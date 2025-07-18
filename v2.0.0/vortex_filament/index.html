@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Vortex Filament Example · FastMultipole.jl</title><meta name="title" content="Vortex Filament Example · FastMultipole.jl"/><meta property="og:title" content="Vortex Filament Example · FastMultipole.jl"/><meta property="twitter:title" content="Vortex Filament Example · FastMultipole.jl"/><meta name="description" content="Documentation for FastMultipole.jl."/><meta property="og:description" content="Documentation for FastMultipole.jl."/><meta property="twitter:description" content="Documentation for FastMultipole.jl."/><meta property="og:url" content="https://flow.byu.edu/FastMultipole.jl/vortex_filament/"/><meta property="twitter:url" content="https://flow.byu.edu/FastMultipole.jl/vortex_filament/"/><link rel="canonical" href="https://flow.byu.edu/FastMultipole.jl/vortex_filament/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">FastMultipole.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Introduction</a></li><li><a class="tocitem" href="../quickstart/">Quick Start</a></li><li><a class="tocitem" href="../guided_examples/">Gravitational Example</a></li><li class="is-active"><a class="tocitem" href>Vortex Filament Example</a><ul class="internal"><li><a class="tocitem" href="#Overloading-body_to_multipole!"><span>Overloading <code>body_to_multipole!</code></span></a></li><li><a class="tocitem" href="#Buffer-Interface-Functions"><span>Buffer Interface Functions</span></a></li><li><a class="tocitem" href="#Overloading-direct!"><span>Overloading <code>direct!</code></span></a></li><li><a class="tocitem" href="#Running-the-FMM"><span>Running the FMM</span></a></li></ul></li><li><a class="tocitem" href="../tuning/">Tuning Parameters</a></li><li><a class="tocitem" href="../advanced_usage/">Multiple Systems</a></li><li><a class="tocitem" href="../advanced_usage_2/">Automated Tuning</a></li><li><a class="tocitem" href="../reference/">Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Vortex Filament Example</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Vortex Filament Example</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/byuflowlab/FastMultipole.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/byuflowlab/FastMultipole.jl/blob/main/docs/src/vortex_filament.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Vortex-Filament-Example"><a class="docs-heading-anchor" href="#Vortex-Filament-Example">Vortex Filament Example</a><a id="Vortex-Filament-Example-1"></a><a class="docs-heading-anchor-permalink" href="#Vortex-Filament-Example" title="Permalink"></a></h1><p>In this example, we review the interface functions used by the vortex filament model found in <code>FastMultipole/test/vortex_filament.jl</code>. First, let&#39;s take a look at the data structure:</p><pre><code class="language-julia hljs">struct VortexFilaments{TF}
+    x::Matrix{SVector{3,TF}}
+    strength::Vector{SVector{3,TF}}
+    core_size::Vector{TF}
+    error_tolerance::Vector{TF}
+    potential::Vector{TF}
+    gradient::Vector{SVector{3,TF}}
+    hessian::Vector{SMatrix{3,3,TF,9}}
+end</code></pre><p>Note that <code>x</code> is a 2-row matrix, where the first row contains the start point of the filament and the second row contains the end point. The <code>strength</code> field contains the strength of the vortex filament, which is a vector quantity. The <code>core_size</code> field contains the regularization radius for each filament. The <code>potential</code>, <code>force</code>, and <code>gradient</code> fields are used to store the results of the FMM call.</p><h2 id="Overloading-body_to_multipole!"><a class="docs-heading-anchor" href="#Overloading-body_to_multipole!">Overloading <code>body_to_multipole!</code></a><a id="Overloading-body_to_multipole!-1"></a><a class="docs-heading-anchor-permalink" href="#Overloading-body_to_multipole!" title="Permalink"></a></h2><p>Just like we did for the gravitational example, we need to overload <code>FastMultipole.body_to_multipole!</code> and <code>FastMultipole.has_vector_potential</code> for our vortex filament system. The recommended way to do this is:</p><pre><code class="language-julia hljs">FastMultipole.body_to_multipole!(system::VortexFilaments, args...) =
+    FastMultipole.body_to_multipole!(Filament{Vortex}, system, args...)
+
+function FastMultipole.has_vector_potential(system::VortexFilaments)
+    return true
+end</code></pre><p>Ordinarily, a 3-dimensional vector potential, such as the stream function in 3-dimensional fluid dynamics, requires 3 separate expansions (1 for each dimension). It is worth noting that when <code>Vortex</code> elements are used, <code>FastMultipole</code> never actually computes the vector potential <span>$\vec{\psi}$</span>; rather, it computes two scalar components <span>$\phi$</span> and <span>$\chi$</span> of the Lamb-Helmholtz decomposition of the field as demonstrated by [<a href="../theory/#gumerov2013efficient">2</a>]. This allows us to reduce the number of expansions required to express the scalar-plus-vector potential from 4 to 2, thus reducing computational cost. It is also worth noting that <span>$\phi$</span> and <span>$\chi$</span> are not origin-invariant fields, and thus cannot be used to evaluate scalar or vector potentials with FMM. In other words, when a <code>Vortex</code> kernel is used as a source in a FMM call, the <code>scalar_potential</code> should not be used.</p><div class="admonition is-info" id="Info-7c67f31520c8620f"><header class="admonition-header">Info<a class="admonition-anchor" href="#Info-7c67f31520c8620f" title="Permalink"></a></header><div class="admonition-body"><p>When using <code>Vortex</code> elements, <code>FastMultipole</code> computes two scalar components <span>$\phi$</span> and <span>$\chi$</span> of the Lamb-Helmholtz decomposition of the field, rather than the vector potential <span>$\vec{\psi}$</span>. This allows us to reduce the number of expansions required to express the scalar-plus-vector potential from 4 to 2, thus reducing computational cost.</p></div></div><div class="admonition is-warning" id="Warning-3c586dcdc82556ad"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-3c586dcdc82556ad" title="Permalink"></a></header><div class="admonition-body"><p>When a <code>Vortex</code> kernel is used as a source in a FMM call, the <code>scalar_potential</code> should not be used. This is because the <code>scalar_potential</code> is not origin-independent under the Lamb-Helmholtz decomposition.</p></div></div><h2 id="Buffer-Interface-Functions"><a class="docs-heading-anchor" href="#Buffer-Interface-Functions">Buffer Interface Functions</a><a id="Buffer-Interface-Functions-1"></a><a class="docs-heading-anchor-permalink" href="#Buffer-Interface-Functions" title="Permalink"></a></h2><p>The buffer interface functions are defined for <code>VortexFilament</code> systems as follows:</p><pre><code class="language-julia hljs">function FastMultipole.source_system_to_buffer!(buffer, i_buffer, system::VortexFilaments, i_body)
+    # position
+    buffer[1:3,i_buffer] .= (system.x[1,i_body]  + system.x[2,i_body]) * 0.5
+
+    # get regularization radius
+    Γ = system.strength[i_body]
+    # Γmag = norm(Γ)
+    core_size = system.core_size[i_body]
+    buffer[4,i_buffer] = system.core_size[i_body] + 0.5 * norm(system.x[2,i_body] - system.x[1,i_body])
+
+    # remainding quantities
+    buffer[5:7,i_buffer] .= Γ
+    buffer[8:10,i_buffer] .= system.x[1,i_body]
+    buffer[11:13,i_buffer] .= system.x[2,i_body]
+    buffer[14,i_buffer] = core_size
+end
+
+Base.eltype(::VortexFilaments{TF}) where TF = TF
+
+FastMultipole.data_per_body(::VortexFilaments) = 14
+
+FastMultipole.get_position(system::VortexFilaments, i) = (system.x[1,i] + system.x[2,i]) * 0.5
+
+FastMultipole.strength_dims(system::VortexFilaments) = 3
+
+FastMultipole.get_n_bodies(system::VortexFilaments) = length(system.strength)
+
+function FastMultipole.buffer_to_target_system!(target_system::VortexFilaments, i_target, ::DerivativesSwitch{PS,VS,GS}, target_buffer, i_buffer) where {PS,VS,GS}
+
+    # extract from buffer
+    PS &amp;&amp; (potential = FastMultipole.get_scalar_potential(target_buffer, i_buffer))
+    VS &amp;&amp; (velocity = FastMultipole.get_gradient(target_buffer, i_buffer))
+    GS &amp;&amp; (hessian = FastMultipole.get_hessian(target_buffer, i_buffer))
+
+    # load into system
+    PS &amp;&amp; (target_system.potential[i_target] += potential)
+    VS &amp;&amp; (target_system.gradient[i_target] += velocity)
+    GS &amp;&amp; (target_system.hessian[i_target] += hessian)
+
+end</code></pre><p>First, we point out that the <code>source_system_to_buffer!</code> function stores a core size in row 14. Although it will not be used by any internal <code>FastMultipole</code> functions, it will be required by the <code>direct!</code> function. Since the columns of the buffer are sorted into an octree structure, they will not match the order of the original system; therefore, it is important to store essential body properties in additional rows of the buffer. We also note that the <code>get_position</code> function needs not return a previously-stored value; in this case, it computes the midpoint of the filament on the fly.</p><h2 id="Overloading-direct!"><a class="docs-heading-anchor" href="#Overloading-direct!">Overloading <code>direct!</code></a><a id="Overloading-direct!-1"></a><a class="docs-heading-anchor-permalink" href="#Overloading-direct!" title="Permalink"></a></h2><p>The <code>FastMultipole.direct!</code> function is overloaded for <code>VortexFilaments</code> systems as follows:</p><pre><code class="language-julia hljs">function get_δ(distance, core_size)
+    δ = distance &lt; core_size ? (distance-core_size) * (distance-core_size) : zero(distance)
+    return δ
+end
+
+function vortex_filament_finite_core_2(x1,x2,xt,q,core_size)
+    # intermediate values
+    r1 = xt - x1
+    r2 = xt - x2
+
+    nr1 = norm(r1)
+    nr2 = norm(r2)
+
+    num = cross(r1, r2)
+    denom = nr1 * nr2 + dot(r1, r2)
+
+    # core size comes into play here
+    distance_1 = norm((x1+x2)*0.5 - xt)
+    δ1 = get_δ(distance_1, core_size)
+
+    distance_2 = norm(x1 - xt)
+    δ2 = get_δ(distance_2, core_size)
+
+    distance_3 = norm(x2 - xt)
+    δ3 = get_δ(distance_3, core_size)
+
+    # desingularized terms
+    f1 = num/(denom + δ1)
+    f2 = 1/(nr1+δ2)
+    f3 = 1/(nr2+δ3)
+
+    # evaluate velocity
+    V = (f1*(f2+f3))/(4*pi) * q
+
+    return V
+end
+
+function FastMultipole.direct!(target_system, target_index, derivatives_switch::DerivativesSwitch{PS,VS,GS}, source_system::VortexFilaments, source_buffer, source_index) where {PS,VS,GS}
+    for i_source in source_index
+        x1 = FastMultipole.get_vertex(source_buffer, source_system, i_source, 1)
+        x2 = FastMultipole.get_vertex(source_buffer, source_system, i_source, 2)
+        q = FastMultipole.get_strength(source_buffer, source_system, i_source)
+        core_size = source_buffer[14, i_source]
+
+        for i_target in target_index
+            xt = FastMultipole.get_position(target_system, i_target)
+
+            if VS
+                # determine sign of q
+                q_mag = norm(q) * sign(dot(q, x2-x1))
+
+                # calculate velocity
+                v = vortex_filament_finite_core_2(x1,x2,xt,q_mag,core_size)
+                FastMultipole.set_gradient!(target_system, i_target, v)
+            end
+        end
+    end
+end</code></pre><p>Note that <code>core_size</code> is retrieved from the buffer matrix rather than from <code>source_system</code> directly, as discussed previously.</p><div class="admonition is-warning" id="Warning-2db05cb90ee740cf"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-2db05cb90ee740cf" title="Permalink"></a></header><div class="admonition-body"><p>The bodies contained inside the <code>source_system</code> argument of the <code>direct!</code> function will not be in the correct order for use in the FMM. For this reason, it is not recommended to access the <code>source_system</code> in the <code>direct!</code> function except for global properties that apply to all bodies. Instead, use the <code>source_buffer</code> matrix as shown in the example above.</p></div></div><h2 id="Running-the-FMM"><a class="docs-heading-anchor" href="#Running-the-FMM">Running the FMM</a><a id="Running-the-FMM-1"></a><a class="docs-heading-anchor-permalink" href="#Running-the-FMM" title="Permalink"></a></h2><p>Let&#39;s try this out on a vortex filament system. The <code>fmm!</code> function is called in the same way as for the gravitational example, but with the <code>VortexFilaments</code> system:</p><pre><code class="language-julia hljs">using LinearAlgebra
+
+# create system
+function generate_filament_field(n_filaments, length_scale; strength_scale=1/n_filaments)
+    centers = rand(SVector{3,Float64}, n_filaments)
+    pts = zeros(SVector{3,Float64}, 2, n_filaments)
+    strength_vec= zeros(SVector{3,Float64}, n_filaments)
+    for (i,center) in enumerate(centers)
+        dx = (rand(SVector{3,Float64}) * 2 .- 1.0) * 0.5 * length_scale
+        pts[1,i] = center - dx
+        pts[2,i] = center + dx
+        Γ = dx / norm(dx) * rand() * strength_scale
+        strength_vec[i] = Γ
+    end
+
+    # create filaments
+    core_size = fill(1e-2, n_filaments)
+    error_tolerance = fill(1e-4, n_filaments)
+    potential = zeros(length(strength_vec))
+    gradient = zeros(SVector{3,Float64}, length(strength_vec))
+    hessian = zeros(SMatrix{3,3,Float64,9}, length(strength_vec))
+
+    return VortexFilaments(pts, strength_vec, core_size, error_tolerance, potential, gradient, hessian)
+end
+
+n_filaments = 5000
+length_scale = 1.0 / n_filaments^(1/3)
+filaments = generate_filament_field(n_filaments, length_scale; strength_scale=1/n_filaments)
+
+# run FMM
+_, cache, _ = fmm!(filaments; scalar_potential=false, gradient=true)
+
+# print results
+println(&quot;Induced Velocity:\n&quot;, filaments.gradient[1:10], &quot;...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Induced Velocity:
+StaticArraysCore.SVector{3, Float64}[[0.00017208087164234374, -0.0009585399404453471, 0.0009813935674933038], [0.0010694581268163347, -0.002100174010739792, 0.00013743033874878897], [-0.00017081172197331172, 0.00040257621804284845, 0.00037062588943358095], [-0.00047905336592148155, 0.0011448692682949472, 9.903497671434478e-5], [0.003134287883343304, 0.004346357646206125, 0.00036451767157267184], [-0.0026667497161893343, 0.004907537399682267, 9.060021437919721e-5], [-0.000533077552081741, -0.00013713549422974695, 0.0004202753364276534], [-6.370260187963949e-7, 0.001188956272600733, -0.0014118052981309506], [0.00028095930406579306, 0.00040520409131375294, -0.0007461585789982858], [-0.0005331551259581096, 0.00037994541933705317, -0.00036338467079464906]]...</code></pre><p>We set <code>scalar_potential=false</code> and <code>gradient=true</code> to indicate that we want to compute the vector field (i.e. the velocity field) but not the scalar potential.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../guided_examples/">« Gravitational Example</a><a class="docs-footer-nextpage" href="../tuning/">Tuning Parameters »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Friday 18 July 2025 17:53">Friday 18 July 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
