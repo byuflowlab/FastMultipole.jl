@@ -309,7 +309,29 @@ end
 """
     allocate_buffers(systems::Tuple, target::Bool)
 
-Allocates buffers for the given systems. If `target` is `true`, it allocates space for position, scalar potential, gradient, and hessian matrix. Otherwise, it allocates enough memory for the user-defined `source_system_to_buffer!`.
+Allocates buffers for the given systems. 
+    
+**Arguments**
+
+* `systems::Tuple`: tuple of systems for which to allocate buffers
+* `target::Bool`: if `true`, allocates space for body position, scalar potential, gradient, hessian matrix, and previous influence for relative error tolerance; otherwise, allocates space for information provided by the user-defined `source_system_to_buffer!`
+* `TF`: element type of the buffers
+
+**Returns**
+
+* `buffers::NTuple{N,Matrix{TF}}`: tuple of `N` matrices, one for each system, as follows:
+
+    * if `target==true`, each matrix has size `(18,N)`, where `N` is the number of bodies in the system; indices correspond to:
+
+        * `(1:3,i)` - x, y, and z coordinates of the `i`th body
+        * `(4,i)` - scalar potential induced at the `i`th body
+        * `(5:7,i)` - x, y, and z components of the vector field induced at the `i`th body
+        * `(8:16,i)` - hessian of the scalar potential induced at the `i`th body
+        * `(17,i)` - estimate of the scalar potential induced at the `i`th body used for relative error tolerance
+        * `(18,i)` - estimate of the vector field magnitude induced at the `i`th body used for relative error tolerance
+
+    * if `target==false`, each matrix has size `(M,N)`, where `N` is the number of bodies in the system, and `M` is determined by the user-defined [`source_system_to_buffer!`](@ref FastMultipole.source_system_to_buffer!) function
+
 """
 function allocate_buffers(systems::Tuple, target::Bool, TF)
     # create buffers
@@ -325,7 +347,22 @@ end
 """
     allocate_small_buffers(systems::Tuple; target=false)
 
-Allocates small buffers for the given systems. These buffers are used for temporary storage of body positions and the previous FMM call's influence for octree sorting.
+Allocates small buffers for the given systems to be used in pidgeon-hole sorting bodies into the octree.
+
+**Arguments**
+
+* `systems::Tuple`: tuple of systems for which to allocate buffers
+* `TF`: element type of the buffers
+
+**Returns**
+
+* `small_buffers::Vector{Matrix{TF}}`: vector of matrices of size `(5,N)` allocated for each system, where:
+
+    * `N` is the number of bodies in the system
+    * indices `(1:3,i)` correspond to the x, y, and z coordinates of the `i`th body
+    * index `(4,i)` corresponds to the estimated scalar potential of the `i`th body
+    * index `(5,i)` corresponds to the estimated vector field magnitude of the `i`th body
+
 """
 function allocate_small_buffers(systems::Tuple, TF)
     # create buffers
@@ -1333,8 +1370,16 @@ function update_min_influence_leaf!(branches, i_branch, buffers)
     branch = branches[i_branch]
 
     # initialize min_influence
-    min_potential = buffers[1][17, branch.bodies_index[1][1]]
-    min_gradient = buffers[1][18, branch.bodies_index[1][1]]
+    min_potential, min_gradient = zero(eltype(branches[1].min_potential)), zero(eltype(branches[1].min_gradient))
+    for i_buffer in eachindex(buffers)
+        buffer = buffers[i_buffer]
+        # extract body index
+        bodies_index = branch.bodies_index[i_buffer]
+        if length(bodies_index) > 0
+            min_potential = max(min_potential, buffer[17, bodies_index[1]])
+            min_gradient = max(min_gradient, buffer[18, bodies_index[1]])
+        end
+    end
 
     # loop over buffers
     for i_buffer in eachindex(buffers)

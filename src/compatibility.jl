@@ -307,6 +307,11 @@ function influence!(influence, target_buffer, source_system, source_buffer)
     error("influence! not overloaded for systems of type $(typeof(source_system))")
 end
 
+"""
+    has_vector_potential(system::{UserDefinedSystem})
+
+Returns `true` if the system induces a vector potential, `false` otherwise. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system).
+"""
 function has_vector_potential(system)
     error("has_vector_potential not overloaded for type $(typeof(system))")
 end

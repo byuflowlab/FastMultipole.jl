@@ -9,12 +9,14 @@ Applies all interactions of `systems` acting on itself without multipole acceler
 
     - a system object for which compatibility functions have been overloaded, or
     - a tuple of system objects for which compatibility functions have been overloaded
+    - `(target_systems, source_systems)` where `target_systems` and `source_systems` are each either a system or tuple of systems for which compatibility functions have been overloaded
 
 # Optional Arguments
 
 - `scalar_potential::Bool`: either a `::Bool` or a `::AbstractVector{Bool}` of length `length(target_systems)` indicating whether each system should receive a scalar potential from `source_systems`
 - `gradient::Bool`: either a `::Bool` or a `::AbstractVector{Bool}` of length `length(target_systems)` indicating whether each system should receive a vector field from `source_systems`
 - `hessian::Bool`: either a `::Bool` or a `::AbstractVector{Bool}` of length `length(target_systems)` indicating whether each system should receive a vector gradient from `source_systems`
+- `n_threads::Int`: the number of threads to use for parallelization; defaults to `Threads.nthreads()`
 
 """
 function direct!(systems::Tuple; args...)

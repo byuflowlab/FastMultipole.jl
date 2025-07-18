@@ -27,6 +27,7 @@ makedocs(;
         "Reference" => "reference.md",
         # "Theory" => "theory.md"
     ],
+    checkdocs=:none
 )
 
 deploydocs(;

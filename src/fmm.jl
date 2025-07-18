@@ -828,10 +828,10 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 
 **Optional Arguments: Allocation**
 
-- `target_buffers::Vector{<:Any}`: buffers for target systems; if not provided, buffers are allocated using [`allocate_buffers`](@ref)
-- `target_small_buffers::Vector{<:Any}`: small buffers for target systems; if not provided, small buffers are allocated using [`allocate_small_buffers`](@ref)
-- `source_buffers::Vector{<:Any}`: buffers for source systems; if not provided, buffers are allocated using [`allocate_buffers`](@ref)
-- `source_small_buffers::Vector{<:Any}`: small buffers for source systems; if not provided, small buffers are allocated using [`allocate_small_buffers`](@ref)
+- `target_buffers::Vector{<:Any}`: buffers for target systems; if not provided, buffers are allocated using [`FastMultipole.allocate_buffers`](@ref)
+- `target_small_buffers::Vector{<:Any}`: small buffers for target systems; if not provided, small buffers are allocated using [`FastMultipole.allocate_small_buffers`](@ref)
+- `source_buffers::Vector{<:Any}`: buffers for source systems; if not provided, buffers are allocated using [`FastMultipole.allocate_buffers`](@ref)
+- `source_small_buffers::Vector{<:Any}`: small buffers for source systems; if not provided, small buffers are allocated using [`FastMultipole.allocate_small_buffers`](@ref)
 
 **Optional Arguments: Tuning Parameters**
 
@@ -1177,14 +1177,14 @@ end
 
 #--- estimate influence for relative error tolerance ---#
 
-@inline function get_influence(system::Matrix, j, ::Union{PowerRelativeGradient, RotatedCoefficientsRelativeGradient})
-    vx, vy, vz = get_gradient(system, j)
-    return sqrt(vx*vx + vy*vy + vz*vz)
-end
+# @inline function get_influence(system::Matrix, j, ::Union{PowerRelativeGradient, RotatedCoefficientsRelativeGradient})
+#     vx, vy, vz = get_gradient(system, j)
+#     return sqrt(vx*vx + vy*vy + vz*vz)
+# end
 
-@inline function get_influence(system::Matrix, j, ::PowerRelativePotential)
-    return get_scalar_potential(system, j)
-end
+# @inline function get_influence(system::Matrix, j, ::PowerRelativePotential)
+#     return get_scalar_potential(system, j)
+# end
 
 # function estimate_influence!(target_systems, target_tree, source_systems, source_tree, error_tolerance::Union{Nothing, AbsoluteError}; optargs...)
 #     return nothing

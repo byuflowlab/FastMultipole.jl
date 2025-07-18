@@ -6,10 +6,15 @@ In the this section, we will describe how to impose an error tolerance. Finally,
 
 `FastMultipole` can be configured to satisfy an error tolerance by dynamically adjusting the expansion order of each multipole-to-local transformation to the smallest integer that satisfies the tolerance, according to an error prediction. Users can indicate their desired error tolerance via the keyword argument `error_tolerance` in the `fmm!` function. A value of `nothing` indicates no error tolerance, in which case the expansion order is fixed at whatever is passed as the `expansion_order` keyword. Otherwise, `error_tolerance` should inherit from the `ErrorMethod` abstract type. The chosen type will determine how the error is predicted, and hence how the expansion order is chosen. Choices include:
 
-- `PowerAbsolutePotential{tolerance}`: Constrains the magnitude of the potential error to be less than `tolerance` using a radially invariant upper bound.
-- `PowerAbsoluteGradient{tolerance}`: Constrains the magnitude of the vector field error to be less than `tolerance` using a radially invariant upper bound.
-- `PowerRelativePotential{tolerance}`: Constrains the relative error of the potential to be less than `tolerance` using a radially invariant upper bound.
-- `PowerRelativeGradient{tolerance}`: Constrains the relative error of the vector field to be less than `tolerance` using a radially invariant upper bound.
+- `PowerAbsolutePotential{tolerance, BE::Bool}`: Constrains the magnitude of the potential error to be less than `tolerance` using a radially invariant upper bound.
+- `PowerAbsoluteGradient{tolerance, BE::Bool}`: Constrains the magnitude of the vector field error to be less than `tolerance` using a radially invariant upper bound.
+- `PowerRelativePotential{relative_tolerance, absolute_tolerance, BE::Bool}`: Constrains the relative error of the potential to be less than `relative_tolerance` using a radially invariant upper bound. If the equivalent absolute tolerance of an interaction is less than `absolute_tolerance`, then `absolute_tolerance` is used instead.
+- `PowerRelativeGradient{relative_tolerance, absolute_tolerance, BE::Bool}`: Constrains the relative error of the vector field to be less than `relative_tolerance` using a radially invariant upper bound. If the equivalent absolute tolerance of an interaction is less than `absolute_tolerance`, then `absolute_tolerance` is used instead.
+
+Since each error 
+
+!!! info
+    For relative error methods, the [`get_previous_influence`](@ref FastMultipole.get_previous_influence) compatibility function must be overloaded for your target system. This function estimates the potential and gradient at the `i`th target body, which is used to compute the relative error. For example, estimates might be based on the previous step of a time-stepping or iterative algorithm.
 
 Say I wanted to compute the gravitational potential to a tolerance of `1e-6` using the absolute potential error method. I would call the FMM as follows:
 

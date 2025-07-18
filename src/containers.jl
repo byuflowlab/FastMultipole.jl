@@ -49,16 +49,6 @@ Switch indicating whether the scalar potential, vector potential, gradient, and/
 """
 struct DerivativesSwitch{PS,GS,HS} end
 
-"""
-    ExpansionSwitch
-
-Switch indicating which expansions should be used:
-
-1. scalar potential (`SP`)
-2. vector potential via Lamb-Helmholtz decomposition (`VP`)
-"""
-struct ExpansionSwitch{SP,VP} end
-
 #------- error predictors -------#
 
 abstract type ErrorMethod{BE} end
@@ -162,10 +152,27 @@ end
 Base.eltype(::Branch{TF,<:Any}) where TF = TF
 
 """
-bodies[index_list] is the same sort operation as performed by the tree
-sorted_bodies[inverse_index_list] undoes the sort operation performed by the tree
+    Tree{TF,N}
+
+Tree object used to sort `N` systems into an octree.
+
+**Fields**
+
+* `branches::Vector{Branch{TF,N}}`: a vector of `Branch` objects composing the tree
+* `expansions::Array{TF,4}`: 4-dimensional array whose `(1,i,j,k)`th element contains the real part of the `j`th expansion coefficient of the `k`th branch, and whose `(2,i,j,k)`th element contains the imaginary part. If `i==1`, the coefficient corresponds to the scalar potential; if `i==2`, the coefficient corresponds to the ''\\chi'' part of the Lamb-Helmholtz decomposition of the vector potential.
+* `levels_index::Vector{UnitRange{Int64}}`: vector of unit ranges indicating the indices of branches at each level of the tree
+* `leaf_index::Vector{Int}`: vector of indices of branches that are leaves
+* `sort_index_list::NTuple{N,Vector{Int}}`: tuple of vectors of indices used to sort the bodies in each system into the tree
+* `inverse_sort_index_list::NTuple{N,Vector{Int}}`: tuple of vectors of indices used to undo the sort operation performed by `sort_index_list`
+* `buffers::NTuple{N,Matrix{TF}}`: tuple of buffers used to store the bodies computed influence of each system in the tree, as explained in [`FastMultipole.allocate_buffers`](@ref)
+* `small_buffers::Vector{Matrix{TF}}`: vector of buffers used to pidgeon-hole sort bodies into the tree, as explained in [`FastMultipole.allocate_small_buffers`](@ref)
+* `expansion_order::Int64`: the maximum storable expansion order
+* `leaf_size::SVector{N,Int64}`: maximum number of bodies in a leaf for each system; if multiple systems are represented, the actual maximum depends on the `InteractionListMethod` used to create the tree
+
 """
 struct Tree{TF,N}
+    # bodies[index_list] is the same sort operation as performed by the tree
+    # sorted_bodies[inverse_index_list] undoes the sort operation performed by the tree
     branches::Vector{Branch{TF,N}}        # a vector of `Branch` objects composing the tree
     expansions::Array{TF,4}
     levels_index::Vector{UnitRange{Int64}}
@@ -190,21 +197,20 @@ end
 Base.length(list::InteractionList) = length(list.direct_list)
 
 #####
-##### allow input systems to take any form when desired
-#####
-struct SortWrapper{TS}
-    system::TS
-    index::Vector{Int}
-end
-
-#####
 ##### when we desire to evaluate the potential at locations not coincident with source centers
 #####
 
 """
-    ProbeSystem
+    ProbeSystem{TF}
 
-Convenience system for defining locations at which the potential, vector field, or vector gradient may be desired.
+Convenience system for defining locations at which the potential, vector field, or vector gradient may be desired. Interface functions are already defined and overloaded.
+
+**Fields**
+
+* `position::Vector{SVector{3,TF}}`: vector of probe positions
+* `scalar_potential::Vector{TF}`: vector of scalar potential values at the positions
+* `gradient::Vector{SVector{3,TF}}`: vector of vector field values at the positions
+* `hessian::Vector{SMatrix{3,3,TF,9}}`: vector of Hessian matrices at the positions
 """
 struct ProbeSystem{TF}
     position::Vector{SVector{3,TF}}
@@ -247,6 +253,19 @@ end
 
 #--- memory cache ---#
 
+"""
+    Cache{TF,NT,NS}
+
+Cache object used to store system buffers to avoid repeated allocations.
+
+**Fields**
+
+* `target_buffers::NTuple{NT, Matrix{TF}}`: tuple of length `NT` containing buffers for target systems
+* `source_buffers::NTuple{NS, Matrix{TF}}`: tuple of length `NS` containing buffers for source systems
+* `target_small_buffers::Vector{Matrix{TF}}`: vector of small buffers used for pidgeon-hole sorting target systems into the octree
+* `source_small_buffers::Vector{Matrix{TF}}`: vector of small buffers used for pidgeon-hole sorting source systems into the octree
+
+"""
 struct Cache{TF,NT,NS}
     target_buffers::NTuple{NT, Matrix{TF}}
     source_buffers::NTuple{NS, Matrix{TF}}
