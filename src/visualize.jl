@@ -96,8 +96,8 @@ function visualize(name, system, tree; probe_indices=nothing, toggle_branches=tr
         branch_radii = Array{Float64,3}(undef,n_branches,1,1)
         branch_indices = Array{Float64,3}(undef,n_branches,1,1)
         for (i,branch) in enumerate(branches)
-            branch_locations[:,i,1,1] .= branch.source_center
-            branch_radii[i,1,1] = branch.source_radius
+            branch_locations[:,i,1,1] .= branch.center
+            branch_radii[i,1,1] = branch.radius
             branch_indices[i,1,1] = Float64(i)
         end
         vtk_grid(name*"_source_branches", branch_locations) do vtk
@@ -110,8 +110,8 @@ function visualize(name, system, tree; probe_indices=nothing, toggle_branches=tr
         branch_radii = Array{Float64,3}(undef,n_branches,1,1)
         branch_indices = Array{Float64,3}(undef,n_branches,1,1)
         for (i,branch) in enumerate(branches)
-            branch_locations[:,i,1,1] .= branch.target_center
-            branch_radii[i,1,1] = branch.target_radius
+            branch_locations[:,i,1,1] .= branch.center
+            branch_radii[i,1,1] = branch.radius
             branch_indices[i,1,1] = Float64(i)
         end
         vtk_grid(name*"_target_branches", branch_locations) do vtk

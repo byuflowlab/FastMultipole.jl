@@ -1,6 +1,6 @@
 function evaluate_multipole!(systems, target_branch::Branch, source_branch, harmonics, expansion_order, lamb_helmholtz, derivatives_switches)
     for i in eachindex(systems)
-        evaluate_multipole!(systems[i], target_branch.bodies_index[i], harmonics, source_branch.multipole_expansion, source_branch.source_center, expansion_order, lamb_helmholtz, derivatives_switches[i])
+        evaluate_multipole!(systems[i], target_branch.bodies_index[i], harmonics, source_branch.multipole_expansion, source_branch.center, expansion_order, lamb_helmholtz, derivatives_switches[i])
     end
 end
 

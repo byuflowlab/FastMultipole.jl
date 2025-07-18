@@ -40,11 +40,11 @@ buffer = FastMultipole.system_to_buffer(masses)
 expansion_order = 7
 box = SVector{3}(0.0,0.0,0.0)
 
-branch = Branch(1:1, 0, 1:0, 0, 1, x, x, 0.0, 0.0, box, box)
+branch = Branch(1:1, 0, 1:0, 0, 1, x, 0.0, box)
 multipole_expansion = FastMultipole.initialize_expansion(expansion_order)
 harmonics = FastMultipole.initialize_harmonics(expansion_order)
 
-body_to_multipole!(Point{Source}, masses, multipole_expansion, buffer, branch.source_center, 1:1, harmonics, expansion_order)
+body_to_multipole!(Point{Source}, masses, multipole_expansion, buffer, branch.center, 1:1, harmonics, expansion_order)
 
 # translate multipole
 
@@ -66,7 +66,7 @@ FastMultipole.update_ζs_mag!(ζs_mag, 0, expansion_order)
 # next multipole branch
 box = SVector{3}(0.0,0.0,0.0)
 
-branch_2 = Branch(2:2, 0, 1:0, 0, 1, x + SVector{3}(0.1, 0.2, 0.14), x + SVector{3}(0.1, 0.2, 0.14), 0.0, 0.0, box, box)
+branch_2 = Branch(2:2, 0, 1:0, 0, 1, x + SVector{3}(0.1, 0.2, 0.14), 0.0, box)
 multipole_expansion_2 = FastMultipole.initialize_expansion(expansion_order)
 expansion_switch = Val(false)
 

@@ -74,6 +74,9 @@ WARNING_FLAG_DIRECT[] = true
 const WARNING_FLAG_LH_POTENTIAL = Array{Bool,0}(undef)
 WARNING_FLAG_LH_POTENTIAL[] = true
 
+const WARNING_FLAG_MAX_INFLUENCE = Array{Bool,0}(undef)
+WARNING_FLAG_MAX_INFLUENCE[] = true
+
 #------- HEADERS AND EXPORTS -------#
 
 include("containers.jl")

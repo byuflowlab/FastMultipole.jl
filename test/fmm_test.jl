@@ -125,7 +125,7 @@ Gammas = [
 
 vortexparticles = VortexParticles(xs, Gammas)
 source_buffer = FastMultipole.system_to_buffer(vortexparticles)
-target_buffer = FastMultipole.target_to_buffer(vortexparticles)
+target_buffer = FastMultipole.target_to_buffer(vortexparticles, true)
 
 # using direct method
 direct!((vortexparticles,); hessian=true)
@@ -153,12 +153,12 @@ leaf_size = SVector{1}(1)
 x_branch_1 = SVector{3}([0.0,0,0])
 bounding_box = SVector{3}(0.0,0,0)
 
-branch_1 = FastMultipole.Branch(SVector{1}(2), SVector{1}([1:2]), 2, 2:3, 0, -1, x_branch_1, x_branch_1, 1/8, 1/8, bounding_box, bounding_box)
+branch_1 = FastMultipole.Branch(SVector{1}(2), SVector{1}([1:2]), 2, 2:3, 0, -1, x_branch_1, 1/8, bounding_box)
 x_branch_2 = FastMultipole.SVector{3}(xs[:,1] .+ [0.01, 0.02, -0.03])
-branch_2 = FastMultipole.Branch(SVector{1}(1), SVector{1}([1:1]), 0, 3:2, 1, 1, x_branch_2, x_branch_2, 1/8, 1/8, bounding_box, bounding_box)
+branch_2 = FastMultipole.Branch(SVector{1}(1), SVector{1}([1:1]), 0, 3:2, 1, 1, x_branch_2, 1/8, bounding_box)
 multipole_coefficients_2 = FastMultipole.initialize_expansion(expansion_order)
 x_branch_3 = FastMultipole.SVector{3}(xs[:,2] .+ [0.02, -0.04, 0.01])
-branch_3 = FastMultipole.Branch(SVector{1}(1), SVector{1}([2:2]), 0, 3:2, 1, 2, x_branch_3, x_branch_3, 1/8, 1/8, bounding_box, bounding_box)
+branch_3 = FastMultipole.Branch(SVector{1}(1), SVector{1}([2:2]), 0, 3:2, 1, 2, x_branch_3, 1/8, bounding_box)
 multipole_coefficients_3 = FastMultipole.initialize_expansion(expansion_order)
 
 # using FMM
@@ -172,8 +172,8 @@ local_coefficients_2 = view(expansions, :, :, :, 2)
 local_coefficients_3 = view(expansions, :, :, :, 3)
 harmonics = initialize_harmonics(expansion_order)
 
-FastMultipole.body_to_multipole!(vortexparticles, multipole_coefficients_2, source_buffer, branch_2.source_center, branch_2.bodies_index[1], harmonics, expansion_order)
-FastMultipole.body_to_multipole!(vortexparticles, multipole_coefficients_3, source_buffer, branch_3.source_center, branch_3.bodies_index[1], harmonics, expansion_order)
+FastMultipole.body_to_multipole!(vortexparticles, multipole_coefficients_2, source_buffer, branch_2.center, branch_2.bodies_index[1], harmonics, expansion_order)
+FastMultipole.body_to_multipole!(vortexparticles, multipole_coefficients_3, source_buffer, branch_3.center, branch_3.bodies_index[1], harmonics, expansion_order)
 
 m2l_harmonics = initialize_harmonics(expansion_order)
 # L = zeros(eltype(tree.branches[1].local_expansion), 2, 4)
@@ -232,7 +232,7 @@ bodies = [
 
 vortex_particles = VortexParticles(bodies)
 source_buffer = FastMultipole.system_to_buffer(vortex_particles)
-target_buffer = FastMultipole.target_to_buffer(vortex_particles)
+target_buffer = FastMultipole.target_to_buffer(vortex_particles, true)
 
 #####
 ##### obtain psi, u, and stretching analytically
@@ -280,13 +280,13 @@ leaf_size_source = SVector{1}(1)
 x_branch_1 = SVector{3}((bodies[1:3,1] + bodies[1:3,2])/2)
 bounding_box = SVector{3}(0.0,0,0)
 
-branch_1 = FastMultipole.Branch(SVector{1}(2), SVector{1}([1:2]), 2, 2:3, 0, -1, x_branch_1, x_branch_1, 1/8, 1/8, bounding_box, bounding_box)
+branch_1 = FastMultipole.Branch(SVector{1}(2), SVector{1}([1:2]), 2, 2:3, 0, -1, x_branch_1, 1/8, bounding_box)
 x_branch_2 = SVector{3}(bodies[1:3,1])# .+ [0.01, 0.02, -0.03])
 multipole_coefficients_2 = FastMultipole.initialize_expansion(expansion_order)
-branch_2 = FastMultipole.Branch(SVector{1}(1), SVector{1}([1:1]), 0, 3:2, 1, 1, x_branch_2, x_branch_2, 1/8, 1/8, bounding_box, bounding_box)
+branch_2 = FastMultipole.Branch(SVector{1}(1), SVector{1}([1:1]), 0, 3:2, 1, 1, x_branch_2, 1/8, bounding_box)
 x_branch_3 = SVector{3}(bodies[1:3,2])# .+ [0.02, -0.04, 0.01])
 multipole_coefficients_3 = FastMultipole.initialize_expansion(expansion_order)
-branch_3 = FastMultipole.Branch(SVector{1}(1), SVector{1}([2:2]), 0, 3:2, 1, 2, x_branch_3, x_branch_3, 1/8, 1/8, bounding_box, bounding_box)
+branch_3 = FastMultipole.Branch(SVector{1}(1), SVector{1}([2:2]), 0, 3:2, 1, 2, x_branch_3, 1/8, bounding_box)
 
 dummy_index = (zeros(Int,length(vortex_particles.bodies)),)
 dummy_leaf_index = collect(1:3)
@@ -298,8 +298,8 @@ local_coefficients_3 = view(expansions, :, :, :, 3)
 harmonics = FastMultipole.initialize_harmonics(expansion_order)
 
 # manually compute multipole coefficients
-FastMultipole.body_to_multipole!(vortex_particles, multipole_coefficients_2, source_buffer, branch_2.source_center, branch_2.bodies_index[1], harmonics, expansion_order)
-FastMultipole.body_to_multipole!(vortex_particles, multipole_coefficients_3, source_buffer, branch_3.source_center, branch_3.bodies_index[1], harmonics, expansion_order)
+FastMultipole.body_to_multipole!(vortex_particles, multipole_coefficients_2, source_buffer, branch_2.center, branch_2.bodies_index[1], harmonics, expansion_order)
+FastMultipole.body_to_multipole!(vortex_particles, multipole_coefficients_3, source_buffer, branch_3.center, branch_3.bodies_index[1], harmonics, expansion_order)
 
 # preallocate containers
 Hs_π2 = [1.0]
@@ -384,7 +384,7 @@ bodies = [
 
 vortex_particles = VortexParticles(bodies)
 source_buffer = FastMultipole.system_to_buffer(vortex_particles)
-target_buffer = FastMultipole.target_to_buffer(vortex_particles)
+target_buffer = FastMultipole.target_to_buffer(vortex_particles, true)
 
 psis = zeros(3,3)
 psis[:,1] = psi(bodies[1:3,1], bodies[1:3,2], bodies[5:7,2]) + psi(bodies[1:3,1], bodies[1:3,3], bodies[5:7,3])

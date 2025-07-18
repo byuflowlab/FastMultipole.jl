@@ -135,11 +135,18 @@ function FastMultipole.buffer_to_target_system!(target_system::VortexParticles, 
 
     # update system
     if GS
-        target_system.gradient_stretching[i_gradient_vortex, i_target] .+= gradient
+        target_system.gradient_stretching[i_gradient_vortex, i_target] .= gradient
     end
     if HS
-        target_system.potential[i_HESSIAN_vortex, i_target] .+= reshape(hessian, 9)
+        target_system.potential[i_HESSIAN_vortex, i_target] .= reshape(hessian, 9)
     end
+end
+
+function FastMultipole.get_previous_influence(system::VortexParticles, i)
+    phi_last = zero(eltype(system))
+    gradient_last = SVector{3}(system.gradient_stretching[1,i], system.gradient_stretching[2,i], system.gradient_stretching[3,i])
+
+    return phi_last, norm(gradient_last)
 end
 
 function FastMultipole.has_vector_potential(system::VortexParticles)

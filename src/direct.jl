@@ -48,7 +48,7 @@ function direct!(target_systems::Tuple, source_systems::Tuple; target_buffers=no
     # set up target buffers
     if isnothing(target_buffers)
         target_buffers = allocate_buffers(target_systems, true, TF)
-        target_to_buffer!(target_buffers, target_systems)
+        target_to_buffer!(target_buffers, target_systems, true)
     end
 
     # set up source buffers
@@ -82,7 +82,7 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
     # set up target buffers
     if isnothing(target_buffers)
         target_buffers = allocate_buffers(target_systems, true, TF)
-        target_to_buffer!(target_buffers, target_systems)
+        target_to_buffer!(target_buffers, target_systems, true)
     end
 
     # set up source buffers

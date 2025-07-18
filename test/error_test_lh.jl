@@ -211,14 +211,11 @@ function multipole_check(x_target, n_sources; seed=123, expansion_order=5, metho
 
     # source branch
     bodies_index, n_branches, branch_index, i_parent, i_leaf_index = 1:n_sources, 0, 1:0, 0, 1
-    source_center = target_center = SVector{3}(0.5,0.5,0.5) * 2
-    source_radius = target_radius = 0.5 * sqrt(3) * 2
-    source_box = target_box = SVector{3}(0.5,0.5,0.5) * 2
-    # source_center = target_center = SVector{3}(0.5,0.5,0.5)
-    # source_radius = target_radius = 0.5 * sqrt(3)
-    # source_box = target_box = SVector{3}(0.5,0.5,0.5)
+    center = SVector{3}(0.5,0.5,0.5) * 2
+    radius = 0.5 * sqrt(3) * 2
+    box = SVector{3}(0.5,0.5,0.5) * 2
 
-    branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, source_center, target_center, source_radius, target_radius, source_box, target_box, expansion_order+20)
+    branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, expansion_order+20)
 
     # get multipole coefficients
     FastMultipole.body_to_multipole!(branch, source_system, branch.harmonics, Val(expansion_order+20))
@@ -277,7 +274,7 @@ function multipole_check(x_target, n_sources; seed=123, expansion_order=5, metho
     end
     rotated_system = VortexParticles(rotated_position, rotated_strength)
 
-    rotated_branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, source_center, target_center, source_radius, target_radius, source_box, target_box, expansion_order+20)
+    rotated_branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, expansion_order+20)
 
     # get multipole coefficients
     FastMultipole.body_to_multipole!(rotated_branch, rotated_system, branch.harmonics, Val(expansion_order+20))
@@ -345,7 +342,7 @@ function multipole_check(x_target, n_sources; seed=123, expansion_order=5, metho
             ϕn0 = 0.0 + 0im
             ϕn1 = 0.0 + 0im
             for i in rotated_branch.bodies_index
-                ρ⃗ = rotated_system[i,Position()] - rotated_branch.source_center
+                ρ⃗ = rotated_system[i,Position()] - rotated_branch.center
                 ρ, θ, ϕ = FastMultipole.cartesian_to_spherical(ρ⃗)
                 this_ωxr, this_ωyr, this_ωzr = rotated_system[i,Strength()]
 
@@ -874,18 +871,15 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
 
     # source branch
     bodies_index, n_branches, branch_index, i_parent, i_leaf_index = 1:n_sources, 0, 1:0, 0, 1
-    source_center = SVector{3}(0.5,0.5,0.5) * 2
-    source_radius = 0.5 * sqrt(3) * 2
-    source_box = SVector{3}(0.5,0.5,0.5) * 2
-    # source_center = target_center = SVector{3}(0.5,0.5,0.5)
-    # source_radius = target_radius = 0.5 * sqrt(3)
-    # source_box = target_box = SVector{3}(0.5,0.5,0.5)
+    center = SVector{3}(0.5,0.5,0.5) * 2
+    radius = 0.5 * sqrt(3) * 2
+    box = SVector{3}(0.5,0.5,0.5) * 2
 
-    source_branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, source_center, source_center, source_radius, source_radius, source_box, source_box, expansion_order+20)
+    source_branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, expansion_order+20)
 
     # multipole expansion
     FastMultipole.body_to_multipole!(source_branch, source_system, source_branch.harmonics, Val(expansion_order+20))
-    _, v_mp, _ = evaluate_multipole(x_target, source_center, source_branch.multipole_expansion, DerivativesSwitch(false,true,false), Val(expansion_order+20), Val(true))
+    _, v_mp, _ = evaluate_multipole(x_target, center, source_branch.multipole_expansion, DerivativesSwitch(false,true,false), Val(expansion_order+20), Val(true))
 
     # target system
     target_system = FastMultipole.ProbeSystem([x_target]; scalar_potential=true, vector=true)
@@ -911,7 +905,7 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
 
     # get local coefficients
     for i in source_branch.bodies_index
-        body_to_local_point!(Point{Vortex}, target_branch.local_expansion, target_branch.harmonics, source_system[i,Position()] - target_branch.target_center, source_system[i,Strength()], Val(expansion_order+10))
+        body_to_local_point!(Point{Vortex}, target_branch.local_expansion, target_branch.harmonics, source_system[i,Position()] - target_branch.center, source_system[i,Strength()], Val(expansion_order+10))
     end
 
     # branch.multipole_expansion[:,1,:] .= 0.0 # we are testing just χ

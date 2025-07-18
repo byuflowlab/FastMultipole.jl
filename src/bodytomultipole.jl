@@ -21,7 +21,7 @@ function body_to_multipole!(tree::Tree, harmonics, system, i_system, expansion_o
         branch = tree.branches[i_branch]
         buffer = tree.buffers[i_system]
         multipole_coefficients = view(tree.expansions, :, :, :, i_branch)
-        body_to_multipole!(system, multipole_coefficients, buffer, branch.source_center, branch.bodies_index[i_system], harmonics, expansion_order)
+        body_to_multipole!(system, multipole_coefficients, buffer, branch.center, branch.bodies_index[i_system], harmonics, expansion_order)
     end
 end
 

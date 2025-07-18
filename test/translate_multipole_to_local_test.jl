@@ -49,9 +49,9 @@ local_expansion_test = ComplexF64[0.12778297701518376 + 4.529876741832122e-19im,
 expansion_order = 10
 box = SVector{3}(0.0,0.0,0.0)
 
-source_branch = Branch(2:2, 0, 1:0, 0, 1, SVector{3}([0.2, 0.4, -0.15999999999999998]), SVector{3}([0.2, 0.4, -0.15999999999999998]), 0.0, 0.0, box, box)
+source_branch = Branch(2:2, 0, 1:0, 0, 1, SVector{3}([0.2, 0.4, -0.15999999999999998]), 0.0, box)
 multipole_expansion = FastMultipole.initialize_expansion(expansion_order)
-target_branch = Branch(2:2, 0, 1:0, 0, 1, SVector{3}([2.5, -4.3999999999999995, 0.8]), SVector{3}([2.5, -4.3999999999999995, 0.8]), 0.0, 0.0, box, box)
+target_branch = Branch(2:2, 0, 1:0, 0, 1, SVector{3}([2.5, -4.3999999999999995, 0.8]), 0.0, box)
 local_expansion = FastMultipole.initialize_expansion(expansion_order)
 
 i, i_compressed = 1, 1

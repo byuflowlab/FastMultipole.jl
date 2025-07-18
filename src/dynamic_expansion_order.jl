@@ -15,9 +15,9 @@ function get_P(Δx, Δy, Δz, target_branch, source_branch, i_source_branch, exp
     # dipole term
     if CD
         q_dipole_x, q_dipole_y, q_dipole_z = dipole_from_multipole(multipole_expansion)
-        rx, ry, rz = minimum_distance(source_branch.source_center, target_branch.target_center, target_branch.target_box)
+        rx, ry, rz = minimum_distance(source_branch.center, target_branch.center, target_branch.box)
         q_dipole_multipole = abs(q_dipole_x * rx + q_dipole_y * ry + q_dipole_z * rz) / r_min
-        rx, ry, rz = closest_corner(source_branch.source_center, target_branch.target_center, target_branch.target_box)
+        rx, ry, rz = closest_corner(source_branch.center, target_branch.center, target_branch.box)
         q_dipole_local = abs(q_dipole_x * rx + q_dipole_y * ry + q_dipole_z * rz) / r_max
     else
         q_dipole_multipole = q_dipole_local = zero(ΔC2)
@@ -32,9 +32,9 @@ end
 #     #--- extract fields ---#
 
 #     source_box = source_branch.source_box
-#     target_box = target_branch.target_box
+#     target_box = target_branch.box
 #     source_center = source_branch.source_center
-#     target_center = target_branch.target_center
+#     target_center = target_branch.center
 
 #     # monopole term
 #     q_monopole = source_branch.multipole_expansion[1,1,1]
@@ -158,9 +158,9 @@ end
 #     #--- extract fields ---#
 
 #     source_box = source_branch.source_box
-#     target_box = target_branch.target_box
+#     target_box = target_branch.box
 #     source_center = source_branch.source_center
-#     target_center = target_branch.target_center
+#     target_center = target_branch.center
 
 #     # monopole term
 #     q_monopole = source_branch.multipole_expansion[1,1,1]
@@ -288,9 +288,9 @@ end
 #     #--- extract fields ---#
 
 #     # extract fields
-#     target_box = local_branch.target_box
+#     target_box = local_branch.box
 #     source_center = multipole_branch.source_center
-#     target_center = local_branch.target_center
+#     target_center = local_branch.center
 #     source_box = multipole_branch.source_box
 #     multipole_expansion = multipole_branch.multipole_expansion
 

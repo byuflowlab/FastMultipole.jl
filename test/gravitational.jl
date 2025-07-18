@@ -77,8 +77,14 @@ function FastMultipole.has_vector_potential(system::Gravitational)
     return false
 end
 
+function FastMultipole.get_previous_influence(system::Gravitational, i)
+    phi_last = system.potential[1,i]
+    gradient_last = SVector{3}(system.potential[5,i], system.potential[6,i], system.potential[7,i])
+
+    return phi_last, norm(gradient_last)
+end
+
 function FastMultipole.direct!(target_system, target_index, derivatives_switch, source_system::Gravitational, source_buffer, source_index)
-    # nbad = 0
     @inbounds for i_source in source_index
         source_x, source_y, source_z = FastMultipole.get_position(source_buffer, i_source)
         source_strength = FastMultipole.get_strength(source_buffer, source_system, i_source)[1]
@@ -88,7 +94,6 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch, 
             dy = target_y - source_y
             dz = target_z - source_z
             r2 = dx*dx + dy*dy + dz*dz
-            # te = @elapsed begin
             if r2 > 0
                 r = sqrt(r2)
                 dϕ = source_strength / r * FastMultipole.ONE_OVER_4π
@@ -96,11 +101,8 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch, 
                 dF = SVector{3}(dx,dy,dz) * source_strength / (r2 * r) * FastMultipole.ONE_OVER_4π
                 FastMultipole.set_gradient!(target_system, j_target, dF)
             end
-        # end
-        # if te > 0.00001; nbad += 1; end
         end
     end
-    # println("nbad = $nbad")
 end
 
 function FastMultipole.buffer_to_target_system!(target_system::Gravitational, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}

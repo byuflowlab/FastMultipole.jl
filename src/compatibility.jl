@@ -45,6 +45,32 @@ function get_position(system, i)
 end
 
 """
+    get_previous_influence(system::{UserDefinedSystem}, i)
+
+Returns the influence of the `i`th body in `system` from the previous FMM call. The relative error is predicted by dividing the absolute error by the result of this function. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system).
+
+**NOTE:** If not overloaded, the default behavior is to return zero for both the scalar potential and vector field, effectively ignoring the relative tolerance in favor of an absolute tolerance.
+
+**Arguments:**
+
+- `system::{UserDefinedSystem}`: the user-defined system object
+- `i::Int`: the index of the body within the system
+
+**Returns:**
+
+- `previous_potential::Float64`: the previous scalar potential at the `i`th body
+- `previous_vector::SVector{3,Float64}`: the previous vector field at the `i`th body
+
+"""
+function get_previous_influence(system, i)
+    if WARNING_FLAG_MAX_INFLUENCE[]
+        @warn "get_previous_influence not overloaded for type $(typeof(system)); relative error prediction will not be used"
+        WARNING_FLAG_MAX_INFLUENCE[] = false
+    end
+    return zero(eltype(system)), zero(eltype(system))
+end
+
+"""
     strength_dims(system::{UserDefinedSystem})
 
 Returns the cardinality of the vector used to define the strength of each body inside `system`. E.g., a point mass would return 1, and a point dipole would return 3. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system).
@@ -337,27 +363,33 @@ function buffer_to_target!(target_system, target_buffer, derivatives_switch, sor
     end
 end
 
-function target_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
+function target_to_buffer!(buffers, systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     for (buffer,system,sort_index) in zip(buffers, systems, sort_index_list)
-        target_to_buffer!(buffer, system, sort_index)
+        target_to_buffer!(buffer, system, target, sort_index)
     end
 end
 
-function target_to_buffer!(buffer::Matrix, system, sort_index=1:get_n_bodies(system))
+function target_to_buffer!(buffer::Matrix, system, target::Bool, sort_index=1:get_n_bodies(system))
     for i_body in 1:get_n_bodies(system)
-        buffer[1:3, i_body] .= get_position(system, sort_index[i_body])
+        i_sorted = sort_index[i_body]
+        buffer[1:3, i_body] .= get_position(system, i_sorted)
+        if target
+            prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
+            buffer[17, i_body] = prev_potential
+            buffer[18, i_body] = prev_velocity
+        end
     end
 end
 
-function target_to_buffer(systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
+function target_to_buffer(systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     buffers = allocate_buffers(systems, true)
-    target_to_buffer!(buffers, systems, sort_index_list)
+    target_to_buffer!(buffers, systems, target, sort_index_list)
     return buffers
 end
 
-function target_to_buffer(system, sort_index=1:get_n_bodies(system))
+function target_to_buffer(system, target::Bool, sort_index=1:get_n_bodies(system))
     buffer = allocate_target_buffer(eltype(system), system)
-    target_to_buffer!(buffer, system, sort_index)
+    target_to_buffer!(buffer, system, target, sort_index)
     return buffer
 end
 
@@ -382,7 +414,7 @@ end
 
 function system_to_buffer!(buffer::Matrix, system, sort_index=1:get_n_bodies(system))
     for i_body in 1:get_n_bodies(system)
-        source_system_to_buffer!(buffer, i_body, system, sort_index[i_body]) # TODO: check this
+        source_system_to_buffer!(buffer, i_body, system, sort_index[i_body])
     end
 end
 

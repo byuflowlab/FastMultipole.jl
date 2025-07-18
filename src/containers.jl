@@ -61,66 +61,55 @@ struct ExpansionSwitch{SP,VP} end
 
 #------- error predictors -------#
 
-abstract type ErrorMethod end
+abstract type ErrorMethod{BE} end
 
-abstract type RelativeError <: ErrorMethod end
+abstract type AbsoluteErrorMethod{AET,BE} <: ErrorMethod{BE} end
 
-abstract type AbsoluteError <: ErrorMethod end
+abstract type RelativeErrorMethod{RET,AET,BE} <: ErrorMethod{BE} end
 
-struct UnequalSpheres <: ErrorMethod end
+struct UnequalSpheres{BE} <: ErrorMethod{BE} end
 
-struct UnequalBoxes <: ErrorMethod end
+struct UnequalBoxes{BE} <: ErrorMethod{BE} end
 
-struct UniformUnequalSpheres <: ErrorMethod end
+struct UniformUnequalSpheres{BE} <: ErrorMethod{BE} end
 
-struct UniformUnequalBoxes <: ErrorMethod end
+struct UniformUnequalBoxes{BE} <: ErrorMethod{BE} end
 
-struct RotatedCoefficients <: ErrorMethod end
+struct RotatedCoefficients{BE} <: ErrorMethod{BE} end
 
 #------- dynamic expansion order -------#
 
-struct AbsoluteUpperBound{ε} <: AbsoluteError end
-AbsoluteUpperBound(ε) = AbsoluteUpperBound{ε}()
+# struct AbsoluteUpperBound{ε} <: AbsoluteError end
+# AbsoluteUpperBound(ε) = AbsoluteUpperBound{ε}()
 
-struct PowerAbsolutePotential{ε,BE} <: AbsoluteError end
+struct PowerAbsolutePotential{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsolutePotential(ε, BE::Bool=true) = PowerAbsolutePotential{ε,BE}()
 
-struct PowerAbsoluteGradient{ε,BE} <: AbsoluteError end
+struct PowerAbsoluteGradient{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsoluteGradient(ε, BE::Bool=true) = PowerAbsoluteGradient{ε,BE}()
 
-struct RotatedCoefficientsAbsoluteGradient{ε,BE} <: AbsoluteError end
+struct RotatedCoefficientsAbsoluteGradient{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 RotatedCoefficientsAbsoluteGradient(ε, BE::Bool=true) = RotatedCoefficientsAbsoluteGradient{ε,BE}()
 
-struct RelativeUpperBound{ε} <: RelativeError end
-RelativeUpperBound(ε) = RelativeUpperBound{ε}()
+# struct RelativeUpperBound{ε} <: RelativeErrorMethod end
+# RelativeUpperBound(ε) = RelativeUpperBound{ε}()
 
-struct PowerRelativePotential{ε,BE} <: RelativeError end
-PowerRelativePotential(ε, BE::Bool=true) = PowerRelativePotential{ε,BE}()
+struct PowerRelativePotential{ε_rel,ε_abs,BE} <: RelativeErrorMethod{ε_rel,ε_abs,BE} end
+PowerRelativePotential(ε_rel, ε_abs=sqrt(eps()), BE::Bool=true) = PowerRelativePotential{ε_rel,ε_abs,BE}()
 
-struct PowerRelativeGradient{ε,BE} <: RelativeError end
-PowerRelativeGradient(ε, BE::Bool=true) = PowerRelativeGradient{ε,BE}()
+struct PowerRelativeGradient{ε_rel,ε_abs,BE} <: RelativeErrorMethod{ε_rel,ε_abs,BE} end
+PowerRelativeGradient(ε_rel, ε_abs=sqrt(eps()), BE::Bool=true) = PowerRelativeGradient{ε_rel,ε_abs,BE}()
 
-struct RotatedCoefficientsRelativeGradient{ε,BE} <: RelativeError end
-RotatedCoefficientsRelativeGradient(ε, BE::Bool=true) = RotatedCoefficientsRelativeGradient{ε,BE}()
+struct RotatedCoefficientsRelativeGradient{ε_rel,ε_abs,BE} <: RelativeErrorMethod{ε_rel,ε_abs,BE} end
+RotatedCoefficientsRelativeGradient(ε_rel, ε_abs=sqrt(eps()), BE::Bool=true) = RotatedCoefficientsRelativeGradient{ε_rel,ε_abs,BE}()
 
 #------- interaction list -------#
 
-abstract type InteractionListMethod{TS} end
+abstract type InteractionListMethod end
 
-struct Barba{TS} <: InteractionListMethod{TS} end
-
-Barba(TS=SortByTarget()) = Barba{TS}()
-
-struct SortByTarget end
-
-struct SortBySource end
-
-struct SelfTuning{TS} <: InteractionListMethod{TS} end
-
-SelfTuning(TS=SortByTarget()) = SelfTuning{TS}()
-
-struct SelfTuningTreeStop{TS} <: InteractionListMethod{TS} end
-SelfTuningTreeStop(TS=SortByTarget()) = SelfTuningTreeStop{TS}()
+struct Barba <: InteractionListMethod end
+struct SelfTuning <: InteractionListMethod end
+struct SelfTuningTreeStop <: InteractionListMethod end
 
 #------- octree creation -------#
 
@@ -140,11 +129,10 @@ Branch object used to sort more than one system into an octree. Type parameters 
 * `i_parent::Int`: index of this branch's parent
 * `i_leaf::Int`: if this branch is a leaf, what is its index in its parent `<:Tree`'s `leaf_index` field
 * `center::Vector{TF}`: center of this branch at which its multipole and local expansions are centered
-* `source_radius::TF`: if this branch is a leaf, distance from `center` to the outer edge of farthest body contained in this branch; otherwise, this is the distance from `center` to the corner of its `source_box`
-* `target_radius::TF`: distance from `center` to the farthest body center contained in this branch
-* `source_box::Vector{TF}`: vector of length 6 containing the distances from the center to faces of a rectangular prism completely enclosing all bodies with their finite radius in the negative x, positive x, negative y, positive y, negative z, and positive z directions, respectively
-* `target_box::Vector{TF}`: vector of length 3 containing the distances from the center to faces of a rectangular prism completely enclosing all body centers in the x, y, and z direction, respectively
-* `max_influence::TF`: maximum influence of any body in this branch on any body in its child branches; used to enforce a relative error tolerance
+* `radius::TF`: distance from `center` to the farthest body contained in this branch (accounting for finite body radius if bodies are sources)
+* `box::Vector{TF}`: vector of length 3 containing the distances from the center to faces of a rectangular prism completely enclosing all bodies in the x, y, and z direction, respectively
+* `min_potential::TF`: maximum influence of any body in this branch on any body in its child branches; used to enforce a relative error tolerance
+* `min_gradient::TF`: maximum gradient magnitude of any body in this branch on any body in its child branches; used to enforce a relative error tolerance
 
 """
 struct Branch{TF,N}
@@ -154,17 +142,15 @@ struct Branch{TF,N}
     branch_index::UnitRange{Int64}
     i_parent::Int64
     i_leaf::Int64
-    source_center::SVector{3,TF}   # center of the branch
-    target_center::SVector{3,TF}   # center of the branch
-    source_radius::TF
-    target_radius::TF
-    source_box::SVector{3,TF} # x, y, and z half widths of the box encapsulating all sources
-    target_box::SVector{3,TF} # x, y, and z half widths of the box encapsulating all sources
-    max_influence::TF
+    center::SVector{3,TF}   # center of the branch
+    radius::TF
+    box::SVector{3,TF} # x, y, and z half widths of the box encapsulating all member bodies
+    min_potential::TF
+    min_gradient::TF
 end
 
-function Branch(n_bodies::SVector{<:Any,Int64}, bodies_index, n_branches, branch_index, i_parent::Int, i_leaf_index, source_center, target_center, source_radius, target_radius, source_box, target_box)
-    return Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf_index, source_center, target_center, source_radius, target_radius, source_box, target_box, zero(target_radius))
+function Branch(n_bodies::SVector{<:Any,Int64}, bodies_index, n_branches, branch_index, i_parent::Int, i_leaf_index, center, radius, box)
+    return Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, zero(radius), zero(radius))
 end
 
 function Branch(bodies_index::SVector{<:Any,UnitRange{Int64}}, args...)

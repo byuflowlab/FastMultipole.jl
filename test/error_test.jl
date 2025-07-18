@@ -52,10 +52,6 @@ function expansion_errors(tree::FastMultipole.Tree{TF,<:Any,<:Any}, m2l_list, sy
         local_branch = tree.branches[i_target]
         multipole_branch = tree.branches[i_source]
 
-        if debug && i == 30299
-            @show local_branch.target_center local_branch.target_box multipole_branch.source_center multipole_branch.source_box local_branch.bodies_index multipole_branch.bodies_index
-        end
-
         # zero velocity influence
         for i in local_branch.bodies_index[1]
             system[i,Velocity()] = zero(SVector{3,TF})
@@ -86,13 +82,13 @@ function expansion_errors(tree::FastMultipole.Tree{TF,<:Any,<:Any}, m2l_list, sy
         # local velocity error
         local_expansion = initialize_expansion(expansion_order)
         for j in multipole_branch.bodies_index[1]
-            Δx = system[j,Position()] - local_branch.target_center
+            Δx = system[j,Position()] - local_branch.center
             strength = system[j,Strength()]
             body_to_local_point!(body_type, local_expansion, local_branch.harmonics, Δx, strength, expansion_order)
         end
         velocity_n_m = initialize_gradient_n_m(expansion_order)
         harmonics = initialize_harmonics(expansion_order)
-        FastMultipole.evaluate_local!(system, local_branch.bodies_index[1], harmonics, velocity_n_m, local_expansion, local_branch.target_center, expansion_order, lamb_helmholtz, derivatives_switch)
+        FastMultipole.evaluate_local!(system, local_branch.bodies_index[1], harmonics, velocity_n_m, local_expansion, local_branch.center, expansion_order, lamb_helmholtz, derivatives_switch)
         v_local = [SVector{3}(system[i,Velocity()]) for i in local_branch.bodies_index[1]]
         local_error = norm.(v_direct - v_local)
         @assert length(local_error) == length(local_branch.bodies_index[1])
@@ -107,7 +103,7 @@ function expansion_errors(tree::FastMultipole.Tree{TF,<:Any,<:Any}, m2l_list, sy
         # overall velocity error
         local_expansion = initialize_expansion(expansion_order)
         FastMultipole.multipole_to_local!(local_expansion, local_branch, multipole_expansion, multipole_branch, expansion_order, lamb_helmholtz, nothing)
-        FastMultipole.evaluate_local!(system, local_branch.bodies_index[1], harmonics, velocity_n_m, local_expansion, local_branch.target_center, expansion_order, lamb_helmholtz, derivatives_switch)
+        FastMultipole.evaluate_local!(system, local_branch.bodies_index[1], harmonics, velocity_n_m, local_expansion, local_branch.center, expansion_order, lamb_helmholtz, derivatives_switch)
         # FastMultipole.evaluate_local!((system,), local_branch, expansion_order, lamb_helmholtz, derivatives_switch, SVector{1}(true))
         v_overall = [SVector{3}(system[i,Velocity()]) for i in local_branch.bodies_index[1]]
         overall_error = norm.(v_direct - v_overall)

@@ -26,12 +26,12 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
     target_branch = target_branches[i_target]
 
     # branch center separation distance
-    Δx, Δy, Δz = target_branch.target_center - source_branch.source_center
+    Δx, Δy, Δz = target_branch.center - source_branch.center
     separation_distance_squared = Δx*Δx + Δy*Δy + Δz*Δz
 
     # decide whether or not to accept the multipole expansion
-    summed_radii = source_branch.source_radius + target_branch.target_radius
-    # summed_radii = sqrt(3) * mean(source_branch.source_box) + sqrt(3) * mean(target_branch.target_box)
+    summed_radii = source_branch.radius + target_branch.radius
+    # summed_radii = sqrt(3) * mean(source_branch.box) + sqrt(3) * mean(target_branch.box)
 
     if separation_distance_squared * multipole_acceptance * multipole_acceptance > summed_radii * summed_radii
     #if ρ_max <= multipole_acceptance * r_min && r_max <= multipole_acceptance * ρ_min # exploring a new criterion
@@ -48,7 +48,7 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
     end
 
     # source is a leaf OR target is not a leaf and is bigger or the same size, so subdivide target branch
-    if source_branch.n_branches == 0 || (target_branch.target_radius >= source_branch.source_radius && target_branch.n_branches != 0)
+    if source_branch.n_branches == 0 || (target_branch.radius >= source_branch.radius && target_branch.n_branches != 0)
 
         for i_child in target_branch.branch_index
             build_interaction_lists!(m2l_list, direct_list, i_child, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
@@ -83,11 +83,11 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
     end
 
     # branch center separation distance
-    Δx, Δy, Δz = target_branch.target_center - source_branch.source_center
+    Δx, Δy, Δz = target_branch.center - source_branch.center
     separation_distance_squared = Δx*Δx + Δy*Δy + Δz*Δz
 
     # decide whether or not to accept the multipole expansion
-    summed_radii = source_branch.source_radius + target_branch.target_radius
+    summed_radii = source_branch.radius + target_branch.radius
 
     # distance is greater than multipole threshold, perform M2L
     if separation_distance_squared * multipole_acceptance * multipole_acceptance > summed_radii * summed_radii
@@ -103,7 +103,7 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
 
     # too close for M2L, and source is a leaf OR target is not a leaf and is bigger or the same size, so subdivide targets
     if source_branch.n_branches == 0 || (n_targets >= n_sources && target_branch.n_branches != 0)
-    # if source_branch.n_branches == 0 || (target_branch.target_radius >= source_branch.source_radius && target_branch.n_branches != 0)
+    # if source_branch.n_branches == 0 || (target_branch.radius >= source_branch.radius && target_branch.n_branches != 0)
 
         for i_child in target_branch.branch_index
             build_interaction_lists!(m2l_list, direct_list, i_child, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
@@ -131,12 +131,12 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
     end
 
     # branch center separation distance
-    Δx, Δy, Δz = target_branch.target_center - source_branch.source_center
+    Δx, Δy, Δz = target_branch.center - source_branch.center
     separation_distance_squared = Δx*Δx + Δy*Δy + Δz*Δz
 
     # decide whether or not to accept the multipole expansion
-    summed_radii = source_branch.source_radius + target_branch.target_radius
-    # summed_radii = sqrt(3) * mean(source_branch.source_box) + sqrt(3) * mean(target_branch.target_box)
+    summed_radii = source_branch.radius + target_branch.radius
+    # summed_radii = sqrt(3) * mean(source_branch.box) + sqrt(3) * mean(target_branch.box)
 
     if separation_distance_squared * multipole_acceptance * multipole_acceptance > summed_radii * summed_radii
     #if ρ_max <= multipole_acceptance * r_min && r_max <= multipole_acceptance * ρ_min # exploring a new criterion
@@ -168,17 +168,17 @@ end
 @inline preallocate_bodies_index(T::Type{<:Branch{<:Any,NT}}, n) where NT = Tuple(Vector{UnitRange{Int64}}(undef, n) for _ in 1:NT)
 # @inline preallocate_bodies_index(T::Type{<:SingleBranch}, n) = Vector{UnitRange{Int64}}(undef, n)
 
-function sort_by(list, target_branches, source_branches, ::InteractionListMethod{SortBySource()})
-    return sort_by_source(list, source_branches)
-end
+# function sort_by(list, target_branches, source_branches, ::InteractionListMethod{SortBySource()})
+#     return sort_by_source(list, source_branches)
+# end
 
-function sort_by(list, target_branches, source_branches, ::InteractionListMethod{SortByTarget()})
-    return sort_by_target(list, target_branches)
-end
+# function sort_by(list, target_branches, source_branches, ::InteractionListMethod{SortByTarget()})
+#     return sort_by_target(list, target_branches)
+# end
 
-function sort_by(list, target_branches, source_branches, ::InteractionListMethod{nothing})
-    return list
-end
+# function sort_by(list, target_branches, source_branches, ::InteractionListMethod{nothing})
+#     return list
+# end
 
 function sort_by_target(list, target_branches::Vector{<:Branch})
     # count cardinality of each target leaf in list

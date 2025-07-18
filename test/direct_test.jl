@@ -71,7 +71,7 @@ for n in target_tree.leaf_index
 end
 
 derivatives_switches = FastMultipole.DerivativesSwitch(true, false, false, (mass,))
-interaction_list_method = FastMultipole.SelfTuning(FastMultipole.SortByTarget())
+interaction_list_method = FastMultipole.SelfTuning()
 FastMultipole.nearfield_multithread!(target_tree.buffers, target_tree.branches, (mass,), source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, Threads.nthreads())
 # copy results to target systems
 FastMultipole.buffer_to_target!((mass,), target_tree, derivatives_switches)
@@ -90,4 +90,3 @@ potential_singlethread = mass.potential[1,:]
 @test isapprox(potential_multithread, potential_singlethread; atol=1e-12)
 
 end
-

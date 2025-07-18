@@ -223,9 +223,9 @@ function nearfield_device!(target_systems, derivatives_switches, source_systems)
     # build target tree
     target_bodies_index = get_bodies_index(target_systems)
     n_branches, branch_index, i_parent, i_leaf_index = 0, 1, -1, 1
-    center, source_radius, target_radius = SVector{3,TF}(0.0,0,0), zero(TF), zero(TF)
-    source_box, target_box, expansion_order = SVector{6,TF}(0.0,0,0,0,0,0), SVector{3,TF}(0.0,0,0), 0
-    target_branch = Branch(target_bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, source_radius, target_radius, source_box, target_box, expansion_order)
+    center, radius, = SVector{3,TF}(0.0,0,0), zero(TF)
+    box, expansion_order = SVector{3,TF}(0.0,0,0), 0
+    target_branch = Branch(target_bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, zero(radius))
     levels_index, leaf_index, sort_index, inverse_sort_index, leaf_size = [1:1], [1], dummy_sort_index(target_systems), dummy_sort_index(target_systems), full_leaf_size(target_systems)
     target_tree = Tree([target_branch], levels_index, leaf_index, sort_index, inverse_sort_index, buffer, Val(expansion_order), leaf_size)
 
@@ -234,7 +234,7 @@ function nearfield_device!(target_systems, derivatives_switches, source_systems)
     else
         # build source tree
         source_bodies_index = get_bodies_index(source_systems)
-        source_branch = Branch(source_bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, source_radius, target_radius, source_box, target_box, expansion_order)
+        source_branch = Branch(source_bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, expansion_order)
         sort_index, inverse_sort_index, leaf_size = dummy_sort_index(source_systems), dummy_sort_index(source_systems), full_leaf_size(source_systems)
         source_tree = Tree([source_branch], levels_index, leaf_index, sort_index, inverse_sort_index, buffer, expansion_order, leaf_size)
     end
@@ -339,7 +339,7 @@ function upward_pass_multithread_1!(source_tree::Tree, systems::Tuple, expansion
                 i_branch = leaf_index[i_task]
                 branch = branches[i_branch]
                 multipole_coefficients = view(source_tree.expansions, :, :, :, i_branch)
-                body_to_multipole!(system, multipole_coefficients, buffer, branch.source_center, branch.bodies_index[i_system], harmonics[i_thread], expansion_order)
+                body_to_multipole!(system, multipole_coefficients, buffer, branch.center, branch.bodies_index[i_system], harmonics[i_thread], expansion_order)
             end
         end
     end
@@ -525,22 +525,22 @@ function assign_m2l!(assignments, m2l_list, n_threads, n_per_thread, interaction
     end
 end
 
-function execute_m2l!(target_expansions, target_branches, source_expansions, source_branches, m2l_list, assignment, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, ηs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz, error_tolerance, ::InteractionListMethod{SortByTarget()})
-    Pmax = 0
-    error_success = true
-    for i in assignment
-        i_target, j_source = m2l_list[i]
-        target_expansion = view(target_expansions, :, :, :, i_target)
-        source_expansion = view(source_expansions, :, :, :, j_source)
-        target_branch = target_branches[i_target]
-        source_branch = source_branches[j_source]
-        P, this_error_success = multipole_to_local!(target_expansion, target_branch, source_expansion, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, ηs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz, error_tolerance)
-        Pmax = max(P, Pmax)
-        error_success = error_success && this_error_success
-    end    
+# function execute_m2l!(target_expansions, target_branches, source_expansions, source_branches, m2l_list, assignment, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, ηs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz, error_tolerance, ::InteractionListMethod{SortByTarget()})
+#     Pmax = 0
+#     error_success = true
+#     for i in assignment
+#         i_target, j_source = m2l_list[i]
+#         target_expansion = view(target_expansions, :, :, :, i_target)
+#         source_expansion = view(source_expansions, :, :, :, j_source)
+#         target_branch = target_branches[i_target]
+#         source_branch = source_branches[j_source]
+#         P, this_error_success = multipole_to_local!(target_expansion, target_branch, source_expansion, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, ηs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz, error_tolerance)
+#         Pmax = max(P, Pmax)
+#         error_success = error_success && this_error_success
+#     end    
 
-    return Pmax, error_success
-end
+#     return Pmax, error_success
+# end
 
 function execute_m2l!(target_expansions, target_branches, source_expansions, source_branches, m2l_list, assignment, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, ηs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz, error_tolerance, ::InteractionListMethod)
     Pmax = 0
@@ -905,7 +905,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     t_lists = @elapsed begin
         m2l_list = sort_by_target(m2l_list, target_tree.branches)
         direct_list = sort_by_target(direct_list, target_tree.branches)
-end
+    end
 
     # run fmm
     return fmm!(target_systems, target_tree, source_systems, source_tree, leaf_size_source, m2l_list, direct_list, derivatives_switches, interaction_list_method; multipole_acceptance, t_source_tree, t_target_tree, t_lists, optargs...)
@@ -928,9 +928,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
     #--- check for datarace condition ---#
 
-    if Threads.nthreads() > 1 && typeof(interaction_list_method) <: Union{InteractionListMethod{SortBySource}, SelfTuning}
-        throw(ArgumentError("InteractionListMethod $interaction_list_method is not thread-safe; use <:InteractionListMethod{SortByTarget} instead, and avoid `SelfTuning`."))
-    end
+    # if Threads.nthreads() > 1 && typeof(interaction_list_method) <: Union{InteractionListMethod{SortBySource}, SelfTuning}
+    #     throw(ArgumentError("InteractionListMethod $interaction_list_method is not thread-safe; use <:InteractionListMethod{SortByTarget} instead, and avoid `SelfTuning`."))
+    # end
 
     #--- silence warnings ---#
 
@@ -962,7 +962,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
     #--- estimate influence for relative error tolerance ---#
 
-    estimate_influence!(target_systems, target_tree, source_systems, source_tree, error_tolerance; nearfield_device)
+    # estimate_influence!(target_systems, target_tree, source_systems, source_tree, error_tolerance; nearfield_device)
 
     # check if systems are empty
     n_target_bodies = get_n_bodies(target_systems)
@@ -1186,91 +1186,91 @@ end
     return get_scalar_potential(system, j)
 end
 
-function estimate_influence!(target_systems, target_tree, source_systems, source_tree, error_tolerance::Union{Nothing, AbsoluteError}; optargs...)
-    return nothing
-end
+# function estimate_influence!(target_systems, target_tree, source_systems, source_tree, error_tolerance::Union{Nothing, AbsoluteError}; optargs...)
+#     return nothing
+# end
 
-function estimate_influence!(target_systems, target_tree, source_systems, source_tree, error_tolerance::RelativeError; nearfield_device=false, shrink_recenter=true)
+# function estimate_influence!(target_systems, target_tree, source_systems, source_tree, error_tolerance::RelativeError; nearfield_device=false, shrink_recenter=true)
 
-    #--- low-order estimate for relative error tolerance ---#
+#     #--- low-order estimate for relative error tolerance ---#
 
-    _, _, estimate_tree, _ = fmm!(target_systems, source_systems; 
-        scalar_potential = true, gradient = true, hessian = false,
-        leaf_size_source = to_vector(5, length(source_systems)),
-        expansion_order = 3, multipole_acceptance = 0.6,
-        error_tolerance = nothing, shrink_recenter, nearfield_device,
-        update_target_systems = false,
-        silence_warnings = true
-    )
+#     _, _, estimate_tree, _ = fmm!(target_systems, source_systems; 
+#         scalar_potential = true, gradient = true, hessian = false,
+#         leaf_size_source = to_vector(5, length(source_systems)),
+#         expansion_order = 3, multipole_acceptance = 0.6,
+#         error_tolerance = nothing, shrink_recenter, nearfield_device,
+#         update_target_systems = false,
+#         silence_warnings = true
+#     )
 
-    #--- update target buffers ---#
+#     #--- update target buffers ---#
 
-    for (i_system, (buffer, estimate)) in enumerate(zip(target_tree.buffers, estimate_tree.buffers))
+#     for (i_system, (buffer, estimate)) in enumerate(zip(target_tree.buffers, estimate_tree.buffers))
         
-        # loop over estimate bodies
-        for j_estimate in 1:get_n_bodies(buffer)
+#         # loop over estimate bodies
+#         for j_estimate in 1:get_n_bodies(buffer)
 
-            # get estimate body index
-            j_system = sorted_index_2_unsorted_index(j_estimate, i_system, estimate_tree)
+#             # get estimate body index
+#             j_system = sorted_index_2_unsorted_index(j_estimate, i_system, estimate_tree)
 
-            # get buffer index
-            j_buffer = unsorted_index_2_sorted_index(j_system, i_system, target_tree)
+#             # get buffer index
+#             j_buffer = unsorted_index_2_sorted_index(j_system, i_system, target_tree)
 
-            # check that we have the right body
-            @assert get_position(buffer, j_buffer) == get_position(estimate, j_estimate)
+#             # check that we have the right body
+#             @assert get_position(buffer, j_buffer) == get_position(estimate, j_estimate)
 
-            # update influence
-            set_scalar_potential!(buffer, j_buffer, get_scalar_potential(estimate, j_estimate))
-            set_gradient!(buffer, j_buffer, get_gradient(estimate, j_estimate))
+#             # update influence
+#             set_scalar_potential!(buffer, j_buffer, get_scalar_potential(estimate, j_estimate))
+#             set_gradient!(buffer, j_buffer, get_gradient(estimate, j_estimate))
 
-        end        
-    end
+#         end        
+#     end
 
-    #--- update target branches ---#
+#     #--- update target branches ---#
 
-    # loop over target buffers
-    for (i_system, system) in enumerate(target_tree.buffers)
+#     # loop over target buffers
+#     for (i_system, system) in enumerate(target_tree.buffers)
 
-        # loop over target branches
-        for (i, branch) in enumerate(target_tree.branches)
+#         # loop over target branches
+#         for (i, branch) in enumerate(target_tree.branches)
             
-            # extract branch info
-            n_bodies = branch.n_bodies
-            bodies_index = branch.bodies_index
-            n_branches = branch.n_branches
-            branch_index = branch.branch_index
-            i_parent = branch.i_parent
-            i_leaf = branch.i_leaf
-            source_center = branch.source_center
-            target_center = branch.target_center
-            source_radius = branch.source_radius
-            target_radius = branch.target_radius
-            source_box = branch.source_box
-            target_box = branch.target_box
-            max_influence = branch.max_influence
+#             # extract branch info
+#             n_bodies = branch.n_bodies
+#             bodies_index = branch.bodies_index
+#             n_branches = branch.n_branches
+#             branch_index = branch.branch_index
+#             i_parent = branch.i_parent
+#             i_leaf = branch.i_leaf
+#             source_center = branch.source_center
+#             target_center = branch.target_center
+#             source_radius = branch.source_radius
+#             target_radius = branch.target_radius
+#             source_box = branch.source_box
+#             target_box = branch.target_box
+#             max_influence = branch.max_influence
 
-            # loop over bodies 
-            for j in branch.bodies_index[i_system]
-                influence = get_influence(system, j, error_tolerance)
-                max_influence = max(max_influence, influence)
-            end
+#             # loop over bodies 
+#             for j in branch.bodies_index[i_system]
+#                 influence = get_influence(system, j, error_tolerance)
+#                 max_influence = max(max_influence, influence)
+#             end
 
-            # replace branch
-            target_tree.branches[i] = typeof(branch)(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, 
-                source_center, target_center, source_radius, target_radius, source_box, target_box, max_influence)
-        end
-    end
+#             # replace branch
+#             target_tree.branches[i] = typeof(branch)(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, 
+#                 source_center, target_center, source_radius, target_radius, source_box, target_box, max_influence)
+#         end
+#     end
 
-    #--- reset buffers ---#
+#     #--- reset buffers ---#
 
-    reset!(target_tree.buffers)
-    reset!(target_tree.small_buffers)
+#     reset!(target_tree.buffers)
+#     reset!(target_tree.small_buffers)
 
-    if DEBUG[]
-        maxinf = [target_tree.branches[j].max_influence * (j in target_tree.leaf_index) for j in 1:length(target_tree.branches)]
-        i_max = findfirst(x -> x == maximum(maxinf), maxinf)
-        @info "Max influence found at branch $(i_max): bodies index: $(target_tree.branches[i_max].bodies_index), max_influence: $(maximum(maxinf))"
+#     if DEBUG[]
+#         maxinf = [target_tree.branches[j].max_influence * (j in target_tree.leaf_index) for j in 1:length(target_tree.branches)]
+#         i_max = findfirst(x -> x == maximum(maxinf), maxinf)
+#         @info "Max influence found at branch $(i_max): bodies index: $(target_tree.branches[i_max].bodies_index), max_influence: $(maximum(maxinf))"
 
-        @show mean(maxinf) maximum(maxinf) minimum(maxinf)
-    end
-end
+#         @show mean(maxinf) maximum(maxinf) minimum(maxinf)
+#     end
+# end

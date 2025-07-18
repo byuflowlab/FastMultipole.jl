@@ -9,12 +9,12 @@ end
 function evaluate_local!(system, i_system, tree::Tree, i_branch, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
     branch = tree.branches[i_branch]
     local_expansion = view(tree.expansions, :, :, :, i_branch)
-    evaluate_local!(system, branch.bodies_index[i_system], harmonics, gradient_n_m, local_expansion, branch.target_center, expansion_order, lamb_helmholtz, derivatives_switches[i_system])
+    evaluate_local!(system, branch.bodies_index[i_system], harmonics, gradient_n_m, local_expansion, branch.center, expansion_order, lamb_helmholtz, derivatives_switches[i_system])
 end
 
 # function evaluate_local!(systems::Tuple, branch::Branch, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
 #     for (system, bodies_index, derivatives_switch) in zip(systems, branch.bodies_index, derivatives_switches)
-#         evaluate_local!(system, bodies_index, harmonics, gradient_n_m, branch.local_expansion, branch.target_center, expansion_order, lamb_helmholtz, derivatives_switch)
+#         evaluate_local!(system, bodies_index, harmonics, gradient_n_m, branch.local_expansion, branch.center, expansion_order, lamb_helmholtz, derivatives_switch)
 #     end
 # end
 
@@ -22,12 +22,12 @@ end
 #     harmonics = branch.harmonics
 #     gradient_n_m = initialize_gradient_n_m(expansion_order, TF)
 #     for (i, system) in enumerate(systems)
-#         evaluate_local!(system, branch.bodies_index[i], harmonics, gradient_n_m, branch.local_expansion, branch.target_center, expansion_order, lamb_helmholtz, derivatives_switches[i])
+#         evaluate_local!(system, branch.bodies_index[i], harmonics, gradient_n_m, branch.local_expansion, branch.center, expansion_order, lamb_helmholtz, derivatives_switches[i])
 #     end
 # end
 
 # function evaluate_local!(system, branch::SingleBranch, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switch)
-#     evaluate_local!(system, branch.bodies_index, harmonics, gradient_n_m, branch.local_expansion, branch.target_center, expansion_order, lamb_helmholtz, derivatives_switch)
+#     evaluate_local!(system, branch.bodies_index, harmonics, gradient_n_m, branch.local_expansion, branch.center, expansion_order, lamb_helmholtz, derivatives_switch)
 # end
 
 function evaluate_local!(system, bodies_index, harmonics, gradient_n_m, local_expansion, expansion_center, expansion_order, lamb_helmholtz, derivatives_switch::DerivativesSwitch{PS,GS,HS}) where {PS,GS,HS}
