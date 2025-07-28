@@ -696,7 +696,8 @@ end
 
 @inline function get_bodies_index(cumulative_octant_census::AbstractMatrix, parent_bodies_indices::AbstractVector, i_octant)
     n_systems = size(cumulative_octant_census,1)
-    bodies_index = SVector{n_systems,UnitRange{Int64}}([get_bodies_index(view(cumulative_octant_census,i_system,:), parent_bodies_indices[i_system], i_octant) for i_system in 1:n_systems])
+    bodies_index = ntuple(i_system -> get_bodies_index(view(cumulative_octant_census,i_system,:), parent_bodies_indices[i_system], i_octant), n_systems)
+    bodies_index = SVector{n_systems,UnitRange{Int64}}(bodies_index)
     return bodies_index
 end
 
