@@ -29,13 +29,13 @@ println(&quot;\ttime cost: &quot;, t_e_8, &quot; seconds&quot;)
 println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">#--- varying expansion order ---#
 
 expansion_order = 1
-	time cost: 0.3213112 seconds
+	time cost: 0.320983264 seconds
 	max error: 0.00026345654971669796
 expansion_order = 4
-	time cost: 0.332168136 seconds
+	time cost: 0.329824188 seconds
 	max error: 8.462364160684993e-5
 expansion_order = 8
-	time cost: 0.429727105 seconds
+	time cost: 0.420127584 seconds
 	max error: 9.099846824153594e-7</code></pre><p>The <code>expansion_order</code> parameter is always positively correlated to accuracy but negatively correlated to cost. </p><h2 id="Multipole-Acceptance-Criterion-(MAC)"><a class="docs-heading-anchor" href="#Multipole-Acceptance-Criterion-(MAC)">Multipole Acceptance Criterion (MAC)</a><a id="Multipole-Acceptance-Criterion-(MAC)-1"></a><a class="docs-heading-anchor-permalink" href="#Multipole-Acceptance-Criterion-(MAC)" title="Permalink"></a></h2><p>Now, let&#39;s explore the <code>multipole_acceptance</code> criterion. It must be between <code>0.0</code> and <code>1.0</code>, and indicates the smallest acceptable distance beyond which multipole expansions are allowed.</p><pre><code class="language-julia hljs"># try varying `multipole_acceptance`
 println(&quot;#--- varying multipole acceptance ---#\n&quot;)
 
@@ -58,13 +58,13 @@ println(&quot;\ttime cost: &quot;, t_m_7, &quot; seconds&quot;)
 println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">#--- varying multipole acceptance ---#
 
 multipole_acceptance = 0.3
-	time cost: 1.034899816 seconds
+	time cost: 1.045108704 seconds
 	max error: 5.540017692748367e-6
 multipole_acceptance = 0.5
-	time cost: 0.336894109 seconds
+	time cost: 0.329980792 seconds
 	max error: 8.462364160684993e-5
 multipole_acceptance = 0.7
-	time cost: 0.165480471 seconds
+	time cost: 0.16563389 seconds
 	max error: 0.00047072609209637684</code></pre><p>The <code>multipole_acceptance</code> parameter is negatively correlated to accuracy. In this case, it is also negatively correlated to cost, but that won&#39;t always be true, depending on the cost of the <code>direct!</code> function.</p><h2 id="Leaf-Size"><a class="docs-heading-anchor" href="#Leaf-Size">Leaf Size</a><a id="Leaf-Size-1"></a><a class="docs-heading-anchor-permalink" href="#Leaf-Size" title="Permalink"></a></h2><p>Finally, let&#39;s explore the <code>leaf_size</code> parameter, which controls the size of the leaf nodes in the octree:</p><pre><code class="language-julia hljs"># try varying `leaf_size`
 println(&quot;#--- varying leaf size ---#\n&quot;)
 
@@ -87,13 +87,13 @@ println(&quot;\ttime cost: &quot;, t_l_80, &quot; seconds&quot;)
 println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">#--- varying leaf size ---#
 
 leaf_size = 5
-	time cost: 0.470594983 seconds
+	time cost: 0.463758367 seconds
 	max error: 0.00016318078127782777
 leaf_size = 20
-	time cost: 0.331244504 seconds
+	time cost: 0.330039803 seconds
 	max error: 8.462364160684993e-5
 leaf_size = 100
-	time cost: 0.735334621 seconds
+	time cost: 0.735747251 seconds
 	max error: 3.108624468950438e-14</code></pre><p>The <code>leaf_size</code> parameter is positively correlated to accuracy, but its relation to cost is less predictable. </p><p>The complicated relationship between these parameters, the cost, and the accuracy of the FMM motivates automated tuning of the parameters, which we&#39;ll explore in <a href="../advanced_usage_2/">Automated Tuning</a>.</p><div class="admonition is-success" id="Tip-66292c34531bdb6b"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-66292c34531bdb6b" title="Permalink"></a></header><div class="admonition-body"><p>Tuning parameters can have an order-of-magnitude impact on the performance of FMM. The <code>expansion_order</code> parameter is positively correlated to accuracy but negatively correlated to cost. The <code>multipole_acceptance</code> and <code>leaf_size</code> parameters are still correlated, but less predictably so. This motivates automated tuning of the parameters, which we&#39;ll explore in the next example.</p></div></div><h2 id="Optimal-Leaf-Size"><a class="docs-heading-anchor" href="#Optimal-Leaf-Size">Optimal Leaf Size</a><a id="Optimal-Leaf-Size-1"></a><a class="docs-heading-anchor-permalink" href="#Optimal-Leaf-Size" title="Permalink"></a></h2><p>We can request <code>FastMultipole</code> to predict the optimal leaf size for our system by setting <code>tune=true</code> in the <code>fmm!</code> call. This performs best when <code>interaction_list_method=SelfTuning()</code> on a single thread, but still functions well for other choices. If <code>tune=true</code>, benchmarks will be used to estimate the leaf size at which the cost of direct calculations is approximately equal to expansion calculations. It is returned as part of a named tuple as the first returned value of <code>fmm!</code>, which can be splatted as a keyword argument in subsequent <code>fmm!</code> calls:</p><pre><code class="language-julia hljs"># get optimal leaf size
 println(&quot;#--- default leaf size ---#\n&quot;)
 t1 = @elapsed optargs, _ = fmm!(system; tune=true, gradient=true)
@@ -104,8 +104,8 @@ println(&quot;\n#--- optimal leaf size ---#\n&quot;)
 t2 = @elapsed fmm!(system; scalar_potential=false, gradient=true, optargs...)
 println(&quot;\ttime cost: &quot;, t2, &quot; seconds&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">#--- default leaf size ---#
 
-	time cost: 0.562806127 seconds
+	time cost: 0.562675956 seconds
 
 #--- optimal leaf size ---#
 
-	time cost: 0.534672636 seconds</code></pre><p>Note that <code>optargs</code> contains <code>leaf_size_source</code>, <code>expansion_order</code>, and <code>multipole_acceptance</code> parameters. Only <code>leaf_size_source</code> is tuned if <code>isnothing(error_tolerance) == true</code>. More complete auto-tuning will be discussed in <a href="../advanced_usage/">Advanced Usage</a>.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../vortex_filament/">« Vortex Filament Example</a><a class="docs-footer-nextpage" href="../advanced_usage/">Multiple Systems »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Friday 18 July 2025 17:55">Friday 18 July 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+	time cost: 0.534044724 seconds</code></pre><p>Note that <code>optargs</code> contains <code>leaf_size_source</code>, <code>expansion_order</code>, and <code>multipole_acceptance</code> parameters. Only <code>leaf_size_source</code> is tuned if <code>isnothing(error_tolerance) == true</code>. More complete auto-tuning will be discussed in <a href="../advanced_usage/">Advanced Usage</a>.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../vortex_filament/">« Vortex Filament Example</a><a class="docs-footer-nextpage" href="../advanced_usage/">Multiple Systems »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Monday 28 July 2025 16:43">Monday 28 July 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
