@@ -11,6 +11,7 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [compat]
 ForwardDiff = "1.0.1"
+Polyester = "0.7"
 LegendrePolynomials = "0.4"
 SpecialFunctions = "2.5.1"
 StaticArrays = "1"

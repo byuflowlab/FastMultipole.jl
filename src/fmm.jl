@@ -152,8 +152,8 @@ function nearfield_multithread!(target_buffer, i_target_buffer, target_branches,
     #     copies[i_copy][1:3,:] .= pos
     # end
 
-    # execute tasks
-    @batch for i_task in eachindex(assignments)
+    # execute tasks (leave as @threads)
+    Threads.@threads for i_task in eachindex(assignments)
         assignment = assignments[i_task]
         # this_buffer = copies[i_task]
         # execute_assignment!(this_buffer, i_target_buffer, target_branches, derivatives_switch, source_system, source_buffer, i_source_system, source_branches, direct_list, assignment, interaction_list_method)
@@ -584,8 +584,8 @@ function horizontal_pass_multithread!(target_tree::Tree{TF1,<:Any}, source_tree:
     source_expansions = source_tree.expansions
     source_branches = source_tree.branches
 
-    # execute tasks
-    @batch for i_thread in 1:n_threads
+    # execute tasks (leave as @threads)
+    Threads.@threads for i_thread in 1:n_threads
         this_Pmax, this_error_success = execute_m2l!(target_expansions, target_branches, source_expansions, source_branches, m2l_list, assignments[i_thread], weights_tmp_1[i_thread], weights_tmp_2[i_thread], weights_tmp_3[i_thread], Ts[i_thread], eimϕs[i_thread], ζs_mag, ηs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz, error_tolerance, interaction_list_method)
         Pmax[i_thread] = this_Pmax
         error_success[i_thread] = this_error_success
@@ -744,7 +744,7 @@ function downward_pass_multithread_2!(tree::Tree{TF,<:Any}, systems, derivatives
     #--- compute multipole expansion coefficients ---#
 
     for (i_system, system) in enumerate(systems)
-        @batch for i_thread in 1:n_threads
+        Threads.@threads for i_thread in 1:n_threads
             leaf_assignment = leaf_assignments[i_system,i_thread]
             these_harmonics = harmonics[i_thread]
             these_gradient_n_m = gradient_n_m[i_thread]
