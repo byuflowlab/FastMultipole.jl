@@ -333,7 +333,7 @@ function upward_pass_multithread_1!(source_tree::Tree, systems::Tuple, expansion
 
     for (i_system, system) in enumerate(systems)
         buffer = source_tree.buffers[i_system]
-        @batch for i_thread in 1:n_threads
+        Threads.@threads for i_thread in 1:n_threads
             leaf_assignment = leaf_assignments[i_system,i_thread]
             for i_task in leaf_assignment
                 i_branch = leaf_index[i_task]
