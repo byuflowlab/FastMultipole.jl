@@ -427,7 +427,7 @@ function upward_pass_multithread_2!(tree::Tree{TF,N}, expansion_order, lamb_helm
         assign_m2m!(assignments, branches, level_index, n_per_thread, n_threads)
 
         # assign thread start branches
-        @batch for i_task in 1:n_threads
+        Threads.@threads for i_task in 1:n_threads
             # get assignment
             assignment = assignments[i_task]
 
@@ -689,7 +689,7 @@ function downward_pass_multithread_1!(tree::Tree{TF,<:Any}, expansion_order, lam
         assign_l2l!(assignments, branches, level_index, n_per_thread, n_threads)
 
         # assign thread start branches
-        @batch for i_task in 1:n_threads
+        Threads.@threads for i_task in 1:n_threads
             
             # get assignment
             assignment = assignments[i_task]

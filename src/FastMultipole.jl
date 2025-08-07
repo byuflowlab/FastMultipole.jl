@@ -6,7 +6,6 @@ import Base.:^
 using LinearAlgebra
 using StaticArrays
 using WriteVTK
-using Polyester
 
 #------- CONSTANTS -------#
 
