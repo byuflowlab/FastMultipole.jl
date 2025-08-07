@@ -363,7 +363,7 @@ function buffer_to_target!(target_systems::Tuple, target_buffers, derivatives_sw
 end
 
 function buffer_to_target!(target_system, target_buffer, derivatives_switch, sort_index=1:get_n_bodies(target_system), buffer_index=1:get_n_bodies(target_system))
-    for i_body in buffer_index
+    Threads.@threads :static for i_body in buffer_index
         buffer_to_target_system!(target_system, sort_index[i_body], derivatives_switch, target_buffer, i_body)
     end
 end

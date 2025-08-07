@@ -879,7 +879,10 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(t
     # create trees
     t_target_tree = @elapsed target_tree = Tree(target_systems, true, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink_recenter, interaction_list_method)
     t_source_tree = @elapsed source_tree = Tree(source_systems, false, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink_recenter, interaction_list_method)
-    
+
+    println("  Target tree: $t_target_tree")
+    println("  Source tree: $t_source_tree")
+
     return fmm!(target_systems, target_tree, source_systems, source_tree; expansion_order, leaf_size_source, error_tolerance, t_source_tree, t_target_tree, interaction_list_method, optargs...)
 end
 
@@ -901,11 +904,13 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
 
     # create interaction lists
-    m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
+    build_list_t = @elapsed m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
     t_lists = @elapsed begin
         m2l_list = sort_by_target(m2l_list, target_tree.branches)
         direct_list = sort_by_target(direct_list, target_tree.branches)
     end
+    println("  Build interaction lists: $build_list_t")
+    println("  Sort Interaction lists: $t_lists")
 
     # run fmm
     return fmm!(target_systems, target_tree, source_systems, source_tree, leaf_size_source, m2l_list, direct_list, derivatives_switches, interaction_list_method; multipole_acceptance, t_source_tree, t_target_tree, t_lists, optargs...)
@@ -1093,15 +1098,30 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
                 # perform nearfield calculations
                 t_direct = nearfield_multithread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, n_threads)
+                println("  Direct interactions: ", t_direct[1])
                 # check number of interactions
                 if tune
-                    n_interactions = 0
                     for i_source_system in eachindex(source_systems)
-                        for (i_target, i_source) in direct_list
-                            source_branch = source_tree.branches[i_source]
-                            target_branch = target_tree.branches[i_target]
-                            n_interactions += source_branch.n_bodies[i_source_system] * sum(target_branch.n_bodies)
+                        n_interactions_local = zeros(Int, n_threads)
+
+                        n_points = length(direct_list)
+                        n_per_thread, rem = divrem(n_points,Threads.nthreads())
+                        n = n_per_thread + (rem > 0)
+                        assignments = 1:n:n_points
+
+                        Threads.@threads :static for i_assignment in length(assignments)
+                            i_start = assignments[i_assignment]
+                            i_end = min(i_start + n - 1, n_points)
+
+                            for idx in i_start:i_end
+                                i_target, i_source = direct_list[idx]
+                                source_branch = source_tree.branches[i_source]
+                                target_branch = target_tree.branches[i_target]
+                                n_interactions_local[i_assignment] += source_branch.n_bodies[i_source_system] * sum(target_branch.n_bodies)
+                            end
                         end
+
+                        n_interactions = sum(n_interactions_local)
                         t_direct[i_source_system] /= n_interactions
                     end
                 end
@@ -1110,11 +1130,13 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 t_up = 0.0
                 if upward_pass
                     t_up = @elapsed upward_pass_multithread!(source_tree, source_systems, expansion_order, lamb_helmholtz, n_threads)
+                    println("  Upward pass: $t_up")
                 end
 
                 Pmax = 0
                 if horizontal_pass
                     t_m2l = @elapsed Pmax, error_success = horizontal_pass_multithread!(target_tree, source_tree, m2l_list, lamb_helmholtz, expansion_order, error_tolerance, interaction_list_method, n_threads)
+                    println("  Horizontal pass: $t_m2l")
                 end
                 if !error_success
                     Pmax += 1
@@ -1124,6 +1146,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 t_dp = 0.0
                 if downward_pass
                     t_dp = @elapsed downward_pass_multithread!(target_tree, target_tree.buffers, derivatives_switches, expansion_order, lamb_helmholtz, n_threads)
+                    println("  Downward pass: $t_dp")
                 end
                 
                 # copy results to target systems
