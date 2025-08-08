@@ -8,7 +8,7 @@ function build_interaction_lists(target_branches, source_branches, source_leaf_s
 
     # populate lists
     if length(target_branches) > 0 && length(source_branches) > 0
-        build_interaction_lists!(m2l_list, direct_list, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
+        m2l_list, direct_list = build_interaction_lists!(m2l_list, direct_list, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
     end
 
     return m2l_list, direct_list
@@ -16,8 +16,9 @@ end
 
 function build_interaction_lists!(m2l_list, direct_list, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
     n_threads = Threads.nthreads()
+
     if n_threads == 1
-        build_interaction_lists!(m2l_list, direct_list, Int32(1), Int32(1), target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method)
+        build_interaction_lists!(m2l_list, direct_list, Int32(1), Int32(1), target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method, nothing, 0, 1)
     else
         start_list = Vector{SVector{2,Int32}}(undef, 0)
         max_depth = 3
@@ -47,7 +48,7 @@ function build_interaction_lists!(m2l_list, direct_list, target_branches, source
 
             for idx in i_start:i_end
                 i, j = start_list[idx]
-                build_interaction_lists!(m2l_lists[i_assignment], direct_lists[i_assignment], i, j, target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method)
+                build_interaction_lists!(m2l_lists[i_assignment], direct_lists[i_assignment], Int32(i), Int32(j), target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method)
             end
         end
 
@@ -55,6 +56,7 @@ function build_interaction_lists!(m2l_list, direct_list, target_branches, source
         m2l_list = vcat(m2l_lists...)
         direct_list = vcat(direct_lists...)
     end
+    return m2l_list, direct_list
 end
 
 mean(x) = sum(x) / length(x)
@@ -200,7 +202,7 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
         end
 
         for i_child in target_branch.branch_index
-            build_interaction_lists!(m2l_list, direct_list, i_child, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method, start_list, max_depth, current_depth+1)
+            build_interaction_lists!(m2l_list, direct_list, Int32(i_child), Int32(j_source), target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method, start_list, max_depth, current_depth+1)
         end
 
     # source is not a leaf AND target is a leaf or has fewer bodies, so subdivide source branch
@@ -209,10 +211,11 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
             for j_child in source_branch.branch_index
                 push!(start_list, SVector{2}(i_target, j_child))
             end
+            return nothing
         end
 
         for j_child in source_branch.branch_index
-            build_interaction_lists!(m2l_list, direct_list, i_target, j_child, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method, start_list, max_depth, current_depth+1)
+            build_interaction_lists!(m2l_list, direct_list, Int32(i_target), Int32(j_child), target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method, start_list, max_depth, current_depth+1)
         end
     end
 end
