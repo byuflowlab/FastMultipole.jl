@@ -20,8 +20,11 @@ function build_interaction_lists!(m2l_list, direct_list, target_branches, source
         build_interaction_lists!(m2l_list, direct_list, Int32(1), Int32(1), target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method)
     else
         start_list = Vector{SVector{2,Int32}}(undef, 0)
-        max_depth = 2
+        max_depth = 3
         build_interaction_lists!(m2l_list, direct_list, Int32(1), Int32(1), target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method, start_list, max_depth, 1)
+
+        n_starts = length(start_list)
+        n_starts == 0 && return
 
         m2l_lists = Vector{Vector{SVector{2,Int32}}}(undef, n_threads)
         direct_lists = Vector{Vector{SVector{2,Int32}}}(undef, n_threads)
@@ -34,7 +37,6 @@ function build_interaction_lists!(m2l_list, direct_list, target_branches, source
             direct_lists[i] = Vector{SVector{2,Int32}}(undef, 0)
         end
 
-        n_starts = 8^max_depth
         n_per_thread, rem = divrem(n_starts, n_threads)
         n = n_per_thread + (rem > 0)
         assignments = 1:n:n_starts
@@ -156,7 +158,7 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
     end
 end
 
-function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield::Val{ff}, nearfield::Val{nf}, self_induced::Val{si}, method::SelfTuningTreeStop, start_list=nothing, max_depth=Inf, current_depth=1) where {ff,nf,si}
+function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield::Val{ff}, nearfield::Val{nf}, self_induced::Val{si}, method::SelfTuningTreeStop, start_list=nothing, max_depth=0, current_depth=1) where {ff,nf,si}
     # unpack
     source_branch = source_branches[j_source]
     target_branch = target_branches[i_target]
