@@ -912,6 +912,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     println("  Build interaction lists: $build_list_t")
     println("  Sort Interaction lists: $t_lists")
 
+    error()
+
     # run fmm
     return fmm!(target_systems, target_tree, source_systems, source_tree, leaf_size_source, m2l_list, direct_list, derivatives_switches, interaction_list_method; multipole_acceptance, t_source_tree, t_target_tree, t_lists, optargs...)
 end

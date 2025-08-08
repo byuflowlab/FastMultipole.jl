@@ -1,24 +1,30 @@
 #--- create interaction lists ---#
 
-function build_interaction_lists(target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method::InteractionListMethod=SelfTuning())
+# function build_interaction_lists(target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method::InteractionListMethod=SelfTuning())
 
+#     # prepare containers
+#     m2l_list = Vector{SVector{2,Int32}}(undef,0)
+#     direct_list = Vector{SVector{2,Int32}}(undef,0)
+
+#     # populate lists
+#     if length(target_branches) > 0 && length(source_branches) > 0
+#         m2l_list, direct_list = build_interaction_lists!(m2l_list, direct_list, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
+#     end
+
+#     return m2l_list, direct_list
+# end
+
+function build_interaction_lists(target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method::InteractionListMethod=SelfTuning())
     # prepare containers
     m2l_list = Vector{SVector{2,Int32}}(undef,0)
     direct_list = Vector{SVector{2,Int32}}(undef,0)
 
-    # populate lists
-    if length(target_branches) > 0 && length(source_branches) > 0
-        m2l_list, direct_list = build_interaction_lists!(m2l_list, direct_list, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
-    end
-
-    return m2l_list, direct_list
-end
-
-function build_interaction_lists!(m2l_list, direct_list, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
+    !(length(target_branches) > 0 && length(source_branches) > 0) && return
+    
     n_threads = Threads.nthreads()
 
     if n_threads == 1
-        build_interaction_lists!(m2l_list, direct_list, Int32(1), Int32(1), target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method, nothing, 0, 1)
+        build_interaction_lists!(m2l_list, direct_list, Int32(1), Int32(1), target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method)
     else
         start_list = Vector{SVector{2,Int32}}(undef, 0)
         max_depth = 3
@@ -42,7 +48,7 @@ function build_interaction_lists!(m2l_list, direct_list, target_branches, source
         n = n_per_thread + (rem > 0)
         assignments = 1:n:n_starts
 
-        Threads.@threads :static for i_assignment in length(assignments)
+        Threads.@threads :static for i_assignment in 1:length(assignments)
             i_start = assignments[i_assignment]
             i_end = min(i_start + n - 1, n_starts)
 
@@ -160,7 +166,7 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
     end
 end
 
-function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield::Val{ff}, nearfield::Val{nf}, self_induced::Val{si}, method::SelfTuningTreeStop, start_list=nothing, max_depth=0, current_depth=1) where {ff,nf,si}
+function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield::Val{ff}, nearfield::Val{nf}, self_induced::Val{si}, method::SelfTuningTreeStop, start_list, max_depth, current_depth) where {ff,nf,si}
     # unpack
     source_branch = source_branches[j_source]
     target_branch = target_branches[i_target]
@@ -216,6 +222,53 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
 
         for j_child in source_branch.branch_index
             build_interaction_lists!(m2l_list, direct_list, Int32(i_target), Int32(j_child), target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method, start_list, max_depth, current_depth+1)
+        end
+    end
+end
+
+function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield::Val{ff}, nearfield::Val{nf}, self_induced::Val{si}, method::SelfTuningTreeStop) where {ff,nf,si}
+    # unpack
+    source_branch = source_branches[j_source]
+    target_branch = target_branches[i_target]
+
+    # both are leaves, so direct!
+    if source_branch.n_branches == target_branch.n_branches == 0
+        (nf || (i_target==j_source && si)) && (i_target!=j_source || si) && push!(direct_list, SVector{2}(i_target, j_source))
+        return nothing
+    end
+
+    # branch center separation distance
+    Δx, Δy, Δz = target_branch.center - source_branch.center
+    separation_distance_squared = Δx*Δx + Δy*Δy + Δz*Δz
+
+    # decide whether or not to accept the multipole expansion
+    summed_radii = source_branch.radius + target_branch.radius
+    # summed_radii = sqrt(3) * mean(source_branch.box) + sqrt(3) * mean(target_branch.box)
+
+    if separation_distance_squared * multipole_acceptance * multipole_acceptance > summed_radii * summed_radii
+    #if ρ_max <= multipole_acceptance * r_min && r_max <= multipole_acceptance * ρ_min # exploring a new criterion
+        if ff
+            push!(m2l_list, SVector{2}(i_target, j_source))
+        end
+        return nothing
+    end
+
+    # count number of sources
+    n_targets = sum(target_branch.n_bodies)
+    n_sources = sum(source_branch.n_bodies)
+
+    # source is a leaf OR target is not a leaf and has more bodies, so subdivide target branch
+    if source_branch.n_branches == 0 || (n_targets >= n_sources && target_branch.n_branches != 0)
+
+        for i_child in target_branch.branch_index
+            build_interaction_lists!(m2l_list, direct_list, Int32(i_child), Int32(j_source), target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
+        end
+
+    # source is not a leaf AND target is a leaf or has fewer bodies, so subdivide source branch
+    else
+
+        for j_child in source_branch.branch_index
+            build_interaction_lists!(m2l_list, direct_list, Int32(i_target), Int32(j_child), target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
         end
     end
 end
