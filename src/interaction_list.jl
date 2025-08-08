@@ -11,10 +11,6 @@ function build_interaction_lists(target_branches, source_branches, source_leaf_s
         build_interaction_lists!(m2l_list, direct_list, Int32(1), Int32(1), target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method)
     end
 
-    # # sort lists
-    # m2l_list = sort_by(m2l_list, target_branches, source_branches, method)
-    # direct_list = sort_by(direct_list, target_branches, source_branches, method)
-
     return m2l_list, direct_list
 end
 
