@@ -411,12 +411,35 @@ end
 #     return list
 # end
 
+function parallel_sort_by_target(list, target_branches::Vector{<:Branch})
+    n_list = length(list)
+    n_branches = length(target_branches)
+    nthreads = Threads.nthreads()
+
+    n_per_thread, rem = divrem(n_list,nthreads)
+    n = n_per_thread + (rem > 0)
+    assignments = 1:n:n_list
+    local_counts = zeros(Int32, n_branches, length(assignments))
+
+    Threads.@threads for i_assignment in eachindex(assignments)
+        i_start = assignments[i_assignment]
+        i_end = i_start + n - 1
+        for i in i_start:i_end
+            local_counts[list[i][1], i_assignment] += Int32(1)
+        end
+    end
+
+    counts = sum(local_counts, dims=2)
+end
+
 function sort_by_target(list, target_branches::Vector{<:Branch})
     # count cardinality of each target leaf in list
     target_counter = zeros(Int32, 2, length(target_branches))
     for (i,j) in list
-        target_counter[1,i] += 1
+        target_counter[1,i] += Int32(1)
     end
+    @show target_counter
+    error()
 
     # cumsum cardinality to obtain an index map
     target_counter[2,1] = Int32(1)
@@ -427,7 +450,7 @@ function sort_by_target(list, target_branches::Vector{<:Branch})
     # preallocate sorted list
     sorted_list = similar(list)
 
-    # sort list by source
+    # sort list by target
     for ij in list
         # get source branch index
         i = ij[1]
