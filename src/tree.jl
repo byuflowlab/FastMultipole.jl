@@ -397,7 +397,7 @@ end
 
 function child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target::Bool)
     
-    if Threads.nthreads() > 1 || true
+    if Threads.nthreads() > 1
         return child_branches_multithread!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
     end
 
