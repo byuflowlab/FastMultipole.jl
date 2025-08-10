@@ -49,7 +49,10 @@ end
 Base.eltype(::Gravitational{TF}) where TF = TF
 
 function FastMultipole.source_system_to_buffer!(buffer, i_buffer, system::Gravitational, i_body)
-    buffer[1:3, i_buffer] .= system.bodies[i_body].position
+    x, y, z = system.bodies[i_body].position
+    buffer[1, i_buffer] = x
+    buffer[2, i_buffer] = y
+    buffer[3, i_buffer] = z
     buffer[4, i_buffer] = system.bodies[i_body].radius
     buffer[5, i_buffer] = system.bodies[i_body].strength
 end
