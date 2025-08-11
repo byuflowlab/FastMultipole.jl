@@ -5,7 +5,7 @@ function build_interaction_lists(target_branches, source_branches, source_leaf_s
     m2l_list = Vector{SVector{2,Int32}}(undef,0)
     direct_list = Vector{SVector{2,Int32}}(undef,0)
 
-    !(length(target_branches) > 0 && length(source_branches) > 0) && return
+    !(length(target_branches) > 0 && length(source_branches) > 0) && return m2l_list, direct_list
     
     n_threads = Threads.nthreads()
 
