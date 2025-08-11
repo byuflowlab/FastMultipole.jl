@@ -411,7 +411,7 @@ end
 #     return list
 # end
 
-function parallel_sort_by_target(list, target_branches::Vector{<:Branch})
+function sort_by_target_multithreaded(list, target_branches::Vector{<:Branch})
     n_list = length(list)
     n_branches = length(target_branches)
     nthreads = Threads.nthreads()
@@ -426,7 +426,7 @@ function parallel_sort_by_target(list, target_branches::Vector{<:Branch})
     # get local counts
     Threads.@threads :static for i_assignment in eachindex(assignments)
         i_start = assignments[i_assignment]
-        i_end = i_start + n - 1
+        i_end = min(i_start + n - 1, n_list)
         for i in i_start:i_end
             local_counts[i_assignment, list[i][1]] += Int32(1)
         end
@@ -442,7 +442,6 @@ function parallel_sort_by_target(list, target_branches::Vector{<:Branch})
         target_counter[2,i] = target_counter[2,i-1] + target_counter[1,i-1]
     end
 
-    
     assignment_offsets = zeros(Int32, size(local_counts))
     for i in 1:n_branches
         offset = target_counter[2, i]
@@ -451,7 +450,6 @@ function parallel_sort_by_target(list, target_branches::Vector{<:Branch})
             offset += local_counts[t, i]
         end
     end
-
 
     Threads.@threads :static for i_assignment in eachindex(assignments)
         i_start = assignments[i_assignment]
@@ -468,6 +466,11 @@ function parallel_sort_by_target(list, target_branches::Vector{<:Branch})
 end
 
 function sort_by_target(list, target_branches::Vector{<:Branch})
+
+    if Threads.nthreads() > 1
+        return sort_by_target_multithreaded(list, target_branches)
+    end
+
     # count cardinality of each target leaf in list
     target_counter = zeros(Int32, 2, length(target_branches))
     for (i,j) in list
