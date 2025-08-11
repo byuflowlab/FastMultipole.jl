@@ -447,16 +447,25 @@ function child_branches_multithread_parents!(branches, buffers, sort_index, smal
     # load balance
     # println("load balance:")
     # @time begin
-    n_threads = min(Threads.nthreads(), length(parents_index))
-    n_per_thread = ceil(Int, length(parents_index) / n_threads)
+    n_parents = length(parents_index)
+    n_threads = min(Threads.nthreads(), n_parents)
+    n_per_thread = ceil(Int, n_parents / n_threads)
     i_parent_start = parents_index[1]:n_per_thread:parents_index[end]
+    stop_point = parents_index[end]
     # end
-    
+
     # thread-local containers
-    # check_buffers = [deepcopy(buffers) for _ in 1:n_threads] # buffers for each thread
-    # check_small_buffers = [deepcopy(small_buffers) for _ in 1:n_threads] # small buffers for each thread
-    # check_sort_index_buffers = [deepcopy(sort_index_buffer) for _ in 1:n_threads] # sort index buffer for each thread
-    # check_sort_index = [deepcopy(sort_index) for _ in 1:n_threads] # sort index for each thread
+    # check_buffers = Vector{typeof(buffers)}(undef, n_threads)
+    # check_small_buffers = Vector{typeof(small_buffers)}(undef, n_threads)
+    # check_sort_index_buffers = Vector{typeof(sort_index_buffer)}(undef, n_threads)
+    # check_sort_index = Vector{typeof(sort_index)}(undef, n_threads)
+    # for i in 1:n_threads
+    #     check_buffers[i] = deepcopy(buffers)
+    #     check_small_buffers[i] = deepcopy(small_buffers)
+    #     check_sort_index_buffers[i] = deepcopy(sort_index_buffer)
+    #     check_sort_index[i] = deepcopy(sort_index)
+    # end
+
     # println("allocate containers")
     # @time begin
     i_first_branch_threads = zeros(Int, n_threads)
@@ -487,7 +496,7 @@ function child_branches_multithread_parents!(branches, buffers, sort_index, smal
         this_sort_index = sort_index
 
         # loop over parents in this thread
-        for i_parent in i_parent_start[i_thread]:min(i_parent_start[i_thread]+n_per_thread-1, parents_index[end])
+        for i_parent in i_parent_start[i_thread]:min(i_parent_start[i_thread]+n_per_thread-1, stop_point)
             parent_branch = branches[i_parent]
             if parent_branch.n_branches > 0
                 # radius of the child branches
@@ -612,7 +621,7 @@ function child_branches_multithread_bodies!(branches, buffers, sort_index, small
             end
         end
     end
-# end
+    # end
     n_children = i_first_branch - length(branches) - 1 # the grandchildren of branches[parents_index]
     parents_index = parents_index[end]+1:length(branches) # the parents of the next generation
     return parents_index, n_children, i_leaf
@@ -953,8 +962,9 @@ end
 end
 
 @inline function get_bodies_index(cumulative_octant_census::AbstractMatrix, parent_bodies_indices::AbstractVector, i_octant)
-    n_systems = size(cumulative_octant_census,1)
-    bodies_index = SVector{n_systems,UnitRange{Int64}}([get_bodies_index(cumulative_octant_census[i_system,:], parent_bodies_indices[i_system], i_octant) for i_system in 1:n_systems])
+    n_systems = size(cumulative_octant_census, 1)
+    bodies_index = ntuple(i_system -> get_bodies_index(view(cumulative_octant_census, i_system, :), parent_bodies_indices[i_system], i_octant), n_systems)
+    bodies_index = SVector{n_systems,UnitRange{Int64}}(bodies_index)
     return bodies_index
 end
 
