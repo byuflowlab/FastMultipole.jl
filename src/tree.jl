@@ -433,6 +433,7 @@ function child_branches!(branches, buffers, sort_index, small_buffers, sort_inde
 end
 
 function child_branches_multithread!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target::Bool)
+    println("\n\n---- DEBUGGING MT ------\n")
     if length(parents_index) < MIN_NPT_BRANCH
         return child_branches_multithread_bodies!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
     else
@@ -444,22 +445,30 @@ function child_branches_multithread_parents!(branches, buffers, sort_index, smal
     i_first_branch = parents_index[end] + n_children + 1
 
     # load balance
+    println("load balance:")
+    @time begin
     n_threads = min(Threads.nthreads(), length(parents_index))
     n_per_thread = ceil(Int, length(parents_index) / n_threads)
     i_parent_start = parents_index[1]:n_per_thread:parents_index[end]
+    end
     
     # thread-local containers
     # check_buffers = [deepcopy(buffers) for _ in 1:n_threads] # buffers for each thread
     # check_small_buffers = [deepcopy(small_buffers) for _ in 1:n_threads] # small buffers for each thread
     # check_sort_index_buffers = [deepcopy(sort_index_buffer) for _ in 1:n_threads] # sort index buffer for each thread
     # check_sort_index = [deepcopy(sort_index) for _ in 1:n_threads] # sort index for each thread
+    println("allocate containers")
+    @time begin
     i_first_branch_threads = zeros(Int, n_threads)
     i_leaf_threads = zeros(Int, n_threads)
     cumulative_octant_census_threads = [MMatrix{length(buffers),8,Int64}(0,0,0,0,0,0,0,0) for _ in 1:n_threads]
     octant_container_threads = [MMatrix{length(buffers),8,Int64}(0,0,0,0,0,0,0,0) for _ in 1:n_threads]
     branches_threads = [eltype(branches)[] for _ in 1:n_threads]
+    end
     
     # create branches in parallel
+    println("create branches")
+    @time begin
     Threads.@threads :static for i_thread in 1:n_threads
         # extract thread-local variables
         this_cumulative_octant_census = cumulative_octant_census_threads[i_thread]
@@ -508,14 +517,20 @@ function child_branches_multithread_parents!(branches, buffers, sort_index, smal
         i_first_branch_threads[i_thread] = this_i_first_branch - i_first_branch # how many grandchild branches this thread has created
         i_leaf_threads[i_thread] = this_i_leaf - i_leaf # how many leaves this thread has created
     end
+end
 
     # cum sum i_first_branch_threads and i_leaf_threads
+    println("cumsum threads")
+    @time begin
     for i_thread in 2:n_threads
         i_first_branch_threads[i_thread] += i_first_branch_threads[i_thread-1]
         i_leaf_threads[i_thread] += i_leaf_threads[i_thread-1]
     end
+end
 
     # offset branch.branch_index and i_leaf
+    println("offset branches")
+    @time begin
     Threads.@threads :static for i_thread in 2:n_threads
         # get the appropriate offset
         offset_branch = i_first_branch_threads[i_thread-1]
@@ -558,11 +573,15 @@ function child_branches_multithread_parents!(branches, buffers, sort_index, smal
             end
         end
     end
+end
 
     # combine branches from all threads
-    # for i_thread in 1:n_threads
-        append!(branches, vcat(branches_threads...))
-    # end
+    println("combine branches")
+    @time begin
+    for i_thread in 1:n_threads
+        append!(branches, branches_threads[i_thread])
+    end
+    end
 
     # update parents_index
     n_children = i_first_branch + i_first_branch_threads[end] - length(branches) - 1 # the grandchildren of branches[parents_index]
@@ -572,6 +591,8 @@ end
 
 function child_branches_multithread_bodies!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target::Bool)
     i_first_branch = parents_index[end] + n_children + 1
+    println("multithread bodies")
+    @time begin
     for i_parent in parents_index
         parent_branch = branches[i_parent]
         if parent_branch.n_branches > 0
@@ -597,6 +618,7 @@ function child_branches_multithread_bodies!(branches, buffers, sort_index, small
             end
         end
     end
+end
     n_children = i_first_branch - length(branches) - 1 # the grandchildren of branches[parents_index]
     parents_index = parents_index[end]+1:length(branches) # the parents of the next generation
     return parents_index, n_children, i_leaf

@@ -29,8 +29,8 @@ sys = generate_gravitational(123, n_bodies)
 # println("Max difference: ", maximum(abs.(diff)))
 
 # profile tree creation
-@profview tree = Tree(sys, true)
-@profview tree = Tree(sys, true)
+# @profview tree = Tree(sys, true)
+# @profview tree = Tree(sys, true)
 # FastMultipole.DEBUG_COUNTER[1] = 0
 # tree = Tree(sys, true; leaf_size=SVector{1}(1));
 @time tree = Tree(sys, true; leaf_size=SVector{1}(leaf_size));#, interaction_list_method=FastMultipole.SelfTuningTreeStop());
