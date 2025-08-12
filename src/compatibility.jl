@@ -375,7 +375,23 @@ function target_to_buffer!(buffers, systems::Tuple, target::Bool, sort_index_lis
 end
 
 function target_to_buffer!(buffer::Matrix, system, target::Bool, sort_index=1:get_n_bodies(system))
-    for i_body in 1:get_n_bodies(system)
+    if Threads.nthreads() > 1
+        target_to_buffer_multithread!(buffer, system, target, sort_index)
+    else
+        for i_body in 1:get_n_bodies(system)
+            i_sorted = sort_index[i_body]
+            buffer[1:3, i_body] .= get_position(system, i_sorted)
+            if target
+                prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
+                buffer[17, i_body] = prev_potential
+                buffer[18, i_body] = prev_velocity
+            end
+        end
+    end
+end
+
+function target_to_buffer_multithread!(buffer::Matrix, system, target::Bool, sort_index=1:get_n_bodies(system))
+    Threads.@threads for i_body in 1:get_n_bodies(system)
         i_sorted = sort_index[i_body]
         buffer[1:3, i_body] .= get_position(system, i_sorted)
         if target
