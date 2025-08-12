@@ -473,7 +473,7 @@ function sort_by_target(list, target_branches::Vector{<:Branch})
 
     length(list) < 2 && return list
 
-    if Threads.nthreads() > 1 || length(list) <= MIN_NPT_SORT
+    if Threads.nthreads() > 1 && length(list) > MIN_NPT_SORT
         return sort_by_target_multithreaded(list, target_branches)
     end
 
