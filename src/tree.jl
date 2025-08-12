@@ -7,6 +7,8 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
     # ensure `systems` isn't empty; otherwise return an empty tree
     if get_n_bodies(systems) > 0
 
+        println("Part I:")
+        @time begin
         # determine float type
         TF = Float32
         for system in systems
@@ -46,12 +48,21 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         for buffer in buffers
             buffer .= zero(TF)
         end
+    end
+        println("Part II: target_to_buffer")
+        @time begin
 
         # update buffers with system positions and max influence
         target_to_buffer!(buffers, systems, target)
+        end
 
+        println("Part III: branch!")
+        @time begin
         # grow root branch
         root_branch, n_children, i_leaf = branch!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target) # even though no sorting needed for creating this branch, it will be needed later on; so `branch!` not ony_min creates the root_branch, but also sorts itself into octants and returns the number of children it will have so we can plan array size
+        end
+        println("Part IV: child branches")
+        @time begin
         branches = [root_branch] # this first branch will already have its child branches encoded
         # estimated_n_branches = estimate_n_branches(systems, leaf_size, allocation_safety_factor)
         # sizehint!(branches, estimated_n_branches)
@@ -78,17 +89,25 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
             # end
         end
 
+    end
+        println("Part V: source/target specific updates")
+        @time begin
         # source/target specific updates
         if target # zero min_influence from buffers
             update_min_influence!(branches, levels_index, buffers)
         else # update buffers with full system data
             system_to_buffer!(buffers, systems, sort_index)
         end
-
+    end
+        println("Part VI: invert index")
+        @time begin
         # invert index
         invert_index!(sort_index_buffer, sort_index)
         inverse_sort_index = sort_index_buffer # reuse the buffer as the inverse index
+        end
 
+        println("Part VII: shrink and recenter branches")
+        @time begin
         # shrink and recenter branches to account for bodies of nonzero radius
         if shrink_recenter 
             if target
@@ -97,7 +116,9 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
                 shrink_recenter_source!(branches, levels_index, buffers)
             end
         end
-
+    end
+        println("Part VIII: store leaves")
+        @time begin
         # store leaves
         n_leaves = 0
         for i_branch in eachindex(branches)
@@ -113,9 +134,11 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
                 i_leaf += 1
             end
         end
+    end
+        println("Part IX: allocate expansions")
 
         # allocate expansions
-        expansions = initialize_expansions(expansion_order, length(branches), TF)
+        @time expansions = initialize_expansions(expansion_order, length(branches), TF)
 
         # # cost parameters
         # if estimate_cost
@@ -1687,6 +1710,10 @@ function shrink_branch!(branches, i_branch, child_index)
 end
 
 function shrink_recenter_source!(branches, levels_index, system)
+    if Threads.nthreads() > 1
+        return shrink_recenter_source_multithread!(branches, levels_index, system)
+    end
+
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
         for i_branch in level_index
@@ -1700,10 +1727,42 @@ function shrink_recenter_source!(branches, levels_index, system)
     end
 end
 
+function shrink_recenter_source_multithread!(branches, levels_index, system)
+    for i_level in length(levels_index):-1:1 # start at the bottom level
+        level_index = levels_index[i_level]
+        Threads.@threads :static for i_branch in level_index
+            branch = branches[i_branch]
+            if branch.n_branches == 0 # leaf
+                shrink_leaf_source!(branches, i_branch, system)
+            else
+                shrink_branch!(branches, i_branch, branch.branch_index)
+            end
+        end
+    end
+end
+
 function shrink_recenter_target!(branches, levels_index, system)
+    if Threads.nthreads() > 1
+        return shrink_recenter_target_multithread!(branches, levels_index, system)
+    end
+
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
         for i_branch in level_index
+            branch = branches[i_branch]
+            if branch.n_branches == 0 # leaf
+                shrink_leaf_target!(branches, i_branch, system)
+            else
+                shrink_branch!(branches, i_branch, branch.branch_index)
+            end
+        end
+    end
+end
+
+function shrink_recenter_target_multithread!(branches, levels_index, system)
+    for i_level in length(levels_index):-1:1 # start at the bottom level
+        level_index = levels_index[i_level]
+        Threads.@threads :static for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
                 shrink_leaf_target!(branches, i_branch, system)
