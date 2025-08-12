@@ -414,7 +414,7 @@ end
 function sort_by_target_multithreaded(list, target_branches::Vector{<:Branch})
     n_list = length(list)
     n_branches = length(target_branches)
-    nthreads = min(Threads.nthreads(), cld(n_list, MIN_NPT_SORT))
+    nthreads = min(Threads.nthreads(), div(n_list, MIN_NPT_SORT))
     target_counter = zeros(Int32, 2, n_branches)
     sorted_list = similar(list)
 
