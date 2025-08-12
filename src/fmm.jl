@@ -1105,7 +1105,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                         n_interactions_local = zeros(Int, n_threads)
 
                         n_points = length(direct_list)
-                        n_per_thread, rem = divrem(n_points,Threads.nthreads())
+                        n_per_thread, rem = divrem(n_points,n_threads)
                         n = n_per_thread + (rem > 0)
                         assignments = 1:n:n_points
 
