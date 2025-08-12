@@ -66,7 +66,8 @@ function make_direct_assignments!(assignments, i_target_system, target_branches,
         i_target, i_source = direct_list[1]
 
         # loop over interaction list
-        for (i_target_next, i_source_next) in view(direct_list, 2:length(direct_list))
+        for i_loop in 2:length(direct_list)
+            i_target_next, i_source_next = direct_list[i_loop]
             # update number of interactions in the current assignment
             n_interactions += target_branches[i_target].n_bodies[i_target_system] * source_branches[i_source].n_bodies[i_source_system]
 
@@ -880,8 +881,8 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(t
     t_target_tree = @elapsed target_tree = Tree(target_systems, true, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink_recenter, interaction_list_method)
     t_source_tree = @elapsed source_tree = Tree(source_systems, false, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink_recenter, interaction_list_method)
 
-    # println("  Target tree: $t_target_tree")
-    # println("  Source tree: $t_source_tree")
+    # println("Tree construction times: target = $t_target_tree, source = $t_source_tree")
+    # error()
 
     return fmm!(target_systems, target_tree, source_systems, source_tree; expansion_order, leaf_size_source, error_tolerance, t_source_tree, t_target_tree, interaction_list_method, optargs...)
 end
