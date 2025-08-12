@@ -433,7 +433,11 @@ function sort_by_target_multithreaded(list, target_branches::Vector{<:Branch})
     end
 
     for i in 1:n_branches
-        target_counter[1, i] = sum(local_counts[:, i])
+        s = zero(eltype(local_counts))
+        for j in 1:size(local_counts, 1)
+            s += local_counts[j, i]
+        end
+        target_counter[1, i] = s
     end
 
     # global offsets
