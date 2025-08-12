@@ -107,7 +107,7 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
             n_per_thread, rem = divrem(n_target_bodies, n_threads)
             rem > 0 && (n_per_thread += 1)
             n_per_thread = max(n_per_thread, MIN_NPT_NF)
-            Threads.@threads for i_start in 1:n_per_thread:n_target_bodies
+            Threads.@threads :static for i_start in 1:n_per_thread:n_target_bodies
                 direct!(target_buffer, i_start:min(i_start+n_per_thread-1, n_source_bodies), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
             end
         end
