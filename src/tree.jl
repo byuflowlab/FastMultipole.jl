@@ -59,7 +59,11 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         println("Part III: branch!")
         @time begin
         # grow root branch
-        root_branch, n_children, i_leaf = branch!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target) # even though no sorting needed for creating this branch, it will be needed later on; so `branch!` not ony_min creates the root_branch, but also sorts itself into octants and returns the number of children it will have so we can plan array size
+        if Threads.nthreads() > 1
+            root_branch, n_children, i_leaf = branch_multithread!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target)
+        else
+            root_branch, n_children, i_leaf = branch!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target) # even though no sorting needed for creating this branch, it will be needed later on; so `branch!` not ony_min creates the root_branch, but also sorts itself into octants and returns the number of children it will have so we can plan array size
+        end
         end
         println("Part IV: child branches")
         @time begin
@@ -703,6 +707,7 @@ function child_branches_level!(branches, buffers, sort_index, small_buffers, sor
 end
 
 function branch!(buffer, small_buffer, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, i_parent, i_leaf, leaf_size, interaction_list_method, target::Bool)
+
     # count bodies in each octant
     census!(octant_container, buffer, bodies_index, center) # octant_container modified
     
