@@ -7,8 +7,8 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
     # ensure `systems` isn't empty; otherwise return an empty tree
     if get_n_bodies(systems) > 0
 
-        println("Part I:")
-        @time begin
+        # println("Part I:")
+        # @time begin # most time at center_box
         # determine float type
         TF = Float32
         for system in systems
@@ -19,6 +19,7 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         octant_container = get_octant_container(systems) # preallocate octant counter; records the total number of bodies in the first octant to start out, but can be reused to count bodies per octant later on
         cumulative_octant_census = get_octant_container(systems) # for creating a cumsum of octant populations
         bodies_index = get_bodies_index(systems)
+
 
         # root branch
         center, box = center_box(systems, TF)
@@ -48,25 +49,25 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         for buffer in buffers
             buffer .= zero(TF)
         end
-    end
-        println("Part II: target_to_buffer")
-        @time begin
+    # end
+        # println("Part II: target_to_buffer")
+        # @time begin # already multithreaded
 
         # update buffers with system positions and max influence
         target_to_buffer!(buffers, systems, target)
-        end
+        # end
 
-        println("Part III: branch!")
-        @time begin
+        # println("Part III: branch!")
+        # @time begin
         # grow root branch
         if Threads.nthreads() > 1
             root_branch, n_children, i_leaf = branch_multithread!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target)
         else
             root_branch, n_children, i_leaf = branch!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target) # even though no sorting needed for creating this branch, it will be needed later on; so `branch!` not ony_min creates the root_branch, but also sorts itself into octants and returns the number of children it will have so we can plan array size
         end
-        end
-        println("Part IV: child branches")
-        @time begin
+        # end
+        # println("Part IV: child branches")
+        # @time begin
         branches = [root_branch] # this first branch will already have its child branches encoded
         # estimated_n_branches = estimate_n_branches(systems, leaf_size, allocation_safety_factor)
         # sizehint!(branches, estimated_n_branches)
@@ -93,25 +94,25 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
             # end
         end
 
-    end
-        println("Part V: source/target specific updates")
-        @time begin
+    # end
+        # println("Part V: source/target specific updates")
+        # @time begin #already threaded
         # source/target specific updates
         if target # zero min_influence from buffers
             update_min_influence!(branches, levels_index, buffers)
         else # update buffers with full system data
             system_to_buffer!(buffers, systems, sort_index)
         end
-    end
-        println("Part VI: invert index")
-        @time begin
+    # end
+        # println("Part VI: invert index")
+        # @time begin
         # invert index
         invert_index!(sort_index_buffer, sort_index)
         inverse_sort_index = sort_index_buffer # reuse the buffer as the inverse index
-        end
+        # end
 
-        println("Part VII: shrink and recenter branches")
-        @time begin
+        # println("Part VII: shrink and recenter branches")
+        # @time begin #already threaded
         # shrink and recenter branches to account for bodies of nonzero radius
         if shrink_recenter 
             if target
@@ -120,9 +121,9 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
                 shrink_recenter_source!(branches, levels_index, buffers)
             end
         end
-    end
-        println("Part VIII: store leaves")
-        @time begin
+    # end
+        # println("Part VIII: store leaves")
+        # @time begin
         # store leaves
         n_leaves = 0
         for i_branch in eachindex(branches)
@@ -138,11 +139,12 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
                 i_leaf += 1
             end
         end
-    end
-        println("Part IX: allocate expansions")
+    # end
+        # println("Part IX: allocate expansions")
 
         # allocate expansions
-        @time expansions = initialize_expansions(expansion_order, length(branches), TF)
+        # @time expansions = initialize_expansions(expansion_order, length(branches), TF)
+        expansions = initialize_expansions(expansion_order, length(branches), TF)
 
         # # cost parameters
         # if estimate_cost
@@ -1331,12 +1333,12 @@ end
     return center, bounding_box
 end
 
-function center_box(systems, TF)
+@inline function center_box(systems, TF)
     bodies_indices = get_bodies_index(systems)
     return center_box(systems, bodies_indices, TF)
 end
 
-function center_box(systems::Tuple, bodies_indices, TF)
+@inline function center_box(systems::Tuple, bodies_indices, TF)
     x_min, y_min, z_min = first_body_position(systems, bodies_indices, TF)
     x_max, y_max, z_max = x_min, y_min, z_min
     for (system, bodies_index) in zip(systems, bodies_indices)
@@ -1779,9 +1781,28 @@ function shrink_recenter_target_multithread!(branches, levels_index, system)
 end
 
 function update_min_influence!(branches, levels_index, buffers)
+
+    if Threads.nthreads() > 1
+        return update_min_influence_multithread!(branches, levels_index, buffers)
+    end
+
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
         for i_branch in level_index
+            branch = branches[i_branch]
+            if branch.n_branches == 0 # leaf
+                update_min_influence_leaf!(branches, i_branch, buffers)
+            else
+                update_min_influence_branch!(branches, i_branch, branch.branch_index)
+            end
+        end
+    end
+end
+
+function update_min_influence_multithread!(branches, levels_index, buffers)
+    for i_level in length(levels_index):-1:1 # start at the bottom level
+        level_index = levels_index[i_level]
+        Threads.@threads for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
                 update_min_influence_leaf!(branches, i_branch, buffers)
@@ -2018,8 +2039,8 @@ function initialize_expansion(expansion_order, type=Float64)
     return zeros(type, 2, 2, ((expansion_order+1) * (expansion_order+2)) >> 1)
 end
 
-function initialize_expansions(expansion_order, n_branches, type=Float64)
-    # incrememnt expansion order to make room for error predictions
+@inline function initialize_expansions(expansion_order, n_branches, type=Float64)
+    # increment expansion order to make room for error predictions
     # expansion_order += 1
 
     return zeros(type, 2, 2, ((expansion_order+1) * (expansion_order+2)) >> 1, n_branches)
