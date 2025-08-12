@@ -1781,28 +1781,9 @@ function shrink_recenter_target_multithread!(branches, levels_index, system)
 end
 
 function update_min_influence!(branches, levels_index, buffers)
-
-    if Threads.nthreads() > 1
-        return update_min_influence_multithread!(branches, levels_index, buffers)
-    end
-
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
         for i_branch in level_index
-            branch = branches[i_branch]
-            if branch.n_branches == 0 # leaf
-                update_min_influence_leaf!(branches, i_branch, buffers)
-            else
-                update_min_influence_branch!(branches, i_branch, branch.branch_index)
-            end
-        end
-    end
-end
-
-function update_min_influence_multithread!(branches, levels_index, buffers)
-    for i_level in length(levels_index):-1:1 # start at the bottom level
-        level_index = levels_index[i_level]
-        Threads.@threads for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
                 update_min_influence_leaf!(branches, i_branch, buffers)
