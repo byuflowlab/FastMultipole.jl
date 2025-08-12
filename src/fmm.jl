@@ -905,13 +905,15 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
 
     # create interaction lists
-    t_lists = @elapsed m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
-    t_lists += @elapsed begin
+    t_lists_build = @elapsed m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
+    t_lists_sort = @elapsed begin
         m2l_list = sort_by_target(m2l_list, target_tree.branches)
         direct_list = sort_by_target(direct_list, target_tree.branches)
     end
+    t_lists = t_lists_build + t_lists_sort
 
-    # println("Interaction list construction and sort time: $t_lists")
+    # println("Interaction list construction time: $t_lists_build")
+    # println("Interaction list sorting time: $t_lists_sort")
 
     # run fmm
     return fmm!(target_systems, target_tree, source_systems, source_tree, leaf_size_source, m2l_list, direct_list, derivatives_switches, interaction_list_method; multipole_acceptance, t_source_tree, t_target_tree, t_lists, optargs...)
