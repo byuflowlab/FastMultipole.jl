@@ -100,6 +100,7 @@ abstract type InteractionListMethod end
 struct Barba <: InteractionListMethod end
 struct SelfTuning <: InteractionListMethod end
 struct SelfTuningTreeStop <: InteractionListMethod end
+struct SelfTuningTargetStop <: InteractionListMethod end
 
 #------- octree creation -------#
 

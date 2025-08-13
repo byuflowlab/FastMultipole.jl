@@ -443,7 +443,7 @@ function child_branches!(branches, buffers, sort_index, small_buffers, sort_inde
             update_octant_accumulator!(cumulative_octant_census)
 
             # number of child branches
-            if exceeds(cumulative_octant_census, leaf_size, interaction_list_method)
+            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method)
                 for i_octant in 1:8
                     if get_population(cumulative_octant_census, i_octant) > 0
                         bodies_index = get_bodies_index(cumulative_octant_census, parent_branch.bodies_index, i_octant)
@@ -538,7 +538,7 @@ function child_branches_multithread_parents!(branches, buffers, sort_index, smal
                 update_octant_accumulator!(this_cumulative_octant_census)
                 
                 # number of child branches
-                if exceeds(this_cumulative_octant_census, leaf_size, interaction_list_method)
+                if exceeds(this_cumulative_octant_census, leaf_size, target, interaction_list_method)
                     for i_octant in 1:8
                         if get_population(this_cumulative_octant_census, i_octant) > 0
                             bodies_index = get_bodies_index(this_cumulative_octant_census, parent_branch.bodies_index, i_octant)
@@ -637,7 +637,7 @@ function child_branches_multithread_bodies!(branches, buffers, sort_index, small
             update_octant_accumulator!(cumulative_octant_census)
 
             # number of child branches
-            if exceeds(cumulative_octant_census, leaf_size, interaction_list_method)
+            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method)
                 for i_octant in 1:8
                     if get_population(cumulative_octant_census, i_octant) > 0
                         bodies_index = get_bodies_index(cumulative_octant_census, parent_branch.bodies_index, i_octant)
@@ -670,7 +670,7 @@ function child_branches_level!(branches, buffers, sort_index, small_buffers, sor
             update_octant_accumulator!(cumulative_octant_census)
 
             # number of child branches
-            if exceeds(cumulative_octant_census, leaf_size, interaction_list_method)
+            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method)
                 for i_octant in 1:8
                     if get_population(cumulative_octant_census, i_octant) > 0
                         bodies_index = get_bodies_index(cumulative_octant_census, parent_branch.bodies_index, i_octant)
@@ -717,7 +717,7 @@ function branch!(buffer, small_buffer, sort_index, octant_container, sort_index_
     update_octant_accumulator!(octant_container) # octant_container modified
     
     # number of child branches
-    n_children = get_n_children(octant_container, leaf_size, interaction_list_method) # nothing modified
+    n_children = get_n_children(octant_container, leaf_size, target, interaction_list_method) # nothing modified
     
     if n_children > 0
         # get beginning index of sorted bodies
@@ -751,7 +751,7 @@ function branch_multithread!(buffer, small_buffer, sort_index, octant_container,
     update_octant_accumulator!(octant_container)
 
     # number of child branches
-    n_children = get_n_children(octant_container, leaf_size, interaction_list_method)
+    n_children = get_n_children(octant_container, leaf_size, target, interaction_list_method)
 
     if n_children > 0
         # get beginning index of sorted bodies
@@ -805,7 +805,7 @@ end
 
 # @inline exceeds(cumulative_octant_census::AbstractVector, leaf_size) = cumulative_octant_census[end] > leaf_size
 
-@inline function exceeds(cumulative_octant_census::AbstractMatrix, leaf_size::SVector, ::SelfTuning)
+@inline function exceeds(cumulative_octant_census::AbstractMatrix, leaf_size::SVector, target::Bool, ::SelfTuning)
     fraction = 0.0
     n_bodies = 0
     for i_element in 1:size(cumulative_octant_census, 1)
@@ -821,7 +821,7 @@ end
     # return fraction > nextfloat(1.0)
 end
 
-@inline function exceeds(branch::Branch, leaf_size, ::SelfTuning)
+@inline function exceeds(branch::Branch, leaf_size, target::Bool, ::SelfTuning)
     fraction = 0.0
     n_bodies = 0
     for i_element in 1:length(leaf_size)
@@ -834,7 +834,7 @@ end
     return fraction > 0.5 && n_bodies > 1
 end
 
-@inline function exceeds(cumulative_octant_census::AbstractMatrix, leaf_size::SVector, ::SelfTuningTreeStop)
+@inline function exceeds(cumulative_octant_census::AbstractMatrix, leaf_size::SVector, target::Bool, ::SelfTuningTreeStop)
     fraction = 0.0
     n_bodies = 0
     for i_element in 1:size(cumulative_octant_census, 1)
@@ -851,7 +851,7 @@ end
     # return fraction > nextfloat(1.0)
 end
 
-@inline function exceeds(branch::Branch, leaf_size, ::SelfTuningTreeStop)
+@inline function exceeds(branch::Branch, leaf_size, target::Bool, ::SelfTuningTreeStop)
     fraction = 0.0
     n_bodies = 0
     for i_element in 1:length(leaf_size)
@@ -864,7 +864,41 @@ end
     return fraction > 2.8284271247461903 && n_bodies > 1
 end
 
-@inline function exceeds(cumulative_octant_census::AbstractMatrix, leaf_size, ::Barba)
+@inline function exceeds(cumulative_octant_census::AbstractMatrix, leaf_size::SVector, target::Bool, ::SelfTuningTargetStop)
+    fraction = 0.0
+    n_bodies = 0
+    for i_element in 1:size(cumulative_octant_census, 1)
+        # fraction += cumulative_octant_census[i_element,end] / leaf_size[i_element]
+        n = cumulative_octant_census[i_element,end]
+        n_bodies += n
+        fraction += n / (leaf_size[i_element] * leaf_size[i_element])
+        # cumulative_octant_census[i_element,end] > leaf_size[i_element] && (return true)
+    end
+    fraction *= minimum(leaf_size)
+
+    threshold = target ? 2.828 : 1.0 # go a little deeper with sources
+
+    return fraction > threshold && n_bodies > 1 # sqrt(8) == 2.8284271247461903; leads to the expectation value
+                                            # of n_source * n_target => leaf_size^2 (break-even point)
+end
+
+@inline function exceeds(branch::Branch, leaf_size, target::Bool, ::SelfTuningTargetStop)
+    fraction = 0.0
+    n_bodies = 0
+    for i_element in 1:length(leaf_size)
+        n = length(leaf_size.bodies_index[i_element])
+        n_bodies += n
+        fraction += n / (leaf_size[i_element] * leaf_size[i_element])
+    end
+    fraction *= minimum(leaf_size)
+
+    threshold = target ? 2.828 : 1.0 # go a little deeper with sources
+
+    return fraction > threshold && n_bodies > 1 # sqrt(8) == 2.8284271247461903; leads to the expectation value
+                                            # of n_source * n_target => leaf_size^2 (break-even point)
+end
+
+@inline function exceeds(cumulative_octant_census::AbstractMatrix, leaf_size::SVector, target::Bool, ::Barba)
     not_over = true
     for i_element in 1:size(cumulative_octant_census, 1)
         n = cumulative_octant_census[i_element,end]
@@ -874,7 +908,7 @@ end
     return !not_over
 end
 
-@inline function exceeds(branch::Branch, leaf_size, ::Barba)
+@inline function exceeds(branch::Branch, leaf_size, target::Bool, ::Barba)
     not_over = true
     for i_element in 1:length(leaf_size)
         n = length(leaf_size.bodies_index[i_element])
@@ -1023,10 +1057,10 @@ end
 
 #--- determine the number of descendants ---#
 
-@inline function get_n_children(cumulative_octant_census, leaf_size, interaction_list_method)
+@inline function get_n_children(cumulative_octant_census, leaf_size, target, interaction_list_method)
     n_children = 0
 
-    if exceeds(cumulative_octant_census, leaf_size, interaction_list_method)
+    if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method)
         for i_octant in 1:8
             get_population(cumulative_octant_census,i_octant) > 0 && (n_children += 1)
         end

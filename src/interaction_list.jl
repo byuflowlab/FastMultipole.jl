@@ -288,6 +288,134 @@ function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, tar
     end
 end
 
+##### SelfTuningTargetStop #####
+function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield::Val{ff}, nearfield::Val{nf}, self_induced::Val{si}, method::SelfTuningTargetStop, start_list, max_depth, current_depth) where {ff,nf,si}
+    # unpack
+    source_branch = source_branches[j_source]
+    target_branch = target_branches[i_target]
+
+    # predict if direct cost is less than multipole cost
+    fraction = 0.0
+    for i_sys in 1:length(source_branch.bodies_index)
+        fraction += source_branch.n_bodies[i_sys] / (source_leaf_size[i_sys] * source_leaf_size[i_sys])
+    end
+    n_targets = sum(target_branch.n_bodies)
+    fraction *= n_targets
+
+    # cost of direct is less than M2L (and target is a leaf), or both branches are leaves, so no need to continue subdividing
+    if target_branch.n_branches == 0
+        if fraction < 1.0 || source_branch.n_branches == 0
+            nf && (i_target!=j_source || si) && push!(direct_list, SVector{2}(i_target, j_source))
+            return nothing
+        end
+    end
+
+    # branch center separation distance
+    Δx, Δy, Δz = target_branch.center - source_branch.center
+    separation_distance_squared = Δx*Δx + Δy*Δy + Δz*Δz
+
+    # decide whether or not to accept the multipole expansion
+    summed_radii = source_branch.radius + target_branch.radius
+
+    # distance is greater than multipole threshold, perform M2L
+    if separation_distance_squared * multipole_acceptance * multipole_acceptance > summed_radii * summed_radii
+    #if ρ_max <= multipole_acceptance * r_min && r_max <= multipole_acceptance * ρ_min # exploring a new criterion
+        if ff
+            push!(m2l_list, SVector{2}(i_target, j_source))
+        end
+        return nothing
+    end
+
+    # count number of sources
+    n_sources = sum(source_branch.n_bodies)
+
+    # too close for M2L, and source is a leaf OR target is not a leaf and is bigger or the same size, so subdivide targets
+    if source_branch.n_branches == 0 || (n_targets >= n_sources && target_branch.n_branches != 0)
+    # if source_branch.n_branches == 0 || (target_branch.radius >= source_branch.radius && target_branch.n_branches != 0)
+        if current_depth == max_depth
+            for i_child in target_branch.branch_index
+                push!(start_list, SVector{2}(i_child, j_source))
+            end
+            return nothing
+        end
+
+        for i_child in target_branch.branch_index
+            build_interaction_lists!(m2l_list, direct_list, Int32(i_child), Int32(j_source), target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method, start_list, max_depth, current_depth+1)
+        end
+
+    # source is not a leaf AND target is a leaf or is smaller, so subdivide source
+    else
+        if current_depth == max_depth
+            for j_child in source_branch.branch_index
+                push!(start_list, SVector{2}(i_target, j_child))
+            end
+            return nothing
+        end
+
+        for j_child in source_branch.branch_index
+            build_interaction_lists!(m2l_list, direct_list, Int32(i_target), Int32(j_child), target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method, start_list, max_depth, current_depth+1)
+        end
+    end
+end
+
+function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield::Val{ff}, nearfield::Val{nf}, self_induced::Val{si}, method::SelfTuningTargetStop) where {ff,nf,si}
+    # unpack
+    source_branch = source_branches[j_source]
+    target_branch = target_branches[i_target]
+
+    # predict if direct cost is less than multipole cost
+    fraction = 0.0
+    for i_sys in 1:length(source_branch.bodies_index)
+        fraction += source_branch.n_bodies[i_sys] / (source_leaf_size[i_sys] * source_leaf_size[i_sys])
+    end
+    n_targets = sum(target_branch.n_bodies)
+    fraction *= n_targets
+
+    # cost of direct is less than M2L, or both branches are leaves, so no need to continue subdividing
+    if target_branch.n_branches == 0
+        if fraction < 1.0 || source_branch.n_branches == 0
+            nf && (i_target!=j_source || si) && push!(direct_list, SVector{2}(i_target, j_source))
+            return nothing
+        end
+    end
+
+    # branch center separation distance
+    Δx, Δy, Δz = target_branch.center - source_branch.center
+    separation_distance_squared = Δx*Δx + Δy*Δy + Δz*Δz
+
+    # decide whether or not to accept the multipole expansion
+    summed_radii = source_branch.radius + target_branch.radius
+
+    # distance is greater than multipole threshold, perform M2L
+    if separation_distance_squared * multipole_acceptance * multipole_acceptance > summed_radii * summed_radii
+    #if ρ_max <= multipole_acceptance * r_min && r_max <= multipole_acceptance * ρ_min # exploring a new criterion
+        if ff
+            push!(m2l_list, SVector{2}(i_target, j_source))
+        end
+        return nothing
+    end
+
+    # count number of sources
+    n_sources = sum(source_branch.n_bodies)
+
+    # too close for M2L, and source is a leaf OR target is not a leaf and is bigger or the same size, so subdivide targets
+    if source_branch.n_branches == 0 || (n_targets >= n_sources && target_branch.n_branches != 0)
+    # if source_branch.n_branches == 0 || (target_branch.radius >= source_branch.radius && target_branch.n_branches != 0)
+
+        for i_child in target_branch.branch_index
+            build_interaction_lists!(m2l_list, direct_list, i_child, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
+        end
+
+    # source is not a leaf AND target is a leaf or is smaller, so subdivide source
+    else
+
+        for j_child in source_branch.branch_index
+            build_interaction_lists!(m2l_list, direct_list, i_target, j_child, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method)
+        end
+
+    end
+end
+
 ##### SelfTuningTreeStop #####
 function build_interaction_lists!(m2l_list, direct_list, i_target, j_source, target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield::Val{ff}, nearfield::Val{nf}, self_induced::Val{si}, method::SelfTuningTreeStop, start_list, max_depth, current_depth) where {ff,nf,si}
     # unpack
