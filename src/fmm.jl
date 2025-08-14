@@ -805,7 +805,7 @@ end
     return SVector{n}(input...)
 end
 
-fmm!(system, cache::Cache=Cache(to_tuple(system), to_tuple(system)); leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=leaf_size, optargs...)
+fmm!(system, cache::Cache=Cache(to_tuple(system), to_tuple(system)); leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
 
 function fmm!(target_systems, source_systems, cache::Cache=Cache(to_tuple(target_systems), to_tuple(source_systems)); optargs...)
     # promote arguments to Tuples
