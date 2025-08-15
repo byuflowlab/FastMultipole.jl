@@ -867,6 +867,8 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(t
     error_tolerance=nothing,
     shrink_recenter=true,
     interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
+    # interaction_list_method::InteractionListMethod=SelfTuning(),
+    # interaction_list_method::InteractionListMethod=SelfTuningTreeStop(),
     optargs...
 )
 
@@ -911,6 +913,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
         direct_list = sort_by_target(direct_list, target_tree.branches)
     end
     t_lists = t_lists_build + t_lists_sort
+
+    # @show length(m2l_list) length(direct_list)
 
     # println("Interaction list construction time: $t_lists_build")
     # println("Interaction list sorting time: $t_lists_sort")
@@ -1108,15 +1112,16 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 # println("Direct interaction time: ", t_direct[1])
                 # check number of interactions
                 if tune
+                    n_interactions_local = zeros(Int, n_threads)
                     for i_source_system in eachindex(source_systems)
-                        n_interactions_local = zeros(Int, n_threads)
+                        n_interactions_local .= 0
 
                         n_points = length(direct_list)
                         n_per_thread, rem = divrem(n_points,n_threads)
                         n = n_per_thread + (rem > 0)
                         assignments = 1:n:n_points
 
-                        Threads.@threads :static for i_assignment in length(assignments)
+                        Threads.@threads :static for i_assignment in eachindex(assignments)
                             i_start = assignments[i_assignment]
                             i_end = min(i_start + n - 1, n_points)
 
