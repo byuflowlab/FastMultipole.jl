@@ -867,8 +867,6 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(t
     error_tolerance=nothing,
     shrink_recenter=true,
     interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
-    # interaction_list_method::InteractionListMethod=SelfTuning(),
-    # interaction_list_method::InteractionListMethod=SelfTuningTreeStop(),
     optargs...
 )
 
