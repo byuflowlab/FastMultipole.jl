@@ -845,7 +845,7 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 **Optional Arguments: Tree Options**
 
 - `shrink_recenter::Bool`: whether to shrink and recenter branches around their bodies, accounting for finite body radius; default is `true`
-- `interaction_list_method::InteractionListMethod`: method for building interaction lists; default is `SelfTuningTreeStop()`
+- `interaction_list_method::InteractionListMethod`: method for building interaction lists; default is `SelfTuningTargetStop()`
 
 **Optional Arguments: Additional Options**
 
