@@ -1,0 +1,80 @@
+%% This BibTeX bibliography file was created using BibDesk.G
+%% https://bibdesk.sourceforge.io/
+
+%% Created for Porter Nelson at 2024-06-12 10:35:10 -0600
+
+%% Saved with string encoding Unicode (UTF-8)
+
+
+@article{greengard1987fast,
+	author = {Greengard, Leslie and Rokhlin, Vladimir},
+	journal = {Journal of computational physics},
+	number = {2},
+	pages = {325--348},
+	title = {A fast algorithm for particle simulations},
+	volume = {73},
+	year = {1987}}
+
+
+@article{DENG2021265,
+	abstract = {The Unsteady Vortex Lattice Method (UVLM) is a medium-fidelity aerodynamic tool that has been widely used in aeroelasticity and flight dynamics simulations. The most time-consuming step is the evaluation of the induced velocity. Supposing that the number of bound and wake lattices is N and the computational cost is ON2, we present an ON Dipole Panel Fast Multipole Method (DPFMM) for the rapid evaluation of the induced velocity in UVLM. The multipole expansion coefficients of a quadrilateral dipole panel have been derived in spherical coordinates, whose accuracy is the same as that of the Biot-Savart kernel at the same truncation degree P. Two methods (the loosening method and the shrinking method) are proposed and tested for space partitioning volumetric panels. Compared with FMM for vortex filaments (with three harmonics), DPFMM is approximately two times faster for N∈[103,106]. The simulation time of a multirotor (N∼104) is reduced from 100 min (with unaccelerated direct solver) to 2 min (with DPFMM).},
+	author = {Shuai DENG and Chen JIANG and Yunjie WANG and Haowen WANG},
+	date-added = {2024-06-12 10:34:55 -0600},
+	date-modified = {2024-06-12 10:34:55 -0600},
+	doi = {10.1016/j.cja.2020.06.029},
+	issn = {1000-9361},
+	journal = {Chinese Journal of Aeronautics},
+	keywords = {Boundary element method, Dipole potentials, Fast multipole method, Potential flow, Unsteady vortex lattice method},
+	number = {2},
+	pages = {265-278},
+	title = {Acceleration of unsteady vortex lattice method via dipole panel fast multipole method},
+	url = {https://www.sciencedirect.com/science/article/pii/S1000936120303204},
+	volume = {34},
+	year = {2021},
+	bdsk-url-1 = {https://www.sciencedirect.com/science/article/pii/S1000936120303204},
+	bdsk-url-2 = {https://doi.org/10.1016/j.cja.2020.06.029}}
+
+
+@article{GUMEROV2023112118,
+	abstract = {In boundary element methods (BEM) in R3, matrix elements and right hand sides are typically computed via analytical or numerical quadrature of the layer potential multiplied by some function over line, triangle and tetrahedral volume elements. When the problem size gets large, the resulting linear systems are often solved iteratively via Krylov subspace methods, with fast multipole methods (FMM) used to accelerate the matrix vector products needed. When FMM acceleration is used, most entries of the matrix never need be computed explicitly - they are only needed in terms of their contribution to the multipole expansion coefficients. We propose a new fast method - Quadrature to Expansion (Q2X) - for the analytical generation of the multipole expansion coefficients produced by the integral expressions for single and double layers on surface triangles; charge distributions over line segments and over tetrahedra in the volume; so that the overall method is well integrated into the FMM, with controlled error. The method is based on the O(1) per moment cost recursive computation of the moments. The method is developed for boundary element methods involving the Laplace Green's function in R3. The derived recursions are first compared against classical quadrature algorithms, and then integrated into FMM accelerated boundary element and vortex element methods. Numerical tests are presented and discussed.},
+	author = {Nail A. Gumerov and Shoken Kaneko and Ramani Duraiswami},
+	date-added = {2024-06-15 15:51:58 -0600},
+	date-modified = {2024-06-15 15:51:58 -0600},
+	doi = {https://doi.org/10.1016/j.jcp.2023.112118},
+	issn = {0021-9991},
+	journal = {Journal of Computational Physics},
+	keywords = {Fast multipole method, Boundary element method, Vortex element method, Multipole expansions, Special function recursions, Quadrature to expansion},
+	pages = {112118},
+	title = {Recursive computation of the multipole expansions of layer potential integrals over simplices for efficient fast multipole accelerated boundary elements},
+	url = {https://www.sciencedirect.com/science/article/pii/S0021999123002139},
+	volume = {486},
+	year = {2023},
+	bdsk-url-1 = {https://doi.org/10.1016/j.jcp.2023.112118}}
+
+
+@article{GUMEROV2023112118,
+	author = {Nail A. Gumerov and Shoken Kaneko and Ramani Duraiswami},
+	journal = {Journal of Computational Physics},
+	pages = {112118},
+	title = {Recursive computation of the multipole expansions of layer potential integrals over simplices for efficient fast multipole accelerated boundary elements},
+	volume = {486},
+	year = {2023}}
+
+
+@article{gumerov2013efficient,
+	author = {Gumerov, Nail A and Duraiswami, Ramani},
+	journal = {Journal of Computational Physics},
+	pages = {310--328},
+	title = {Efficient FMM accelerated vortex methods in three dimensions via the Lamb--Helmholtz decomposition},
+	volume = {240},
+	year = {2013}}
+
+
+@article{yokota2013fmm2,
+	author = {Yokota, Rio},
+	journal = {Journal of Algorithms \& Computational Technology},
+	number = {3},
+	pages = {301--324},
+	title = {An FMM based on dual tree traversal for many-core architectures},
+	volume = {7},
+	year = {2013}}
