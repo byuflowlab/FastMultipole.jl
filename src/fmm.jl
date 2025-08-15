@@ -891,7 +891,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     leaf_size_source=default_leaf_size(source_systems), multipole_acceptance=0.4,
     scalar_potential=false, gradient=true, hessian=false,
     farfield=true, nearfield=true, self_induced=true,
-    interaction_list_method::InteractionListMethod=SelfTuningTreeStop(),
+    interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
     t_source_tree=0.0, t_target_tree=0.0,
     optargs...
 )
