@@ -876,7 +876,8 @@ end
     end
     fraction *= minimum(leaf_size)
 
-    threshold = target ? 2.828 : 1.0 # go a little deeper with sources
+    # threshold = target ? 2.828 : 1.0 # go a little deeper with sources
+    threshold = 1.0
 
     return fraction > threshold && n_bodies > 1 # sqrt(8) == 2.8284271247461903; leads to the expectation value
                                             # of n_source * n_target => leaf_size^2 (break-even point)
@@ -892,7 +893,8 @@ end
     end
     fraction *= minimum(leaf_size)
 
-    threshold = target ? 2.828 : 1.0 # go a little deeper with sources
+    # threshold = target ? 2.828 : 1.0 # go a little deeper with sources
+    threshold = 1.0
 
     return fraction > threshold && n_bodies > 1 # sqrt(8) == 2.8284271247461903; leads to the expectation value
                                             # of n_source * n_target => leaf_size^2 (break-even point)
