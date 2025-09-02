@@ -1002,6 +1002,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
         # available threads
         n_threads = Threads.nthreads()
+        if n_target_bodies + n_source_bodies < MIN_BODIES
+            n_threads = 1
+        end
 
         # reset trees
         if reset_target_tree

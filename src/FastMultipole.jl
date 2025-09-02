@@ -29,7 +29,10 @@ const MIN_NPT_L2B = 100
 const MIN_NPT_NF = 100
 const MIN_NPT_BRANCH = 9 # if fewer branches than this, multithread over bodies instead of branches
                          # TODO: this should probably be a function of the number of threads
-const MIN_NPT_SORT = 100
+const MIN_NPT_SORT = 10000
+const MIN_NPT_MUL_SORT = 100
+const MIN_NPT = 100
+const MIN_BODIES = 1000
 
 # preallocate y-axis rotation matrices by π/2
 const Hs_π2 = Float64[1.0]
