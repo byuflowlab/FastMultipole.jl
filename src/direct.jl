@@ -41,12 +41,12 @@ end
 
 
 function direct!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(true, length(target_systems)), velocity=fill(true, length(target_systems)), velocity_gradient=fill(true, length(target_systems)))
+
     # set up target buffers
     if isnothing(target_buffers)
         target_buffers = allocate_buffers(target_systems, true)
         target_to_buffer!(target_buffers, target_systems)
     end
-
     # set up source buffers
     if isnothing(source_buffers)
         source_buffers = allocate_buffers(source_systems, false)
@@ -59,11 +59,15 @@ function direct!(target_systems::Tuple, source_systems::Tuple; target_buffers=no
     velocity_gradient = to_vector(velocity_gradient, length(target_systems))
     derivatives_switches = DerivativesSwitch(scalar_potential, velocity, velocity_gradient)
 
+    #check_derivs(target_systems[1].particles[4:6, :]; label="after passing derivatives back")
+    check_derivs(target_buffers[1][1:3, :]; label="after passing derivatives back")
     for (source_system, source_buffer) in zip(source_systems, source_buffers)
         for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
             direct!(target_buffer, 1:get_n_bodies(target_system), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
         end
     end
+    #check_derivs(target_systems[1].particles[4:6, :]; label="before passing derivatives back")
+    check_derivs(target_buffers[1][1:3, :]; label="before passing derivatives back")
 
     # update target systems
     buffer_to_target!(target_systems, target_buffers, derivatives_switches)

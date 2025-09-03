@@ -21,9 +21,15 @@ function Tree(systems::Tuple, target::Bool; buffers=allocate_buffers(systems, ta
         bx, by, bz = box
 
         # initial octree generation uses cubic cells
-        bmax = max(max(bx,by),bz)
+        #bmax = max(max(bx,by),bz)
+        bmax = bx == by ? bx : max(bx, by)
+        bmax = bmax == bz ? bz : max(bmax, bz)
         radius = sqrt(bmax*bmax*3.0)
-        box = SVector{3}(bmax, bmax, bmax)
+        #debug
+        if bmax == 0
+            error()
+        end
+        box = SVector{3, TF}(bmax, bmax, bmax)
 
         # prepare to divide
         i_first_branch = 2
@@ -113,7 +119,6 @@ function Tree(systems::Tuple, target::Bool; buffers=allocate_buffers(systems, ta
 
         # assemble tree
         tree = Tree(branches, expansions, levels_index, leaf_index, sort_index, inverse_sort_index, buffers, small_buffers, expansion_order, leaf_size)#, cost_parameters)
-
     else
         tree = EmptyTree(systems)
     end
@@ -192,8 +197,14 @@ function TreeByLevel(systems::Tuple, target::Bool; centerbox=center_box(systems,
         bx, by, bz = box
 
         # initial octree generation uses cubic cells
-        bmax = max(max(bx,by),bz)
+        #bmax = max(max(bx,by),bz)
+        bmax = bx == by ? bx : max(bx, by)
+        bmax = bmax == bz ? bz : max(bmax, bz)
         radius = sqrt(bmax*bmax*3.0)
+        #debug
+        if bmax == 0
+            error()
+        end
         box = SVector{3}(bmax, bmax, bmax)
 
         # prepare to divide
@@ -276,12 +287,34 @@ end
 #--- buffers ---#
 
 function allocate_target_buffer(TF, system)
+    #=if TF <: ReverseDiff.TrackedReal
+        buffer = zeros(16, get_n_bodies(system))
+        tp = ReverseDiff.tape(system)
+        return ReverseDiff.track(buffer, tp)
+    end=#
     buffer = zeros(TF, 16, get_n_bodies(system))
+    if TF <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(system)
+        for idx in CartesianIndices(buffer)
+            buffer[idx] = ReverseDiff.track(0.0, tp)
+        end
+    end
     return buffer
 end
 
 function allocate_source_buffer(TF, system)
+    #=if TF <: ReverseDiff.TrackedReal
+        buffer = zeros(data_per_body(system), get_n_bodies(system))
+        tp = ReverseDiff.tape(system)
+        return ReverseDiff.track(buffer, tp)
+    end=#
     buffer = zeros(TF, data_per_body(system), get_n_bodies(system))
+    if TF <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(system)
+        for idx in CartesianIndices(buffer)
+            buffer[idx] = ReverseDiff.track(0.0, tp)
+        end
+    end
     return buffer
 end
 
@@ -291,7 +324,6 @@ function allocate_buffers(systems::Tuple, target::Bool)
     for system in systems
         TF = promote_type(TF, eltype(system))
     end
-
     # create buffers
     if target
         buffers = Tuple(allocate_target_buffer(TF, system) for system in systems)
@@ -435,7 +467,6 @@ function branch!(buffer, small_buffer, sort_index, octant_container, sort_index_
     else
         i_leaf_index = -1
     end
-
     return Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, source_center, target_center, source_radius, target_radius, source_box, target_box), n_children, i_leaf
 end
 
@@ -793,6 +824,7 @@ end
 #--- find the center of a (group of) system(s) of bodies of zero radius ---#
 
 @inline function max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, x, y, z)
+
     x_min = min(x_min, x)
     x_max = max(x_max, x)
     y_min = min(y_min, y)
@@ -803,12 +835,24 @@ end
     return x_min, x_max, y_min, y_max, z_min, z_max
 end
 
+@inline function max_xyz(x_min::ReverseDiff.TrackedReal, x_max::ReverseDiff.TrackedReal, y_min::ReverseDiff.TrackedReal, y_max::ReverseDiff.TrackedReal, z_min::ReverseDiff.TrackedReal, z_max::ReverseDiff.TrackedReal, x::ReverseDiff.TrackedReal, y::ReverseDiff.TrackedReal, z::ReverseDiff.TrackedReal)
+
+    x_min = x_min == x ? x_min : min(x_min, x)
+    x_max = x_max == x ? x_max : max(x_max, x)
+    y_min = y_min == y ? y_min : min(y_min, y)
+    y_max = y_max == y ? y_max : max(y_max, y)
+    z_min = z_min == z ? z_min : min(z_min, z)
+    z_max = z_max == z ? z_max : max(z_max, z)
+
+    return x_min, x_max, y_min, y_max, z_min, z_max
+end
+
 @inline function max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, system, bodies_index)
+    
     for i in bodies_index
         x, y, z = get_position(system, i)
         x_min, x_max, y_min, y_max, z_min, z_max = max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, x, y, z)
     end
-
     return x_min, x_max, y_min, y_max, z_min, z_max
 end
 
@@ -892,6 +936,22 @@ end
     x_min = min(x_min, x)
     y_min = min(y_min, y)
     z_min = min(z_min, z)
+
+    return x_min, y_min, z_min
+end
+
+@inline function source_max_xyz(x_max::ReverseDiff.TrackedReal, y_max::ReverseDiff.TrackedReal, z_max::ReverseDiff.TrackedReal, x::ReverseDiff.TrackedReal, y::ReverseDiff.TrackedReal, z::ReverseDiff.TrackedReal)
+    x_max = x_max == x ? x_max : max(x_max, x)
+    y_max = y_max == y ? y_max : max(y_max, y)
+    z_max = z_max == z ? z_max : max(z_max, z)
+
+    return x_max, y_max, z_max
+end
+
+@inline function source_min_xyz(x_min::ReverseDiff.TrackedReal, y_min::ReverseDiff.TrackedReal, z_min::ReverseDiff.TrackedReal, x::ReverseDiff.TrackedReal, y::ReverseDiff.TrackedReal, z::ReverseDiff.TrackedReal)
+    x_min = x_min == x ? x_min : min(x_min, x)
+    y_min = y_min == y ? y_min : min(y_min, y)
+    z_min = z_min == z ? z_min : min(z_min, z)
 
     return x_min, y_min, z_min
 end
@@ -1016,15 +1076,23 @@ end
         dx = x - cxt
         dy = y - cyt
         dz = z - czt
-        distance = sqrt(dx*dx + dy*dy + dz*dz)
-        target_radius = max(target_radius, distance)
+        #distance = sqrt(dx*dx + dy*dy + dz*dz) # non-differentiable when distance == 0
+        d2 = dx*dx + dy*dy + dz*dz
+        distance = d2 > zero(d2) ? sqrt(d2) : zero(d2)
+
+        #target_radius = max(target_radius, distance)
+        target_radius = target_radius == distance ? target_radius : max(target_radius, distance)
 
         # max source radius
         dx = x - cxs
         dy = y - cys
         dz = z - czs
-        distance = sqrt(dx*dx + dy*dy + dz*dz)
-        source_radius = max(source_radius, distance + body_radius)
+        d2 = dx*dx + dy*dy + dz*dz
+        distance = d2 > zero(d2) ? sqrt(d2) : zero(d2)
+        #distance = sqrt(dx*dx + dy*dy + dz*dz) non-differentiable when distance == 0
+        #source_radius = max(source_radius, distance + body_radius)
+        # probably don't need this one, since the source and target probably aren't in the same location.
+        source_radius = source_radius == distance + body_radius ? source_radius : max(distance + body_radius)
 
     end
 
@@ -1075,12 +1143,20 @@ end
         dz = zt - czt
         distance = sqrt(dx*dx + dy*dy + dz*dz)
         target_radius = max(target_radius, distance + child_target_radius)
+        #debug
+        if dx*dx + dy*dy + dz*dz == 0
+            error()
+        end
 
         # max source radius
         dx = xs - cxs
         dy = ys - cys
         dz = zs - czs
         distance = sqrt(dx*dx + dy*dy + dz*dz)
+        #debug
+        if dx*dx + dy*dy + dz*dz == 0
+            error()
+        end
         source_radius = max(source_radius, distance + child_source_radius)
 
     end

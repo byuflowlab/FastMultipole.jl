@@ -30,7 +30,7 @@ function nearfield_loop!(target_buffers, target_branches, source_system, source_
 
             # identify targets
             target_index = target_branches[i_target].bodies_index[i_target_system]
-
+            
             # compute interaction
             direct!(target_system, target_index, derivatives_switch, source_system, source_buffer, source_index)
 
@@ -592,7 +592,7 @@ end
 
 function downward_pass_singlethread_2!(tree::Tree{TF,<:Any}, systems, expansion_order, lamb_helmholtz, derivatives_switches, velocity_n_m) where TF
 
-    harmonics = initialize_harmonics(expansion_order)
+    harmonics = initialize_harmonics(expansion_order, TF)
     # loop over systems
     for (i_system, system) in enumerate(systems)
         evaluate_local!(system, i_system, tree, harmonics, velocity_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
@@ -1196,7 +1196,7 @@ function estimate_influence!(target_systems, target_tree, source_systems, source
             # loop over bodies 
             for j in branch.bodies_index[i_system]
                 influence = get_influence(system, j, ε_tol)
-                max_influence = max(max_influence, influence)
+                max_influence = max(max_influence, influence) #debug - may fail with ReverseDiff but this code doesn't run during my test case.
             end
 
             # replace branch

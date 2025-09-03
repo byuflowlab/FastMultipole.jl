@@ -6,13 +6,13 @@
     return cartesian_to_spherical(x[1], x[2], x[3]; EPSILON)
 end
 
-@inline function cartesian_to_spherical(x, y, z; EPSILON=1e-10)
+@inline function cartesian_to_spherical(x::R, y::R, z::R; EPSILON=1e-10) where R
     x2y2 = x*x + y*y
     r2 = x2y2 + z*z
     r = iszero(r2) ? r2 : sqrt(r2)
     z_r = z/r
     if r > 0
-        theta = x2y2 > 0 ? acos(z_r) : π * (z < 0)
+        theta = x2y2 > 0 ? acos(z_r) : R(π) * (z < 0)
     else
         theta = zero(r)
     end
@@ -571,7 +571,7 @@ function rotate_z_n_power!(rotated_weights, source_weights, eimϕs, eiϕ_real, e
         # increment index
         i_weight += 1
     end
-
+    # these two lines may be non-differentiable if the input to sqrt is zero.
     power_ϕ = sqrt(power_ϕ)
     power_χ = sqrt(power_χ)
 

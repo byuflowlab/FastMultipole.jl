@@ -399,7 +399,7 @@ end
 
 function system_to_buffer!(buffer::Matrix, system, sort_index=1:get_n_bodies(system))
     for i_body in 1:get_n_bodies(system)
-        source_system_to_buffer!(buffer, i_body, system, sort_index[i_body]) # TODO: check this
+        source_system_to_buffer!(buffer, i_body, system, sort_index[i_body])
     end
 end
 
@@ -489,6 +489,33 @@ function set_velocity!(system::Matrix, i, velocity)
     @inbounds system[7,i] += velocity[3]
 end
 
+function set_velocity!(system::ReverseDiff.TrackedArray, i, velocity)
+    system_val_star = system.value[5:7, i]
+    system.value[5,i] += ReverseDiff.value(velocity[1])
+    system.value[6,i] += ReverseDiff.value(velocity[2])
+    system.value[7,i] += ReverseDiff.value(velocity[3])
+    tp = ReverseDiff.tape(system)
+    ReverseDiff.record!(tp,
+                        ReverseDiff.SpecialInstruction,
+                        set_velocity!,
+                        (system, i, velocity),
+                        nothing,
+                        system_val_star)
+    return nothing
+end
+
+function ReverseDiff.special_reverse_exec!(instruction::ReverseDiff.SpecialInstruction{typeof(set_velocity!)})
+    
+    system, i, velocity = instruction.input
+    system_val_star = instruction.cache
+    for j=1:3
+        system.value[j,i] = system_val_star[j]
+        ReverseDiff._add_to_deriv!(velocity[j], system.deriv[j, i])
+    end
+    return nothing
+
+end
+
 """
     set_velocity_gradient!(target_buffer, i_body, velocity_gradient)
 
@@ -505,6 +532,35 @@ function set_velocity_gradient!(system::Matrix, i, velocity_gradient)
     @inbounds system[14, i] += velocity_gradient[7]
     @inbounds system[15, i] += velocity_gradient[8]
     @inbounds system[16, i] += velocity_gradient[9]
+end
+
+
+function set_velocity_gradient!(system::ReverseDiff.TrackedArray, i, velocity_gradient)
+
+    system_val_star = system.value[8:16, i]
+    for j=1:9
+        system.value[j+7, i] += ReverseDiff.value(velocity_gradient[j])
+    end
+    tp = ReverseDiff.tape(system)
+    ReverseDiff.record!(tp,
+                        ReverseDiff.SpecialInstruction,
+                        set_velocity_gradient!,
+                        (system, i, velocity_gradient),
+                        nothing,
+                        system_val_star)
+    return nothing
+end
+
+function ReverseDiff.special_reverse_exec!(instruction::ReverseDiff.SpecialInstruction{typeof(set_velocity_gradient!)})
+
+    system, i, velocity_gradient = instruction.input
+    system_val_star = instruction.cache
+    for j=1:9
+        system.value[j+7,i] = system_val_star[j]
+        ReverseDiff._add_to_deriv!(velocity_gradient[j], system.deriv[j+7, i])
+    end
+    return nothing
+
 end
 
 #--- auxilliary functions ---#

@@ -7,6 +7,10 @@ using LinearAlgebra
 using StaticArrays
 using WriteVTK
 
+using ForwardDiff
+using ChainRulesCore
+using ReverseDiff
+
 #------- CONSTANTS -------#
 
 const ONE_OVER_4π = 1/(4*π)
@@ -83,12 +87,16 @@ include("harmonics.jl")
 include("rotate.jl")
 include("translate.jl")
 include("evaluate_expansions.jl")
+include("extended_rrule_macro.jl") # must be loaded before rrules due to containing a runtime-evaluated macro
 include("tree.jl")
+include("tree_rrules.jl")
 
 export Branch, SingleBranch, MultiBranch, Tree, SingleTree, MultiTree, initialize_expansion, initialize_harmonics
 export unsort!, resort!, unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
 
 include("compatibility.jl")
+#include("extended_rrule_macro.jl")
+include("compatibility_rrules.jl")
 
 export Body, Position, Radius, ScalarPotential, VectorPotential, Velocity, VelocityGradient, Vertex, Normal, Strength
 export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Panel

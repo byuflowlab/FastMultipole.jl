@@ -226,6 +226,11 @@ struct Branch{TF,N}
     max_influence::TF
 end
 
+#=function Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, source_center, target_center, source_radius, target_radius, source_box, target_box, lock, max_influence)
+    TF = promote_type(eltype(source_center), eltype(target_center), eltype(source_radius), eltype(target_radius), eltype(source_box), eltype(target_box), eltype(max_influence))
+    Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, TF.(source_center), TF.(target_center), TF(source_radius), TF(target_radius), TF.(source_box), TF.(target_box), lock, TF(max_influence))
+end=#
+
 # function Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, source_center, target_center, source_radius::TF, target_radius, source_box, target_box, lock, max_influence=zero(TF)) where TF
 #     Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, source_center, target_center, source_radius, target_radius, source_box, target_box, error, lock, max_influence)
 # end
@@ -259,6 +264,10 @@ struct Tree{TF,N}
     leaf_size::SVector{N,Int64}    # max number of bodies in a leaf
     # cost_parameters::MultiCostParameters{N}
     # cost_parameters::SVector{N,Float64}
+end
+
+function Tree(branches, expansions, levels_index, left_index, sort_index_list, inverse_sort_index_list, buffers, small_buffers, expansion_order, leaf_size)
+    return Tree(branches, TF.(expansions), levels_index, left_index, sort_index_list, inverse_sort_index_list, TF.(buffers), TF.(small_buffers), expansion_order, leaf_size)
 end
 
 struct InteractionList{TF}
