@@ -8,8 +8,15 @@ function build_interaction_lists(target_branches, source_branches, source_leaf_s
     !(length(target_branches) > 0 && length(source_branches) > 0) && return m2l_list, direct_list
     
     n_threads = Threads.nthreads()
+    n_bodies = 0
+    for branch in target_branches
+        n_bodies += get_n_bodies(branch)
+    end
+    for branch in source_branches
+        n_bodies += get_n_bodies(branch)
+    end
 
-    if n_threads == 1
+    if n_threads == 1 || n_bodies < MIN_BODIES
         build_interaction_lists!(m2l_list, direct_list, Int32(1), Int32(1), target_branches, source_branches, source_leaf_size, multipole_acceptance, Val(farfield), Val(nearfield), Val(self_induced), method)
     else
         start_list = Vector{SVector{2,Int32}}(undef, 0)

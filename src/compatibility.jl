@@ -363,8 +363,14 @@ function buffer_to_target!(target_systems::Tuple, target_buffers, derivatives_sw
 end
 
 function buffer_to_target!(target_system, target_buffer, derivatives_switch, sort_index=1:get_n_bodies(target_system), buffer_index=1:get_n_bodies(target_system))
-    Threads.@threads :static for i_body in buffer_index
-        buffer_to_target_system!(target_system, sort_index[i_body], derivatives_switch, target_buffer, i_body)
+    if get_n_bodies(target_system) > MIN_BODIES
+        Threads.@threads for i_body in buffer_index
+            buffer_to_target_system!(target_system, sort_index[i_body], derivatives_switch, target_buffer, i_body)
+        end
+    else
+        for i_body in buffer_index
+            buffer_to_target_system!(target_system, sort_index[i_body], derivatives_switch, target_buffer, i_body)
+        end
     end
 end
 
@@ -375,7 +381,7 @@ function target_to_buffer!(buffers, systems::Tuple, target::Bool, sort_index_lis
 end
 
 function target_to_buffer!(buffer::Matrix, system, target::Bool, sort_index=1:get_n_bodies(system))
-    if Threads.nthreads() > 1
+    if Threads.nthreads() > 1 && get_n_bodies(system) > MIN_BODIES
         target_to_buffer_multithread!(buffer, system, target, sort_index)
     else
         for i_body in 1:get_n_bodies(system)

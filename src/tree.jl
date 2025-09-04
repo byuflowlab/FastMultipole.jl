@@ -426,9 +426,9 @@ end
 
 function child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target::Bool)
     
-    if Threads.nthreads() > 1
-        return child_branches_multithread!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
-    end
+    # if Threads.nthreads() > 1
+    #     return child_branches_multithread!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
+    # end
 
     i_first_branch = parents_index[end] + n_children + 1
     for i_parent in parents_index
@@ -730,7 +730,11 @@ function branch_multithread!(buffer, small_buffer, sort_index, octant_container,
         octant_beginning_index!(octant_container, bodies_index)
 
         # sort bodies into octants
-        sort_bodies_multithread!(buffer, small_buffer, sort_index, octant_container, sort_index_buffer, bodies_index, center, target)
+        if length(bodies_index) < MIN_BODIES
+            sort_bodies!(buffer, small_buffer, sort_index, octant_container, sort_index_buffer, bodies_index, center, target)
+        else
+            sort_bodies_multithread!(buffer, small_buffer, sort_index, octant_container, sort_index_buffer, bodies_index, center, target)
+        end
         # sort_bodies!(buffer, small_buffer, sort_index, octant_container, sort_index_buffer, bodies_index, center, target)
     end
     # @show bodies_index
@@ -1098,14 +1102,13 @@ function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_i
     end
 end
 
-function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_indices::AbstractVector, sort_index_buffer, bodies_index::UnitRange, center, target::Bool)
+function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_indices::AbstractVector, sort_index_buffer, bodies_index::UnitRange, center, target::Bool)    
     # allocate octant_indices for each thread
-    n_threads = min(Threads.nthreads(), length(bodies_index))
+    n_threads = min(Threads.nthreads(), cld(length(bodies_index), MIN_NPT_MUL_SORT))
     octant_indices_per_thread = [zeros(Int64, 8) for _ in 1:n_threads]
 
     # bodies per thread
     n_bodies_per_thread, rem = divrem(length(bodies_index), n_threads)
-    # rem > 0 && (n_bodies_per_thread += 1)
     n = n_bodies_per_thread + (rem > 0)
 
     i_start_0 = bodies_index[1]
@@ -1723,7 +1726,8 @@ function shrink_branch!(branches, i_branch, child_index)
 end
 
 function shrink_recenter_source!(branches, levels_index, system)
-    if Threads.nthreads() > 1
+    n_threads = Threads.nthreads()
+    if n_threads > 1 && length(branches) > MIN_NPT
         return shrink_recenter_source_multithread!(branches, levels_index, system)
     end
 
@@ -1743,7 +1747,7 @@ end
 function shrink_recenter_source_multithread!(branches, levels_index, system)
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
-        Threads.@threads :static for i_branch in level_index
+        Threads.@threads for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
                 shrink_leaf_source!(branches, i_branch, system)
@@ -1755,7 +1759,8 @@ function shrink_recenter_source_multithread!(branches, levels_index, system)
 end
 
 function shrink_recenter_target!(branches, levels_index, system)
-    if Threads.nthreads() > 1
+    n_threads = Threads.nthreads()
+    if n_threads > 1 && length(branches) > MIN_NPT
         return shrink_recenter_target_multithread!(branches, levels_index, system)
     end
 
