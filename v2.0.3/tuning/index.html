@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Tuning Parameters · FastMultipole.jl</title><meta name="title" content="Tuning Parameters · FastMultipole.jl"/><meta property="og:title" content="Tuning Parameters · FastMultipole.jl"/><meta property="twitter:title" content="Tuning Parameters · FastMultipole.jl"/><meta name="description" content="Documentation for FastMultipole.jl."/><meta property="og:description" content="Documentation for FastMultipole.jl."/><meta property="twitter:description" content="Documentation for FastMultipole.jl."/><meta property="og:url" content="https://flow.byu.edu/FastMultipole.jl/tuning/"/><meta property="twitter:url" content="https://flow.byu.edu/FastMultipole.jl/tuning/"/><link rel="canonical" href="https://flow.byu.edu/FastMultipole.jl/tuning/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">FastMultipole.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Introduction</a></li><li><a class="tocitem" href="../quickstart/">Quick Start</a></li><li><a class="tocitem" href="../guided_examples/">Gravitational Example</a></li><li><a class="tocitem" href="../vortex_filament/">Vortex Filament Example</a></li><li class="is-active"><a class="tocitem" href>Tuning Parameters</a><ul class="internal"><li><a class="tocitem" href="#Expansion-Order"><span>Expansion Order</span></a></li><li><a class="tocitem" href="#Multipole-Acceptance-Criterion-(MAC)"><span>Multipole Acceptance Criterion (MAC)</span></a></li><li><a class="tocitem" href="#Leaf-Size"><span>Leaf Size</span></a></li><li><a class="tocitem" href="#Optimal-Leaf-Size"><span>Optimal Leaf Size</span></a></li></ul></li><li><a class="tocitem" href="../advanced_usage/">Multiple Systems</a></li><li><a class="tocitem" href="../advanced_usage_2/">Automated Tuning</a></li><li><a class="tocitem" href="../reference/">Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Tuning Parameters</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Tuning Parameters</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/byuflowlab/FastMultipole.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/byuflowlab/FastMultipole.jl/blob/main/docs/src/tuning.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Tuning-Parameters"><a class="docs-heading-anchor" href="#Tuning-Parameters">Tuning Parameters</a><a id="Tuning-Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Tuning-Parameters" title="Permalink"></a></h1><p>The FMM can be tuned for accuracy and performance by adjusting the following parameters: <code>multipole_acceptance</code>, <code>leaf_size</code>, and <code>expansion_order</code>. These parameters are passed to the <code>fmm!</code> function as keyword arguments. Let&#39;s take a look at how each affects the FMM. </p><h2 id="Expansion-Order"><a class="docs-heading-anchor" href="#Expansion-Order">Expansion Order</a><a id="Expansion-Order-1"></a><a class="docs-heading-anchor-permalink" href="#Expansion-Order" title="Permalink"></a></h2><p>First we&#39;ll try varying the <code>expansion_order</code>, or the degree of the expansions used:</p><pre><code class="language-julia hljs"># create system
+n_bodies, rand_seed = 10000, 123
+system = generate_gravitational(rand_seed, n_bodies)
+
+# compute potential directly
+direct!(system; gradient=true)
+gradient_direct = system.potential[5:7,:]
+
+# try varying `expansion_order`
+println(&quot;#--- varying expansion order ---#\n&quot;)
+println(&quot;expansion_order = 1&quot;)
+fmm!(system; expansion_order=1, multipole_acceptance=0.5, leaf_size=30, gradient=true)
+system.potential .= 0.0
+t_e_1 = @elapsed fmm!(system; expansion_order=3, multipole_acceptance=0.5, leaf_size=30, gradient=true)
+println(&quot;\ttime cost: &quot;, t_e_1, &quot; seconds&quot;)
+println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))
+
+println(&quot;expansion_order = 4&quot;)
+system.potential .= 0.0
+t_e_4 = @elapsed fmm!(system; expansion_order=4, multipole_acceptance=0.5, leaf_size=30, gradient=true)
+println(&quot;\ttime cost: &quot;, t_e_4, &quot; seconds&quot;)
+println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))
+
+println(&quot;expansion_order = 8&quot;)
+system.potential .= 0.0
+t_e_8 = @elapsed fmm!(system; expansion_order=8, multipole_acceptance=0.5, leaf_size=30, gradient=true)
+println(&quot;\ttime cost: &quot;, t_e_8, &quot; seconds&quot;)
+println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">#--- varying expansion order ---#
+
+expansion_order = 1
+	time cost: 0.318398455 seconds
+	max error: 0.00026345654971669796
+expansion_order = 4
+	time cost: 0.337951432 seconds
+	max error: 8.462364160684993e-5
+expansion_order = 8
+	time cost: 0.418448469 seconds
+	max error: 9.099846824153594e-7</code></pre><p>The <code>expansion_order</code> parameter is always positively correlated to accuracy but negatively correlated to cost. </p><h2 id="Multipole-Acceptance-Criterion-(MAC)"><a class="docs-heading-anchor" href="#Multipole-Acceptance-Criterion-(MAC)">Multipole Acceptance Criterion (MAC)</a><a id="Multipole-Acceptance-Criterion-(MAC)-1"></a><a class="docs-heading-anchor-permalink" href="#Multipole-Acceptance-Criterion-(MAC)" title="Permalink"></a></h2><p>Now, let&#39;s explore the <code>multipole_acceptance</code> criterion. It must be between <code>0.0</code> and <code>1.0</code>, and indicates the smallest acceptable distance beyond which multipole expansions are allowed.</p><pre><code class="language-julia hljs"># try varying `multipole_acceptance`
+println(&quot;#--- varying multipole acceptance ---#\n&quot;)
+
+println(&quot;multipole_acceptance = 0.3&quot;)
+system.potential .= 0.0
+t_m_3 = @elapsed fmm!(system; expansion_order=4, multipole_acceptance=0.3, leaf_size=30, scalar_potential=true, gradient=true)
+println(&quot;\ttime cost: &quot;, t_m_3, &quot; seconds&quot;)
+println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))
+
+println(&quot;multipole_acceptance = 0.5&quot;)
+system.potential .= 0.0
+t_m_5 = @elapsed fmm!(system; expansion_order=4, multipole_acceptance=0.5, leaf_size=30, scalar_potential=true, gradient=true)
+println(&quot;\ttime cost: &quot;, t_m_5, &quot; seconds&quot;)
+println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))
+
+println(&quot;multipole_acceptance = 0.7&quot;)
+system.potential .= 0.0
+t_m_7 = @elapsed fmm!(system; expansion_order=4, multipole_acceptance=0.7, leaf_size=30, scalar_potential=true, gradient=true)
+println(&quot;\ttime cost: &quot;, t_m_7, &quot; seconds&quot;)
+println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">#--- varying multipole acceptance ---#
+
+multipole_acceptance = 0.3
+	time cost: 1.112690399 seconds
+	max error: 5.540017692748367e-6
+multipole_acceptance = 0.5
+	time cost: 0.327522738 seconds
+	max error: 8.462364160684993e-5
+multipole_acceptance = 0.7
+	time cost: 0.168981157 seconds
+	max error: 0.00047072609209637684</code></pre><p>The <code>multipole_acceptance</code> parameter is negatively correlated to accuracy. In this case, it is also negatively correlated to cost, but that won&#39;t always be true, depending on the cost of the <code>direct!</code> function.</p><h2 id="Leaf-Size"><a class="docs-heading-anchor" href="#Leaf-Size">Leaf Size</a><a id="Leaf-Size-1"></a><a class="docs-heading-anchor-permalink" href="#Leaf-Size" title="Permalink"></a></h2><p>Finally, let&#39;s explore the <code>leaf_size</code> parameter, which controls the size of the leaf nodes in the octree:</p><pre><code class="language-julia hljs"># try varying `leaf_size`
+println(&quot;#--- varying leaf size ---#\n&quot;)
+
+println(&quot;leaf_size = 5&quot;)
+system.potential .= 0.0
+t_l_5 = @elapsed fmm!(system; expansion_order=4, multipole_acceptance=0.5, leaf_size=5, gradient=true)
+println(&quot;\ttime cost: &quot;, t_l_5, &quot; seconds&quot;)
+println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))
+
+println(&quot;leaf_size = 20&quot;)
+system.potential .= 0.0
+t_l_20 = @elapsed fmm!(system; expansion_order=4, multipole_acceptance=0.5, leaf_size=20, gradient=true)
+println(&quot;\ttime cost: &quot;, t_l_20, &quot; seconds&quot;)
+println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))
+
+println(&quot;leaf_size = 100&quot;)
+system.potential .= 0.0
+t_l_80 = @elapsed fmm!(system; expansion_order=4, multipole_acceptance=0.5, leaf_size=80, gradient=true)
+println(&quot;\ttime cost: &quot;, t_l_80, &quot; seconds&quot;)
+println(&quot;\tmax error: &quot;, maximum(abs.(system.potential[5:7,:] .- gradient_direct)))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">#--- varying leaf size ---#
+
+leaf_size = 5
+	time cost: 0.469903159 seconds
+	max error: 0.00016571931400392523
+leaf_size = 20
+	time cost: 0.294938965 seconds
+	max error: 9.605443677091971e-5
+leaf_size = 100
+	time cost: 0.548674939 seconds
+	max error: 3.493219723086499e-5</code></pre><p>The <code>leaf_size</code> parameter is positively correlated to accuracy, but its relation to cost is less predictable. </p><p>The complicated relationship between these parameters, the cost, and the accuracy of the FMM motivates automated tuning of the parameters, which we&#39;ll explore in <a href="../advanced_usage_2/">Automated Tuning</a>.</p><div class="admonition is-success" id="Tip-66292c34531bdb6b"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-66292c34531bdb6b" title="Permalink"></a></header><div class="admonition-body"><p>Tuning parameters can have an order-of-magnitude impact on the performance of FMM. The <code>expansion_order</code> parameter is positively correlated to accuracy but negatively correlated to cost. The <code>multipole_acceptance</code> and <code>leaf_size</code> parameters are still correlated, but less predictably so. This motivates automated tuning of the parameters, which we&#39;ll explore in the next example.</p></div></div><h2 id="Optimal-Leaf-Size"><a class="docs-heading-anchor" href="#Optimal-Leaf-Size">Optimal Leaf Size</a><a id="Optimal-Leaf-Size-1"></a><a class="docs-heading-anchor-permalink" href="#Optimal-Leaf-Size" title="Permalink"></a></h2><p>We can request <code>FastMultipole</code> to predict the optimal leaf size for our system by setting <code>tune=true</code> in the <code>fmm!</code> call. This performs best when <code>interaction_list_method=SelfTuning()</code> on a single thread, but still functions well for other choices. If <code>tune=true</code>, benchmarks will be used to estimate the leaf size at which the cost of direct calculations is approximately equal to expansion calculations. It is returned as part of a named tuple as the first returned value of <code>fmm!</code>, which can be splatted as a keyword argument in subsequent <code>fmm!</code> calls:</p><pre><code class="language-julia hljs"># get optimal leaf size
+println(&quot;#--- default leaf size ---#\n&quot;)
+t1 = @elapsed optargs, _ = fmm!(system; tune=true, gradient=true)
+println(&quot;\ttime cost: &quot;, t1, &quot; seconds&quot;)
+
+# run again with optimal leaf size
+println(&quot;\n#--- optimal leaf size ---#\n&quot;)
+t2 = @elapsed fmm!(system; scalar_potential=false, gradient=true, optargs...)
+println(&quot;\ttime cost: &quot;, t2, &quot; seconds&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">#--- default leaf size ---#
+
+	time cost: 0.547664851 seconds
+
+#--- optimal leaf size ---#
+
+	time cost: 0.514259176 seconds</code></pre><p>Note that <code>optargs</code> contains <code>leaf_size_source</code>, <code>expansion_order</code>, and <code>multipole_acceptance</code> parameters. Only <code>leaf_size_source</code> is tuned if <code>isnothing(error_tolerance) == true</code>. More complete auto-tuning will be discussed in <a href="../advanced_usage/">Advanced Usage</a>.</p></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../vortex_filament/">« Vortex Filament Example</a><a class="docs-footer-nextpage" href="../advanced_usage/">Multiple Systems »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Friday 5 September 2025 19:01">Friday 5 September 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>

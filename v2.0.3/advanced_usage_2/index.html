@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Automated Tuning · FastMultipole.jl</title><meta name="title" content="Automated Tuning · FastMultipole.jl"/><meta property="og:title" content="Automated Tuning · FastMultipole.jl"/><meta property="twitter:title" content="Automated Tuning · FastMultipole.jl"/><meta name="description" content="Documentation for FastMultipole.jl."/><meta property="og:description" content="Documentation for FastMultipole.jl."/><meta property="twitter:description" content="Documentation for FastMultipole.jl."/><meta property="og:url" content="https://flow.byu.edu/FastMultipole.jl/advanced_usage_2/"/><meta property="twitter:url" content="https://flow.byu.edu/FastMultipole.jl/advanced_usage_2/"/><link rel="canonical" href="https://flow.byu.edu/FastMultipole.jl/advanced_usage_2/"/><script data-outdated-warner src="../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.050/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL=".."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../assets/documenter.js"></script><script src="../search_index.js"></script><script src="../siteinfo.js"></script><script src="../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../">FastMultipole.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../">Introduction</a></li><li><a class="tocitem" href="../quickstart/">Quick Start</a></li><li><a class="tocitem" href="../guided_examples/">Gravitational Example</a></li><li><a class="tocitem" href="../vortex_filament/">Vortex Filament Example</a></li><li><a class="tocitem" href="../tuning/">Tuning Parameters</a></li><li><a class="tocitem" href="../advanced_usage/">Multiple Systems</a></li><li class="is-active"><a class="tocitem" href>Automated Tuning</a><ul class="internal"><li><a class="tocitem" href="#Satisfying-an-Error-Tolerance"><span>Satisfying an Error Tolerance</span></a></li><li><a class="tocitem" href="#Fully-Automatic-Tuning-of-FMM-Parameters"><span>Fully Automatic Tuning of FMM Parameters</span></a></li></ul></li><li><a class="tocitem" href="../reference/">Reference</a></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li class="is-active"><a href>Automated Tuning</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>Automated Tuning</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/byuflowlab/FastMultipole.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/byuflowlab/FastMultipole.jl/blob/main/docs/src/advanced_usage_2.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="Automated-Tuning"><a class="docs-heading-anchor" href="#Automated-Tuning">Automated Tuning</a><a id="Automated-Tuning-1"></a><a class="docs-heading-anchor-permalink" href="#Automated-Tuning" title="Permalink"></a></h1><p>In the this section, we will describe how to impose an error tolerance. Finally, we will show how to automatically tune the FMM parameters.</p><h2 id="Satisfying-an-Error-Tolerance"><a class="docs-heading-anchor" href="#Satisfying-an-Error-Tolerance">Satisfying an Error Tolerance</a><a id="Satisfying-an-Error-Tolerance-1"></a><a class="docs-heading-anchor-permalink" href="#Satisfying-an-Error-Tolerance" title="Permalink"></a></h2><p><code>FastMultipole</code> can be configured to satisfy an error tolerance by dynamically adjusting the expansion order of each multipole-to-local transformation to the smallest integer that satisfies the tolerance, according to an error prediction. Users can indicate their desired error tolerance via the keyword argument <code>error_tolerance</code> in the <code>fmm!</code> function. A value of <code>nothing</code> indicates no error tolerance, in which case the expansion order is fixed at whatever is passed as the <code>expansion_order</code> keyword. Otherwise, <code>error_tolerance</code> should inherit from the <code>ErrorMethod</code> abstract type. The chosen type will determine how the error is predicted, and hence how the expansion order is chosen. Choices include:</p><ul><li><code>PowerAbsolutePotential{tolerance, BE::Bool}</code>: Constrains the magnitude of the potential error to be less than <code>tolerance</code> using a radially invariant upper bound.</li><li><code>PowerAbsoluteGradient{tolerance, BE::Bool}</code>: Constrains the magnitude of the vector field error to be less than <code>tolerance</code> using a radially invariant upper bound.</li><li><code>PowerRelativePotential{relative_tolerance, absolute_tolerance, BE::Bool}</code>: Constrains the relative error of the potential to be less than <code>relative_tolerance</code> using a radially invariant upper bound. If the equivalent absolute tolerance of an interaction is less than <code>absolute_tolerance</code>, then <code>absolute_tolerance</code> is used instead.</li><li><code>PowerRelativeGradient{relative_tolerance, absolute_tolerance, BE::Bool}</code>: Constrains the relative error of the vector field to be less than <code>relative_tolerance</code> using a radially invariant upper bound. If the equivalent absolute tolerance of an interaction is less than <code>absolute_tolerance</code>, then <code>absolute_tolerance</code> is used instead.</li></ul><p>Since each error </p><div class="admonition is-info" id="Info-c2c28874b05d26bb"><header class="admonition-header">Info<a class="admonition-anchor" href="#Info-c2c28874b05d26bb" title="Permalink"></a></header><div class="admonition-body"><p>For relative error methods, the <a href="../reference/#FastMultipole.get_previous_influence"><code>get_previous_influence</code></a> compatibility function must be overloaded for your target system. This function estimates the potential and gradient at the <code>i</code>th target body, which is used to compute the relative error. For example, estimates might be based on the previous step of a time-stepping or iterative algorithm.</p></div></div><p>Say I wanted to compute the gravitational potential to a tolerance of <code>1e-6</code> using the absolute potential error method. I would call the FMM as follows:</p><pre><code class="language-julia hljs">using FastMultipole
+using Random # needed for `gravitational.jl`
+
+gravitational_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], &quot;..&quot;, &quot;test&quot;, &quot;gravitational.jl&quot;))
+include(gravitational_path)
+
+# create system
+n_bodies, rand_seed = 5_000, 123
+system = generate_gravitational(rand_seed, n_bodies)
+
+# run FMM with error tolerance
+fmm!(system; scalar_potential=true, gradient=false, hessian=false, error_tolerance=PowerAbsolutePotential(1e-6), expansion_order=8)
+
+# print potential
+println(&quot;gravitational potential:\n&quot;, system.potential[1,1:10], &quot;...&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">gravitational potential:
+[0.07426879642064285, 0.06829899501596587, 0.07877672474734222, 0.06786349408731887, 0.08677480902341508, 0.06870967081802001, 0.07928022113731996, 0.0792077099369143, 0.06951825597964247, 0.07837103296927522]...</code></pre><p>This keyword argument <code>error_tolerance=PowerAbsolutePotential(1e-6)</code> requests that the expansion order be dynamically adjusted to ensure that the potential error of each interaction is less than <code>1e-6</code> at each body. Note that this does ensure a perfectly conservative error bound, since many multipole-to-local transformations will be performed to any given target cell. However, the maximum error should be within an order of magnitude of the specified tolerance, and the average error will be much lower. It is also worth pointing out that the <code>expansion_order</code> keyword determines the maximum allowable expansion order; if it is too small, then <code>FastMultipole</code> will not be able to satisfy the error tolerance, and will show a warning. In this case, the expansion order is set to <code>8</code>, which is sufficient to satisfy the error tolerance.</p><pre><code class="language-julia hljs"># verify error
+phi_fmm = system.potential[1,:]
+system.potential .= 0.0
+direct!(system; scalar_potential=true, gradient=false, hessian=false)
+phi_direct = system.potential[1,:]
+println(&quot;max potential error: &quot;, maximum(abs.(phi_direct .- phi_fmm)))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">max potential error: 3.1953250384519905e-7</code></pre><p>It is also worth noting that the expansion order is never allowed to be less than 1, which leads to &quot;bottoming out&quot; behavior. Let&#39;s see what happens when we request a tolerance of <code>1e-2</code>:</p><pre><code class="language-julia hljs"># run FMM with error tolerance
+system.potential .= 0.0
+fmm!(system; scalar_potential=true, gradient=false, hessian=false, error_tolerance=PowerAbsolutePotential(1e-2))
+
+# check error
+phi_fmm = system.potential[1,:]
+println(&quot;max error:\n&quot;, maximum(abs.(phi_direct .- phi_fmm)))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">max error:
+0.000538778638138393</code></pre><p>As a rule of thumb, <code>PowerAbsolutePotential</code> and <code>PowerAbsoluteGradient</code> are best when the maximum error is to be constrained, while <code>RotatedCoefficientsAbsoluteGradient</code> is better if the mean error is to be constrained.</p><div class="admonition is-info" id="Info-19ad3fecfa96619"><header class="admonition-header">Info<a class="admonition-anchor" href="#Info-19ad3fecfa96619" title="Permalink"></a></header><div class="admonition-body"><p>When imposing an error tolerance, the <code>PowerAbsolutePotential</code> and <code>PowerAbsoluteGradient</code> methods are best when the maximum error is to be constrained, while <code>RotatedCoefficientsAbsoluteGradient</code> is better if the mean error is to be constrained.</p></div></div><h2 id="Fully-Automatic-Tuning-of-FMM-Parameters"><a class="docs-heading-anchor" href="#Fully-Automatic-Tuning-of-FMM-Parameters">Fully Automatic Tuning of FMM Parameters</a><a id="Fully-Automatic-Tuning-of-FMM-Parameters-1"></a><a class="docs-heading-anchor-permalink" href="#Fully-Automatic-Tuning-of-FMM-Parameters" title="Permalink"></a></h2><p><code>FastMultipole</code> can automatically tune the FMM parameters to satisfy an error tolerance. This is done by running the <a href="../reference/#FastMultipole.tune_fmm"><code>tune_fmm</code></a> function, which returns a named tuple of the optimal parameters and a preallocated buffer to reduce memory allocations.</p><p>Say I wanted the optimal tuning parameters for the gravitational potential of a system of point masses, with a maximum error tolerance of <code>1e-4</code>. I would call the function as follows:</p><pre><code class="language-julia hljs">opt_params, cache = tune_fmm(system; error_tolerance=PowerAbsolutePotential(1e-4), scalar_potential=true, gradient=false, hessian=false)
+println(&quot;Optimal parameters: &quot;, opt_params)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">
+#======= Begin FastMultipole.tune_fmm() =======#
+
+multipole_acceptance = 0.3...
+
+	Best Parameters:
+		leaf_size_source:    [90]
+		expansion_order:     1
+		multipole_acceptance: 0.3
+		cost:                0.183354207 seconds
+
+multipole_acceptance = 0.4...
+
+	Best Parameters:
+		leaf_size_source:    [45]
+		expansion_order:     2
+		multipole_acceptance: 0.4
+		cost:                0.173116851 seconds
+
+multipole_acceptance = 0.5...
+
+	Best Parameters:
+		leaf_size_source:    [111]
+		expansion_order:     1
+		multipole_acceptance: 0.5
+		cost:                0.183076182 seconds
+
+multipole_acceptance = 0.6...
+
+	Best Parameters:
+		leaf_size_source:    [882]
+		expansion_order:     1
+		multipole_acceptance: 0.6
+		cost:                0.182816966 seconds
+
+multipole_acceptance = 0.7...
+
+	Best Parameters:
+		leaf_size_source:    [441]
+		expansion_order:     1
+		multipole_acceptance: 0.7
+		cost:                0.182993128 seconds
+
+multipole_acceptance = 0.8...
+<span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Error tolerance 0.0001 not reached! Using max expansion order P=3.
+<span class="sgr33"><span class="sgr1">│ </span></span>	ε_mp = 5.241963273480421e-5,
+<span class="sgr33"><span class="sgr1">│ </span></span>	ε_l = 0.0014731423419786286
+<span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ FastMultipole ~/work/FastMultipole.jl/FastMultipole.jl/src/translate.jl:990</span>
+
+	Best Parameters:
+		leaf_size_source:    [220]
+		expansion_order:     6
+		multipole_acceptance: 0.8
+		cost:                0.168460171 seconds
+
+Finished autotune!
+
+Parameters:
+	leaf_size_source:    [220]
+	expansion_order:     6
+	multipole_acceptance: 0.8
+	cost:                0.168460171 seconds
+
+#===============================================#
+
+Optimal parameters: (leaf_size_source = [220], expansion_order = 6, multipole_acceptance = 0.8)</code></pre><p>This will return a named tuple of the optimal parameters, which can then be passed to the <code>fmm!</code> function. The <code>cache</code> is a preallocated buffer that can be used to reduce memory allocations during the FMM call.</p><pre><code class="language-julia hljs"># run FMM without default parameters
+println(&quot;Default Tuning Parameters:&quot;)
+system.potential .= 0.0
+t1 = @elapsed fmm!(system; scalar_potential=true, gradient=false, hessian=false, error_tolerance=PowerAbsolutePotential(1e-4))
+
+# verify error
+phi_fmm = system.potential[1,:]
+println(&quot;\tmax error: &quot;, maximum(abs.(phi_direct .- phi_fmm)))
+println(&quot;\ttime cost: &quot;, t1, &quot; seconds&quot;)
+
+# run FMM with optimal parameters
+println(&quot;Optimal Tuning Parameters:&quot;)
+t2 = @elapsed fmm!(system, cache; scalar_potential=true, gradient=false, hessian=false, error_tolerance=PowerAbsolutePotential(1e-4), opt_params...)
+
+# verify error
+println(&quot;\tmax error: &quot;, maximum(abs.(phi_direct .- phi_fmm)))
+println(&quot;\ttime cost: &quot;, t2, &quot; seconds&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Default Tuning Parameters:
+	max error: 0.00033237800897240044
+	time cost: 0.177157381 seconds
+Optimal Tuning Parameters:
+	max error: 0.00033237800897240044
+	time cost: 0.19847151 seconds</code></pre><p>Note that the <code>tune_fmm</code> function iterates over each requested <code>multipole_acceptance</code> criterion, so it is not optimal to call it before every FMM call. Instead, <code>tune_fmm</code> can be called once for a representative system primarily to choose <code>multipole_acceptance</code>. Since the optimal parameters depend on the size, distribution, and strengths of the sources and targets, it is recommended to set the keyword argument <code>tune=true</code> to iteratively update the <code>expansion_order</code> and <code>leaf_size_source</code> parameters each time <code>fmm!</code> is called. This will allow the FMM to adapt to the system as it evolves, and will ensure that the optimal parameters are used for each call.</p><div class="admonition is-success" id="Tip-709239aed0176e90"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-709239aed0176e90" title="Permalink"></a></header><div class="admonition-body"><p>The <code>tune_fmm</code> function can be used to automatically tune the FMM parameters to satisfy an error tolerance. It returns a named tuple of the optimal parameters and a preallocated buffer to reduce memory allocations.</p></div></div><div class="admonition is-warning" id="Warning-36707f035a97fc82"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-36707f035a97fc82" title="Permalink"></a></header><div class="admonition-body"><p>The <code>tune_fmm</code> function is computationally expensive, so it should not be called before every FMM call. Instead, it should be called once for a representative system to choose the optimal <code>multipole_acceptance</code> parameter. Then, the optimal parameters will be updated in each <code>fmm!</code> call if the <code>tune=true</code> keyword argument is set. This allows the FMM to adapt to the system as it evolves.</p></div></div></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../advanced_usage/">« Multiple Systems</a><a class="docs-footer-nextpage" href="../reference/">Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Friday 5 September 2025 19:01">Friday 5 September 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
