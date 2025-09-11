@@ -18,82 +18,82 @@ function generate_gravitational(seed, n_bodies; radius_factor=0.1)
 end
 
 function bm_fmm_1024()
-    expansion_order, leaf_size, multipole_threshold = 5, 100, 0.4
+    expansion_order, leaf_size, multipole_acceptance = 5, 100, 0.4
     n_bodies = 1024
     system = generate_gravitational(123, n_bodies)
     # tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=true)
-    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
+    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
     return nothing
 end
 
 function bm_fmm_4096()
-    expansion_order, leaf_size, multipole_threshold = 5, 100, 0.4
+    expansion_order, leaf_size, multipole_acceptance = 5, 100, 0.4
     n_bodies = 4096
     system = generate_gravitational(123, n_bodies)
     # tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=true)
-    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
+    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
     return nothing
 end
 
 function bm_fmm_16384()
-    expansion_order, leaf_size, multipole_threshold = 5, 100, 0.4
+    expansion_order, leaf_size, multipole_acceptance = 5, 100, 0.4
     n_bodies = 16384
     system = generate_gravitational(123, n_bodies)
     # tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=true)
-    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
+    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
     return nothing
 end
 
 function bm_fmm_65536()
-    expansion_order, leaf_size, multipole_threshold = 5, 100, 0.4
+    expansion_order, leaf_size, multipole_acceptance = 5, 100, 0.4
     n_bodies = 65536
     system = generate_gravitational(123, n_bodies)
     # tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=true)
-    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
+    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
     return nothing
 end
 
 function bm_fmm_262144()
-    expansion_order, leaf_size, multipole_threshold = 5, 100, 0.4
+    expansion_order, leaf_size, multipole_acceptance = 5, 100, 0.4
     n_bodies = 262144
     system = generate_gravitational(123, n_bodies)
     # tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=true)
-    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
+    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
     return nothing
 end
 
 function bm_fmm_1048576()
-    expansion_order, leaf_size, multipole_threshold = 5, 100, 0.4
+    expansion_order, leaf_size, multipole_acceptance = 5, 100, 0.4
     n_bodies = 1048576
     system = generate_gravitational(123, n_bodies)
     # tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=true)
-    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
+    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
     return nothing
 end
 
 function bm_fmm_4194304()
-    expansion_order, leaf_size, multipole_threshold = 5, 100, 0.4
+    expansion_order, leaf_size, multipole_acceptance = 5, 100, 0.4
     n_bodies = 4194304
     system = generate_gravitational(123, n_bodies)
     # tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=true)
-    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
+    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
     return nothing
 end
 
 function bm_fmm()
-    expansion_order, leaf_size, multipole_threshold = 5, 100, 0.4
+    expansion_order, leaf_size, multipole_acceptance = 5, 100, 0.4
     n_bodies = 10_000
     system = generate_gravitational(123, n_bodies)
     # tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=true)
-    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
+    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
     return nothing
 end
 
 function bm_fmm_system(system)
-    expansion_order, leaf_size, multipole_threshold = 5, 100, 0.4
+    expansion_order, leaf_size, multipole_acceptance = 5, 100, 0.4
     n_bodies = 10_000
     # tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=true)
-    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
+    fmm.fmm!(system; expansion_order=expansion_order, leaf_size=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_bodies=true, shrink_recenter=false)
     return nothing
 end
 
@@ -104,15 +104,15 @@ function bm_direct()
     return sum(system2.potential)
 end
 
-function bm_fmm_accuracy(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+function bm_fmm_accuracy(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
     system = generate_gravitational(123, n_bodies)
     # system = (generate_gravitational(123, n_bodies),)
     println("Create tree")
     @time tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=shrink_recenter)
     println("Run fmm")
-    @time fmm.fmm!(tree, system; multipole_threshold=multipole_threshold, reset_tree=true, nearfield=true, farfield=true, unsort_bodies=true)
+    @time fmm.fmm!(tree, system; multipole_acceptance=multipole_acceptance, reset_tree=true, nearfield=true, farfield=true, unsort_bodies=true)
     # println("Run fmm again")
-    # @time fmm.fmm!(tree, system; multipole_threshold=multipole_threshold, reset_tree=true, nearfield=true, farfield=true, unsort_bodies=true)
+    # @time fmm.fmm!(tree, system; multipole_acceptance=multipole_acceptance, reset_tree=true, nearfield=true, farfield=true, unsort_bodies=true)
     println("BEGIN DIRECT")
     system2 = generate_gravitational(123, n_bodies)
     @time fmm.direct!(system2, 1:n_bodies, system2, 1:n_bodies)
@@ -122,13 +122,13 @@ function bm_fmm_accuracy(expansion_order, leaf_size, multipole_threshold, n_bodi
     return maximum(abs.(phi2 - phi)), system, tree, system2
 end
 
-function bm_fmm_accuracy_dual_tree(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+function bm_fmm_accuracy_dual_tree(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
     system = (generate_gravitational(123, n_bodies),)
     println("Create trees")
     @time source_tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=shrink_recenter)
     @time target_tree = fmm.Tree(system; expansion_order, leaf_size, shrink_recenter=shrink_recenter)
     println("Run fmm")
-    @time fmm.fmm!(target_tree, system, source_tree, system; multipole_threshold=multipole_threshold, nearfield=true, farfield=true)
+    @time fmm.fmm!(target_tree, system, source_tree, system; multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true)
     println("BEGIN DIRECT")
     system2 = generate_gravitational(123, n_bodies)
     @time fmm.direct!(system2, 1:n_bodies, system2, 1:n_bodies)
@@ -137,7 +137,7 @@ function bm_fmm_accuracy_dual_tree(expansion_order, leaf_size, multipole_thresho
     return maximum(abs.(phi2 - phi)), system, source_tree, target_tree, system2
 end
 
-function bm_fmm_accuracy_dual_tree_wrapped(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+function bm_fmm_accuracy_dual_tree_wrapped(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
     println("Create systems")
     source_system = generate_gravitational(123, n_bodies)
     target_system = fmm.SortWrapper(source_system)
@@ -147,7 +147,7 @@ function bm_fmm_accuracy_dual_tree_wrapped(expansion_order, leaf_size, multipole
     @time target_tree = fmm.Tree(target_system; expansion_order, leaf_size, shrink_recenter=shrink_recenter)
 
     println("Run fmm")
-    @time fmm.fmm!(target_tree, target_system, source_tree, source_system; multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
+    @time fmm.fmm!(target_tree, target_system, source_tree, source_system; multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
 
     println("BEGIN DIRECT")
     system2 = generate_gravitational(123, n_bodies)
@@ -158,7 +158,7 @@ function bm_fmm_accuracy_dual_tree_wrapped(expansion_order, leaf_size, multipole
     return maximum(abs.(phi2 - phi)), source_system, source_tree, target_system, target_tree, system2
 end
 
-function bm_fmm_accuracy_dual_tree_wrapped_multiple(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+function bm_fmm_accuracy_dual_tree_wrapped_multiple(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
     println("Create systems")
     source_system1 = generate_gravitational(123, n_bodies)
     source_system2 = generate_gravitational(456, n_bodies)
@@ -170,7 +170,7 @@ function bm_fmm_accuracy_dual_tree_wrapped_multiple(expansion_order, leaf_size, 
     @time target_tree = fmm.Tree((target_system1, target_system2); expansion_order, leaf_size, shrink_recenter=shrink_recenter)
 
     println("Run fmm")
-    @time fmm.fmm!(target_tree, (target_system1, target_system2), source_tree, (source_system1, source_system2); multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
+    @time fmm.fmm!(target_tree, (target_system1, target_system2), source_tree, (source_system1, source_system2); multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
 
     println("BEGIN DIRECT")
     source_system_direct = (generate_gravitational(123, n_bodies), generate_gravitational(456, n_bodies))
@@ -182,7 +182,7 @@ function bm_fmm_accuracy_dual_tree_wrapped_multiple(expansion_order, leaf_size, 
     return maximum(abs.(phi2 - phi)), source_system, source_tree, target_system, target_tree, system2
 end
 
-function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
     println("Create systems")
     source_system1 = fmm.SortWrapper(generate_gravitational(123, n_bodies))
     source_system2 = generate_gravitational(456, n_bodies)
@@ -194,7 +194,7 @@ function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested(expansion_order, leaf
     @time target_tree = fmm.Tree((target_system1, target_system2); expansion_order, leaf_size, shrink_recenter=shrink_recenter)
 
     println("Run fmm")
-    @time fmm.fmm!(target_tree, (target_system1, target_system2), source_tree, (source_system1, source_system2); multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
+    @time fmm.fmm!(target_tree, (target_system1, target_system2), source_tree, (source_system1, source_system2); multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
 
     println("BEGIN DIRECT")
     source_system_direct = (generate_gravitational(123, n_bodies), generate_gravitational(456, n_bodies))
@@ -206,7 +206,7 @@ function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested(expansion_order, leaf
     return maximum(abs.(phi2 - phi)), source_system, source_tree, target_system, target_tree, system2
 end
 
-function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
     println("Create systems")
     source_system1 = fmm.SortWrapper(generate_gravitational(123, n_bodies))
     source_system2 = generate_gravitational(456, n_bodies)
@@ -214,7 +214,7 @@ function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api(expansion_order, 
     target_system2 = fmm.SortWrapper(source_system1)
 
     println("Run fmm")
-    @time fmm.fmm!((target_system1, target_system2), (source_system1, source_system2); expansion_order, leaf_size_source=leaf_size, leaf_size_target=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
+    @time fmm.fmm!((target_system1, target_system2), (source_system1, source_system2); expansion_order, leaf_size_source=leaf_size, leaf_size_target=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
 
     println("BEGIN DIRECT")
     source_system_direct = (generate_gravitational(123, n_bodies), generate_gravitational(456, n_bodies))
@@ -226,7 +226,7 @@ function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api(expansion_order, 
     return maximum(abs.(phi2 - phi)), source_system, source_tree, target_system, target_tree, system2
 end
 
-function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api_twice(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api_twice(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
     println("Create systems")
     source_system1 = fmm.SortWrapper(generate_gravitational(123, n_bodies))
     source_system2 = generate_gravitational(456, n_bodies)
@@ -234,8 +234,8 @@ function bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api_twice(expansion_o
     target_system2 = fmm.SortWrapper(source_system1)
 
     println("Run fmm")
-    @time fmm.fmm!((target_system1, target_system2), (source_system1, source_system2); expansion_order, leaf_size_source=leaf_size, leaf_size_target=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
-    @time fmm.fmm!((target_system1, target_system2), (source_system1, source_system2); expansion_order, leaf_size_source=leaf_size, leaf_size_target=leaf_size, multipole_threshold=multipole_threshold, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
+    @time fmm.fmm!((target_system1, target_system2), (source_system1, source_system2); expansion_order, leaf_size_source=leaf_size, leaf_size_target=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
+    @time fmm.fmm!((target_system1, target_system2), (source_system1, source_system2); expansion_order, leaf_size_source=leaf_size, leaf_size_target=leaf_size, multipole_acceptance=multipole_acceptance, nearfield=true, farfield=true, unsort_source_bodies=true, unsort_target_bodies=true)
 
     println("BEGIN DIRECT")
     source_system_direct = (generate_gravitational(123, n_bodies), generate_gravitational(456, n_bodies))
@@ -316,7 +316,7 @@ end
 
 # shrink_recenter = false
 # farfield=nearfield=true
-expansion_order, leaf_size, multipole_threshold = 10, 500, 0.4
+expansion_order, leaf_size, multipole_acceptance = 10, 500, 0.4
 n_bodies = 10_000
 
 shrink_recenter = true
@@ -325,11 +325,11 @@ shrink_recenter = true
 # println("create tree...")
 # tree = fmm.Tree(sys; leaf_size=leaf_size, expansion_order=expansion_order, n_divisions=n_divisions)
 # println("done.")
-# err, system, tree, system2 = bm_fmm_accuracy(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# err, system, tree, system2 = bm_fmm_accuracy(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # @show err
 
 println("===== nthreads: $(Threads.nthreads()) =====")
-# err, sys, tree, sys2 = bm_fmm_accuracy(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# err, sys, tree, sys2 = bm_fmm_accuracy(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # @show err
 
 n_bodies = 10_000
@@ -348,23 +348,23 @@ optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivati
 # @btime bm_fmm_system($system)
 
 # println("===== nthreads: $(Threads.nthreads()) =====")
-# err, sys, tree, sys2 = bm_fmm_accuracy(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# err, sys, tree, sys2 = bm_fmm_accuracy(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # @show err
-# err_ns, sys_ns, tree_ns, sys2_ns = bm_fmm_accuracy(expansion_order, leaf_size, multipole_threshold, n_bodies, false)
+# err_ns, sys_ns, tree_ns, sys2_ns = bm_fmm_accuracy(expansion_order, leaf_size, multipole_acceptance, n_bodies, false)
 # @show err_ns
 
-# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # @show err
-# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped_multiple(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped_multiple(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # @show err
-# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped_multiple_nested(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped_multiple_nested(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # @show err
-# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # @show err
-# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api_twice(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# err, source_system, source_tree, target_system, target_tree, system2 = bm_fmm_accuracy_dual_tree_wrapped_multiple_nested_api_twice(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # @show err
 
-# bm_fmm_accuracy_dual_tree(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# bm_fmm_accuracy_dual_tree(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 
 # println("===== begin benchmark: $(Threads.nthreads()) threads =====")
 # ts = zeros(7)
@@ -455,7 +455,7 @@ optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivati
 #####
 ##### m2l
 #####
-# m2l_list, direct_list = fmm.build_interaction_lists(tree.branches, multipole_threshold, farfield, nearfield)
+# m2l_list, direct_list = fmm.build_interaction_lists(tree.branches, multipole_acceptance, farfield, nearfield)
 # m2l_st = []
 # m2l_mt = []
 # mt_m2l_fun(this_index) = fmm.horizontal_pass_multi_thread!(tree.branches, tree.branches, this_index, expansion_order)
@@ -554,7 +554,7 @@ optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivati
 
 # sys = generate_gravitational(123, 500000)
 # tree = fmm.Tree(sys; expansion_order=expansion_order, leaf_size=leaf_size)
-# m2l_list, direct_list = fmm.build_interaction_lists(tree.branches, multipole_threshold, true, true)
+# m2l_list, direct_list = fmm.build_interaction_lists(tree.branches, multipole_acceptance, true, true)
 # fmm.horizontal_pass_multi_thread!(tree.branches, m2l_list, expansion_order)
 # t = @elapsed fmm.horizontal_pass_multi_thread!(tree.branches, m2l_list, expansion_order)
 # t_per_op = t / length(m2l_list)
@@ -584,7 +584,7 @@ optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivati
 # @time bm_direct()
 # @btime fmm.fmm!($tree, $systems, $options; unsort_bodies=true)
 # println("Calculating accuracy:")
-# expansion_order, leaf_size, multipole_threshold = 8, 300, 0.3
+# expansion_order, leaf_size, multipole_acceptance = 8, 300, 0.3
 # n_bodies = 100000
 # shrink_recenter, n_divisions = true, 10
 # sys = generate_gravitational(123,n_bodies)
@@ -606,11 +606,11 @@ optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivati
 # tree_noshrinking = fmm.Tree(sys_noshrinking; expansion_order, leaf_size, n_divisions=5, shrink_recenter=false)
 
 # println("done")
-# run_bm_accuracy() = bm_fmm_accuracy(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# run_bm_accuracy() = bm_fmm_accuracy(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # accuracy, system, tree, system2 = run_bm_accuracy()
 # accuracy, system, tree, system2 = run_bm_accuracy()
 # println("single tree accuracy: $accuracy")
-# run_bm_accuracy_dual_tree() = bm_fmm_accuracy_dual_tree(expansion_order, leaf_size, multipole_threshold, n_bodies, shrink_recenter)
+# run_bm_accuracy_dual_tree() = bm_fmm_accuracy_dual_tree(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # accuracy, system, tree, system2 = run_bm_accuracy_dual_tree()
 # accuracy, system, tree, system2 = run_bm_accuracy_dual_tree()
 # println("dual tree accuracy: $accuracy")

@@ -1,26 +1,24 @@
-# Guided Examples
+# Gravitational Example
 
-`FastMultipole` is designed to incorporate easily into your existing Julia code with minimal effort. We'll walk through the process of adding `FastMultipole` to an existing code in the following guided examples.
+`FastMultipole` is designed to incorporate easily into your existing Julia code with minimal effort. In this section and the [Vortex Filament Example](vortex_filament.md), we demonstrate how this can be done.
 
-## Gravitational Example
-
-In order to use `FastMultipole`, certain interface functions must be defined. In this example, we will walk through the process of incorporating FMM into the gravitational point mass model used in [Quick Start](@ref). This code can also be found under `test/gravitational.jl`. Note that an additional (minimalistic) vortex particle example is included in `test/vortex.jl`.
+First, we'll review the interface functions used by the gravitational point mass model used in [Quick Start](@ref). This code can also be found under `FastMultipole/test/gravitational.jl`.
 
 To better understand how the `FastMultipole` interface functions, let's take a look at the data structures we'll use to define our point masses:
 
-```@example guidedex
+```@example guidedex 
 using FastMultipole
 using FastMultipole.StaticArrays
 
-const i_POTENTIAL = 1:4             # index of the gravitational potential
-const i_VELOCITY = 5:7              # index of the velocity
-const i_VELOCITY_GRADIENT = 8:16    # index of the velocity gradient
+const i_POTENTIAL = 1:1   # index of the gravitational potential
+const i_GRADIENT = 5:7    # index of the gravitational acceleration
+const i_HESSIAN = 8:16    # index of the hessian matrix
 
 # a single point mass
 struct Body{TF}
     position::SVector{3,TF}
     radius::TF
-    strength::SVector{4,TF}
+    strength::TF
 end
 
 # container for a system of `Body`'s
@@ -32,256 +30,190 @@ end
 # constructor
 function Gravitational(bodies::Matrix)
     nbodies = size(bodies)[2]
-    bodies2 = [Body(SVector{3}(bodies[1:3,i]),bodies[4,i],SVector{4}(bodies[5:8,i])) for i in 1:nbodies]
-    potential = zeros(52,nbodies)
+    bodies2 = [Body(SVector{3}(bodies[1:3,i]),bodies[4,i],bodies[5,i]) for i in 1:nbodies]
+    potential = zeros(eltype(bodies), 16, nbodies)
     return Gravitational(bodies2,potential)
 end
 ```
 
-Note that while the particular choice of data structures is completely arbitrary, `FastMultipole` does not create any new storage containers for values of interest such as potential, velocity, velocity gradient. If these are desired, they must exist in the user-defined system, and will be updated in-place by `FastMultipole`.
+In short, `Body` objects represent individual point masses, and the `Gravitational` object contains a group of them, along with a matrix of the potential, velocity, and velocity gradient at each body. The observant reader will notice that the `strength` field of `Body` represents its mass. 
 
-### Overloading the `body_to_multipole!` Function
+## Overloading `body_to_multipole!`
 
-The function `body_to_multipole!` is used to generate multipole expansions for our particular system. This is done be overloading `body_to_multipole!` for the data structure representing our model. Convenience functions exist within `FastMultipole` to make this complicated function into a one-liner:
+The function `body_to_multipole!` is used to generate multipole expansions for our particular system. This is done be overloading `FastMultipole.body_to_multipole!` for our data structure. Convenience functions exist within `FastMultipole` to simplify this complicated function into a one-liner:
 
 ```@example guidedex
 FastMultipole.body_to_multipole!(system::Gravitational, args...) =
     FastMultipole.body_to_multipole!(Point{Source}, system, args...)
 ```
 
-Note that we are overloading `body_to_multipole!` to operate on our `::Gravitational` system, which consists of point sources. Other convenience functions exist in `FastMultipole` for any combination of `Point`, `Filament`, or `Panel` geometries using `Source`, `Dipole`, or `Vortex` kernels. These are specified when overloading `body_to_multipole!` as `<geometry>{<kernel>}`. For example, if my model used vortex filaments, I would replace `Point{Source}` in the example above to `Filament{Vortex}`.
+The `::Gravitational` type annotation is the key that allows `FastMultipole` to dispatch on `::Gravitational` systems. `Point{Source}` is used to indicate that our bodies are points and induce a source (i.e. ``1/r``) potential. Other convenience functions exist in `FastMultipole` for any combination of `Point`, `Filament`, or `Panel` geometries using `Source`, `Dipole`, or `Vortex` kernels, and are specified when overloading `body_to_multipole!` as `<geometry>{<kernel>}`. For example, if my model used constant vortex sheet panels, I would replace `Point{Source}` in the example above to `Panel{Vortex}`.
 
-We use the fast recursive method of generating exact coefficients for panels as developed by [GUMEROV2023112118](@cite).
+!!! tip
+    `FastMultipole` provides convenience functions for generating multipole coefficients for any combination of `Point`, `Filament`, or `Panel` geometries using `Source`, `Dipole`, or `Vortex` kernels. These are specified when overloading `body_to_multipole!` as `<geometry>{<kernel>}`.
 
-### Overloading Getters
+We use the fast recursive method of generating exact coefficients for panels as developed by [GUMEROV2023112118](@cite). We have derived our own formulae for vortex filaments and panels, which are in the process of publication.
 
-The `Gravitational` struct needs the following getters to be overloaded to support the indexing format used by `FastMultipole`. This approach allows for great flexibility without harming performance.
-
-```@example guidedex
-import Base: getindex
-
-Base.getindex(g::Gravitational, i, ::FastMultipole.Position) = g.bodies[i].position
-Base.getindex(g::Gravitational, i, ::FastMultipole.Radius) = g.bodies[i].radius
-Base.getindex(g::Gravitational, i, ::FastMultipole.ScalarPotential) = g.potential[1,i]
-Base.getindex(g::Gravitational, i, ::FastMultipole.Velocity) = view(g.potential,i_VELOCITY,i)
-Base.getindex(g::Gravitational, i, ::FastMultipole.VelocityGradient) = reshape(view(g.potential,i_VELOCITY_GRADIENT,i),3,3)
-Base.getindex(g::Gravitational, i, ::FastMultipole.Strength) = g.bodies[i].strength[1]
-Base.getindex(g::Gravitational, i, ::FastMultipole.Body) = g.bodies[i], view(g.potential,:,i)
-```
-It is worth noting that there are ways of defining these functions that would harm performance, e.g. by allocating an array each time the velocity is requested. It is up to the user to define these functions with the efficiency they desire.
-
-### Overloading Setters
-
-`Gravitational` also needs the following setters to be overloaded as well. These are used to update the potential and other quantities in-place. The same performance considerations that applied to getters apply here.
+`FastMultipole` also requires the user to indicate if a source system induces a vector potential. This is done by overloading the `has_vector_potential` function as follows:
 
 ```@example guidedex
-import Base: setindex!
-
-function Base.setindex!(g::Gravitational, val, i, ::FastMultipole.Body)
-    body, potential = val
-    g.bodies[i] = body
-    g.potential[:,i] .= potential
-    return nothing
-end
-function Base.setindex!(g::Gravitational, val, i, ::FastMultipole.ScalarPotential)
-    g.potential[i_POTENTIAL[1],i] = val
-end
-function Base.setindex!(g::Gravitational, val, i, ::FastMultipole.Velocity)
-    g.potential[i_VELOCITY,i] .= val
-end
-function Base.setindex!(g::Gravitational, val, i, ::FastMultipole.VelocityGradient)
-    reshape(g.potential[i_VELOCITY_GRADIENT,i],3,3) .= val
+function FastMultipole.has_vector_potential(system::Gravitational)
+    return false
 end
 ```
+This will allow `FastMultipole` to avoid unnecessary calculations if the vector potential is not needed. Since `Gravitational` systems do not induce a vector potential, we return `false`.
 
-### Additional Requirements
+## Buffer Interface Functions
 
-In addition to the getters and setters listed above, each system struct must be overloaded with three additional methods. In `gravitational.jl`, these are they are overloaded as follows.
+`FastMultipole` allocates a buffer matrix in which to sort and store key system information. The buffer interface is created by overloading several functions for the user-defined system type. The first of these functions is [`FastMultipole.source_system_to_buffer!`](@ref), which populates a matrix with the important information about each body, column-wise. Overloading for `::Gravitational` systems looks like this:
 
 ```@example guidedex
-# determine the number of bodies contained by the system
-FastMultipole.get_n_bodies(g::Gravitational) = length(g.bodies)
+function FastMultipole.source_system_to_buffer!(buffer, i_buffer, system::Gravitational, i_body)
+    buffer[1:3, i_buffer] .= system.bodies[i_body].position
+    buffer[4, i_buffer] = system.bodies[i_body].radius
+    buffer[5, i_buffer] = system.bodies[i_body].strength
+end
+```
+Here, the `i_body`th body position, radius, and strength are copied to the correct positions in the `i_buffer`th column of the buffer matrix.
 
-# determine the float-type used by the system
+It is worth noting that there are ways of defining these functions that would harm performance, e.g. by allocating an array each time the velocity is requested. If you notice `FastMultipole`'s performance is poor, this and the other interface functions are good places to check.
+
+!!! warning
+    The user-defined buffer interface functions are used frequently during an FMM call, so it is important to write them efficiently, avoiding allocations and following the Julia performance tips. If you notice that `FastMultipole`'s performance is poor, this might be the reason.
+
+Because every system can have a unique buffer structure, we need to overload a few additional functions to tell `FastMultipole` how to allocate and access it. The first function, `data_per_body`, returns the number of rows in the buffer matrix that are used to define a single body. The second function, `get_position`, returns the position of the `i`th body in the system. The third function, `strength_dims`, returns the number of rows in the buffer matrix that are used to define the strength of a single body. Finally, we overload `get_n_bodies` to return the number of bodies in our system. For our `Gravitational` system, we define:
+
+```@example guidedex
 Base.eltype(::Gravitational{TF}) where TF = TF
 
-# return all data structures required to define a single body
-FastMultipole.buffer_element(g::Gravitational) = (deepcopy(g.bodies[1]),zeros(eltype(g),52))
+function FastMultipole.data_per_body(system::Gravitational)
+    return 5
+end
+
+function FastMultipole.get_position(system::Gravitational, i)
+    return system.bodies[i].position
+end
+
+function FastMultipole.strength_dims(system::Gravitational)
+    return 1
+end
+
+FastMultipole.get_n_bodies(system::Gravitational) = length(system.bodies)
 ```
+These functions provide enough information for `FastMultipole` to allocate the buffer matrix and access the data it needs.
 
-Note that the last of these functions, `buffer_element`, can return a tuple of values in case multiple data structures are required to define a single body.
-
-### Vector Potential
-
-Ordinarily, a 3-dimensional vector potential, such as the stream function in 3-dimensional fluid dynamics, requires 3 separate expansions (1 for each dimension). In `FastMultipole`, however, we employ the Lamb-Helmholtz decomposition demonstrated by [gumerov2013efficient](@cite) to reduce the number of expansions required from 3 to 2, thus reducing computational cost.
-
-### Non-required Functionality
-
-Though not required to run `Fast Multipole`, the `direct!` and `save_vtk` functions are useful for debugging and visualization. Here are some examples of how this could be implemented.
+Finally, we need to tell `FastMultipole` how to transfer the results of the FMM call back to the user-defined system. This is done by overloading the [`FastMultipole.buffer_to_target_system!`](@ref) function. Overloading for `::Gravitational` systems looks like this:
 
 ```@example guidedex
-function FastMultipole.direct!(target_system, target_index, derivatives_switch, source_system::Gravitational, source_index)
-    # nbad = 0
-    for i_source in source_index
-        source_x, source_y, source_z = source_system[i_source,FastMultipole.POSITION]
-        source_strength = source_system.bodies[i_source].strength[1]
-        for j_target in target_index
-            target_x, target_y, target_z = target_system[j_target,FastMultipole.POSITION]
+function FastMultipole.buffer_to_target_system!(target_system::Gravitational, i_target, ::FastMultipole.DerivativesSwitch{PS,VS,GS}, target_buffer, i_buffer) where {PS,VS,GS}
+    # get values
+    TF = eltype(target_buffer)
+    scalar_potential = PS ? FastMultipole.get_scalar_potential(target_buffer, i_buffer) : zero(TF)
+    velocity = VS ? FastMultipole.get_gradient(target_buffer, i_buffer) : zero(SVector{3,TF})
+    hessian = GS ? FastMultipole.get_hessian(target_buffer, i_buffer) : zero(SMatrix{3,3,TF,9})
+
+    # update system
+    target_system.potential[i_POTENTIAL[1], i_target] = scalar_potential
+    target_system.potential[i_GRADIENT, i_target] .= velocity
+    for (jj,j) in enumerate(i_HESSIAN)
+        target_system.potential[j, i_target] = hessian[jj]
+    end
+end
+```
+We note that the convenience functions `get_gradient` and `get_hessian` return `::SVector{3}` and `::SMatrix{3,3}`, respectively, to reduce allocations.
+
+## Overloading `direct!`
+
+The last required interface function is [`FastMultipole.direct!`](@ref), which evaluates the potential at a target system using a source system without multipole acceleration. This is required in an FMM call for those interactions that are too close to be approximated by expansions. It is also useful for debugging and testing the accuracy of the FMM call. Overloading for `::Gravitational` systems, we have:
+
+```@example guidedex
+function FastMultipole.direct!(target_system, target_index, ::DerivativesSwitch{PS,VS,GS}, source_system::Gravitational, source_buffer, source_index) where {PS,VS,GS}
+    @inbounds for i_source in source_index
+        source_x, source_y, source_z = FastMultipole.get_position(source_buffer, i_source)
+        source_strength = FastMultipole.get_strength(source_buffer, source_system, i_source)[1]
+        @inbounds for j_target in target_index
+            target_x, target_y, target_z = FastMultipole.get_position(target_system, j_target)
             dx = target_x - source_x
             dy = target_y - source_y
             dz = target_z - source_z
-            r = sqrt(dx*dx + dy*dy + dz*dz)
-            # te = @elapsed begin
-            if r > 0
-                dV = source_strength / r
-                target_system[j_target,FastMultipole.SCALAR_POTENTIAL] += dV
-            end
-        # end
-        # if te > 0.00001; nbad += 1; end
-        end
-    end
-    # println("nbad = $nbad")
-end
-
-function save_vtk(filename, element::Gravitational, nt=0; compress=false, extra_fields=nothing)
-    _, n = size(element.bodies)
-    WriteVTK.vtk_grid(filename*"_point_masses."*string(nt)*".vts", reshape(view(element.bodies,1:3,:),3,n,1,1); compress) do vtk
-        vtk["strength"] = reshape(view(element.bodies,4,:), 1, n, 1, 1)
-        vtk["velocity"] = reshape(element.velocity, 3, n, 1, 1)
-        vtk["scalar potential"] = reshape(view(element.potential,1,:), n, 1, 1)
-        vtk["vector potential"] = reshape(view(element.potential,2:4,:), 3, n, 1, 1)
-        if !isnothing(extra_fields)
-            for i in 1:length(extra_fields)
-                vtk[extra_fields[i][1]] = extra_fields[i][2]
+            r2 = dx*dx + dy*dy + dz*dz
+            if r2 > 0
+                r = sqrt(r2)
+                if PS
+                    dϕ = source_strength / r * FastMultipole.ONE_OVER_4π
+                    FastMultipole.set_scalar_potential!(target_system, j_target, dϕ)
+                end
+                if VS
+                    dF = SVector{3}(dx,dy,dz) * source_strength / (r2 * r) * FastMultipole.ONE_OVER_4π
+                    FastMultipole.set_gradient!(target_system, j_target, dF)
+                end
             end
         end
     end
 end
-
 ```
+Note that the velocity gradient is not calculated in this function. If the velocity gradient is requested, the contribution due to `::Gravitational` systems will then be zero.
 
+!!! tip
+    Use the boolean type parameters of the `::DerivativesSwitch{PS,GS,HS}` argument when overloading the `direct!` to know when to compute the scalar potential, its gradient, and its hessian, respectively. This can save cost by avoiding unnecessary calculations.
 
-## FMM Tuning Parameters
+## Running the FMM
 
-We can improve the accuracy of the FMM by altering the follwing input parameters: `multipole_threshold`, `leaf_size`, and `expansion_order`. Though not linear, `expansion_order` is positively correlated with accuracy while `multipole_threshold` and `leaf_size` are negatively correlated.
-
-- **`multipole_threshold` (between 0 and 1) the radius of the source over the minimum distance at which multipole expansion are used**
-- **`leaf_size` (greater than 1) the maximum number of bodies included in each leaf level branch**
-- **`expansion_order` the number of terms included in each multipole expansion minus one**
+Now that we have defined the interface functions, we can run the FMM on our `Gravitational` system to obtain the gravitational acceleration at each body. The [`fmm!`](@ref) function is used to perform the FMM call as:
 
 ```@example guidedex
-import FastMultipole as fmm
 using Random
 
-function generate_gravitational(seed, n_bodies; radius_factor=0.1, strength_factor=1.0)
+# create system
+function generate_gravitational(seed, n_bodies; radius_factor=0.1, strength_scale=1/n_bodies, bodies_fun=(x)->x)
+    # random seed
     Random.seed!(seed)
-    bodies = rand(8,n_bodies)
-    bodies[1:3,:] = rand(3,n_bodies) # body positions
 
-    bodies[4,:] ./= (n_bodies^(1/3)*2) # body radii
+    # initialize bodies
+    bodies = rand(5, n_bodies)
+
+    # scale radius
+    bodies[4,:] ./= (n_bodies^(1/3)*2)
     bodies[4,:] .*= radius_factor
 
-    bodies[5,:] .*= strength_factor # body strengths
+    # scale strength
+    bodies[5,:] .*= strength_scale
 
-    system = Gravitational(bodies)
-    return system
+    # user-defined function for arbitrary transformation
+    bodies_fun(bodies)
+
+    # create system
+    return Gravitational(bodies)
 end
 
-function measure_error(;multipole_threshold=0.4, leaf_size=50, expansion_order=5)
-    fmm_system = generate_gravitational(123,1000)
-    direct_system = deepcopy(fmm_system)
+n_bodies, rand_seed = 5_000, 123
+system = generate_gravitational(rand_seed, n_bodies)
 
-    fmm.fmm!(fmm_system; multipole_threshold, leaf_size, expansion_order)
-    fmm.direct!(direct_system)
+# run FMM
+fmm!(system; scalar_potential=false, gradient=true, hessian=true)
 
-    percent_error = abs.((fmm_system.potential[1,:] .- direct_system.potential[1,:]) ./ direct_system.potential[1,:])
-    return maximum(percent_error)
-end
-
-# default parameters
-println(measure_error(multipole_threshold=0.4, leaf_size=50, expansion_order=5))
-
-# expansion_order increased to 10
-println(measure_error(multipole_threshold=0.4, leaf_size=50, expansion_order=10))
+println("gravitational acceleration:\n", system.potential[5:7,1:10], "...")
 ```
+The `scalar_potential` and `gradient` arguments are set to `false` and `true`, respectively, to indicate that we want to compute the vector field (i.e. the gravitational field lines that translate to force and their gradient) but not the scalar potential.
 
-## Evaluate Source on Target
+!!! warning
+    The user must specify which fields they want to be computed by the FMM by setting the boolean keyword arguments `scalar_potential`, `gradient`, and `hessian` when calling `fmm!` (defaults are `scalar_potential=false`, `gradient=true`, and `hessian=false`). Note also that if the source system induces a vector potential (as indicated by the interface function `has_vector_potential(system)=true`), then the `scalar_potential` keyword should be set to `false`, since the scalar potential will be non-sensical in this case.
 
-`FastMutipole` allows for the evaluation of source systems on target systems while leaving the source systems unaltered.
+## Preallocating the Buffers
+
+The `fmm!` function incurs a small overhead for allocating the buffer matrices. If our system is large and the FMM will be called more than once, we can preallocate the buffers to avoid this overhead. This is done by returning a `cache` of preallocated memory the first time `fmm!` is called, and then adding it as an additional argument to `fmm!` in subsequent calls as follows:
 
 ```@example guidedex
-target_system = generate_gravitational(123, 100)
-source_system = generate_gravitational(321, 100)
+# allocate buffer cache
+allocs_1 = @allocated _, cache, _ = fmm!(system; scalar_potential=false, gradient=true, hessian=true)
 
-fmm.fmm!(target_system, source_system)
+# run FMM with preallocated buffers
+allocs_2 = @allocated fmm!(system, cache; scalar_potential=false, gradient=true, hessian=true)
+
+println("memory allocated without the cache:  ", allocs_1, " bytes")
+println("memory allocated with the cache:     ", allocs_2, " bytes")
 ```
+Note that the second call to `fmm!` allocates less memory.
 
-## Evaluate Multiple Sources on Multiple Targets
-
-The FMM also supports the evaluation of multiple source systems on multiple target systems. The user is also able to evaluate a single source on multiple targets or multiple sources on a single target with any combination of supported system types.
-
-```@example guidedex
-vortex_path = normpath(joinpath(splitdir(pathof(fmm))[1], "..", "test", "vortex.jl"))
-include(vortex_path)
-
-function generate_vortex(seed, n_bodies; radius_factor=0.1, strength_factor=1.0)
-    Random.seed!(seed)
-    bodies = rand(8,n_bodies)
-    bodies[1:3,:] = rand(3,n_bodies) # body positions
-
-    bodies[4,:] ./= (n_bodies^(1/3)*2) # body radii
-    bodies[4,:] .*= radius_factor
-
-    bodies[5,:] .*= strength_factor # body strengths
-
-    system = VortexParticles(bodies)
-    return system
-end
-
-target_one = generate_gravitational(123, 100)
-target_two = generate_vortex(124, 100)
-
-source_one = generate_gravitational(125, 100)
-source_two = generate_vortex(126, 100)
-
-fmm.fmm!((target_one, target_two), (source_one, source_two))
-```
-
-## Non-Potential Flow Applications
-
-As a default, target systems will be evaluated and returned with `scalar_potential`, `velocity`, and `velocity_gradient` fields populated. (Note that the vector potential is not explicitly tracked, though its induced velocity and velocity gradient are.) In some situations, only some of these values may be required. By inputting a boolean vector of the same length as target systems, the user is able to speed up the calculation by not storing unecessary values.
-
-$\overline{V} = -\nabla \phi + \nabla \times \overline{\psi}$
-
-|  | $\phi$ | $\overline{\psi}$ | $\overline{V}$| $\nabla \overline{V}$ |
-| ----------- | ----------- | ----------- | ----------- | ----------- |
-| `fmm!` Keyword Arguments | `scalar_potential` | `vector_potential` | `velocity` | `velocity_gradient` |
-| Fluid Dynamics | Scalar Potential | Stream Function | Fluid Velocity | Velocity Gradient |
-| Electrostatics | Electric Potential | - | Electric Field | Field Gradient Tensor |
-| Magnetostatics | - | Magnetic Vector Potential | Magnetic Field | Field Gradient Tensor |
-| Gravity | Gravitational Potential | - | Gravitational Acceleration | Acceleration Gradient Tensor |
-
-
-```@example guidedex
-target_one = generate_gravitational(123, 100)
-target_two = generate_vortex(124, 100)
-
-source_one = generate_gravitational(125, 100)
-
-fmm.fmm!((target_one, target_two), source_one, scalar_potential=[true, false],
-    velocity=[true, true], velocity_gradient=[false, false])
-```
-
-## Saving Generated Trees
-
-A given `fmm!` call will typically return a single tree (if performed on the entire system) or two seperate source/target trees (if called on a source and a target). The function call can also be modified to save these trees.
-
-```@example guidedex
-
-target_filepath = "target_tree"
-source_filepath = "source_tree"
-
-target_tree, source_tree = fmm.fmm!((target_one, target_two), source_one;
-    save_tree_target=true, save_name_target=target_filepath,
-    save_tree_source=true, save_name_source=source_filepath)
-```
+!!! tip
+    If you plan to call `fmm!` multiple times on the same system, consider preallocating the buffers by saving the `cache` returned by the first call, and splatting it as a keyword argument for each subsequent call. This can reduce memory allocations and improve performance.

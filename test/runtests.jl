@@ -20,7 +20,7 @@ include("bodytolocal.jl")
 
 #--- helper functions ---#
 
-function vector_to_expansion!(expansion, vector,index, expansion_order)
+function vector_to_expansion!(expansion, vector, index, expansion_order)
     len = length(expansion)
     i_comp = 1
     i = 1

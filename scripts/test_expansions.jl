@@ -31,7 +31,7 @@ target = [ 0.1, 0.3,0.2]
 derivatives_switch = FastMultipole.DerivativesSwitch(true,true,true,true)
 P = 20
 
-scalar_potential, vector_potential, velocity, gradient = FastMultipole.L2B(target, expansion_center, local_expansion, derivatives_switch, Val(P))
+scalar_potential, vector_potential, gradient, gradient = FastMultipole.L2B(target, expansion_center, local_expansion, derivatives_switch, Val(P))
 
 
 #=

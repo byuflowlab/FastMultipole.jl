@@ -1,18 +1,18 @@
 function ProbeSystem(n_bodies, TF=Float64)
     position = zeros(SVector{3,TF}, n_bodies)
     scalar_potential = zeros(TF, n_bodies)
-    velocity = zeros(SVector{3,TF}, n_bodies)
-    velocity_gradient = zeros(SMatrix{3,3,TF,9}, n_bodies)
-    return ProbeSystem{TF}(position, scalar_potential, velocity, velocity_gradient)
+    gradient = zeros(SVector{3,TF}, n_bodies)
+    hessian = zeros(SMatrix{3,3,TF,9}, n_bodies)
+    return ProbeSystem{TF}(position, scalar_potential, gradient, hessian)
 end
 
 function reset!(system::ProbeSystem{TF}) where TF
     system.scalar_potential .= zero(TF)
-    for i in eachindex(system.velocity)
-        system.velocity[i] = zero(SVector{3,TF})
+    for i in eachindex(system.gradient)
+        system.gradient[i] = zero(SVector{3,TF})
     end
-    for i in eachindex(system.velocity_gradient)
-        system.velocity_gradient[i] = zero(SMatrix{3,3,TF,9})
+    for i in eachindex(system.hessian)
+        system.hessian[i] = zero(SMatrix{3,3,TF,9})
     end
 end
 
@@ -48,13 +48,13 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch, 
     return nothing
 end
 
-function FastMultipole.buffer_to_target_system!(target_system::ProbeSystem, i_target, ::FastMultipole.DerivativesSwitch{PS,VS,GS}, target_buffer, i_buffer) where {PS,VS,GS}
+function FastMultipole.buffer_to_target_system!(target_system::ProbeSystem, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
     TF = eltype(target_buffer)
     scalar_potential = PS ? FastMultipole.get_scalar_potential(target_buffer, i_buffer) : zero(TF)
-    velocity = VS ? FastMultipole.get_velocity(target_buffer, i_buffer) : zero(SVector{3,TF})
-    velocity_gradient = GS ? FastMultipole.get_velocity_gradient(target_buffer, i_buffer) : zero(SMatrix{3,3,TF,9})
+    gradient = GS ? FastMultipole.get_gradient(target_buffer, i_buffer) : zero(SVector{3,TF})
+    hessian = HS ? FastMultipole.get_hessian(target_buffer, i_buffer) : zero(SMatrix{3,3,TF,9})
 
     target_system.scalar_potential[i_target] = scalar_potential
-    target_system.velocity[i_target] = velocity
-    target_system.velocity_gradient[i_target] = velocity_gradient
+    target_system.gradient[i_target] = gradient
+    target_system.hessian[i_target] = hessian
 end

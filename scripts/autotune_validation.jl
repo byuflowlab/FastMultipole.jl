@@ -24,15 +24,15 @@ function validate_tuning!(systems::Tuple, leaf_size_range, mac_range, name::Stri
         for (i_mac, mac) in enumerate(mac_range)
             reset!(systems[1])
             t1 = @elapsed fmm!(systems, target_tree, systems, source_tree;
-                              leaf_size_source, multipole_threshold=mac,
+                              leaf_size_source, multipole_acceptance=mac,
                               scalar_potential=false, velocity=true,
-                              velocity_gradient=false)
+                              hessian=false)
 
             reset!(systems[1])
             t2 = @elapsed fmm!(systems, target_tree, systems, source_tree;
-                              leaf_size_source, multipole_threshold=mac,
+                              leaf_size_source, multipole_acceptance=mac,
                               scalar_potential=false, velocity=true,
-                              velocity_gradient=false)
+                              hessian=false)
 
             benchmarks[i_mac, i_ls] = min(t1, t2)
 

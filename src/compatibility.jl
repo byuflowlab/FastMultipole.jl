@@ -45,6 +45,32 @@ function get_position(system, i)
 end
 
 """
+    get_previous_influence(system::{UserDefinedSystem}, i)
+
+Returns the influence of the `i`th body in `system` from the previous FMM call. The relative error is predicted by dividing the absolute error by the result of this function. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system).
+
+**NOTE:** If not overloaded, the default behavior is to return zero for both the scalar potential and vector field, effectively ignoring the relative tolerance in favor of an absolute tolerance.
+
+**Arguments:**
+
+- `system::{UserDefinedSystem}`: the user-defined system object
+- `i::Int`: the index of the body within the system
+
+**Returns:**
+
+- `previous_potential::Float64`: the previous scalar potential at the `i`th body
+- `previous_vector::SVector{3,Float64}`: the previous vector field at the `i`th body
+
+"""
+function get_previous_influence(system, i)
+    if WARNING_FLAG_MAX_INFLUENCE[]
+        @warn "get_previous_influence not overloaded for type $(typeof(system)); relative error prediction will not be used"
+        WARNING_FLAG_MAX_INFLUENCE[] = false
+    end
+    return zero(eltype(system)), zero(eltype(system))
+end
+
+"""
     strength_dims(system::{UserDefinedSystem})
 
 Returns the cardinality of the vector used to define the strength of each body inside `system`. E.g., a point mass would return 1, and a point dipole would return 3. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system).
@@ -78,40 +104,6 @@ Returns the number of bodies contained inside `system`. Should be overloaded for
 """
 get_n_bodies(system) = throw("FastMultipole.get_n_bodies() not overloaded for type $(typeof(system))")
 
-# function get_scalar_potential(system, i)
-#     if WARNING_FLAG_SCALAR_POTENTIAL[]
-#         @warn "get_scalar_potential not overloaded for type $(typeof(system)); zero assumed"
-#         WARNING_FLAG_SCALAR_POTENTIAL[] = false
-#     end
-#     return zero(eltype(system))
-# end
-
-#function Base.getindex(sys, i, ::VectorPotential)
-#    if WARNING_FLAG_VECTOR_POTENTIAL[]
-#        @warn "getindex! not overloaded for `FastMultipole.VectorPotential` for type $(typeof(sys)); zero assumed"
-#        WARNING_FLAG_VECTOR_POTENTIAL[] = false
-#    end
-#    return SVector{3}(0.0,0.0,0.0)
-#end
-
-# function get_velocity(system, i)
-#     if WARNING_FLAG_VELOCITY[]
-#         @warn "get_velocity not overloaded for type $(typeof(system)); zero assumed"
-#         WARNING_FLAG_VELOCITY[] = false
-#     end
-#     return zero(SVector{3,eltype(system)})
-# end
-
-# function get_velocity_gradient(system, i)
-#     if WARNING_FLAG_VELOCITY_GRADIENT[]
-#         @warn "get_velocity_gradient not overloaded for type $(typeof(system)); zero assumed"
-#         WARNING_FLAG_VELOCITY_GRADIENT[] = false
-#     end
-#     return zero(SMatrix{3,3,eltype(system),9})
-# end
-
-#--- setters ---#
-
 """
     body_to_multipole!(system::{UserDefinedSystem}, multipole_coefficients, buffer, expansion_center, bodies_index, harmonics, expansion_order)
 
@@ -133,7 +125,7 @@ function body_to_multipole!(system, multipole_coefficients, buffer, expansion_ce
 end
 
 """
-    direct!(target_buffer, target_index, derivatives_switch::DerivativesSwitch{PS,VS,GS}, ::{UserDefinedSystem}, source_buffer, source_index) where {PS,VS,GS}
+    direct!(target_buffer, target_index, derivatives_switch::DerivativesSwitch{PS,GS,HS}, ::{UserDefinedSystem}, source_buffer, source_index) where {PS,GS,HS}
 
 Calculates direct (nearfield) interactions of `source_system` on `target_buffer`. Should be overloaded or each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system), for all source bodies in `source_index`, at all target bodies in `target_index`, as follows:
 
@@ -155,11 +147,11 @@ for i_source in source_index
         if PS
             set_scalar_potential!(target_buffer, i_target, scalar_potential)
         end
-        if VS
-            set_velocity!(target_buffer, i_target, velocity)
-        end
         if GS
-            set_velocity_gradient!(target_buffer, i_target, velocity_gradient)
+            set_gradient!(target_buffer, i_target, gradient)
+        end
+        if HS
+            set_hessian!(target_buffer, i_target, hessian)
         end
 
     end
@@ -174,6 +166,8 @@ The following convenience getter functions are available for accessing the sourc
 * `get_strength(source_buffer::Matrix, source_system::{UserDefinedSystem}, i_body::Int)`: returns an SVector containing the strength of the `i_body` body
 * `get_vertex(source_buffer::Matrix, source_system::{UserDefinedSystem}, i_body::Int, i_vertex::Int)`: returns an SVector containing the x, y, and z coordinates of the `i_vertex` vertex of the `i_body` body
 
+Note also that the compile time parameters `PS`, `GS`, and `HS` are used to determine whether the scalar potential and vector field should be computed, respectively. This allows us to skip unnecessary calculations and improve performance.
+
 """
 function direct!(target_buffer, target_index, derivatives_switch, source_system, source_buffer, source_index)
     if WARNING_FLAG_DIRECT[]
@@ -184,21 +178,23 @@ function direct!(target_buffer, target_index, derivatives_switch, source_system,
 end
 
 """
-    buffer_to_target_system!(target_system::{UserDefinedSystem}, i_target, ::DerivativesSwitch{PS,VS,GS}, target_buffer, i_buffer) where {PS,VS,GS}
+    buffer_to_target_system!(target_system::{UserDefinedSystem}, i_target, ::DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
 
 Compatibility function used to update target systems. It should be overloaded for each system (where `{UserDefinedSystem}` is replaced with the type of the user-defined system) to be a target and should behave as follows. For the `i_body`th body contained inside of `target_system`,
 
 * `target_buffer[4, i_buffer]` contains the scalar potential influence to be added to the `i_target` body of `target_system`
-* `target_buffer[5:7, i_buffer]` contains the velocity influence to be added to the `i_target` body of `target_system`
-* `target_buffer[8:16, i_buffer]` contains the velocity gradient to be added to the `i_target` body of `target_system`
+* `target_buffer[5:7, i_buffer]` contains the vector field influence to be added to the `i_target` body of `target_system`
+* `target_buffer[8:16, i_buffer]` contains the vector field gradient to be added to the `i_target` body of `target_system`
 
 Note that any system acting only as a source (and not as a target) need not overload `buffer_to_target_system!`.
 
 The following convenience functions can may be used to access the buffer:
 
 * `get_scalar_potential(target_buffer, i_buffer::Int)`: returns the scalar potential induced at the `i_buffer` body in `target_buffer`
-* `get_velocity(target_buffer, i_buffer::Int)`: returns an SVector of length 3 containing the velocity induced at the `i_buffer` body in `target_buffer`
-* `get_velocity_gradient(target_buffer, i_buffer::Int)`: returns an SMatrix of size 3x3 containing the velocity gradient induced at the `i_buffer` body in `target_buffer`
+* `get_gradient(target_buffer, i_buffer::Int)`: returns an SVector of length 3 containing the vector field induced at the `i_buffer` body in `target_buffer`
+* `get_hessian(target_buffer, i_buffer::Int)`: returns an SMatrix of size 3x3 containing the vector gradient induced at the `i_buffer` body in `target_buffer`
+
+For some slight performance improvements, the booleans `PS`, `GS`, and `HS` can be used as a switch to indicate whether the scalar potential, vector field, and vector gradient are to be stored, respectively. Since they are compile-time parameters, `if` statements relying on them will not incur a runtime cost.
 
 """
 function buffer_to_target_system!(target_system, i_target, derivatives_switch, target_buffer, i_buffer)
@@ -206,21 +202,21 @@ function buffer_to_target_system!(target_system, i_target, derivatives_switch, t
 end
 
 """
-    target_influence_to_buffer!(target_buffer, i_buffer, ::DerivativesSwitch{PS,VS,GS}, target_system::{UserDefinedSystem}, i_target) where {PS,VS,GS}
+    target_influence_to_buffer!(target_buffer, i_buffer, ::DerivativesSwitch{PS,GS,HS}, target_system::{UserDefinedSystem}, i_target) where {PS,GS,HS}
 
 **NOTE:** this function is primarily used for the boundary element solver, and is not required for the FMM.
 
 Updates the `target_buffer` with influences from `target_system` for the `i_target`th body. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system) to be used as a target, assuming the target buffer positions have already been set. It should behave as follows:
 
 * `target_buffer[4, i_buffer]` should be set to the scalar potential at the body position
-* `target_buffer[5:7, i_buffer]` should be set to the velocity at the body position
-* `target_buffer[8:16, i_buffer]` should be set to the velocity gradient at the body position
+* `target_buffer[5:7, i_buffer]` should be set to the vector field at the body position
+* `target_buffer[8:16, i_buffer]` should be set to the vector gradient at the body position
 
 The following convenience functions can may be used to access the buffer:
 
 * `set_scalar_potential!(target_buffer, i_buffer, scalar_potential)`: accumulates the `scalar_potential` to the `i_buffer` body in `target_buffer`
-* `set_velocity!(target_buffer, i_buffer, velocity)`: accumulates the `velocity` to the `i_buffer` body in `target_buffer`
-* `set_velocity_gradient!(target_buffer, i_buffer, velocity_gradient)`: accumulates the `velocity_gradient` to the `i_buffer` body in `target_buffer`
+* `set_gradient!(target_buffer, i_buffer, gradient)`: accumulates `gradient` to the `i_buffer` body in `target_buffer`
+* `set_hessian!(target_buffer, i_buffer, hessian)`: accumulates `hessian` to the `i_buffer` body in `target_buffer`
 
 """
 function target_influence_to_buffer!(target_buffer, i_buffer, derivatives_switch, target_system, i_target)
@@ -311,8 +307,26 @@ function influence!(influence, target_buffer, source_system, source_buffer)
     error("influence! not overloaded for systems of type $(typeof(source_system))")
 end
 
+"""
+    has_vector_potential(system::{UserDefinedSystem})
+
+Returns `true` if the system induces a vector potential, `false` otherwise. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system).
+"""
+function has_vector_potential(system)
+    error("has_vector_potential not overloaded for type $(typeof(system))")
+end
 
 #------- internal functions -------#
+
+#--- lamb-helmholtz ---#
+
+function has_vector_potential(systems::Tuple)
+    not_lh = true
+    for system in systems
+        not_lh = not_lh && !has_vector_potential(system)
+    end
+    return !not_lh
+end
 
 #--- source_buffer getters ---#
 
@@ -349,32 +363,60 @@ function buffer_to_target!(target_systems::Tuple, target_buffers, derivatives_sw
 end
 
 function buffer_to_target!(target_system, target_buffer, derivatives_switch, sort_index=1:get_n_bodies(target_system), buffer_index=1:get_n_bodies(target_system))
-    for i_body in buffer_index
-        buffer_to_target_system!(target_system, sort_index[i_body], derivatives_switch, target_buffer, i_body)
+    if get_n_bodies(target_system) > MIN_BODIES
+        Threads.@threads for i_body in buffer_index
+            buffer_to_target_system!(target_system, sort_index[i_body], derivatives_switch, target_buffer, i_body)
+        end
+    else
+        for i_body in buffer_index
+            buffer_to_target_system!(target_system, sort_index[i_body], derivatives_switch, target_buffer, i_body)
+        end
     end
 end
 
-function target_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
+function target_to_buffer!(buffers, systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     for (buffer,system,sort_index) in zip(buffers, systems, sort_index_list)
-        target_to_buffer!(buffer, system, sort_index)
+        target_to_buffer!(buffer, system, target, sort_index)
     end
 end
 
-function target_to_buffer!(buffer::Matrix, system, sort_index=1:get_n_bodies(system))
-    for i_body in 1:get_n_bodies(system)
-        buffer[1:3, i_body] .= get_position(system, sort_index[i_body])
+function target_to_buffer!(buffer::Matrix, system, target::Bool, sort_index=1:get_n_bodies(system))
+    if Threads.nthreads() > 1 && get_n_bodies(system) > MIN_BODIES
+        target_to_buffer_multithread!(buffer, system, target, sort_index)
+    else
+        for i_body in 1:get_n_bodies(system)
+            i_sorted = sort_index[i_body]
+            buffer[1:3, i_body] .= get_position(system, i_sorted)
+            if target
+                prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
+                buffer[17, i_body] = prev_potential
+                buffer[18, i_body] = prev_velocity
+            end
+        end
     end
 end
 
-function target_to_buffer(systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
+function target_to_buffer_multithread!(buffer::Matrix, system, target::Bool, sort_index=1:get_n_bodies(system))
+    Threads.@threads for i_body in 1:get_n_bodies(system)
+        i_sorted = sort_index[i_body]
+        buffer[1:3, i_body] .= get_position(system, i_sorted)
+        if target
+            prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
+            buffer[17, i_body] = prev_potential
+            buffer[18, i_body] = prev_velocity
+        end
+    end
+end
+
+function target_to_buffer(systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     buffers = allocate_buffers(systems, true)
-    target_to_buffer!(buffers, systems, sort_index_list)
+    target_to_buffer!(buffers, systems, target, sort_index_list)
     return buffers
 end
 
-function target_to_buffer(system, sort_index=1:get_n_bodies(system))
+function target_to_buffer(system, target::Bool, sort_index=1:get_n_bodies(system))
     buffer = allocate_target_buffer(eltype(system), system)
-    target_to_buffer!(buffer, system, sort_index)
+    target_to_buffer!(buffer, system, target, sort_index)
     return buffer
 end
 
@@ -392,13 +434,26 @@ function target_influence_to_buffer!(target_buffer::Matrix, target_system, deriv
 end
 
 function system_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
-    for (buffer, system, sort_index) in zip(buffers, systems, sort_index_list)
-        system_to_buffer!(buffer, system, sort_index)
+    if Threads.nthreads() > 1
+        for (buffer, system, sort_index) in zip(buffers, systems, sort_index_list)
+            system_to_buffer_multithread!(buffer, system, sort_index)
+        end
+    else
+        # single-threaded fallback
+        for (buffer, system, sort_index) in zip(buffers, systems, sort_index_list)
+            system_to_buffer!(buffer, system, sort_index)
+        end
     end
 end
 
 function system_to_buffer!(buffer::Matrix, system, sort_index=1:get_n_bodies(system))
     for i_body in 1:get_n_bodies(system)
+        source_system_to_buffer!(buffer, i_body, system, sort_index[i_body])
+    end
+end
+
+function system_to_buffer_multithread!(buffer::Matrix, system, sort_index=1:get_n_bodies(system))
+    Threads.@threads for i_body in 1:get_n_bodies(system)
         source_system_to_buffer!(buffer, i_body, system, sort_index[i_body])
     end
 end
@@ -456,9 +511,9 @@ end
 
 get_scalar_potential(system::AbstractMatrix, i) = @inbounds system[4, i]
 
-get_velocity(system::AbstractMatrix{TF}, i) where TF = @inbounds SVector{3,TF}(system[5,i], system[6,i], system[7,i])
+get_gradient(system::AbstractMatrix{TF}, i) where TF = @inbounds SVector{3,TF}(system[5,i], system[6,i], system[7,i])
 
-get_velocity_gradient(system::AbstractMatrix{TF}, i) where TF =
+get_hessian(system::AbstractMatrix{TF}, i) where TF =
     @inbounds SMatrix{3,3,TF,9}(system[8, i], system[9, i], system[10, i],
     system[11, i], system[12, i], system[13, i],
     system[14, i], system[15, i], system[16, i])
@@ -478,15 +533,15 @@ function set_scalar_potential!(system::Matrix, i, scalar_potential)
 end
 
 """
-    set_velocity!(target_buffer, i_body, velocity)
+    set_gradient!(target_buffer, i_body, gradient)
 
-Accumulates `velocity` to `target_buffer`.
+Accumulates `gradient` to `target_buffer`.
 
 """
-function set_velocity!(system::Matrix, i, velocity)
-    @inbounds system[5,i] += velocity[1]
-    @inbounds system[6,i] += velocity[2]
-    @inbounds system[7,i] += velocity[3]
+function set_gradient!(system::Matrix, i, gradient)
+    @inbounds system[5,i] += gradient[1]
+    @inbounds system[6,i] += gradient[2]
+    @inbounds system[7,i] += gradient[3]
 end
 
 function set_velocity!(system::ReverseDiff.TrackedArray, i, velocity)
@@ -517,21 +572,21 @@ function ReverseDiff.special_reverse_exec!(instruction::ReverseDiff.SpecialInstr
 end
 
 """
-    set_velocity_gradient!(target_buffer, i_body, velocity_gradient)
+    set_hessian!(target_buffer, i_body, hessian)
 
-Accumulates `velocity_gradient` to `target_buffer`.
+Accumulates `hessian` to `target_buffer`.
 
 """
-function set_velocity_gradient!(system::Matrix, i, velocity_gradient)
-    @inbounds system[8, i] += velocity_gradient[1]
-    @inbounds system[9, i] += velocity_gradient[2]
-    @inbounds system[10, i] += velocity_gradient[3]
-    @inbounds system[11, i] += velocity_gradient[4]
-    @inbounds system[12, i] += velocity_gradient[5]
-    @inbounds system[13, i] += velocity_gradient[6]
-    @inbounds system[14, i] += velocity_gradient[7]
-    @inbounds system[15, i] += velocity_gradient[8]
-    @inbounds system[16, i] += velocity_gradient[9]
+function set_hessian!(system::Matrix, i, hessian)
+    @inbounds system[8, i] += hessian[1]
+    @inbounds system[9, i] += hessian[2]
+    @inbounds system[10, i] += hessian[3]
+    @inbounds system[11, i] += hessian[4]
+    @inbounds system[12, i] += hessian[5]
+    @inbounds system[13, i] += hessian[6]
+    @inbounds system[14, i] += hessian[7]
+    @inbounds system[15, i] += hessian[8]
+    @inbounds system[16, i] += hessian[9]
 end
 
 

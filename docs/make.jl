@@ -12,21 +12,25 @@ makedocs(;
     authors="Ryan Anderson <rymanderson@gmail.com> and contributors",
     sitename="FastMultipole.jl",
     format=Documenter.HTML(;
-        canonical="https://flow.byu.edu/FastMultipole",
+        canonical="https://flow.byu.edu/FastMultipole.jl",
         edit_link="main",
         assets=String[],
     ),
     pages=[
 		"Introduction" => "index.md",
         "Quick Start" => "quickstart.md",
-        "Guided Examples" => "guided_examples.md",
-        "Advanced Usage" => "advanced_usage.md",
+        "Gravitational Example" => "guided_examples.md",
+        "Vortex Filament Example" => "vortex_filament.md",
+        "Tuning Parameters" => "tuning.md",
+        "Multiple Systems" => "advanced_usage.md",
+        "Automated Tuning" => "advanced_usage_2.md",
         "Reference" => "reference.md",
-        "Theory" => "theory.md"
+        # "Theory" => "theory.md"
     ],
+    checkdocs=:none
 )
 
 deploydocs(;
-    repo="github.com/byuflowlab/FastMultipole",
+    repo="github.com/byuflowlab/FastMultipole.jl",
     devbranch="main",
 )

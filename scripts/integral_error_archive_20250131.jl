@@ -1511,9 +1511,9 @@ function rectangle_error(l_branch, l_system, m_branch, m_system, P; m_method="lo
     return m_err/4/pi, l_err/4/pi
 end
 
-function test_error_from_m2l_list(system; expansion_order=5, multipole_threshold=0.5, leaf_size=30, shrink_recenter=true, r=true)
+function test_error_from_m2l_list(system; expansion_order=5, multipole_acceptance=0.5, leaf_size=30, shrink_recenter=true, r=true)
     tree = Tree(system; expansion_order=20, leaf_size, shrink_recenter)
-    m2l_list, direct_list = build_interaction_lists(tree.branches, tree.branches, tree.leaf_index, multipole_threshold, true, true, true, UnequalSpheres(), expansion_order, Val(true))
+    m2l_list, direct_list = build_interaction_lists(tree.branches, tree.branches, tree.leaf_index, multipole_acceptance, true, true, true, UnequalSpheres(), expansion_order, Val(true))
 
     errs_mp, errs_l, errs_o = Float64[], Float64[], Float64[]
     errs_mp_v, errs_l_v, errs_o_v = Float64[], Float64[], Float64[]
@@ -1614,24 +1614,24 @@ system = Gravitational(bodies)
 # vortex system
 # system = generate_vortex(123, n_bodies)
 
-expansion_order, multipole_threshold, leaf_size = 4, 0.5, 100
-# expansion_order, multipole_threshold, leaf_size = 4, 0.5, 260
+expansion_order, multipole_acceptance, leaf_size = 4, 0.5, 100
+# expansion_order, multipole_acceptance, leaf_size = 4, 0.5, 260
 
-leaf_size, multipole_threshold = 25,0.5
+leaf_size, multipole_acceptance = 25,0.5
 FastMultipole.direct!(system)
 velocity_direct = deepcopy(system.velocity_stretching)
 reset!(system)
-FastMultipole.fmm!(system; expansion_order=10, multipole_threshold, leaf_size, lamb_helmholtz=true)
+FastMultipole.fmm!(system; expansion_order=10, multipole_acceptance, leaf_size, lamb_helmholtz=true)
 velocity_fmm = deepcopy(system.velocity_stretching)
 println("\nP=10:")
 @show mean(abs.(velocity_direct[1:3,:] .- velocity_fmm[1:3,:]))
 reset!(system)
-FastMultipole.fmm!(system; expansion_order=5, multipole_threshold, leaf_size, lamb_helmholtz=true)
+FastMultipole.fmm!(system; expansion_order=5, multipole_acceptance, leaf_size, lamb_helmholtz=true)
 velocity_fmm = deepcopy(system.velocity_stretching)
 println("\nP=5:")
 @show mean(abs.(velocity_direct[1:3,:] .- velocity_fmm[1:3,:]))
 reset!(system)
-FastMultipole.fmm!(system; expansion_order=1, multipole_threshold, leaf_size, lamb_helmholtz=true)
+FastMultipole.fmm!(system; expansion_order=1, multipole_acceptance, leaf_size, lamb_helmholtz=true)
 velocity_fmm = deepcopy(system.velocity_stretching)
 println("\nP=1:")
 @show mean(abs.(velocity_direct[1:3,:] .- velocity_fmm[1:3,:]))
@@ -1642,7 +1642,7 @@ means_local = Float64[]
 means_multipole = Float64[]
 Ps = 1:10
 #  for expansion_order in Ps
-#      errs_mp, errs_l, errs_o, errs_mp_v, errs_l_v, errs_o_v, ubs_mp_us, ubs_l_us, ubs_mp_uus, ubs_l_uus, ubs_mp_ub, ubs_l_ub, ubs_mp_uub, ubs_l_uub, errs_mp_uc, errs_l_uc, errs_mp_uc_v, errs_l_uc_v, errs_mp_r, errs_l_r = test_error_from_m2l_list(system; expansion_order, multipole_threshold, leaf_size, shrink_recenter=true) # leaf_size=260
+#      errs_mp, errs_l, errs_o, errs_mp_v, errs_l_v, errs_o_v, ubs_mp_us, ubs_l_us, ubs_mp_uus, ubs_l_uus, ubs_mp_ub, ubs_l_ub, ubs_mp_uub, ubs_l_uub, errs_mp_uc, errs_l_uc, errs_mp_uc_v, errs_l_uc_v, errs_mp_r, errs_l_r = test_error_from_m2l_list(system; expansion_order, multipole_acceptance, leaf_size, shrink_recenter=true) # leaf_size=260
 #      push!(means_local, output_stuff(errs_l_v ./ errs_l_uc_v)[1])
 #      push!(means_multipole, output_stuff(errs_mp_v ./ errs_mp_uc_v)[1])
 #  end
@@ -1664,10 +1664,10 @@ system = generate_vortex(123, n_bodies)
 # for expansion_order in [1,4,10]
 expansion_order = 4
 
-    # multipole_threshold, leaf_size = 0.5, 100
-    multipole_threshold, leaf_size = 0.5, 26
+    # multipole_acceptance, leaf_size = 0.5, 100
+    multipole_acceptance, leaf_size = 0.5, 26
 
-    errs_mp, errs_l, errs_o, errs_mp_v, errs_l_v, errs_o_v, ubs_mp_us, ubs_l_us, ubs_mp_uus, ubs_l_uus, ubs_mp_ub, ubs_l_ub, ubs_mp_uub, ubs_l_uub, errs_mp_uc, errs_l_uc, errs_mp_uc_v, errs_l_uc_v, errs_mp_lh, errs_l_lh, errs_mp_r, errs_l_r = test_error_from_m2l_list(system; expansion_order, multipole_threshold, leaf_size, shrink_recenter=true, r=false) # leaf_size=260
+    errs_mp, errs_l, errs_o, errs_mp_v, errs_l_v, errs_o_v, ubs_mp_us, ubs_l_us, ubs_mp_uus, ubs_l_uus, ubs_mp_ub, ubs_l_ub, ubs_mp_uub, ubs_l_uub, errs_mp_uc, errs_l_uc, errs_mp_uc_v, errs_l_uc_v, errs_mp_lh, errs_l_lh, errs_mp_r, errs_l_r = test_error_from_m2l_list(system; expansion_order, multipole_acceptance, leaf_size, shrink_recenter=true, r=false) # leaf_size=260
 
     #------- get data for paper -------#
 

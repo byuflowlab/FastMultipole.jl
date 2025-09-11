@@ -7,13 +7,13 @@ include("evaluate_multipole.jl")
 include("bodytolocal.jl")
 
 function flatten_derivatives!(jacobian)
-    # velocity
-    velocity = zeros(3)
-    velocity[1] = jacobian[2,3] - jacobian[3,2]
-    velocity[2] = jacobian[3,1] - jacobian[1,3]
-    velocity[3] = jacobian[1,2] - jacobian[2,1]
+    # vector field
+    gradient = zeros(3)
+    gradient[1] = jacobian[2,3] - jacobian[3,2]
+    gradient[2] = jacobian[3,1] - jacobian[1,3]
+    gradient[3] = jacobian[1,2] - jacobian[2,1]
 
-    return velocity
+    return gradient
 end
 
 function Snm(r,θ,ϕ,n,m)
@@ -205,20 +205,17 @@ function multipole_check(x_target, n_sources; seed=123, expansion_order=5, metho
     position = rand(3,n_sources) .* 2
     strength = rand(3,n_sources)
     # strength[1,1] = 1.0 # a single vortex of unit strength aligned with the x axis
-                        # means the velocity should be in the -y direction
+                        # means the vector field should be in the -y direction
     strength = rand(3,n_sources)
     source_system = VortexParticles(position, strength)
 
     # source branch
     bodies_index, n_branches, branch_index, i_parent, i_leaf_index = 1:n_sources, 0, 1:0, 0, 1
-    source_center = target_center = SVector{3}(0.5,0.5,0.5) * 2
-    source_radius = target_radius = 0.5 * sqrt(3) * 2
-    source_box = target_box = SVector{3}(0.5,0.5,0.5) * 2
-    # source_center = target_center = SVector{3}(0.5,0.5,0.5)
-    # source_radius = target_radius = 0.5 * sqrt(3)
-    # source_box = target_box = SVector{3}(0.5,0.5,0.5)
+    center = SVector{3}(0.5,0.5,0.5) * 2
+    radius = 0.5 * sqrt(3) * 2
+    box = SVector{3}(0.5,0.5,0.5) * 2
 
-    branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, source_center, target_center, source_radius, target_radius, source_box, target_box, expansion_order+20)
+    branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, expansion_order+20)
 
     # get multipole coefficients
     FastMultipole.body_to_multipole!(branch, source_system, branch.harmonics, Val(expansion_order+20))
@@ -229,7 +226,7 @@ function multipole_check(x_target, n_sources; seed=123, expansion_order=5, metho
     ϕ, v, _ = evaluate_multipole(x_target, source_center, branch.multipole_expansion, DerivativesSwitch(true,true,false), Val(expansion_order), Val(true))
     ϕtrue, vtrue, _ = evaluate_multipole(x_target, source_center, branch.multipole_expansion, DerivativesSwitch(true,true,false), Val(expansion_order+20), Val(true))
 
-    # check velocity
+    # check vector field
     v_analytic = SVector{3}(0.0,0,0)
     for i_body in branch.bodies_index
         dx = x_target-source_system[i_body,FastMultipole.Position()]
@@ -277,7 +274,7 @@ function multipole_check(x_target, n_sources; seed=123, expansion_order=5, metho
     end
     rotated_system = VortexParticles(rotated_position, rotated_strength)
 
-    rotated_branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, source_center, target_center, source_radius, target_radius, source_box, target_box, expansion_order+20)
+    rotated_branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, expansion_order+20)
 
     # get multipole coefficients
     FastMultipole.body_to_multipole!(rotated_branch, rotated_system, branch.harmonics, Val(expansion_order+20))
@@ -345,7 +342,7 @@ function multipole_check(x_target, n_sources; seed=123, expansion_order=5, metho
             ϕn0 = 0.0 + 0im
             ϕn1 = 0.0 + 0im
             for i in rotated_branch.bodies_index
-                ρ⃗ = rotated_system[i,Position()] - rotated_branch.source_center
+                ρ⃗ = rotated_system[i,Position()] - rotated_branch.center
                 ρ, θ, ϕ = FastMultipole.cartesian_to_spherical(ρ⃗)
                 this_ωxr, this_ωyr, this_ωzr = rotated_system[i,Strength()]
 
@@ -574,7 +571,7 @@ function multipole_check(x_target, n_sources; seed=123, expansion_order=5, metho
     @show norm(εχ_loop) / norm(v-vtrue)
 
     # test FastMultipole
-    εχ_fmm = FastMultipole.multipole_error(r⃗, branch, expansion_order, FastMultipole.LambHelmholtzΧVelocity())
+    εχ_fmm = FastMultipole.multipole_error(r⃗, branch, expansion_order, FastMultipole.LambHelmholtzΧVector())
 
     @show εχ_fmm / norm(v-vtrue)
 
@@ -874,21 +871,18 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
 
     # source branch
     bodies_index, n_branches, branch_index, i_parent, i_leaf_index = 1:n_sources, 0, 1:0, 0, 1
-    source_center = SVector{3}(0.5,0.5,0.5) * 2
-    source_radius = 0.5 * sqrt(3) * 2
-    source_box = SVector{3}(0.5,0.5,0.5) * 2
-    # source_center = target_center = SVector{3}(0.5,0.5,0.5)
-    # source_radius = target_radius = 0.5 * sqrt(3)
-    # source_box = target_box = SVector{3}(0.5,0.5,0.5)
+    center = SVector{3}(0.5,0.5,0.5) * 2
+    radius = 0.5 * sqrt(3) * 2
+    box = SVector{3}(0.5,0.5,0.5) * 2
 
-    source_branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, source_center, source_center, source_radius, source_radius, source_box, source_box, expansion_order+20)
+    source_branch = Branch(bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, expansion_order+20)
 
     # multipole expansion
     FastMultipole.body_to_multipole!(source_branch, source_system, source_branch.harmonics, Val(expansion_order+20))
-    _, v_mp, _ = evaluate_multipole(x_target, source_center, source_branch.multipole_expansion, DerivativesSwitch(false,true,false), Val(expansion_order+20), Val(true))
+    _, v_mp, _ = evaluate_multipole(x_target, center, source_branch.multipole_expansion, DerivativesSwitch(false,true,false), Val(expansion_order+20), Val(true))
 
     # target system
-    target_system = FastMultipole.ProbeSystem([x_target]; scalar_potential=true, velocity=true)
+    target_system = FastMultipole.ProbeSystem([x_target]; scalar_potential=true, vector=true)
 
     # target branch
     target_center = x_target - dx_local
@@ -902,36 +896,36 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
     eimϕs = zeros(Float64, 2, expansion_order+11)
     weights_tmp_1 = initialize_expansion(expansion_order+10, Float64)
     weights_tmp_2 = initialize_expansion(expansion_order+10, Float64)
-    velocity_n_m = zeros(2,3,size(target_branch.local_expansion,3))
+    gradient_n_m = zeros(2,3,size(target_branch.local_expansion,3))
     FastMultipole.multipole_to_local!(target_branch, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, FastMultipole.ζs_mag, FastMultipole.ηs_mag, FastMultipole.Hs_π2, FastMultipole.M̃, FastMultipole.L̃, expansion_order+10, Val(true))
-    _, v_l_check, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, velocity_n_m, target_branch.local_expansion, Val(expansion_order), Val(true), DerivativesSwitch(false,true,false))
+    _, v_l_check, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, gradient_n_m, target_branch.local_expansion, Val(expansion_order), Val(true), DerivativesSwitch(false,true,false))
 
     local_expansion_check = deepcopy(target_branch.local_expansion)
     target_branch.local_expansion .= 0.0
 
     # get local coefficients
     for i in source_branch.bodies_index
-        body_to_local_point!(Point{Vortex}, target_branch.local_expansion, target_branch.harmonics, source_system[i,Position()] - target_branch.target_center, source_system[i,Strength()], Val(expansion_order+10))
+        body_to_local_point!(Point{Vortex}, target_branch.local_expansion, target_branch.harmonics, source_system[i,Position()] - target_branch.center, source_system[i,Strength()], Val(expansion_order+10))
     end
 
     # branch.multipole_expansion[:,1,:] .= 0.0 # we are testing just χ
     # branch.multipole_expansion[:,2,:] .= 0.0 # we are testing just ϕ
 
     # evaluate expansion
-    _, v, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, velocity_n_m, target_branch.local_expansion, Val(expansion_order), Val(true), DerivativesSwitch(false,true,false))
-    _, vtrue, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, velocity_n_m, target_branch.local_expansion, Val(expansion_order+20), Val(true), DerivativesSwitch(false,true,false))
+    _, v, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, gradient_n_m, target_branch.local_expansion, Val(expansion_order), Val(true), DerivativesSwitch(false,true,false))
+    _, vtrue, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, gradient_n_m, target_branch.local_expansion, Val(expansion_order+20), Val(true), DerivativesSwitch(false,true,false))
 
     this_L = deepcopy(target_branch.local_expansion)
     target_branch.local_expansion[:,2,:] .= 0.0
-    _, v_ϕonly, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, velocity_n_m, target_branch.local_expansion, Val(expansion_order), Val(true), DerivativesSwitch(true,true,false))
-    _, vtrue_ϕonly, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, velocity_n_m, target_branch.local_expansion, Val(expansion_order+20), Val(true), DerivativesSwitch(true,true,false))
+    _, v_ϕonly, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, gradient_n_m, target_branch.local_expansion, Val(expansion_order), Val(true), DerivativesSwitch(true,true,false))
+    _, vtrue_ϕonly, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, gradient_n_m, target_branch.local_expansion, Val(expansion_order+20), Val(true), DerivativesSwitch(true,true,false))
     target_branch.local_expansion .= this_L
     target_branch.local_expansion[:,1,:] .= 0.0
-    _, v_χonly, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, velocity_n_m, target_branch.local_expansion, Val(expansion_order), Val(true), DerivativesSwitch(true,true,false))
-    _, vtrue_χonly, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, velocity_n_m, target_branch.local_expansion, Val(expansion_order+20), Val(true), DerivativesSwitch(true,true,false))
+    _, v_χonly, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, gradient_n_m, target_branch.local_expansion, Val(expansion_order), Val(true), DerivativesSwitch(true,true,false))
+    _, vtrue_χonly, _ = FastMultipole.evaluate_local(x_target-target_center, target_branch.harmonics, gradient_n_m, target_branch.local_expansion, Val(expansion_order+20), Val(true), DerivativesSwitch(true,true,false))
     target_branch.local_expansion .= this_L
 
-    # check velocity
+    # check vector field
     v_analytic = SVector{3}(0.0,0,0)
     for i_body in source_branch.bodies_index
         dx = x_target-source_system[i_body,FastMultipole.Position()]
@@ -1099,7 +1093,7 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
 
     println("\n==== error estimates ====\n")
 
-    # ϕ velocity
+    # ϕ vector
     εϕ = 0.0 + 0im
     for n in expansion_order+1:expansion_order+1
         εϕ += get_ϕ_error(source_center, source_box, ω⃗, target_center, n, v̂, r; sphere=false)
@@ -1107,7 +1101,7 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
 
     @show εϕ/4/pi norm(vtrue_ϕonly-v_ϕonly)
 
-    # χ velocity
+    # χ vector
     εχ = 0.0 + 0im
     for n in expansion_order+1:expansion_order+1
         εχ += get_χ_error(source_center, source_box, ω⃗, target_center, n, v̂, r; sphere=false)
@@ -1115,7 +1109,7 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
 
     @show norm(εχ/4/pi) norm(vtrue_χonly-v_χonly)
 
-    # ϕχ velocity
+    # ϕχ vector
     εϕχ = 0.0 + 0im
     for n in expansion_order+1:expansion_order+1
         εϕχ += get_ϕχ_error(source_center, source_box, ω⃗, target_center, n, v̂, r; sphere=false)
@@ -1127,7 +1121,7 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
 
     println("\n==== spherical source approximation ====\n")
 
-    # ϕ velocity
+    # ϕ vector
     εϕ = 0.0 + 0im
     sphere = true
     for n in expansion_order+1:expansion_order+1
@@ -1136,7 +1130,7 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
 
     @show εϕ/4/pi norm(vtrue_ϕonly-v_ϕonly)
 
-    # χ velocity
+    # χ vector
     εχ = 0.0 + 0im
     for n in expansion_order+1:expansion_order+1
         εχ += get_χ_error(source_center, source_box, ω⃗, target_center, n, v̂, r; sphere)
@@ -1144,7 +1138,7 @@ function local_check(x_target, dx_local, source_system::VortexParticles; seed=12
 
     @show norm(εχ/4/pi) norm(vtrue_χonly-v_χonly)
 
-    # ϕχ velocity
+    # ϕχ vector
     εϕχ = 0.0 + 0im
     for n in expansion_order+1:expansion_order+1
         εϕχ += get_ϕχ_error(source_center, source_box, ω⃗, target_center, n, v̂, r; sphere=true)

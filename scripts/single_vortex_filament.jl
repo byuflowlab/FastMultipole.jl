@@ -39,12 +39,12 @@ function generate_two_filaments(centers, ls, strengths)
 
     # create filaments
     core_size = fill(1e-2, size(x, 2))
-    ε_tol = fill(1e-4, size(x, 2))
+    error_tolerance = fill(1e-4, size(x, 2))
     potential = zeros(length(strength_vec))
     force = zeros(SVector{3,Float64}, length(strength_vec))
     gradient = zeros(SMatrix{3,3,Float64,9}, length(strength_vec))
 
-    return VortexFilaments(x, strength_vec, core_size, ε_tol, potential, force, gradient)
+    return VortexFilaments(x, strength_vec, core_size, error_tolerance, potential, force, gradient)
 end
 
 function generate_probes_xz(xspan, zspan, phi)
@@ -153,7 +153,7 @@ norms = sqrt.(sum(diff .* diff; dims=1))
 # direct!(fil)
 # v_direct_r = deepcopy(fil.force)
 # reset!(fil)
-# _, _, tt, st, m2l_list, direct_list, _ = fmm!(fil; leaf_size_source=1, multipole_threshold=0.99999, expansion_order=10, lamb_helmholtz=true, ε_tol=nothing)
+# _, _, tt, st, m2l_list, direct_list, _ = fmm!(fil; leaf_size_source=1, multipole_acceptance=0.99999, expansion_order=10, lamb_helmholtz=true, error_tolerance=nothing)
 # v_fmm_r = deepcopy(fil.force)
 # diff_r = v_fmm_r - v_direct_r
 # norms_r = [sqrt(sum(diff_r[i] .* diff_r[i])) for i in 1:length(diff_r)]
@@ -208,7 +208,7 @@ save_vtk(viz_name_prefix * "v_direct", probes)
 # @show maximum(norm.(v_direct - v_direct_r))
 
 reset!(probes)
-optargs, target_tree, source_tree, m2l_list, direct_list, derivatives_switches, error_success = fmm!(probes, filaments; leaf_size_source=20, multipole_threshold=0.4, expansion_order=10, lamb_helmholtz=true, ε_tol=nothing)
+optargs, target_tree, source_tree, m2l_list, direct_list, derivatives_switches, error_success = fmm!(probes, filaments; leaf_size_source=20, multipole_acceptance=0.4, expansion_order=10, lamb_helmholtz=true, error_tolerance=nothing)
 
 save_vtk(viz_name_prefix * "v_fmm", probes)
 
@@ -232,7 +232,7 @@ direct!(filaments)
 v_direct_r = deepcopy(filaments.force)
 
 reset!(filaments)
-_, _, _, _, m2l_list, direct_list, _ = fmm!(filaments; leaf_size_source=1, multipole_threshold=0.4, expansion_order=20, lamb_helmholtz=true, ε_tol=nothing)
+_, _, _, _, m2l_list, direct_list, _ = fmm!(filaments; leaf_size_source=1, multipole_acceptance=0.4, expansion_order=20, lamb_helmholtz=true, error_tolerance=nothing)
 v_fmm_r = deepcopy(filaments.force)
 diff_r = v_fmm_r - v_direct_r
 norms_r = [sqrt(sum(diff_r[i] .* diff_r[i])) for i in 1:length(diff_r)]
@@ -244,7 +244,7 @@ reset!(vortex_system)
 direct!(vortex_system)
 v_direct_vs = deepcopy(vortex_system.force)
 reset!(vortex_system)
-_, _, _, _, m2l_list, direct_list, _ = fmm!(vortex_system; leaf_size_source=1, multipole_threshold=0.4, expansion_order=20, lamb_helmholtz=true, ε_tol=nothing)
+_, _, _, _, m2l_list, direct_list, _ = fmm!(vortex_system; leaf_size_source=1, multipole_acceptance=0.4, expansion_order=20, lamb_helmholtz=true, error_tolerance=nothing)
 v_fmm_vs = deepcopy(vortex_system.force)
 diff_vs = v_fmm_vs - v_direct_vs
 norms_vs = [sqrt(sum(diff_vs[i] .* diff_vs[i])) for i in 1:length(diff_vs)]

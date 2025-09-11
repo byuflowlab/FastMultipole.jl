@@ -18,7 +18,7 @@ const ONE_THIRD = 1/3
 const π_over_2 = π/2
 const π2 = 2*π
 const SQRT3 = sqrt(3.0)
-const LOCAL_ERROR_SAFETY = 1.0 # guess how many cells will contribute to the local error
+const LOCAL_ERROR_SAFETY = 2.0 # guess how many cells will contribute to the local error
                                # NOTE: this doesn't apply to multipole error as that error is 
                                # highly localized and doesn't accumulate
 const DEBUG = Array{Bool,0}(undef)
@@ -31,6 +31,12 @@ const MIN_NPT_M2L = 100
 const MIN_NPT_L2L = 100
 const MIN_NPT_L2B = 100
 const MIN_NPT_NF = 100
+const MIN_NPT_BRANCH = 9 # if fewer branches than this, multithread over bodies instead of branches
+                         # TODO: this should probably be a function of the number of threads
+const MIN_NPT_SORT = 10000
+const MIN_NPT_MUL_SORT = 100
+const MIN_NPT = 100
+const MIN_BODIES = 1000
 
 # preallocate y-axis rotation matrices by π/2
 const Hs_π2 = Float64[1.0]
@@ -60,11 +66,11 @@ WARNING_FLAG_SCALAR_POTENTIAL[] = true
 const WARNING_FLAG_VECTOR_POTENTIAL = Array{Bool,0}(undef)
 WARNING_FLAG_VECTOR_POTENTIAL[] = true
 
-const WARNING_FLAG_VELOCITY = Array{Bool,0}(undef)
-WARNING_FLAG_VELOCITY[] = true
+const WARNING_FLAG_gradient = Array{Bool,0}(undef)
+WARNING_FLAG_gradient[] = true
 
-const WARNING_FLAG_VELOCITY_GRADIENT = Array{Bool,0}(undef)
-WARNING_FLAG_VELOCITY_GRADIENT[] = true
+const WARNING_FLAG_hessian = Array{Bool,0}(undef)
+WARNING_FLAG_hessian[] = true
 
 const WARNING_FLAG_STRENGTH = Array{Bool,0}(undef)
 WARNING_FLAG_STRENGTH[] = true
@@ -77,6 +83,9 @@ WARNING_FLAG_DIRECT[] = true
 
 const WARNING_FLAG_LH_POTENTIAL = Array{Bool,0}(undef)
 WARNING_FLAG_LH_POTENTIAL[] = true
+
+const WARNING_FLAG_MAX_INFLUENCE = Array{Bool,0}(undef)
+WARNING_FLAG_MAX_INFLUENCE[] = true
 
 #------- HEADERS AND EXPORTS -------#
 
@@ -99,8 +108,10 @@ include("compatibility.jl")
 include("compatibility_rrules.jl")
 include("containers_rrules.jl")
 
-export Body, Position, Radius, ScalarPotential, VectorPotential, Velocity, VelocityGradient, Vertex, Normal, Strength
+export Body, Position, Radius, ScalarPotential, Gradient, Hessian, Vertex, Normal, Strength
 export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Panel
+export PowerAbsolutePotential, PowerAbsoluteGradient, RotatedCoefficientsAbsoluteGradient
+# export PowerRelativePotential, PowerRelativeGradient, RotatedCoefficientsRelativeGradient
 export get_n_bodies, buffer_element, body_to_multipole!, direct!, direct_gpu!
 
 include("bodytomultipole.jl")
@@ -118,10 +129,6 @@ export DerivativesSwitch
 include("error.jl")
 
 export multipole_error, local_error, error
-
-include("sortwrapper.jl")
-
-export SortWrapper
 
 include("interaction_list.jl")
 

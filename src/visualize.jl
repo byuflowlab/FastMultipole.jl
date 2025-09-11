@@ -1,44 +1,44 @@
-function visualize_bodies(name, system, tree; i_system=nothing)
-    n_bodies = get_n_bodies(system)
-    body_locations = zeros(3,n_bodies,1,1)
-    body_radii = zeros(n_bodies,1,1)
-    scalar_strength = zeros(n_bodies,1,1)
-    vector_strength = zeros(3,n_bodies,1,1)
-    scalar_potential = zeros(n_bodies,1,1)
-    vector_potential = zeros(3,n_bodies,1,1)
-    velocity = zeros(3,n_bodies,1,1)
-    body_indices = zeros(n_bodies,1,1)
-    unsorted_body_indices = zeros(n_bodies,1,1)
-    for i in 1:n_bodies
-        body_locations[:,i,1,1] .= system[i,Position()]
-        body_radii[i,1,1] = system[i,Radius()]
-        if typeof(system[i,Strength()]) <: AbstractArray
-            vector_strength[:,i,1,1] .= system[i,Strength()]
-        else
-            scalar_strength[i,1,1] = system[i,Strength()]
-        end
-        scalar_potential[i,1,1] = system[i,ScalarPotential()]
-        velocity[:,i,1,1] .= system[i,Velocity()]
-        unsorted_body_indices[i,1,1] = Float64(i)
-        if isnothing(i_system)
-            body_indices[i,1,1] = Float64(unsorted_index_2_sorted_index(i, tree))
-        else
-            body_indices[i,1,1] = Flaot64(unsorted_index_2_sorted_index(i, i_system, tree))
-        end
-    end
-    vtk_grid(name*"_bodies", body_locations) do vtk
-        vtk["radius"] = body_radii
-        if typeof(system[1,Strength()]) <: AbstractArray
-            vtk["vector strength"] = vector_strength
-        else
-            vtk["scalar strength"] = scalar_strength
-        end
-        vtk["scalar potential"] = scalar_potential
-        vtk["velocity"] = velocity
-        vtk["body index"] = body_indices
-        vtk["unsorted body index"] = unsorted_body_indices
-    end
-end
+# function visualize_bodies(name, system, tree; i_system=nothing)
+#     n_bodies = get_n_bodies(system)
+#     body_locations = zeros(3,n_bodies,1,1)
+#     body_radii = zeros(n_bodies,1,1)
+#     scalar_strength = zeros(n_bodies,1,1)
+#     vector_strength = zeros(3,n_bodies,1,1)
+#     scalar_potential = zeros(n_bodies,1,1)
+#     vector_potential = zeros(3,n_bodies,1,1)
+#     velocity = zeros(3,n_bodies,1,1)
+#     body_indices = zeros(n_bodies,1,1)
+#     unsorted_body_indices = zeros(n_bodies,1,1)
+#     for i in 1:n_bodies
+#         body_locations[:,i,1,1] .= system[i,Position()]
+#         body_radii[i,1,1] = system[i,Radius()]
+#         if typeof(system[i,Strength()]) <: AbstractArray
+#             vector_strength[:,i,1,1] .= system[i,Strength()]
+#         else
+#             scalar_strength[i,1,1] = system[i,Strength()]
+#         end
+#         scalar_potential[i,1,1] = system[i,ScalarPotential()]
+#         velocity[:,i,1,1] .= system[i,Velocity()]
+#         unsorted_body_indices[i,1,1] = Float64(i)
+#         if isnothing(i_system)
+#             body_indices[i,1,1] = Float64(unsorted_index_2_sorted_index(i, tree))
+#         else
+#             body_indices[i,1,1] = Flaot64(unsorted_index_2_sorted_index(i, i_system, tree))
+#         end
+#     end
+#     vtk_grid(name*"_bodies", body_locations) do vtk
+#         vtk["radius"] = body_radii
+#         if typeof(system[1,Strength()]) <: AbstractArray
+#             vtk["vector strength"] = vector_strength
+#         else
+#             vtk["scalar strength"] = scalar_strength
+#         end
+#         vtk["scalar potential"] = scalar_potential
+#         vtk["velocity"] = velocity
+#         vtk["body index"] = body_indices
+#         vtk["unsorted body index"] = unsorted_body_indices
+#     end
+# end
 
 function visualize_bodies(name, system, tree, ::Nothing; i_system=nothing)
     visualize_bodies(name, system, tree; i_system)
@@ -96,8 +96,8 @@ function visualize(name, system, tree; probe_indices=nothing, toggle_branches=tr
         branch_radii = Array{Float64,3}(undef,n_branches,1,1)
         branch_indices = Array{Float64,3}(undef,n_branches,1,1)
         for (i,branch) in enumerate(branches)
-            branch_locations[:,i,1,1] .= branch.source_center
-            branch_radii[i,1,1] = branch.source_radius
+            branch_locations[:,i,1,1] .= branch.center
+            branch_radii[i,1,1] = branch.radius
             branch_indices[i,1,1] = Float64(i)
         end
         vtk_grid(name*"_source_branches", branch_locations) do vtk
@@ -110,8 +110,8 @@ function visualize(name, system, tree; probe_indices=nothing, toggle_branches=tr
         branch_radii = Array{Float64,3}(undef,n_branches,1,1)
         branch_indices = Array{Float64,3}(undef,n_branches,1,1)
         for (i,branch) in enumerate(branches)
-            branch_locations[:,i,1,1] .= branch.target_center
-            branch_radii[i,1,1] = branch.target_radius
+            branch_locations[:,i,1,1] .= branch.center
+            branch_radii[i,1,1] = branch.radius
             branch_indices[i,1,1] = Float64(i)
         end
         vtk_grid(name*"_target_branches", branch_locations) do vtk

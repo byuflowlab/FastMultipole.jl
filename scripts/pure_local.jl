@@ -12,7 +12,7 @@ function get_strength(system::Gravitational, i)
     return system.bodies[i].strength
 end
 
-function set_velocity!(system::Gravitational, i, v)
+function set_gradient!(system::Gravitational, i, v)
     system.potential[5:7,i] .+= v
 end
 
@@ -33,11 +33,11 @@ function pure_local!(targets, system, branch, expansion_order)
 
     # evaluate at all targets
     lamb_helmholtz = typeof(system) <: Gravitational ? Val(false) : Val(true)
-    velocity_n_m = FastMultipole.initialize_velocity_n_m(expansion_order, Float64)
+    velocity_n_m = FastMultipole.initialize_gradient_n_m(expansion_order, Float64)
     for i_target in 1:get_n_bodies(targets)
         Δx = FastMultipole.get_position(targets, i_target) - branch.target_center
         _, v, _ = FastMultipole.evaluate_local(Δx, harmonics, velocity_n_m, local_expansion, expansion_order, lamb_helmholtz, DerivativesSwitch(false, true, false))
-        set_velocity!(targets, i_target, v)
+        set_gradient!(targets, i_target, v)
     end
 
     return branch, expansions

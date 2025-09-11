@@ -8,11 +8,11 @@ using PythonPlot
 include("../test/gravitational.jl")
 include("../test/vortex.jl")
 
-function get_velocity(system::Gravitational)
+function get_gradient(system::Gravitational)
     return system.potential[5:7,:]
 end
 
-function get_velocity(system::VortexParticles)
+function get_gradient(system::VortexParticles)
     return system.velocity_stretching[1:3,:]
 end
 
@@ -33,7 +33,7 @@ function check_error(system, ϕ_true, velocity_true; optargs...)
     max_err_ϕ_rel = maximum(errs_ϕ_rel)
 
     # velocity error
-    velocity_fmm = get_velocity(system)
+    velocity_fmm = get_gradient(system)
     diff = velocity_true - velocity_fmm
     errs2 = diff .* diff
     mag2 = velocity_true .* velocity_true
@@ -48,20 +48,20 @@ system = generate_gravitational(123, n_bodies; strength_scale=1/n_bodies)
 # system = generate_vortex(123, n_bodies; strength_scale=1/n_bodies/0.07891333941819026)
 direct!(system)
 ϕ_true = get_potential(system)
-v_true = get_velocity(system)
+v_true = get_gradient(system)
 
 
 function test_error_ub(system, ϕ_true, v_true, theta)
     println("\n==== begin theta = $theta =====\n")
     ps = 1:16
     res = zeros(8, length(ps))
-    optargs, cache, _ = fmm!(system; lamb_helmholtz=false, tune=true, expansion_order=1, multipole_threshold=theta)
+    optargs, cache, _ = fmm!(system; lamb_helmholtz=false, tune=true, expansion_order=1, multipole_acceptance=theta)
     leaf_size_source = optargs.leaf_size_source
     for p in ps
         println("P = $p")
         # mean_phi, max_phi, mean_v, max_v, l2_phi_rel, max_phi_rel, l2_v_rel, max_v_rel
         @show leaf_size_source
-        optargs, stuff = check_error(system, ϕ_true, v_true; leaf_size_source, expansion_order=p, multipole_threshold=theta, lamb_helmholtz=false, scalar_potential=true, cache...)
+        optargs, stuff = check_error(system, ϕ_true, v_true; leaf_size_source, expansion_order=p, multipole_acceptance=theta, lamb_helmholtz=false, scalar_potential=true, cache)
         leaf_size_source = optargs.leaf_size_source
         for i in 1:8
             res[i,p] = stuff[i]

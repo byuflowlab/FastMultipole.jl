@@ -25,7 +25,8 @@ function FastMultipole.strength_to_value(strength, ::Gravitational)
 end
 
 function FastMultipole.buffer_to_system_strength!(system::Gravitational, i_body, source_buffer, i_buffer)
-    (; position, radius) = system.bodies[i_body]
+    position = system.bodies[i_body].position
+    radius = system.bodies[i_body].radius
     strength = source_buffer[5, i_buffer]
     system.bodies[i_body] = eltype(system.bodies)(position, radius, strength)
 end
@@ -38,12 +39,12 @@ n_bodies = 10
 seed = 1234
 system = generate_gravitational(seed, n_bodies)
 
-direct!(system; scalar_potential=true, velocity=false)
+direct!(system; scalar_potential=true, gradient=false)
 phi_desired = system.potential[1, :]
 
 #--- create FGS solver ---#
 
-fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_threshold=0.5, leaf_size=30)
+fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_acceptance=0.5, leaf_size=30)
 
 #--- check influence matrix ---#
 
@@ -75,12 +76,12 @@ n_bodies = 1000
 seed = 1234
 system = generate_gravitational(seed, n_bodies)
 
-direct!(system; scalar_potential=true, velocity=false)
+direct!(system; scalar_potential=true, gradient=false)
 system.potential[1, :] .*= -1.0
 
 #--- create FGS solver ---#
 
-fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_threshold=0.5, leaf_size=100) # try with leaf_size=3 for sources with no non-self influence
+fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_acceptance=0.5, leaf_size=100) # try with leaf_size=3 for sources with no non-self influence
 
 #--- check self influence matrices ---#
 
@@ -163,13 +164,13 @@ seed = 1234
 system = generate_gravitational(seed, n_bodies)
 derivatives_switches = FastMultipole.DerivativesSwitch(true, false, false, (system,))
 
-direct!(system; scalar_potential=true, velocity=false)
+direct!(system; scalar_potential=true, gradient=false)
 phi_desired = system.potential[1, :]
 system.potential[1, :] .*= -1.0 # invert potential to compel FGS to compute strengths
 
 #--- create FGS solver ---#
 
-fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_threshold=0.5, leaf_size=100) # try with leaf_size=3 for sources with no non-self influence
+fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_acceptance=0.5, leaf_size=100) # try with leaf_size=3 for sources with no non-self influence
 
 #--- unpack containers ---#
 
@@ -182,8 +183,7 @@ nonself_matrices = fgs.nonself_matrices
 index_map = fgs.index_map
 m2l_list = fgs.m2l_list
 direct_list = fgs.direct_list
-multipole_threshold = fgs.multipole_threshold
-lamb_helmholtz = fgs.lamb_helmholtz
+multipole_acceptance = fgs.multipole_acceptance
 strengths = fgs.strengths
 strengths_by_leaf = fgs.strengths_by_leaf
 targets_by_branch = fgs.targets_by_branch
@@ -317,20 +317,22 @@ seed = 123
 system = generate_gravitational(seed, n_bodies)
 derivatives_switches = FastMultipole.DerivativesSwitch(true, false, false, (system,))
 
-direct!(system; scalar_potential=true, velocity=false)
+direct!(system; scalar_potential=true, gradient=false)
 strengths_desired = [b.strength for b in system.bodies]
 phi_desired = system.potential[1, :]
 system.potential[1, :] .*= -1.0 # invert external potential to compel FGS to compute the original strengths
 
 # perturb strengths slightly
 for i in eachindex(system.bodies)
-    (; position, radius, strength) = system.bodies[i]
+    position = system.bodies[i].position
+    radius = system.bodies[i].radius
+    strength = system.bodies[i].strength
     system.bodies[i] = eltype(system.bodies)(position, radius, strength + round(strength, sigdigits=1)*100*(rand()-0.5))
 end
 
 #--- create FGS solver ---#
 
-fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_threshold=0.5, leaf_size=n_bodies, lamb_helmholtz=false, shrink_recenter=false) # try with leaf_size=3 for sources with no non-self influence
+fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_acceptance=0.5, leaf_size=n_bodies, shrink_recenter=false) # try with leaf_size=3 for sources with no non-self influence
 
 #--- test solve! ---#
 
@@ -363,7 +365,8 @@ derivatives_switches = FastMultipole.DerivativesSwitch(true, false, false, (syst
 
 systems = (system,)
 target = false
-source_tree = Tree(systems, target; buffers=FastMultipole.allocate_buffers(systems, target), small_buffers = FastMultipole.allocate_small_buffers(systems), expansion_order=4, leaf_size=SVector{1}(20), n_divisions=20, shrink_recenter=false, interaction_list_method=Barba())
+TF = eltype(system)
+source_tree = Tree(systems, target; buffers=FastMultipole.allocate_buffers(systems, target, TF), small_buffers = FastMultipole.allocate_small_buffers(systems, TF), expansion_order=4, leaf_size=SVector{1}(20), n_divisions=20, shrink_recenter=false, interaction_list_method=Barba())
 
 #--- modify the buffer strengths ---#
 
@@ -387,12 +390,12 @@ for i in 1:FastMultipole.get_n_bodies(system)
 end
 system_strengths = [system.bodies[i].strength for i in 1:FastMultipole.get_n_bodies(system)]
 
-system_p = sortperm(eachcol(system_positions))
+system_p = sortperm(collect(eachcol(system_positions)))
 sorted_system_positions = system_positions[:, system_p]
 sorted_system_strengths = system_strengths[system_p]
 
 # sort buffer by position
-buffer_p = sortperm(eachcol(buffer_positions))
+buffer_p = sortperm(collect(eachcol(buffer_positions)))
 sorted_buffer_positions = buffer_positions[:, buffer_p]
 sorted_buffer_strengths = buffer_strengths[buffer_p]
 

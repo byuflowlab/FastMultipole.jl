@@ -36,7 +36,7 @@ end
     return matrix_offset:matrix_offset + m*n - 1
 end
 
-@inline function get_vector_range(ms::Matrices, k::Int, m)
+@inline function get_gradient_range(ms::Matrices, k::Int, m)
     # get the range of values corresponding to the k-th rhs vector
     rhs_offset = ms.rhs_offsets[k]
     return rhs_offset:rhs_offset + m - 1
@@ -44,7 +44,7 @@ end
 
 function get_matrix_vector(ms::Matrices, k::Int)
     m, n = ms.sizes[k]
-    vrange = get_vector_range(ms, k, m)
+    vrange = get_gradient_range(ms, k, m)
     mrange = get_matrix_range(ms, k, m, n)
     mat = @view ms.data[mrange]
     return reshape(mat, m, n), view(ms.rhs, vrange)
@@ -536,7 +536,7 @@ FastGaussSeidel(systems::Tuple; optargs...) = FastGaussSeidel(systems, systems; 
 FastGaussSeidel(target_systems, source_systems; optargs...) = FastGaussSeidel((target_systems,), (source_systems,); optargs...)
 
 function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple; 
-    expansion_order=4, multipole_threshold=0.5, leaf_size=30, lamb_helmholtz=true,
+    expansion_order=4, multipole_acceptance=0.5, leaf_size=30,
     interaction_list_method=Barba(), shrink_recenter=true,
     derivatives_switches=DerivativesSwitch(true, true, false, target_systems)
 )
@@ -568,7 +568,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     #--- build interaction lists ---#
 
     farfield, nearfield, self_induced = true, true, false # self-induced interactions accounted for in self-influence matrices
-    m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size, multipole_threshold, farfield, nearfield, self_induced, interaction_list_method)
+    m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
 
     #--- build non-self influence matrices ---#
 
@@ -631,8 +631,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
         sorted_list,
         full_direct_list,
         interaction_list_method,
-        multipole_threshold,
-        lamb_helmholtz,
+        multipole_acceptance,
         strengths,
         strengths_by_leaf,
         targets_by_branch,
@@ -813,8 +812,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
     direct_list = solver.direct_list
     full_direct_list = solver.full_direct_list
     interaction_list_method = solver.interaction_list_method
-    multipole_threshold = solver.multipole_threshold
-    lamb_helmholtz = solver.lamb_helmholtz
+    multipole_acceptance = solver.multipole_acceptance
     strengths = solver.strengths
     strengths_by_leaf = solver.strengths_by_leaf
     targets_by_branch = solver.targets_by_branch
@@ -862,12 +860,12 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
         # fmm call
         reset!(target_buffers)
         fmm!(target_systems, target_tree, source_systems, source_tree, source_tree.leaf_size, m2l_list, empty_direct_list, derivatives_switches, interaction_list_method;
-            source_tree.expansion_order, ε_tol=nothing, lamb_helmholtz,
+            source_tree.expansion_order, error_tolerance=nothing,
             upward_pass=true, horizontal_pass=true, downward_pass=true,
             # horizontal_pass_verbose::Bool=false,
             reset_target_tree=true, reset_source_tree=true,
             # nearfield_device::Bool=false,
-            tune=false, update_target_systems=false, multipole_threshold,
+            tune=false, update_target_systems=false, multipole_acceptance,
             # t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
             # silence_warnings=false,
         )
@@ -932,12 +930,12 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
 
     # use new strengths to get the full influence (farfield was already computed)
     fmm!(target_systems, target_tree, source_systems, source_tree, source_tree.leaf_size, m2l_list, full_direct_list, derivatives_switches, interaction_list_method;
-            expansion_order=source_tree.expansion_order, ε_tol=nothing, lamb_helmholtz,
+            expansion_order=source_tree.expansion_order, error_tolerance=nothing,
             upward_pass=false, horizontal_pass=false, downward_pass=false, # just nearfield influence
             # horizontal_pass_verbose::Bool=false,
             reset_target_tree=false, reset_source_tree=false, # false now
             # nearfield_device::Bool=false,
-            tune=false, update_target_systems=true, multipole_threshold, # update_target_systems is `true` now
+            tune=false, update_target_systems=true, multipole_acceptance, # update_target_systems is `true` now
             # t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
             # silence_warnings=false,
         )

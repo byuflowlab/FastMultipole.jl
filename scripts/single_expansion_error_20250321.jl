@@ -8,11 +8,11 @@ using PythonPlot
 include("../test/gravitational.jl")
 include("../test/vortex.jl")
 
-function get_velocity(system::Gravitational)
+function get_gradient(system::Gravitational)
     return system.potential[5:7,:]
 end
 
-function get_velocity(system::VortexParticles)
+function get_gradient(system::VortexParticles)
     return system.velocity_stretching[1:3,:]
 end
 
@@ -102,7 +102,7 @@ max_errs = []
 err_ubs = []
 expansion_orders = 1:20
 for expansion_order = expansion_orders
-    errs, max_err, err_ub = test_error_ub(target_system, source_system; expansion_order, multipole_threshold=5.0, lamb_helmholtz=false)
+    errs, max_err, err_ub = test_error_ub(target_system, source_system; expansion_order, multipole_acceptance=5.0, lamb_helmholtz=false)
     push!(max_errs, max_err)
     push!(err_ubs, err_ub)
 end

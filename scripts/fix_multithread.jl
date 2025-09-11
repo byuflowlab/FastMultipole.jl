@@ -9,9 +9,9 @@ include("../test/evaluate_multipole.jl")
 function test_direct()
     # multithreaded test
     @assert Threads.nthreads() > 1
-    leaf_size, multipole_threshold, n_bodies = 1, 0.5, 10000
+    leaf_size, multipole_acceptance, n_bodies = 1, 0.5, 10000
     system = generate_gravitational(123, n_bodies; radius_factor=0.0)
-    tree, m2l_list, direct_list, derivatives = fmm!(system; expansion_order=4, leaf_size, multipole_threshold, farfield=false, unsort_bodies=false)
+    tree, m2l_list, direct_list, derivatives = fmm!(system; expansion_order=4, leaf_size, multipole_acceptance, farfield=false, unsort_bodies=false)
 
     # single-threaded check
     system2 = generate_gravitational(123, n_bodies; radius_factor=0.0)
@@ -30,9 +30,9 @@ end
 function test_expansions()
     # multithreaded test
     @assert Threads.nthreads() > 1
-    leaf_size, multipole_threshold, expansion_order, n_bodies = 1, 0.5, 1, 10
+    leaf_size, multipole_acceptance, expansion_order, n_bodies = 1, 0.5, 1, 10
     system = generate_gravitational(123, n_bodies; radius_factor=0.0)
-    tree, m2l_list, direct_list, derivatives = fmm!(system; expansion_order, leaf_size, multipole_threshold, nearfield=false, unsort_bodies=false)
+    tree, m2l_list, direct_list, derivatives = fmm!(system; expansion_order, leaf_size, multipole_acceptance, nearfield=false, unsort_bodies=false)
 
     # single-threaded check
     system2 = generate_gravitational(123, n_bodies; radius_factor=0.0)
@@ -66,9 +66,9 @@ function test_full()
 
     # multithreaded test
     @assert Threads.nthreads() > 1
-    leaf_size, multipole_threshold, expansion_order, n_bodies = 100, 0.4, 16, 10000
+    leaf_size, multipole_acceptance, expansion_order, n_bodies = 100, 0.4, 16, 10000
     system = generate_gravitational(123, n_bodies; radius_factor=0.0)
-    tree, m2l_list, direct_list, derivatives = fmm!(system; expansion_order, leaf_size, multipole_threshold, nearfield=true, unsort_bodies=false)
+    tree, m2l_list, direct_list, derivatives = fmm!(system; expansion_order, leaf_size, multipole_acceptance, nearfield=true, unsort_bodies=false)
 
     # single-threaded check
     system2 = generate_gravitational(123, n_bodies; radius_factor=0.0)
@@ -103,9 +103,9 @@ function test_vorton_full()
 
     # multithreaded test
     @assert Threads.nthreads() > 1
-    leaf_size, multipole_threshold, expansion_order, n_bodies = 1, 0.4, 16, 10000
+    leaf_size, multipole_acceptance, expansion_order, n_bodies = 1, 0.4, 16, 10000
     system = generate_vortex(123, n_bodies)
-    tree, m2l_list, direct_list, derivatives = fmm!(system; expansion_order, leaf_size, multipole_threshold, nearfield=true, unsort_bodies=false, lamb_helmholtz=true)
+    tree, m2l_list, direct_list, derivatives = fmm!(system; expansion_order, leaf_size, multipole_acceptance, nearfield=true, unsort_bodies=false, lamb_helmholtz=true)
 
     @assert length(m2l_list) > 0
 

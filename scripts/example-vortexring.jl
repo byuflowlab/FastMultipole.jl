@@ -282,8 +282,8 @@ convect!(vortexparticles, nsteps;
         # integration options
         integrate=Euler(dt),
         # fmm options
-        fmm_p=4, fmm_ncrit=50, fmm_multipole_threshold=0.5,
-        # fmm_p=43, fmm_ncrit=50, fmm_multipole_threshold=0.5,
+        fmm_p=4, fmm_ncrit=50, fmm_multipole_acceptance=0.5,
+        # fmm_p=43, fmm_ncrit=50, fmm_multipole_acceptance=0.5,
         direct=false,
         # direct=true,
         # save options

@@ -32,18 +32,18 @@ function closest_corner(center1, center2, box2::SVector{3,<:Any})
 end
 
 @inline function get_r_ρ(local_branch, multipole_branch, separation_distance_squared, ::UnequalBoxes)
-    r_max = local_branch.target_radius
-    r_min = norm(minimum_distance(multipole_branch.source_center, local_branch.target_center, local_branch.target_box))
-    ρ_max = multipole_branch.source_radius
-    ρ_min = norm(minimum_distance(local_branch.target_center, multipole_branch.source_center, multipole_branch.source_box))
+    r_max = local_branch.radius
+    r_min = norm(minimum_distance(multipole_branch.center, local_branch.center, local_branch.box))
+    ρ_max = multipole_branch.radius
+    ρ_min = norm(minimum_distance(local_branch.center, multipole_branch.center, multipole_branch.box))
 
     return r_min, r_max, ρ_min, ρ_max
 end
 
 @inline function get_r_ρ(local_branch, multipole_branch, separation_distance_squared, ::UniformUnequalBoxes)
-    r_max = local_branch.target_radius
-    r_min = norm(minimum_distance(multipole_branch.source_center, local_branch.target_center, local_branch.target_box))
-    ρ_max = multipole_branch.source_radius
+    r_max = local_branch.radius
+    r_min = norm(minimum_distance(multipole_branch.center, local_branch.center, local_branch.box))
+    ρ_max = multipole_branch.radius
     ρ_min = sqrt(separation_distance_squared) - ρ_max
 
     return r_min, r_max, ρ_min, ρ_max
@@ -51,9 +51,9 @@ end
 
 @inline function get_r_ρ(local_branch, multipole_branch, separation_distance_squared, ::Union{UnequalSpheres, UniformUnequalSpheres})
     separation_distance = sqrt(separation_distance_squared)
-    r_max = local_branch.target_radius
+    r_max = local_branch.radius
     r_min = separation_distance - r_max
-    ρ_max = multipole_branch.source_radius
+    ρ_max = multipole_branch.radius
     ρ_min = separation_distance - ρ_max
 
     return r_min, r_max, ρ_min, ρ_max
@@ -100,7 +100,7 @@ function multipole_error(local_branch, multipole_branch, i_source_branch, expans
     @assert LH == false "$(error_method) not implmemented with `lamb_helmholtz=true`"
 
     # get distances
-    Δx, Δy, Δz = local_branch.target_center - multipole_branch.source_center
+    Δx, Δy, Δz = local_branch.center - multipole_branch.center
     separation_distance_squared = Δx*Δx + Δy*Δy + Δz*Δz
     r_min, _, _, ρ_max = get_r_ρ(local_branch, multipole_branch, separation_distance_squared, error_method)
 
@@ -128,10 +128,10 @@ end
 function multipole_error(local_branch, multipole_branch, i_source_branch, expansions, P, error_method::RotatedCoefficients, lamb_helmholtz::Val)
 
     # vector from multipole center to local center
-    t⃗ = local_branch.target_center - multipole_branch.source_center
+    t⃗ = local_branch.center - multipole_branch.center
 
     # multipole max error location
-    Δx, Δy, Δz = minimum_distance(multipole_branch.source_center, local_branch.target_center, local_branch.target_box)
+    Δx, Δy, Δz = minimum_distance(multipole_branch.center, local_branch.center, local_branch.box)
     r_mp = sqrt(Δx * Δx + Δy * Δy + Δz * Δz)
 
     # calculate error
@@ -186,7 +186,7 @@ function local_error(local_branch, multipole_branch, i_source_branch, expansions
     @assert LH == false "$(error_method) not implmemented with `lamb_helmholtz=true`"
 
     # get distances
-    Δx, Δy, Δz = local_branch.target_center - multipole_branch.source_center
+    Δx, Δy, Δz = local_branch.center - multipole_branch.center
     separation_distance_squared = Δx*Δx + Δy*Δy + Δz*Δz
     r_min, r_max, ρ_min, ρ_max = get_r_ρ(local_branch, multipole_branch, separation_distance_squared, error_method)
 
@@ -210,7 +210,7 @@ function local_error(local_branch, multipole_branch, i_source_branch, expansions
     @assert LH == false "$(error_method) not implmemented with `lamb_helmholtz=true`"
 
     # get distances
-    Δx, Δy, Δz = local_branch.target_center - multipole_branch.source_center
+    Δx, Δy, Δz = local_branch.center - multipole_branch.center
     separation_distance_squared = Δx*Δx + Δy*Δy + Δz*Δz
     r_min, r_max, ρ_min, ρ_max = get_r_ρ(local_branch, multipole_branch, separation_distance_squared, error_method)
 
@@ -291,10 +291,10 @@ end
 function local_error(local_branch, multipole_branch, i_source_branch, expansions, P, error_method::RotatedCoefficients, lamb_helmholtz::Val)
 
     # vector from multipole center to local center
-    t⃗ = local_branch.target_center - multipole_branch.source_center
+    t⃗ = local_branch.center - multipole_branch.center
 
     # local max error location
-    r_l = sum(local_branch.target_box) * 0.33333333333333333333 * sqrt(3)
+    r_l = sum(local_branch.box) * 0.33333333333333333333 * sqrt(3)
 
     # calculate error
     multipole_expansion = view(expansions, :, :, :, i_source_branch)
@@ -355,20 +355,20 @@ end
 
 #------- try more efficient error predictors -------#
 
-function predict_error(target_branch, source_weights, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz::Val{LH}, ::RotatedCoefficientsAbsoluteVelocity) where LH
+function predict_error(target_branch, source_weights, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz::Val{LH}, ::RotatedCoefficientsAbsoluteGradient) where LH
     
     # translation vector
-    Δx = target_branch.target_center - source_branch.source_center
+    Δx = target_branch.center - source_branch.center
     r, θ, ϕ = cartesian_to_spherical(Δx)
 
     #--- distance information ---#
 
     # multipole error location
-    Δx, Δy, Δz = minimum_distance(source_branch.source_center, target_branch.target_center, target_branch.target_box)
+    Δx, Δy, Δz = minimum_distance(source_branch.center, target_branch.center, target_branch.box)
     r_mp = sqrt(Δx * Δx + Δy * Δy + Δz * Δz)
 
     # local error location
-    r_l = target_branch.target_radius
+    r_l = target_branch.radius
 
     #--- initialize recursive values ---#
 
@@ -471,13 +471,13 @@ expects that the upward pass has been performed up to expansion_order+1
 function predict_error(target_branch, source_weights, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz::Val{LH}, ::PowerAbsolutePotential) where LH
     
     # translation vector
-    Δx = target_branch.target_center - source_branch.source_center
+    Δx = target_branch.center - source_branch.center
     r, θ, ϕ = cartesian_to_spherical(Δx)
 
     #--- multipole error prediction ---#
     
     # distance to closest point
-    Δx, Δy, Δz = minimum_distance(source_branch.source_center, target_branch.target_center, target_branch.target_box)
+    Δx, Δy, Δz = minimum_distance(source_branch.center, target_branch.center, target_branch.box)
     r_mp = sqrt(Δx * Δx + Δy * Δy + Δz * Δz)
     
     # check multipole magnitude
@@ -540,22 +540,22 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     # local power error prediction
     nfact = Float64(factorial(big(n)))
     L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
-    r_l = target_branch.target_radius
+    r_l = target_branch.radius
     ε_l_power = l_power / L̃0 / nfact * r_l^n
 
     return ε_mp_power * ONE_OVER_4π, ε_l_power * ONE_OVER_4π
 end
 
-function predict_error(target_branch, source_weights, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz::Val{LH}, ::PowerAbsoluteVelocity) where LH
+function predict_error(target_branch, source_weights, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz::Val{LH}, ::PowerAbsoluteGradient) where LH
     
     # translation vector
-    Δx = target_branch.target_center - source_branch.source_center
+    Δx = target_branch.center - source_branch.center
     r, θ, ϕ = cartesian_to_spherical(Δx)
 
     #--- multipole error prediction ---#
     
     # distance to closest point
-    Δx, Δy, Δz = minimum_distance(source_branch.source_center, target_branch.target_center, target_branch.target_box)
+    Δx, Δy, Δz = minimum_distance(source_branch.center, target_branch.center, target_branch.box)
     r_mp = sqrt(Δx * Δx + Δy * Δy + Δz * Δz)
     
     # check multipole magnitude
@@ -655,7 +655,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     # local power error prediction
     nfact = Float64(factorial(big(n)))
     L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
-    r_l = target_branch.target_radius
+    r_l = target_branch.radius
     ε_l_power += l_power / L̃0 * r_l^(n-1) / nfact * n * sqrt(3)
 
     # stuff = zero(r_l)
@@ -694,7 +694,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
         # @show l_power / L̃0
         # n += 1 # return n back to its original value
         # nfact = Float64(factorial(big(n)))
-        r_l = target_branch.target_radius
+        r_l = target_branch.radius
         ε_l_power += n * l_power / L̃0 * r_l^(n) / nfact * sqrt(3)
 
         
@@ -833,7 +833,7 @@ end
     # # local power error prediction
     # nfact = Float64(factorial(big(n)))
     # L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
-    # r_l = target_branch.target_radius
+    # r_l = target_branch.radius
     # println("\nSherlock!")
     # @show ε_l_power
     # ε_l_power += l_power / L̃0 * r_l^(n-1) / nfact * n * sqrt(3)
@@ -858,7 +858,7 @@ end
     #     # local power error prediction
     #     nfact = Float64(factorial(big(n)))
     #     L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
-    #     r_l = target_branch.target_radius
+    #     r_l = target_branch.radius
     #     ε_l_power += l_power / L̃0 * r_l^(n) / nfact * sqrt(3)
     #     @show ε_l_power
     # end

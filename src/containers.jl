@@ -8,9 +8,9 @@ struct Radius <: Indexable end
 
 struct ScalarPotential <: Indexable end
 
-struct Velocity <: Indexable end
+struct Gradient <: Indexable end
 
-struct VelocityGradient <: Indexable end
+struct Hessian <: Indexable end
 
 struct Vertex <: Indexable end
 
@@ -45,138 +45,62 @@ abstract type Panel{NS,TK} <: AbstractElement{TK} end
 """
     DerivativesSwitch
 
-Switch indicating whether the scalar potential, vector potential, velocity, and/or velocity gradient should be computed for a target system. Information is stored as type parameters, allowing the compiler to compile away if statements.
+Switch indicating whether the scalar potential, vector potential, gradient, and/or hessian should be computed for a target system. Information is stored as type parameters, allowing the compiler to compile away if statements.
 """
-struct DerivativesSwitch{PS,VS,GS} end
-
-"""
-    ExpansionSwitch
-
-Switch indicating which expansions should be used:
-
-1. scalar potential (`SP`)
-2. vector potential via Lamb-Helmholtz decomposition (`VP`)
-"""
-struct ExpansionSwitch{SP,VP} end
-
-#####
-##### cost parameters
-#####
-# abstract type CostParameters end
-
-# struct SingleCostParameters <: CostParameters
-#     alloc_M2M_L2L::SVector{3,Float64}
-#     tau_M2M_L2L::SVector{5,Float64}
-#     alloc_M2L::SVector{3,Float64}
-#     tau_M2L::SVector{5,Float64}
-#     alloc_L2B::SVector{3,Float64}
-#     tau_L2B::SVector{3,Float64}
-#     C_nearfield::Float64
-#     tau_B2M::SVector{3,Float64}
-# end
-
-# SingleCostParameters(;
-#     alloc_M2M_L2L = ALLOC_M2M_L2L_DEFAULT,
-#     tau_M2M_L2L = TAU_M2M_DEFAULT,
-#     alloc_M2L = ALLOC_M2L_DEFAULT,
-#     tau_M2L = TAU_M2L_DEFAULT,
-#     tau_L2L = TAU_L2L_DEFAULT,
-#     alloc_L2B = ALLOC_L2B_DEFAULT,
-#     tau_L2B = TAU_L2B_DEFAULT,
-#     C_nearfield = C_NEARFIELD_DEFAULT,
-#     tau_B2M = TAU_B2M_DEFAULT
-# ) = SingleCostParameters(alloc_M2M_L2L, tau_M2M_L2L, alloc_M2L, tau_M2L, alloc_L2B, tau_L2B, C_nearfield, tau_B2M)
-
-# struct MultiCostParameters{N} <: CostParameters
-#     alloc_M2M_L2L::SVector{3,Float64}
-#     tau_M2M_L2L::SVector{5,Float64}
-#     alloc_M2L::SVector{3,Float64}
-#     tau_M2L::SVector{5,Float64}
-#     alloc_L2B::SVector{3,Float64}
-#     tau_L2B::SVector{3,Float64}
-#     C_nearfield::SVector{N,Float64}
-#     tau_B2M::SVector{N,SVector{3,Float64}}
-# end
-
-# MultiCostParameters{N}(;
-#     alloc_M2M_L2L = ALLOC_M2M_L2L_DEFAULT,
-#     tau_M2M_L2L = TAU_M2M_L2L_DEFAULT,
-#     alloc_M2L = ALLOC_M2L_DEFAULT,
-#     tau_M2L = TAU_M2L_DEFAULT,
-#     alloc_L2B = ALLOC_L2B_DEFAULT,
-#     tau_L2B = TAU_L2B_DEFAULT,
-#     C_nearfield = SVector{N,Float64}(C_NEARFIELD_DEFAULT for _ in 1:N),
-#     tau_B2M = SVector{N,SVector{3,Float64}}(TAU_B2M_DEFAULT for _ in 1:N)
-# ) where N = MultiCostParameters{N}(alloc_M2M_L2L, tau_M2M_L2L, alloc_M2L, tau_M2L, tau_L2L, alloc_L2B, tau_L2B, C_nearfield, tau_B2M)
-
-# CostParameters(systems::Tuple) = MultiCostParameters()
-# CostParameters(system) = SingleCostParameters()
-
-# CostParameters(alloc_M2M_L2L, tau_B2M, alloc_M2L, tau_M2L, tau_L2L, alloc_L2B, tau_L2B, C_nearfield::Float64, tau_M2M_L2L) =
-#     SingleCostParameters(alloc_M2M_L2L, tau_B2M, alloc_M2L, tau_M2L, tau_L2L, alloc_L2B, tau_L2B, C_nearfield, tau_M2M_L2L)
-
-# CostParameters(alloc_M2M_L2L, tau_B2M, alloc_M2L, tau_M2L, tau_L2L, alloc_L2B, tau_L2B, C_nearfield::SVector, tau_M2M_L2L) =
-#     MultiCostParameters(alloc_M2M_L2L, tau_B2M, alloc_M2L, tau_M2L, tau_L2L, alloc_L2B, tau_L2B, C_nearfield, tau_M2M_L2L)
+struct DerivativesSwitch{PS,GS,HS} end
 
 #------- error predictors -------#
 
-abstract type ErrorMethod end
+abstract type ErrorMethod{BE} end
 
-abstract type RelativeError <: ErrorMethod end
+abstract type AbsoluteErrorMethod{AET,BE} <: ErrorMethod{BE} end
 
-abstract type AbsoluteError <: ErrorMethod end
+abstract type RelativeErrorMethod{RET,AET,BE} <: ErrorMethod{BE} end
 
-struct UnequalSpheres <: ErrorMethod end
+struct UnequalSpheres{BE} <: ErrorMethod{BE} end
 
-struct UnequalBoxes <: ErrorMethod end
+struct UnequalBoxes{BE} <: ErrorMethod{BE} end
 
-struct UniformUnequalSpheres <: ErrorMethod end
+struct UniformUnequalSpheres{BE} <: ErrorMethod{BE} end
 
-struct UniformUnequalBoxes <: ErrorMethod end
+struct UniformUnequalBoxes{BE} <: ErrorMethod{BE} end
 
-struct RotatedCoefficients <: ErrorMethod end
+struct RotatedCoefficients{BE} <: ErrorMethod{BE} end
 
 #------- dynamic expansion order -------#
 
-struct AbsoluteUpperBound{ε} <: AbsoluteError end
-AbsoluteUpperBound(ε) = AbsoluteUpperBound{ε}()
+# struct AbsoluteUpperBound{ε} <: AbsoluteError end
+# AbsoluteUpperBound(ε) = AbsoluteUpperBound{ε}()
 
-struct PowerAbsolutePotential{ε,BE} <: AbsoluteError end
+struct PowerAbsolutePotential{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsolutePotential(ε, BE::Bool=true) = PowerAbsolutePotential{ε,BE}()
 
-struct PowerAbsoluteVelocity{ε,BE} <: AbsoluteError end
-PowerAbsoluteVelocity(ε, BE::Bool=true) = PowerAbsoluteVelocity{ε,BE}()
+struct PowerAbsoluteGradient{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
+PowerAbsoluteGradient(ε, BE::Bool=true) = PowerAbsoluteGradient{ε,BE}()
 
-struct RotatedCoefficientsAbsoluteVelocity{ε,BE} <: AbsoluteError end
-RotatedCoefficientsAbsoluteVelocity(ε, BE::Bool=true) = RotatedCoefficientsAbsoluteVelocity{ε,BE}()
+struct RotatedCoefficientsAbsoluteGradient{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
+RotatedCoefficientsAbsoluteGradient(ε, BE::Bool=true) = RotatedCoefficientsAbsoluteGradient{ε,BE}()
 
-struct RelativeUpperBound{ε} <: RelativeError end
-RelativeUpperBound(ε) = RelativeUpperBound{ε}()
+# struct RelativeUpperBound{ε} <: RelativeErrorMethod end
+# RelativeUpperBound(ε) = RelativeUpperBound{ε}()
 
-struct PowerRelativePotential{ε,BE} <: RelativeError end
-PowerRelativePotential(ε, BE::Bool=true) = PowerRelativePotential{ε,BE}()
+struct PowerRelativePotential{ε_rel,ε_abs,BE} <: RelativeErrorMethod{ε_rel,ε_abs,BE} end
+PowerRelativePotential(ε_rel, ε_abs=sqrt(eps()), BE::Bool=true) = PowerRelativePotential{ε_rel,ε_abs,BE}()
 
-struct PowerRelativeVelocity{ε,BE} <: RelativeError end
-PowerRelativeVelocity(ε, BE::Bool=true) = PowerRelativeVelocity{ε,BE}()
+struct PowerRelativeGradient{ε_rel,ε_abs,BE} <: RelativeErrorMethod{ε_rel,ε_abs,BE} end
+PowerRelativeGradient(ε_rel, ε_abs=sqrt(eps()), BE::Bool=true) = PowerRelativeGradient{ε_rel,ε_abs,BE}()
 
-struct RotatedCoefficientsRelativeVelocity{ε,BE} <: RelativeError end
-RotatedCoefficientsRelativeVelocity(ε, BE::Bool=true) = RotatedCoefficientsRelativeVelocity{ε,BE}()
+struct RotatedCoefficientsRelativeGradient{ε_rel,ε_abs,BE} <: RelativeErrorMethod{ε_rel,ε_abs,BE} end
+RotatedCoefficientsRelativeGradient(ε_rel, ε_abs=sqrt(eps()), BE::Bool=true) = RotatedCoefficientsRelativeGradient{ε_rel,ε_abs,BE}()
 
 #------- interaction list -------#
 
-abstract type InteractionListMethod{TS} end
+abstract type InteractionListMethod end
 
-struct Barba{TS} <: InteractionListMethod{TS} end
-
-Barba(TS=SortByTarget()) = Barba{TS}()
-
-struct SortByTarget end
-
-struct SortBySource end
-
-struct SelfTuning{TS} <: InteractionListMethod{TS} end
-
-SelfTuning(TS=SortByTarget()) = SelfTuning{TS}()
+struct Barba <: InteractionListMethod end
+struct SelfTuning <: InteractionListMethod end
+struct SelfTuningTreeStop <: InteractionListMethod end
+struct SelfTuningTargetStop <: InteractionListMethod end
 
 #------- octree creation -------#
 
@@ -196,14 +120,10 @@ Branch object used to sort more than one system into an octree. Type parameters 
 * `i_parent::Int`: index of this branch's parent
 * `i_leaf::Int`: if this branch is a leaf, what is its index in its parent `<:Tree`'s `leaf_index` field
 * `center::Vector{TF}`: center of this branch at which its multipole and local expansions are centered
-* `source_radius::TF`: if this branch is a leaf, distance from `center` to the outer edge of farthest body contained in this branch; otherwise, this is the distance from `center` to the corner of its `source_box`
-* `target_radius::TF`: distance from `center` to the farthest body center contained in this branch
-* `source_box::Vector{TF}`: vector of length 6 containing the distances from the center to faces of a rectangular prism completely enclosing all bodies with their finite radius in the negative x, positive x, negative y, positive y, negative z, and positive z directions, respectively
-* `target_box::Vector{TF}`: vector of length 3 containing the distances from the center to faces of a rectangular prism completely enclosing all body centers in the x, y, and z direction, respectively
-* multipole_expansion::Array{TF,3}`: array of size (2,2,) containing the multipole expansion coefficients; the first index indicates real or imaginary, the second index indicates scalar potential or the second component of the Lamb-Helmholtz decomposition, and the third index `k` indicates the expansion coefficient of degree \$n\$ and order \$m\$, as \$k = p(p+1)/2 + m + 1\$
-* local_expansion::Array{TF,3}`: array of size `(2,2,(p+1)(p+2)/2)` containing the local expansion coefficients; the first index indicates real or imaginary, the second index indicates scalar potential or the second component of the Lamb-Helmholtz decomposition, and the third index `k` indicates the expansion coefficient of degree \$n\$ and order \$m\$, as \$k = p(p+1)/2 + m + 1\$
-* `harmonics::Array{TF,3}`: array of size `(2,2,(p+1)(p+2)/2)` used as storage for regular harmonics, irregular harmonics, or whatever is needed, and is indexed as multipole and local expansions
-* `lock::ReentrantLock`: lock used to avoid data race conditions when modifying this branch or its corresponding bodies
+* `radius::TF`: distance from `center` to the farthest body contained in this branch (accounting for finite body radius if bodies are sources)
+* `box::Vector{TF}`: vector of length 3 containing the distances from the center to faces of a rectangular prism completely enclosing all bodies in the x, y, and z direction, respectively
+* `min_potential::TF`: maximum influence of any body in this branch on any body in its child branches; used to enforce a relative error tolerance
+* `min_gradient::TF`: maximum gradient magnitude of any body in this branch on any body in its child branches; used to enforce a relative error tolerance
 
 """
 struct Branch{TF,N}
@@ -213,30 +133,15 @@ struct Branch{TF,N}
     branch_index::UnitRange{Int64}
     i_parent::Int64
     i_leaf::Int64
-    source_center::SVector{3,TF}   # center of the branch
-    target_center::SVector{3,TF}   # center of the branch
-    source_radius::TF
-    target_radius::TF
-    source_box::SVector{3,TF} # x, y, and z half widths of the box encapsulating all sources
-    target_box::SVector{3,TF} # x, y, and z half widths of the box encapsulating all sources
-    # multipole_expansion::Array{TF,3} # multipole expansion coefficients
-    # local_expansion::Array{TF,3}     # local expansion coefficients
-    # harmonics::Array{TF,3}
-    lock::ReentrantLock
-    max_influence::TF
+    center::SVector{3,TF}   # center of the branch
+    radius::TF
+    box::SVector{3,TF} # x, y, and z half widths of the box encapsulating all member bodies
+    min_potential::TF
+    min_gradient::TF
 end
 
-#=function Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, source_center, target_center, source_radius, target_radius, source_box, target_box, lock, max_influence)
-    TF = promote_type(eltype(source_center), eltype(target_center), eltype(source_radius), eltype(target_radius), eltype(source_box), eltype(target_box), eltype(max_influence))
-    Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, TF.(source_center), TF.(target_center), TF(source_radius), TF(target_radius), TF.(source_box), TF.(target_box), lock, TF(max_influence))
-end=#
-
-# function Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, source_center, target_center, source_radius::TF, target_radius, source_box, target_box, lock, max_influence=zero(TF)) where TF
-#     Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, source_center, target_center, source_radius, target_radius, source_box, target_box, error, lock, max_influence)
-# end
-
-function Branch(n_bodies::SVector{<:Any,Int64}, bodies_index, n_branches, branch_index, i_parent::Int, i_leaf_index, source_center, target_center, source_radius, target_radius, source_box, target_box)
-    return Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf_index, source_center, target_center, source_radius, target_radius, source_box, target_box, ReentrantLock(), zero(target_radius))
+function Branch(n_bodies::SVector{<:Any,Int64}, bodies_index, n_branches, branch_index, i_parent::Int, i_leaf_index, center, radius, box)
+    return Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box, zero(radius), zero(radius))
 end
 
 function Branch(bodies_index::SVector{<:Any,UnitRange{Int64}}, args...)
@@ -248,10 +153,27 @@ end
 Base.eltype(::Branch{TF,<:Any}) where TF = TF
 
 """
-bodies[index_list] is the same sort operation as performed by the tree
-sorted_bodies[inverse_index_list] undoes the sort operation performed by the tree
+    Tree{TF,N}
+
+Tree object used to sort `N` systems into an octree.
+
+**Fields**
+
+* `branches::Vector{Branch{TF,N}}`: a vector of `Branch` objects composing the tree
+* `expansions::Array{TF,4}`: 4-dimensional array whose `(1,i,j,k)`th element contains the real part of the `j`th expansion coefficient of the `k`th branch, and whose `(2,i,j,k)`th element contains the imaginary part. If `i==1`, the coefficient corresponds to the scalar potential; if `i==2`, the coefficient corresponds to the ''\\chi'' part of the Lamb-Helmholtz decomposition of the vector potential.
+* `levels_index::Vector{UnitRange{Int64}}`: vector of unit ranges indicating the indices of branches at each level of the tree
+* `leaf_index::Vector{Int}`: vector of indices of branches that are leaves
+* `sort_index_list::NTuple{N,Vector{Int}}`: tuple of vectors of indices used to sort the bodies in each system into the tree
+* `inverse_sort_index_list::NTuple{N,Vector{Int}}`: tuple of vectors of indices used to undo the sort operation performed by `sort_index_list`
+* `buffers::NTuple{N,Matrix{TF}}`: tuple of buffers used to store the bodies computed influence of each system in the tree, as explained in [`FastMultipole.allocate_buffers`](@ref)
+* `small_buffers::Vector{Matrix{TF}}`: vector of buffers used to pidgeon-hole sort bodies into the tree, as explained in [`FastMultipole.allocate_small_buffers`](@ref)
+* `expansion_order::Int64`: the maximum storable expansion order
+* `leaf_size::SVector{N,Int64}`: maximum number of bodies in a leaf for each system; if multiple systems are represented, the actual maximum depends on the `InteractionListMethod` used to create the tree
+
 """
 struct Tree{TF,N}
+    # bodies[index_list] is the same sort operation as performed by the tree
+    # sorted_bodies[inverse_index_list] undoes the sort operation performed by the tree
     branches::Vector{Branch{TF,N}}        # a vector of `Branch` objects composing the tree
     expansions::Array{TF,4}
     levels_index::Vector{UnitRange{Int64}}
@@ -280,27 +202,26 @@ end
 Base.length(list::InteractionList) = length(list.direct_list)
 
 #####
-##### allow input systems to take any form when desired
-#####
-struct SortWrapper{TS}
-    system::TS
-    index::Vector{Int}
-end
-
-#####
 ##### when we desire to evaluate the potential at locations not coincident with source centers
 #####
 
 """
-    ProbeSystem
+    ProbeSystem{TF}
 
-Convenience system for defining locations at which the potential, velocity, or velocity gradient may be desired.
+Convenience system for defining locations at which the potential, vector field, or vector gradient may be desired. Interface functions are already defined and overloaded.
+
+**Fields**
+
+* `position::Vector{SVector{3,TF}}`: vector of probe positions
+* `scalar_potential::Vector{TF}`: vector of scalar potential values at the positions
+* `gradient::Vector{SVector{3,TF}}`: vector of vector field values at the positions
+* `hessian::Vector{SMatrix{3,3,TF,9}}`: vector of Hessian matrices at the positions
 """
 struct ProbeSystem{TF}
     position::Vector{SVector{3,TF}}
     scalar_potential::Vector{TF}
-    velocity::Vector{SVector{3,TF}}
-    velocity_gradient::Vector{SMatrix{3,3,TF,9}}
+    gradient::Vector{SVector{3,TF}}
+    hessian::Vector{SMatrix{3,3,TF,9}}
 end
 
 #------- SOLVERS -------#
@@ -323,8 +244,7 @@ struct FastGaussSeidel{TF,Nsys,TIL} <: AbstractSolver
     direct_list::Vector{SVector{2,Int32}}
     full_direct_list::Vector{SVector{2,Int32}}
     interaction_list_method::TIL
-    multipole_threshold::Float64
-    lamb_helmholtz::Bool
+    multipole_acceptance::Float64
     strengths::Vector{TF}
     strengths_by_leaf::Vector{UnitRange{Int}}
     targets_by_branch::Vector{UnitRange{Int}}
@@ -334,4 +254,49 @@ struct FastGaussSeidel{TF,Nsys,TIL} <: AbstractSolver
     extra_right_hand_side::Vector{TF}
     influences_per_system::Vector{Vector{TF}}
     residual_vector::Vector{TF}
+end
+
+#--- memory cache ---#
+
+"""
+    Cache{TF,NT,NS}
+
+Cache object used to store system buffers to avoid repeated allocations.
+
+**Fields**
+
+* `target_buffers::NTuple{NT, Matrix{TF}}`: tuple of length `NT` containing buffers for target systems
+* `source_buffers::NTuple{NS, Matrix{TF}}`: tuple of length `NS` containing buffers for source systems
+* `target_small_buffers::Vector{Matrix{TF}}`: vector of small buffers used for pidgeon-hole sorting target systems into the octree
+* `source_small_buffers::Vector{Matrix{TF}}`: vector of small buffers used for pidgeon-hole sorting source systems into the octree
+
+"""
+struct Cache{TF,NT,NS}
+    target_buffers::NTuple{NT, Matrix{TF}}
+    source_buffers::NTuple{NS, Matrix{TF}}
+    target_small_buffers::Vector{Matrix{TF}}
+    source_small_buffers::Vector{Matrix{TF}}
+end
+
+function Cache(; 
+    target_buffers::NTuple{NT,Matrix{TF}}, 
+    source_buffers::NTuple{NS,Matrix{TF}}, 
+    target_small_buffers::Vector{Matrix{TF}}, 
+    source_small_buffers::Vector{Matrix{TF}}
+        ) where {TF,NT,NS}
+    return Cache{TF,NT,NS}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
+end
+
+function Cache(target_systems::Tuple, source_systems::Tuple)
+    # get float type
+    TF = get_type(target_systems, source_systems)
+
+    # allocate buffers
+    target_buffers = allocate_buffers(target_systems, true, TF)
+    source_buffers = allocate_buffers(source_systems, false, TF)
+    target_small_buffers = allocate_small_buffers(target_systems, TF)
+    source_small_buffers = allocate_small_buffers(source_systems, TF)
+    
+    # return cache
+    return Cache{TF,length(target_systems),length(source_systems)}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
 end

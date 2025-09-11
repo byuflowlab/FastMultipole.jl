@@ -22,11 +22,11 @@ v_true_mags = sqrt.(sum(v_true .* v_true; dims=1))
 @show mean(v_true_mags)
 
 reset!(system)
-# @time tuned_params, cache = FastMultipole.tune_fmm!(system; ε_abs, lamb_helmholtz, verbose=true, )#multipole_thresholds=0.4:0.1:0.5)
+# @time tuned_params, cache = FastMultipole.tune_fmm!(system; ε_abs, lamb_helmholtz, verbose=true, )#multipole_acceptances=0.4:0.1:0.5)
 
 FastMultipole.DEBUG[] = true
 resize!(FastMultipole.DEBUG_DISTRIBUTION, 0)
-@time fmm!(system; ε_abs, lamb_helmholtz, tuned_params..., cache...)
+@time fmm!(system; ε_abs, lamb_helmholtz, tuned_params..., cache)
 FastMultipole.DEBUG[] = false
 
 v_fmm = similar(v_true)

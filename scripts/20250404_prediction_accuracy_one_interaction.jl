@@ -14,11 +14,11 @@ include("../test/bodytolocal.jl")
 include("../test/gravitational.jl")
 include("../test/vortex.jl")
 
-function get_velocity(system::Gravitational)
+function get_gradient(system::Gravitational)
     return system.potential[5:7,:]
 end
 
-function get_velocity(system::VortexParticles)
+function get_gradient(system::VortexParticles)
     return system.velocity_stretching[1:3,:]
 end
 
@@ -65,7 +65,7 @@ function potential_err!(ϕ_fmm, ϕ_direct, bodies_index)
     end   
 end
 
-function test_accuracy(source_systems::Tuple, r_l_over_r_mp_list, expansion_order, max_expansion_order, multipole_threshold, lamb_helmholtz, dx_vec)
+function test_accuracy(source_systems::Tuple, r_l_over_r_mp_list, expansion_order, max_expansion_order, multipole_acceptance, lamb_helmholtz, dx_vec)
 
     # wrap val
     lamb_helmholtz_bool = lamb_helmholtz
@@ -98,7 +98,7 @@ function test_accuracy(source_systems::Tuple, r_l_over_r_mp_list, expansion_orde
     Ts = zeros(Float64, FastMultipole.length_Ts(max_expansion_order))
     eimϕs = zeros(Float64, 2, max_expansion_order + 1)
     harmonics = initialize_harmonics(max_expansion_order)
-    velocity_n_m = FastMultipole.initialize_velocity_n_m(max_expansion_order, Float64)
+    velocity_n_m = FastMultipole.initialize_gradient_n_m(max_expansion_order, Float64)
     derivatives_switches = DerivativesSwitch(true, true, false, (nothing,))
 
     for r_l_over_r_mp in r_l_over_r_mp_list
@@ -106,7 +106,7 @@ function test_accuracy(source_systems::Tuple, r_l_over_r_mp_list, expansion_orde
         # determine target system size
         r_mp = source_tree.branches[1].source_radius
         r_l = r_l_over_r_mp * r_mp
-        target_center_distance = (r_mp + r_l) / multipole_threshold
+        target_center_distance = (r_mp + r_l) / multipole_acceptance
         source_center = source_tree.branches[1].source_center
         # target_center = SVector{3}(source_center[1] + target_center_distance, source_center[2], source_center[3])
         target_center = source_center + dx_vec * target_center_distance
@@ -353,7 +353,7 @@ max_expansion_order = 20
 lamb_helmholtz = typeof(source_systems[1]) <: VortexParticles
 @show lamb_helmholtz
 
-multipole_threshold = 0.8
+multipole_acceptance = 0.8
 r_l_over_r_mp = [1.0]
 ψs = range(0, stop=pi, length=100)
 
@@ -375,7 +375,7 @@ for (iψ, ψ) in enumerate(ψs)
     # dx_vec = SVector{3}(1.0, 0.0, 0.0)
     dx_vec = SVector{3}(sin(ψ), 0.0, cos(ψ))
     dx_vec = SVector{3}(sin(ψ) * cos(ξ), sin(ψ) * sin(ξ), cos(ψ))
-    max_errs, max_v_errs, max_mp_errs, max_v_mp_errs, max_l_errs, max_v_l_errs, ε_mp_hat, ε_l_hat, ε_v_mp_hat, ε_v_l_hat = test_accuracy(source_systems, r_l_over_r_mp, expansion_order, max_expansion_order, multipole_threshold, lamb_helmholtz, dx_vec)
+    max_errs, max_v_errs, max_mp_errs, max_v_mp_errs, max_l_errs, max_v_l_errs, ε_mp_hat, ε_l_hat, ε_v_mp_hat, ε_v_l_hat = test_accuracy(source_systems, r_l_over_r_mp, expansion_order, max_expansion_order, multipole_acceptance, lamb_helmholtz, dx_vec)
     max_errs, max_v_errs, max_mp_errs, max_v_mp_errs, max_l_errs, max_v_l_errs, ε_mp_hat, ε_l_hat, ε_v_mp_hat, ε_v_l_hat = compile(max_errs, max_v_errs, max_mp_errs, max_v_mp_errs, max_l_errs, max_v_l_errs, ε_mp_hat, ε_l_hat, ε_v_mp_hat, ε_v_l_hat, 1)
 
     prediction_over_measured_mp[iψ,:] .= ε_mp_hat ./ max_mp_errs

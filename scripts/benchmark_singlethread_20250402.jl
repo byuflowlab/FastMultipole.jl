@@ -21,11 +21,11 @@ function benchmark_fmm_gravitational(sizes, rand_seed=123; fmm_args...)
 
         # Warm-up call to reduce noise
         reset!(system)
-        time1 = @elapsed fmm!(system; cache..., optargs...)
+        time1 = @elapsed fmm!(system; cache, optargs...)
 
         # Benchmark
         reset!(system)
-        time2 = @elapsed fmm!(system; cache..., optargs...)
+        time2 = @elapsed fmm!(system; cache, optargs...)
 
         push!(results, min(time1, time2))
     end
@@ -46,11 +46,11 @@ function benchmark_fmm_gravitational2(sizes, rand_seed=123; fmm_args...)
 
         # Warm-up call to reduce noise
         reset!(system)
-        time1 = @elapsed fmm!(system; velocity=false, lamb_helmholtz=false, scalar_potential=true, cache..., optargs...)
+        time1 = @elapsed fmm!(system; velocity=false, lamb_helmholtz=false, scalar_potential=true, cache, optargs...)
 
         # Benchmark
         reset!(system)
-        time2 = @elapsed fmm!(system; velocity=false, lamb_helmholtz=false, scalar_potential=true, cache..., optargs...)
+        time2 = @elapsed fmm!(system; velocity=false, lamb_helmholtz=false, scalar_potential=true, cache, optargs...)
         phi_fmm = get_potential(system)
 
         # get error
@@ -86,11 +86,11 @@ function benchmark_fmm_vortex(sizes, rand_seed=123; fmm_args...)
 
         # Warm-up call to reduce noise
         reset!(system)
-        time1 = @elapsed fmm!(system; cache..., lamb_helmholtz=true, fmm_args...)
+        time1 = @elapsed fmm!(system; cache, lamb_helmholtz=true, fmm_args...)
 
         # Benchmark
         reset!(system)
-        time2 = @elapsed fmm!(system; cache..., lamb_helmholtz=true, fmm_args...)
+        time2 = @elapsed fmm!(system; cache, lamb_helmholtz=true, fmm_args...)
 
         push!(results, min(time1, time2))
     end
@@ -146,7 +146,7 @@ end
 #=
 for P in 1:3
     print("P = $P:")
-    grav_results, grav_results_direct, errs = benchmark_fmm_gravitational2(sizes; expansion_order=P, multipole_threshold=0.5, lamb_helmholtz=false, velocity=false, scalar_potential=true)
+    grav_results, grav_results_direct, errs = benchmark_fmm_gravitational2(sizes; expansion_order=P, multipole_acceptance=0.5, lamb_helmholtz=false, velocity=false, scalar_potential=true)
     println(grav_results)
     println(grav_results_direct)
     println(errs)
@@ -157,9 +157,9 @@ end
 
 # sizes = [2^n for n in 8:2:23]
 #=
-grav_results = benchmark_fmm_gravitational(sizes; expansion_order=3, multipole_threshold=0.5, leaf_size_source=50)
+grav_results = benchmark_fmm_gravitational(sizes; expansion_order=3, multipole_acceptance=0.5, leaf_size_source=50)
 println(grav_results)
-vort_results = benchmark_fmm_vortex(sizes; expansion_order=3, multipole_threshold=0.5, leaf_size_source=50)
+vort_results = benchmark_fmm_vortex(sizes; expansion_order=3, multipole_acceptance=0.5, leaf_size_source=50)
 println(vort_results)
 =#
 #=

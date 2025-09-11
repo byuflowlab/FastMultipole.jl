@@ -12,11 +12,11 @@ include("../test/evaluate_multipole.jl")
 include("../test/gravitational.jl")
 include("../test/vortex.jl")
 
-function get_velocity(system::Gravitational)
+function get_gradient(system::Gravitational)
     return system.potential[5:7,:]
 end
 
-function get_velocity(system::VortexParticles)
+function get_gradient(system::VortexParticles)
     return system.velocity_stretching[1:3,:]
 end
 
@@ -49,7 +49,7 @@ function velocity_err!(v_fmm, v_direct, bodies_index)
 end
     
 
-function test_accuracy(target_systems::Tuple, source_systems::Tuple, expansion_orders, multipole_threshold, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
+function test_accuracy(target_systems::Tuple, source_systems::Tuple, expansion_orders, multipole_acceptance, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
     
     # outputs
     max_errs_list = Vector{Float64}[]
@@ -67,7 +67,7 @@ function test_accuracy(target_systems::Tuple, source_systems::Tuple, expansion_o
         println("\n#----- Expansion order: $expansion_order -----#")
 
         # get leaf size
-        optargs, cache, _ = fmm!(target_systems, source_systems; lamb_helmholtz=lamb_helmholtz_bool, expansion_order, multipole_threshold, nearfield=false, farfield=false, self_induced=false)
+        optargs, cache, _ = fmm!(target_systems, source_systems; lamb_helmholtz=lamb_helmholtz_bool, expansion_order, multipole_acceptance, nearfield=false, farfield=false, self_induced=false)
         # leaf_size_source = optargs.leaf_size_source
         # leaf_size_source = SVector{length(source_systems)}(leaf_size for _ in eachindex(source_systems))
         leaf_size_source = leaf_size
@@ -78,7 +78,7 @@ function test_accuracy(target_systems::Tuple, source_systems::Tuple, expansion_o
         source_tree = Tree(source_systems, false; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order=expansion_order+1, leaf_size=leaf_size_source, shrink_recenter)
 
         # get m2l list
-        m2l_list, _ = FastMultipole.build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_threshold, true, false, false, SelfTuning())
+        m2l_list, _ = FastMultipole.build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, true, false, false, SelfTuning())
 
         # upward pass
         FastMultipole.upward_pass_singlethread!(source_tree, source_systems, expansion_order+1, lamb_helmholtz)
@@ -90,7 +90,7 @@ function test_accuracy(target_systems::Tuple, source_systems::Tuple, expansion_o
         Ts = zeros(Float64, FastMultipole.length_Ts(expansion_order+1))
         eimϕs = zeros(Float64, 2, expansion_order + 2)
         harmonics = initialize_harmonics(expansion_order)
-        velocity_n_m = FastMultipole.initialize_velocity_n_m(expansion_order, Float64)
+        velocity_n_m = FastMultipole.initialize_gradient_n_m(expansion_order, Float64)
         derivatives_switches = DerivativesSwitch(false, true, false, target_systems)
 
         # target velocity container
@@ -199,11 +199,11 @@ function test_accuracy(target_systems::Tuple, source_systems::Tuple, expansion_o
     return max_errs_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list
 end
 
-function save_csv(filename, max_errs_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list, expansion_orders, multipole_threshold, leaf_size)
+function save_csv(filename, max_errs_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list, expansion_orders, multipole_acceptance, leaf_size)
     
     #--- total error ---#
 
-    open(filename * "_total_error_mac$(multipole_threshold)_ls$(leaf_size).csv", "w") do io
+    open(filename * "_total_error_mac$(multipole_acceptance)_ls$(leaf_size).csv", "w") do io
         println(io, "expansion_order, 0, 25, 50, 75, 100")
         for i in eachindex(expansion_orders)
             errs = max_errs_list[i]
@@ -216,7 +216,7 @@ function save_csv(filename, max_errs_list, max_mp_errs_list, ε_mp_hat_list, ε_
     
     #--- multipole error ---#
 
-    open(filename * "_multipole_error_mac$(multipole_threshold)_ls$(leaf_size).csv", "w") do io
+    open(filename * "_multipole_error_mac$(multipole_acceptance)_ls$(leaf_size).csv", "w") do io
         println(io, "expansion_order, 0, 25, 50, 75, 100")
         for i in eachindex(expansion_orders)
             errs = max_mp_errs_list[i]
@@ -237,10 +237,10 @@ function read_csv_to_matrix(filename)
     end
 end
 
-function read_csv(filename_base, multipole_threshold, leaf_size)
+function read_csv(filename_base, multipole_acceptance, leaf_size)
     # Construct filenames
-    total_error_file = "$(filename_base)_total_error_mac$(multipole_threshold)_ls$(leaf_size).csv"
-    multipole_error_file = "$(filename_base)_multipole_error_mac$(multipole_threshold)_ls$(leaf_size).csv"
+    total_error_file = "$(filename_base)_total_error_mac$(multipole_acceptance)_ls$(leaf_size).csv"
+    multipole_error_file = "$(filename_base)_multipole_error_mac$(multipole_acceptance)_ls$(leaf_size).csv"
 
     # Read both files into matrices
     total_error_matrix = read_csv_to_matrix(total_error_file)
@@ -274,9 +274,9 @@ function custom_boxplot(plot_name, labels::Vector, box_stats::Matrix{<:Real}; co
     return fig
 end
 
-function plot_error_data(filename_base, multipole_threshold, leaf_size)
+function plot_error_data(filename_base, multipole_acceptance, leaf_size)
     # Read data from CSV files
-    total_error_matrix, multipole_error_matrix = read_csv(filename_base, multipole_threshold, leaf_size)
+    total_error_matrix, multipole_error_matrix = read_csv(filename_base, multipole_acceptance, leaf_size)
 
     # Extract data for plotting
     x_total = total_error_matrix[:, 1]
@@ -291,8 +291,8 @@ function plot_error_data(filename_base, multipole_threshold, leaf_size)
     fig2 = custom_boxplot("multipole error", x_multipole, y_multipole; color="lightgreen")
 
     # Save the figures
-    fig.savefig("$(filename_base)_total_error_mac$(multipole_threshold)_ls$(leaf_size).png")
-    fig2.savefig("$(filename_base)_multipole_error_mac$(multipole_threshold)_ls$(leaf_size).png")
+    fig.savefig("$(filename_base)_total_error_mac$(multipole_acceptance)_ls$(leaf_size).png")
+    fig2.savefig("$(filename_base)_multipole_error_mac$(multipole_acceptance)_ls$(leaf_size).png")
 end
 
 #--- create systems ---#
@@ -303,12 +303,12 @@ n_bodies = 50_000
 source = generate_gravitational(123, n_bodies; strength_scale=1.0/3798.955768976926)
 vortex = generate_vortex(123, n_bodies; strength_scale=1.0/10566.33461495282)
 
-fmm!(source; lamb_helmholtz=false, expansion_order=4, multipole_threshold=0.5)
+fmm!(source; lamb_helmholtz=false, expansion_order=4, multipole_acceptance=0.5)
 
 #--- check error prediction ---#
 
 expansion_orders = 1:20
-multipole_threshold = 0.5
+multipole_acceptance = 0.5
 shrink_recenter = true
 leaf_size = SVector{1}(50)
 
@@ -317,29 +317,29 @@ leaf_size = SVector{1}(50)
 error_method = FastMultipole.RotatedCoefficientsAbsoluteVelocity{1.0,false}()
 
 lamb_helmholtz = false
-max_errs_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list = test_accuracy((source,), (source,), expansion_orders, multipole_threshold, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
+max_errs_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list = test_accuracy((source,), (source,), expansion_orders, multipole_acceptance, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
 filename_base = "rot_coeff_source"
-save_csv(filename_base, max_errs_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list, expansion_orders, multipole_threshold, leaf_size[1])
-plot_error_data(filename_base, multipole_threshold, leaf_size[1])
+save_csv(filename_base, max_errs_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list, expansion_orders, multipole_acceptance, leaf_size[1])
+plot_error_data(filename_base, multipole_acceptance, leaf_size[1])
 
 lamb_helmholtz = true
-max_errs_list_vortex, max_mp_errs_list_vortex, ε_mp_hat_list_vortex, ε_l_hat_list_vortex, ε_hat_list_vortex = test_accuracy((vortex,), (vortex,), expansion_orders, multipole_threshold, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
+max_errs_list_vortex, max_mp_errs_list_vortex, ε_mp_hat_list_vortex, ε_l_hat_list_vortex, ε_hat_list_vortex = test_accuracy((vortex,), (vortex,), expansion_orders, multipole_acceptance, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
 filename_base = "rot_coeff_vortex"
-save_csv(filename_base, max_errs_list_vortex, max_mp_errs_list_vortex, ε_mp_hat_list_vortex, ε_l_hat_list_vortex, ε_hat_list_vortex, expansion_orders, multipole_threshold, leaf_size[1])
-plot_error_data(filename_base, multipole_threshold, leaf_size[1])
+save_csv(filename_base, max_errs_list_vortex, max_mp_errs_list_vortex, ε_mp_hat_list_vortex, ε_l_hat_list_vortex, ε_hat_list_vortex, expansion_orders, multipole_acceptance, leaf_size[1])
+plot_error_data(filename_base, multipole_acceptance, leaf_size[1])
 
 #--- multipole power method ---#
 
 error_method = FastMultipole.PowerAbsoluteVelocity{1.0,false}()
 
 lamb_helmholtz = false
-power_max_errs_list, power_max_mp_errs_list, power_ε_mp_hat_list, power_ε_l_hat_list, power_ε_hat_list = test_accuracy((source,), (source,), expansion_orders, multipole_threshold, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
+power_max_errs_list, power_max_mp_errs_list, power_ε_mp_hat_list, power_ε_l_hat_list, power_ε_hat_list = test_accuracy((source,), (source,), expansion_orders, multipole_acceptance, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
 filename_base = "power_source"
-save_csv(filename_base, power_max_errs_list, power_max_mp_errs_list, power_ε_mp_hat_list, power_ε_l_hat_list, power_ε_hat_list, expansion_orders, multipole_threshold, leaf_size[1])
-plot_error_data(filename_base, multipole_threshold, leaf_size[1])
+save_csv(filename_base, power_max_errs_list, power_max_mp_errs_list, power_ε_mp_hat_list, power_ε_l_hat_list, power_ε_hat_list, expansion_orders, multipole_acceptance, leaf_size[1])
+plot_error_data(filename_base, multipole_acceptance, leaf_size[1])
 
 lamb_helmholtz = true
-power_max_errs_list_vortex, power_max_mp_errs_list_vortex, power_ε_mp_hat_list_vortex, power_ε_l_hat_list_vortex, power_ε_hat_list_vortex = test_accuracy((vortex,), (vortex,), expansion_orders, multipole_threshold, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
+power_max_errs_list_vortex, power_max_mp_errs_list_vortex, power_ε_mp_hat_list_vortex, power_ε_l_hat_list_vortex, power_ε_hat_list_vortex = test_accuracy((vortex,), (vortex,), expansion_orders, multipole_acceptance, lamb_helmholtz, shrink_recenter, leaf_size, error_method)
 filename_base = "power_vortex"
-save_csv("power_vortex", power_max_errs_list_vortex, power_max_mp_errs_list_vortex, power_ε_mp_hat_list_vortex, power_ε_l_hat_list_vortex, power_ε_hat_list_vortex, expansion_orders, multipole_threshold, leaf_size[1])
-plot_error_data(filename_base, multipole_threshold, leaf_size[1])
+save_csv("power_vortex", power_max_errs_list_vortex, power_max_mp_errs_list_vortex, power_ε_mp_hat_list_vortex, power_ε_l_hat_list_vortex, power_ε_hat_list_vortex, expansion_orders, multipole_acceptance, leaf_size[1])
+plot_error_data(filename_base, multipole_acceptance, leaf_size[1])

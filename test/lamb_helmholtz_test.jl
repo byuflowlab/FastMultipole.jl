@@ -97,10 +97,10 @@ expansion_order = 10
 center = SVector{3}([0.01, 0.02, -0.03])
 box = SVector{3}(0.0,0.0,0.0)
 
-branch = Branch(1:1, 0, 1:0, 0, 1, center, center, 0.0, 0.0, box, box)
+branch = Branch(1:1, 0, 1:0, 0, 1, center, 0.0, box)
 branch_weights = initialize_expansion(expansion_order)
 translated_center = SVector{3}([0.04, 0.04, -0.019999999999999997])
-translated_branch = Branch(1:1, 0, 1:0, 0, 1, translated_center, translated_center, 0.0, 0.0, box, box)
+translated_branch = Branch(1:1, 0, 1:0, 0, 1, translated_center, 0.0, box)
 translated_weights = initialize_expansion(expansion_order)
 
 # set source expansion
@@ -165,10 +165,10 @@ expansion_order = 10
 center = SVector{3}([0.04, 0.04, -0.019999999999999997])
 box = SVector{3}(0.0,0.0,0.0)
 
-branch = Branch(1:1, 0, 1:0, 0, 1, center, center, 0.0, 0.0, box, box)
+branch = Branch(1:1, 0, 1:0, 0, 1, center, 0.0, box)
 multipole_expansion = initialize_expansion(expansion_order)
 translated_center = SVector{3}([0.96, 0.03, -0.02])
-translated_branch = Branch(1:1, 0, 1:0, 0, 1, translated_center, translated_center, 0.0, 0.0, box, box)
+translated_branch = Branch(1:1, 0, 1:0, 0, 1, translated_center, 0.0, box)
 translated_expansion = initialize_expansion(expansion_order)
 
 # set source expansion
@@ -225,10 +225,10 @@ expansion_order = 10
 center = SVector{3}([0.96, 0.03, -0.02])
 box = SVector{3}(0.0,0.0,0.0)
 
-branch = Branch(1:1, 0, 1:0, 0, 1, center, center, 0.0, 0.0, box, box)
+branch = Branch(1:1, 0, 1:0, 0, 1, center, 0.0, box)
 local_expansion = initialize_expansion(expansion_order)
 translated_center = SVector{3}([0.98, 0.01, 0.01])
-translated_branch = Branch(1:1, 0, 1:0, 0, 1, translated_center, translated_center, 0.0, 0.0, box, box)
+translated_branch = Branch(1:1, 0, 1:0, 0, 1, translated_center, 0.0, box)
 translated_expansion = initialize_expansion(expansion_order)
 
 # set source expansion
@@ -278,9 +278,9 @@ x_target = SVector{3}(1.0,0,0)
 center = SVector{3}(0.01, 0.02, -0.03)
 box = SVector{3}(0.0,0.0,0.0)
 
-branch = Branch(1:1, 0, 1:0, 0, 1, center, center, 0.0, 0.0, box, box)
+branch = Branch(1:1, 0, 1:0, 0, 1, center, 0.0, box)
 multipole_expansion = initialize_expansion(expansion_order)
-local_branch = Branch(1:1, 0, 1:0, 0, 1, x_target + SVector{3}(-0.04, 0.03, -0.02), x_target + SVector{3}(-0.04, 0.03, -0.02), 0.0, 0.0, box, box)
+local_branch = Branch(1:1, 0, 1:0, 0, 1, x_target + SVector{3}(-0.04, 0.03, -0.02), 0.0, box)
 local_expansion = initialize_expansion(expansion_order)
 harmonics = FastMultipole.initialize_harmonics(expansion_order)
 
@@ -312,12 +312,12 @@ derivatives_switch = DerivativesSwitch(true,true,true)
 FastMultipole.multipole_to_local!(local_expansion, local_branch, multipole_expansion, branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, ηs_mag, Hs_π2, FastMultipole.M̃, FastMultipole.L̃, expansion_order, lamb_helmholtz)
 
 # evaluate local expansion
-Δx = x_target - local_branch.target_center
-velocity_n_m = FastMultipole.initialize_velocity_n_m(expansion_order)
-ϕ, v, vg = FastMultipole.evaluate_local(Δx, harmonics, velocity_n_m, local_expansion, expansion_order, lamb_helmholtz, derivatives_switch)
+Δx = x_target - local_branch.center
+gradient_n_m = FastMultipole.initialize_gradient_n_m(expansion_order)
+ϕ, v, vg = FastMultipole.evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion_order, lamb_helmholtz, derivatives_switch)
 
 Δx = x_target - x_source
-velocity = -cross(Δx, Γ) / norm(Δx)^3 / (4*pi)
+gradient = -cross(Δx, Γ) / norm(Δx)^3 / (4*pi)
 
 Δx5 = norm(Δx)^5
 g11 = -3*(-Γ[3]*Δx[2] + Γ[2] * Δx[3]) * Δx[1]^2 / Δx5
@@ -329,11 +329,11 @@ g23 = -Γ[1]/norm(Δx)^3 - 3*(Γ[3]*Δx[1]-Γ[1]*Δx[3])*Δx[3]^2/Δx5
 g31 = -Γ[2]/norm(Δx)^3 - 3*(-Γ[2]*Δx[1]+Γ[1]*Δx[2])*Δx[1]^2 / Δx5
 g32 = Γ[1]/norm(Δx)^3 - 3*(-Γ[2]*Δx[1]+Γ[1]*Δx[2])*Δx[2]^2/Δx5
 g33 = -3*(-Γ[2]*Δx[1]+Γ[1]*Δx[2])*Δx[3]^2 / Δx5
-velocity_gradient = SMatrix{3,3}(g11,g21,g31,g12,g22,g32,g13,g23,g33) / (4*pi)
+hessian = SMatrix{3,3}(g11,g21,g31,g12,g22,g32,g13,g23,g33) / (4*pi)
 
-@test isapprox(velocity, v; atol=1e-11)
+@test isapprox(gradient, v; atol=1e-11)
 for i in 1:9
-    @test isapprox(velocity_gradient[i], vg[i]; atol=1e-9)
+    @test isapprox(hessian[i], vg[i]; atol=1e-9)
 end
 
 end

@@ -9,12 +9,14 @@ Applies all interactions of `systems` acting on itself without multipole acceler
 
     - a system object for which compatibility functions have been overloaded, or
     - a tuple of system objects for which compatibility functions have been overloaded
+    - `(target_systems, source_systems)` where `target_systems` and `source_systems` are each either a system or tuple of systems for which compatibility functions have been overloaded
 
 # Optional Arguments
 
 - `scalar_potential::Bool`: either a `::Bool` or a `::AbstractVector{Bool}` of length `length(target_systems)` indicating whether each system should receive a scalar potential from `source_systems`
-- `velocity::Bool`: either a `::Bool` or a `::AbstractVector{Bool}` of length `length(target_systems)` indicating whether each system should receive a velocity from `source_systems`
-- `velocity_gradient::Bool`: either a `::Bool` or a `::AbstractVector{Bool}` of length `length(target_systems)` indicating whether each system should receive a velocity gradient from `source_systems`
+- `gradient::Bool`: either a `::Bool` or a `::AbstractVector{Bool}` of length `length(target_systems)` indicating whether each system should receive a vector field from `source_systems`
+- `hessian::Bool`: either a `::Bool` or a `::AbstractVector{Bool}` of length `length(target_systems)` indicating whether each system should receive a vector gradient from `source_systems`
+- `n_threads::Int`: the number of threads to use for parallelization; defaults to `Threads.nthreads()`
 
 """
 function direct!(systems::Tuple; args...)
@@ -40,24 +42,27 @@ function _direct!(target_system, source_system; n_threads=Threads.nthreads(), ar
 end
 
 
-function direct!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(true, length(target_systems)), velocity=fill(true, length(target_systems)), velocity_gradient=fill(true, length(target_systems)))
+function direct!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)))
+    
+    # get float type
+    TF = get_type(target_systems, source_systems)
 
     # set up target buffers
     if isnothing(target_buffers)
-        target_buffers = allocate_buffers(target_systems, true)
-        target_to_buffer!(target_buffers, target_systems)
+        target_buffers = allocate_buffers(target_systems, true, TF)
+        target_to_buffer!(target_buffers, target_systems, true)
     end
     # set up source buffers
     if isnothing(source_buffers)
-        source_buffers = allocate_buffers(source_systems, false)
+        source_buffers = allocate_buffers(source_systems, false, TF)
         system_to_buffer!(source_buffers, source_systems)
     end
 
     # ensure derivative switch information is a vector
     scalar_potential = to_vector(scalar_potential, length(target_systems))
-    velocity = to_vector(velocity, length(target_systems))
-    velocity_gradient = to_vector(velocity_gradient, length(target_systems))
-    derivatives_switches = DerivativesSwitch(scalar_potential, velocity, velocity_gradient)
+    gradient = to_vector(gradient, length(target_systems))
+    hessian = to_vector(hessian, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian)
 
     #check_derivs(target_systems[1].particles[:, :]; label="after passing derivatives back")
     #check_derivs(target_systems[1].particles[4:6, :]; label="after passing derivatives back")
@@ -79,24 +84,28 @@ function direct!(target_systems::Tuple, source_systems::Tuple; target_buffers=no
     buffer_to_target!(target_systems, target_buffers, derivatives_switches)
 end
 
-function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_threads; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(true, length(target_systems)), velocity=fill(true, length(target_systems)), velocity_gradient=fill(true, length(target_systems)))
+function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_threads; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)))
+    
+    # get float type
+    TF = get_type(target_systems, source_systems)
+    
     # set up target buffers
     if isnothing(target_buffers)
-        target_buffers = allocate_buffers(target_systems, true)
-        target_to_buffer!(target_buffers, target_systems)
+        target_buffers = allocate_buffers(target_systems, true, TF)
+        target_to_buffer!(target_buffers, target_systems, true)
     end
 
     # set up source buffers
     if isnothing(source_buffers)
-        source_buffers = allocate_buffers(source_systems, false)
+        source_buffers = allocate_buffers(source_systems, false, TF)
         system_to_buffer!(source_buffers, source_systems)
     end
 
     # ensure derivative switch information is a vector
     scalar_potential = to_vector(scalar_potential, length(target_systems))
-    velocity = to_vector(velocity, length(target_systems))
-    velocity_gradient = to_vector(velocity_gradient, length(target_systems))
-    derivatives_switches = DerivativesSwitch(scalar_potential, velocity, velocity_gradient)
+    gradient = to_vector(gradient, length(target_systems))
+    hessian = to_vector(hessian, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian)
 
     for (source_system, source_buffer) in zip(source_systems, source_buffers)
         for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
@@ -106,7 +115,7 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
             n_per_thread, rem = divrem(n_target_bodies, n_threads)
             rem > 0 && (n_per_thread += 1)
             n_per_thread = max(n_per_thread, MIN_NPT_NF)
-            Threads.@threads for i_start in 1:n_per_thread:n_target_bodies
+            Threads.@threads :static for i_start in 1:n_per_thread:n_target_bodies
                 direct!(target_buffer, i_start:min(i_start+n_per_thread-1, n_source_bodies), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
             end
         end
