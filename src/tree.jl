@@ -287,11 +287,6 @@ end
 #--- buffers ---#
 
 function allocate_target_buffer(TF, system)
-    #=if TF <: ReverseDiff.TrackedReal
-        buffer = zeros(16, get_n_bodies(system))
-        tp = ReverseDiff.tape(system)
-        return ReverseDiff.track(buffer, tp)
-    end=#
     buffer = zeros(TF, 16, get_n_bodies(system))
     if TF <: ReverseDiff.TrackedReal
         tp = ReverseDiff.tape(system)
@@ -303,11 +298,6 @@ function allocate_target_buffer(TF, system)
 end
 
 function allocate_source_buffer(TF, system)
-    #=if TF <: ReverseDiff.TrackedReal
-        buffer = zeros(data_per_body(system), get_n_bodies(system))
-        tp = ReverseDiff.tape(system)
-        return ReverseDiff.track(buffer, tp)
-    end=#
     buffer = zeros(TF, data_per_body(system), get_n_bodies(system))
     if TF <: ReverseDiff.TrackedReal
         tp = ReverseDiff.tape(system)

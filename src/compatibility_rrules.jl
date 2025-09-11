@@ -5,12 +5,12 @@
 #    And the Jacobian/jvp entries would also just be the identity matrix.
 #    Long story short, it's better to write explicit pullbacks for array assignments instead of a general rule.
 
-function target_to_buffer!(buffer::ReverseDiff.TrackedArray, system, sort_index=1:get_n_bodies(system))
-    buffer_val_star = deepcopy(buffer.value)
+function target_to_buffer!(buffer::Matrix{<:ReverseDiff.TrackedReal}, system, sort_index=1:get_n_bodies(system))
+    buffer_val_star = ReverseDiff.value.(buffer)
     tp = ReverseDiff.tape(system)
     for i_body in 1:get_n_bodies(system)
         for j=1:3
-            buffer.value[j, i_body] = get_position(system, sort_index[i_body])[j].value
+            buffer[j, i_body].value = get_position(system, sort_index[i_body])[j].value
         end
         #buffer.value[1:3, i_body] .= ReverseDiff.value.(get_position(system, sort_index[i_body]))
     end
@@ -29,7 +29,7 @@ end
 
     buffer, system, sort_index = instruction.input
     buffer_val_star = instruction.cache
-    ReverseDiff.value!(buffer, buffer_val_star)
+    ReverseDiff.value!.(buffer, buffer_val_star)
     #zeroR = zero(eltype(buffer.deriv))
     for i_body in 1:get_n_bodies(system)
         # ReverseDiff._add_to_deriv!.(get_position(system, sort_index[i_body]), buffer.value[1:3, i_body])

@@ -97,6 +97,7 @@ export unsort!, resort!, unsorted_index_2_sorted_index, sorted_index_2_unsorted_
 include("compatibility.jl")
 #include("extended_rrule_macro.jl")
 include("compatibility_rrules.jl")
+include("containers_rrules.jl")
 
 export Body, Position, Radius, ScalarPotential, VectorPotential, Velocity, VelocityGradient, Vertex, Normal, Strength
 export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Panel
