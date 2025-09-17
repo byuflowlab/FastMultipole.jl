@@ -434,7 +434,7 @@ function target_influence_to_buffer!(target_buffer::Matrix, target_system, deriv
 end
 
 function system_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
-    if Threads.nthreads() > 1
+    if Threads.nthreads() > 1 && get_n_bodies(systems) > MIN_BODIES
         for (buffer, system, sort_index) in zip(buffers, systems, sort_index_list)
             system_to_buffer_multithread!(buffer, system, sort_index)
         end

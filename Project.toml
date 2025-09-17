@@ -1,7 +1,7 @@
 name = "FastMultipole"
 uuid = "ce07d0d3-2b9f-49ba-89eb-12c800257c85"
 authors = ["Ryan Anderson <rymanderson@gmail.com> and contributors"]
-version = "2.0.3"
+version = "2.0.4"
 
 [deps]
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"

@@ -60,7 +60,7 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         # println("Part III: branch!")
         # @time begin
         # grow root branch
-        if Threads.nthreads() > 1
+        if Threads.nthreads() > 1 && get_n_bodies(systems) > MIN_BODIES
             root_branch, n_children, i_leaf = branch_multithread!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target)
         else
             root_branch, n_children, i_leaf = branch!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target) # even though no sorting needed for creating this branch, it will be needed later on; so `branch!` not ony_min creates the root_branch, but also sorts itself into octants and returns the number of children it will have so we can plan array size
@@ -426,7 +426,7 @@ end
 
 function child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target::Bool)
     
-    # if Threads.nthreads() > 1
+    # if Threads.nthreads() > 1 && get_n_bodies(buffers) > MIN_BODIES
     #     return child_branches_multithread!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
     # end
 
@@ -1727,7 +1727,7 @@ end
 
 function shrink_recenter_source!(branches, levels_index, system)
     n_threads = Threads.nthreads()
-    if n_threads > 1 && length(branches) > MIN_NPT
+    if n_threads > 1 && get_n_bodies(system) > MIN_BODIES
         return shrink_recenter_source_multithread!(branches, levels_index, system)
     end
 
@@ -1760,7 +1760,7 @@ end
 
 function shrink_recenter_target!(branches, levels_index, system)
     n_threads = Threads.nthreads()
-    if n_threads > 1 && length(branches) > MIN_NPT
+    if n_threads > 1 && get_n_bodies(system) > MIN_BODIES
         return shrink_recenter_target_multithread!(branches, levels_index, system)
     end
 
