@@ -33,42 +33,42 @@ println(&quot;Optimal parameters: &quot;, opt_params)</code></pre><pre class="do
 multipole_acceptance = 0.3...
 
 	Best Parameters:
-		leaf_size_source:    [114]
+		leaf_size_source:    [90]
 		expansion_order:     1
 		multipole_acceptance: 0.3
-		cost:                0.182874213 seconds
+		cost:                0.183101695 seconds
 
 multipole_acceptance = 0.4...
 
 	Best Parameters:
-		leaf_size_source:    [57]
+		leaf_size_source:    [45]
 		expansion_order:     2
 		multipole_acceptance: 0.4
-		cost:                0.172793256 seconds
+		cost:                0.173055493 seconds
 
 multipole_acceptance = 0.5...
 
 	Best Parameters:
-		leaf_size_source:    [110]
+		leaf_size_source:    [111]
 		expansion_order:     1
 		multipole_acceptance: 0.5
-		cost:                0.18288315 seconds
+		cost:                0.183231948 seconds
 
 multipole_acceptance = 0.6...
 
 	Best Parameters:
-		leaf_size_source:    [876]
+		leaf_size_source:    [874]
 		expansion_order:     1
 		multipole_acceptance: 0.6
-		cost:                0.182574935 seconds
+		cost:                0.183105472 seconds
 
 multipole_acceptance = 0.7...
 
 	Best Parameters:
-		leaf_size_source:    [438]
+		leaf_size_source:    [437]
 		expansion_order:     1
 		multipole_acceptance: 0.7
-		cost:                0.182580796 seconds
+		cost:                0.183089347 seconds
 
 multipole_acceptance = 0.8...
 <span class="sgr33"><span class="sgr1">┌ Warning: </span></span>Error tolerance 0.0001 not reached! Using max expansion order P=3.
@@ -77,22 +77,22 @@ multipole_acceptance = 0.8...
 <span class="sgr33"><span class="sgr1">└ </span></span><span class="sgr90">@ FastMultipole ~/work/FastMultipole.jl/FastMultipole.jl/src/translate.jl:990</span>
 
 	Best Parameters:
-		leaf_size_source:    [219]
+		leaf_size_source:    [218]
 		expansion_order:     6
 		multipole_acceptance: 0.8
-		cost:                0.167430904 seconds
+		cost:                0.16409934 seconds
 
 Finished autotune!
 
 Parameters:
-	leaf_size_source:    [219]
+	leaf_size_source:    [218]
 	expansion_order:     6
 	multipole_acceptance: 0.8
-	cost:                0.167430904 seconds
+	cost:                0.16409934 seconds
 
 #===============================================#
 
-Optimal parameters: (leaf_size_source = [219], expansion_order = 6, multipole_acceptance = 0.8)</code></pre><p>This will return a named tuple of the optimal parameters, which can then be passed to the <code>fmm!</code> function. The <code>cache</code> is a preallocated buffer that can be used to reduce memory allocations during the FMM call.</p><pre><code class="language-julia hljs"># run FMM without default parameters
+Optimal parameters: (leaf_size_source = [218], expansion_order = 6, multipole_acceptance = 0.8)</code></pre><p>This will return a named tuple of the optimal parameters, which can then be passed to the <code>fmm!</code> function. The <code>cache</code> is a preallocated buffer that can be used to reduce memory allocations during the FMM call.</p><pre><code class="language-julia hljs"># run FMM without default parameters
 println(&quot;Default Tuning Parameters:&quot;)
 system.potential .= 0.0
 t1 = @elapsed fmm!(system; scalar_potential=true, gradient=false, hessian=false, error_tolerance=PowerAbsolutePotential(1e-4))
@@ -110,7 +110,7 @@ t2 = @elapsed fmm!(system, cache; scalar_potential=true, gradient=false, hessian
 println(&quot;\tmax error: &quot;, maximum(abs.(phi_direct .- phi_fmm)))
 println(&quot;\ttime cost: &quot;, t2, &quot; seconds&quot;)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">Default Tuning Parameters:
 	max error: 0.00033237800897240044
-	time cost: 0.19163484 seconds
+	time cost: 0.179288485 seconds
 Optimal Tuning Parameters:
 	max error: 0.00033237800897240044
-	time cost: 0.19606729 seconds</code></pre><p>Note that the <code>tune_fmm</code> function iterates over each requested <code>multipole_acceptance</code> criterion, so it is not optimal to call it before every FMM call. Instead, <code>tune_fmm</code> can be called once for a representative system primarily to choose <code>multipole_acceptance</code>. Since the optimal parameters depend on the size, distribution, and strengths of the sources and targets, it is recommended to set the keyword argument <code>tune=true</code> to iteratively update the <code>expansion_order</code> and <code>leaf_size_source</code> parameters each time <code>fmm!</code> is called. This will allow the FMM to adapt to the system as it evolves, and will ensure that the optimal parameters are used for each call.</p><div class="admonition is-success" id="Tip-709239aed0176e90"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-709239aed0176e90" title="Permalink"></a></header><div class="admonition-body"><p>The <code>tune_fmm</code> function can be used to automatically tune the FMM parameters to satisfy an error tolerance. It returns a named tuple of the optimal parameters and a preallocated buffer to reduce memory allocations.</p></div></div><div class="admonition is-warning" id="Warning-36707f035a97fc82"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-36707f035a97fc82" title="Permalink"></a></header><div class="admonition-body"><p>The <code>tune_fmm</code> function is computationally expensive, so it should not be called before every FMM call. Instead, it should be called once for a representative system to choose the optimal <code>multipole_acceptance</code> parameter. Then, the optimal parameters will be updated in each <code>fmm!</code> call if the <code>tune=true</code> keyword argument is set. This allows the FMM to adapt to the system as it evolves.</p></div></div></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../advanced_usage/">« Multiple Systems</a><a class="docs-footer-nextpage" href="../reference/">Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Friday 5 September 2025 19:00">Friday 5 September 2025</span>. Using Julia version 1.11.6.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
+	time cost: 0.197008615 seconds</code></pre><p>Note that the <code>tune_fmm</code> function iterates over each requested <code>multipole_acceptance</code> criterion, so it is not optimal to call it before every FMM call. Instead, <code>tune_fmm</code> can be called once for a representative system primarily to choose <code>multipole_acceptance</code>. Since the optimal parameters depend on the size, distribution, and strengths of the sources and targets, it is recommended to set the keyword argument <code>tune=true</code> to iteratively update the <code>expansion_order</code> and <code>leaf_size_source</code> parameters each time <code>fmm!</code> is called. This will allow the FMM to adapt to the system as it evolves, and will ensure that the optimal parameters are used for each call.</p><div class="admonition is-success" id="Tip-709239aed0176e90"><header class="admonition-header">Tip<a class="admonition-anchor" href="#Tip-709239aed0176e90" title="Permalink"></a></header><div class="admonition-body"><p>The <code>tune_fmm</code> function can be used to automatically tune the FMM parameters to satisfy an error tolerance. It returns a named tuple of the optimal parameters and a preallocated buffer to reduce memory allocations.</p></div></div><div class="admonition is-warning" id="Warning-36707f035a97fc82"><header class="admonition-header">Warning<a class="admonition-anchor" href="#Warning-36707f035a97fc82" title="Permalink"></a></header><div class="admonition-body"><p>The <code>tune_fmm</code> function is computationally expensive, so it should not be called before every FMM call. Instead, it should be called once for a representative system to choose the optimal <code>multipole_acceptance</code> parameter. Then, the optimal parameters will be updated in each <code>fmm!</code> call if the <code>tune=true</code> keyword argument is set. This allows the FMM to adapt to the system as it evolves.</p></div></div></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../advanced_usage/">« Multiple Systems</a><a class="docs-footer-nextpage" href="../reference/">Reference »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.14.1 on <span class="colophon-date" title="Wednesday 17 September 2025 17:18">Wednesday 17 September 2025</span>. Using Julia version 1.11.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
