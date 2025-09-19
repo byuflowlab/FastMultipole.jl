@@ -810,6 +810,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
     index_map = solver.index_map
     m2l_list = solver.m2l_list
     direct_list = solver.direct_list
+    @show length(m2l_list), length(direct_list)
     full_direct_list = solver.full_direct_list
     interaction_list_method = solver.interaction_list_method
     multipole_acceptance = solver.multipole_acceptance

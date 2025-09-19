@@ -32,6 +32,10 @@ function data_per_body(system)
     throw("data_per_body not overloaded for type $(typeof(system))")
 end
 
+function extra_data_per_target_body(system)
+    return 0
+end
+
 #--- getters ---#
 
 """
@@ -391,6 +395,7 @@ function target_to_buffer!(buffer::Matrix, system, target::Bool, sort_index=1:ge
                 prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
                 buffer[17, i_body] = prev_potential
                 buffer[18, i_body] = prev_velocity
+                extra_target_to_buffer!(buffer, system, i_body, i_sorted)
             end
         end
     end
@@ -404,8 +409,13 @@ function target_to_buffer_multithread!(buffer::Matrix, system, target::Bool, sor
             prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
             buffer[17, i_body] = prev_potential
             buffer[18, i_body] = prev_velocity
+            extra_target_to_buffer!(buffer, system, i_body, i_sorted)
         end
     end
+end
+
+function extra_target_to_buffer!(buffer, system, i_body, i_sorted)
+    return nothing
 end
 
 function target_to_buffer(systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))

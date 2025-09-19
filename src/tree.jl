@@ -39,7 +39,7 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         for (system, buffer) in zip(systems, buffers)
             @assert get_n_bodies(system) == size(buffer, 2) "Buffer doesn't match system size"
             if target
-                @assert size(buffer, 1) == 18
+                @assert size(buffer, 1) == 18 + extra_data_per_target_body(system)
             else
                 @assert size(buffer, 1) == data_per_body(system)
             end
@@ -321,7 +321,7 @@ end
 #--- buffers ---#
 
 function allocate_target_buffer(TF, system)
-    buffer = zeros(TF, 18, get_n_bodies(system))
+    buffer = zeros(TF, 18 + extra_data_per_target_body(system), get_n_bodies(system))
     return buffer
 end
 
@@ -405,7 +405,7 @@ function allocate_small_buffers(systems::Tuple, TF)
     # create buffers
     small_buffers = Vector{Matrix{TF}}(undef, length(systems))
     for i in eachindex(systems)
-        small_buffers[i] = zeros(5, get_n_bodies(systems[i]))
+        small_buffers[i] = zeros(5 + extra_data_per_target_body(systems[i]), get_n_bodies(systems[i]))
     end
 
     return small_buffers
@@ -1071,8 +1071,9 @@ function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_i
         small_buffer[2,this_i] = buffer[2, i_body]
         small_buffer[3,this_i] = buffer[3, i_body]
         if target
-            small_buffer[4,this_i] = buffer[17, i_body] # copy influence from the buffer to the small buffer
-            small_buffer[5,this_i] = buffer[18, i_body] # copy influence from the buffer to the small buffer
+            for i in 1:size(small_buffer, 1)-3
+                small_buffer[3+i,this_i] = buffer[16+i, i_body] # copy influence from the buffer to the small buffer
+            end
         end
         # tmp = system[i_body, Body()]
         # buffer[this_i] = tmp
@@ -1092,8 +1093,9 @@ function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_i
     end
     if target
          for i_body in bodies_index
-            buffer[17, i_body] = small_buffer[4, i_body]
-            buffer[18, i_body] = small_buffer[5, i_body]
+            for i in 1:size(small_buffer, 1)-3
+                buffer[16+i, i_body] = small_buffer[3+i, i_body]
+            end
         end
     end
 
@@ -1155,8 +1157,9 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
             small_buffer[2,this_i] = buffer[2, i_body]
             small_buffer[3,this_i] = buffer[3, i_body]
             if target
-                small_buffer[4,this_i] = buffer[17, i_body] # copy influence from the buffer to the small buffer
-                small_buffer[5,this_i] = buffer[18, i_body] # copy influence from the buffer to the small buffer
+                for i in 1:size(small_buffer, 1)-3
+                    small_buffer[3+i,this_i] = buffer[16+i, i_body] # copy influence from the buffer to the small buffer
+                end
             end
 
             # update sort index
@@ -1170,14 +1173,15 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
     # place buffers
     # println("place buffers")
     Threads.@threads :static for i_body in bodies_index
-         buffer[1, i_body] = small_buffer[1, i_body]
-         buffer[2, i_body] = small_buffer[2, i_body]
-         buffer[3, i_body] = small_buffer[3, i_body]
+        buffer[1, i_body] = small_buffer[1, i_body]
+        buffer[2, i_body] = small_buffer[2, i_body]
+        buffer[3, i_body] = small_buffer[3, i_body]
         if target
-             buffer[17, i_body] = small_buffer[4, i_body]
-             buffer[18, i_body] = small_buffer[5, i_body]
+            for i in 1:size(small_buffer, 1)-3
+                buffer[16+i, i_body] = small_buffer[3+i, i_body]
+            end
         end
-         sort_index[i_body] = sort_index_buffer[i_body]
+        sort_index[i_body] = sort_index_buffer[i_body]
     end
 end
 
