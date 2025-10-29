@@ -88,24 +88,31 @@ function FastMultipole.get_previous_influence(system::Gravitational, i)
     return phi_last, norm(gradient_last)
 end
 
-function FastMultipole.direct!(target_system, target_index, derivatives_switch, source_system::Gravitational, source_buffer, source_index)
-    @inbounds for i_source in source_index
-        source_x, source_y, source_z = FastMultipole.get_position(source_buffer, i_source)
-        source_strength = FastMultipole.get_strength(source_buffer, source_system, i_source)[1]
-        @inbounds for j_target in target_index
-            target_x, target_y, target_z = FastMultipole.get_position(target_system, j_target)
+function FastMultipole.direct!(target_system, target_index, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, source_system::Gravitational, source_buffer, source_index) where {PS,GS,HS}
+    @inbounds for j_target in target_index
+        target_x, target_y, target_z = FastMultipole.get_position(target_system, j_target)
+        dϕ = zero(eltype(target_system))
+        d∇ϕ = zero(SVector{3,eltype(target_system)})
+        @inbounds for i_source in source_index
+            source_x, source_y, source_z = FastMultipole.get_position(source_buffer, i_source)
+            source_strength = FastMultipole.get_strength(source_buffer, source_system, i_source)[1]
             dx = target_x - source_x
             dy = target_y - source_y
             dz = target_z - source_z
             r2 = dx*dx + dy*dy + dz*dz
             if r2 > 0
                 r = sqrt(r2)
-                dϕ = source_strength / r * FastMultipole.ONE_OVER_4π
-                FastMultipole.set_scalar_potential!(target_system, j_target, dϕ)
-                dF = SVector{3}(dx,dy,dz) * source_strength / (r2 * r) * FastMultipole.ONE_OVER_4π
-                FastMultipole.set_gradient!(target_system, j_target, dF)
+                tmp = source_strength / r * FastMultipole.ONE_OVER_4π
+                if PS
+                    dϕ += tmp
+                end 
+                if GS
+                    d∇ϕ += SVector{3}(dx,dy,dz) * tmp / r2
+                end
             end
         end
+        PS && FastMultipole.set_scalar_potential!(target_system, j_target, dϕ)
+        GS && FastMultipole.set_gradient!(target_system, j_target, d∇ϕ)
     end
 end
 
