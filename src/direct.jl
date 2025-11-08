@@ -37,12 +37,12 @@ function _direct!(target_system, source_system; n_threads=Threads.nthreads(), ar
     if n_threads > 1
         return direct_multithread!(target_system, source_system, n_threads; args...)
     else
-        return direct!(target_system, source_system; args...)
+        return direct_singlethread!(target_system, source_system; args...)
     end
 end
 
 
-function direct!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)))
+function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)))
     
     # get float type
     TF = get_type(target_systems, source_systems)
@@ -100,6 +100,7 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
     derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian)
 
     for (source_system, source_buffer) in zip(source_systems, source_buffers)
+        n_source_bodies = get_n_bodies(source_system)
         for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
             
             # load balance
