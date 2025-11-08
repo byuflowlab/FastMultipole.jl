@@ -34,7 +34,7 @@
 
     # test branch! function
     expansion_order, leaf_size, multipole_acceptance = 2, SVector{1}(1), 0.5
-    tree = FastMultipole.Tree((elements,), false; expansion_order, leaf_size, shrink_recenter=false)
+    tree = FastMultipole.Tree((elements,), false; expansion_order, leaf_size, shrink=false, recenter=false)
 
     r1 = max(max(tree.branches[1].box[1],tree.branches[1].box[2]),tree.branches[1].box[3])
     r2 = max(max(tree.branches[2].box[1],tree.branches[2].box[2]),tree.branches[2].box[3])
@@ -109,8 +109,8 @@
 
     # test branch! function
     expansion_order, leaf_size, multipole_acceptance = 2, SVector{1}(1), 0.5
-    source_tree = FastMultipole.Tree((elements,), false; expansion_order, leaf_size, shrink_recenter=true)
-    target_tree = FastMultipole.Tree((elements,), true; expansion_order, leaf_size, shrink_recenter=true)
+    source_tree = FastMultipole.Tree((elements,), false; expansion_order, leaf_size, shrink=true, recenter=true)
+    target_tree = FastMultipole.Tree((elements,), true; expansion_order, leaf_size, shrink=true, recenter=true)
 
     # test branch 3-5 (leaf branches)
     function test_leaf(source_branches, target_branches, buffer::Matrix, i_leaf)

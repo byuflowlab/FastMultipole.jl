@@ -5,6 +5,7 @@ include("../test/gravitational.jl")
 # using BenchmarkTools
 using Random
 using WriteVTK
+# using ProfileView
 # using BSON
 
 function generate_gravitational(seed, n_bodies; radius_factor=0.1, strength_factor=1/n_bodies)
@@ -333,18 +334,18 @@ println("===== nthreads: $(Threads.nthreads()) =====")
 # err, sys, tree, sys2 = bm_fmm_accuracy(expansion_order, leaf_size, multipole_acceptance, n_bodies, shrink_recenter)
 # @show err
 
-n_bodies = 1_000_000
+n_bodies = 2_000
 system = generate_gravitational(123, n_bodies)
 # optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivatives_switches, error_success = fmm!(system)
 # bm_fmm_system(system)
 # @time bm_fmm_system(system)
 
-@time fmm!(system; expansion_order=3, leaf_size=50, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink_recenter=false)
-@time fmm!(system; expansion_order=3, leaf_size=50, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink_recenter=false)
-@time fmm!(system; expansion_order=3, leaf_size=50, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink_recenter=false)
-potential_fmm = system.potential[1,:]
+@time fmm!(system; expansion_order=3, leaf_size=10, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink_recenter=false)
+@time fmm!(system; expansion_order=3, leaf_size=10, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink_recenter=false)
+# @time fmm!(system; expansion_order=3, leaf_size=50, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink_recenter=false)
+# potential_fmm = system.potential[1,:]
 
-system.potential .= 0.0
+# system.potential .= 0.0
 # direct!(system; scalar_potential=true, gradient=false, hessian=false)
 # potential_direct = system.potential[1,:]
 
@@ -352,8 +353,6 @@ system.potential .= 0.0
 # @show max_err
 # @time fmm!(system; expansion_order=7, leaf_size=50, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false)
 # @time fmm!(system; expansion_order=7, leaf_size=50, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false)
-
-
 
 println("done.")
 

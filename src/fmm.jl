@@ -844,7 +844,8 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 
 **Optional Arguments: Tree Options**
 
-- `shrink_recenter::Bool`: whether to shrink and recenter branches around their bodies, accounting for finite body radius; default is `true`
+- `shrink::Bool`: whether to shrink branches around their bodies, accounting for finite body radius; default is `true`
+- `recenter::Bool`: whether to recenter branches around their bodies, accounting for finite body radius; default is `false`
 - `interaction_list_method::InteractionListMethod`: method for building interaction lists; default is `SelfTuningTargetStop()`
 
 **Optional Arguments: Additional Options**
@@ -865,7 +866,7 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(t
     leaf_size_source=default_leaf_size(source_systems),
     expansion_order=5,
     error_tolerance=nothing,
-    shrink_recenter=true,
+    shrink=true, recenter=false,
     interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
     optargs...
 )
@@ -878,8 +879,8 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(t
     leaf_size_target = to_vector(isnothing(leaf_size_target) ? minimum(leaf_size_source) : leaf_size_target, length(target_systems))
 
     # create trees
-    t_target_tree = @elapsed target_tree = Tree(target_systems, true, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink_recenter, interaction_list_method)
-    t_source_tree = @elapsed source_tree = Tree(source_systems, false, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink_recenter, interaction_list_method)
+    t_target_tree = @elapsed target_tree = Tree(target_systems, true, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
+    t_source_tree = @elapsed source_tree = Tree(source_systems, false, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
 
     # println("Tree construction times: target = $t_target_tree, source = $t_source_tree")
     # error()

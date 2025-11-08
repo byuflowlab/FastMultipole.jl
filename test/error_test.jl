@@ -142,7 +142,7 @@ function run_gravitational_system(expansion_order; debug=false)
 
     # generate multipole expansions and m2l-list
     leaf_size, multipole_acceptance, lamb_helmholtz = SVector{1}(50), 0.5, false
-    tree = Tree((system,); expansion_order=expansion_order+2, leaf_size, shrink_recenter=true)
+    tree = Tree((system,); expansion_order=expansion_order+2, leaf_size, shrink=true, recenter==true)
     tree, m2l_list, direct_list, derivatives_switches = fmm!((system,), tree; multipole_acceptance, expansion_order=expansion_order+1, lamb_helmholtz, hessian=false)
 
     # compute expansion errors
@@ -255,7 +255,7 @@ function run_vortex_system(expansion_order)
 
     # generate multipole expansions and m2l-list
     leaf_size, multipole_acceptance, lamb_helmholtz = SVector{1}(40), 0.5, true
-    tree = Tree((system,); expansion_order=expansion_order+2, leaf_size, shrink_recenter=true)
+    tree = Tree((system,); expansion_order=expansion_order+2, leaf_size, shrink=true, recenter==true)
     tree, m2l_list, direct_list, derivatives_switches = fmm!((system,), tree; multipole_acceptance, expansion_order=expansion_order+1, unsort_bodies=false, lamb_helmholtz, hessian=false)
 
     # compute expansion errors
