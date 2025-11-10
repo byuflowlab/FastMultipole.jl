@@ -1024,17 +1024,30 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             # allow nearfield_device! to be called concurrently with upward and horizontal passes
             t1 = Threads.@spawn nearfield && nearfield_device!(target_systems, target_tree, derivatives_switches, source_systems, source_tree, direct_list)
             n_threads_multipole = n_threads == 1 ? n_threads : n_threads - 1
+            # Initialize Pmax
+            Pmax = 0
+            Pmax_ref = Ref(0)
+            error_success_ref = Ref(true)
+
             t2 = Threads.@spawn begin
-                    upward_pass && upward_pass_multithread!(source_tree.branches, source_systems, expansion_order, lamb_helmholtz, source_tree.levels_index, source_tree.leaf_index, n_threads_multipole)
-                    horizontal_pass && length(m2l_list) > 0 && horizontal_pass_multithread!(target_tree.branches, source_tree.branches, m2l_list, lamb_helmholtz, expansion_order, error_tolerance, n_threads_multipole)
-	                downward_pass && downward_pass_multithread_1!(target_tree.branches, expansion_order, lamb_helmholtz, target_tree.levels_index, n_threads_multipole)
+                    upward_pass && upward_pass_multithread!(source_tree, source_systems, expansion_order, lamb_helmholtz, n_threads_multipole)
+                    if horizontal_pass && length(m2l_list) > 0
+                        Pmax_result, error_success_result = horizontal_pass_multithread!(target_tree, source_tree, m2l_list, lamb_helmholtz, expansion_order, error_tolerance, interaction_list_method, n_threads_multipole)
+                        Pmax_ref[] = Pmax_result
+                        error_success_ref[] = error_success_result
+                    end
+	                downward_pass && downward_pass_multithread_1!(target_tree, expansion_order, lamb_helmholtz, n_threads_multipole)
                 end
 
             fetch(t1)
             fetch(t2)
 
+            # Extract values from refs
+            Pmax = Pmax_ref[]
+            error_success = error_success_ref[]
+
             # local to body interaction
-            downward_pass && downward_pass_multithread_2!(target_tree.branches, target_systems, derivatives_switches, Pmax, lamb_helmholtz, tree.leaf_index, n_threads)
+            downward_pass && downward_pass_multithread_2!(target_tree, target_systems, derivatives_switches, expansion_order, lamb_helmholtz, n_threads)
 
         else # use CPU
 
