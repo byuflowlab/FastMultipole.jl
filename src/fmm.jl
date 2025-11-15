@@ -927,6 +927,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     horizontal_pass_verbose::Bool=false,
     reset_target_tree::Bool=true, reset_source_tree::Bool=true,
     nearfield_device::Bool=false,
+    nearfield::Bool=true,
     tune=false, update_target_systems=true, multipole_acceptance=0.5,
     t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
     silence_warnings=false,
