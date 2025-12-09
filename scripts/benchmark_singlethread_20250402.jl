@@ -143,13 +143,13 @@ sizes = [2^n for n in 4:2:22]
 
 #--- benchmark fmm ---#
 
-for P in 1:3
-    print("P = $P:")
-    grav_results, grav_results_direct, errs = benchmark_fmm_gravitational2(sizes; expansion_order=P, multipole_threshold=0.5, lamb_helmholtz=false, velocity=false, scalar_potential=true)
-    println(grav_results)
-    println(grav_results_direct)
-    println(errs)
-end
+# for P in 1:3
+#     print("P = $P:")
+#     grav_results, grav_results_direct, errs = benchmark_fmm_gravitational2(sizes; expansion_order=P, multipole_threshold=0.5, lamb_helmholtz=false, velocity=false, scalar_potential=true)
+#     println(grav_results)
+#     println(grav_results_direct)
+#     println(errs)
+# end
 
 # make plots for paper:
 
@@ -173,4 +173,17 @@ end
 #=
 [0.000191708, 0.002213583, 0.033915041, 0.540281042, 8.677510666, 407.491280667]
 [0.000435083, 0.006332833, 0.1002775, 1.594397833, 26.096670584, 414.648684791]
+=#
+
+#--- include potential, gradient, and hessian ---#
+
+sizes = [2^n for n in 8:2:23]
+
+grav_results = benchmark_fmm_gravitational(sizes; expansion_order=3, multipole_threshold=0.5, lamb_helmholtz=false, velocity_gradient=true, velocity=true, scalar_potential=true)
+println(grav_results)
+vort_results = benchmark_fmm_vortex(sizes; expansion_order=3, multipole_threshold=0.5, lamb_helmholtz=true, velocity_gradient=true, velocity=true, scalar_potential=true)
+println(vort_results)
+#=
+[0.00049425, 0.003680209, 0.031296542, 0.188308459, 1.129763917, 5.118565041, 21.878593292, 107.323106833]
+[0.000549709, 0.00538125, 0.045219209, 0.271285292, 1.457891875, 6.617460583, 29.410045375, 123.73382475]
 =#

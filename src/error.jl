@@ -722,7 +722,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
         for m in 0:n
             χnm_real, χnm_imag = weights_tmp_1[1,2,i+m], weights_tmp_1[2,2,i+m]
             χnm = sqrt(χnm_real * χnm_real + χnm_imag * χnm_imag)
-            @assert χnm < stuff "l_power / L0 is not greater than all coefficients"
+            @assert χnm <= stuff "l_power / L0 is not greater than all coefficients: got $(χnm) < $stuff"
             # @show χnm / stuff
         end
             
