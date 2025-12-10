@@ -82,10 +82,17 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         #     end
         # end
 
+        # determine mean body radius as a stopping criterion for subdivision
+        if target
+            max_body_radius = zero(TF)
+        else
+            max_body_radius = get_max_body_radius(buffers, TF)
+        end
+
         # check depth
         if n_children > 0
             while n_children > 0
-                parents_index, n_children, i_leaf = child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
+                parents_index, n_children, i_leaf = child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target, max_body_radius)
                 push!(levels_index, parents_index)
             end
             # if WARNING_FLAG_LEAF_SIZE[]
@@ -201,6 +208,19 @@ function EmptyTree(system::Tuple)
     expansion_order = -1
     leaf_size = SVector{N}(-1 for _ in 1:N)
     return Tree(branches, expansions, levels_index, leaf_index, sort_index_list, inverse_sort_index_list, buffer, small_buffer, expansion_order, leaf_size)
+end
+
+function get_max_body_radius(buffers::Tuple, TF)
+    max_radius = zero(TF)
+    n_bodies = 0
+    for buffer in buffers
+        for i_body in 1:size(buffer,2)
+            max_radius += buffer[4,i_body]
+            # max_radius = max(max_radius, buffer[4,i_body])
+        end
+        n_bodies += size(buffer,2)
+    end
+    return max_radius / n_bodies
 end
 
 #------- construct tree by level rather than leaf size -------#
@@ -424,7 +444,7 @@ end
 #     return Int(ceil(estimated_n_branches * allocation_safety_factor))
 # end
 
-function child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target::Bool)
+function child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target::Bool, max_body_radius)
     
     # if Threads.nthreads() > 1 && get_n_bodies(buffers) > MIN_BODIES
     #     return child_branches_multithread!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
@@ -443,7 +463,7 @@ function child_branches!(branches, buffers, sort_index, small_buffers, sort_inde
             update_octant_accumulator!(cumulative_octant_census)
 
             # number of child branches
-            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method)
+            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method) && child_radius >= max_body_radius
                 for i_octant in 1:8
                     if get_population(cumulative_octant_census, i_octant) > 0
                         bodies_index = get_bodies_index(cumulative_octant_census, parent_branch.bodies_index, i_octant)
