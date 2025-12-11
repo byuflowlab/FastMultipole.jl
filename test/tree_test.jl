@@ -34,7 +34,8 @@
 
     # test branch! function
     expansion_order, leaf_size, multipole_acceptance = 2, SVector{1}(1), 0.5
-    tree = FastMultipole.Tree((elements,), false; expansion_order, leaf_size, shrink_recenter=false)
+    switches = DerivativesSwitch(true, true, true, (elements,))
+    tree = FastMultipole.Tree((elements,), false, switches; expansion_order, leaf_size, shrink=false, recenter=false)
 
     r1 = max(max(tree.branches[1].box[1],tree.branches[1].box[2]),tree.branches[1].box[3])
     r2 = max(max(tree.branches[2].box[1],tree.branches[2].box[2]),tree.branches[2].box[3])
@@ -109,8 +110,9 @@
 
     # test branch! function
     expansion_order, leaf_size, multipole_acceptance = 2, SVector{1}(1), 0.5
-    source_tree = FastMultipole.Tree((elements,), false; expansion_order, leaf_size, shrink_recenter=true)
-    target_tree = FastMultipole.Tree((elements,), true; expansion_order, leaf_size, shrink_recenter=true)
+    switches = DerivativesSwitch(true, true, true, (elements,))
+    source_tree = FastMultipole.Tree((elements,), false, switches; expansion_order, leaf_size, shrink=true, recenter=true)
+    target_tree = FastMultipole.Tree((elements,), true, switches; expansion_order, leaf_size, shrink=true, recenter=true)
 
     # test branch 3-5 (leaf branches)
     function test_leaf(source_branches, target_branches, buffer::Matrix, i_leaf)
@@ -188,7 +190,8 @@ n_bodies = 101
 bodies = rand(8,n_bodies)
 system = (Gravitational(bodies),)
 
-tree = fmm.Tree(system, false; leaf_size=SVector{1}(5))
+switches = DerivativesSwitch(true, true, true, (elements,))
+tree = fmm.Tree(system, false, switches; leaf_size=SVector{1}(5))
 leaf_index = tree.leaf_index
 
 i_leaf = 1
@@ -206,8 +209,8 @@ end
 n_bodies = 5
 bodies = rand(8,n_bodies)
 system = (Gravitational(bodies),)
-
-tree = fmm.Tree(system, true; leaf_size=SVector{1}(5))
+switches = DerivativesSwitch(true, true, true, (system,))
+tree = fmm.Tree(system, true, switches; leaf_size=SVector{1}(5))
 
 # fill potential with index
 for i in 1:FastMultipole.get_n_bodies(system)

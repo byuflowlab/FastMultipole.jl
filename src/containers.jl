@@ -283,13 +283,13 @@ function Cache(;
     return Cache{TF,NT,NS}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
 end
 
-function Cache(target_systems::Tuple, source_systems::Tuple)
+function Cache(target_systems::Tuple, source_systems::Tuple, switches::Tuple)
     # get float type
     TF = get_type(target_systems, source_systems)
 
     # allocate buffers
-    target_buffers = allocate_buffers(target_systems, true, TF)
-    source_buffers = allocate_buffers(source_systems, false, TF)
+    target_buffers = allocate_buffers(target_systems, true, TF, switches)
+    source_buffers = allocate_buffers(source_systems, false, TF, switches)
     target_small_buffers = allocate_small_buffers(target_systems, TF)
     source_small_buffers = allocate_small_buffers(source_systems, TF)
     

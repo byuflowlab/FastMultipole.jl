@@ -805,9 +805,9 @@ end
     return SVector{n}(input...)
 end
 
-fmm!(system, cache::Cache=Cache(to_tuple(system), to_tuple(system)); leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
+fmm!(system, cache::Cache=Cache(to_tuple(system), to_tuple(system), DerivativesSwitch(false, true, false, to_tuple(system))); leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
 
-function fmm!(target_systems, source_systems, cache::Cache=Cache(to_tuple(target_systems), to_tuple(source_systems)); optargs...)
+function fmm!(target_systems, source_systems, cache::Cache=Cache(to_tuple(target_systems), to_tuple(source_systems), DerivativesSwitch(false, true, false, to_tuple(target_systems))); optargs...)
     # promote arguments to Tuples
     target_systems = to_tuple(target_systems)
     source_systems = to_tuple(source_systems)
@@ -844,7 +844,8 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 
 **Optional Arguments: Tree Options**
 
-- `shrink_recenter::Bool`: whether to shrink and recenter branches around their bodies, accounting for finite body radius; default is `true`
+- `shrink::Bool`: whether to shrink branches around their bodies, accounting for finite body radius; default is `true`
+- `recenter::Bool`: whether to recenter branches around their bodies, accounting for finite body radius; default is `false`
 - `interaction_list_method::InteractionListMethod`: method for building interaction lists; default is `SelfTuningTargetStop()`
 
 **Optional Arguments: Additional Options**
@@ -860,41 +861,19 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 - `hessian::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector gradient; default is `false`
 
 """
-function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(target_systems, source_systems);
+function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(target_systems, source_systems, DerivativesSwitch(false, true, false, target_systems));
     leaf_size_target=nothing,
     leaf_size_source=default_leaf_size(source_systems),
+    scalar_potential=false, gradient=true, hessian=false,
     expansion_order=5,
     error_tolerance=nothing,
-    shrink_recenter=true,
+    shrink=true, recenter=false,
     interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
     optargs...
 )
 
     # get float type
     TF = get_type(target_systems, source_systems)
-
-    # promote leaf_size to vector
-    leaf_size_source = to_vector(leaf_size_source, length(source_systems))
-    leaf_size_target = to_vector(isnothing(leaf_size_target) ? minimum(leaf_size_source) : leaf_size_target, length(target_systems))
-
-    # create trees
-    t_target_tree = @elapsed target_tree = Tree(target_systems, true, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink_recenter, interaction_list_method)
-    t_source_tree = @elapsed source_tree = Tree(source_systems, false, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink_recenter, interaction_list_method)
-
-    # println("Tree construction times: target = $t_target_tree, source = $t_source_tree")
-    # error()
-
-    return fmm!(target_systems, target_tree, source_systems, source_tree; expansion_order, leaf_size_source, error_tolerance, t_source_tree, t_target_tree, interaction_list_method, optargs...)
-end
-
-function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, source_tree::Tree;
-    leaf_size_source=default_leaf_size(source_systems), multipole_acceptance=0.4,
-    scalar_potential=false, gradient=true, hessian=false,
-    farfield=true, nearfield=true, self_induced=true,
-    interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
-    t_source_tree=0.0, t_target_tree=0.0,
-    optargs...
-)
 
     # promote derivative arguments to a vector
     scalar_potential = to_vector(scalar_potential, length(target_systems))
@@ -903,6 +882,31 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     
     # assemble derivatives switch
     derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
+
+    # promote leaf_size to vector
+    leaf_size_source = to_vector(leaf_size_source, length(source_systems))
+    leaf_size_target = to_vector(isnothing(leaf_size_target) ? minimum(leaf_size_source) : leaf_size_target, length(target_systems))
+
+    # create trees
+    t_target_tree = @elapsed target_tree = Tree(target_systems, true, derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
+    t_source_tree = @elapsed source_tree = Tree(source_systems, false, derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
+
+    # println("Tree construction times: target = $t_target_tree, source = $t_source_tree")
+    # error()
+
+    return fmm!(target_systems, target_tree, source_systems, source_tree; 
+        expansion_order, leaf_size_source, error_tolerance, t_source_tree, t_target_tree, 
+        interaction_list_method, derivatives_switches, optargs...)
+end
+
+function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, source_tree::Tree;
+    leaf_size_source=default_leaf_size(source_systems), multipole_acceptance=0.4,
+    derivatives_switches=DerivativesSwitch(false, true, false, target_systems),
+    farfield=true, nearfield=true, self_induced=true,
+    interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
+    t_source_tree=0.0, t_target_tree=0.0,
+    optargs...
+)
 
     # create interaction lists
     t_lists_build = @elapsed m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)

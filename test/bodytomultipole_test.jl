@@ -349,7 +349,7 @@ function FastMultipole.reset!(system::VortexPanels)
 end
 
 function Branch(bodies_index::UnitRange, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box)
-    return Branch(SVector{1}(length(bodies_index)), SVector{1}([bodies_index]), n_branches, branch_index, i_parent, i_leaf_index, center, radius, box)
+    return FastMultipole.Branch(SVector{1}(length(bodies_index)), SVector{1}([bodies_index]), n_branches, branch_index, i_parent, i_leaf_index, center, radius, box)
 end
 
 @testset "body-to-multipole: point source" begin

@@ -57,8 +57,9 @@ end
     
 n_bodies = 1000
 mass = generate_gravitational(123, n_bodies)
-source_tree = Tree((mass,), false; leaf_size=SVector{1}(1))
-target_tree = Tree((mass,), true; leaf_size=SVector{1}(1))
+switches = FastMultipole.DerivativesSwitch(true, true, true, (mass,))
+source_tree = Tree((mass,), false, switches; leaf_size=SVector{1}(1))
+target_tree = Tree((mass,), true, switches; leaf_size=SVector{1}(1))
 n_leaves_target = length(target_tree.leaf_index)
 n_leaves_source = length(source_tree.leaf_index)
 direct_list = Vector{SVector{2,Int}}(undef, n_leaves_target*n_leaves_source)

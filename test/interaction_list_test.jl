@@ -4,7 +4,8 @@ Random.seed!(456)
 n_bodies = 1_000_000
 bodies = rand(8,n_bodies)
 masses = Gravitational(bodies)
-tree = Tree((masses,), false; leaf_size = SVector{1}(100))
+switches = DerivativesSwitch(true, true, true, (masses,))
+tree = Tree((masses,), false, switches; leaf_size = SVector{1}(100))
 mac = 0.5
 
 m2l_list, direct_list = build_interaction_lists(tree.branches, tree.branches, tree.leaf_index, mac, true, true, true)

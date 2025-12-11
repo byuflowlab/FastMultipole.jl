@@ -537,7 +537,7 @@ FastGaussSeidel(target_systems, source_systems; optargs...) = FastGaussSeidel((t
 
 function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple; 
     expansion_order=4, multipole_acceptance=0.5, leaf_size=30,
-    interaction_list_method=Barba(), shrink_recenter=true,
+    interaction_list_method=Barba(), shrink=true, recenter=false,
     derivatives_switches=DerivativesSwitch(true, true, false, target_systems)
 )
 
@@ -553,8 +553,10 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
 
     # create trees
     TF = promote_type(eltype.(target_systems)...)
-    target_tree = Tree(target_systems, true; expansion_order, leaf_size, shrink_recenter, interaction_list_method)
-    source_tree = Tree(source_systems, false; expansion_order, leaf_size, shrink_recenter, interaction_list_method)
+    switches = DerivativesSwitch(true, true, true, target_systems)
+    target_tree = Tree(target_systems, true, switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
+    switches = DerivativesSwitch(true, true, true, source_systems)
+    source_tree = Tree(source_systems, false, switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
 
     #--- ensure no leaves have fewer than 2 bodies ---#
 

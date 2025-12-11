@@ -2,7 +2,7 @@ const DEBUG_COUNTER = [0]
 
 #------- tree constructor -------#
 
-function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=allocate_buffers(systems, target, TF), small_buffers = allocate_small_buffers(systems, TF), expansion_order=7, leaf_size=default_leaf_size(systems), n_divisions=20, shrink_recenter=false, allocation_safety_factor=1.0, estimate_cost=false, read_cost_file=false, write_cost_file=false, interaction_list_method=SelfTuning())
+function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buffers=allocate_buffers(systems, target, TF, switches), small_buffers = allocate_small_buffers(systems, TF), expansion_order=7, leaf_size=default_leaf_size(systems), n_divisions=20, shrink=false, recenter=false, allocation_safety_factor=1.0, estimate_cost=false, read_cost_file=false, write_cost_file=false, interaction_list_method=SelfTuning())
 
     # ensure `systems` isn't empty; otherwise return an empty tree
     if get_n_bodies(systems) > 0
@@ -121,11 +121,11 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         # println("Part VII: shrink and recenter branches")
         # @time begin #already threaded
         # shrink and recenter branches to account for bodies of nonzero radius
-        if shrink_recenter 
+        if shrink
             if target
-                shrink_recenter_target!(branches, levels_index, buffers)
+                shrink_recenter_target!(branches, levels_index, buffers, recenter)
             else
-                shrink_recenter_source!(branches, levels_index, buffers)
+                shrink_recenter_source!(branches, levels_index, buffers, recenter)
             end
         end
     # end
@@ -236,7 +236,7 @@ end
 """
 Doesn't stop subdividing until ALL child branches have satisfied the leaf size.
 """
-function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerbox=center_box(systems, getTF(systems)), buffers=allocate_buffers(systems, target, TF), small_buffers = allocate_small_buffers(systems, TF), expansion_order=7, n_levels=5)
+function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems), switches=DerivativesSwitch(true, true, false, systems); centerbox=center_box(systems, getTF(systems)), buffers=allocate_buffers(systems, target, TF, switches), small_buffers = allocate_small_buffers(systems, TF), expansion_order=7, n_levels=5)
 
     # ensure `systems` isn't empty; otherwise return an empty tree
     if get_n_bodies(systems) > 0
@@ -310,8 +310,8 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerb
         inverse_sort_index = sort_index_buffer # reuse the buffer as the inverse index
 
         # shrink and recenter branches to account for bodies of nonzero radius
-        shrink_recenter = false
-        shrink_recenter && shrink_recenter!(branches, levels_index, buffers)
+        shrink = recenter = false
+        shrink && shrink_recenter!(branches, levels_index, buffers, recenter)
 
         # store leaves
         leaf_index = collect(levels_index[end])
@@ -340,7 +340,15 @@ end
 
 #--- buffers ---#
 
-function allocate_target_buffer(TF, system)
+function allocate_target_buffer(TF, system, ::DerivativesSwitch{PS,GS,HS}) where {PS,GS,HS}
+    n = 0
+    if HS
+        n += 18 # 3 position, 1 potential, 3 gradient, 9 hessian, 1 prev potential, 1 prev velocity
+    elseif GS
+        n += 9 # 3 position, 1 potential, 3 gradient, 1 prev potential, 1 prev velocity
+    elseif PS
+        n += 6 # 3 position, 1 potential, 1 prev potential, 1 prev velocity
+    end
     buffer = zeros(TF, 18, get_n_bodies(system))
     return buffer
 end
@@ -390,10 +398,10 @@ Allocates buffers for the given systems.
     * if `target==false`, each matrix has size `(M,N)`, where `N` is the number of bodies in the system, and `M` is determined by the user-defined [`source_system_to_buffer!`](@ref FastMultipole.source_system_to_buffer!) function
 
 """
-function allocate_buffers(systems::Tuple, target::Bool, TF)
+function allocate_buffers(systems::Tuple, target::Bool, TF, switches)
     # create buffers
     if target
-        buffers = Tuple(allocate_target_buffer(TF, system) for system in systems)
+        buffers = Tuple(allocate_target_buffer(TF, system, switch) for (system, switch) in zip(systems, switches))
     else
         buffers = Tuple(allocate_source_buffer(TF, system) for system in systems)
     end
@@ -1678,13 +1686,16 @@ end
     return radius
 end
 
-function shrink_leaf_source!(branches::Vector{Branch{TF,N}}, i_branch, system) where {TF,N}
+function shrink_leaf_source!(branches::Vector{Branch{TF,N}}, i_branch, system, recenter::Bool) where {TF,N}
     # unpack
     branch = branches[i_branch]
     bodies_index = branch.bodies_index
 
     # recenter and target box
     new_source_center, new_source_box = source_center_box(system, bodies_index, TF)
+    if !recenter
+        new_source_center = branch.center
+    end
 
     # shrink radii and create source box
     new_source_radius = shrink_radius_source(new_source_center, system, bodies_index)
@@ -1694,13 +1705,16 @@ function shrink_leaf_source!(branches::Vector{Branch{TF,N}}, i_branch, system) w
 
 end
 
-function shrink_leaf_target!(branches::Vector{Branch{TF,N}}, i_branch, system) where {TF,N}
+function shrink_leaf_target!(branches::Vector{Branch{TF,N}}, i_branch, system, recenter) where {TF,N}
     # unpack
     branch = branches[i_branch]
     bodies_index = branch.bodies_index
 
     # recenter and target box
     new_target_center, new_target_box = center_box(system, bodies_index, TF)
+    if !recenter
+        new_target_center = branch.center
+    end
 
     # shrink radii and create source box
     new_target_radius = shrink_radius_target(new_target_center, system, bodies_index)
@@ -1732,11 +1746,14 @@ Computes the smallest bounding box to completely bound all child boxes.
 
 Shrunk radii are merely the distance from the center to the corner of the box.
 """
-function shrink_branch!(branches, i_branch, child_index)
+function shrink_branch!(branches, i_branch, child_index, recenter::Bool)
 
     # recenter and target box
     new_center, new_box = center_box(branches, child_index)
     # new_source_center, new_source_box = source_center_box(branches, child_index)
+    if !recenter
+        new_center = branches[i_branch].center
+    end
 
     # shrink radii and create source box
     new_radius = shrink_radius(new_center, branches, child_index)
@@ -1745,10 +1762,10 @@ function shrink_branch!(branches, i_branch, child_index)
     replace_branch!(branches, i_branch, new_center, new_radius, new_box)
 end
 
-function shrink_recenter_source!(branches, levels_index, system)
+function shrink_recenter_source!(branches, levels_index, system, recenter::Bool)
     n_threads = Threads.nthreads()
     if n_threads > 1 && get_n_bodies(system) > MIN_BODIES
-        return shrink_recenter_source_multithread!(branches, levels_index, system)
+        return shrink_recenter_source_multithread!(branches, levels_index, system, recenter)
     end
 
     for i_level in length(levels_index):-1:1 # start at the bottom level
@@ -1756,32 +1773,32 @@ function shrink_recenter_source!(branches, levels_index, system)
         for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
-                shrink_leaf_source!(branches, i_branch, system)
+                shrink_leaf_source!(branches, i_branch, system, recenter)
             else
-                shrink_branch!(branches, i_branch, branch.branch_index)
+                shrink_branch!(branches, i_branch, branch.branch_index, recenter)
             end
         end
     end
 end
 
-function shrink_recenter_source_multithread!(branches, levels_index, system)
+function shrink_recenter_source_multithread!(branches, levels_index, system, recenter::Bool)
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
         Threads.@threads for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
-                shrink_leaf_source!(branches, i_branch, system)
+                shrink_leaf_source!(branches, i_branch, system, recenter)
             else
-                shrink_branch!(branches, i_branch, branch.branch_index)
+                shrink_branch!(branches, i_branch, branch.branch_index, recenter)
             end
         end
     end
 end
 
-function shrink_recenter_target!(branches, levels_index, system)
+function shrink_recenter_target!(branches, levels_index, system, recenter)
     n_threads = Threads.nthreads()
     if n_threads > 1 && get_n_bodies(system) > MIN_BODIES
-        return shrink_recenter_target_multithread!(branches, levels_index, system)
+        return shrink_recenter_target_multithread!(branches, levels_index, system, recenter)
     end
 
     for i_level in length(levels_index):-1:1 # start at the bottom level
@@ -1789,23 +1806,23 @@ function shrink_recenter_target!(branches, levels_index, system)
         for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
-                shrink_leaf_target!(branches, i_branch, system)
+                shrink_leaf_target!(branches, i_branch, system, recenter)
             else
-                shrink_branch!(branches, i_branch, branch.branch_index)
+                shrink_branch!(branches, i_branch, branch.branch_index, recenter)
             end
         end
     end
 end
 
-function shrink_recenter_target_multithread!(branches, levels_index, system)
+function shrink_recenter_target_multithread!(branches, levels_index, system, recenter::Bool)
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
         Threads.@threads :static for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
-                shrink_leaf_target!(branches, i_branch, system)
+                shrink_leaf_target!(branches, i_branch, system, recenter)
             else
-                shrink_branch!(branches, i_branch, branch.branch_index)
+                shrink_branch!(branches, i_branch, branch.branch_index, recenter)
             end
         end
     end

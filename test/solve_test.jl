@@ -332,7 +332,7 @@ end
 
 #--- create FGS solver ---#
 
-fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_acceptance=0.5, leaf_size=n_bodies, shrink_recenter=false) # try with leaf_size=3 for sources with no non-self influence
+fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_acceptance=0.5, leaf_size=n_bodies, shrink=false, recenter=false) # try with leaf_size=3 for sources with no non-self influence
 
 #--- test solve! ---#
 
@@ -366,7 +366,8 @@ derivatives_switches = FastMultipole.DerivativesSwitch(true, false, false, (syst
 systems = (system,)
 target = false
 TF = eltype(system)
-source_tree = Tree(systems, target; buffers=FastMultipole.allocate_buffers(systems, target, TF), small_buffers = FastMultipole.allocate_small_buffers(systems, TF), expansion_order=4, leaf_size=SVector{1}(20), n_divisions=20, shrink_recenter=false, interaction_list_method=Barba())
+switches = DerivativesSwitch(true, true, true, systems)
+source_tree = Tree(systems, target, switches; buffers=FastMultipole.allocate_buffers(systems, target, TF, switches), small_buffers = FastMultipole.allocate_small_buffers(systems, TF), expansion_order=4, leaf_size=SVector{1}(20), n_divisions=20, shrink=false, recenter=false, interaction_list_method=Barba())
 
 #--- modify the buffer strengths ---#
 

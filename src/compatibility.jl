@@ -389,8 +389,8 @@ function target_to_buffer!(buffer::Matrix, system, target::Bool, sort_index=1:ge
             buffer[1:3, i_body] .= get_position(system, i_sorted)
             if target
                 prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
-                buffer[17, i_body] = prev_potential
-                buffer[18, i_body] = prev_velocity
+                buffer[end-1, i_body] = prev_potential # 17th row if hessian=true
+                buffer[end, i_body] = prev_velocity # 18th row if hessian=true
             end
         end
     end
@@ -402,20 +402,20 @@ function target_to_buffer_multithread!(buffer::Matrix, system, target::Bool, sor
         buffer[1:3, i_body] .= get_position(system, i_sorted)
         if target
             prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
-            buffer[17, i_body] = prev_potential
-            buffer[18, i_body] = prev_velocity
+            buffer[end-1, i_body] = prev_potential # 17th row if hessian=true
+            buffer[end, i_body] = prev_velocity # 18th row if hessian=true
         end
     end
 end
 
-function target_to_buffer(systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
-    buffers = allocate_buffers(systems, true)
+function target_to_buffer(systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]), switches=DerivativesSwitch(true, true, true, systems))
+    buffers = allocate_buffers(systems, true, get_type(systems), switches)
     target_to_buffer!(buffers, systems, target, sort_index_list)
     return buffers
 end
 
-function target_to_buffer(system, target::Bool, sort_index=1:get_n_bodies(system))
-    buffer = allocate_target_buffer(eltype(system), system)
+function target_to_buffer(system, target::Bool, switch::DerivativesSwitch, sort_index=1:get_n_bodies(system))
+    buffer = allocate_target_buffer(eltype(system), system, switch)
     target_to_buffer!(buffer, system, target, sort_index)
     return buffer
 end
@@ -459,7 +459,7 @@ function system_to_buffer_multithread!(buffer::Matrix, system, sort_index=1:get_
 end
 
 function system_to_buffer(systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
-    buffers = allocate_buffers(systems, false)
+    buffers = allocate_buffers(systems, false, get_type(systems), DerivativesSwitch(false, false, false, systems))
     system_to_buffer!(buffers, systems, sort_index_list)
     return buffers
 end

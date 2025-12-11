@@ -47,23 +47,23 @@ function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; targ
     # get float type
     TF = get_type(target_systems, source_systems)
 
+    # derivatives switches
+    scalar_potential = to_vector(scalar_potential, length(target_systems))
+    gradient = to_vector(gradient, length(target_systems))
+    hessian = to_vector(hessian, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
+
     # set up target buffers
     if isnothing(target_buffers)
-        target_buffers = allocate_buffers(target_systems, true, TF)
+        target_buffers = allocate_buffers(target_systems, true, TF, derivatives_switches)
         target_to_buffer!(target_buffers, target_systems, true)
     end
 
     # set up source buffers
     if isnothing(source_buffers)
-        source_buffers = allocate_buffers(source_systems, false, TF)
+        source_buffers = allocate_buffers(source_systems, false, TF, derivatives_switches)
         system_to_buffer!(source_buffers, source_systems)
     end
-
-    # ensure derivative switch information is a vector
-    scalar_potential = to_vector(scalar_potential, length(target_systems))
-    gradient = to_vector(gradient, length(target_systems))
-    hessian = to_vector(hessian, length(target_systems))
-    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian)
 
     for (source_system, source_buffer) in zip(source_systems, source_buffers)
         for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
@@ -80,24 +80,24 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
     
     # get float type
     TF = get_type(target_systems, source_systems)
-    
-    # set up target buffers
-    if isnothing(target_buffers)
-        target_buffers = allocate_buffers(target_systems, true, TF)
-        target_to_buffer!(target_buffers, target_systems, true)
-    end
-
-    # set up source buffers
-    if isnothing(source_buffers)
-        source_buffers = allocate_buffers(source_systems, false, TF)
-        system_to_buffer!(source_buffers, source_systems)
-    end
 
     # ensure derivative switch information is a vector
     scalar_potential = to_vector(scalar_potential, length(target_systems))
     gradient = to_vector(gradient, length(target_systems))
     hessian = to_vector(hessian, length(target_systems))
-    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian)
+    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
+    
+    # set up target buffers
+    if isnothing(target_buffers)
+        target_buffers = allocate_buffers(target_systems, true, TF, derivatives_switches)
+        target_to_buffer!(target_buffers, target_systems, true)
+    end
+
+    # set up source buffers
+    if isnothing(source_buffers)
+        source_buffers = allocate_buffers(source_systems, false, TF, derivatives_switches)
+        system_to_buffer!(source_buffers, source_systems)
+    end
 
     for (source_system, source_buffer) in zip(source_systems, source_buffers)
         n_source_bodies = get_n_bodies(source_system)
