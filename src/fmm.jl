@@ -1021,31 +1021,48 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
         # begin FMM
         if nearfield_device # use GPU
 
-            # allow nearfield_device! to be called concurrently with upward and horizontal passes
-            t1 = Threads.@spawn nearfield && nearfield_device!(target_systems, target_tree, derivatives_switches, source_systems, source_tree, direct_list)
-            n_threads_multipole = n_threads == 1 ? n_threads : n_threads - 1
+            # Multi-threaded version (commented out for now)
+            # # allow nearfield_device! to be called concurrently with upward and horizontal passes
+            # t1 = Threads.@spawn nearfield && nearfield_device!(target_systems, target_tree, derivatives_switches, source_systems, source_tree, direct_list)
+            # n_threads_multipole = n_threads == 1 ? n_threads : n_threads - 1
+            # 
+            # t2 = Threads.@spawn begin
+            #         upward_pass && upward_pass_multithread!(source_tree, source_systems, expansion_order, lamb_helmholtz, n_threads_multipole)
+            #         if horizontal_pass && length(m2l_list) > 0
+            #             Pmax, error_success = horizontal_pass_multithread!(target_tree, source_tree, m2l_list, lamb_helmholtz, expansion_order, error_tolerance, interaction_list_method, n_threads_multipole)
+            #             if !error_success
+            #                 Pmax += 1
+            #             end
+            #         end
+            #         downward_pass && downward_pass_multithread_1!(target_tree, expansion_order, lamb_helmholtz, n_threads_multipole)
+            #     end
+            # 
+            # fetch(t1)
+            # fetch(t2)
+            
+            # Single-threaded version
+            # Perform nearfield calculations on GPU
+            nearfield && nearfield_device!(target_systems, target_tree, derivatives_switches, source_systems, source_tree, direct_list)
+            
             # Initialize Pmax
             Pmax = 0
-            Pmax_ref = Ref(0)
-            error_success_ref = Ref(true)
-
-            t2 = Threads.@spawn begin
-                    upward_pass && upward_pass_multithread!(source_tree, source_systems, expansion_order, lamb_helmholtz, n_threads_multipole)
-                    if horizontal_pass && length(m2l_list) > 0
-                        Pmax_result, error_success_result = horizontal_pass_multithread!(target_tree, source_tree, m2l_list, lamb_helmholtz, expansion_order, error_tolerance, interaction_list_method, n_threads_multipole)
-                        Pmax_ref[] = Pmax_result
-                        error_success_ref[] = error_success_result
-                    end
-	                downward_pass && downward_pass_multithread_1!(target_tree, expansion_order, lamb_helmholtz, n_threads_multipole)
+            
+            # Farfield computations (single-threaded)
+            if upward_pass
+                upward_pass_multithread!(source_tree, source_systems, expansion_order, lamb_helmholtz, 1)
+            end
+            
+            if horizontal_pass && length(m2l_list) > 0
+                Pmax, error_success = horizontal_pass_multithread!(target_tree, source_tree, m2l_list, lamb_helmholtz, expansion_order, error_tolerance, interaction_list_method, 1)
+                if !error_success
+                    Pmax += 1
                 end
-
-            fetch(t1)
-            fetch(t2)
-
-            # Extract values from refs
-            Pmax = Pmax_ref[]
-            error_success = error_success_ref[]
-
+            end
+            
+            if downward_pass
+                downward_pass_multithread_1!(target_tree, expansion_order, lamb_helmholtz, 1)
+            end
+            
             # local to body interaction
             downward_pass && downward_pass_multithread_2!(target_tree, target_systems, derivatives_switches, expansion_order, lamb_helmholtz, n_threads)
 
