@@ -12,7 +12,7 @@ function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buff
         # determine float type
         TF = Float32
         for system in systems
-            TF = promote_type(TF, eltype(system))
+            TF = promote_type(TF, numtype(system))
         end
 
         # initialize variables
@@ -172,7 +172,7 @@ function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buff
     return tree
 end
 
-function Tree(system, target::Bool, TF=eltype(system); optargs...)
+function Tree(system, target::Bool, TF=numtype(system); optargs...)
     return Tree((system,), target, TF; optargs...)
 end
 
@@ -228,7 +228,7 @@ end
 function getTF(systems::Tuple)
     TF = Float32
     for system in systems
-        TF = promote_type(TF, eltype(system))
+        TF = promote_type(TF, numtype(system))
     end
     return TF
 end
@@ -244,7 +244,7 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems), switche
         # determine float type
         TF = Float32
         for system in systems
-            TF = promote_type(TF, eltype(system))
+            TF = promote_type(TF, numtype(system))
         end
 
         # initialize variables
@@ -359,9 +359,9 @@ function allocate_source_buffer(TF, system)
 end
 
 function get_type(systems::Tuple)
-    TF = eltype(first(systems))
+    TF = numtype(first(systems))
     for system in systems
-        TF = promote_type(TF, eltype(system))
+        TF = promote_type(TF, numtype(system))
     end
     return TF
 end
@@ -370,6 +370,8 @@ function get_type(target_systems::Tuple, source_systems::Tuple)
     TF = promote_type(get_type(source_systems), get_type(target_systems))
     return TF
 end
+
+numtype(system) = eltype(system)
 
 """
     allocate_buffers(systems::Tuple, target::Bool)

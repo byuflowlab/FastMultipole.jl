@@ -67,7 +67,7 @@ function get_previous_influence(system, i)
         @warn "get_previous_influence not overloaded for type $(typeof(system)); relative error prediction will not be used"
         WARNING_FLAG_MAX_INFLUENCE[] = false
     end
-    return zero(eltype(system)), zero(eltype(system))
+    return zero(numtype(system)), zero(numtype(system))
 end
 
 """
@@ -415,7 +415,7 @@ function target_to_buffer(systems::Tuple, target::Bool, sort_index_list=SVector{
 end
 
 function target_to_buffer(system, target::Bool, switch::DerivativesSwitch, sort_index=1:get_n_bodies(system))
-    buffer = allocate_target_buffer(eltype(system), system, switch)
+    buffer = allocate_target_buffer(numtype(system), system, switch)
     target_to_buffer!(buffer, system, target, sort_index)
     return buffer
 end
@@ -465,7 +465,7 @@ function system_to_buffer(systems::Tuple, sort_index_list=SVector{length(systems
 end
 
 function system_to_buffer(system, sort_index=1:get_n_bodies(system))
-    buffer = allocate_source_buffer(eltype(system), system)
+    buffer = allocate_source_buffer(numtype(system), system)
     system_to_buffer!(buffer, system, sort_index)
     return buffer
 end
