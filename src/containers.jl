@@ -58,6 +58,28 @@ abstract type AbsoluteErrorMethod{AET,BE} <: ErrorMethod{BE} end
 abstract type RelativeErrorMethod{RET,AET,BE} <: ErrorMethod{BE} end
 
 struct UnequalSpheres{BE} <: ErrorMethod{BE} end
+UnequalSpheres(BE=false) = UnequalSpheres{BE}()
+
+struct PringleAbsolutePotential{BE} <: ErrorMethod{BE} end
+PringleAbsolutePotential(BE=false) = PringleAbsolutePotential{BE}()
+
+struct PringleRelativePotential{BE} <: ErrorMethod{BE} end
+PringleRelativePotential(BE=false) = PringleRelativePotential{BE}()
+
+struct DehnenAbsoluteGradient{BE} <: ErrorMethod{BE} end
+DehnenAbsoluteGradient(BE=false) = DehnenAbsoluteGradient{BE}()
+
+struct UnequalSpheresMultipoleGradient{BE} <: ErrorMethod{BE} end
+UnequalSpheresMultipoleGradient() = UnequalSpheresMultipoleGradient{false}()
+
+struct UnequalSpheresGradient{BE} <: ErrorMethod{BE} end
+UnequalSpheresGradient() = UnequalSpheresGradient{false}()
+
+struct HeuristicRelativePotential{BE} <: ErrorMethod{BE} end
+HeuristicRelativePotential(BE=false) = HeuristicRelativePotential{BE}()
+
+struct HeuristicAbsolutePotential{BE} <: ErrorMethod{BE} end
+HeuristicAbsolutePotential(BE=false) = HeuristicAbsolutePotential{BE}()
 
 struct UnequalBoxes{BE} <: ErrorMethod{BE} end
 
@@ -74,6 +96,9 @@ struct RotatedCoefficients{BE} <: ErrorMethod{BE} end
 
 struct PowerAbsolutePotential{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsolutePotential(ε, BE::Bool=true) = PowerAbsolutePotential{ε,BE}()
+
+struct PowerAbsolutePotentialMultipole{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
+PowerAbsolutePotentialMultipole(ε, BE::Bool=true) = PowerAbsolutePotentialMultipole{ε,BE}()
 
 struct PowerAbsoluteGradient{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsoluteGradient(ε, BE::Bool=true) = PowerAbsoluteGradient{ε,BE}()
