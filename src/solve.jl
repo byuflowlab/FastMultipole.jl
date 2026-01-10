@@ -552,7 +552,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     leaf_size = to_vector(leaf_size, length(source_systems))
 
     # create trees
-    TF = promote_type(eltype.(target_systems)...)
+    TF = promote_type(numtype.(target_systems)...)
     switches = DerivativesSwitch(true, true, true, target_systems)
     target_tree = Tree(target_systems, true, switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
     switches = DerivativesSwitch(true, true, true, source_systems)
