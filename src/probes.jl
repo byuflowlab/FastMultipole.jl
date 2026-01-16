@@ -3,7 +3,15 @@ function ProbeSystem(n_bodies, TF=Float64)
     scalar_potential = zeros(TF, n_bodies)
     gradient = zeros(SVector{3,TF}, n_bodies)
     hessian = zeros(SMatrix{3,3,TF,9}, n_bodies)
-    return ProbeSystem{TF}(position, scalar_potential, gradient, hessian)
+    return ProbeSystemStatic{TF}(position, scalar_potential, gradient, hessian)
+end
+
+function ProbeSystemArray(n_bodies, TF=Float64)
+    position = zeros(TF, 3, n_bodies)
+    scalar_potential = zeros(TF, n_bodies)
+    gradient = zeros(TF, 3, n_bodies)
+    hessian = zeros(TF, 3, 3, n_bodies)
+    return ProbeSystemArray{TF}(position, scalar_potential, gradient, hessian)
 end
 
 function reset!(system::ProbeSystem{TF}) where TF
@@ -21,24 +29,27 @@ end
 Base.eltype(::ProbeSystem{TF}) where TF = TF
 
 function FastMultipole.source_system_to_buffer!(buffer, i_buffer, system::ProbeSystem, i_body)
-    buffer[1:3, i_buffer] .= system.bodies[i_body].position
-    buffer[4, i_buffer] = zero(TF)
-    buffer[5, i_buffer] = zero(TF)
+    throw("ProbeSystem cannot be used as a source system")
 end
 
 function FastMultipole.data_per_body(system::ProbeSystem)
-    return 5
+    return 3
 end
 
-function FastMultipole.get_position(system::ProbeSystem, i)
+function FastMultipole.get_position(system::ProbeSystemStatic, i)
     return system.position[i]
 end
 
-function FastMultipole.strength_dims(system::ProbeSystem)
-    return 1
+function FastMultipole.get_position(system::ProbeSystemArray, i)
+    return system.position[1,i], system.position[2,i], system.position[3,i]
 end
 
-FastMultipole.get_n_bodies(system::ProbeSystem) = length(system.position)
+function FastMultipole.strength_dims(system::ProbeSystem)
+    return 0
+end
+
+FastMultipole.get_n_bodies(system::ProbeSystemStatic) = length(system.position)
+FastMultipole.get_n_bodies(system::ProbeSystemArray) = size(system.position, 2)
 
 function FastMultipole.body_to_multipole!(system::ProbeSystem, args...)
     return nothing
@@ -48,13 +59,32 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch, 
     return nothing
 end
 
-function FastMultipole.buffer_to_target_system!(target_system::ProbeSystem, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
-    TF = eltype(target_buffer)
-    scalar_potential = PS ? FastMultipole.get_scalar_potential(target_buffer, i_buffer) : zero(TF)
-    gradient = GS ? FastMultipole.get_gradient(target_buffer, i_buffer) : zero(SVector{3,TF})
-    hessian = HS ? FastMultipole.get_hessian(target_buffer, i_buffer) : zero(SMatrix{3,3,TF,9})
+function FastMultipole.buffer_to_target_system!(target_system::ProbeSystemStatic, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+    if PS
+        scalar_potential = FastMultipole.get_scalar_potential(target_buffer, i_buffer)
+        target_system.scalar_potential[i_target] += scalar_potential
+    end
+    if GS
+        gradient = FastMultipole.get_gradient(target_buffer, i_buffer)
+        target_system.gradient[i_target] += gradient
+    end
+    if HS        
+        hessian = FastMultipole.get_hessian(target_buffer, i_buffer)
+        target_system.hessian[i_target] += hessian
+    end
+end
 
-    target_system.scalar_potential[i_target] = scalar_potential
-    target_system.gradient[i_target] = gradient
-    target_system.hessian[i_target] = hessian
+function FastMultipole.buffer_to_target_system!(target_system::ProbeSystemArray, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+    if PS
+        scalar_potential = FastMultipole.get_scalar_potential(target_buffer, i_buffer)
+        target_system.scalar_potential[i_target] += scalar_potential
+    end
+    if GS
+        gradient = FastMultipole.get_gradient(target_buffer, i_buffer)
+        target_system.gradient[:, i_target] .+= gradient
+    end
+    if HS        
+        hessian = FastMultipole.get_hessian(target_buffer, i_buffer)
+        target_system.hessian[:, :, i_target] .+= hessian
+    end
 end

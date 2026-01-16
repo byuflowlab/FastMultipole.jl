@@ -1377,7 +1377,7 @@ end
     return center_box(systems, bodies_indices, TF)
 end
 
-@inline function center_box(systems::Tuple, bodies_indices, TF)
+function center_box(systems::Tuple, bodies_indices, TF)
     x_min, y_min, z_min = first_body_position(systems, bodies_indices, TF)
     x_max, y_max, z_max = x_min, y_min, z_min
     for (system, bodies_index) in zip(systems, bodies_indices)
@@ -1500,7 +1500,7 @@ end
 #     return system[bodies_index[1],POSITION]
 # end
 
-@inline function first_body_position(systems::Tuple, bodies_indices, TF)
+function first_body_position(systems::Tuple, bodies_indices, TF)
     for (system, bodies_index) in zip(systems, bodies_indices)
         length(bodies_index) > 0 && (return get_position(system, bodies_index[1]))
     end

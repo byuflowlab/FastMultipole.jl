@@ -407,29 +407,6 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     return ε_mp * ϕ, ε_mp * ϕ
 end
 
-function predict_error(target_branch, source_weights, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz::Val{LH}, ::HeuristicRelativePotential) where LH
-
-    # --- distance information ---#
-
-    # multipole error location
-    Δx, Δy, Δz = minimum_distance(source_branch.center, target_branch.center, target_branch.box)
-    r_mp = sqrt(Δx * Δx + Δy * Δy + Δz * Δz)
-
-    # max source radius
-    ρ_max = source_branch.radius
-
-    @assert r_mp > ρ_max "Error predictor requires target branch to be outside the source branch's bounding sphere"
-
-    ρ_max_over_r_mp = ρ_max / r_mp
-    p = expansion_order
-
-    # @assert (p+1) * ρ_max - (p+2) * r_mp >= 0.0 "Error predictor requires target branch to be outside the source branch's bounding sphere"
-
-    ε_mp = ρ_max_over_r_mp^p / r_mp
-
-    return ε_mp, ε_mp
-end
-
 function predict_error(target_branch, source_weights, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz::Val{LH}, ::UnequalSpheresMultipoleGradient) where LH
 
     # --- distance information ---#

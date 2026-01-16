@@ -238,11 +238,20 @@ Convenience system for defining locations at which the potential, vector field, 
 * `gradient::Vector{SVector{3,TF}}`: vector of vector field values at the positions
 * `hessian::Vector{SMatrix{3,3,TF,9}}`: vector of Hessian matrices at the positions
 """
-struct ProbeSystem{TF}
+abstract type ProbeSystem{TF} end
+
+struct ProbeSystemStatic{TF} <: ProbeSystem{TF}
     position::Vector{SVector{3,TF}}
     scalar_potential::Vector{TF}
     gradient::Vector{SVector{3,TF}}
     hessian::Vector{SMatrix{3,3,TF,9}}
+end
+
+struct ProbeSystemArray{TF} <: ProbeSystem{TF}
+    position::Matrix{TF}           # 3 x n_bodies
+    scalar_potential::Vector{TF}   # n_bodies
+    gradient::Matrix{TF}           # 3 x n_bodies
+    hessian::Array{TF,3}           # 3 x 3 x n_bodies
 end
 
 #------- SOLVERS -------#
