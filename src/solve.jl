@@ -36,7 +36,7 @@ end
     return matrix_offset:matrix_offset + m*n - 1
 end
 
-@inline function get_gradient_range(ms::Matrices, k::Int, m)
+@inline function get_rhs_range(ms::Matrices, k::Int, m)
     # get the range of values corresponding to the k-th rhs vector
     rhs_offset = ms.rhs_offsets[k]
     return rhs_offset:rhs_offset + m - 1
@@ -44,7 +44,7 @@ end
 
 function get_matrix_vector(ms::Matrices, k::Int)
     m, n = ms.sizes[k]
-    vrange = get_gradient_range(ms, k, m)
+    vrange = get_rhs_range(ms, k, m)
     mrange = get_matrix_range(ms, k, m, n)
     mat = @view ms.data[mrange]
     return reshape(mat, m, n), view(ms.rhs, vrange)
@@ -689,7 +689,7 @@ function update_by_leaf!(strengths::Vector, strengths_by_leaf::Vector{UnitRange{
     end
 end
 
-function update_by_leaf!(source_buffers::Tuple{<:Matrix}, source_systems::Tuple, strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}}, source_tree::Tree)
+function update_by_leaf!(source_buffers::Tuple{<:Matrix}, source_systems::Tuple, strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}}, source_tree::Tree, rlx)
     # update strengths by leaf
     for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
         # get bodies index
@@ -710,7 +710,7 @@ function update_by_leaf!(source_buffers::Tuple{<:Matrix}, source_systems::Tuple,
                 # update strengths
                 for i_body in bodies_index[i_source_system]
                     # set strength value
-                    value_to_strength!(source_buffer, source_system, i_body, these_strengths[i_strength])
+                    value_to_strength!(source_buffer, source_system, i_body, these_strengths[i_strength], rlx)
 
                     # increment index
                     i_strength += 1
@@ -798,7 +798,7 @@ solve!(target_systems, source_systems, solver::FastGaussSeidel; optargs...) = so
 
 function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussSeidel{TF,N}; 
     derivatives_switches=DerivativesSwitch(true, true, false, target_systems),
-    max_iterations=10, tolerance=1e-3,
+    max_iterations=10, tolerance=1e-3, rlx=1.0
 ) where {TF,N}
 
     #--- unpack containers ---#
@@ -852,7 +852,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
     # prepare inputs
     empty_direct_list = Vector{Tuple{Int,Int}}(undef, 0)
     mse = one(TF) * 100000
-    mse_best = mse
+    # mse_best = mse
 
     # begin iterations
     for iteration in 1:max_iterations
@@ -915,7 +915,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
 
         #--- update strengths in buffers ---#
 
-        update_by_leaf!(source_buffers, source_systems, strengths, strengths_by_leaf, source_tree)
+        update_by_leaf!(source_buffers, source_systems, strengths, strengths_by_leaf, source_tree, rlx)
 
         #--- restore right hand side to exclude farfield influence ---#
 

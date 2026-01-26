@@ -267,6 +267,11 @@ function value_to_strength!(source_buffer, source_system, i_body, value)
     throw("value_to_strength! not overloaded for type $(typeof(source_system))")
 end
 
+"Ignore relaxation factor by default, unless overloaded by the user."
+function value_to_strength!(source_buffer, source_system, i_body, value, rlx)
+    value_to_strength!(source_buffer, source_system, i_body, value)
+end
+
 """
     buffer_to_system_strength!(system::{UserDefinedSystem}, source_buffer::Matrix{Float64}, i_body::Int)
 
