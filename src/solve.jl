@@ -689,7 +689,7 @@ function update_by_leaf!(strengths::Vector, strengths_by_leaf::Vector{UnitRange{
     end
 end
 
-function update_by_leaf!(source_buffers::Tuple{<:Matrix}, source_systems::Tuple, strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}}, source_tree::Tree, rlx)
+function update_by_leaf!(source_buffers::Tuple{<:Matrix}, source_systems::Tuple, strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}}, source_tree::Tree, rlx=1.0)
     # update strengths by leaf
     for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
         # get bodies index

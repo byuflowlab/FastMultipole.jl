@@ -379,6 +379,27 @@ function buffer_to_target!(target_system, target_buffer, derivatives_switch, sor
     end
 end
 
+"""
+    extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
+
+Adds any extra target data required by the user-defined system to the target buffer, especially for custom solver implementations. Does nothing by default.
+
+**NOTE:** Exactly `n=extra_target_data_per_body(system)` rows should be added by this function in `target_buffer[end-n-1:end-2, i_body]`.
+
+"""
+function extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
+    return nothing
+end
+
+"""
+    extra_target_data_per_body(system)
+
+Returns the number of extra rows required per body in the target buffer by the user-defined system, especially for custom solver implementations. Returns `0` by default.
+"""
+function extra_target_data_per_body(system)
+    return 0
+end
+
 function target_to_buffer!(buffers, systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     for (buffer,system,sort_index) in zip(buffers, systems, sort_index_list)
         target_to_buffer!(buffer, system, target, sort_index)
@@ -394,6 +415,7 @@ function target_to_buffer!(buffer::Matrix, system, target::Bool, sort_index=1:ge
             buffer[1:3, i_body] .= get_position(system, i_sorted)
             if target
                 prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
+                extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
                 buffer[end-1, i_body] = prev_potential # 17th row if hessian=true
                 buffer[end, i_body] = prev_velocity # 18th row if hessian=true
             end
@@ -407,6 +429,7 @@ function target_to_buffer_multithread!(buffer::Matrix, system, target::Bool, sor
         buffer[1:3, i_body] .= get_position(system, i_sorted)
         if target
             prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
+            extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
             buffer[end-1, i_body] = prev_potential # 17th row if hessian=true
             buffer[end, i_body] = prev_velocity # 18th row if hessian=true
         end

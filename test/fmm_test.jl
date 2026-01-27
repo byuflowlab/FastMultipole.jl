@@ -355,7 +355,7 @@ vortex_particles.gradient_stretching .*= 0
 
 # run fmm
 multipole_acceptance = 0.7
-tree, m2l_list, direct_list, derivatives_switches = fmm!((vortex_particles,); expansion_order, leaf_size_source, multipole_acceptance, shrink=true, recenter=true, scalar_potential=false, hessian=true)
+optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivatives_switches, error_success = fmm!((vortex_particles,); expansion_order, leaf_size_source, multipole_acceptance, shrink=true, recenter=true, scalar_potential=false, hessian=true)
 update_gradient_stretching!(vortex_particles)
 
 # test vector

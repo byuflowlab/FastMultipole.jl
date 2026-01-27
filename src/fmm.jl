@@ -805,9 +805,13 @@ end
     return SVector{n}(input...)
 end
 
-fmm!(system, cache::Cache=Cache(to_tuple(system), to_tuple(system), DerivativesSwitch(false, true, false, to_tuple(system))); leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
+fmm!(system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, optargs...) = fmm!(system, Cache(to_tuple(system), to_tuple(system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(system))); scalar_potential, gradient, hessian, leaf_size, optargs...)
 
-function fmm!(target_systems, source_systems, cache::Cache=Cache(to_tuple(target_systems), to_tuple(source_systems), DerivativesSwitch(false, true, false, to_tuple(target_systems))); optargs...)
+fmm!(target_system, source_system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, optargs...) = fmm!(target_system, source_system, Cache(to_tuple(target_system), to_tuple(source_system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(target_system))); scalar_potential, gradient, hessian, leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
+
+fmm!(system, cache::Cache; leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
+
+function fmm!(target_systems, source_systems, cache::Cache; optargs...)
     # promote arguments to Tuples
     target_systems = to_tuple(target_systems)
     source_systems = to_tuple(source_systems)

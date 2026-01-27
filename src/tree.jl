@@ -38,9 +38,10 @@ function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buff
         # check buffer size
         for (system, buffer) in zip(systems, buffers)
             @assert get_n_bodies(system) == size(buffer, 2) "Buffer doesn't match system size"
-            if target
-                @assert size(buffer, 1) == 18
-            else
+            # if target
+            #     @assert size(buffer, 1) == 18
+            # else
+            if !target
                 @assert size(buffer, 1) == data_per_body(system)
             end
         end
@@ -269,9 +270,10 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems), switche
         # check buffer size
         for (system, buffer) in zip(systems, buffers)
             @assert get_n_bodies(system) == size(buffer, 2) "Buffer doesn't match system size"
-            if target
-                @assert size(buffer, 1) == 18
-            else
+            # if target
+            #     @assert size(buffer, 1) == 18
+            # else
+            if !target
                 @assert size(buffer, 1) == data_per_body(system)
             end
         end
@@ -349,7 +351,8 @@ function allocate_target_buffer(TF, system, ::DerivativesSwitch{PS,GS,HS}) where
     elseif PS
         n += 6 # 3 position, 1 potential, 1 prev potential, 1 prev velocity
     end
-    buffer = zeros(TF, 18, get_n_bodies(system))
+    n += extra_target_data_per_body(system)
+    buffer = zeros(TF, n, get_n_bodies(system))
     return buffer
 end
 
@@ -434,8 +437,9 @@ Allocates small buffers for the given systems to be used in pidgeon-hole sorting
 function allocate_small_buffers(systems::Tuple, TF)
     # create buffers
     small_buffers = Vector{Matrix{TF}}(undef, length(systems))
-    for i in eachindex(systems)
-        small_buffers[i] = zeros(5, get_n_bodies(systems[i]))
+    for (i, system) in enumerate(systems)
+        nextra = extra_target_data_per_body(system)
+        small_buffers[i] = zeros(5 + nextra, get_n_bodies(system))
     end
 
     return small_buffers
@@ -1091,7 +1095,8 @@ end
 function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_indices::AbstractVector, sort_index_buffer, bodies_index::UnitRange, center, target::Bool)
 
     # sort indices
-     for i_body in bodies_index
+    nextra = size(small_buffer, 1) - 3
+    for i_body in bodies_index
         # identify octant
         i_octant = get_octant(get_position(buffer, i_body), center)
         this_i = octant_indices[i_octant]
@@ -1101,8 +1106,9 @@ function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_i
         small_buffer[2,this_i] = buffer[2, i_body]
         small_buffer[3,this_i] = buffer[3, i_body]
         if target
-            small_buffer[4,this_i] = buffer[17, i_body] # copy influence from the buffer to the small buffer
-            small_buffer[5,this_i] = buffer[18, i_body] # copy influence from the buffer to the small buffer
+            small_buffer[end-nextra+1:end,this_i] .= buffer[end-nextra+1:end, i_body] # copy influence from the buffer to the small buffer
+            # small_buffer[4,this_i] = buffer[17, i_body] # copy influence from the buffer to the small buffer
+            # small_buffer[5,this_i] = buffer[18, i_body] # copy influence from the buffer to the small buffer
         end
         # tmp = system[i_body, Body()]
         # buffer[this_i] = tmp
@@ -1115,19 +1121,20 @@ function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_i
     end
 
     # place buffers
-     for i_body in bodies_index
+    for i_body in bodies_index
         buffer[1, i_body] = small_buffer[1, i_body]
         buffer[2, i_body] = small_buffer[2, i_body]
         buffer[3, i_body] = small_buffer[3, i_body]
     end
     if target
          for i_body in bodies_index
-            buffer[17, i_body] = small_buffer[4, i_body]
-            buffer[18, i_body] = small_buffer[5, i_body]
+            buffer[end-nextra+1:end,i_body] .= small_buffer[end-nextra+1:end, i_body] # copy influence from the buffer to the small buffer
+            # buffer[17, i_body] = small_buffer[4, i_body]
+            # buffer[18, i_body] = small_buffer[5, i_body]
         end
     end
 
-     for i in bodies_index
+    for i in bodies_index
         sort_index[i] = sort_index_buffer[i]
     end
 end
@@ -1171,6 +1178,7 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
 
     # println("sort indices: ")
     # sort indices
+    nextra = size(small_buffer, 1) - 3
     Threads.@threads :static for i_thread in 1:n_threads
         this_bodies_index = i_start_0 + (i_thread-1) * n : min(i_start_0 + i_thread * n - 1, i_end_0)
         this_octant_indices = octant_indices_per_thread[i_thread]
@@ -1185,8 +1193,9 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
             small_buffer[2,this_i] = buffer[2, i_body]
             small_buffer[3,this_i] = buffer[3, i_body]
             if target
-                small_buffer[4,this_i] = buffer[17, i_body] # copy influence from the buffer to the small buffer
-                small_buffer[5,this_i] = buffer[18, i_body] # copy influence from the buffer to the small buffer
+                small_buffer[end-nextra+1:end,this_i] .= buffer[end-nextra+1:end, i_body] # copy influence from the buffer to the small buffer
+                # small_buffer[4,this_i] = buffer[17, i_body] # copy influence from the buffer to the small buffer
+                # small_buffer[5,this_i] = buffer[18, i_body] # copy influence from the buffer to the small buffer
             end
 
             # update sort index
@@ -1200,14 +1209,15 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
     # place buffers
     # println("place buffers")
     Threads.@threads :static for i_body in bodies_index
-         buffer[1, i_body] = small_buffer[1, i_body]
-         buffer[2, i_body] = small_buffer[2, i_body]
-         buffer[3, i_body] = small_buffer[3, i_body]
+        buffer[1, i_body] = small_buffer[1, i_body]
+        buffer[2, i_body] = small_buffer[2, i_body]
+        buffer[3, i_body] = small_buffer[3, i_body]
         if target
-             buffer[17, i_body] = small_buffer[4, i_body]
-             buffer[18, i_body] = small_buffer[5, i_body]
+            buffer[end-nextra+1:end,i_body] .= small_buffer[end-nextra+1:end, i_body] # copy influence from the buffer to the small buffer
+            # buffer[17, i_body] = small_buffer[4, i_body]
+            # buffer[18, i_body] = small_buffer[5, i_body]
         end
-         sort_index[i_body] = sort_index_buffer[i_body]
+        sort_index[i_body] = sort_index_buffer[i_body]
     end
 end
 
@@ -1855,8 +1865,8 @@ function update_min_influence_leaf!(branches, i_branch, buffers)
         # extract body index
         bodies_index = branch.bodies_index[i_buffer]
         if length(bodies_index) > 0
-            min_potential = max(min_potential, buffer[17, bodies_index[1]])
-            min_gradient = max(min_gradient, buffer[18, bodies_index[1]])
+            min_potential = max(min_potential, buffer[end-1, bodies_index[1]])
+            min_gradient = max(min_gradient, buffer[end, bodies_index[1]])
         end
     end
 
@@ -1869,8 +1879,8 @@ function update_min_influence_leaf!(branches, i_branch, buffers)
 
         # compute max influence
         for i_body in bodies_index
-            min_potential = min(min_potential, buffer[17,i_body])
-            min_gradient = min(min_gradient, buffer[18,i_body])
+            min_potential = min(min_potential, buffer[end-1,i_body])
+            min_gradient = min(min_gradient, buffer[end,i_body])
         end
     end
 
