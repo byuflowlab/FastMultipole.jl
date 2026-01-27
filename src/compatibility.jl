@@ -206,13 +206,17 @@ end
 
 **NOTE:** this function is primarily used for the boundary element solver, and is not required for the FMM.
 
-Updates the `target_buffer` with influences from `target_system` for the `i_target`th body. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system) to be used as a target, assuming the target buffer positions have already been set. It should behave as follows:
+Updates the `target_buffer` with influences from `target_system` for the `i_target`th body for updating the RHS of the matrix solve. 
+Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system) to be used as a target, 
+assuming the target buffer positions have already been set. 
+
+It should behave as follows:
 
 * `target_buffer[4, i_buffer]` should be set to the scalar potential at the body position
 * `target_buffer[5:7, i_buffer]` should be set to the vector field at the body position
 * `target_buffer[8:16, i_buffer]` should be set to the vector gradient at the body position
 
-The following convenience functions can may be used to access the buffer:
+The following convenience functions may be used to access the buffer:
 
 * `set_scalar_potential!(target_buffer, i_buffer, scalar_potential)`: accumulates the `scalar_potential` to the `i_buffer` body in `target_buffer`
 * `set_gradient!(target_buffer, i_buffer, gradient)`: accumulates `gradient` to the `i_buffer` body in `target_buffer`
@@ -223,26 +227,25 @@ function target_influence_to_buffer!(target_buffer, i_buffer, derivatives_switch
     throw("target_influence_to_buffer! not overloaded for type $(typeof(target_system))")
 end
 
-"""
-    strength_to_value(strength, source_system)
-
-**NOTE:** this function is primarily used for the boundary element solver, and is not required for the FMM.
-
-Converts the strength of a body in `source_system` to a scalar value. Should be overloaded for each user-defined system object used with the boundary element solver.
-
-**Arguments:**
-
-* `strength::SVector{dim, Float64}`: the strength of the body, where `dim` is the number of components in the strength vector (e.g., 1 for a point source, 3 for a point vortex, etc.)
-* `source_system::{UserDefinedSystem}`: the user-defined system object, used solely for dispatch
-
-"""
-function strength_to_value(strength, source_system)
-    throw("strength_to_value not overloaded for type $(typeof(source_system))")
+function strength_to_value!(strengths, i_strength, buffer, system, i_body)
+    dims = strength_dims(system)
+    strengths[i_strength:i_strength+dims-1] .= get_strength(buffer, system, i_body)
+    return dims
 end
-
-function strength_to_value(source_buffer::Matrix, source_system, i_body)
-    return strength_to_value(get_strength(source_buffer, source_system, i_body), source_system)
-end
+# function strength_to_value(strength, source_system)
+#     throw("strength_to_value not overloaded for type $(typeof(source_system))")
+# end
+# """
+#     strength_to_value!(strength, source_system)
+# **NOTE:** this function is primarily used for the boundary element solver, and is not required for the FMM.
+# Converts the strength of a body in `source_system` to a scalar value. Should be overloaded for each user-defined system object used with the boundary element solver.
+# **Arguments:**
+# * `strength::SVector{dim, Float64}`: the strength of the body, where `dim` is the number of components in the strength vector (e.g., 1 for a point source, 3 for a point vortex, etc.)
+# * `source_system::{UserDefinedSystem}`: the user-defined system object, used solely for dispatch
+# """
+# function strength_to_value(source_buffer::Matrix, source_system, i_body)
+#     return strength_to_value(get_strength(source_buffer, source_system, i_body), source_system)
+# end
 
 """
     value_to_strength!(source_buffer, source_system, i_body, value)
@@ -292,24 +295,26 @@ function buffer_to_system_strength!(system, i_body, source_buffer, i_buffer)
 end
 
 """
-    influence!(influence, target_buffer, source_system, source_buffer)
+    influence!(influence, target_buffer, target_system)
 
-**NOTE:** `source_system` is provided solely for dispatch; it's member bodies will be out of order and should not be referenced.
+**NOTE:** `target_system` is provided solely for dispatch; it's member bodies will be out of order and should not be referenced.
 
 **NOTE:** This function is primarily used for the boundary element solver, and is not required for the FMM.
 
-Evaluate the influence as pertains to the boundary element influence matrix and overwrites it to `influence` (which would need to be subtracted for it to act like the RHS of a linear system). Based on the current state of the `target_buffer` and `source_buffer`. Should be overloaded for each system type that is used in the boundary element solver.
+Evaluate the influence as pertains to the boundary element influence matrix and overwrites it to `influence` (which would need to be subtracted for it to act like the RHS of a linear system). 
+Based on the current state of the `target_buffer`. Should be overloaded for each system type that is used as a target in the boundary element solver.
+Assumes that `length(influence) == size(target_buffer, 2) * strength_dims(target_system)`. 
+In other words, each dimension of influence at each body is stored consecutively, e.g. `[influence_1_body_1, influence_2_body_1, ..., influence_1_body_n, influence_2_body_n, ...]`.
 
 **Arguments:**
 
 * `influence::AbstractVector{TF}`: vector containing the influence for every body in the target buffer
 * `target_buffer::Matrix{TF}`: target buffer used to compute the influence
-* `source_system::{UserDefinedSystem}`: system object used solely for dispatch
-* `source_buffer::Matrix{TF}`: source buffer used to compute the influence
+* `target_system::{UserDefinedSystem}`: system object used solely for dispatch
 
 """
-function influence!(influence, target_buffer, source_system, source_buffer)
-    error("influence! not overloaded for systems of type $(typeof(source_system))")
+function influence!(influence, target_buffer, target_system)
+    error("influence! not overloaded for systems of type $(typeof(target_system))")
 end
 
 """

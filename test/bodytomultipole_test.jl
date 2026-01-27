@@ -348,6 +348,7 @@ function FastMultipole.reset!(system::VortexPanels)
     system.hessian .= zero(eltype(system.hessian))
 end
 
+function Branch end
 function Branch(bodies_index::UnitRange, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box)
     return FastMultipole.Branch(SVector{1}(length(bodies_index)), SVector{1}([bodies_index]), n_branches, branch_index, i_parent, i_leaf_index, center, radius, box)
 end

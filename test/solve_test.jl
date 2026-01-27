@@ -8,7 +8,7 @@
 #--- define influence function ---#
 
 # just the scalar potential
-function FastMultipole.influence!(influence, target_buffer, ::Gravitational, source_buffer)
+function FastMultipole.influence!(influence, target_buffer, ::Gravitational)
     influence .= view(target_buffer, 4, :)
 end
 
@@ -20,9 +20,9 @@ function FastMultipole.value_to_strength!(source_buffer, ::Gravitational, i_body
     source_buffer[5, i_body] = value
 end
 
-function FastMultipole.strength_to_value(strength, ::Gravitational)
-    return strength[1]
-end
+# function FastMultipole.strength_to_value(strength, ::Gravitational)
+#     return strength[1]
+# end
 
 function FastMultipole.buffer_to_system_strength!(system::Gravitational, i_body, source_buffer, i_buffer)
     position = system.bodies[i_body].position
@@ -199,7 +199,7 @@ FastMultipole.target_influence_to_buffer!(target_buffers, (system,), derivatives
 
 # run influence function on buffers
 FastMultipole.reset!(extra_right_hand_side)
-FastMultipole.influence!(extra_right_hand_side, influences_per_system, target_buffers, (system,), source_buffers, source_tree)
+FastMultipole.influence!(extra_right_hand_side, influences_per_system, target_buffers, (system,), target_tree)
 
 #--- check influence function ---#
 
@@ -245,7 +245,7 @@ i_branch = direct_list[1][2]
 i_leaf = findfirst(x -> source_tree.leaf_index[x] == i_branch, 1:length(source_tree.leaf_index)) # i_leaf = 3
 right_hand_side .= zero(eltype(right_hand_side))
 old_influence_storage .= zero(eltype(old_influence_storage))
-FastMultipole.update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, i_leaf, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
+FastMultipole.update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, i_leaf, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
 
 # updated branch influence
 i_target = direct_list[1][1] # i_target = 82
@@ -257,7 +257,7 @@ source_index = source_tree.branches[i_branch].bodies_index[1]
 target_index = target_tree.branches[i_target].bodies_index[1]
 direct!(target_buffers[1], target_index, derivatives_switches[1], system, source_buffers[1], source_index)
 test_influence = zero(extra_right_hand_side)
-FastMultipole.influence!(test_influence, influences_per_system, target_buffers, (system,), source_buffers, source_tree)
+FastMultipole.influence!(test_influence, influences_per_system, target_buffers, (system,), target_tree)
 manual_influence = test_influence[targets_by_branch[i_target]]
 
 @test isapprox(branch_influence, manual_influence; atol=1e-6)
@@ -271,7 +271,7 @@ right_hand_side .= zero(eltype(right_hand_side))
 nonself_matrices.rhs .= zero(eltype(nonself_matrices.rhs))
 
 # update nonself influence
-FastMultipole.update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
+FastMultipole.update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
 
 # #--- check nonself influence function ---#
 
@@ -283,7 +283,7 @@ FastMultipole.nearfield_singlethread!(target_buffers, target_tree.branches, (sys
 # get influence from target buffers
 test_influence = similar(extra_right_hand_side)
 test_influence .= zero(eltype(test_influence))
-FastMultipole.influence!(test_influence, influences_per_system, target_buffers, (system,), source_buffers, source_tree)
+FastMultipole.influence!(test_influence, influences_per_system, target_buffers, (system,), target_tree)
 
 # check that the influence is the same as the right-hand side
 @test isapprox(test_influence, right_hand_side; atol=1e-6)
