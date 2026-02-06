@@ -611,6 +611,9 @@ function body_to_multipole_filament!(::Type{Filament{Dipole}}, multipole_coeffic
     end
 end
 
+"""
+strength is a per unit length differential quantity
+"""
 function body_to_multipole_filament!(::Type{Filament{Vortex}}, multipole_coefficients, harmonics, x0, xu, strength, expansion_order)
 
     # transform to ξ, η, z
@@ -630,6 +633,7 @@ function body_to_multipole_filament!(::Type{Filament{Vortex}}, multipole_coeffic
     calculate_pj!(harmonics, ξ0_real, ξ0_imag, η0_real, η0_imag, z0, expansion_order)
 
     # jacobian of the transformation to simplex
+    # in layman's terms, multiply by the length of the filament
     J = norm(xu)
 
     # convert to vortex
