@@ -66,8 +66,11 @@ function make_direct_assignments!(assignments, i_target_system, target_branches,
         i_target, i_source = direct_list[1]
 
         # loop over interaction list
-        for i_loop in 2:length(direct_list)
-            i_target_next, i_source_next = direct_list[i_loop]
+        for i_next in 2:length(direct_list)
+
+            # get next interaction
+            i_target_next, i_source_next = direct_list[i_next]
+
             # update number of interactions in the current assignment
             n_interactions += target_branches[i_target].n_bodies[i_target_system] * source_branches[i_source].n_bodies[i_source_system]
 
@@ -88,7 +91,14 @@ function make_direct_assignments!(assignments, i_target_system, target_branches,
         end
         
         # get the last assignment
-        assignments[i_thread] = i_start:i_end
+        if i_start <= length(direct_list)
+            i_end = length(direct_list)
+            if i_thread <= n_threads
+                assignments[i_thread] = i_start:i_end
+            else
+                assignments[end] = assignments[end][1]:i_end
+            end
+        end
 
     end
 end
@@ -521,8 +531,14 @@ function assign_m2l!(assignments, m2l_list, n_threads, n_per_thread, interaction
         end
 
         # get the last assignment
-        assignments[i_thread] = i_start:i_end
-
+        if i_start <= length(m2l_list)
+            i_end = length(m2l_list)
+            if i_thread <= n_threads
+                assignments[i_thread] = i_start:i_end
+            else
+                assignments[end] = assignments[end][1]:i_end
+            end
+        end
     end
 end
 
