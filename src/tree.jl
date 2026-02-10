@@ -10,7 +10,7 @@ function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buff
         # println("Part I:")
         # @time begin # most time at center_box
         # determine float type
-        TF = Float32
+        # TF = Float32
         for system in systems
             TF = promote_type(TF, numtype(system))
         end
@@ -1384,6 +1384,8 @@ function center_box(systems::Tuple, bodies_indices, TF)
         x_min, x_max, y_min, y_max, z_min, z_max = max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, system, bodies_index)
     end
 
+    x_min, x_max, y_min, y_max, z_min, z_max = TF(x_min), TF(x_max), TF(y_min), TF(y_max), TF(z_min), TF(z_max)
+
     return get_center_box(x_min, x_max, y_min, y_max, z_min, z_max)
 end
 
@@ -1466,6 +1468,8 @@ function source_center_box(systems::Tuple, bodies_indices, TF)
     for (system, bodies_index) in zip(systems, bodies_indices)
         x_min, x_max, y_min, y_max, z_min, z_max = source_max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, system, bodies_index)
     end
+
+    x_min, x_max, y_min, y_max, z_min, z_max = TF(x_min), TF(x_max), TF(y_min), TF(y_max), TF(z_min), TF(z_max)
 
     return get_center_box(x_min, x_max, y_min, y_max, z_min, z_max)
 end
