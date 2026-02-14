@@ -88,7 +88,14 @@ function make_direct_assignments!(assignments, i_target_system, target_branches,
         end
         
         # get the last assignment
-        assignments[i_thread] = i_start:i_end
+        if i_start <= length(direct_list)
+            i_end = length(direct_list)
+            if i_thread <= n_threads
+                assignments[i_thread] = i_start:i_end
+            else
+                assignments[end] = assignments[end][1]:i_end
+            end
+        end
 
     end
 end
@@ -521,7 +528,14 @@ function assign_m2l!(assignments, m2l_list, n_threads, n_per_thread, interaction
         end
 
         # get the last assignment
-        assignments[i_thread] = i_start:i_end
+        if i_start <= length(m2l_list)
+            i_end = length(m2l_list)
+            if i_thread <= n_threads
+                assignments[i_thread] = i_start:i_end
+            else
+                assignments[end] = assignments[end][1]:i_end
+            end
+        end
 
     end
 end
