@@ -395,6 +395,6 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
         end
     end
 
-    return -u * ONE_OVER_4π, SVector{3}(vx,vy,vz) * ONE_OVER_4π, SMatrix{3,3,eltype(local_expansion),9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz) * ONE_OVER_4π
+    return u * ONE_OVER_4π, SVector{3}(vx,vy,vz) * ONE_OVER_4π, SMatrix{3,3,eltype(local_expansion),9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz) * ONE_OVER_4π
 end
 
