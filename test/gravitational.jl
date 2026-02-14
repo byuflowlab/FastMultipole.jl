@@ -75,7 +75,7 @@ end
 
 FastMultipole.get_n_bodies(g::Gravitational) = length(g.bodies)
 
-FastMultipole.body_to_multipole!(system::Gravitational, args...) = FastMultipole.body_to_multipole!(Point{Source}, system, args...)
+FastMultipole.body_to_multipole!(system::Gravitational, args...) = FastMultipole.body_to_multipole!(Point{Source}, system, args...; scale_strength=-1.0)
 
 function FastMultipole.has_vector_potential(system::Gravitational)
     return false
@@ -107,7 +107,7 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch::
                     dϕ += tmp
                 end 
                 if GS
-                    d∇ϕ += SVector{3}(dx,dy,dz) * tmp / r2
+                    d∇ϕ -= SVector{3}(dx,dy,dz) * tmp / r2
                 end
             end
         end

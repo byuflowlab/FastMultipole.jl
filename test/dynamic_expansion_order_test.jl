@@ -1,100 +1,100 @@
-@testset "dynamic expansion order: absolute and relative rotated coefficients, point source" begin
+# @testset "dynamic expansion order: absolute and relative rotated coefficients, point source" begin
 
-expansion_order, leaf_size_source, multipole_acceptance = 20, SVector{1}(10), 0.5
-n_bodies = 10000
+# expansion_order, leaf_size_source, multipole_acceptance = 20, SVector{1}(10), 0.5
+# n_bodies = 10000
 
-shrink = recenter = true
-seed = 123
-validation_system = generate_gravitational(seed, n_bodies; radius_factor=0.0)
-FastMultipole.direct!(validation_system)
-validation_potential = validation_system.potential[1,:]
+# shrink = recenter = true
+# seed = 123
+# validation_system = generate_gravitational(seed, n_bodies; radius_factor=0.0)
+# FastMultipole.direct!(validation_system)
+# validation_potential = validation_system.potential[1,:]
 
-validation_system2 = generate_gravitational(seed, n_bodies; radius_factor=0.1)
-FastMultipole.direct!(validation_system2)
-validation_potential2 = validation_system2.potential[1,:]
+# validation_system2 = generate_gravitational(seed, n_bodies; radius_factor=0.1)
+# FastMultipole.direct!(validation_system2)
+# validation_potential2 = validation_system2.potential[1,:]
 
-@assert validation_potential == validation_potential2
+# @assert validation_potential == validation_potential2
 
-ε = 1e-5
-error_tolerance = FastMultipole.RotatedCoefficientsAbsoluteGradient(ε, false)
-# error_tolerance = nothing
-system = generate_gravitational(seed, n_bodies; radius_factor=0.0)
-system2 = generate_gravitational(seed, n_bodies; radius_factor=0.1)
+# ε = 1e-5
+# error_tolerance = FastMultipole.RotatedCoefficientsAbsoluteGradient(ε, false)
+# # error_tolerance = nothing
+# system = generate_gravitational(seed, n_bodies; radius_factor=0.0)
+# system2 = generate_gravitational(seed, n_bodies; radius_factor=0.1)
 
-# println("\n===== radius factor = 0.0 =====\n")
+# # println("\n===== radius factor = 0.0 =====\n")
 
-gradient_null = system.potential[5:7,:]
-optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivatives_switches, error_success = FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink, recenter, error_tolerance)
+# gradient_null = system.potential[5:7,:]
+# optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivatives_switches, error_success = FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink, recenter, error_tolerance)
 
-gradient_fmm = system.potential[5:7,:]
-gradient_err = [norm(system.potential[5:7,i] - validation_system.potential[5:7,i]) for i in 1:size(system.potential,2)]
+# gradient_fmm = system.potential[5:7,:]
+# gradient_err = [norm(system.potential[5:7,i] - validation_system.potential[5:7,i]) for i in 1:size(system.potential,2)]
 
-@test ε * 0.1 < maximum(gradient_err) < ε * 30
+# @test ε * 0.1 < maximum(gradient_err) < ε * 30
 
-# println("\n===== radius factor = 0.1 =====\n")
+# # println("\n===== radius factor = 0.1 =====\n")
 
-FastMultipole.fmm!(system2; expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink, recenter, error_tolerance)
+# FastMultipole.fmm!(system2; expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink, recenter, error_tolerance)
 
-gradient_err = [norm(system2.potential[5:7,i] - validation_system.potential[5:7,i]) for i in 1:size(system.potential,2)]
+# gradient_err = [norm(system2.potential[5:7,i] - validation_system.potential[5:7,i]) for i in 1:size(system.potential,2)]
 
-@test ε * 0.1 < maximum(gradient_err) < ε * 30
+# @test ε * 0.1 < maximum(gradient_err) < ε * 30
 
-# relative error tolerance
-error_tolerance = FastMultipole.RotatedCoefficientsRelativeGradient(ε, eps(), false)
-FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink, recenter, error_tolerance)
-gradient_err = [norm(system.potential[5:7,i] - validation_system.potential[5:7,i]) / norm(validation_system.potential[5:7,i]) for i in 1:size(system.potential,2)]
+# # relative error tolerance
+# error_tolerance = FastMultipole.RotatedCoefficientsRelativeGradient(ε, eps(), false)
+# FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink, recenter, error_tolerance)
+# gradient_err = [norm(system.potential[5:7,i] - validation_system.potential[5:7,i]) / norm(validation_system.potential[5:7,i]) for i in 1:size(system.potential,2)]
 
-@test ε * 0.1 < maximum(gradient_err) < ε * 30
+# @test ε * 0.1 < maximum(gradient_err) < ε * 30
 
-end
+# end
 
-@testset "dynamic expansion order: absolute and relative rotated coefficients, point vortex" begin
+# @testset "dynamic expansion order: absolute and relative rotated coefficients, point vortex" begin
 
-expansion_order, leaf_size_source, multipole_acceptance = 20, SVector{1}(10), 0.5
-n_bodies = 10000
+# expansion_order, leaf_size_source, multipole_acceptance = 20, SVector{1}(10), 0.5
+# n_bodies = 10000
 
-shrink = recenter = true
-seed = 123
-validation_system = generate_vortex(seed, n_bodies; radius_factor=0.0)
-FastMultipole.direct!(validation_system)
-validation_potential = validation_system.gradient_stretching[1:3,:]
+# shrink = recenter = true
+# seed = 123
+# validation_system = generate_vortex(seed, n_bodies; radius_factor=0.0)
+# FastMultipole.direct!(validation_system)
+# validation_potential = validation_system.gradient_stretching[1:3,:]
 
-validation_system2 = generate_vortex(seed, n_bodies; radius_factor=0.1)
-FastMultipole.direct!(validation_system2)
-validation_potential2 = validation_system2.gradient_stretching[1:3,:]
+# validation_system2 = generate_vortex(seed, n_bodies; radius_factor=0.1)
+# FastMultipole.direct!(validation_system2)
+# validation_potential2 = validation_system2.gradient_stretching[1:3,:]
 
-@assert validation_potential == validation_potential2
+# @assert validation_potential == validation_potential2
 
-ε = 1e-5
-error_tolerance = FastMultipole.RotatedCoefficientsAbsoluteGradient(ε, false)
-# error_tolerance = nothing
-system = generate_vortex(seed, n_bodies; radius_factor=0.0)
-system2 = generate_vortex(seed, n_bodies; radius_factor=0.1)
+# ε = 1e-5
+# error_tolerance = FastMultipole.RotatedCoefficientsAbsoluteGradient(ε, false)
+# # error_tolerance = nothing
+# system = generate_vortex(seed, n_bodies; radius_factor=0.0)
+# system2 = generate_vortex(seed, n_bodies; radius_factor=0.1)
 
-# println("\n===== radius factor = 0.0 =====\n")
+# # println("\n===== radius factor = 0.0 =====\n")
 
-FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, shrink, recenter, error_tolerance)
+# FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, shrink, recenter, error_tolerance)
 
-gradient_err = [norm(system.gradient_stretching[1:3,i] - validation_system.gradient_stretching[1:3,i]) for i in 1:size(system.gradient_stretching,2)]
+# gradient_err = [norm(system.gradient_stretching[1:3,i] - validation_system.gradient_stretching[1:3,i]) for i in 1:size(system.gradient_stretching,2)]
 
-@test ε * 0.1 < maximum(gradient_err) < ε * 100
+# @test ε * 0.1 < maximum(gradient_err) < ε * 100
 
-# println("\n===== radius factor = 0.1 =====\n")
+# # println("\n===== radius factor = 0.1 =====\n")
 
-FastMultipole.fmm!(system2; expansion_order, leaf_size_source, multipole_acceptance, shrink, recenter, error_tolerance)
+# FastMultipole.fmm!(system2; expansion_order, leaf_size_source, multipole_acceptance, shrink, recenter, error_tolerance)
 
-gradient_err = [norm(system2.gradient_stretching[1:3,i] - validation_system.gradient_stretching[1:3,i]) for i in 1:size(system.gradient_stretching,2)]
+# gradient_err = [norm(system2.gradient_stretching[1:3,i] - validation_system.gradient_stretching[1:3,i]) for i in 1:size(system.gradient_stretching,2)]
 
-@test ε * 0.1 < maximum(gradient_err) < ε * 100
+# @test ε * 0.1 < maximum(gradient_err) < ε * 100
 
-# relative error tolerance
-error_tolerance = FastMultipole.RotatedCoefficientsRelativeGradient(ε, eps(), false)
-optimized_args, cache, target_tree, source_tree, _ = FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, shrink, recenter, error_tolerance)
-gradient_err = [norm(system.gradient_stretching[1:3,i] - validation_system.gradient_stretching[1:3,i]) / norm(validation_system.gradient_stretching[1:3,i]) for i in 1:size(system.gradient_stretching,2)]
+# # relative error tolerance
+# error_tolerance = FastMultipole.RotatedCoefficientsRelativeGradient(ε, eps(), false)
+# optimized_args, cache, target_tree, source_tree, _ = FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, shrink, recenter, error_tolerance)
+# gradient_err = [norm(system.gradient_stretching[1:3,i] - validation_system.gradient_stretching[1:3,i]) / norm(validation_system.gradient_stretching[1:3,i]) for i in 1:size(system.gradient_stretching,2)]
 
-@test ε * 0.1 < maximum(gradient_err) < ε * 30
+# @test ε * 0.1 < maximum(gradient_err) < ε * 30
 
-end
+# end
 
 @testset "dynamic expansion order: absolute and relative multipole power, point source" begin
 

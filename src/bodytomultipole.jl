@@ -384,7 +384,7 @@ end
 
 #--- point elements ---#
 
-function body_to_multipole!(element::Type{<:Point}, system, multipole_coefficients, buffer::Matrix, center, bodies_index, harmonics, expansion_order)
+function body_to_multipole!(element::Type{<:Point}, system, multipole_coefficients, buffer::Matrix, center, bodies_index, harmonics, expansion_order; scale_strength=1.0)
     # loop over bodies
     for i_body in bodies_index
         # relative body position
@@ -393,6 +393,7 @@ function body_to_multipole!(element::Type{<:Point}, system, multipole_coefficien
 
         # get strength
         strength = get_strength(buffer, system, i_body)
+        strength = strength .* scale_strength
 
         # update values
         body_to_multipole_point!(element, multipole_coefficients, harmonics, Δx, strength, expansion_order)
@@ -497,7 +498,7 @@ end
 
 #--- filament elements ---#
 
-function body_to_multipole!(element::Type{<:Filament}, system, multipole_coefficients, buffer, center, bodies_index, harmonics, expansion_order)
+function body_to_multipole!(element::Type{<:Filament}, system, multipole_coefficients, buffer, center, bodies_index, harmonics, expansion_order; scale_strength=1.0)
 
     # loop over bodies
     for i_body in bodies_index
@@ -509,6 +510,7 @@ function body_to_multipole!(element::Type{<:Filament}, system, multipole_coeffic
 
         # strength
         strength = get_strength(buffer, system, i_body)
+        strength = strength .*scale_strength
 
         # delta
         xu = x2 - x1
@@ -640,7 +642,7 @@ end
 
 #--- panel elements ---#
 
-function body_to_multipole!(element::Type{<:Panel}, system, multipole_coefficients, buffer, center, bodies_index, harmonics, expansion_order)
+function body_to_multipole!(element::Type{<:Panel}, system, multipole_coefficients, buffer, center, bodies_index, harmonics, expansion_order; scale_strength=1.0)
     # loop over bodies
     for i_body in bodies_index
         # relative body position
@@ -660,6 +662,7 @@ function body_to_multipole!(element::Type{<:Panel}, system, multipole_coefficien
 
         # get strength
         strength = get_strength(buffer, system, i_body)
+        strength = strength .* scale_strength
 
         # update values
         body_to_multipole_panel!(element, multipole_coefficients, harmonics, x0, xu, xv, normal, strength, expansion_order)

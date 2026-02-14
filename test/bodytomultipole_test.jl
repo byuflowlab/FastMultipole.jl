@@ -511,7 +511,7 @@ x_point = FastMultipole.get_position(system,1)
 Δx = xt - x_point
 Δx̂ = Δx / norm(Δx)
 r = norm(Δx)
-ϕ_point = 1/4/pi/r^2 * dot(q,Δx̂)
+ϕ_point = -1/4/pi/r^2 * dot(q,Δx̂)
 
 @test isapprox(ϕ_point, ϕ_l2b; atol=1e-12)
 

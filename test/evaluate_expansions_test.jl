@@ -32,7 +32,7 @@ u, gradient, hessian = FastMultipole.evaluate_local(Δx, harmonics, gradient_n_m
 
 dx = x_target - xs
 dx_norm = sqrt(dx'*dx)
-ϕ_test = mass/dx_norm/4/pi
+ϕ_test = -mass/dx_norm/4/pi
 g_test = dx / norm(dx)^3 * mass / 4 / pi
 h_test = -SMatrix{3,3}(2*dx[1]^2 - dx[2]^2 - dx[3]^2, 3*dx[1]*dx[2], 3*dx[1]*dx[3], 3*dx[1]*dx[2], -dx[1]^2+2*dx[2]^2-dx[3]^2, 3*dx[2]*dx[3], 3*dx[1]*dx[3], 3*dx[2]*dx[3], -dx[1]^2 - dx[2]^2 + 2*dx[3]^2) / dx_norm^5 * mass / 4 / pi
 
