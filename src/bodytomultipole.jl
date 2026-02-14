@@ -801,7 +801,7 @@ function body_to_multipole_panel!(::Type{Panel{Dipole}}, multipole_coefficients,
     # invert the sign of the strength so v=∇ϕ instead of v=-∇ϕ
     # this will allow induced velocities to be added to those induced by vortex elements
     # we'll invert the potential again at the end
-    qx, qy, qz = -normal * strength[1]
+    qx, qy, qz = normal * strength[1]
 
     # convert to dipole coefficients
     i_source, i_dipole = 1, 2
