@@ -296,7 +296,7 @@ function upward_pass_singlethread!(tree::Tree, systems, expansion_order, lamb_he
     upward_pass_singlethread_2!(tree, expansion_order, lamb_helmholtz)
 end
 
-function upward_pass_multithread_1!(source_tree::Tree, systems::Tuple, expansion_order, n_threads)
+function upward_pass_multithread_1!(source_tree::Tree{TF}, systems::Tuple, expansion_order, n_threads) where TF
     
     #--- load balance ---#
 
@@ -335,7 +335,7 @@ function upward_pass_multithread_1!(source_tree::Tree, systems::Tuple, expansion
 
     #--- preallocate memory ---#
 
-    harmonics = [initialize_harmonics(expansion_order) for _ in 1:n_threads]
+    harmonics = [initialize_harmonics(expansion_order, TF) for _ in 1:n_threads]
 
     #--- compute multipole expansion coefficients ---#
 
@@ -638,7 +638,7 @@ end
 
 function downward_pass_singlethread_2!(tree::Tree{TF,<:Any}, systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m) where TF
 
-    harmonics = initialize_harmonics(expansion_order)
+    harmonics = initialize_harmonics(expansion_order, TF)
     # loop over systems
     for (i_system, system) in enumerate(systems)
         evaluate_local!(system, i_system, tree, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
