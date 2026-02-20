@@ -43,7 +43,7 @@ end
 
 
 function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)))
-    
+
     # get float type
     TF = get_type(target_systems, source_systems)
 
@@ -77,7 +77,7 @@ function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; targ
 end
 
 function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_threads; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)))
-    
+
     # get float type
     TF = get_type(target_systems, source_systems)
 
@@ -86,7 +86,7 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
     gradient = to_vector(gradient, length(target_systems))
     hessian = to_vector(hessian, length(target_systems))
     derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
-    
+
     # set up target buffers
     if isnothing(target_buffers)
         target_buffers = allocate_buffers(target_systems, true, TF, derivatives_switches)
@@ -102,14 +102,14 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
     for (source_system, source_buffer) in zip(source_systems, source_buffers)
         n_source_bodies = get_n_bodies(source_system)
         for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
-            
+
             # load balance
             n_target_bodies = get_n_bodies(target_system)
             n_per_thread, rem = divrem(n_target_bodies, n_threads)
             rem > 0 && (n_per_thread += 1)
             n_per_thread = max(n_per_thread, MIN_NPT_NF)
             Threads.@threads :static for i_start in 1:n_per_thread:n_target_bodies
-                direct!(target_buffer, i_start:min(i_start+n_per_thread-1, n_source_bodies), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
+                direct!(target_buffer, i_start:min(i_start+n_per_thread-1, n_target_bodies), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
             end
         end
     end
