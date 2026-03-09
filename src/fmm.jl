@@ -877,6 +877,7 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 - `scalar_potential::Union{Bool,AbstractVector{Bool}}`: whether to compute the scalar potential; default is `false`
 - `gradient::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector field; default is `true`
 - `hessian::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector gradient; default is `false`
+- `extra_farfield::Bool`: whether to compute extra farfield interactions; default is `false`
 
 """
 function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(target_systems, source_systems, DerivativesSwitch(false, true, false, target_systems));
@@ -953,6 +954,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     tune=false, update_target_systems=true, multipole_acceptance=0.5,
     t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
     silence_warnings=false,
+    extra_farfield=false,
 )
 
     #--- check if lamb-helmholtz decomposition is required ---#
@@ -1106,6 +1108,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                     # println("Downward pass time: ", t_dp)
                 end
 
+                # extra farfield function
+                extra_farfield && ( extra_farfield!(target_tree, source_tree, source_systems, m2l_list, derivatives_switches) )
+
                 # copy results to target systems
                 update_target_systems && buffer_to_target!(target_systems, target_tree, derivatives_switches)
 
@@ -1184,7 +1189,11 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                     t_dp = @elapsed downward_pass_multithread!(target_tree, target_tree.buffers, derivatives_switches, expansion_order, lamb_helmholtz, n_threads)
                     # println("Downward pass time: $t_dp")
                 end
-                
+
+                # extra farfield function
+                println("\nExtra farfield: ", extra_farfield)
+                @time extra_farfield && ( extra_farfield!(target_tree, source_tree, source_systems, derivatives_switches) )
+                println("done.\n")
                 # copy results to target systems
                 update_target_systems && buffer_to_target!(target_systems, target_tree, derivatives_switches)
 

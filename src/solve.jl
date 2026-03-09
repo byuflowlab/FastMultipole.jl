@@ -538,7 +538,8 @@ FastGaussSeidel(target_systems, source_systems; optargs...) = FastGaussSeidel((t
 function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple; 
     expansion_order=4, multipole_acceptance=0.5, leaf_size=30,
     interaction_list_method=Barba(), shrink=true, recenter=false,
-    derivatives_switches=DerivativesSwitch(true, true, false, target_systems)
+    derivatives_switches=DerivativesSwitch(true, true, false, target_systems),
+    extra_farfield=false
 )
 
     #--- identical source and target trees ---#
@@ -642,7 +643,8 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
         old_influence_storage,
         extra_right_hand_side,
         influences_per_system,
-        residual_vector
+        residual_vector,
+        extra_farfield,
     )
 end
 
@@ -798,7 +800,7 @@ solve!(target_systems, source_systems, solver::FastGaussSeidel; optargs...) = so
 
 function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussSeidel{TF,N}; 
     derivatives_switches=DerivativesSwitch(true, true, false, target_systems),
-    max_iterations=10, tolerance=1e-3, rlx=1.0
+    max_iterations=10, inner_iterations=1, tolerance=1e-3, rlx=1.0, reverse_pass=false, verbose=true
 ) where {TF,N}
 
     #--- unpack containers ---#
@@ -846,13 +848,16 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
     # add nonself influence to the right-hand side
     nonself_matrices.rhs .= zero(TF) # reset rhs
     update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
-
+    
     #--- fast gauss seidel iterations ---#
 
     # prepare inputs
     empty_direct_list = Vector{Tuple{Int,Int}}(undef, 0)
     mse = one(TF) * 100000
     # mse_best = mse
+
+    Δ = zero(TF) # track change in strengths
+    strengths_old = similar(strengths)
 
     # begin iterations
     for iteration in 1:max_iterations
@@ -861,6 +866,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
         
         # fmm call
         reset!(target_buffers)
+
         fmm!(target_systems, target_tree, source_systems, source_tree, source_tree.leaf_size, m2l_list, empty_direct_list, derivatives_switches, interaction_list_method;
             source_tree.expansion_order, error_tolerance=nothing,
             upward_pass=true, horizontal_pass=true, downward_pass=true,
@@ -870,6 +876,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
             tune=false, update_target_systems=false, multipole_acceptance,
             # t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
             # silence_warnings=false,
+            extra_farfield=solver.extra_farfield,
         )
 
         # move farfield influence to the right-hand side
@@ -882,7 +889,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
         # note that `right_hand_side` now contains external, nonself, and farfield influence
         mse = residual!(residual_vector, self_matrices, strengths, strengths_by_leaf)
         
-        println("Iteration $(iteration): MSE = $(mse)")
+        verbose &&println("Iteration $(iteration):\tMSE = $(mse),\tdelta = $(Δ)")
         
         # if mse > mse_best * 10 # stop if mse begins increasing
         #     @warn "FastGaussSeidel stopped early at iteration $(iteration) with MSE = $(mse) (previous was $(mse_best))"
@@ -891,27 +898,57 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
         # mse_best = min(mse_best, mse)
 
         if mse <= tolerance
-            @info "FastGaussSeidel converged after $(iteration-1) iterations with MSE = $(mse)"
+            @info "FastGaussSeidel converged after $(iteration-1) iterations with MSE = $(mse); delta = $(Δ)"
             break
         end
 
         #--- nearfield influence and solve ---#
 
-        for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
-            
-            # unpack influence matrix and right-hand side
-            mat, rhs = get_matrix_vector(self_matrices, i_leaf)
+        strengths_old .= strengths
 
-            # unpack strengths
-            leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
+        for i_inner in 1:inner_iterations
 
-            # solve for strengths
-            leaf_strengths .= mat \ rhs
+            for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
+                
+                # unpack influence matrix and right-hand side
+                mat, rhs = get_matrix_vector(self_matrices, i_leaf)
 
-            # update non-self influence
-            length(direct_list) > 0 && update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, i_leaf, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
+                # unpack strengths
+                leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
+
+                # solve for strengths
+                leaf_strengths .= mat \ rhs
+
+                # update non-self influence
+                length(direct_list) > 0 && update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, i_leaf, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
+
+            end
+
+            if reverse_pass
+                #--- reverse pass ---#
+
+                for (i_leaf, i_branch) in enumerate(reverse(source_tree.leaf_index))
+                    
+                    # unpack influence matrix and right-hand side
+                    mat, rhs = get_matrix_vector(self_matrices, i_leaf)
+
+                    # unpack strengths
+                    leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
+
+                    # solve for strengths
+                    leaf_strengths .= mat \ rhs
+
+                    # update non-self influence
+                    length(direct_list) > 0 && update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, i_leaf, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
+                end
+            end
 
         end
+
+        # get delta
+        strengths_old .-= strengths
+        strengths_old .*= strengths_old
+        Δ = sqrt(maximum(strengths_old))
 
         #--- update strengths in buffers ---#
 
@@ -940,6 +977,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
             tune=false, update_target_systems=true, multipole_acceptance, # update_target_systems is `true` now
             # t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
             # silence_warnings=false,
+            extra_farfield=solver.extra_farfield
         )
 
     # update source system strengths
@@ -995,6 +1033,11 @@ function influence!(sorted_influences::Vector{TF}, influences_per_system::Vector
 end
 
 function residual!(residual_vector, self_matrices::Matrices, strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}})
+    
+    # initialize mean squared error
+    mse = zero(eltype(residual_vector))
+    mae = zero(eltype(residual_vector))
+    n = 0
 
     # loop over self influence matrices
     for i_leaf in eachindex(self_matrices.rhs_offsets)
@@ -1009,17 +1052,20 @@ function residual!(residual_vector, self_matrices::Matrices, strengths::Vector, 
         this_residual = view(residual_vector, vrange)
         this_residual .= rhs
         mul!(this_residual, mat, leaf_strengths, 1.0, -1.0)
-    end
 
-    # sum of the squared residuals
-    mse = zero(eltype(residual_vector))
-    for i in eachindex(residual_vector)
-        r = residual_vector[i]
-        mse += r * r
+        # aggregate mse residual
+        for r in this_residual
+            mse += r * r
+            n += length(this_residual)
+            mae = max(mae, abs(r))
+        end
     end
 
     # compute the mean squared error
-    mse /= length(residual_vector)
+    mse /= n
 
-    return mse
+    # mse = maximum(abs.(residual_vector)) # temporary check
+
+    return mae
+    # return mse
 end

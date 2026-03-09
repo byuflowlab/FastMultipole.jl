@@ -91,16 +91,14 @@ function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buff
         end
 
         # check depth
-        if n_children > 0
-            while n_children > 0
-                parents_index, n_children, i_leaf = child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target, max_body_radius)
-                push!(levels_index, parents_index)
-            end
-            # if WARNING_FLAG_LEAF_SIZE[]
-            #     @warn "leaf_size not reached in for loop, so while loop used to build octree; to improve performance, increase `n_divisions` > $(length(levels_index))"
-            #     WARNING_FLAG_LEAF_SIZE[] = false
-            # end
+        while n_children > 0
+            parents_index, n_children, i_leaf = child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target, max_body_radius)
+            push!(levels_index, parents_index)
         end
+        # if WARNING_FLAG_LEAF_SIZE[]
+        #     @warn "leaf_size not reached in for loop, so while loop used to build octree; to improve performance, increase `n_divisions` > $(length(levels_index))"
+        #     WARNING_FLAG_LEAF_SIZE[] = false
+        # end
 
     # end
         # println("Part V: source/target specific updates")
@@ -463,6 +461,9 @@ function child_branches!(branches, buffers, sort_index, small_buffers, sort_inde
     # if Threads.nthreads() > 1 && get_n_bodies(buffers) > MIN_BODIES
     #     return child_branches_multithread!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
     # end
+    if length(parents_index) == 0
+        @show parents_index length(branches), size(buffers[1],2), size(buffers[2],2), leaf_size, target
+    end
 
     i_first_branch = parents_index[end] + n_children + 1
     for i_parent in parents_index

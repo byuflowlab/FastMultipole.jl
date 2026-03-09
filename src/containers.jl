@@ -284,6 +284,7 @@ struct FastGaussSeidel{TF,Nsys,TIL} <: AbstractSolver
     extra_right_hand_side::Vector{TF}
     influences_per_system::Vector{Vector{TF}}
     residual_vector::Vector{TF}
+    extra_farfield::Bool
 end
 
 #--- memory cache ---#

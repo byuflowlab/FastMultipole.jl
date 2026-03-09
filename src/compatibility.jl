@@ -448,7 +448,7 @@ function target_to_buffer(system, target::Bool, switch::DerivativesSwitch, sort_
     return buffer
 end
 
-function target_influence_to_buffer!(target_buffers::Tuple, target_systems::Tuple, derivatives_switches, sort_index_list=SVector{length(target_systems)}([1:get_n_bodies(system) for system in target_systems]))
+function target_influence_to_buffer!(target_buffers::Tuple, target_systems::Tuple, derivatives_switches::Tuple, sort_index_list=SVector{length(target_systems)}([1:get_n_bodies(system) for system in target_systems]))
     for (target_buffer, target_system, derivatives_switch, sort_index) in zip(target_buffers, target_systems, derivatives_switches, sort_index_list)
         reset!(target_buffer)
         target_influence_to_buffer!(target_buffer, target_system, derivatives_switch, sort_index)
