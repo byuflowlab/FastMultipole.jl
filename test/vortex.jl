@@ -3,7 +3,6 @@
 import FastMultipole as fmm
 import FastMultipole.WriteVTK
 using FastMultipole
-using SpecialFunctions:erf
 
 #------- classic vortex particle method -------#
 
@@ -29,13 +28,15 @@ struct VortexParticles{TF}
     gradient_stretching::Matrix{TF}
 end
 
-function generate_vortex(seed, n_bodies; strength_scale=1/n_bodies, radius_factor=0.0)
+function generate_vortex(seed, n_bodies; shift_position=fmm.SVector{3,Float64}(0,0,0), strength_scale=1/n_bodies, radius_factor=0.0, strength_mean=0.0, strength_std=1.0)
     Random.seed!(seed)
     position = rand(3, n_bodies)
+    position .+= shift_position
     radius = rand(n_bodies) .* radius_factor
-    strength = 2 .* rand(3, n_bodies) .- 1.0
-    strength .-= 0.5
-    strength .*= 2
+    # strength = 2 .* rand(3, n_bodies) .- 1.0
+    # strength .-= 0.5
+    # strength .*= 2
+    strength = strength_std .* randn(3, n_bodies) .+ strength_mean
     strength .*= strength_scale
     return VortexParticles(position, strength, radius)
 end

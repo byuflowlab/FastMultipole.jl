@@ -800,7 +800,8 @@ solve!(target_systems, source_systems, solver::FastGaussSeidel; optargs...) = so
 
 function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussSeidel{TF,N}; 
     derivatives_switches=DerivativesSwitch(true, true, false, target_systems),
-    max_iterations=10, inner_iterations=1, tolerance=1e-3, rlx=1.0, reverse_pass=false, verbose=true
+    max_iterations=10, inner_iterations=1, tolerance=1e-3, 
+    rlx=1.0, reverse_pass=false, verbose=true, final_update=true
 ) where {TF,N}
 
     #--- unpack containers ---#
@@ -842,6 +843,10 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
     #--- update strengths ---#
 
     update_by_leaf!(strengths, strengths_by_leaf, source_systems, source_buffers, source_tree)
+
+    #--- update strengths in buffers to match ---#
+
+    update_by_leaf!(source_buffers, source_systems, strengths, strengths_by_leaf, source_tree)
 
     #--- non-self influence ---#
 
@@ -968,17 +973,19 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
     #--- final update of systems ---#
 
     # use new strengths to get the full influence (farfield was already computed)
-    fmm!(target_systems, target_tree, source_systems, source_tree, source_tree.leaf_size, m2l_list, full_direct_list, derivatives_switches, interaction_list_method;
-            expansion_order=source_tree.expansion_order, error_tolerance=nothing,
-            upward_pass=false, horizontal_pass=false, downward_pass=false, # just nearfield influence
-            # horizontal_pass_verbose::Bool=false,
-            reset_target_tree=false, reset_source_tree=false, # false now
-            # nearfield_device::Bool=false,
-            tune=false, update_target_systems=true, multipole_acceptance, # update_target_systems is `true` now
-            # t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
-            # silence_warnings=false,
-            extra_farfield=solver.extra_farfield
-        )
+    if final_update
+        fmm!(target_systems, target_tree, source_systems, source_tree, source_tree.leaf_size, m2l_list, full_direct_list, derivatives_switches, interaction_list_method;
+                expansion_order=source_tree.expansion_order, error_tolerance=nothing,
+                upward_pass=false, horizontal_pass=false, downward_pass=false, # just nearfield influence
+                # horizontal_pass_verbose::Bool=false,
+                reset_target_tree=false, reset_source_tree=false, # false now
+                # nearfield_device::Bool=false,
+                tune=false, update_target_systems=true, multipole_acceptance, # update_target_systems is `true` now
+                # t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
+                # silence_warnings=false,
+                extra_farfield=solver.extra_farfield
+            )
+    end
 
     # update source system strengths
     buffer_to_system_strength!(source_systems, source_tree)

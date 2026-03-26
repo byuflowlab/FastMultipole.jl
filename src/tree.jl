@@ -202,7 +202,7 @@ function EmptyTree(system::Tuple)
     leaf_index = Int[]
     sort_index_list = Tuple(Int[] for _ in 1:N)
     inverse_sort_index_list = Tuple(Int[] for _ in 1:N)
-    buffer = (Matrix{TF}(undef,0,0),)
+    buffer = Tuple(Matrix{TF}(undef,0,0) for _ in 1:N)
     small_buffer = [Matrix{TF}(undef,0,0)]
     expansion_order = -1
     leaf_size = SVector{N}(-1 for _ in 1:N)
@@ -461,9 +461,6 @@ function child_branches!(branches, buffers, sort_index, small_buffers, sort_inde
     # if Threads.nthreads() > 1 && get_n_bodies(buffers) > MIN_BODIES
     #     return child_branches_multithread!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
     # end
-    if length(parents_index) == 0
-        @show parents_index length(branches), size(buffers[1],2), size(buffers[2],2), leaf_size, target
-    end
 
     i_first_branch = parents_index[end] + n_children + 1
     for i_parent in parents_index

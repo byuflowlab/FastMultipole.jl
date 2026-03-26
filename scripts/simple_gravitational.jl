@@ -340,17 +340,17 @@ system = generate_gravitational(123, n_bodies)
 # bm_fmm_system(system)
 # @time bm_fmm_system(system)
 
-@time fmm!(system; expansion_order=3, leaf_size=10, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink_recenter=false)
-@time fmm!(system; expansion_order=3, leaf_size=10, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink_recenter=false)
+@time fmm!(system; expansion_order=3, leaf_size=10, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink=false, recenter=false)
+# @time fmm!(system; expansion_order=3, leaf_size=10, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink=false, recenter=false)
 # @time fmm!(system; expansion_order=3, leaf_size=50, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false, shrink_recenter=false)
-# potential_fmm = system.potential[1,:]
+potential_fmm = system.potential[1,:]
 
-# system.potential .= 0.0
-# direct!(system; scalar_potential=true, gradient=false, hessian=false)
-# potential_direct = system.potential[1,:]
+system.potential .= 0.0
+direct!(system; scalar_potential=true, gradient=false, hessian=false)
+potential_direct = system.potential[1,:]
 
-# max_err = maximum(abs.(potential_fmm - potential_direct))
-# @show max_err
+max_err = maximum(abs.(potential_fmm - potential_direct))
+@show max_err
 # @time fmm!(system; expansion_order=7, leaf_size=50, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false)
 # @time fmm!(system; expansion_order=7, leaf_size=50, multipole_acceptance=0.5, gradient=false, scalar_potential=true, hessian=false)
 

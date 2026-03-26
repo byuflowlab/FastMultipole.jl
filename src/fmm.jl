@@ -826,11 +826,8 @@ fmm!(target_system, source_system; scalar_potential=false, gradient=true, hessia
 fmm!(system, cache::Cache; leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
 
 function fmm!(target_systems, source_systems, cache::Cache; optargs...)
-    # promote arguments to Tuples
-    target_systems = to_tuple(target_systems)
-    source_systems = to_tuple(source_systems)
-
-    return fmm!(target_systems, source_systems, cache; optargs...)
+    # promote arguments to Tuples and dispatch to the main method
+    return fmm!(to_tuple(target_systems), to_tuple(source_systems), cache; optargs...)
 end
 
 """
@@ -880,7 +877,19 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 - `extra_farfield::Bool`: whether to compute extra farfield interactions; default is `false`
 
 """
-function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(target_systems, source_systems, DerivativesSwitch(false, true, false, target_systems));
+function fmm!(target_systems::Tuple, source_systems::Tuple;
+    scalar_potential=false, gradient=true, hessian=false, optargs...
+)
+    # allocate cache with actual derivatives switches
+    scalar_potential_v = to_vector(scalar_potential, length(target_systems))
+    gradient_v = to_vector(gradient, length(target_systems))
+    hessian_v = to_vector(hessian, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems)
+    cache = Cache(target_systems, source_systems, derivatives_switches)
+    return fmm!(target_systems, source_systems, cache; scalar_potential, gradient, hessian, optargs...)
+end
+
+function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     leaf_size_target=nothing,
     leaf_size_source=default_leaf_size(source_systems),
     scalar_potential=false, gradient=true, hessian=false,
@@ -898,7 +907,7 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(t
     scalar_potential = to_vector(scalar_potential, length(target_systems))
     gradient = to_vector(gradient, length(target_systems))
     hessian = to_vector(hessian, length(target_systems))
-    
+
     # assemble derivatives switch
     derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
 
@@ -1191,9 +1200,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 end
 
                 # extra farfield function
-                println("\nExtra farfield: ", extra_farfield)
                 @time extra_farfield && ( extra_farfield!(target_tree, source_tree, source_systems, derivatives_switches) )
-                println("done.\n")
                 # copy results to target systems
                 update_target_systems && buffer_to_target!(target_systems, target_tree, derivatives_switches)
 
