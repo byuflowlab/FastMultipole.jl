@@ -448,7 +448,7 @@ function target_to_buffer(system, target::Bool, switch::DerivativesSwitch, sort_
     return buffer
 end
 
-function target_influence_to_buffer!(target_buffers::Tuple, target_systems::Tuple, derivatives_switches::Tuple, sort_index_list=SVector{length(target_systems)}([1:get_n_bodies(system) for system in target_systems]))
+function target_influence_to_buffer!(target_buffers, target_systems::Tuple, derivatives_switches::Tuple, sort_index_list=SVector{length(target_systems)}([1:get_n_bodies(system) for system in target_systems]))
     for (target_buffer, target_system, derivatives_switch, sort_index) in zip(target_buffers, target_systems, derivatives_switches, sort_index_list)
         reset!(target_buffer)
         target_influence_to_buffer!(target_buffer, target_system, derivatives_switch, sort_index)
@@ -502,7 +502,7 @@ function buffer_to_system_strength!(source_systems::Tuple, source_tree::Tree)
     buffer_to_system_strength!(source_systems, source_tree.buffers, source_tree.sort_index_list)
 end
 
-function buffer_to_system_strength!(source_systems::Tuple, source_buffers::NTuple{<:Any,<:Matrix}, sort_index_list=SVector{length(source_systems)}([1:get_n_bodies(system) for system in source_systems]), buffer_index_list=SVector{length(source_systems)}([1:get_n_bodies(system) for system in source_systems]))
+function buffer_to_system_strength!(source_systems::Tuple, source_buffers::AbstractVector{<:Matrix}, sort_index_list=SVector{length(source_systems)}([1:get_n_bodies(system) for system in source_systems]), buffer_index_list=SVector{length(source_systems)}([1:get_n_bodies(system) for system in source_systems]))
     for (source_system, source_buffer, sort_index, buffer_index) in zip(source_systems, source_buffers, sort_index_list, buffer_index_list)
         buffer_to_system_strength_range!(source_system, source_buffer, sort_index, buffer_index)
     end
@@ -592,13 +592,13 @@ end
 
 #--- auxilliary functions ---#
 
-function reset!(systems::Tuple)
+function reset!(systems::Union{Tuple, AbstractVector{<:Matrix}})
     for system in systems
         reset!(system)
     end
 end
 
-function reset!(small_buffers::Vector{<:Matrix})
+function reset_small_buffers!(small_buffers::Vector{<:Matrix})
     for buffer in small_buffers
         buffer .= 0.0
     end

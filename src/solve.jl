@@ -50,7 +50,7 @@ function get_matrix_vector(ms::Matrices, k::Int)
     return reshape(mat, m, n), view(ms.rhs, vrange)
 end
 
-function set_unit_strength!(source_buffers::Tuple, source_systems::Tuple)
+function set_unit_strength!(source_buffers::AbstractVector{<:Matrix}, source_systems::Tuple)
     for i_source_system in eachindex(source_systems)
         source_system = source_systems[i_source_system]
         source_buffer = source_buffers[i_source_system]
@@ -69,7 +69,7 @@ function set_unit_strength!(source_buffer::AbstractMatrix{TF}, source_system) wh
     end
 end
 
-function save_strengths(source_buffers::Tuple, source_systems::Tuple)
+function save_strengths(source_buffers::AbstractVector{<:Matrix}, source_systems::Tuple)
     # save the strengths of the source systems
     TF = promote_type(eltype.(source_buffers)...)
     old_strengths = Tuple(Matrix{TF}(undef, strength_dims(source_systems[k]), get_n_bodies(source_systems[k])) for k in eachindex(source_systems))
@@ -82,7 +82,7 @@ function save_strengths(source_buffers::Tuple, source_systems::Tuple)
     return old_strengths
 end
 
-function restore_strengths!(source_buffers::Tuple, source_systems::Tuple, old_strengths)
+function restore_strengths!(source_buffers::AbstractVector{<:Matrix}, source_systems::Tuple, old_strengths)
     # restore the strengths of the source systems
     for k in eachindex(source_systems)
         source_system = source_systems[k]
@@ -91,7 +91,7 @@ function restore_strengths!(source_buffers::Tuple, source_systems::Tuple, old_st
     end
 end
 
-function nonself_influence_matrices(target_buffers::Tuple, source_buffers::Tuple, source_systems::Tuple, target_tree::Tree{TF,<:Any}, source_tree::Tree, direct_list, derivatives_switches) where TF
+function nonself_influence_matrices(target_buffers::AbstractVector{<:Matrix}, source_buffers::AbstractVector{<:Matrix}, source_systems::Tuple, target_tree::Tree{TF,<:Any}, source_tree::Tree, direct_list, derivatives_switches) where TF
     
     #--- sort by source ---#
 
@@ -205,7 +205,7 @@ function nonself_influence_matrices(target_buffers::Tuple, source_buffers::Tuple
         matrix, influence = get_matrix_vector(matrices, 1)
 
         for (i_target,j_source) in sorted_list
-                
+
             # start on the next matrix
             if j_source != this_source
                 i_matrix += 1
@@ -219,7 +219,7 @@ function nonself_influence_matrices(target_buffers::Tuple, source_buffers::Tuple
             this_i_source_start = i_source_start
 
             for i_source_system in eachindex(source_systems)
-                
+
                 # get view of matrix corresponding to this source system
                 source_index = source_branches[j_source].bodies_index[i_source_system]
                 n_sources = length(source_index)
@@ -231,7 +231,7 @@ function nonself_influence_matrices(target_buffers::Tuple, source_buffers::Tuple
 
                 # loop over target systems
                 for i_target_system in eachindex(target_buffers)
-                    
+
                     # get view of matrix corresponding to this source and target system
                     target_index = target_branches[i_target].bodies_index[i_target_system]
                     n_targets = length(target_index)
@@ -247,7 +247,7 @@ function nonself_influence_matrices(target_buffers::Tuple, source_buffers::Tuple
 
                     # loop over source bodies
                     for (isb,i_source_body) in enumerate(source_index)
-                    
+
                         # reset targets
                         reset!(target_buffer, target_index)
 
@@ -428,6 +428,9 @@ function self_influence_matrices(target_buffers, source_buffers, source_systems,
                 this_influence = view(influence, i_target_start:i_target_start + n_targets - 1)
 
                 # loop over bodies in this branch
+                targets_view = view(target_buffer, :, target_bodies_index)
+                sources_view = view(source_buffer, :, source_bodies_index)
+                this_matrix_block = view(matrix, i_target_start:i_target_start + n_targets - 1, i_source_start + 1:i_source_start + length(source_bodies_index))
                 for (isb, i_source_body) in enumerate(source_bodies_index)
 
                     # reset targets
@@ -437,17 +440,16 @@ function self_influence_matrices(target_buffers, source_buffers, source_systems,
                     direct!(target_buffer, target_bodies_index, derivatives_switch, source_system, source_buffer, i_source_body:i_source_body)
 
                     # compute influences
-                    influence!(this_influence, view(target_buffer, :, target_bodies_index), source_system, view(source_buffer, :, source_bodies_index))
+                    influence!(this_influence, targets_view, source_system, sources_view)
 
                     # update matrix
-                    matrix[i_target_start:i_target_start + n_targets - 1, isb + i_source_start] .= this_influence
-
+                    this_matrix_block[:, isb] .= this_influence
                 end
 
                 # update target starting index
                 i_target_start += length(branch.bodies_index[i_target_system])
             end
-            
+
             # update source starting index
             i_source_start += length(source_bodies_index)
         end
@@ -648,7 +650,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     )
 end
 
-function reset!(v::Vector{TF}) where TF
+function reset!(v::Vector{TF}) where TF<:Number
     # reset vector to zero
     v .= zero(TF)
 end
@@ -659,7 +661,7 @@ function reset!(influences_per_system::Vector{<:AbstractVector})
     end
 end
 
-function update_by_leaf!(strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}}, source_systems::Tuple, source_buffers::Tuple{<:Matrix}, source_tree::Tree)
+function update_by_leaf!(strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}}, source_systems::Tuple, source_buffers::AbstractVector{<:Matrix}, source_tree::Tree)
     # update strengths by leaf
     for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
         # get bodies index
@@ -691,7 +693,7 @@ function update_by_leaf!(strengths::Vector, strengths_by_leaf::Vector{UnitRange{
     end
 end
 
-function update_by_leaf!(source_buffers::Tuple{<:Matrix}, source_systems::Tuple, strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}}, source_tree::Tree, rlx=1.0)
+function update_by_leaf!(source_buffers::AbstractVector{<:Matrix}, source_systems::Tuple, strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}}, source_tree::Tree, rlx=1.0)
     # update strengths by leaf
     for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
         # get bodies index
@@ -999,12 +1001,12 @@ Evaluate the influence as pertains to the boundary element influence matrix and 
 
 * `sorted_influences::Vector{Float64}`: single vector containing the influence for every body in the target buffers, sorted by source branch in the direct interaction list
 * `influences_per_system::Vector{Vector{Float64}}`: vector of vectors containing the influence for each target system, sorted the same way as the buffers
-* `target_buffers::NTuple{N,Matrix{Float64}}`: target buffers used to compute the influence
-* `source_systems::NTuple{N,<:{UserDefinedSystem}}`: system objects used for dispatch
-* `source_buffers::NTuple{N,Matrix{Float64}}`: source buffers used to compute the influence
+* `target_buffers::Vector{Matrix{Float64}}`: target buffers used to compute the influence
+* `source_systems::Tuple`: system objects used for dispatch
+* `source_buffers::Vector{Matrix{Float64}}`: source buffers used to compute the influence
 
 """
-function influence!(sorted_influences::Vector{TF}, influences_per_system::Vector{Vector{TF}}, target_buffers::Tuple, source_systems::Tuple, source_buffers::Tuple, source_tree::Tree) where TF
+function influence!(sorted_influences::Vector{TF}, influences_per_system::Vector{Vector{TF}}, target_buffers::AbstractVector{<:Matrix}, source_systems::Tuple, source_buffers::AbstractVector{<:Matrix}, source_tree::Tree) where TF
     @assert length(target_buffers) == length(source_buffers) == length(source_systems)
 
     #--- evaluate influences ---#

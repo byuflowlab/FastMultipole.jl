@@ -202,14 +202,14 @@ function EmptyTree(system::Tuple)
     leaf_index = Int[]
     sort_index_list = Tuple(Int[] for _ in 1:N)
     inverse_sort_index_list = Tuple(Int[] for _ in 1:N)
-    buffer = Tuple(Matrix{TF}(undef,0,0) for _ in 1:N)
+    buffer = [Matrix{TF}(undef,0,0) for _ in 1:N]
     small_buffer = [Matrix{TF}(undef,0,0)]
     expansion_order = -1
     leaf_size = SVector{N}(-1 for _ in 1:N)
     return Tree(branches, expansions, levels_index, leaf_index, sort_index_list, inverse_sort_index_list, buffer, small_buffer, expansion_order, leaf_size)
 end
 
-function get_max_body_radius(buffers::Tuple, TF)
+function get_max_body_radius(buffers::AbstractVector{<:Matrix}, TF)
     max_radius = zero(TF)
     n_bodies = 0
     for buffer in buffers
@@ -387,7 +387,7 @@ Allocates buffers for the given systems.
 
 **Returns**
 
-* `buffers::NTuple{N,Matrix{TF}}`: tuple of `N` matrices, one for each system, as follows:
+* `buffers::Vector{Matrix{TF}}`: vector of matrices, one for each system, as follows:
 
     * if `target==true`, each matrix has size `(18,N)`, where `N` is the number of bodies in the system; indices correspond to:
 
@@ -404,9 +404,9 @@ Allocates buffers for the given systems.
 function allocate_buffers(systems::Tuple, target::Bool, TF, switches)
     # create buffers
     if target
-        buffers = Tuple(allocate_target_buffer(TF, system, switch) for (system, switch) in zip(systems, switches))
+        buffers = [allocate_target_buffer(TF, system, switch) for (system, switch) in zip(systems, switches)]
     else
-        buffers = Tuple(allocate_source_buffer(TF, system) for system in systems)
+        buffers = [allocate_source_buffer(TF, system) for system in systems]
     end
 
     return buffers
@@ -1385,7 +1385,7 @@ end
     return center_box(systems, bodies_indices, TF)
 end
 
-function center_box(systems::Tuple, bodies_indices, TF)
+function center_box(systems, bodies_indices, TF)
     x_min, y_min, z_min = first_body_position(systems, bodies_indices, TF)
     x_max, y_max, z_max = x_min, y_min, z_min
     for (system, bodies_index) in zip(systems, bodies_indices)
@@ -1470,7 +1470,7 @@ end
     return x_min, x_max, y_min, y_max, z_min, z_max
 end
 
-function source_center_box(systems::Tuple, bodies_indices, TF)
+function source_center_box(systems, bodies_indices, TF)
     x_min, y_min, z_min = first_body_position(systems, bodies_indices, TF)
     x_max, y_max, z_max = x_min, y_min, z_min
     for (system, bodies_index) in zip(systems, bodies_indices)
@@ -1512,7 +1512,7 @@ end
 #     return system[bodies_index[1],POSITION]
 # end
 
-function first_body_position(systems::Tuple, bodies_indices, TF)
+function first_body_position(systems, bodies_indices, TF)
     for (system, bodies_index) in zip(systems, bodies_indices)
         length(bodies_index) > 0 && (return get_position(system, bodies_index[1]))
     end
@@ -1573,7 +1573,7 @@ end
 #     return target_radius, source_radius
 # end
 
-@inline function shrink_radius_source(source_radius, source_center, systems::Tuple, bodies_indices)
+@inline function shrink_radius_source(source_radius, source_center, systems::Union{Tuple, AbstractVector{<:Matrix}}, bodies_indices)
     # loop over systems
     for (system, bodies_index) in zip(systems, bodies_indices)
         source_radius = shrink_radius_source(source_radius, source_center, system, bodies_index)
@@ -1604,7 +1604,7 @@ end
     return source_radius
 end
 
-@inline function shrink_radius_target(target_radius, target_center, systems::Tuple, bodies_indices)
+@inline function shrink_radius_target(target_radius, target_center, systems::Union{Tuple, AbstractVector{<:Matrix}}, bodies_indices)
     # loop over systems
     for (system, bodies_index) in zip(systems, bodies_indices)
         target_radius = shrink_radius_target(target_radius, target_center, system, bodies_index)

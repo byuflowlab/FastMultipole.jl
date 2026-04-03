@@ -190,7 +190,7 @@ Tree object used to sort `N` systems into an octree.
 * `leaf_index::Vector{Int}`: vector of indices of branches that are leaves
 * `sort_index_list::NTuple{N,Vector{Int}}`: tuple of vectors of indices used to sort the bodies in each system into the tree
 * `inverse_sort_index_list::NTuple{N,Vector{Int}}`: tuple of vectors of indices used to undo the sort operation performed by `sort_index_list`
-* `buffers::NTuple{N,Matrix{TF}}`: tuple of buffers used to store the bodies computed influence of each system in the tree, as explained in [`FastMultipole.allocate_buffers`](@ref)
+* `buffers::Vector{Matrix{TF}}`: vector of buffers used to store the bodies computed influence of each system in the tree, as explained in [`FastMultipole.allocate_buffers`](@ref)
 * `small_buffers::Vector{Matrix{TF}}`: vector of buffers used to pidgeon-hole sort bodies into the tree, as explained in [`FastMultipole.allocate_small_buffers`](@ref)
 * `expansion_order::Int64`: the maximum storable expansion order
 * `leaf_size::SVector{N,Int64}`: maximum number of bodies in a leaf for each system; if multiple systems are represented, the actual maximum depends on the `InteractionListMethod` used to create the tree
@@ -205,7 +205,7 @@ struct Tree{TF,N}
     leaf_index::Vector{Int}
     sort_index_list::NTuple{N,Vector{Int}}
     inverse_sort_index_list::NTuple{N,Vector{Int}}
-    buffers::NTuple{N,Matrix{TF}}
+    buffers::Vector{Matrix{TF}}
     small_buffers::Vector{Matrix{TF}}
     expansion_order::Int64
     leaf_size::SVector{N,Int64}    # max number of bodies in a leaf
@@ -296,26 +296,26 @@ Cache object used to store system buffers to avoid repeated allocations.
 
 **Fields**
 
-* `target_buffers::NTuple{NT, Matrix{TF}}`: tuple of length `NT` containing buffers for target systems
-* `source_buffers::NTuple{NS, Matrix{TF}}`: tuple of length `NS` containing buffers for source systems
+* `target_buffers::Vector{Matrix{TF}}`: vector of buffers for target systems
+* `source_buffers::Vector{Matrix{TF}}`: vector of buffers for source systems
 * `target_small_buffers::Vector{Matrix{TF}}`: vector of small buffers used for pidgeon-hole sorting target systems into the octree
 * `source_small_buffers::Vector{Matrix{TF}}`: vector of small buffers used for pidgeon-hole sorting source systems into the octree
 
 """
-struct Cache{TF,NT,NS}
-    target_buffers::NTuple{NT, Matrix{TF}}
-    source_buffers::NTuple{NS, Matrix{TF}}
+struct Cache{TF}
+    target_buffers::Vector{Matrix{TF}}
+    source_buffers::Vector{Matrix{TF}}
     target_small_buffers::Vector{Matrix{TF}}
     source_small_buffers::Vector{Matrix{TF}}
 end
 
-function Cache(; 
-    target_buffers::NTuple{NT,Matrix{TF}}, 
-    source_buffers::NTuple{NS,Matrix{TF}}, 
-    target_small_buffers::Vector{Matrix{TF}}, 
+function Cache(;
+    target_buffers::Vector{Matrix{TF}},
+    source_buffers::Vector{Matrix{TF}},
+    target_small_buffers::Vector{Matrix{TF}},
     source_small_buffers::Vector{Matrix{TF}}
-        ) where {TF,NT,NS}
-    return Cache{TF,NT,NS}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
+        ) where {TF}
+    return Cache{TF}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
 end
 
 function Cache(target_systems::Tuple, source_systems::Tuple, switches::Tuple)
@@ -329,5 +329,5 @@ function Cache(target_systems::Tuple, source_systems::Tuple, switches::Tuple)
     source_small_buffers = allocate_small_buffers(source_systems, TF)
     
     # return cache
-    return Cache{TF,length(target_systems),length(source_systems)}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
+    return Cache{TF}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
 end
