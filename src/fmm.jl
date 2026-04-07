@@ -1200,7 +1200,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 end
 
                 # extra farfield function
-                @time extra_farfield && ( extra_farfield!(target_tree, source_tree, source_systems, derivatives_switches) )
+                extra_farfield && ( extra_farfield!(target_tree, source_tree, source_systems, derivatives_switches) )
                 # copy results to target systems
                 update_target_systems && buffer_to_target!(target_systems, target_tree, derivatives_switches)
 
