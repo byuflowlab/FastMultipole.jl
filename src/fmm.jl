@@ -796,6 +796,7 @@ function warn_scalar_potential_with_lh(derivatives_switches::Tuple, lamb_helmhol
     end
     if WARNING_FLAG_LH_POTENTIAL[] && !success
         @warn "\nScalar potential was requested for a source system inducing a vector potential; this may result in nonsensical scalar potential predictions.\nIf you really need the scalar_potential, check which system results in has_vector_potential(system)==true, and remove it."
+        WARNING_FLAG_LH_POTENTIAL[] = false
     end
 end
 
@@ -1200,7 +1201,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 end
 
                 # extra farfield function
-                @time extra_farfield && ( extra_farfield!(target_tree, source_tree, source_systems, derivatives_switches) )
+                extra_farfield && ( extra_farfield!(target_tree, source_tree, source_systems, derivatives_switches) )
                 # copy results to target systems
                 update_target_systems && buffer_to_target!(target_systems, target_tree, derivatives_switches)
 

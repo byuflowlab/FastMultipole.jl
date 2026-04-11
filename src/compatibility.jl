@@ -516,7 +516,7 @@ end
 
 #--- auxilliary functions ---#
 
-@inline function get_n_bodies(systems::Tuple)
+@inline function get_n_bodies(systems::Union{Tuple, AbstractVector{<:Matrix}})
     n_bodies = 0
     for system in systems
         n_bodies += get_n_bodies(system)
