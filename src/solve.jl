@@ -801,10 +801,14 @@ solve!(systems::Tuple, solver::FastGaussSeidel; optargs...) = solve!(systems, sy
 solve!(target_systems, source_systems, solver::FastGaussSeidel; optargs...) = solve!((target_systems,), (source_systems,), solver; optargs...)
 
 function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussSeidel{TF,N}; 
-    derivatives_switches=DerivativesSwitch(true, true, false, target_systems),
+    scalar_potential=false, gradient=true, hessian=false,
     max_iterations=10, inner_iterations=1, tolerance=1e-3, 
     rlx=1.0, reverse_pass=false, verbose=true, final_update=true
 ) where {TF,N}
+
+    #--- derivatives switches ---#
+
+    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
 
     #--- unpack containers ---#
 
@@ -896,7 +900,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
         # note that `right_hand_side` now contains external, nonself, and farfield influence
         mse = residual!(residual_vector, self_matrices, strengths, strengths_by_leaf)
         
-        verbose &&println("Iteration $(iteration):\tMSE = $(mse),\tdelta = $(Δ)")
+        verbose && println("Iteration $(iteration):\tMSE = $(mse),\tdelta = $(Δ)")
         
         # if mse > mse_best * 10 # stop if mse begins increasing
         #     @warn "FastGaussSeidel stopped early at iteration $(iteration) with MSE = $(mse) (previous was $(mse_best))"
@@ -905,7 +909,9 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
         # mse_best = min(mse_best, mse)
 
         if mse <= tolerance
-            @info "FastGaussSeidel converged after $(iteration-1) iterations with MSE = $(mse); delta = $(Δ)"
+            if verbose
+                @info "FastGaussSeidel converged after $(iteration-1) iterations with MSE = $(mse); delta = $(Δ)"
+            end
             break
         end
 
@@ -969,7 +975,9 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
 
     #--- check if we converged ---#
     if mse > tolerance
-        @warn "FastGaussSeidel did not converge after $(max_iterations) iterations with MSE = $(mse)"
+        if verbose
+            @warn "FastGaussSeidel did not converge after $(max_iterations) iterations with MSE = $(mse)"
+        end
     end
 
     #--- final update of systems ---#
