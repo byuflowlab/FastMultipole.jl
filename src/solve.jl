@@ -1049,6 +1049,193 @@ function influence!(sorted_influences::Vector{TF}, influences_per_system::Vector
     end
 end
 
+#------- Block Jacobi Preconditioner -------#
+
+"""
+    JacobiPreconditioner{TF}
+
+Block Jacobi preconditioner that partitions bodies into uniform grid cells and
+stores per-cell LU-factorized influence matrices.
+
+`cell_body_indices[k]` contains the original (global) body indices for cell `k`,
+matching the row/column ordering of `lu_factorizations[k]`.
+"""
+struct JacobiPreconditioner{TF}
+    lu_factorizations::Vector{LU{TF, Matrix{TF}, Vector{Int}}}
+    cell_body_indices::Vector{Vector{Int}}  # original body indices per cell
+    cell_nonsingular::Vector{Bool}          # whether each cell's LU is nonsingular
+    n_bodies::Int
+end
+
+"""
+    JacobiPreconditioner(target_systems, source_systems; cell_size, derivatives_switches)
+
+Build a block Jacobi preconditioner by partitioning bodies into uniform grid cells
+and assembling/factorizing the self-influence matrix for each cell.
+
+Bodies are hashed into a uniform grid (cell list) following the pattern of FLOWVPM's
+`merge_particles!`. For each non-empty cell, a dense influence matrix is assembled
+column-by-column using `direct!` with unit strengths (matching `self_influence_matrices`),
+then LU-factorized.
+"""
+JacobiPreconditioner(system; optargs...) = JacobiPreconditioner((system,); optargs...)
+JacobiPreconditioner(systems::Tuple; optargs...) = JacobiPreconditioner(systems, systems; optargs...)
+
+function JacobiPreconditioner(target_systems::Tuple, source_systems::Tuple;
+    cell_size::Real,
+    derivatives_switches=DerivativesSwitch(true, true, false, target_systems),
+)
+    @assert target_systems === source_systems "different sources and targets are not yet supported for JacobiPreconditioner"
+
+    TF = get_type(target_systems, source_systems)
+    n_bodies_total = get_n_bodies(source_systems)
+
+    #--- build uniform cell list ---#
+
+    # collect positions (global indexing across all systems)
+    positions = Vector{SVector{3,TF}}(undef, n_bodies_total)
+    body_offset = 0
+    for system in source_systems
+        nb = get_n_bodies(system)
+        for i in 1:nb
+            positions[body_offset + i] = get_position(system, i)
+        end
+        body_offset += nb
+    end
+
+    # compute bounding box
+    xmin = ymin = zmin = typemax(TF)
+    xmax = ymax = zmax = typemin(TF)
+    for pos in positions
+        xmin = min(xmin, pos[1]); xmax = max(xmax, pos[1])
+        ymin = min(ymin, pos[2]); ymax = max(ymax, pos[2])
+        zmin = min(zmin, pos[3]); zmax = max(zmax, pos[3])
+    end
+
+    # grid dimensions
+    Nx = max(1, floor(Int, (xmax - xmin) / cell_size) + 1)
+    Ny = max(1, floor(Int, (ymax - ymin) / cell_size) + 1)
+    Nz = max(1, floor(Int, (zmax - zmin) / cell_size) + 1)
+    n_cells = Nx * Ny * Nz
+
+    # hash bodies into cells (counting sort)
+    cell_keys = Vector{Int}(undef, n_bodies_total)
+    cell_offsets = zeros(Int, n_cells + 1)
+
+    for i in 1:n_bodies_total
+        pos = positions[i]
+        ix = clamp(floor(Int, (pos[1] - xmin) / cell_size), 0, Nx - 1)
+        iy = clamp(floor(Int, (pos[2] - ymin) / cell_size), 0, Ny - 1)
+        iz = clamp(floor(Int, (pos[3] - zmin) / cell_size), 0, Nz - 1)
+        key = ix + iy * Nx + iz * Nx * Ny
+        cell_keys[i] = key
+        cell_offsets[key + 2] += 1
+    end
+
+    # prefix sum
+    for i in 2:(n_cells + 1)
+        cell_offsets[i] += cell_offsets[i - 1]
+    end
+
+    # place bodies in sorted order (sorted_indices[j] = original body index)
+    sorted_indices = Vector{Int}(undef, n_bodies_total)
+    counts = copy(cell_offsets)
+    for i in 1:n_bodies_total
+        key = cell_keys[i] + 1
+        counts[key] += 1
+        sorted_indices[counts[key]] = i
+    end
+
+    # collect non-empty cells as vectors of original body indices
+    cell_body_indices = Vector{Vector{Int}}()
+    for key in 0:(n_cells - 1)
+        range_start = cell_offsets[key + 1] + 1
+        range_stop = cell_offsets[key + 2]
+        range_start > range_stop && continue
+        push!(cell_body_indices, sorted_indices[range_start:range_stop])
+    end
+
+    #--- allocate buffers ---#
+
+    # use full-size target buffers (hessian=true) so reset! can zero rows 4:16
+    full_switches = DerivativesSwitch(true, true, true, target_systems)
+    target_buffers = allocate_buffers(target_systems, true, TF, full_switches)
+    source_buffers = allocate_buffers(source_systems, false, TF, DerivativesSwitch(false, false, false, source_systems))
+
+    # load systems into buffers (unsorted — identity permutation)
+    target_to_buffer!(target_buffers, target_systems, true)
+    system_to_buffer!(source_buffers, source_systems)
+
+    #--- assemble per-cell influence matrices and LU-factorize ---#
+
+    old_strengths = save_strengths(source_buffers, source_systems)
+    set_unit_strength!(source_buffers, source_systems)
+
+    lu_factorizations = Vector{LU{TF, Matrix{TF}, Vector{Int}}}(undef, length(cell_body_indices))
+    cell_nonsingular = Vector{Bool}(undef, length(cell_body_indices))
+
+    for (i_cell, body_indices) in enumerate(cell_body_indices)
+        n_cell = length(body_indices)
+        cell_matrix = zeros(TF, n_cell, n_cell)
+
+        for (col, i_source_global) in enumerate(body_indices)
+            i_sys, i_local = _global_to_system_index(source_systems, i_source_global)
+            source_system = source_systems[i_sys]
+            source_buffer = source_buffers[i_sys]
+
+            for (row, i_target_global) in enumerate(body_indices)
+                t_sys, t_local = _global_to_system_index(target_systems, i_target_global)
+                target_buffer = target_buffers[t_sys]
+
+                # reset target
+                reset!(target_buffer, t_local:t_local)
+
+                # compute direct influence of single source on single target
+                direct!(target_buffer, t_local:t_local, derivatives_switches[t_sys], source_system, source_buffer, i_local:i_local)
+
+                # extract influence value
+                infl = zeros(TF, 1)
+                influence!(infl, view(target_buffer, :, t_local:t_local), source_system, view(source_buffer, :, i_local:i_local))
+                cell_matrix[row, col] = infl[1]
+            end
+        end
+
+        F = lu(cell_matrix; check=false)
+        lu_factorizations[i_cell] = F
+        cell_nonsingular[i_cell] = issuccess(F)
+    end
+
+    restore_strengths!(source_buffers, source_systems, old_strengths)
+
+    return JacobiPreconditioner{TF}(lu_factorizations, cell_body_indices, cell_nonsingular, n_bodies_total)
+end
+
+"""
+    _global_to_system_index(systems, global_index)
+
+Given a global body index (1-based across all systems), return `(system_index, local_index)`.
+"""
+function _global_to_system_index(systems, global_index)
+    offset = 0
+    for (i_sys, system) in enumerate(systems)
+        nb = get_n_bodies(system)
+        if global_index <= offset + nb
+            return i_sys, global_index - offset
+        end
+        offset += nb
+    end
+    error("global_index $global_index out of range for systems with $(sum(get_n_bodies(s) for s in systems)) total bodies")
+end
+
+function LinearAlgebra.ldiv!(y::AbstractVector, P::JacobiPreconditioner, x::AbstractVector)
+    y .= x  # default: identity preconditioning for uncovered/singular cells
+    for (k, body_indices) in enumerate(P.cell_body_indices)
+        P.cell_nonsingular[k] || continue
+        ldiv!(view(y, body_indices), P.lu_factorizations[k], view(x, body_indices))
+    end
+    return y
+end
+
 function residual!(residual_vector, self_matrices::Matrices, strengths::Vector, strengths_by_leaf::Vector{UnitRange{Int}})
     
     # initialize mean squared error

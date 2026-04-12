@@ -143,7 +143,7 @@ include("solve.jl")
 
 include("extra_farfield.jl")
 
-export FastGaussSeidel
+export FastGaussSeidel, JacobiPreconditioner
 
 #------- PRECALCULATIONS -------#
 
