@@ -1060,8 +1060,8 @@ stores per-cell LU-factorized influence matrices.
 `cell_body_indices[k]` contains the original (global) body indices for cell `k`,
 matching the row/column ordering of `lu_factorizations[k]`.
 """
-struct JacobiPreconditioner{TF}
-    lu_factorizations::Vector{LU{TF, Matrix{TF}, Vector{Int}}}
+struct JacobiPreconditioner{TF,LF<:LU}
+    lu_factorizations::Vector{LF}
     cell_body_indices::Vector{Vector{Int}}  # original body indices per cell
     cell_nonsingular::Vector{Bool}          # whether each cell's LU is nonsingular
     n_bodies::Int
@@ -1171,7 +1171,8 @@ function JacobiPreconditioner(target_systems::Tuple, source_systems::Tuple;
     old_strengths = save_strengths(source_buffers, source_systems)
     set_unit_strength!(source_buffers, source_systems)
 
-    lu_factorizations = Vector{LU{TF, Matrix{TF}, Vector{Int}}}(undef, length(cell_body_indices))
+    LF = typeof(lu(zeros(TF, 0, 0)))
+    lu_factorizations = Vector{LF}(undef, length(cell_body_indices))
     cell_nonsingular = Vector{Bool}(undef, length(cell_body_indices))
 
     for (i_cell, body_indices) in enumerate(cell_body_indices)
@@ -1207,7 +1208,7 @@ function JacobiPreconditioner(target_systems::Tuple, source_systems::Tuple;
 
     restore_strengths!(source_buffers, source_systems, old_strengths)
 
-    return JacobiPreconditioner{TF}(lu_factorizations, cell_body_indices, cell_nonsingular, n_bodies_total)
+    return JacobiPreconditioner{TF,LF}(lu_factorizations, cell_body_indices, cell_nonsingular, n_bodies_total)
 end
 
 """
