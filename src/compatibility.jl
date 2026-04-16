@@ -605,5 +605,5 @@ function reset_small_buffers!(small_buffers::Vector{<:Matrix})
 end
 
 function reset!(system::Matrix, indices=1:size(system, 2))
-    system[4:16, indices] .= zero(eltype(system))
+    system[4:size(system, 1), indices] .= zero(eltype(system))
 end

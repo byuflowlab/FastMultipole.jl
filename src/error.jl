@@ -402,7 +402,8 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
 
     # evaluate the multipole expansion to get scaling factor
     derivatives_switch = DerivativesSwitch(true, true, true)
-    ϕ, _ = evaluate_multipole(source_branch.center + SVector{3}(Δx, Δy, Δz), source_branch.center, source_weights, derivatives_switch, expansion_order, lamb_helmholtz)
+    # ϕ, _ = evaluate_multipole(source_branch.center + SVector{3}(Δx, Δy, Δz), source_branch.center, source_weights, derivatives_switch, expansion_order, lamb_helmholtz)
+    ϕ = source_weights[1,1,1] / r_mp
 
     return ε_mp * ϕ, ε_mp * ϕ
 end
@@ -963,115 +964,115 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     # n=expansion_order # try reducing n to get a more conservative prediction
     for n=expansion_order+1:expansion_order+nplus
         
-    # local power
-    # n -= 1 # temporarily decrement n to get a more conservative local power
-    l_power = 0.0
-    i = (n*(n+1)) >> 1 + 1
-    for m in 0:n
-        # de-normalization
-        L̃ = sqrt(4*pi / (Float64(factorial(big(n-abs(m)))) * Float64(factorial(big(n+abs(m)))) * (2*n+1)) )
-
-        # conservative local power
-        ϕnm_real = weights_tmp_1[1,1,i+m]
-        ϕnm_imag = weights_tmp_1[2,1,i+m]
-        l_power += (ϕnm_real * ϕnm_real + ϕnm_imag * ϕnm_imag) * L̃ * L̃ * (2-(m==0))
-    end
-    l_power = sqrt(abs(l_power))
-    l_power_phi_unrotated = l_power
-    # n += 1 # return n back to its original value
-
-    # local power error prediction
-    nfact = Float64(factorial(big(n)))
-    L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
-    r_l = target_branch.radius
-    ε_l_power += l_power / L̃0 * r_l^(n-1) / nfact * n * sqrt(3)
-
-    # stuff = zero(r_l)
-    # for np in 0:n-1
-    #     stuff += r_l^(np) / Float64(factorial(big(np)))
-    # end
-    # ε_l_power = l_power / L̃0 * sqrt(3) * (exp(r) - stuff)
-    
-    # stuff = zero(r_l)
-    # for np in n-1:n+100
-    #     stuff += r_l^(np) / Float64(factorial(big(np)))
-    # end
-    # ε_l_power = l_power / L̃0 * sqrt(3) * stuff
-
-    if LH
-        
         # local power
-        l_power = 0.0
         # n -= 1 # temporarily decrement n to get a more conservative local power
+        l_power = 0.0
         i = (n*(n+1)) >> 1 + 1
         for m in 0:n
             # de-normalization
             L̃ = sqrt(4*pi / (Float64(factorial(big(n-abs(m)))) * Float64(factorial(big(n+abs(m)))) * (2*n+1)) )
 
             # conservative local power
-            χnm_real = weights_tmp_1[1,2,i+m]
-            χnm_imag = weights_tmp_1[2,2,i+m]
-            l_power += (χnm_real * χnm_real + χnm_imag * χnm_imag) * L̃ * L̃ * (1+(m>0))
+            ϕnm_real = weights_tmp_1[1,1,i+m]
+            ϕnm_imag = weights_tmp_1[2,1,i+m]
+            l_power += (ϕnm_real * ϕnm_real + ϕnm_imag * ϕnm_imag) * L̃ * L̃ * (2-(m==0))
         end
         l_power = sqrt(abs(l_power))
-        l_power_chi_unrotated = l_power
-        
-        # local power error prediction
-        L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
-        # println("checking:")
-        # @show l_power / L̃0
+        l_power_phi_unrotated = l_power
         # n += 1 # return n back to its original value
-        # nfact = Float64(factorial(big(n)))
+
+        # local power error prediction
+        nfact = Float64(factorial(big(n)))
+        L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
         r_l = target_branch.radius
-        ε_l_power += n * l_power / L̃0 * r_l^(n) / nfact * sqrt(3)
+        ε_l_power += l_power / L̃0 * r_l^(n-1) / nfact * n * sqrt(3)
 
-        
-        # l_power = 0.0
-        # i = (n*(n+1)) >> 1 + 1
-        # for m in 0:n
-        #     # de-normalization
-        #     L̃ = sqrt(4*pi / (Float64(factorial(big(n-abs(m)))) * Float64(factorial(big(n+abs(m)))) * (2*n+1)) )
-
-        #     # conservative local power
-        #     χnm_real = weights_tmp_1[1,2,i+m]
-        #     χnm_imag = weights_tmp_1[2,2,i+m]
-        #     l_power += (χnm_real * χnm_real + χnm_imag * χnm_imag) * L̃ * L̃ * (1+(m>0))
+        # stuff = zero(r_l)
+        # for np in 0:n-1
+        #     stuff += r_l^(np) / Float64(factorial(big(np)))
         # end
-        # l_power = sqrt(abs(l_power))
-        # l_power_chi_unrotated = l_power
+        # ε_l_power = l_power / L̃0 * sqrt(3) * (exp(r) - stuff)
         
-        # # local power error prediction
-        # L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
-        # @show l_power / L̃0
+        # stuff = zero(r_l)
+        # for np in n-1:n+100
+        #     stuff += r_l^(np) / Float64(factorial(big(np)))
+        # end
+        # ε_l_power = l_power / L̃0 * sqrt(3) * stuff
 
-        
-        # check that l_power / L0 is greater than all coefficients
-        stuff = l_power / L̃0
-        for m in 0:n
-            χnm_real, χnm_imag = weights_tmp_1[1,2,i+m], weights_tmp_1[2,2,i+m]
-            χnm = sqrt(χnm_real * χnm_real + χnm_imag * χnm_imag)
-            @assert χnm < stuff "l_power / L0 is not greater than all coefficients"
-            # @show χnm / stuff
-        end
+        if LH
             
-        # stuff = zero(r_l)
-        # for np in 0:n
-        #     stuff += r_l^(np) / Float64(factorial(big(np)))
-        # end
-        # ε_l_power += l_power / L̃0 * sqrt(3) * (exp(r) - stuff)
-        # @show exp(r), stuff, exp(r) - stuff, r_l, nfact, r_l^(n) / nfact
-        
-        # stuff = zero(r_l)
-        # for np in n:n+100
-        #     stuff += r_l^(np) / Float64(factorial(big(np)))
-        # end
-        # ε_l_power += l_power / L̃0 * sqrt(3) * stuff
-        # @show l_power / L̃0, stuff
-        
-    end
-    
+            # local power
+            l_power = 0.0
+            # n -= 1 # temporarily decrement n to get a more conservative local power
+            i = (n*(n+1)) >> 1 + 1
+            for m in 0:n
+                # de-normalization
+                L̃ = sqrt(4*pi / (Float64(factorial(big(n-abs(m)))) * Float64(factorial(big(n+abs(m)))) * (2*n+1)) )
 
-end
+                # conservative local power
+                χnm_real = weights_tmp_1[1,2,i+m]
+                χnm_imag = weights_tmp_1[2,2,i+m]
+                l_power += (χnm_real * χnm_real + χnm_imag * χnm_imag) * L̃ * L̃ * (1+(m>0))
+            end
+            l_power = sqrt(abs(l_power))
+            l_power_chi_unrotated = l_power
+            
+            # local power error prediction
+            L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
+            # println("checking:")
+            # @show l_power / L̃0
+            # n += 1 # return n back to its original value
+            # nfact = Float64(factorial(big(n)))
+            r_l = target_branch.radius
+            ε_l_power += n * l_power / L̃0 * r_l^(n) / nfact * sqrt(3)
+
+            
+            # l_power = 0.0
+            # i = (n*(n+1)) >> 1 + 1
+            # for m in 0:n
+            #     # de-normalization
+            #     L̃ = sqrt(4*pi / (Float64(factorial(big(n-abs(m)))) * Float64(factorial(big(n+abs(m)))) * (2*n+1)) )
+
+            #     # conservative local power
+            #     χnm_real = weights_tmp_1[1,2,i+m]
+            #     χnm_imag = weights_tmp_1[2,2,i+m]
+            #     l_power += (χnm_real * χnm_real + χnm_imag * χnm_imag) * L̃ * L̃ * (1+(m>0))
+            # end
+            # l_power = sqrt(abs(l_power))
+            # l_power_chi_unrotated = l_power
+            
+            # # local power error prediction
+            # L̃0 = sqrt(4*pi/((2*n+1) * nfact * nfact))
+            # @show l_power / L̃0
+
+            
+            # check that l_power / L0 is greater than all coefficients
+            # stuff = l_power / L̃0
+            # for m in 0:n
+            #     χnm_real, χnm_imag = weights_tmp_1[1,2,i+m], weights_tmp_1[2,2,i+m]
+            #     χnm = sqrt(χnm_real * χnm_real + χnm_imag * χnm_imag)
+            #     @assert χnm < stuff "l_power / L0 is not greater than all coefficients"
+            #     # @show χnm / stuff
+            # end
+                
+            # stuff = zero(r_l)
+            # for np in 0:n
+            #     stuff += r_l^(np) / Float64(factorial(big(np)))
+            # end
+            # ε_l_power += l_power / L̃0 * sqrt(3) * (exp(r) - stuff)
+            # @show exp(r), stuff, exp(r) - stuff, r_l, nfact, r_l^(n) / nfact
+            
+            # stuff = zero(r_l)
+            # for np in n:n+100
+            #     stuff += r_l^(np) / Float64(factorial(big(np)))
+            # end
+            # ε_l_power += l_power / L̃0 * sqrt(3) * stuff
+            # @show l_power / L̃0, stuff
+            
+        end
+        
+
+    end
     #--- brute force check ---#
 
 
