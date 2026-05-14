@@ -47,14 +47,14 @@ end
     end
 
     # exactly at origin should return finite spherical coordinates
-    ρ0, θ0, ϕ0 = FastMultipole.cartesian_to_spherical(0.0, 0.0, 0.0)
-    @test ρ0 == 0.0
-    @test θ0 == 0.0
-    @test ϕ0 == 0.0
+    rho0, theta0, phi0 = FastMultipole.cartesian_to_spherical(0.0, 0.0, 0.0)
+    @test rho0 == 0.0
+    @test theta0 == 0.0
+    @test phi0 == 0.0
 
-    # on axis should keep azimuth finite and well-defined
-    ρz, θz, ϕz = FastMultipole.cartesian_to_spherical(0.0, 0.0, -2.0)
-    @test isapprox(ρz, 2.0)
-    @test isapprox(θz, π)
-    @test isapprox(ϕz, 0.0)
+    # on axis should keep polar and azimuthal angles finite and well-defined
+    rho_axis, theta_axis, phi_axis = FastMultipole.cartesian_to_spherical(0.0, 0.0, -2.0)
+    @test isapprox(rho_axis, 2.0)
+    @test isapprox(theta_axis, π)
+    @test isapprox(phi_axis, 0.0)
 end
