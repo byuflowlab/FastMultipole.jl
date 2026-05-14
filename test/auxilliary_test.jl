@@ -45,5 +45,16 @@ end
     for i in 1:3
         @test isapprox(this[i], that[i]; atol=1e-10)
     end
-end
 
+    # exactly at origin should return finite spherical coordinates
+    ρ0, θ0, ϕ0 = FastMultipole.cartesian_to_spherical(0.0, 0.0, 0.0)
+    @test ρ0 == 0.0
+    @test θ0 == 0.0
+    @test ϕ0 == 0.0
+
+    # on axis should keep azimuth finite and well-defined
+    ρz, θz, ϕz = FastMultipole.cartesian_to_spherical(0.0, 0.0, -2.0)
+    @test isapprox(ρz, 2.0)
+    @test isapprox(θz, π)
+    @test isapprox(ϕz, 0.0)
+end
