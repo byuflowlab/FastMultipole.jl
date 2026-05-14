@@ -33,4 +33,5 @@ makedocs(;
 deploydocs(;
     repo="github.com/byuflowlab/FastMultipole.jl",
     devbranch="main",
+    forcepush=true,
 )
