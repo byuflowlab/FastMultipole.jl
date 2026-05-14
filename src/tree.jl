@@ -214,7 +214,7 @@ function get_max_body_radius(buffers::AbstractVector{<:Matrix}, TF)
     n_bodies = 0
     for buffer in buffers
         for i_body in 1:size(buffer,2)
-            max_radius += buffer[4,i_body]
+            max_radius += TF(buffer[4,i_body])
             # max_radius = max(max_radius, buffer[4,i_body])
         end
         n_bodies += size(buffer,2)
