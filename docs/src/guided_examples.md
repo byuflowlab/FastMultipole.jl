@@ -105,12 +105,12 @@ These functions provide enough information for `FastMultipole` to allocate the b
 Finally, we need to tell `FastMultipole` how to transfer the results of the FMM call back to the user-defined system. This is done by overloading the [`FastMultipole.buffer_to_target_system!`](@ref) function. Overloading for `::Gravitational` systems looks like this:
 
 ```@example guidedex
-function FastMultipole.buffer_to_target_system!(target_system::Gravitational, i_target, ::FastMultipole.DerivativesSwitch{PS,VS,GS}, target_buffer, i_buffer) where {PS,VS,GS}
+function FastMultipole.buffer_to_target_system!(target_system::Gravitational, i_target, switch::FastMultipole.DerivativesSwitch{PS,VS,GS}, target_buffer, i_buffer) where {PS,VS,GS}
     # get values
     TF = eltype(target_buffer)
-    scalar_potential = PS ? FastMultipole.get_scalar_potential(target_buffer, i_buffer) : zero(TF)
-    velocity = VS ? FastMultipole.get_gradient(target_buffer, i_buffer) : zero(SVector{3,TF})
-    hessian = GS ? FastMultipole.get_hessian(target_buffer, i_buffer) : zero(SMatrix{3,3,TF,9})
+    scalar_potential = PS ? FastMultipole.get_scalar_potential(target_buffer, switch, i_buffer) : zero(TF)
+    velocity = VS ? FastMultipole.get_gradient(target_buffer, switch, i_buffer) : zero(SVector{3,TF})
+    hessian = GS ? FastMultipole.get_hessian(target_buffer, switch, i_buffer) : zero(SMatrix{3,3,TF,9})
 
     # update system
     target_system.potential[i_POTENTIAL[1], i_target] = scalar_potential
@@ -127,7 +127,7 @@ We note that the convenience functions `get_gradient` and `get_hessian` return `
 The last required interface function is [`FastMultipole.direct!`](@ref), which evaluates the potential at a target system using a source system without multipole acceleration. This is required in an FMM call for those interactions that are too close to be approximated by expansions. It is also useful for debugging and testing the accuracy of the FMM call. Overloading for `::Gravitational` systems, we have:
 
 ```@example guidedex
-function FastMultipole.direct!(target_system, target_index, ::DerivativesSwitch{PS,VS,GS}, source_system::Gravitational, source_buffer, source_index) where {PS,VS,GS}
+function FastMultipole.direct!(target_system, target_index, switch::DerivativesSwitch{PS,VS,GS}, source_system::Gravitational, source_buffer, source_index) where {PS,VS,GS}
     @inbounds for i_source in source_index
         source_x, source_y, source_z = FastMultipole.get_position(source_buffer, i_source)
         source_strength = FastMultipole.get_strength(source_buffer, source_system, i_source)[1]
@@ -141,11 +141,11 @@ function FastMultipole.direct!(target_system, target_index, ::DerivativesSwitch{
                 r = sqrt(r2)
                 if PS
                     dϕ = source_strength / r * FastMultipole.ONE_OVER_4π
-                    FastMultipole.set_scalar_potential!(target_system, j_target, dϕ)
+                    FastMultipole.set_scalar_potential!(target_system, switch, j_target, dϕ)
                 end
                 if VS
                     dF = SVector{3}(dx,dy,dz) * source_strength / (r2 * r) * FastMultipole.ONE_OVER_4π
-                    FastMultipole.set_gradient!(target_system, j_target, dF)
+                    FastMultipole.set_gradient!(target_system, switch, j_target, dF)
                 end
             end
         end
@@ -156,6 +156,9 @@ Note that the velocity gradient is not calculated in this function. If the veloc
 
 !!! tip
     Use the boolean type parameters of the `::DerivativesSwitch{PS,GS,HS}` argument when overloading the `direct!` to know when to compute the scalar potential, its gradient, and its hessian, respectively. This can save cost by avoiding unnecessary calculations.
+
+!!! note
+    The hard-coded target buffer rows `4`, `5:7`, and `8:16` are valid only when `metadata=0` and only when all preceding standard outputs are enabled. New overloads should use the switch-aware getter and setter functions shown above. A `DerivativesSwitch(true, true, false)` call still works and creates `DerivativesSwitch{true,true,false,0,0}`.
 
 ## Running the FMM
 
@@ -217,3 +220,6 @@ Note that the second call to `fmm!` allocates less memory.
 
 !!! tip
     If you plan to call `fmm!` multiple times on the same system, consider preallocating the buffers by saving the `cache` returned by the first call, and splatting it as a keyword argument for each subsequent call. This can reduce memory allocations and improve performance.
+
+!!! warning
+    Caches are tied to the requested target buffer layout. Changing `scalar_potential`, `gradient`, `hessian`, `metadata`, or `extra_outputs` requires a cache with the matching switch layout or a new cache.

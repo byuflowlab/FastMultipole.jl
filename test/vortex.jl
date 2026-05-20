@@ -78,7 +78,7 @@ end
 
 fmm.body_to_multipole!(system::VortexParticles, args...) = body_to_multipole!(Point{Vortex}, system, args...)
 
-function fmm.direct!(target_system::Matrix{TF}, target_index, ::FastMultipole.DerivativesSwitch{S,V,VG}, source_system::VortexParticles, source_buffer, source_index) where {TF,S,V,VG}
+function fmm.direct!(target_system::Matrix{TF}, target_index, derivatives_switch::FastMultipole.DerivativesSwitch{S,V,VG}, source_system::VortexParticles, source_buffer, source_index) where {TF,S,V,VG}
     for j_source in source_index
         x_source = FastMultipole.get_position(source_buffer, j_source)
         Γx, Γy, Γz = FastMultipole.get_strength(source_buffer,  source_system, j_source)
@@ -102,7 +102,7 @@ function fmm.direct!(target_system::Matrix{TF}, target_index, ::FastMultipole.De
                     vx = (dz * Γy - dy * Γz) * denom
                     vy = (dx * Γz - dz * Γx) * denom
                     vz = (dy * Γx - dx * Γy) * denom
-                    FastMultipole.set_gradient!(target_system, i_target, SVector{3,TF}(vx,vy,vz))
+                    FastMultipole.set_gradient!(target_system, derivatives_switch, i_target, SVector{3,TF}(vx,vy,vz))
                 end
 
                 # vector gradient
@@ -117,7 +117,7 @@ function fmm.direct!(target_system::Matrix{TF}, target_index, ::FastMultipole.De
                     vzx = (-3 * dz * (Γy * dz - Γz * dy) + Γy * r2) * denom
                     vzy = (-3 * dz * (Γz * dx - Γx * dz) - Γx * r2) * denom
                     vzz = -3 * dz * (Γx * dy - Γy * dx) * denom
-                    FastMultipole.set_hessian!(target_system, i_target, SMatrix{3,3,TF,9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz))
+                    FastMultipole.set_hessian!(target_system, derivatives_switch, i_target, SMatrix{3,3,TF,9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz))
                 end
 
             end
@@ -125,11 +125,11 @@ function fmm.direct!(target_system::Matrix{TF}, target_index, ::FastMultipole.De
     end
 end
 
-function FastMultipole.buffer_to_target_system!(target_system::VortexParticles, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+function FastMultipole.buffer_to_target_system!(target_system::VortexParticles, i_target, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
     # retrieve fields
     TF = eltype(target_system)
-    gradient = GS ? FastMultipole.get_gradient(target_buffer, i_buffer) : zero(SVector{3,TF})
-    hessian = HS ? FastMultipole.get_hessian(target_buffer, i_buffer) : zero(SMatrix{3,3,TF,9})
+    gradient = GS ? FastMultipole.get_gradient(target_buffer, derivatives_switch, i_buffer) : zero(SVector{3,TF})
+    hessian = HS ? FastMultipole.get_hessian(target_buffer, derivatives_switch, i_buffer) : zero(SMatrix{3,3,TF,9})
 
     # update system
     if GS
@@ -140,11 +140,15 @@ function FastMultipole.buffer_to_target_system!(target_system::VortexParticles, 
     end
 end
 
-function FastMultipole.get_previous_influence(system::VortexParticles, i)
-    phi_last = zero(eltype(system))
-    gradient_last = SVector{3}(system.gradient_stretching[1,i], system.gradient_stretching[2,i], system.gradient_stretching[3,i])
+FastMultipole.metadata_per_body(system::VortexParticles) = 2
+FastMultipole.previous_potential_metadata_index(system::VortexParticles) = 1
+FastMultipole.previous_gradient_metadata_index(system::VortexParticles) = 2
 
-    return phi_last, norm(gradient_last)
+function FastMultipole.metadata_to_buffer!(buffer, switch, i_buffer, system::VortexParticles, i_body)
+    previous_potential = zero(eltype(system))
+    previous_gradient = norm(SVector{3}(system.gradient_stretching[1, i_body], system.gradient_stretching[2, i_body], system.gradient_stretching[3, i_body]))
+    buffer[FastMultipole.metadata_index(switch, 1), i_buffer] = previous_potential
+    buffer[FastMultipole.metadata_index(switch, 2), i_buffer] = previous_gradient
 end
 
 function FastMultipole.has_vector_potential(system::VortexParticles)

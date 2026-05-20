@@ -820,15 +820,53 @@ end
     return SVector{n}(input...)
 end
 
-fmm!(system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, optargs...) = fmm!(system, Cache(to_tuple(system), to_tuple(system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(system))); scalar_potential, gradient, hessian, leaf_size, optargs...)
+fmm!(system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...) = fmm!(system, Cache(to_tuple(system), to_tuple(system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(system); extra_outputs, metadata)); scalar_potential, gradient, hessian, leaf_size, extra_outputs, metadata, optargs...)
 
-fmm!(target_system, source_system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, optargs...) = fmm!(target_system, source_system, Cache(to_tuple(target_system), to_tuple(source_system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(target_system))); scalar_potential, gradient, hessian, leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
+fmm!(target_system, source_system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...) = fmm!(target_system, source_system, Cache(to_tuple(target_system), to_tuple(source_system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(target_system); extra_outputs, metadata)); scalar_potential, gradient, hessian, leaf_size_source=leaf_size, leaf_size_target=nothing, extra_outputs, metadata, optargs...)
 
 fmm!(system, cache::Cache; leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
 
 function fmm!(target_systems, source_systems, cache::Cache; optargs...)
     # promote arguments to Tuples and dispatch to the main method
     return fmm!(to_tuple(target_systems), to_tuple(source_systems), cache; optargs...)
+end
+
+function validate_cache_compatibility(cache::Cache, target_systems::Tuple, source_systems::Tuple, switches::Tuple)
+    length(cache.target_buffers) == length(target_systems) ||
+        throw(ArgumentError("cache target buffer count does not match target systems"))
+    length(cache.target_small_buffers) == length(target_systems) ||
+        throw(ArgumentError("cache target small-buffer count does not match target systems"))
+    length(cache.source_buffers) == length(source_systems) ||
+        throw(ArgumentError("cache source buffer count does not match source systems"))
+    length(cache.source_small_buffers) == length(source_systems) ||
+        throw(ArgumentError("cache source small-buffer count does not match source systems"))
+
+    for (i, (system, switch, buffer, small_buffer)) in enumerate(zip(target_systems, switches, cache.target_buffers, cache.target_small_buffers))
+        expected_rows = target_buffer_rows(switch)
+        size(buffer, 1) == expected_rows ||
+            throw(ArgumentError("cache target buffer $i has $(size(buffer, 1)) rows, expected $expected_rows for the requested derivative switch layout"))
+        size(buffer, 2) == get_n_bodies(system) ||
+            throw(ArgumentError("cache target buffer $i has $(size(buffer, 2)) bodies, expected $(get_n_bodies(system))"))
+
+        expected_small_rows = length(tree_carried_range(switch))
+        size(small_buffer, 1) == expected_small_rows ||
+            throw(ArgumentError("cache target small buffer $i has $(size(small_buffer, 1)) rows, expected $expected_small_rows for the requested metadata layout"))
+        size(small_buffer, 2) == get_n_bodies(system) ||
+            throw(ArgumentError("cache target small buffer $i has $(size(small_buffer, 2)) bodies, expected $(get_n_bodies(system))"))
+    end
+
+    for (i, (system, buffer, small_buffer)) in enumerate(zip(source_systems, cache.source_buffers, cache.source_small_buffers))
+        size(buffer, 1) == data_per_body(system) ||
+            throw(ArgumentError("cache source buffer $i has $(size(buffer, 1)) rows, expected $(data_per_body(system))"))
+        size(buffer, 2) == get_n_bodies(system) ||
+            throw(ArgumentError("cache source buffer $i has $(size(buffer, 2)) bodies, expected $(get_n_bodies(system))"))
+        size(small_buffer, 1) == 4 ||
+            throw(ArgumentError("cache source small buffer $i has $(size(small_buffer, 1)) rows, expected 4"))
+        size(small_buffer, 2) == get_n_bodies(system) ||
+            throw(ArgumentError("cache source small buffer $i has $(size(small_buffer, 2)) bodies, expected $(get_n_bodies(system))"))
+    end
+
+    return nothing
 end
 
 """
@@ -875,25 +913,27 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 - `scalar_potential::Union{Bool,AbstractVector{Bool}}`: whether to compute the scalar potential; default is `false`
 - `gradient::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector field; default is `true`
 - `hessian::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector gradient; default is `false`
+- `extra_outputs::Union{Int,AbstractVector{Int}}`: number of extra accumulated target output rows; default is `0`
+- `metadata::Union{Nothing,Int,AbstractVector{Int}}`: number of metadata rows carried with target positions; `nothing` infers [`metadata_per_body`](@ref)
 - `extra_farfield::Bool`: whether to compute extra farfield interactions; default is `false`
 
 """
 function fmm!(target_systems::Tuple, source_systems::Tuple;
-    scalar_potential=false, gradient=true, hessian=false, optargs...
+    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing, optargs...
 )
     # allocate cache with actual derivatives switches
     scalar_potential_v = to_vector(scalar_potential, length(target_systems))
     gradient_v = to_vector(gradient, length(target_systems))
     hessian_v = to_vector(hessian, length(target_systems))
-    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems)
+    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; extra_outputs, metadata)
     cache = Cache(target_systems, source_systems, derivatives_switches)
-    return fmm!(target_systems, source_systems, cache; scalar_potential, gradient, hessian, optargs...)
+    return fmm!(target_systems, source_systems, cache; scalar_potential, gradient, hessian, extra_outputs, metadata, optargs...)
 end
 
 function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     leaf_size_target=nothing,
     leaf_size_source=default_leaf_size(source_systems),
-    scalar_potential=false, gradient=true, hessian=false,
+    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing,
     expansion_order=5,
     error_tolerance=nothing,
     shrink=true, recenter=false,
@@ -910,7 +950,11 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     hessian = to_vector(hessian, length(target_systems))
 
     # assemble derivatives switch
-    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
+    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems; extra_outputs, metadata)
+
+    validate_cache_compatibility(cache, target_systems, source_systems, derivatives_switches)
+
+    warn_missing_previous_influence_metadata(target_systems, error_tolerance)
 
     # promote leaf_size to vector
     leaf_size_source = to_vector(leaf_size_source, length(source_systems))

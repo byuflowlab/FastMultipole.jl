@@ -126,7 +126,7 @@ Gammas = [
 vortexparticles = VortexParticles(xs, Gammas)
 source_buffer = FastMultipole.system_to_buffer(vortexparticles)
 switch = DerivativesSwitch(true, true, true)
-target_buffer = FastMultipole.target_to_buffer(vortexparticles, true, switch)
+target_buffer = FastMultipole.target_to_buffer(vortexparticles, switch)
 
 # using direct method
 direct!((vortexparticles,); hessian=true)
@@ -204,7 +204,7 @@ FastMultipole.evaluate_local!(target_buffer, 1, tree, 2, harmonics, gradient_n_m
 FastMultipole.evaluate_local!(target_buffer, 1, tree, 3, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
 
 # update system
-FastMultipole.buffer_to_target!(vortexparticles, target_buffer, DerivativesSwitch(false, true, true), 1:FastMultipole.get_n_bodies(vortexparticles))
+FastMultipole.buffer_to_target!(vortexparticles, target_buffer, switch, 1:FastMultipole.get_n_bodies(vortexparticles))
 
 update_gradient_stretching!(vortexparticles)
 
@@ -234,7 +234,7 @@ bodies = [
 vortex_particles = VortexParticles(bodies)
 source_buffer = FastMultipole.system_to_buffer(vortex_particles)
 switch = DerivativesSwitch(true, true, true)
-target_buffer = FastMultipole.target_to_buffer(vortex_particles, true, switch)
+target_buffer = FastMultipole.target_to_buffer(vortex_particles, switch)
 
 #####
 ##### obtain psi, u, and stretching analytically
@@ -326,12 +326,12 @@ FastMultipole.multipole_to_local!(local_coefficients_3, branch_3, multipole_coef
 # evaluate multipoles
 gradient_n_m = FastMultipole.initialize_gradient_n_m(expansion_order)
 harmonics = FastMultipole.initialize_harmonics(expansion_order)
-derivatives_switches = DerivativesSwitch(true, true, true, (vortex_particles,))
+derivatives_switches = DerivativesSwitch(false, true, true, (vortex_particles,))
 
 FastMultipole.evaluate_local!(target_buffer, 1, tree, 2, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
 FastMultipole.evaluate_local!(target_buffer, 1, tree, 3, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
 
-FastMultipole.buffer_to_target!(vortex_particles, target_buffer, DerivativesSwitch(false, true, true), 1:FastMultipole.get_n_bodies(vortex_particles))
+FastMultipole.buffer_to_target!(vortex_particles, target_buffer, switch, 1:FastMultipole.get_n_bodies(vortex_particles))
 
 update_gradient_stretching!(vortex_particles)
 # hessians_fmm.= deepcopy(reshape(vortex_particles.potential[i_POTENTIAL_HESSIAN[10:end],:],3,3,3,2))
@@ -387,7 +387,7 @@ bodies = [
 vortex_particles = VortexParticles(bodies)
 source_buffer = FastMultipole.system_to_buffer(vortex_particles)
 switch = DerivativesSwitch(true, true, true)
-target_buffer = FastMultipole.target_to_buffer(vortex_particles, true, switch)
+target_buffer = FastMultipole.target_to_buffer(vortex_particles, switch)
 
 psis = zeros(3,3)
 psis[:,1] = psi(bodies[1:3,1], bodies[1:3,2], bodies[5:7,2]) + psi(bodies[1:3,1], bodies[1:3,3], bodies[5:7,3])
@@ -437,7 +437,7 @@ vortex_particles.gradient_stretching .*= 0
 expansion_order = 20
 leaf_size = SVector{1}(1)
 
-switches = DerivativesSwitch(true, true, true, (vortex_particles,))
+switches = DerivativesSwitch(false, true, true, (vortex_particles,))
 source_tree = FastMultipole.Tree((vortex_particles,), false, switches; expansion_order, leaf_size, shrink=false, recenter=false)
 target_tree = FastMultipole.Tree((vortex_particles,), true, switches; expansion_order, leaf_size, shrink=false, recenter=false)
 
@@ -498,4 +498,3 @@ potential7 = system.potential[1,:]
 @test isapprox(maximum(abs.(potential7 - validation_potential)), 0.0; atol=1e-10)
 
 end
-

@@ -81,11 +81,15 @@ function FastMultipole.has_vector_potential(system::Gravitational)
     return false
 end
 
-function FastMultipole.get_previous_influence(system::Gravitational, i)
-    phi_last = system.potential[1,i]
-    gradient_last = SVector{3}(system.potential[5,i], system.potential[6,i], system.potential[7,i])
+FastMultipole.metadata_per_body(system::Gravitational) = 2
+FastMultipole.previous_potential_metadata_index(system::Gravitational) = 1
+FastMultipole.previous_gradient_metadata_index(system::Gravitational) = 2
 
-    return phi_last, norm(gradient_last)
+function FastMultipole.metadata_to_buffer!(buffer, switch, i_buffer, system::Gravitational, i_body)
+    previous_potential = system.potential[1, i_body]
+    previous_gradient = norm(SVector{3}(system.potential[5, i_body], system.potential[6, i_body], system.potential[7, i_body]))
+    buffer[FastMultipole.metadata_index(switch, 1), i_buffer] = previous_potential
+    buffer[FastMultipole.metadata_index(switch, 2), i_buffer] = previous_gradient
 end
 
 function FastMultipole.direct!(target_system, target_index, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, source_system::Gravitational, source_buffer, source_index) where {PS,GS,HS}
@@ -111,17 +115,17 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch::
                 end
             end
         end
-        PS && FastMultipole.set_scalar_potential!(target_system, j_target, dϕ)
-        GS && FastMultipole.set_gradient!(target_system, j_target, d∇ϕ)
+        PS && FastMultipole.set_scalar_potential!(target_system, derivatives_switch, j_target, dϕ)
+        GS && FastMultipole.set_gradient!(target_system, derivatives_switch, j_target, d∇ϕ)
     end
 end
 
-function FastMultipole.buffer_to_target_system!(target_system::Gravitational, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+function FastMultipole.buffer_to_target_system!(target_system::Gravitational, i_target, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
     # get values
     TF = eltype(target_buffer)
-    scalar_potential = PS ? FastMultipole.get_scalar_potential(target_buffer, i_buffer) : zero(TF)
-    gradient = GS ? FastMultipole.get_gradient(target_buffer, i_buffer) : zero(SVector{3,TF})
-    hessian = HS ? FastMultipole.get_hessian(target_buffer, i_buffer) : zero(SMatrix{3,3,TF,9})
+    scalar_potential = PS ? FastMultipole.get_scalar_potential(target_buffer, derivatives_switch, i_buffer) : zero(TF)
+    gradient = GS ? FastMultipole.get_gradient(target_buffer, derivatives_switch, i_buffer) : zero(SVector{3,TF})
+    hessian = HS ? FastMultipole.get_hessian(target_buffer, derivatives_switch, i_buffer) : zero(SMatrix{3,3,TF,9})
 
     # update system
     target_system.potential[i_POTENTIAL[1], i_target] = scalar_potential

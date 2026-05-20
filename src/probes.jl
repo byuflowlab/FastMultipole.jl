@@ -59,32 +59,32 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch, 
     return nothing
 end
 
-function FastMultipole.buffer_to_target_system!(target_system::ProbeSystemStatic, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+function FastMultipole.buffer_to_target_system!(target_system::ProbeSystemStatic, i_target, switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
     if PS
-        scalar_potential = FastMultipole.get_scalar_potential(target_buffer, i_buffer)
+        scalar_potential = FastMultipole.get_scalar_potential(target_buffer, switch, i_buffer)
         target_system.scalar_potential[i_target] += scalar_potential
     end
     if GS
-        gradient = FastMultipole.get_gradient(target_buffer, i_buffer)
+        gradient = FastMultipole.get_gradient(target_buffer, switch, i_buffer)
         target_system.gradient[i_target] += gradient
     end
     if HS        
-        hessian = FastMultipole.get_hessian(target_buffer, i_buffer)
+        hessian = FastMultipole.get_hessian(target_buffer, switch, i_buffer)
         target_system.hessian[i_target] += hessian
     end
 end
 
-function FastMultipole.buffer_to_target_system!(target_system::ProbeSystemArray, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+function FastMultipole.buffer_to_target_system!(target_system::ProbeSystemArray, i_target, switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
     if PS
-        scalar_potential = FastMultipole.get_scalar_potential(target_buffer, i_buffer)
+        scalar_potential = FastMultipole.get_scalar_potential(target_buffer, switch, i_buffer)
         target_system.scalar_potential[i_target] += scalar_potential
     end
     if GS
-        gradient = FastMultipole.get_gradient(target_buffer, i_buffer)
+        gradient = FastMultipole.get_gradient(target_buffer, switch, i_buffer)
         target_system.gradient[:, i_target] .+= gradient
     end
     if HS        
-        hessian = FastMultipole.get_hessian(target_buffer, i_buffer)
+        hessian = FastMultipole.get_hessian(target_buffer, switch, i_buffer)
         target_system.hessian[:, :, i_target] .+= hessian
     end
 end

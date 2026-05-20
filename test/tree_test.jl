@@ -61,6 +61,41 @@
     end
 # end
 
+@testset "octree creation: source radius stop" begin
+    n_bodies = 8
+    positions = rand(3, n_bodies)
+    radii = fill(1.0, n_bodies)
+    strengths = rand(n_bodies)
+    source = Gravitational(vcat(positions, radii', strengths', zeros(3, n_bodies)))
+    switches = DerivativesSwitch(false, false, false, (source,))
+
+    tree = FastMultipole.Tree((source,), false, switches; leaf_size=SVector{1}(1), shrink=false, recenter=false)
+
+    @test length(tree.branches) == 1
+    @test tree.branches[1].n_branches == 0
+    @test all(tree.buffers[1][4, :] .== 1.0)
+end
+
+@testset "octree creation: multiple source radii" begin
+    n_bodies = 12
+    positions_1 = rand(3, n_bodies)
+    positions_2 = rand(3, n_bodies) .+ 2.0
+    radii_1 = range(0.01, 0.12; length=n_bodies)
+    radii_2 = range(0.02, 0.24; length=n_bodies)
+    strengths = rand(n_bodies)
+    source_1 = Gravitational(vcat(positions_1, collect(radii_1)', strengths', zeros(3, n_bodies)))
+    source_2 = Gravitational(vcat(positions_2, collect(radii_2)', strengths', zeros(3, n_bodies)))
+    switches = DerivativesSwitch(false, false, false, (source_1, source_2))
+
+    tree = FastMultipole.Tree((source_1, source_2), false, switches; leaf_size=SVector{2}(2,2), shrink=false, recenter=false)
+
+    for (buffer, source, sort_index) in zip(tree.buffers, (source_1, source_2), tree.sort_index_list)
+        for i_body in 1:n_bodies
+            @test buffer[4, i_body] == source.bodies[sort_index[i_body]].radius
+        end
+    end
+end
+
 @testset "octree creation: shrinking" begin
 
     # build list of elements to sort
@@ -107,6 +142,11 @@
     @test isapprox(test_source_center, source_center; atol=1e-12)
     @test isapprox(test_source_radius, source_radius; atol=1e-12)
     @test isapprox(test_source_box, source_box; atol=1e-12)
+
+    # Use point-like sources for the detailed branch geometry checks below.
+    radii = zeros(Float64, size(xs,1))
+    bodies = vcat(xs',radii',ms',zeros(3,length(ms)))
+    elements = Gravitational(bodies)
 
     # test branch! function
     expansion_order, leaf_size, multipole_acceptance = 2, SVector{1}(1), 0.5
@@ -191,7 +231,7 @@ bodies = rand(8,n_bodies)
 system = (Gravitational(bodies),)
 
 switches = DerivativesSwitch(true, true, true, (elements,))
-tree = fmm.Tree(system, false, switches; leaf_size=SVector{1}(5))
+tree = FastMultipole.Tree(system, false, switches; leaf_size=SVector{1}(5))
 leaf_index = tree.leaf_index
 
 i_leaf = 1
@@ -210,7 +250,7 @@ n_bodies = 5
 bodies = rand(8,n_bodies)
 system = (Gravitational(bodies),)
 switches = DerivativesSwitch(true, true, true, (system,))
-tree = fmm.Tree(system, true, switches; leaf_size=SVector{1}(5))
+tree = FastMultipole.Tree(system, true, switches; leaf_size=SVector{1}(5))
 
 # fill potential with index
 for i in 1:FastMultipole.get_n_bodies(system)

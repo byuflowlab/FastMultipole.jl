@@ -35,11 +35,11 @@ function evaluate_local!(system, bodies_index, harmonics, gradient_n_m, local_ex
         pos = get_position(system, i_body)
         scalar_potential, gradient, hessian = evaluate_local(pos - expansion_center, harmonics, gradient_n_m, local_expansion, expansion_order, lamb_helmholtz, derivatives_switch)
 
-        PS && set_scalar_potential!(system, i_body, scalar_potential)
+        PS && set_scalar_potential!(system, derivatives_switch, i_body, scalar_potential)
 
-        GS && set_gradient!(system, i_body, gradient)
+        GS && set_gradient!(system, derivatives_switch, i_body, gradient)
 
-        HS && set_hessian!(system, i_body, hessian)
+        HS && set_hessian!(system, derivatives_switch, i_body, hessian)
     end
 end
 
@@ -397,4 +397,3 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
 
     return u * ONE_OVER_4π, SVector{3}(vx,vy,vz) * ONE_OVER_4π, SMatrix{3,3,eltype(local_expansion),9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz) * ONE_OVER_4π
 end
-

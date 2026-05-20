@@ -45,32 +45,6 @@ function get_position(system, i)
 end
 
 """
-    get_previous_influence(system::{UserDefinedSystem}, i)
-
-Returns the influence of the `i`th body in `system` from the previous FMM call. The relative error is predicted by dividing the absolute error by the result of this function. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system).
-
-**NOTE:** If not overloaded, the default behavior is to return zero for both the scalar potential and vector field, effectively ignoring the relative tolerance in favor of an absolute tolerance.
-
-**Arguments:**
-
-- `system::{UserDefinedSystem}`: the user-defined system object
-- `i::Int`: the index of the body within the system
-
-**Returns:**
-
-- `previous_potential::Float64`: the previous scalar potential at the `i`th body
-- `previous_vector::SVector{3,Float64}`: the previous vector field at the `i`th body
-
-"""
-function get_previous_influence(system, i)
-    if WARNING_FLAG_MAX_INFLUENCE[]
-        @warn "get_previous_influence not overloaded for type $(typeof(system)); relative error prediction will not be used"
-        WARNING_FLAG_MAX_INFLUENCE[] = false
-    end
-    return zero(numtype(system)), zero(numtype(system))
-end
-
-"""
     strength_dims(system::{UserDefinedSystem})
 
 Returns the cardinality of the vector used to define the strength of each body inside `system`. E.g., a point mass would return 1, and a point dipole would return 3. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system).
@@ -182,17 +156,13 @@ end
 
 Compatibility function used to update target systems. It should be overloaded for each system (where `{UserDefinedSystem}` is replaced with the type of the user-defined system) to be a target and should behave as follows. For the `i_body`th body contained inside of `target_system`,
 
-* `target_buffer[4, i_buffer]` contains the scalar potential influence to be added to the `i_target` body of `target_system`
-* `target_buffer[5:7, i_buffer]` contains the vector field influence to be added to the `i_target` body of `target_system`
-* `target_buffer[8:16, i_buffer]` contains the vector field gradient to be added to the `i_target` body of `target_system`
+* `get_scalar_potential(target_buffer, derivatives_switch, i_buffer)` contains the scalar potential influence to be added to the `i_target` body of `target_system`, when scalar potential output is enabled
+* `get_gradient(target_buffer, derivatives_switch, i_buffer)` contains the vector field influence to be added to the `i_target` body of `target_system`, when gradient output is enabled
+* `get_hessian(target_buffer, derivatives_switch, i_buffer)` contains the vector field gradient to be added to the `i_target` body of `target_system`, when hessian output is enabled
 
 Note that any system acting only as a source (and not as a target) need not overload `buffer_to_target_system!`.
 
-The following convenience functions can may be used to access the buffer:
-
-* `get_scalar_potential(target_buffer, i_buffer::Int)`: returns the scalar potential induced at the `i_buffer` body in `target_buffer`
-* `get_gradient(target_buffer, i_buffer::Int)`: returns an SVector of length 3 containing the vector field induced at the `i_buffer` body in `target_buffer`
-* `get_hessian(target_buffer, i_buffer::Int)`: returns an SMatrix of size 3x3 containing the vector gradient induced at the `i_buffer` body in `target_buffer`
+Target buffers are compact when metadata or disabled outputs are involved. The no-switch matrix getters still read the legacy rows `4`, `5:7`, and `8:16`, but new target-buffer code should use the switch-aware getter functions.
 
 For some slight performance improvements, the booleans `PS`, `GS`, and `HS` can be used as a switch to indicate whether the scalar potential, vector field, and vector gradient are to be stored, respectively. Since they are compile-time parameters, `if` statements relying on them will not incur a runtime cost.
 
@@ -208,15 +178,11 @@ end
 
 Updates the `target_buffer` with influences from `target_system` for the `i_target`th body. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system) to be used as a target, assuming the target buffer positions have already been set. It should behave as follows:
 
-* `target_buffer[4, i_buffer]` should be set to the scalar potential at the body position
-* `target_buffer[5:7, i_buffer]` should be set to the vector field at the body position
-* `target_buffer[8:16, i_buffer]` should be set to the vector gradient at the body position
+* `set_scalar_potential!(target_buffer, derivatives_switch, i_buffer, scalar_potential)` should be used when scalar potential output is enabled
+* `set_gradient!(target_buffer, derivatives_switch, i_buffer, gradient)` should be used when gradient output is enabled
+* `set_hessian!(target_buffer, derivatives_switch, i_buffer, hessian)` should be used when hessian output is enabled
 
-The following convenience functions can may be used to access the buffer:
-
-* `set_scalar_potential!(target_buffer, i_buffer, scalar_potential)`: accumulates the `scalar_potential` to the `i_buffer` body in `target_buffer`
-* `set_gradient!(target_buffer, i_buffer, gradient)`: accumulates `gradient` to the `i_buffer` body in `target_buffer`
-* `set_hessian!(target_buffer, i_buffer, hessian)`: accumulates `hessian` to the `i_buffer` body in `target_buffer`
+The no-switch matrix setters still write legacy rows `4`, `5:7`, and `8:16`; switch-aware setters are required for compact target buffers.
 
 """
 function target_influence_to_buffer!(target_buffer, i_buffer, derivatives_switch, target_system, i_target)
@@ -292,7 +258,7 @@ function buffer_to_system_strength!(system, i_body, source_buffer, i_buffer)
 end
 
 """
-    influence!(influence, target_buffer, source_system, source_buffer)
+    influence!(influence, target_buffer, derivatives_switch, source_system, source_buffer)
 
 **NOTE:** `source_system` is provided solely for dispatch; it's member bodies will be out of order and should not be referenced.
 
@@ -304,11 +270,12 @@ Evaluate the influence as pertains to the boundary element influence matrix and 
 
 * `influence::AbstractVector{TF}`: vector containing the influence for every body in the target buffer
 * `target_buffer::Matrix{TF}`: target buffer used to compute the influence
+* `derivatives_switch::DerivativesSwitch`: target-buffer layout used to locate enabled outputs
 * `source_system::{UserDefinedSystem}`: system object used solely for dispatch
 * `source_buffer::Matrix{TF}`: source buffer used to compute the influence
 
 """
-function influence!(influence, target_buffer, source_system, source_buffer)
+function influence!(influence, target_buffer, derivatives_switch::DerivativesSwitch, source_system, source_buffer)
     error("influence! not overloaded for systems of type $(typeof(source_system))")
 end
 
@@ -382,7 +349,8 @@ end
 """
     extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
 
-Adds any extra target data required by the user-defined system to the target buffer, especially for custom solver implementations. Does nothing by default.
+Deprecated compatibility hook. New code should overload [`metadata_to_buffer!`](@ref)
+instead. This function is still called by the default `metadata_to_buffer!`.
 
 **NOTE:** Exactly `n=extra_target_data_per_body(system)` rows should be added by this function in `target_buffer[end-n-1:end-2, i_body]`.
 
@@ -394,57 +362,148 @@ end
 """
     extra_target_data_per_body(system)
 
-Returns the number of extra rows required per body in the target buffer by the user-defined system, especially for custom solver implementations. Returns `0` by default.
+Deprecated compatibility hook. New code should overload [`metadata_per_body`](@ref)
+instead. This function is still used as the default fallback for
+`metadata_per_body`.
 """
 function extra_target_data_per_body(system)
     return 0
 end
 
-function target_to_buffer!(buffers, systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
-    for (buffer,system,sort_index) in zip(buffers, systems, sort_index_list)
-        target_to_buffer!(buffer, system, target, sort_index)
+"""
+    metadata_to_buffer!(buffer, switch, i_buffer, system, i_body)
+
+Copies target metadata for `i_body` into the target buffer column `i_buffer`.
+Metadata rows occupy `metadata_range(switch)` and are sorted with positions.
+Outputs are stored after metadata and should not be written by this function.
+"""
+function metadata_to_buffer!(buffer, switch, i_buffer, system, i_body)
+    extra_target_data_to_buffer!(buffer, i_buffer, system, i_body)
+end
+
+"""
+    metadata_per_body(system)
+
+Returns the number of per-target metadata rows that should be carried through
+target tree sorting. Defaults to `extra_target_data_per_body(system)` for
+compatibility, which defaults to `0`.
+"""
+function metadata_per_body(system)
+    return extra_target_data_per_body(system)
+end
+
+"""
+    previous_potential_metadata_index(system)
+
+Returns the 1-based metadata row used as the previous scalar-potential estimate
+for relative error prediction, or `0` if unavailable.
+"""
+previous_potential_metadata_index(system) = 0
+
+"""
+    previous_gradient_metadata_index(system)
+
+Returns the 1-based metadata row used as the previous gradient-magnitude
+estimate for relative error prediction, or `0` if unavailable.
+"""
+previous_gradient_metadata_index(system) = 0
+
+target_uses_previous_influence_metadata(system) = previous_potential_metadata_index(system) > 0 && previous_gradient_metadata_index(system) > 0
+target_uses_previous_influence_metadata(system, ::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM} =
+    target_uses_previous_influence_metadata(system) &&
+    previous_potential_metadata_index(system) <= NM &&
+    previous_gradient_metadata_index(system) <= NM
+
+metadata_value(buffer, j, i_body) = j == 0 ? zero(eltype(buffer)) : buffer[3 + j, i_body]
+
+function warn_missing_previous_influence_metadata(target_systems::Tuple, error_tolerance)
+    isnothing(error_tolerance) && return nothing
+    error_tolerance isa RelativeErrorMethod || return nothing
+    for system in target_systems
+        if !target_uses_previous_influence_metadata(system) && WARNING_FLAG_MAX_INFLUENCE[]
+            @warn "relative error prediction requested but previous influence metadata indices are unavailable for type $(typeof(system)); falling back to absolute tolerance behavior"
+            WARNING_FLAG_MAX_INFLUENCE[] = false
+            return nothing
+        end
+    end
+    return nothing
+end
+
+function metadata_vector(metadata, target_systems::Tuple)
+    isnothing(metadata) && return [metadata_per_body(system) for system in target_systems]
+    return to_vector(metadata, length(target_systems))
+end
+
+function target_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]), switches=DerivativesSwitch(true, true, true, systems))
+    @assert length(switches) == length(systems) "target switches must match target systems"
+    for (buffer, system, sort_index, switch) in zip(buffers, systems, sort_index_list, switches)
+        target_to_buffer!(buffer, system, sort_index, switch)
     end
 end
 
-function target_to_buffer!(buffer::Matrix, system, target::Bool, sort_index=1:get_n_bodies(system))
+function target_to_buffer!(buffer::Matrix, system, sort_index=1:get_n_bodies(system), switch=DerivativesSwitch(true, true, true, system))
     if Threads.nthreads() > 1 && get_n_bodies(system) > MIN_BODIES
-        target_to_buffer_multithread!(buffer, system, target, sort_index)
+        target_to_buffer_multithread!(buffer, system, sort_index, switch)
     else
         for i_body in 1:get_n_bodies(system)
             i_sorted = sort_index[i_body]
             buffer[1:3, i_body] .= get_position(system, i_sorted)
-            if target
-                prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
-                extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
-                buffer[end-1, i_body] = prev_potential # 17th row if hessian=true
-                buffer[end, i_body] = prev_velocity # 18th row if hessian=true
-            end
+            metadata_to_buffer!(buffer, switch, i_body, system, i_sorted)
         end
     end
 end
 
-function target_to_buffer_multithread!(buffer::Matrix, system, target::Bool, sort_index=1:get_n_bodies(system))
+function target_to_buffer_multithread!(buffer::Matrix, system, sort_index=1:get_n_bodies(system), switch=DerivativesSwitch(true, true, true, system))
     Threads.@threads for i_body in 1:get_n_bodies(system)
         i_sorted = sort_index[i_body]
         buffer[1:3, i_body] .= get_position(system, i_sorted)
-        if target
-            prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
-            extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
-            buffer[end-1, i_body] = prev_potential # 17th row if hessian=true
-            buffer[end, i_body] = prev_velocity # 18th row if hessian=true
+        metadata_to_buffer!(buffer, switch, i_body, system, i_sorted)
+    end
+end
+
+function source_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
+    for (buffer, system, sort_index) in zip(buffers, systems, sort_index_list)
+        source_to_buffer!(buffer, system, sort_index)
+    end
+end
+
+function source_to_buffer!(buffer::Matrix, system, sort_index=1:get_n_bodies(system))
+    if Threads.nthreads() > 1 && get_n_bodies(system) > MIN_BODIES
+        source_to_buffer_multithread!(buffer, system, sort_index)
+    else
+        for i_body in 1:get_n_bodies(system)
+            source_system_to_buffer!(buffer, i_body, system, sort_index[i_body])
         end
     end
 end
 
-function target_to_buffer(systems::Tuple, target::Bool, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]), switches=DerivativesSwitch(true, true, true, systems))
+function source_to_buffer_multithread!(buffer::Matrix, system, sort_index=1:get_n_bodies(system))
+    Threads.@threads for i_body in 1:get_n_bodies(system)
+        source_system_to_buffer!(buffer, i_body, system, sort_index[i_body])
+    end
+end
+
+function target_to_buffer(systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]), switches=DerivativesSwitch(true, true, true, systems))
     buffers = allocate_buffers(systems, true, get_type(systems), switches)
-    target_to_buffer!(buffers, systems, target, sort_index_list)
+    target_to_buffer!(buffers, systems, sort_index_list, switches)
     return buffers
 end
 
-function target_to_buffer(system, target::Bool, switch::DerivativesSwitch, sort_index=1:get_n_bodies(system))
+function target_to_buffer(system, switch::DerivativesSwitch, sort_index=1:get_n_bodies(system))
     buffer = allocate_target_buffer(numtype(system), system, switch)
-    target_to_buffer!(buffer, system, target, sort_index)
+    target_to_buffer!(buffer, system, sort_index, switch)
+    return buffer
+end
+
+function source_to_buffer(systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
+    buffers = allocate_buffers(systems, false, get_type(systems), DerivativesSwitch(false, false, false, systems))
+    source_to_buffer!(buffers, systems, sort_index_list)
+    return buffers
+end
+
+function source_to_buffer(system, sort_index=1:get_n_bodies(system))
+    buffer = allocate_source_buffer(numtype(system), system)
+    source_to_buffer!(buffer, system, sort_index)
     return buffer
 end
 
@@ -538,13 +597,27 @@ function get_position(system::AbstractMatrix{TF}, i) where TF
 end
 
 get_scalar_potential(system::AbstractMatrix, i) = @inbounds system[4, i]
+get_scalar_potential(system::AbstractMatrix, switch::DerivativesSwitch{true,<:Any,<:Any}, i) = @inbounds system[scalar_potential_index(switch), i]
+get_scalar_potential(system::AbstractMatrix, ::DerivativesSwitch{false,<:Any,<:Any}, i) =
+    throw(ArgumentError("scalar potential output is disabled for this target buffer"))
 
 get_gradient(system::AbstractMatrix{TF}, i) where TF = @inbounds SVector{3,TF}(system[5,i], system[6,i], system[7,i])
+get_gradient(system::AbstractMatrix{TF}, switch::DerivativesSwitch{<:Any,true,<:Any}, i) where TF = @inbounds SVector{3,TF}(system[gradient_range(switch)[1],i], system[gradient_range(switch)[2],i], system[gradient_range(switch)[3],i])
+get_gradient(system::AbstractMatrix, ::DerivativesSwitch{<:Any,false,<:Any}, i) =
+    throw(ArgumentError("gradient output is disabled for this target buffer"))
 
 get_hessian(system::AbstractMatrix{TF}, i) where TF =
     @inbounds SMatrix{3,3,TF,9}(system[8, i], system[9, i], system[10, i],
     system[11, i], system[12, i], system[13, i],
     system[14, i], system[15, i], system[16, i])
+function get_hessian(system::AbstractMatrix{TF}, switch::DerivativesSwitch{<:Any,<:Any,true}, i) where TF
+    r = hessian_range(switch)
+    return @inbounds SMatrix{3,3,TF,9}(system[r[1], i], system[r[2], i], system[r[3], i],
+    system[r[4], i], system[r[5], i], system[r[6], i],
+    system[r[7], i], system[r[8], i], system[r[9], i])
+end
+get_hessian(system::AbstractMatrix, ::DerivativesSwitch{<:Any,<:Any,false}, i) =
+    throw(ArgumentError("hessian output is disabled for this target buffer"))
 
 get_n_bodies(sys::AbstractMatrix) = size(sys, 2)
 
@@ -559,6 +632,11 @@ Accumulates `scalar_potential` to `target_buffer`.
 function set_scalar_potential!(system::Matrix, i, scalar_potential)
     @inbounds system[4, i] += scalar_potential
 end
+function set_scalar_potential!(system::Matrix, switch::DerivativesSwitch{true,<:Any,<:Any}, i, scalar_potential)
+    @inbounds system[scalar_potential_index(switch), i] += scalar_potential
+end
+set_scalar_potential!(system::Matrix, ::DerivativesSwitch{false,<:Any,<:Any}, i, scalar_potential) =
+    throw(ArgumentError("scalar potential output is disabled for this target buffer"))
 
 """
     set_gradient!(target_buffer, i_body, gradient)
@@ -571,6 +649,14 @@ function set_gradient!(system::Matrix, i, gradient)
     @inbounds system[6,i] += gradient[2]
     @inbounds system[7,i] += gradient[3]
 end
+function set_gradient!(system::Matrix, switch::DerivativesSwitch{<:Any,true,<:Any}, i, gradient)
+    r = gradient_range(switch)
+    @inbounds system[r[1],i] += gradient[1]
+    @inbounds system[r[2],i] += gradient[2]
+    @inbounds system[r[3],i] += gradient[3]
+end
+set_gradient!(system::Matrix, ::DerivativesSwitch{<:Any,false,<:Any}, i, gradient) =
+    throw(ArgumentError("gradient output is disabled for this target buffer"))
 
 """
     set_hessian!(target_buffer, i_body, hessian)
@@ -589,6 +675,20 @@ function set_hessian!(system::Matrix, i, hessian)
     @inbounds system[15, i] += hessian[8]
     @inbounds system[16, i] += hessian[9]
 end
+function set_hessian!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,true}, i, hessian)
+    r = hessian_range(switch)
+    @inbounds system[r[1], i] += hessian[1]
+    @inbounds system[r[2], i] += hessian[2]
+    @inbounds system[r[3], i] += hessian[3]
+    @inbounds system[r[4], i] += hessian[4]
+    @inbounds system[r[5], i] += hessian[5]
+    @inbounds system[r[6], i] += hessian[6]
+    @inbounds system[r[7], i] += hessian[7]
+    @inbounds system[r[8], i] += hessian[8]
+    @inbounds system[r[9], i] += hessian[9]
+end
+set_hessian!(system::Matrix, ::DerivativesSwitch{<:Any,<:Any,false}, i, hessian) =
+    throw(ArgumentError("hessian output is disabled for this target buffer"))
 
 #--- auxilliary functions ---#
 
@@ -606,4 +706,14 @@ end
 
 function reset!(system::Matrix, indices=1:size(system, 2))
     system[4:size(system, 1), indices] .= zero(eltype(system))
+end
+
+function reset_outputs!(system::Matrix, switch::DerivativesSwitch, indices=1:size(system, 2))
+    system[output_range(switch), indices] .= zero(eltype(system))
+end
+
+function reset_outputs!(systems::Union{Tuple, AbstractVector{<:Matrix}}, switches::Tuple)
+    for (system, switch) in zip(systems, switches)
+        reset_outputs!(system, switch)
+    end
 end

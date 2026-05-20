@@ -14,7 +14,23 @@ In the this section, we will describe how to impose an error tolerance. Finally,
 Since each error 
 
 !!! info
-    For relative error methods, the [`get_previous_influence`](@ref FastMultipole.get_previous_influence) compatibility function must be overloaded for your target system. This function estimates the potential and gradient at the `i`th target body, which is used to compute the relative error. For example, estimates might be based on the previous step of a time-stepping or iterative algorithm.
+    For relative error methods, previous influence estimates should be provided as target metadata. Overload [`metadata_per_body`](@ref FastMultipole.metadata_per_body), [`metadata_to_buffer!`](@ref FastMultipole.metadata_to_buffer!), [`previous_potential_metadata_index`](@ref FastMultipole.previous_potential_metadata_index), and [`previous_gradient_metadata_index`](@ref FastMultipole.previous_gradient_metadata_index).
+
+For example:
+
+```julia
+FastMultipole.metadata_per_body(system::MyTargets) = 2
+FastMultipole.previous_potential_metadata_index(system::MyTargets) = 1
+FastMultipole.previous_gradient_metadata_index(system::MyTargets) = 2
+
+function FastMultipole.metadata_to_buffer!(buffer, switch, i_buffer, system::MyTargets, i_body)
+    buffer[FastMultipole.metadata_index(switch, 1), i_buffer] = system.previous_potential[i_body]
+    buffer[FastMultipole.metadata_index(switch, 2), i_buffer] = system.previous_gradient_norm[i_body]
+end
+```
+
+If a relative error method is requested and these indices are unavailable,
+`FastMultipole` warns once and uses the absolute tolerance fallback.
 
 Say I wanted to compute the gravitational potential to a tolerance of `1e-6` using the absolute potential error method. I would call the FMM as follows:
 
@@ -73,6 +89,9 @@ opt_params, cache = tune_fmm(system; error_tolerance=PowerAbsolutePotential(1e-4
 println("Optimal parameters: ", opt_params)
 ```
 This will return a named tuple of the optimal parameters, which can then be passed to the `fmm!` function. The `cache` is a preallocated buffer that can be used to reduce memory allocations during the FMM call.
+
+!!! warning
+    A cache is compatible only with the target buffer layout it was allocated for. Changing `scalar_potential`, `gradient`, `hessian`, `metadata`, or `extra_outputs` requires a matching cache or a newly allocated cache.
 
 ```@example advancedex2
 # run FMM without default parameters

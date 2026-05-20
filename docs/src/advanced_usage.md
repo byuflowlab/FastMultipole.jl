@@ -68,3 +68,52 @@ Note that `scalar_potential`, `gradient`, and `hessian` can be passed as a singl
 
 !!! tip
     The `fmm!` keyword arguments `scalar_potential`, `gradient`, and `hessian` can be passed as a single boolean or as a tuple of booleans, one for each target system. This allows the user to specify which values are desired for each target system, and avoids unnecessary calculations for values that are not needed.
+
+## Metadata and Extra Outputs
+
+Target buffers have two distinct extension areas. Metadata rows are copied from
+the target system and sorted with positions, so they are available during
+nearfield interactions. Extra output rows are additional fields induced by neighboring bodies besides the scalar potential, gradient, and hessian. Note that extra outputs are not included in far-field interactions; as such, they are typically kernels with compact or near-compact support, meaning their far-field influence vanishes. An example of an appropriate extra output would be the vorticity induced by a gaussian vortex blob. Its velocity is approximated by multipole expansions, but the vorticity drops off exponentially.
+
+Request extra accumulated rows with `extra_outputs`:
+
+```julia
+direct!(target_system, source_system;
+    scalar_potential=true, gradient=false, hessian=false, extra_outputs=3)
+```
+
+!!! tip
+    Request `extra_outputs=N` for accumulated custom output rows. Access those rows with [`FastMultipole.extra_output_range`](@ref), [`FastMultipole.get_extra_output`](@ref), [`FastMultipole.set_extra_output!`](@ref), or [`FastMultipole.extra_output_view`](@ref).
+
+A custom `direct!` overload should use switch-aware helpers:
+
+```julia
+function FastMultipole.direct!(target_buffer, target_index, switch::DerivativesSwitch{PS,GS,HS}, source_system::MySources, source_buffer, source_index) where {PS,GS,HS}
+    for i_target in target_index
+        PS && FastMultipole.set_scalar_potential!(target_buffer, switch, i_target, potential)
+        FastMultipole.set_extra_output!(target_buffer, switch, i_target, 1, diagnostic)
+    end
+end
+```
+
+Target systems declare sorted metadata with:
+
+```julia
+FastMultipole.metadata_per_body(system::MyTargets) = 2
+
+function FastMultipole.metadata_to_buffer!(buffer, switch, i_buffer, system::MyTargets, i_body)
+    buffer[FastMultipole.metadata_index(switch, 1), i_buffer] = system.previous_potential[i_body]
+    buffer[FastMultipole.metadata_index(switch, 2), i_buffer] = system.previous_gradient_norm[i_body]
+end
+```
+
+Then copy extra outputs back in `buffer_to_target_system!`:
+
+```julia
+function FastMultipole.buffer_to_target_system!(target_system::MyTargets, i_target, switch::DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+    target_system.extra[:, i_target] .+= FastMultipole.extra_output_view(target_buffer, switch, i_buffer)
+end
+```
+
+!!! warning
+    Target buffers are compact. Hard-coded target rows `4`, `5:7`, and `8:16` are valid only when `metadata=0` and only when all preceding standard outputs are enabled. Custom target code should use switch-aware getters, setters, and range helpers.

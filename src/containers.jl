@@ -43,11 +43,24 @@ abstract type Panel{NS,TK} <: AbstractElement{TK} end
 #------- dispatch convenience functions to determine which derivatives are desired -------#
 
 """
-    DerivativesSwitch
+    DerivativesSwitch{PS,GS,HS,NO,NM}
 
-Switch indicating whether the scalar potential, vector potential, gradient, and/or hessian should be computed for a target system. Information is stored as type parameters, allowing the compiler to compile away if statements.
+Switch indicating whether scalar potential (`PS`), gradient (`GS`), and hessian (`HS`)
+outputs should be computed for a target system. `NO` is the number of extra
+accumulated output rows requested by the caller, and `NM` is the number of
+metadata rows carried with target positions through tree sorting.
+
+Target buffers use a compact row layout: positions in rows `1:3`, metadata in
+rows `4:3+NM`, enabled standard outputs in scalar/gradient/hessian order, and
+then `NO` extra output rows. Disabled standard outputs do not reserve rows, so
+custom target-buffer code should use switch-aware layout helpers.
+
+Use `DerivativesSwitch(scalar_potential, gradient, hessian; extra_outputs=0,
+metadata=0)` for a single switch, or pass target systems as the fourth argument
+to infer `metadata_per_body(system)` when `metadata=nothing`. Existing calls
+such as `DerivativesSwitch(true, true, false)` remain valid.
 """
-struct DerivativesSwitch{PS,GS,HS} end
+struct DerivativesSwitch{PS,GS,HS,NO,NM} end
 
 #------- error predictors -------#
 
@@ -172,6 +185,10 @@ end
 function Branch(bodies_index::SVector{<:Any,UnitRange{Int64}}, args...)
     n_bodies = SVector{length(bodies_index), Int}(length(bodies_i) for bodies_i in bodies_index)
     return Branch(n_bodies, bodies_index, args...)
+end
+
+function Branch(bodies_index::UnitRange{Int64}, args...)
+    return Branch(SVector{1,UnitRange{Int64}}((bodies_index,)), args...)
 end
 
 
@@ -325,8 +342,8 @@ function Cache(target_systems::Tuple, source_systems::Tuple, switches::Tuple)
     # allocate buffers
     target_buffers = allocate_buffers(target_systems, true, TF, switches)
     source_buffers = allocate_buffers(source_systems, false, TF, switches)
-    target_small_buffers = allocate_small_buffers(target_systems, TF)
-    source_small_buffers = allocate_small_buffers(source_systems, TF)
+    target_small_buffers = allocate_small_buffers(target_systems, TF, switches; target=true)
+    source_small_buffers = allocate_small_buffers(source_systems, TF, DerivativesSwitch(false, false, false, source_systems); target=false)
     
     # return cache
     return Cache{TF}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)

@@ -255,7 +255,7 @@ function nonself_influence_matrices(target_buffers::AbstractVector{<:Matrix}, so
                         direct!(target_buffer, target_index, derivatives_switch, source_system, source_buffer, i_source_body:i_source_body)
 
                         # compute influences
-                        influence!(this_influence, this_target_buffer, source_system, this_source_buffer)
+                        influence!(this_influence, this_target_buffer, derivatives_switch, source_system, this_source_buffer)
 
                         # update matrix
                         this_matrix[:,isb] .= this_influence
@@ -440,7 +440,7 @@ function self_influence_matrices(target_buffers, source_buffers, source_systems,
                     direct!(target_buffer, target_bodies_index, derivatives_switch, source_system, source_buffer, i_source_body:i_source_body)
 
                     # compute influences
-                    influence!(this_influence, targets_view, source_system, sources_view)
+                    influence!(this_influence, targets_view, derivatives_switch, source_system, sources_view)
 
                     # update matrix
                     this_matrix_block[:, isb] .= this_influence
@@ -840,7 +840,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
 
     # run influence function on buffers
     reset!(extra_right_hand_side)
-    influence!(extra_right_hand_side, influences_per_system, target_buffers, source_systems, source_buffers, source_tree)
+    influence!(extra_right_hand_side, influences_per_system, target_buffers, source_systems, source_buffers, source_tree, derivatives_switches)
 
     # set the right-hand side to the external influence
     # NOTE: this only happens once as it is not reset in the iterations
@@ -893,7 +893,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
 
         # move farfield influence to the right-hand side
         reset!(extra_right_hand_side)
-        influence!(extra_right_hand_side, influences_per_system, target_buffers, source_systems, source_buffers, source_tree)
+        influence!(extra_right_hand_side, influences_per_system, target_buffers, source_systems, source_buffers, source_tree, derivatives_switches)
         right_hand_side .+= extra_right_hand_side
 
         #--- check residual ---#
@@ -1004,7 +1004,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
 end
 
 """
-    influence!(sorted_influences, influences_per_system, target_buffers, source_systems, source_buffers, source_tree)
+    influence!(sorted_influences, influences_per_system, target_buffers, source_systems, source_buffers, source_tree, derivatives_switches)
 
 Evaluate the influence as pertains to the boundary element influence matrix and subtracts it from `sorted_influences` (which would act like the RHS of a linear system). Based on the current state of the `target_buffers` and `source_buffers`. Note that `source_systems` is provided solely for dispatch. Note also that `influences_per_system` is overwritten each time.
 
@@ -1015,7 +1015,7 @@ Evaluate the influence as pertains to the boundary element influence matrix and 
 * `source_buffers::Vector{Matrix{Float64}}`: source buffers used to compute the influence
 
 """
-function influence!(sorted_influences::Vector{TF}, influences_per_system::Vector{Vector{TF}}, target_buffers::AbstractVector{<:Matrix}, source_systems::Tuple, source_buffers::AbstractVector{<:Matrix}, source_tree::Tree) where TF
+function influence!(sorted_influences::Vector{TF}, influences_per_system::Vector{Vector{TF}}, target_buffers::AbstractVector{<:Matrix}, source_systems::Tuple, source_buffers::AbstractVector{<:Matrix}, source_tree::Tree, derivatives_switches::Tuple) where TF
     @assert length(target_buffers) == length(source_buffers) == length(source_systems)
 
     #--- evaluate influences ---#
@@ -1026,9 +1026,10 @@ function influence!(sorted_influences::Vector{TF}, influences_per_system::Vector
         target_buffer = target_buffers[i_system]
         source_buffer = source_buffers[i_system]
         source_system = source_systems[i_system]
+        derivatives_switch = derivatives_switches[i_system]
 
         # evaluate influence
-        influence!(influence, target_buffer, source_system, source_buffer)
+        influence!(influence, target_buffer, derivatives_switch, source_system, source_buffer)
     end
 
     #--- sort by source ---#
@@ -1164,7 +1165,7 @@ function JacobiPreconditioner(target_systems::Tuple, source_systems::Tuple;
     source_buffers = allocate_buffers(source_systems, false, TF, DerivativesSwitch(false, false, false, source_systems))
 
     # load systems into buffers (unsorted — identity permutation)
-    target_to_buffer!(target_buffers, target_systems, true)
+    target_to_buffer!(target_buffers, target_systems, SVector{length(target_systems)}([1:get_n_bodies(system) for system in target_systems]), full_switches)
     system_to_buffer!(source_buffers, source_systems)
 
     #--- assemble per-cell influence matrices and LU-factorize ---#
@@ -1197,7 +1198,7 @@ function JacobiPreconditioner(target_systems::Tuple, source_systems::Tuple;
 
                 # extract influence value
                 infl = zeros(TF, 1)
-                influence!(infl, view(target_buffer, :, t_local:t_local), source_system, view(source_buffer, :, i_local:i_local))
+                influence!(infl, view(target_buffer, :, t_local:t_local), derivatives_switches[t_sys], source_system, view(source_buffer, :, i_local:i_local))
                 cell_matrix[row, col] = infl[1]
             end
         end

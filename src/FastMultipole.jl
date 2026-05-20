@@ -104,6 +104,7 @@ export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Pane
 export PowerAbsolutePotential, PowerAbsoluteGradient, RotatedCoefficientsAbsoluteGradient
 # export PowerRelativePotential, PowerRelativeGradient, RotatedCoefficientsRelativeGradient
 export get_n_bodies, buffer_element, body_to_multipole!, direct!, direct_gpu!
+export source_to_buffer!, source_to_buffer
 
 include("bodytomultipole.jl")
 
@@ -115,7 +116,10 @@ export direct!
 
 include("derivativesswitch.jl")
 
-export DerivativesSwitch
+export DerivativesSwitch, metadata_range, metadata_index, tree_carried_range
+export scalar_potential_index, gradient_range, hessian_range
+export standard_output_range, extra_output_range, output_range
+export get_extra_output, set_extra_output!, extra_output_view, output_view
 
 include("error.jl")
 
