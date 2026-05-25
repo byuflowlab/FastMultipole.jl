@@ -106,6 +106,10 @@ export PowerAbsolutePotential, PowerAbsoluteGradient, RotatedCoefficientsAbsolut
 export get_n_bodies, buffer_element, body_to_multipole!, direct!, direct_gpu!
 export source_to_buffer!, source_to_buffer
 
+include("direct_conditioning.jl")
+
+export DirectConditioningRule, SelfPairs, PairSet, AllPairs, applies
+
 include("bodytomultipole.jl")
 
 export body_to_multipole!

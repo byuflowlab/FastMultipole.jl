@@ -1,41 +1,50 @@
 #------- direct interactions -------#
 
-function nearfield_singlethread!(target_buffers, target_branches, source_systems, source_buffers, source_branches, derivatives_switches, direct_list)
+function nearfield_singlethread!(target_buffers, target_branches, source_systems, source_buffers, source_branches, derivatives_switches, direct_list, direct_conditioning=())
     # loop over sources
     t_nf = @MVector zeros(length(source_systems))
+    direct_conditioning = normalize_direct_conditioning(direct_conditioning)
     for i_source_system in eachindex(source_systems)
         source_system = source_systems[i_source_system]
         source_buffer = source_buffers[i_source_system]
 
         # perform direct interactions
-        t_elapsed = @elapsed nearfield_loop!(target_buffers, target_branches, source_system, source_buffer, i_source_system, source_branches, direct_list, derivatives_switches)
+        t_elapsed = @elapsed nearfield_loop!(target_buffers, target_branches, source_system, source_buffer, i_source_system, source_branches, direct_list, derivatives_switches, direct_conditioning)
         t_nf[i_source_system] = t_elapsed
     end
 
     return t_nf
 end
 
-function nearfield_loop!(target_buffers, target_branches, source_system, source_buffer, i_source_system, source_branches, direct_list, derivatives_switches)
+function nearfield_loop!(target_buffers, target_branches, source_system, source_buffer, i_source_system, source_branches, direct_list, derivatives_switches, direct_conditioning=())
     # loop over target systems
     for (i_target_system, target_system) in enumerate(target_buffers)
 
         # extract derivatives switch
         derivatives_switch = derivatives_switches[i_target_system]
 
-        # loop over direct list
-        for (i_target, i_source) in direct_list
-
-            # identify sources
-            source_index = source_branches[i_source].bodies_index[i_source_system]
-
-            # identify targets
-            target_index = target_branches[i_target].bodies_index[i_target_system]
-
-            # compute interaction
-            direct!(target_system, target_index, derivatives_switch, source_system, source_buffer, source_index)
-
+        if has_direct_conditioning(direct_conditioning)
+            with_direct_conditioning!(direct_conditioning, source_buffer, source_system, i_source_system, target_system, i_target_system) do
+                nearfield_direct_list_loop!(target_system, i_target_system, target_branches, derivatives_switch, source_system, source_buffer, i_source_system, source_branches, direct_list)
+            end
+        else
+            nearfield_direct_list_loop!(target_system, i_target_system, target_branches, derivatives_switch, source_system, source_buffer, i_source_system, source_branches, direct_list)
         end
+    end
+end
 
+function nearfield_direct_list_loop!(target_system, i_target_system, target_branches, derivatives_switch, source_system, source_buffer, i_source_system, source_branches, direct_list)
+    # loop over direct list
+    for (i_target, i_source) in direct_list
+
+        # identify sources
+        source_index = source_branches[i_source].bodies_index[i_source_system]
+
+        # identify targets
+        target_index = target_branches[i_target].bodies_index[i_target_system]
+
+        # compute interaction
+        direct!(target_system, target_index, derivatives_switch, source_system, source_buffer, source_index)
     end
 end
 
@@ -117,14 +126,23 @@ function execute_assignment!(target_buffer, i_target_buffer, target_branches, de
     end
 end
 
-function nearfield_multithread!(target_systems, target_branches, source_systems::Tuple, source_buffers, source_branches, derivatives_switches, direct_list, interaction_list_method, n_threads)
+function nearfield_multithread!(target_systems, target_branches, source_systems::Tuple, source_buffers, source_branches, derivatives_switches, direct_list, interaction_list_method, n_threads, direct_conditioning=())
     # benchmark for auto-tuning
     t_nf = @MVector zeros(length(source_systems))
+    direct_conditioning = normalize_direct_conditioning(direct_conditioning)
 
     for (i_source_system, source_system) in enumerate(source_systems)
         source_buffer = source_buffers[i_source_system]
         for (i_target_buffer, target_buffer) in enumerate(target_systems)
-            t = @elapsed nearfield_multithread!(target_buffer, i_target_buffer, target_branches, source_system, source_buffer, i_source_system, source_branches, derivatives_switches[i_target_buffer], direct_list, interaction_list_method, n_threads)
+            t = @elapsed begin
+                if has_direct_conditioning(direct_conditioning)
+                    with_direct_conditioning!(direct_conditioning, source_buffer, source_system, i_source_system, target_buffer, i_target_buffer) do
+                        nearfield_multithread!(target_buffer, i_target_buffer, target_branches, source_system, source_buffer, i_source_system, source_branches, derivatives_switches[i_target_buffer], direct_list, interaction_list_method, n_threads)
+                    end
+                else
+                    nearfield_multithread!(target_buffer, i_target_buffer, target_branches, source_system, source_buffer, i_source_system, source_branches, derivatives_switches[i_target_buffer], direct_list, interaction_list_method, n_threads)
+                end
+            end
             t_nf[i_source_system] += t
         end
     end
@@ -916,6 +934,7 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 - `extra_outputs::Union{Int,AbstractVector{Int}}`: number of extra accumulated target output rows; default is `0`
 - `metadata::Union{Nothing,Int,AbstractVector{Int}}`: number of metadata rows carried with target positions; `nothing` infers [`metadata_per_body`](@ref)
 - `extra_farfield::Bool`: whether to compute extra farfield interactions; default is `false`
+- `direct_conditioning`: a `DirectConditioningRule` or tuple of rules used to temporarily condition source buffers for selected source-target system pairs during CPU nearfield interactions
 
 """
 function fmm!(target_systems::Tuple, source_systems::Tuple;
@@ -1009,11 +1028,13 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
     silence_warnings=false,
     extra_farfield=false,
+    direct_conditioning=(),
 )
 
     #--- check if lamb-helmholtz decomposition is required ---#
 
     lamb_helmholtz = has_vector_potential(source_systems)
+    direct_conditioning = normalize_direct_conditioning(direct_conditioning)
 
     #--- check for datarace condition ---#
 
@@ -1098,6 +1119,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
         # begin FMM
         if nearfield_device # use GPU
+            if has_direct_conditioning(direct_conditioning)
+                throw(ArgumentError("direct_conditioning is only supported for CPU nearfield; use nearfield_device=false"))
+            end
 
             # allow nearfield_device! to be called concurrently with upward and horizontal passes
             t1 = Threads.@spawn nearfield && nearfield_device!(target_systems, target_tree, derivatives_switches, source_systems, source_tree, direct_list)
@@ -1120,7 +1144,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             if n_threads == 1
 
                 # perform nearfield calculations
-                t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list)
+                t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, direct_conditioning)
                 # println("Direct interaction time: ", t_direct[1])
 
                 # check number of interactions
@@ -1191,7 +1215,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             else
 
                 # perform nearfield calculations
-                t_direct = nearfield_multithread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, n_threads)
+                t_direct = nearfield_multithread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, n_threads, direct_conditioning)
                 # println("Direct interaction time: ", t_direct[1])
                 # check number of interactions
                 if tune

@@ -19,6 +19,7 @@ Applies all interactions of `systems` acting on itself without multipole acceler
 - `extra_outputs::Int`: number of extra accumulated target output rows; defaults to `0`
 - `metadata::Union{Nothing,Int}`: number of target metadata rows carried with positions; `nothing` infers [`metadata_per_body`](@ref)
 - `n_threads::Int`: the number of threads to use for parallelization; defaults to `Threads.nthreads()`
+- `direct_conditioning`: a `DirectConditioningRule` or tuple of rules used to temporarily condition source buffers for selected source-target system pairs
 
 """
 function direct!(systems::Tuple; args...)
@@ -44,7 +45,7 @@ function _direct!(target_system, source_system; n_threads=Threads.nthreads(), ar
 end
 
 
-function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)), extra_outputs=0, metadata=nothing)
+function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)), extra_outputs=0, metadata=nothing, direct_conditioning=())
 
     # get float type
     TF = get_type(target_systems, source_systems)
@@ -67,9 +68,21 @@ function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; targ
         system_to_buffer!(source_buffers, source_systems)
     end
 
-    for (source_system, source_buffer) in zip(source_systems, source_buffers)
-        for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
-            direct!(target_buffer, 1:get_n_bodies(target_system), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
+    direct_conditioning = normalize_direct_conditioning(direct_conditioning)
+
+    if has_direct_conditioning(direct_conditioning)
+        for (i_source_system, (source_system, source_buffer)) in enumerate(zip(source_systems, source_buffers))
+            for (i_target_system, (target_system, target_buffer, derivatives_switch)) in enumerate(zip(target_systems, target_buffers, derivatives_switches))
+                with_direct_conditioning!(direct_conditioning, source_buffer, source_system, i_source_system, target_buffer, i_target_system) do
+                    direct!(target_buffer, 1:get_n_bodies(target_system), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
+                end
+            end
+        end
+    else
+        for (source_system, source_buffer) in zip(source_systems, source_buffers)
+            for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
+                direct!(target_buffer, 1:get_n_bodies(target_system), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
+            end
         end
     end
 
@@ -78,7 +91,7 @@ function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; targ
 
 end
 
-function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_threads; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)), extra_outputs=0, metadata=nothing)
+function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_threads; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)), extra_outputs=0, metadata=nothing, direct_conditioning=())
 
     # get float type
     TF = get_type(target_systems, source_systems)
@@ -101,17 +114,22 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
         system_to_buffer!(source_buffers, source_systems)
     end
 
-    for (source_system, source_buffer) in zip(source_systems, source_buffers)
-        n_source_bodies = get_n_bodies(source_system)
-        for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
+    direct_conditioning = normalize_direct_conditioning(direct_conditioning)
 
-            # load balance
-            n_target_bodies = get_n_bodies(target_system)
-            n_per_thread, rem = divrem(n_target_bodies, n_threads)
-            rem > 0 && (n_per_thread += 1)
-            n_per_thread = max(n_per_thread, MIN_NPT_NF)
-            Threads.@threads :static for i_start in 1:n_per_thread:n_target_bodies
-                direct!(target_buffer, i_start:min(i_start+n_per_thread-1, n_target_bodies), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
+    if has_direct_conditioning(direct_conditioning)
+        for (i_source_system, (source_system, source_buffer)) in enumerate(zip(source_systems, source_buffers))
+            n_source_bodies = get_n_bodies(source_system)
+            for (i_target_system, (target_system, target_buffer, derivatives_switch)) in enumerate(zip(target_systems, target_buffers, derivatives_switches))
+                with_direct_conditioning!(direct_conditioning, source_buffer, source_system, i_source_system, target_buffer, i_target_system) do
+                    direct_multithread_pair!(target_buffer, target_system, derivatives_switch, source_system, source_buffer, n_source_bodies, n_threads)
+                end
+            end
+        end
+    else
+        for (source_system, source_buffer) in zip(source_systems, source_buffers)
+            n_source_bodies = get_n_bodies(source_system)
+            for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
+                direct_multithread_pair!(target_buffer, target_system, derivatives_switch, source_system, source_buffer, n_source_bodies, n_threads)
             end
         end
     end
@@ -119,4 +137,15 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
     # update target systems
     buffer_to_target!(target_systems, target_buffers, derivatives_switches)
 
+end
+
+function direct_multithread_pair!(target_buffer, target_system, derivatives_switch, source_system, source_buffer, n_source_bodies, n_threads)
+    # load balance
+    n_target_bodies = get_n_bodies(target_system)
+    n_per_thread, rem = divrem(n_target_bodies, n_threads)
+    rem > 0 && (n_per_thread += 1)
+    n_per_thread = max(n_per_thread, MIN_NPT_NF)
+    Threads.@threads :static for i_start in 1:n_per_thread:n_target_bodies
+        direct!(target_buffer, i_start:min(i_start+n_per_thread-1, n_target_bodies), derivatives_switch, source_system, source_buffer, 1:n_source_bodies)
+    end
 end

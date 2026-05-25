@@ -54,6 +54,7 @@ end
 
 include("auxilliary_test.jl")
 include("metadata_extra_test.jl")
+include("direct_conditioning_test.jl")
 include("direct_test.jl")
 include("harmonics_test.jl")
 include("rotate_test.jl")

@@ -8,6 +8,11 @@ The following functions are the primary user-facing API of the `FastMultipole` p
 fmm!
 tune_fmm
 direct!(::Tuple)
+DirectConditioningRule
+SelfPairs
+PairSet
+AllPairs
+FastMultipole.applies
 ```
 
 ## Compatibility Functions
