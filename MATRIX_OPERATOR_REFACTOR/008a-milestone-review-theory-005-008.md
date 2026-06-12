@@ -29,13 +29,19 @@ tasks `005` through `008`. No production code changes are part of this review.
 - Roadmap-alignment notes recorded in this file
 - Explicit confirmation that all Theory rows are complete and approved before
   Implementation starts
+- Explicit confirmation that the Theory Phase Acceptance Target in
+  `START_HERE.md` is satisfied for both complex and real solid harmonic bases,
+  including M2M, M2L, L2L, invariant matrices, z-axis rotations only, and the
+  point-mass unit-strength convergence example
 - Any required coordination-document fixes identified before later work starts
 
 ## Verification
 
 Confirm completed work matches the background design, hard phase gate, and task
-ordering. If `START_HERE.md`, a task file, and `../MATRIX_OPERATOR_REFACTOR.md`
-disagree, stop and require a coordination-document fix.
+ordering. Confirm the completed artifacts demonstrate convergence of the
+required point-mass example to analytic `1/r` as expansion order increases. If
+`START_HERE.md`, a task file, and `../MATRIX_OPERATOR_REFACTOR.md` disagree,
+stop and require a coordination-document fix.
 
 ## Approval Notes
 

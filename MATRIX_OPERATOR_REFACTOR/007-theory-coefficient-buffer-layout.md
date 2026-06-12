@@ -27,11 +27,16 @@ the explicit operator layer.
 - Proposed flat-buffer layout and typed views
 - Mapping to current logical coefficient layout
 - Scratch, cache, and aliasing requirements
+- Buffer/view requirements for both compressed complex and real solid harmonic
+  bases across M2M, M2L, and L2L matrix-operator applications
+- Confirmation that buffer layout choices do not alter the approved invariant
+  matrix and z-axis rotation operator contract
 
 ## Verification
 
 Validate indexing maps with deterministic coefficient round trips and layout
-examples. Record commands, tolerances where relevant, and result summaries.
+examples for both complex and real basis layouts. Record commands, tolerances
+where relevant, and result summaries.
 
 ## Approval Notes
 

@@ -3,7 +3,8 @@
 ## Objective
 
 Derive the complete M2L operator composition from approved z-rotation,
-z-translation, Lamb-Helmholtz, and axis-swap theory.
+z-translation, Lamb-Helmholtz, and axis-swap theory using invariant matrices
+and z-axis rotations only.
 
 ## Dependencies
 
@@ -29,11 +30,16 @@ z-translation, Lamb-Helmholtz, and axis-swap theory.
 - End-to-end M2L operator ordering
 - Intermediate basis/channel layout notes
 - Required cache entries and parity targets for implementation
+- Explicit statement that the M2L composition uses only invariant matrices and
+  z-axis rotations for all non-z-aligned source-target offsets
+- Point-mass unit-strength M2L example component that can be composed with the
+  later M2M and L2L examples and checked against the analytic potential `1/r`
 
 ## Verification
 
 Compare composed operator output against current production M2L behavior across
-representative source-target offsets. Record commands, tolerances, and result
+representative source-target offsets. Include the M2L stage of the point-mass
+unit-strength convergence example. Record commands, tolerances, and result
 summaries.
 
 ## Approval Notes

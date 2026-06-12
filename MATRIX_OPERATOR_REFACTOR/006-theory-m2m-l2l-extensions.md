@@ -3,7 +3,7 @@
 ## Objective
 
 Extend the approved component theory to explicit M2M and L2L operator
-pipelines.
+pipelines using invariant matrices and z-axis rotations only.
 
 ## Dependencies
 
@@ -28,12 +28,18 @@ pipelines.
 - M2M operator composition
 - L2L operator composition
 - Shared conventions with the approved M2L operator structure
+- Explicit statement that both M2M and L2L compositions use only invariant
+  matrices and z-axis rotations for all non-z-aligned offsets
+- Complete point-mass unit-strength M2M, M2L, and L2L operator-chain example
+  that obtains an expansion, translates it through the three operations,
+  evaluates at a target point, and compares against analytic `1/r`
 
 ## Verification
 
 Compare explicit M2M and L2L operator results against current production
-behavior for representative parent-child offsets. Record commands, tolerances,
-and result summaries.
+behavior for representative parent-child offsets. Demonstrate convergence of
+the complete point-mass example to `1/r` as expansion order increases. Record
+commands, tolerances, and result summaries.
 
 ## Approval Notes
 

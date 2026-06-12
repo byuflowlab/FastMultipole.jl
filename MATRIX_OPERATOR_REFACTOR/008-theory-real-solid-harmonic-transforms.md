@@ -3,7 +3,8 @@
 ## Objective
 
 Derive complex-to-real and real-to-complex solid-harmonic transform
-conventions and tests for the later real-basis implementation target.
+conventions and tests for real-basis M2M, M2L, and L2L matrix operators using
+invariant matrices and z-axis rotations only.
 
 ## Dependencies
 
@@ -27,11 +28,17 @@ conventions and tests for the later real-basis implementation target.
 - Complex-to-real and real-to-complex transform formulas
 - Normalization, ordering, and sign conventions
 - Parity targets for real-basis execution
+- Real-basis forms of the approved M2M, M2L, and L2L operator chains, derived
+  from the complex-basis theory or directly in the real basis
+- Verification requirements showing real-basis parity with the complex-basis
+  point-mass unit-strength M2M, M2L, and L2L convergence example
 
 ## Verification
 
 Check transform round trips and parity against complex-basis operator examples.
-Record commands, tolerances, and result summaries.
+Demonstrate that the real-basis point-mass operator chain evaluates to the same
+convergent `1/r` result as the complex-basis chain. Record commands,
+tolerances, and result summaries.
 
 ## Approval Notes
 

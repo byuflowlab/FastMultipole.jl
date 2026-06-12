@@ -56,6 +56,24 @@ After the Theory gate is approved, `008b-implementation-replan.md` must be
 completed and approved before task `009` or any later Implementation task
 starts.
 
+## Theory Phase Acceptance Target
+
+By the end of the Theory Phase, the approved artifacts must specify matrix
+operators for both the compressed complex solid harmonic basis and the real
+solid harmonic basis. For each basis, the theory must cover M2M, M2L, and L2L
+operations using invariant matrices and z-axis rotations only; all non-z
+rotation effects must be expressed through approved invariant axis-swap
+matrices and fixed operator compositions.
+
+Before task `008a` can approve the Theory gate, the Theory artifacts must also
+include an example for a point mass of unit strength that:
+
+1. obtains the source expansion;
+2. applies M2M, M2L, and L2L through the approved matrix-operator chain;
+3. evaluates the resulting expansion at a target point; and
+4. demonstrates convergence to the analytic potential `1/r` as expansion order
+   increases.
+
 ## Milestone Reviews
 
 Milestone Reviews are blocking tasks. No later normal task may start until the
@@ -77,11 +95,11 @@ Each Milestone Review requires the reviewing agent to:
 
 | Done | Approved | Task | Summary | Blocking |
 | --- | --- | --- | --- | --- |
-| [ ] | [ ] | `001-theory-z-rotation-operators.md` | Derive z-rotation blocks, inverse blocks, and overwrite/accumulate semantics. | None |
-| [ ] | [ ] | `002-theory-m2l-z-translation-scaling.md` | Derive M2L fixed-`m` z-translation matrices and stable distance scaling. | `001` |
-| [ ] | [ ] | `003-theory-lamb-helmholtz-operator-form.md` | Derive multipole/local Lamb-Helmholtz operator form and channel coupling. | `001` |
-| [ ] | [ ] | `004-theory-axis-swap-conventions.md` | Derive invariant axis-swap signs and active/passive rotation conventions. | `001` |
-| [ ] | [ ] | `004a-milestone-review-theory-001-004.md` | Milestone Review for Theory tasks `001` through `004`. | `001`, `002`, `003`, `004` |
+| [x] | [x] | `001-theory-z-rotation-operators.md` | Derive z-rotation blocks, inverse blocks, and overwrite/accumulate semantics. | None |
+| [x] | [x] | `002-theory-m2l-z-translation-scaling.md` | Derive M2L fixed-`m` z-translation matrices and stable distance scaling. | `001` |
+| [x] | [x] | `003-theory-lamb-helmholtz-operator-form.md` | Derive multipole/local Lamb-Helmholtz operator form and channel coupling. | `001` |
+| [x] | [x] | `004-theory-axis-swap-conventions.md` | Derive invariant axis-swap signs and active/passive rotation conventions. | `001` |
+| [x] | [x] | `004a-milestone-review-theory-001-004.md` | Milestone Review for Theory tasks `001` through `004`. | `001`, `002`, `003`, `004` |
 | [ ] | [ ] | `005-theory-full-m2l-composition.md` | Derive the complete M2L operator composition from approved component theory. | `004a`, `002`, `003`, `004` |
 | [ ] | [ ] | `006-theory-m2m-l2l-extensions.md` | Extend the component theory to M2M and L2L pipelines. | `005` |
 | [ ] | [ ] | `007-theory-coefficient-buffer-layout.md` | Specify coefficient-buffer layout, indexing, and typed view requirements. | `005`, `006` |
