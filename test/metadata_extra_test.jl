@@ -134,3 +134,34 @@ end
 
     @test_throws ArgumentError FastMultipole.fmm!(system, cache; scalar_potential=false, gradient=true, hessian=true)
 end
+
+@testset "threaded fmm extra_farfield" begin
+    if Threads.nthreads() == 1
+        @test_skip "requires multiple Julia threads"
+    else
+        n_bodies = FastMultipole.MIN_BODIES ÷ 2 + 1
+        target = generate_gravitational(123, n_bodies)
+        source = generate_gravitational(456, n_bodies)
+
+        @test begin
+            FastMultipole.fmm!(
+                target, source;
+                scalar_potential=false,
+                gradient=false,
+                hessian=false,
+                expansion_order=1,
+                leaf_size_source=n_bodies,
+                leaf_size_target=n_bodies,
+                multipole_acceptance=0.0,
+                upward_pass=false,
+                horizontal_pass=false,
+                downward_pass=false,
+                nearfield=false,
+                update_target_systems=false,
+                extra_farfield=true,
+                silence_warnings=true,
+            )
+            true
+        end
+    end
+end
