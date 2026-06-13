@@ -8,6 +8,7 @@ Extend the explicit operator structure to M2M and L2L.
 
 - `006-theory-m2m-l2l-extensions.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
 - `014-impl-full-m2l-operator-pipeline.md`
 - `015-impl-axis-swap-benchmarks.md`
 
@@ -28,6 +29,10 @@ Extend the explicit operator structure to M2M and L2L.
 - Explicit M2M operator pipeline
 - Explicit L2L operator pipeline
 - Shared cache and scratch integration with the M2L operator layer
+- Per the `008b` re-plan, this first pass is **side-by-side, parity-only**: the
+  explicit M2M/L2L operator pipelines are validated against production but do
+  **not** replace the production `multipole_to_multipole!` / `local_to_local!`
+  internals. Production hot-path replacement is a later, explicitly scoped step.
 
 ## Verification
 

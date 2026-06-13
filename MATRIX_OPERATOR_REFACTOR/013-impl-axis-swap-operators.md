@@ -8,6 +8,7 @@ Implement invariant axis-swap operators and y-rotation parity tests.
 
 - `004-theory-axis-swap-conventions.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
 - `010-impl-z-rotation-operators.md`
 - `012a-milestone-review-impl-009-012.md`
 

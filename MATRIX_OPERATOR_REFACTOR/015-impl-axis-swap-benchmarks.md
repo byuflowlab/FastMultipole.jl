@@ -9,6 +9,7 @@ Benchmark invariant axis-swap composition and full M2L operator paths.
 - `004-theory-axis-swap-conventions.md`
 - `005-theory-full-m2l-composition.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
 - `014-impl-full-m2l-operator-pipeline.md`
 
 ## Required Reading

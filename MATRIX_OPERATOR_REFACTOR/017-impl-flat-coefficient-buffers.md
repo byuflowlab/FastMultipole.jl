@@ -9,6 +9,7 @@ stable.
 
 - `007-theory-coefficient-buffer-layout.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
 - `016-impl-m2m-and-l2l-operator-pipelines.md`
 - `016a-milestone-review-impl-013-016.md`
 

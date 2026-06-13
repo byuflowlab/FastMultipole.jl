@@ -13,6 +13,7 @@ call behavior.
 - `007-theory-coefficient-buffer-layout.md`
 - `008a-milestone-review-theory-005-008.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
 
 ## Required Reading
 

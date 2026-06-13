@@ -9,6 +9,8 @@ behavior.
 
 - `005-theory-full-m2l-composition.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
+- `008d-theory-dynamic-p-error-m2l-integration.md`
 - `010-impl-z-rotation-operators.md`
 - `011-impl-m2l-z-translation-blocks.md`
 - `012-impl-lamb-helmholtz-operators.md`
@@ -19,6 +21,7 @@ behavior.
 - `START_HERE.md`
 - Approved dependency task files listed above
 - Approved `theory/full-m2l-composition.md`
+- Approved `theory/dynamic-p-error-m2l-integration.md`
 - Current production M2L call sites and tests
 
 ## Artifacts or Production Surface
@@ -30,7 +33,11 @@ behavior.
 
 - End-to-end explicit M2L operator composition
 - Cache and scratch usage integrated with earlier implementation tasks
-- Compatibility path that preserves current production behavior
+- Compatibility path that preserves current production behavior. Per the `008b`
+  re-plan, this first pass is **side-by-side, parity-only**: the explicit M2L
+  operator pipeline is validated against production but does **not** replace the
+  production `multipole_to_local!` / `multipole_to_local_II!` internals.
+  Production hot-path replacement is a later, explicitly scoped step.
 
 ## Verification
 

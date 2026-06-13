@@ -9,6 +9,7 @@ Implement Lamb-Helmholtz transform operators and parity tests.
 - `003-theory-lamb-helmholtz-operator-form.md`
 - `007-theory-coefficient-buffer-layout.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
 - `009-impl-basis-and-operator-cache-types.md`
 
 ## Required Reading

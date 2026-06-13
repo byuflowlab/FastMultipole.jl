@@ -8,6 +8,7 @@ and coordination rules before the final Implementation tasks begin.
 ## Dependencies
 
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
 - `013-impl-axis-swap-operators.md`
 - `014-impl-full-m2l-operator-pipeline.md`
 - `015-impl-axis-swap-benchmarks.md`

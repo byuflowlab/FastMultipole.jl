@@ -9,6 +9,7 @@ Implement explicit z-rotation operators and parity tests.
 - `001-theory-z-rotation-operators.md`
 - `007-theory-coefficient-buffer-layout.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
 - `009-impl-basis-and-operator-cache-types.md`
 
 ## Required Reading

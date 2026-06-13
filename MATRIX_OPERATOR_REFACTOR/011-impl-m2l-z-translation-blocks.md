@@ -9,6 +9,8 @@ Implement fixed-`m` M2L z-translation blocks with approved distance scaling.
 - `002-theory-m2l-z-translation-scaling.md`
 - `007-theory-coefficient-buffer-layout.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
+- `008d-theory-dynamic-p-error-m2l-integration.md`
 - `009-impl-basis-and-operator-cache-types.md`
 
 ## Required Reading
@@ -16,6 +18,7 @@ Implement fixed-`m` M2L z-translation blocks with approved distance scaling.
 - `START_HERE.md`
 - Approved dependency task files listed above
 - Approved `theory/m2l-z-translation-scaling.md`
+- Approved `theory/dynamic-p-error-m2l-integration.md`
 - Existing M2L z-translation production code and tests
 
 ## Artifacts or Production Surface

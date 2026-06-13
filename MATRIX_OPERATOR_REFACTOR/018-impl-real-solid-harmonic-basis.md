@@ -8,6 +8,8 @@ Add real-basis transforms and evaluate native real-basis execution.
 
 - `008-theory-real-solid-harmonic-transforms.md`
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
+- `008e-theory-real-basis-kernel-derivatives.md`
 - `017-impl-flat-coefficient-buffers.md`
 
 ## Required Reading
@@ -15,6 +17,7 @@ Add real-basis transforms and evaluate native real-basis execution.
 - `START_HERE.md`
 - Approved dependency task files listed above
 - Approved `theory/real-solid-harmonic-transforms.md`
+- Approved `theory/real-basis-kernel-derivatives.md`
 - Stable operator API and flat-buffer implementation notes
 
 ## Artifacts or Production Surface
@@ -27,6 +30,9 @@ Add real-basis transforms and evaluate native real-basis execution.
 
 - Complex-to-real and real-to-complex transform implementation
 - Evaluation path for native real-basis operator execution
+- Native real-basis evaluation of the potential, gradient, and gradient
+  Jacobian (Hessian) per approved `theory/real-basis-kernel-derivatives.md`,
+  matching the production `DerivativesSwitch{PS,GS,HS}` paths
 - Notes on whether native real-basis execution should remain enabled,
   experimental, or deferred
 

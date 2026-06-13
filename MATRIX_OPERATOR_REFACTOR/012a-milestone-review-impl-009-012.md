@@ -8,6 +8,7 @@ and coordination rules before later Implementation work begins.
 ## Dependencies
 
 - `008b-implementation-replan.md`
+- `008c-implementation-performance-baseline.md`
 - `009-impl-basis-and-operator-cache-types.md`
 - `010-impl-z-rotation-operators.md`
 - `011-impl-m2l-z-translation-blocks.md`
