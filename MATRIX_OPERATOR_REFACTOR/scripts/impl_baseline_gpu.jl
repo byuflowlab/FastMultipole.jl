@@ -9,15 +9,14 @@
 # kernel-launch + host/device transfer.
 #
 # It deliberately mirrors the CPU dense prototypes in impl_baseline_cpu.jl:
-#   * same two GEMM-relevant stages
-#       - M2L z-translation : block-diagonal over m, block size (P+1-m)
+#   * same GEMM-relevant stage shapes
+#       - M2M/M2L/L2L z-translation : block-diagonal over m, block size (P+1-m)
 #       - axis-swap (y rot) : block-diagonal over n, block size (2n+1)
 #   * same batch sweep
 #   * re/im modeled as 2 columns per expansion
-# so the CSV columns line up with dense_vs_loop.csv and CPU<->GPU numbers are
-# directly comparable.
+# so CPU<->GPU seconds_per_expansion numbers are directly comparable.
 #
-# Two GPU variants are measured per (stage, batch):
+# Two GPU data-residency variants are measured per (stage, launch strategy, batch):
 #   - device_resident : inputs already on the GPU (steady-state FMM: coefficient
 #                        buffers live on device). Pure kernel time.
 #   - with_transfer   : host->device upload + compute + device->host download,
@@ -49,7 +48,7 @@
 # Output (machine-tagged, alongside the CPU results):
 #   MATRIX_OPERATOR_REFACTOR/data/impl_performance_baseline/<hostname>/
 #       env_gpu.md
-#       dense_gpu.csv  (columns: stage,form,precision,P,batch,seconds,seconds_per_expansion)
+#       dense_gpu.csv  (columns include launch_strategy and transfer_variant)
 #
 # On a machine WITHOUT a functional GPU the script prints a clear skip message
 # and exits 0 (it is safe to leave in CI / run on the CPU dev box).
@@ -83,6 +82,7 @@ const OUTDIR = normpath(joinpath(@__DIR__, "..", "data", "impl_performance_basel
 # block sizes (identical to impl_baseline_cpu.jl)
 mblocks(P) = [P + 1 - m for m in 0:P]   # M2L z-translation
 nblocks(P) = [2n + 1 for n in 0:P]      # axis-swap (y rotation)
+block_offsets(blocks) = cumsum(vcat(1, blocks[1:end-1]))
 
 # -----------------------------------------------------------------------------
 # Try to load CUDA; skip cleanly if unavailable.
@@ -153,6 +153,74 @@ function make_gpu_apply(::Type{T}, blocks, cols) where {T}
     return run!, run_with_transfer!
 end
 
+function fused_block_kernel!(Y, A, X, offsets, sizes, nblocks, nrows, cols)
+    idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    stride = blockDim().x * gridDim().x
+    total = nrows * cols
+    while idx <= total
+        row = (idx - 1) % nrows + 1
+        col = (idx - 1) ÷ nrows + 1
+
+        k = 1
+        @inbounds while k < nblocks && row >= offsets[k + 1]
+            k += 1
+        end
+        @inbounds begin
+            offset = offsets[k]
+            b = sizes[k]
+            local_i = row - offset + 1
+            s = zero(eltype(Y))
+            for h in 1:b
+                s += A[row, h] * X[offset + h - 1, col]
+            end
+            Y[row, col] = s
+        end
+        idx += stride
+    end
+    return nothing
+end
+
+"""
+Single-launch packed-block GPU prototype. It intentionally uses a simple custom
+kernel rather than cuBLAS so we can measure the launch-fusion side of the design
+space for the small block-diagonal operators.
+"""
+function make_gpu_fused_apply(::Type{T}, blocks, cols) where {T}
+    offsets = block_offsets(blocks)
+    nrows = sum(blocks)
+    maxb = maximum(blocks)
+    hA = zeros(T, nrows, maxb)
+    @inbounds for k in eachindex(blocks)
+        b = blocks[k]
+        r0 = offsets[k]
+        hA[r0:(r0 + b - 1), 1:b] .= randn(T, b, b)
+    end
+    hX = randn(T, nrows, cols)
+    hY = zeros(T, nrows, cols)
+    dA = CuArray(hA)
+    dX = CuArray(hX)
+    dY = CUDA.zeros(T, nrows, cols)
+    dOffsets = CuArray(Int32.(offsets))
+    dSizes = CuArray(Int32.(blocks))
+
+    run! = function ()
+        total = nrows * cols
+        threads = 256
+        blocks_grid = min(cld(total, threads), 65535)
+        @cuda threads=threads blocks=blocks_grid fused_block_kernel!(
+            dY, dA, dX, dOffsets, dSizes, Int32(length(blocks)), Int32(nrows), Int32(cols)
+        )
+        return nothing
+    end
+    run_with_transfer! = function ()
+        copyto!(dX, hX)
+        run!()
+        copyto!(hY, dY)
+        return nothing
+    end
+    return run!, run_with_transfer!
+end
+
 function write_env_gpu(io)
     println(io, "# 008c GPU baseline -- environment")
     println(io)
@@ -185,23 +253,35 @@ function main()
     end
 
     open(joinpath(OUTDIR, "dense_gpu.csv"), "w") do io
-        println(io, "stage,form,precision,P,batch,seconds,seconds_per_expansion")
+        println(io, "stage,form,launch_strategy,transfer_variant,precision,P,batch,seconds,seconds_per_expansion")
         for P in P_DENSE_LIST
             for T in PREC_LIST
                 for B in BATCH_LIST
                     cols = 2 * B  # re + im lanes
 
-                    for (stage, blocks) in (("m2l_z_translation", mblocks(P)),
+                    for (stage, blocks) in (("m2m_z_translation", mblocks(P)),
+                                            ("m2l_z_translation", mblocks(P)),
+                                            ("l2l_z_translation", mblocks(P)),
                                             ("axis_swap", nblocks(P)))
                         run!, run_xfer! = make_gpu_apply(T, blocks, cols)
 
                         t = gpu_timeit(run!)
-                        @printf(io, "%s,device_resident,%s,%d,%d,%.6e,%.6e\n",
-                                stage, T, P, B, t, t / B)
+                        @printf(io, "%s,dense,per_block_launch,device_resident,%s,%d,%d,%.6e,%.6e\n",
+                                stage, string(T), P, B, t, t / B)
 
                         t = gpu_timeit(run_xfer!)
-                        @printf(io, "%s,with_transfer,%s,%d,%d,%.6e,%.6e\n",
-                                stage, T, P, B, t, t / B)
+                        @printf(io, "%s,dense,per_block_launch,with_transfer,%s,%d,%d,%.6e,%.6e\n",
+                                stage, string(T), P, B, t, t / B)
+
+                        run!, run_xfer! = make_gpu_fused_apply(T, blocks, cols)
+
+                        t = gpu_timeit(run!)
+                        @printf(io, "%s,dense,fused_kernel,device_resident,%s,%d,%d,%.6e,%.6e\n",
+                                stage, string(T), P, B, t, t / B)
+
+                        t = gpu_timeit(run_xfer!)
+                        @printf(io, "%s,dense,fused_kernel,with_transfer,%s,%d,%d,%.6e,%.6e\n",
+                                stage, string(T), P, B, t, t / B)
 
                         flush(io)
                     end

@@ -103,21 +103,65 @@ fresh checkout under the default Julia). They write machine-tagged output to
 `MATRIX_OPERATOR_REFACTOR/data/impl_performance_baseline/<hostname>/` so a later
 run on stronger hardware does not clobber these numbers.
 
+The harnesses are now intended for cross-machine collection. Numbers recorded
+on this local CPU are provisional design evidence; final implementation-policy
+decisions should compare at least local CPU, the 72-thread CPU host, and a CUDA
+GPU host by downloading each machine-tagged result directory.
+
 Run commands (from the repository root):
 
 ```bash
 # CPU baseline, GENUINELY single-thread BLAS (apples-to-apples vs the recurrence)
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
+P_LIST="4,8,12" P_DENSE_LIST="4,8,12" BATCH_LIST="1,8,64" SAMPLES=10 \
   julia --project=. MATRIX_OPERATOR_REFACTOR/scripts/impl_baseline_cpu.jl
 
 # CPU baseline, all-cores BLAS
-OPENBLAS_NUM_THREADS=4 OMP_NUM_THREADS=4 \
+OPENBLAS_NUM_THREADS=$(sysctl -n hw.ncpu) OMP_NUM_THREADS=$(sysctl -n hw.ncpu) \
+P_LIST="4,8,12" P_DENSE_LIST="4,8,12" BATCH_LIST="1,8,64" SAMPLES=10 \
   julia --project=. MATRIX_OPERATOR_REFACTOR/scripts/impl_baseline_cpu.jl
 
 # GPU baseline (on a CUDA machine; add CUDA first)
 julia --project=. -e 'import Pkg; Pkg.add("CUDA")'
-julia --project=. MATRIX_OPERATOR_REFACTOR/scripts/impl_baseline_gpu.jl
+P_DENSE_LIST="2,3,4,5,6,7,10,12,14,20" \
+BATCH_LIST="64,512,4096,32768,262144" \
+PREC_LIST="Float64,Float32" SAMPLES=50 \
+  julia --project=. MATRIX_OPERATOR_REFACTOR/scripts/impl_baseline_gpu.jl
 ```
+
+`dense_vs_loop_blas<N>.csv` schema:
+
+```text
+stage,form,precision,blas_threads,P,batch,measured_batch,scaled_from_per_expansion,seconds,seconds_per_expansion
+```
+
+CPU stages include `m2m_z_translation`, `m2l_z_translation`,
+`l2l_z_translation`, and `axis_swap`. CPU forms include:
+
+- `recurrence`: current production scalar path, measured in Float64. For large
+  batches the harness measures only `measured_batch = min(batch,
+  RECURRENCE_BATCH_CAP)` expansions and sets `scaled_from_per_expansion=true`
+  when projecting the `seconds` column to the requested batch.
+- `dense`: direct per-block BLAS `mul!` on pre-split block matrices.
+- `dense_packed`: gather from a flat coefficient-like layout, run per-block
+  BLAS `mul!`, and scatter back to a flat output buffer.
+- `compiled_block_loop`: full-batch hand-written small-block matmul loop for
+  CPU comparison against BLAS call overhead.
+
+`dense_gpu.csv` schema:
+
+```text
+stage,form,launch_strategy,transfer_variant,precision,P,batch,seconds,seconds_per_expansion
+```
+
+GPU `launch_strategy` values are `per_block_launch` for the existing per-block
+`mul!` path and `fused_kernel` for the single-launch packed-block prototype.
+Each is measured as `device_resident` and `with_transfer`. On CPU-only machines
+the GPU script exits cleanly with no measurements.
+
+Small-`P` / tiny-batch fallback policy remains undecided here. The final choice
+must be revisited after the full `019` benchmark evidence, especially for
+`P <= 3` and `batch == 1` regimes where prototype overhead can dominate.
 
 **BLAS thread-control caveat (important for the single-thread numbers).**
 Runtime `BLAS.set_num_threads()` was found **unreliable** for OpenBLAS on this

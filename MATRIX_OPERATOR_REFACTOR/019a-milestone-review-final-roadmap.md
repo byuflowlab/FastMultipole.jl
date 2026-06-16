@@ -40,6 +40,11 @@ notes listed by tasks `017` through `019`.
   confirm all recorded decisions and feedback have been incorporated** into the
   completed refactor and coordination documents. Note any gaps and the required
   fixes here.
+- **Revisit small-`P` / tiny-batch fallback policy using final `019` benchmark
+  evidence.** The `008c` prototype harness leaves this undecided for cases where
+  dense packing, BLAS launch overhead, or fused-kernel overhead may dominate
+  (`P <= 3`, `batch == 1`, and nearby regimes). Record whether production should
+  keep a recurrence/compiled-loop fallback or always use the dense operator path.
 
 ## Verification
 

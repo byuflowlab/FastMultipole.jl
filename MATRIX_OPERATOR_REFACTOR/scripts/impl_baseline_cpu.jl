@@ -19,11 +19,12 @@
 #        - L2L  z-translation      translate_local_z!
 #        - Lamb-Helmholtz xform    transform_lamb_helmholtz_{multipole,local}!
 #
-#   3. Builds THROWAWAY DENSE-MATRIX prototypes of the two GEMM-relevant stages
-#      (block-diagonal-over-m z-translation, block-diagonal-over-n axis-swap)
-#      and measures them head-to-head against the recurrences, sweeping the
-#      batch count (1 .. many expansions) and toggling single- vs multi-thread
-#      BLAS, so the GEMM-vs-loop crossover is visible per regime.
+#   3. Builds THROWAWAY DENSE-MATRIX prototypes of the GEMM-relevant stages
+#      (block-diagonal-over-m M2M/M2L/L2L z-translation,
+#      block-diagonal-over-n axis-swap) and measures them head-to-head against
+#      the recurrences, sweeping the batch count (1 .. many expansions) and
+#      toggling single- vs multi-thread BLAS, so the GEMM-vs-loop crossover is
+#      visible per regime.
 #
 # This is a TEMPORARY benchmark harness. It does NOT touch src/. The dense
 # prototypes are representative cost models (correct block dimensions, random
@@ -55,7 +56,7 @@
 #     MATRIX_OPERATOR_REFACTOR/data/impl_performance_baseline/<hostname>/
 #       env.md                      (environment + BLAS metadata)
 #       stage_recurrence.csv        (production stage timings)
-#       dense_vs_loop_blas<N>.csv   (dense-prototype head-to-head, batch sweep,
+#       dense_vs_loop_blas<N>.csv   (dense/prototype head-to-head, batch sweep,
 #                                    N = actual BLAS thread count for that run)
 #
 # The script is self-contained: drop the repo on a new machine and the two run
@@ -117,6 +118,9 @@ const SEED       = 1234
 const P_DENSE_LIST = haskey(ENV, "P_DENSE_LIST") ? _parse_int_list(ENV["P_DENSE_LIST"]) : [2, 3, 4, 5, 6, 7, 10, 14, 20]
 # Dense head-to-head sweeps both precisions (recurrence stays Float64 = production).
 const PREC_LIST  = haskey(ENV, "PREC_LIST")  ? _parse_prec_list(ENV["PREC_LIST"]) : [Float64, Float32]
+# The scalar recurrence per-expansion time is batch-independent, so cap how many
+# iterations we actually time (avoids minutes of pointless work at huge batch).
+const RECURRENCE_BATCH_CAP = haskey(ENV, "RECURRENCE_BATCH_CAP") ? parse(Int, ENV["RECURRENCE_BATCH_CAP"]) : 2048
 
 # ---- output location (machine-tagged) ---------------------------------------
 const HOST = gethostname()
@@ -259,11 +263,12 @@ function bench_stages(io)
 end
 
 # -----------------------------------------------------------------------------
-# (3) Dense-prototype head-to-head vs recurrence  (GEMM-relevant stages)
+# (3) Dense/prototype head-to-head vs recurrence  (GEMM-relevant stages)
 # -----------------------------------------------------------------------------
 #
-# The two stages with a real dense/GEMM analog are:
+# The stages with a real dense/GEMM analog are:
 #   * fixed-m z-translation : block-diagonal over m, block size (P+1-m)
+#     (M2M, M2L, and L2L use the same block-shape cost model here)
 #   * axis-swap (y rotation): block-diagonal over n, block size (2n+1)
 #
 # We build random dense blocks of the correct dimensions and apply them to a
@@ -293,6 +298,65 @@ function make_dense_apply(::Type{T}, blocks, cols) where {T}
     return f
 end
 
+block_offsets(blocks) = cumsum(vcat(1, blocks[1:end-1]))
+
+"""
+Packed-layout prototype: gather contiguous coefficient-layout slices into
+per-block GEMM inputs, apply each block with BLAS, then scatter back to a flat
+coefficient-like output buffer. This models the extra layout traffic around a
+block GEMM path without depending on production storage code.
+"""
+function make_dense_packed_apply(::Type{T}, blocks, cols) where {T}
+    offsets = block_offsets(blocks)
+    nrows = sum(blocks)
+    coeff_in = randn(T, nrows, cols)
+    coeff_out = zeros(T, nrows, cols)
+    As = [randn(T, b, b) for b in blocks]
+    Xs = [zeros(T, b, cols) for b in blocks]
+    Ys = [zeros(T, b, cols) for b in blocks]
+    f = function ()
+        @inbounds for k in eachindex(blocks)
+            b = blocks[k]
+            r = offsets[k]:(offsets[k] + b - 1)
+            copyto!(Xs[k], view(coeff_in, r, :))
+            mul!(Ys[k], As[k], Xs[k])
+            copyto!(view(coeff_out, r, :), Ys[k])
+        end
+        return nothing
+    end
+    return f
+end
+
+"""
+Full-batch hand-written small-block matrix multiply. This is intentionally a
+simple compiled loop over the whole batch, used to compare BLAS call overhead
+against a direct CPU implementation for tiny block sizes.
+"""
+function make_compiled_block_loop_apply(::Type{T}, blocks, cols) where {T}
+    As = [randn(T, b, b) for b in blocks]
+    Xs = [randn(T, b, cols) for b in blocks]
+    Ys = [zeros(T, b, cols) for b in blocks]
+    f = function ()
+        @inbounds for k in eachindex(blocks)
+            A = As[k]
+            X = Xs[k]
+            Y = Ys[k]
+            b = size(A, 1)
+            for j in 1:cols
+                for i in 1:b
+                    s = zero(T)
+                    for h in 1:b
+                        s += A[i, h] * X[h, j]
+                    end
+                    Y[i, j] = s
+                end
+            end
+        end
+        return nothing
+    end
+    return f
+end
+
 # NOTE on thread control: runtime BLAS.set_num_threads() was found to be
 # UNRELIABLE for OpenBLAS on this platform -- get_num_threads() changes but the
 # actual GEMM execution does not (verified with a large reference GEMM). The
@@ -306,7 +370,7 @@ function bench_dense_vs_loop(io, blas_threads)
     LH = Val(false)
     r = 2.3
 
-    println(io, "stage,form,precision,blas_threads,P,batch,seconds,seconds_per_expansion")
+    println(io, "stage,form,precision,blas_threads,P,batch,measured_batch,scaled_from_per_expansion,seconds,seconds_per_expansion")
 
     for P in P_DENSE_LIST
         src = FM.initialize_expansion(P, TF); rand!(src)
@@ -316,27 +380,53 @@ function bench_dense_vs_loop(io, blas_threads)
         for B in BATCH_LIST
             cols = 2 * B   # re + im lanes
 
-            # recurrence side is Float64 only (production precision); time once per B.
-            # pure Julia scalar code -> always single-threaded.
-            trz = timeit(() -> (for _ in 1:B; FM.translate_multipole_to_local_z!(dst, src, r, P, LH); end))
-            @printf(io, "m2l_z_translation,recurrence,Float64,%d,%d,%d,%.6e,%.6e\n",
-                    blas_threads, P, B, trz, trz / B)
-            try_ = timeit(() -> (for _ in 1:B; FM.rotate_multipole_y!(dst, src, Ts, FM.Hs_π2, FM.ζs_mag, θ, P, LH); end))
-            @printf(io, "axis_swap,recurrence,Float64,%d,%d,%d,%.6e,%.6e\n",
-                    blas_threads, P, B, try_, try_ / B)
+            # Recurrence side is Float64 only (production precision) and pure
+            # Julia scalar code -> always single-threaded, and its per-expansion
+            # time is INDEPENDENT of batch. So we measure it over at most
+            # RECURRENCE_BATCH_CAP iterations (running it B times at huge B would
+            # cost minutes for no extra information) and report the measured
+            # per-expansion time; the `seconds` column is per-expansion * B.
+            Brec = min(B, RECURRENCE_BATCH_CAP)
+            scaled = Brec != B
+
+            recurrence_cases = (
+                ("m2m_z_translation", () -> FM.translate_multipole_z!(dst, src, r, P, LH)),
+                ("m2l_z_translation", () -> FM.translate_multipole_to_local_z!(dst, src, r, P, LH)),
+                ("l2l_z_translation", () -> FM.translate_local_z!(dst, src, r, P, LH)),
+                ("axis_swap", () -> FM.rotate_multipole_y!(dst, src, Ts, FM.Hs_π2, FM.ζs_mag, θ, P, LH)),
+            )
+            for (stage, fone) in recurrence_cases
+                tr = timeit(() -> (for _ in 1:Brec; fone(); end))
+                tr_pe = tr / Brec
+                @printf(io, "%s,recurrence,Float64,%d,%d,%d,%d,%s,%.6e,%.6e\n",
+                        stage, blas_threads, P, B, Brec, string(scaled), tr_pe * B, tr_pe)
+            end
 
             # dense side: sweep precisions (Float64 matches production; Float32
             # shows the single-precision speedup).
+            prototype_cases = (
+                ("m2m_z_translation", mblocks(P)),
+                ("m2l_z_translation", mblocks(P)),
+                ("l2l_z_translation", mblocks(P)),
+                ("axis_swap", nblocks(P)),
+            )
             for T in PREC_LIST
-                apply_dense_z = make_dense_apply(T, mblocks(P), cols)
-                td = timeit(apply_dense_z)
-                @printf(io, "m2l_z_translation,dense,%s,%d,%d,%d,%.6e,%.6e\n",
-                        T, blas_threads, P, B, td, td / B)
+                for (stage, blocks) in prototype_cases
+                    apply_dense = make_dense_apply(T, blocks, cols)
+                    td = timeit(apply_dense)
+                    @printf(io, "%s,dense,%s,%d,%d,%d,%d,false,%.6e,%.6e\n",
+                            stage, string(T), blas_threads, P, B, B, td, td / B)
 
-                apply_dense_y = make_dense_apply(T, nblocks(P), cols)
-                td = timeit(apply_dense_y)
-                @printf(io, "axis_swap,dense,%s,%d,%d,%d,%.6e,%.6e\n",
-                        T, blas_threads, P, B, td, td / B)
+                    apply_packed = make_dense_packed_apply(T, blocks, cols)
+                    td = timeit(apply_packed)
+                    @printf(io, "%s,dense_packed,%s,%d,%d,%d,%d,false,%.6e,%.6e\n",
+                            stage, string(T), blas_threads, P, B, B, td, td / B)
+
+                    apply_loop = make_compiled_block_loop_apply(T, blocks, cols)
+                    td = timeit(apply_loop)
+                    @printf(io, "%s,compiled_block_loop,%s,%d,%d,%d,%d,false,%.6e,%.6e\n",
+                            stage, string(T), blas_threads, P, B, B, td, td / B)
+                end
             end
 
             flush(io)
