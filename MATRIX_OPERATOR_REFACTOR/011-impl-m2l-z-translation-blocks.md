@@ -11,6 +11,7 @@ Implement fixed-`m` M2L z-translation blocks with approved distance scaling.
 - `008b-implementation-replan.md`
 - `008c-implementation-performance-baseline.md`
 - `008d-theory-dynamic-p-error-m2l-integration.md`
+- `008h-theory-lamb-helmholtz-accuracy-order.md`
 - `009-impl-basis-and-operator-cache-types.md`
 
 ## Required Reading
@@ -31,6 +32,10 @@ Implement fixed-`m` M2L z-translation blocks with approved distance scaling.
 - Fixed-`m` block construction
 - Stable distance-scaling implementation
 - Cache integration compatible with task `009`
+- For `Val(true)`, block/cache sizing must support the active padded order
+  `P_active = P_phi + 1` so the `chi` channel is translated through
+  `P_chi = P_phi + 1`; `phi` rows above `P_phi` are padding/scratch, not
+  requested physical output.
 
 ## Verification
 

@@ -105,8 +105,7 @@ This is a Theory Phase task. It must not modify production code under `src/`.
 Artifacts:
 
 - `theory/radix-interaction-list.md` — construction derivation and batch-layout
-  specification. TODO-gated where it depends on `008d`'s final accepted-offset
-  stencil bound.
+  specification.
 - `scripts/radix_interaction_list_verify.jl` — standalone deterministic verifier
   (no production imports; performs no expansion translations — it only checks which
   cells/pairs are identified). It builds the interaction list for one or more test
@@ -158,6 +157,45 @@ MATRIX_OPERATOR_REFACTOR/data/radix_interaction_list/verification_summary.md
 
 ## Approval Notes
 
-To be filled by a different agent after derivation, verification, and notes are
-complete. Approval is blocked until `008d` is approved, since the exact accepted
-offsets come from `008d`'s conservative bound.
+Derivation, verification, and notes are complete for this task:
+
+- `theory/radix-interaction-list.md` specifies the offset-class stencil sweep
+  (`source_coord = target_coord - d`), the per-offset batched M2L layout and its
+  contrast with the legacy per-pair `m2l_list`, the near/self -> direct complement
+  with `Val{ff/nf/si}`-analogous toggles, the shared source/target grid
+  requirement, the channel-agnostic Lamb-Helmholtz note, and the explicit
+  complete-coverage acceptance criterion.
+- `scripts/radix_interaction_list_verify.jl` builds the list for grid-aligned,
+  clustered, sparse, and fixed-seed random grids (both `Val(false)` and
+  `Val(true)`), with no production imports and no expansion translations. It
+  confirms the exact far/near/self cell-pair partition, agreement between the swept
+  M2L batches and the classified far set, per-offset batch purity, grid-sharing
+  invariants, and — the real target — that every ordered body pair is covered
+  exactly once. The random case exercises a non-trivial near set (342 near, 3198
+  far, 60 self) and the LH bound is correctly more conservative.
+- `data/radix_interaction_list/verification_summary.md` records the per-case table;
+  the verifier prints `radix_interaction_list_verify: PASS`.
+- `git status --short src/` and `git diff --stat -- src/` are empty: no production
+  code changed.
+
+## Clear-Context Approval
+
+Reviewed the allowed clear-context scope for task `008g`: `START_HERE.md`, this
+task file, the listed derivation artifact, verifier, generated verification
+summary, and the listed production interaction-list surfaces in read-only mode.
+
+Dependencies `008d` and `008f` are marked approved in `START_HERE.md`. The
+derivation consumes their accepted-offset stencil and uniform-grid geometry
+without modifying production code. The radix-path construction is specified as a
+translation-invariant sweep over accepted offset classes, with per-offset M2L
+batches and an exact near/self direct complement. The verifier was rerun locally
+with:
+
+```sh
+julia --project=. MATRIX_OPERATOR_REFACTOR/scripts/radix_interaction_list_verify.jl
+```
+
+It printed `radix_interaction_list_verify: PASS` and regenerated the recorded
+summary. `git diff --stat -- src` is empty.
+
+Conclusion: `008g` is approved.

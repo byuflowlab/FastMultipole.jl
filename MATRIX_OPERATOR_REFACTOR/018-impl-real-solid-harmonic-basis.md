@@ -10,6 +10,7 @@ Add real-basis transforms and evaluate native real-basis execution.
 - `008b-implementation-replan.md`
 - `008c-implementation-performance-baseline.md`
 - `008e-theory-real-basis-kernel-derivatives.md`
+- `008h-theory-lamb-helmholtz-accuracy-order.md`
 - `017-impl-flat-coefficient-buffers.md`
 
 ## Required Reading
@@ -33,6 +34,9 @@ Add real-basis transforms and evaluate native real-basis execution.
 - Native real-basis evaluation of the potential, gradient, and gradient
   Jacobian (Hessian) per approved `theory/real-basis-kernel-derivatives.md`,
   matching the production `DerivativesSwitch{PS,GS,HS}` paths
+- Native real-basis `Val(true)` execution must preserve the approved channel
+  sizing rule from `theory/lamb-helmholtz-accuracy-order.md`:
+  `P_chi = P_phi + 1` for M2L/evaluation, with `Val(false)` unchanged.
 - Notes on whether native real-basis execution should remain enabled,
   experimental, or deferred
 

@@ -38,8 +38,8 @@ finished. The completing agent must not approve its own work.
 ## Hard Phase Gate
 
 All Theory Phase rows, including Theory Milestone Reviews and the Theory
-Addendum rows `008d`, `008e`, `008f`, and `008g`, must be marked both `Done` and
-`Approved` before any Implementation Phase row starts.
+Addendum rows `008d`, `008e`, `008f`, `008g`, and `008h`, must be marked both
+`Done` and `Approved` before any Implementation Phase row starts.
 
 Theory work may create or edit artifacts under:
 
@@ -121,15 +121,23 @@ f-before-d ordering is intentional and dependency-driven.
 
 The `008g` row was added later by user request on `2026-06-13`. It derives the
 radix-path interaction-list construction and depends on `008d` (the stencil) and
-`008f` (the cell geometry), so it is listed last and cannot be selected until
-`008d` is complete and approved.
+`008f` (the cell geometry), so it cannot be selected until `008d` is complete and
+approved.
+
+The `008h` row was added by user request on `2026-06-15`. It derives the
+Lamb-Helmholtz channel accuracy-order relationship (the hypothesis that the `χ`
+channel must be carried at `P + 1` while `φ` stays at `P`). It depends on the
+Lamb-Helmholtz operator form (`003`), the constant-`P` stencil (`008d`), and the
+real-basis kernel derivatives (`008e`); it is independent of `008g` and is listed
+last.
 
 | Done | Approved | Task | Summary | Blocking |
 | --- | --- | --- | --- | --- |
 | [x] | [x] | `008f-theory-radix-sort-clustering.md` | Derive a radix-sort (Morton/Z-order) clustering for large-`N`/GPU producing uniform-grid cells for translation-invariant M2L stencils. | `008b`, `007` |
-| [ ] | [ ] | `008d-theory-dynamic-p-error-m2l-integration.md` | Specify constant-`P` error handling: legacy octree keeps dynamic-`P`; the radix-sort path moves error control into a conservative translation-invariant interaction-list stencil. | `008b`, `008f`, `002`, `005`, `007` |
-| [ ] | [ ] | `008e-theory-real-basis-kernel-derivatives.md` | Derive real-basis evaluation of potential, gradient, and gradient Jacobian (Hessian) for the `1/r` kernel. | `008b`, `007`, `008` |
-| [ ] | [ ] | `008g-theory-radix-interaction-list.md` | Derive the radix-path M2L interaction-list construction: apply the `008d` constant-`P` stencil over `008f` uniform-grid cells, batch M2L by integer offset class, and route the near/self complement to direct. Verify complete, non-double-counted n-body coverage on a test grid. | `008d`, `008f`, `008b`, `007`, `005` |
+| [x] | [x] | `008d-theory-dynamic-p-error-m2l-integration.md` | Specify constant-`P` error handling: legacy octree keeps dynamic-`P`; the radix-sort path moves error control into a conservative translation-invariant interaction-list stencil. | `008b`, `008f`, `002`, `005`, `007` |
+| [x] | [x] | `008e-theory-real-basis-kernel-derivatives.md` | Derive real-basis evaluation of potential, gradient, and gradient Jacobian (Hessian) for the `1/r` kernel. | `008b`, `007`, `008` |
+| [x] | [x] | `008g-theory-radix-interaction-list.md` | Derive the radix-path M2L interaction-list construction: apply the `008d` constant-`P` stencil over `008f` uniform-grid cells, batch M2L by integer offset class, and route the near/self complement to direct. Verify complete, non-double-counted n-body coverage on a test grid. | `008d`, `008f`, `008b`, `007`, `005` |
+| [x] | [x] | `008h-theory-lamb-helmholtz-accuracy-order.md` | Derive the Lamb-Helmholtz channel accuracy-order rule (hypothesis: `χ` carried at `P + 1` while `φ` stays at `P`), with stencil/buffer/operator-sizing consequences and a convergence-slope verification. | `003`, `005`, `008d`, `008e`, `007`, `008b` |
 
 ## Implementation Re-Plan Gate
 
@@ -140,13 +148,13 @@ production code work starts.
 | Done | Approved | Task | Summary | Blocking |
 | --- | --- | --- | --- | --- |
 | [x] | [x] | `008b-implementation-replan.md` | User-in-the-loop Implementation re-plan after Theory is approved and before production code work begins. | All Theory rows, `008a` |
-| [ ] | [ ] | `008c-implementation-performance-baseline.md` | Pre-implementation performance, allocation/storage baseline, and design gate before production code work begins. | All Theory rows, `008a`, `008b` |
+| [x] | [ ] | `008c-implementation-performance-baseline.md` | Pre-implementation performance, allocation/storage baseline, and design gate before production code work begins. | All Theory rows, `008a`, `008b` |
 
 ## Implementation Phase
 
 Every Theory Phase row above, including the Theory Addendum rows `008d`,
-`008e`, `008f`, and `008g`, is a blocker for every row in this section. Do not start any
-Implementation task until all Theory rows are marked both `Done` and
+`008e`, `008f`, `008g`, and `008h`, is a blocker for every row in this section. Do
+not start any Implementation task until all Theory rows are marked both `Done` and
 `Approved`. Do not start any Implementation task until
 `008b-implementation-replan.md` and
 `008c-implementation-performance-baseline.md` are also marked both `Done` and
@@ -165,7 +173,7 @@ Milestone Review blocks every Implementation task.
 | [ ] | [ ] | `012a-milestone-review-impl-009-012.md` | Milestone Review for Implementation tasks `009` through `012`. | `008b`, `008c`, `009`, `010`, `011`, `012` |
 | [ ] | [ ] | `013-impl-axis-swap-operators.md` | Implement invariant axis-swap operators and y-rotation parity tests. | All Theory rows, `008b`, `008c`, `012a`, `010` |
 | [ ] | [ ] | `014-impl-full-m2l-operator-pipeline.md` | Compose the full M2L operator pipeline and test against current production behavior. | All Theory rows, `008b`, `008c`, `013`, `010`, `011`, `012` |
-| [ ] | [ ] | `015-impl-axis-swap-benchmarks.md` | Benchmark invariant axis-swap composition and full M2L operator paths. | All Theory rows, `008b`, `008c`, `014` |
+| [ ] | [ ] | `015-impl-axis-swap-benchmarks.md` | Benchmark invariant axis-swap composition and full M2L operator paths, including the M2L batching-strategy candidates; record separate CPU and GPU recommendations and the benchmark-gated batching decision. | All Theory rows, `008b`, `008c`, `014` |
 | [ ] | [ ] | `016-impl-m2m-and-l2l-operator-pipelines.md` | Extend the operator structure to M2M and L2L. | All Theory rows, `008b`, `008c`, `014`, `015` |
 | [ ] | [ ] | `016a-milestone-review-impl-013-016.md` | Milestone Review for Implementation tasks `013` through `016`. | `008b`, `008c`, `013`, `014`, `015`, `016` |
 | [ ] | [ ] | `017-impl-flat-coefficient-buffers.md` | Introduce flat coefficient buffers and typed views after the operator API is stable. | All Theory rows, `008b`, `008c`, `016a`, `016` |

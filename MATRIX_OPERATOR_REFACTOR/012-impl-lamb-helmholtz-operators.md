@@ -8,6 +8,7 @@ Implement Lamb-Helmholtz transform operators and parity tests.
 
 - `003-theory-lamb-helmholtz-operator-form.md`
 - `007-theory-coefficient-buffer-layout.md`
+- `008h-theory-lamb-helmholtz-accuracy-order.md`
 - `008b-implementation-replan.md`
 - `008c-implementation-performance-baseline.md`
 - `009-impl-basis-and-operator-cache-types.md`
@@ -29,6 +30,10 @@ Implement Lamb-Helmholtz transform operators and parity tests.
 - Multipole and local Lamb-Helmholtz operator construction
 - Channel-coupling application path
 - Cache integration compatible with task `009`
+- Local operators for `Val(true)` must include the upper-neighbor
+  `chi_{P_phi + 1} -> chi_{P_phi}` row from
+  `theory/lamb-helmholtz-accuracy-order.md`. Same-order `chi` truncation is a
+  rejected candidate for the matrix M2L/evaluation path.
 
 ## Verification
 

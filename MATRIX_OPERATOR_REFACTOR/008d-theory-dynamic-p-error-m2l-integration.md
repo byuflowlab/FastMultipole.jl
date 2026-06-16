@@ -76,43 +76,65 @@ blocks every Implementation task under the standard hard phase gate.
 adopted because it amortizes list-build cost and is GPU-batch-friendly. Options
 (a) and (b) are retained here only as a record of considered alternatives.
 
-### Conservative error bound (starting point)
+### Conservative error bound
 
-Starting point: the original Greengard–Rokhlin multipole truncation bound. For a
-source cell with bounding-sphere radius `ρ` about its center and total source
-strength `A = Σ|qᵢ|`, an order-`P` truncated multipole expansion evaluated at a
-point a distance `r > ρ` from the source center satisfies
+The adopted radix-path bound is specified in
+`theory/constant-p-error-stencil.md`. It starts from the original
+Greengard–Rokhlin multipole truncation bound. For a source cell with
+bounding-sphere radius `rho` about its center and total source strength
+`A = sum(abs(q_i))`, an order-`P` truncated multipole expansion evaluated at a
+point a distance `r > rho` from the source center satisfies
 
 ```
-|ε_multipole| ≤ A / (r − ρ) · (ρ / r)^(P + 1)
+|epsilon_multipole| <= A / (r - rho) * (rho / r)^(P + 1)
 ```
 
 with the dual bound on the target (local-expansion) side.
 
-On a uniform radix grid (cell half-width `w`, bounding-sphere radius
-`ρ = w·√3`, integer center-to-center offsets giving distance `r`), this collapses
-to a `(1/c)^(P+1) / (c − 1)` form in the separation ratio `c = r / ρ`. This is
-the same family already implemented in `src/error.jl` as `UnequalSpheres` /
-`PringleAbsolutePotential`.
+On the uniform radix grid from `008f`, a cell has half-width `w`, radius
+`rho = w * sqrt(3)`, center distance `R = 2w * norm(d)` for integer offset `d`,
+and normalized separation:
 
-At a fixed `P` and tolerance `ε`, the inequality fixes the minimum integer
-separation at which a pair is "well separated" — i.e. the near/far boundary of
-the stencil. Because the bound depends only on the relative offset, the stencil
-is identical for every cell at a level: compute it once, reuse everywhere.
+```text
+c = R / rho = 2 * norm(d) / sqrt(3).
+```
 
-TODO (user): confirm/derive the precise conservative bound to adopt, any
-tightening relative to the Greengard–Rokhlin form above, and the exact mapping
-from `(P, ε)` to the integer stencil radius. The exact bound is still under
-discussion.
+For equal source and target cells, the conservative scalar stencil bound is:
+
+```text
+B(P, d, A) = 2A / (rho * (c - 2)) * (1 / (c - 1))^(P + 1).
+```
+
+The bound is valid only for `c > 2`; offsets with `c <= 2` are rejected from the
+M2L stencil and routed to near/direct handling. For `c > 2`, accept offset `d`
+if and only if the configured bound is finite and `B(P, d, A) <= epsilon`.
+
+The formulas above use analytic `1/r` normalization. When comparing against
+production-normalized scalar potentials, multiply analytic bounds by
+`1 / (4*pi)` before applying a production-normalized tolerance.
 
 ### Lamb-Helmholtz (`χ`-channel) extension
 
-TODO (user): extend the conservative bound and the resulting stencil to the
-Lamb-Helmholtz `χ` channel (`lamb_helmholtz = Val(true)`). The single-channel
-Greengard–Rokhlin form above does not yet account for the vector-potential
-channel.
+For `lamb_helmholtz = Val(true)`, the first-pass conservative stencil applies
+the scalar bound independently to configured `phi` and `chi` source budgets:
 
-**This task is not finished until this subheading is filled out.**
+```text
+B_phi = B(P, d, A_phi)
+B_chi = B(P, d, A_chi)
+```
+
+The local Lamb-Helmholtz transform has same-degree `chi` to `phi` coupling and
+neighboring-degree `chi` coupling. The stencil accounts for these with
+`m / n <= 1` and `r / (n + 1) <= R`, where `R = 2w * norm(d)`, giving the
+combined default bound:
+
+```text
+B_LH(P, d, A_phi, A_chi) =
+    B(P, d, A_phi) + (1 + 2R) * B(P, d, A_chi).
+```
+
+Unless a future implementation supplies channel-specific tolerances, accept
+`Val(true)` offsets if and only if `B_LH` is finite and `B_LH <= epsilon`.
 
 ## Operator-Pipeline Implication
 
@@ -159,8 +181,8 @@ old ops + old error machinery, new ops + constant-`P` stencil.
 - Does not derive the radix-sort clustering itself; that is task `008f`.
 - Does not remove or alter the legacy dynamic-`P` machinery, error formulas, or
   `get_P` policy; the legacy path is preserved exactly.
-- Does not finalize the exact conservative stencil bound or the Lamb-Helmholtz
-  extension (both TODO, pending user input).
+- Does not fit tighter, data-dependent stencils; the selected bound is a
+  conservative analytic first pass.
 - Does not port the old error machinery onto the new operators; that feasibility
   is deferred to the end of the Implementation phase.
 
@@ -171,9 +193,8 @@ This is a Theory Phase task. It must not modify production code under `src/`.
 Artifacts:
 
 - `theory/constant-p-error-stencil.md` — error-handling strategy and the
-  conservative-stencil specification (with the TODO derivations above)
+  conservative-stencil specification
 - `scripts/constant_p_error_stencil_verify.jl` — verification script
-  (TODO-gated until the bound is filled in)
 - `data/constant_p_error_stencil/verification_summary.md` — generated summary
 
 ## Verification
@@ -183,11 +204,24 @@ Artifacts:
   the existing per-interaction error prediction must match production
   `FastMultipole.multipole_to_local!` for each supported error method, across
   representative offsets, tolerances, and both `Val(false)` / `Val(true)`.
-- **Radix-sort path:** once the conservative bound and its Lamb-Helmholtz
-  extension are filled in (TODO), the verification script must confirm that the
-  stencil accepts exactly the cell offsets whose conservative error bound at the
-  constant `P` is within tolerance, and that constant-`P` M2L over the stencil
-  meets the target accuracy on a representative uniform-grid case.
+- **Radix-sort path:** the verification script confirms the uniform-grid
+  geometry mapping, rejection for `c <= 2`, exact agreement between the analytic
+  acceptance predicate and generated stencil offsets, monotonicity under larger
+  `P` and looser `epsilon`, production-normalized scaling, and both
+  `Val(false)` / `Val(true)` paths.
+
+Verifier command:
+
+```text
+julia --project=. MATRIX_OPERATOR_REFACTOR/scripts/constant_p_error_stencil_verify.jl
+```
+
+Result:
+
+```text
+constant_p_error_stencil_verify: PASS
+summary: MATRIX_OPERATOR_REFACTOR/data/constant_p_error_stencil/verification_summary.md
+```
 
 Confirm no production `src/` code changed during this Theory task.
 
@@ -199,6 +233,31 @@ MATRIX_OPERATOR_REFACTOR/data/constant_p_error_stencil/verification_summary.md
 
 ## Approval Notes
 
-To be filled by a different agent after derivation, verification, and notes are
-complete. Approval is blocked until the Lamb-Helmholtz subheading and the
-conservative-bound TODOs are resolved.
+Derivation, verification, and notes are complete for this task. A different
+agent must perform clear-context approval before the row is marked Approved.
+
+**Clear-context approval (2026-06-13).** A different agent, in a fresh context,
+performed clear-context approval per the `START_HERE.md` protocol. The reviewer
+read only `START_HERE.md`, this task file, and the three listed artifacts
+(`theory/constant-p-error-stencil.md`,
+`scripts/constant_p_error_stencil_verify.jl`,
+`data/constant_p_error_stencil/verification_summary.md`).
+
+Findings:
+
+- The conservative scalar bound is the Greengard–Rokhlin multipole-truncation
+  bound evaluated at a conservatively reduced separation (`c → c - 1`, absorbing
+  target-cell extent) and doubled for the source and target sides; it is valid
+  for `c > 2`, with `c <= 2` offsets correctly routed to near/direct. The
+  Lamb-Helmholtz combined bound and the `1 / (4π)` production normalization are
+  documented and match the script.
+- The verification script implements the documented formulas exactly and tests
+  geometry mapping, `c <= 2` rejection, analytic/generated stencil agreement,
+  monotonicity under larger `P` and looser `ε`, production-normalized scaling,
+  and both `Val(false)` / `Val(true)` paths.
+- The verifier was re-run during approval and printed
+  `constant_p_error_stencil_verify: PASS`.
+- `git status` / `git diff` confirm no production `src/` code changed; all work
+  is confined to `MATRIX_OPERATOR_REFACTOR/`.
+
+Approved. The `008d` row is marked Approved in `START_HERE.md`.

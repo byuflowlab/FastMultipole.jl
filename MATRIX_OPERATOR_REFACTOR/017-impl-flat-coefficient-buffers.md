@@ -8,6 +8,7 @@ stable.
 ## Dependencies
 
 - `007-theory-coefficient-buffer-layout.md`
+- `008h-theory-lamb-helmholtz-accuracy-order.md`
 - `008b-implementation-replan.md`
 - `008c-implementation-performance-baseline.md`
 - `016-impl-m2m-and-l2l-operator-pipelines.md`
@@ -30,6 +31,9 @@ stable.
 - Flat coefficient buffer representation
 - Typed views matching approved layout theory
 - Migration of stable operator API paths to the new layout
+- `Val(true)` buffers/views must represent `P_phi`, `P_chi = P_phi + 1`, and
+  the padded active order `P_active = P_chi` without treating padded `phi`
+  rows above `P_phi` as physical output. `Val(false)` remains single-order `P`.
 
 ## Verification
 

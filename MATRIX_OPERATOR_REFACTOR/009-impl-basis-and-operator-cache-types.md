@@ -11,6 +11,7 @@ call behavior.
 - `004-theory-axis-swap-conventions.md`
 - `005-theory-full-m2l-composition.md`
 - `007-theory-coefficient-buffer-layout.md`
+- `008h-theory-lamb-helmholtz-accuracy-order.md`
 - `008a-milestone-review-theory-005-008.md`
 - `008b-implementation-replan.md`
 - `008c-implementation-performance-baseline.md`
@@ -33,6 +34,9 @@ call behavior.
 - Shared invariant cache ownership model
 - Per-thread scratch ownership model
 - Element-type parameterization where practical
+- Channel-order metadata for `Val(true)`: store `P_phi` as the requested
+  physical order, `P_chi = P_phi + 1`, and `P_active = P_chi` for common
+  padded cache/buffer dimensions. `Val(false)` remains single-order `P`.
 
 ## Verification
 
