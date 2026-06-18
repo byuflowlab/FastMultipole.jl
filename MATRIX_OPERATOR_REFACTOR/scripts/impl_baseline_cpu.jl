@@ -127,6 +127,11 @@ const HOST = gethostname()
 const OUTDIR = normpath(joinpath(@__DIR__, "..", "data", "impl_performance_baseline", HOST))
 mkpath(OUTDIR)
 
+function progress(msg)
+    println("[", Dates.format(Dates.now(), "HH:MM:SS"), "] ", msg)
+    flush(stdout)
+end
+
 # -----------------------------------------------------------------------------
 # Environment metadata + weak-BLAS detection
 # -----------------------------------------------------------------------------
@@ -220,6 +225,7 @@ function bench_stages(io)
     println(io, "stage,P,lamb_helmholtz,seconds")
     for P in P_LIST
         for LHbool in (false, true)
+            progress("stage baselines: P=$P lamb_helmholtz=$LHbool")
             LH = Val(LHbool)
             TF = Float64
             src   = FM.initialize_expansion(P, TF)
@@ -231,29 +237,36 @@ function bench_stages(io)
             r, θ, ϕ = 2.3, 0.7, 0.9
 
             # z-rotation
+            progress("  timing rotate_z")
             t = timeit(() -> FM.rotate_z!(dst, src, eimϕs, ϕ, P, LH))
             @printf(io, "rotate_z,%d,%s,%.6e\n", P, LHbool, t)
 
             # axis-swap (Wigner y-rotation; builds Ts internally)
+            progress("  timing rotate_multipole_y")
             t = timeit(() -> FM.rotate_multipole_y!(dst, src, Ts, FM.Hs_π2, FM.ζs_mag, θ, P, LH))
             @printf(io, "rotate_multipole_y,%d,%s,%.6e\n", P, LHbool, t)
 
             # M2M z-translation
+            progress("  timing translate_multipole_z")
             t = timeit(() -> FM.translate_multipole_z!(dst, src, r, P, LH))
             @printf(io, "translate_multipole_z,%d,%s,%.6e\n", P, LHbool, t)
 
             # M2L z-translation
+            progress("  timing translate_multipole_to_local_z")
             t = timeit(() -> FM.translate_multipole_to_local_z!(dst, src, r, P, LH))
             @printf(io, "translate_multipole_to_local_z,%d,%s,%.6e\n", P, LHbool, t)
 
             # L2L z-translation
+            progress("  timing translate_local_z")
             t = timeit(() -> FM.translate_local_z!(dst, src, r, P, LH))
             @printf(io, "translate_local_z,%d,%s,%.6e\n", P, LHbool, t)
 
             if LHbool
                 # Lamb-Helmholtz transforms (in place; reset before each sample)
+                progress("  timing transform_lamb_helmholtz_multipole")
                 t = timeit(() -> FM.transform_lamb_helmholtz_multipole!(tmp, r, P); setup=() -> (tmp .= src))
                 @printf(io, "transform_lamb_helmholtz_multipole,%d,%s,%.6e\n", P, LHbool, t)
+                progress("  timing transform_lamb_helmholtz_local")
                 t = timeit(() -> FM.transform_lamb_helmholtz_local!(tmp, r, P); setup=() -> (tmp .= src))
                 @printf(io, "transform_lamb_helmholtz_local,%d,%s,%.6e\n", P, LHbool, t)
             end
@@ -373,12 +386,14 @@ function bench_dense_vs_loop(io, blas_threads)
     println(io, "stage,form,precision,blas_threads,P,batch,measured_batch,scaled_from_per_expansion,seconds,seconds_per_expansion")
 
     for P in P_DENSE_LIST
+        progress("dense-vs-loop: P=$P")
         src = FM.initialize_expansion(P, TF); rand!(src)
         dst = FM.initialize_expansion(P, TF)
         Ts = zeros(TF, FM.length_Ts(P)); θ = 0.7
 
         for B in BATCH_LIST
             cols = 2 * B   # re + im lanes
+            progress("  batch=$B cols=$cols")
 
             # Recurrence side is Float64 only (production precision) and pure
             # Julia scalar code -> always single-threaded, and its per-expansion
@@ -396,6 +411,7 @@ function bench_dense_vs_loop(io, blas_threads)
                 ("axis_swap", () -> FM.rotate_multipole_y!(dst, src, Ts, FM.Hs_π2, FM.ζs_mag, θ, P, LH)),
             )
             for (stage, fone) in recurrence_cases
+                progress("    recurrence stage=$stage measured_batch=$Brec scaled=$scaled")
                 tr = timeit(() -> (for _ in 1:Brec; fone(); end))
                 tr_pe = tr / Brec
                 @printf(io, "%s,recurrence,Float64,%d,%d,%d,%d,%s,%.6e,%.6e\n",
@@ -412,16 +428,19 @@ function bench_dense_vs_loop(io, blas_threads)
             )
             for T in PREC_LIST
                 for (stage, blocks) in prototype_cases
+                    progress("    dense stage=$stage precision=$(string(T))")
                     apply_dense = make_dense_apply(T, blocks, cols)
                     td = timeit(apply_dense)
                     @printf(io, "%s,dense,%s,%d,%d,%d,%d,false,%.6e,%.6e\n",
                             stage, string(T), blas_threads, P, B, B, td, td / B)
 
+                    progress("    dense_packed stage=$stage precision=$(string(T))")
                     apply_packed = make_dense_packed_apply(T, blocks, cols)
                     td = timeit(apply_packed)
                     @printf(io, "%s,dense_packed,%s,%d,%d,%d,%d,false,%.6e,%.6e\n",
                             stage, string(T), blas_threads, P, B, B, td, td / B)
 
+                    progress("    compiled_block_loop stage=$stage precision=$(string(T))")
                     apply_loop = make_compiled_block_loop_apply(T, blocks, cols)
                     td = timeit(apply_loop)
                     @printf(io, "%s,compiled_block_loop,%s,%d,%d,%d,%d,false,%.6e,%.6e\n",
@@ -441,31 +460,35 @@ function main()
     Random.seed!(SEED)
     ensure_globals!(max(maximum(P_LIST), maximum(P_DENSE_LIST)))
 
-    println("Writing baseline to: ", OUTDIR)
+    progress("Writing baseline to: $OUTDIR")
+    progress("Sweep parameters: P_LIST=$P_LIST P_DENSE_LIST=$P_DENSE_LIST BATCH_LIST=$BATCH_LIST PREC_LIST=$PREC_LIST SAMPLES=$SAMPLES RECURRENCE_BATCH_CAP=$RECURRENCE_BATCH_CAP")
 
     optimized = open(joinpath(OUTDIR, "env.md"), "w") do io
         write_env(io)
     end
+    progress("Wrote environment metadata: $(joinpath(OUTDIR, "env.md"))")
     if !optimized
         @warn "No tuned BLAS detected -- dense/GEMM numbers are a lower bound (see env.md)."
     end
 
-    println("[1/2] production recurrence stage baselines ...")
+    progress("[1/2] production recurrence stage baselines ...")
     open(joinpath(OUTDIR, "stage_recurrence.csv"), "w") do io
         bench_stages(io)
     end
+    progress("[1/2] wrote stage_recurrence.csv")
 
     # Threading is controlled by the launch env var, NOT runtime calls (see note
     # above bench_dense_vs_loop). Tag the output by the actual BLAS thread count
     # so the env-var=1 and env-var=ncores runs land in separate files.
     blas_threads = BLAS.get_num_threads()
     fname = "dense_vs_loop_blas$(blas_threads).csv"
-    println("[2/2] dense-prototype vs recurrence head-to-head (BLAS threads = $blas_threads) ...")
+    progress("[2/2] dense-prototype vs recurrence head-to-head (BLAS threads = $blas_threads) ...")
     open(joinpath(OUTDIR, fname), "w") do io
         bench_dense_vs_loop(io, blas_threads)
     end
+    progress("[2/2] wrote $fname")
 
-    println("Done. Results in: ", OUTDIR, " (dense file: ", fname, ")")
+    progress("Done. Results in: $OUTDIR (dense file: $fname)")
 end
 
 main()

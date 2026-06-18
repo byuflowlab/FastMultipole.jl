@@ -96,6 +96,8 @@ include("tree.jl")
 
 export Branch, SingleBranch, MultiBranch, Tree, SingleTree, MultiTree, initialize_expansion, initialize_harmonics
 export unsort!, resort!, unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
+export AbstractOperatorBasis, CompressedComplexBasis, RealSolidHarmonicBasis
+export OperatorOrders, OperatorBasisInfo, OperatorInvariantCache, OperatorScratch, ThreadedOperatorScratch
 
 include("compatibility.jl")
 

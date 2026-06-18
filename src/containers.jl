@@ -348,3 +348,138 @@ function Cache(target_systems::Tuple, source_systems::Tuple, switches::Tuple)
     # return cache
     return Cache{TF}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
 end
+
+#------- operator basis and cache types -------#
+
+abstract type AbstractOperatorBasis end
+
+struct CompressedComplexBasis <: AbstractOperatorBasis end
+
+struct RealSolidHarmonicBasis <: AbstractOperatorBasis end
+
+struct OperatorOrders{LH}
+    P_phi::Int
+    P_chi::Int
+    P_active::Int
+end
+
+function _validate_operator_order(P::Integer)
+    P < 0 && throw(ArgumentError("operator expansion order must be nonnegative"))
+    return Int(P)
+end
+
+function OperatorOrders(P::Integer, ::Val{false})
+    P_int = _validate_operator_order(P)
+    return OperatorOrders{false}(P_int, P_int, P_int)
+end
+
+function OperatorOrders(P::Integer, ::Val{true})
+    P_int = _validate_operator_order(P)
+    return OperatorOrders{true}(P_int, P_int + 1, P_int + 1)
+end
+
+struct OperatorBasisInfo{B<:AbstractOperatorBasis,LH}
+    basis::B
+    orders::OperatorOrders{LH}
+    channel_count::Int
+    basis_dof_phi::Int
+    basis_dof_chi::Int
+    basis_dof_active::Int
+end
+
+_operator_ncomplex(P::Integer) = ((P + 1) * (P + 2)) >> 1
+_compressed_complex_dof(P::Integer) = 2 * _operator_ncomplex(P)
+
+function OperatorBasisInfo(basis::CompressedComplexBasis, orders::OperatorOrders{LH}) where LH
+    channel_count = LH ? 2 : 1
+    basis_dof_phi = _compressed_complex_dof(orders.P_phi)
+    basis_dof_chi = _compressed_complex_dof(orders.P_active)
+    basis_dof_active = _compressed_complex_dof(orders.P_active)
+    return OperatorBasisInfo{CompressedComplexBasis,LH}(
+        basis,
+        orders,
+        channel_count,
+        basis_dof_phi,
+        basis_dof_chi,
+        basis_dof_active,
+    )
+end
+
+OperatorBasisInfo(basis::CompressedComplexBasis, P::Integer, lamb_helmholtz::Val) =
+    OperatorBasisInfo(basis, OperatorOrders(P, lamb_helmholtz))
+
+OperatorBasisInfo(P::Integer, lamb_helmholtz::Val) =
+    OperatorBasisInfo(CompressedComplexBasis(), P, lamb_helmholtz)
+
+struct OperatorInvariantCache{TF,B<:AbstractOperatorBasis,LH}
+    basis_info::OperatorBasisInfo{B,LH}
+    Hs_pi2::Vector{TF}
+    zeta_mag::Vector{TF}
+    eta_mag::Vector{TF}
+    M_tilde::Vector{TF}
+    L_tilde::Vector{TF}
+end
+
+function OperatorInvariantCache(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}) where {TF,B,LH}
+    P_active = basis_info.orders.P_active
+
+    Hs_pi2 = ones(TF, 1)
+    zeta_mag = ones(TF, 1)
+    eta_mag = ones(TF, 1)
+    M_tilde = ones(TF, 1)
+    L_tilde = ones(TF, 1)
+
+    update_Hs_π2!(Hs_pi2, P_active)
+    update_ζs_mag!(zeta_mag, P_active)
+    update_ηs_mag!(eta_mag, P_active)
+    update_M̃!(M_tilde, P_active)
+    update_L̃!(L_tilde, P_active)
+
+    return OperatorInvariantCache{TF,B,LH}(
+        basis_info,
+        Hs_pi2,
+        zeta_mag,
+        eta_mag,
+        M_tilde,
+        L_tilde,
+    )
+end
+
+OperatorInvariantCache(::Type{TF}, P::Integer, lamb_helmholtz::Val) where TF =
+    OperatorInvariantCache(TF, OperatorBasisInfo(P, lamb_helmholtz))
+
+struct OperatorScratch{TF,B<:AbstractOperatorBasis,LH}
+    basis_info::OperatorBasisInfo{B,LH}
+    weights_tmp_1::Array{TF,3}
+    weights_tmp_2::Array{TF,3}
+    weights_tmp_3::Array{TF,3}
+    Ts::Vector{TF}
+    eimphis::Matrix{TF}
+end
+
+function OperatorScratch(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}) where {TF,B,LH}
+    P_active = basis_info.orders.P_active
+    return OperatorScratch{TF,B,LH}(
+        basis_info,
+        initialize_expansion(P_active, TF),
+        initialize_expansion(P_active, TF),
+        initialize_expansion(P_active, TF),
+        zeros(TF, length_Ts(P_active)),
+        zeros(TF, 2, P_active + 1),
+    )
+end
+
+OperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val) where TF =
+    OperatorScratch(TF, OperatorBasisInfo(P, lamb_helmholtz))
+
+struct ThreadedOperatorScratch{S}
+    scratch::Vector{S}
+end
+
+function ThreadedOperatorScratch(::Type{TF}, basis_info::OperatorBasisInfo) where TF
+    scratch = [OperatorScratch(TF, basis_info) for _ in 1:Threads.nthreads()]
+    return ThreadedOperatorScratch{eltype(scratch)}(scratch)
+end
+
+ThreadedOperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val) where TF =
+    ThreadedOperatorScratch(TF, OperatorBasisInfo(P, lamb_helmholtz))

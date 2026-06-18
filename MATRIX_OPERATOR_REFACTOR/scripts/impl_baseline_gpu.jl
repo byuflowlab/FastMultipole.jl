@@ -79,6 +79,11 @@ const PREC_LIST  = haskey(ENV, "PREC_LIST")  ? _parse_prec_list(ENV["PREC_LIST"]
 const HOST   = gethostname()
 const OUTDIR = normpath(joinpath(@__DIR__, "..", "data", "impl_performance_baseline", HOST))
 
+function progress(msg)
+    println("[", Dates.format(Dates.now(), "HH:MM:SS"), "] ", msg)
+    flush(stdout)
+end
+
 # block sizes (identical to impl_baseline_cpu.jl)
 mblocks(P) = [P + 1 - m for m in 0:P]   # M2L z-translation
 nblocks(P) = [2n + 1 for n in 0:P]      # axis-swap (y rotation)
@@ -247,38 +252,55 @@ function write_env_gpu(io)
 end
 
 function main()
-    println("Writing GPU baseline to: ", OUTDIR)
+    progress("Writing GPU baseline to: $OUTDIR")
+    progress("Sweep parameters: P_DENSE_LIST=$P_DENSE_LIST BATCH_LIST=$BATCH_LIST PREC_LIST=$PREC_LIST SAMPLES=$SAMPLES")
+    try
+        dev = CUDA.device()
+        progress("CUDA device: $(CUDA.name(dev)) runtime=$(CUDA.runtime_version()) total_mem_GiB=$(round(CUDA.totalmem(dev) / 2^30; digits=2))")
+    catch err
+        progress("CUDA device metadata unavailable: $err")
+    end
+
     open(joinpath(OUTDIR, "env_gpu.md"), "w") do io
         write_env_gpu(io)
     end
+    progress("Wrote GPU environment metadata: $(joinpath(OUTDIR, "env_gpu.md"))")
 
     open(joinpath(OUTDIR, "dense_gpu.csv"), "w") do io
         println(io, "stage,form,launch_strategy,transfer_variant,precision,P,batch,seconds,seconds_per_expansion")
         for P in P_DENSE_LIST
+            progress("gpu dense sweep: P=$P")
             for T in PREC_LIST
+                progress("  precision=$(string(T))")
                 for B in BATCH_LIST
                     cols = 2 * B  # re + im lanes
+                    progress("    batch=$B cols=$cols")
 
                     for (stage, blocks) in (("m2m_z_translation", mblocks(P)),
                                             ("m2l_z_translation", mblocks(P)),
                                             ("l2l_z_translation", mblocks(P)),
                                             ("axis_swap", nblocks(P)))
+                        progress("      preparing stage=$stage")
                         run!, run_xfer! = make_gpu_apply(T, blocks, cols)
 
+                        progress("      timing stage=$stage launch=per_block_launch transfer=device_resident")
                         t = gpu_timeit(run!)
                         @printf(io, "%s,dense,per_block_launch,device_resident,%s,%d,%d,%.6e,%.6e\n",
                                 stage, string(T), P, B, t, t / B)
 
+                        progress("      timing stage=$stage launch=per_block_launch transfer=with_transfer")
                         t = gpu_timeit(run_xfer!)
                         @printf(io, "%s,dense,per_block_launch,with_transfer,%s,%d,%d,%.6e,%.6e\n",
                                 stage, string(T), P, B, t, t / B)
 
                         run!, run_xfer! = make_gpu_fused_apply(T, blocks, cols)
 
+                        progress("      timing stage=$stage launch=fused_kernel transfer=device_resident")
                         t = gpu_timeit(run!)
                         @printf(io, "%s,dense,fused_kernel,device_resident,%s,%d,%d,%.6e,%.6e\n",
                                 stage, string(T), P, B, t, t / B)
 
+                        progress("      timing stage=$stage launch=fused_kernel transfer=with_transfer")
                         t = gpu_timeit(run_xfer!)
                         @printf(io, "%s,dense,fused_kernel,with_transfer,%s,%d,%d,%.6e,%.6e\n",
                                 stage, string(T), P, B, t, t / B)
@@ -289,7 +311,8 @@ function main()
             end
         end
     end
-    println("Done. Results in: ", OUTDIR)
+    progress("Wrote dense_gpu.csv")
+    progress("Done. Results in: $OUTDIR")
 end
 
 main()

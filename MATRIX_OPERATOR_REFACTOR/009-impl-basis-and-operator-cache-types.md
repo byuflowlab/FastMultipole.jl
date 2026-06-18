@@ -45,5 +45,42 @@ types construct correctly. Record commands and result summaries.
 
 ## Approval Notes
 
-To be filled by a different agent after implementation and verification are
-complete.
+Approved by reviewing agent (separate clear-context review) on 2026-06-18.
+
+Objective met: the change is additive only — the basis/cache/scratch types are
+defined in `src/containers.jl` (per the START_HERE Implementation Code Placement
+rule) with exports in `src/FastMultipole.jl`; no translation call site in
+`translate.jl`, `fmm.jl`, or `rotate.jl` was modified. Production translation
+behavior is unchanged.
+
+Deliverables verified:
+- Compressed-complex basis type (`CompressedComplexBasis`); `RealSolidHarmonicBasis`
+  present as a deferred placeholder for task `018`.
+- Shared invariant cache ownership (`OperatorInvariantCache`) owning private copies
+  of `Hs_π2`, `ζs_mag`, `ηs_mag`, `M̃`, `L̃`.
+- Per-thread scratch ownership (`OperatorScratch` + `ThreadedOperatorScratch`).
+- Element-type parameterization via `TF`.
+- LH channel-order metadata: `P_phi = P`, `P_chi = P_phi + 1`, `P_active = P_chi`;
+  caches/scratch sized at `P_active`. `Val(false)` stays single-order `P`.
+
+Tests strengthened during review and confirmed sufficient:
+- `operator cache support types`: orders, negative-`P` errors, channel/DOF sizing,
+  eltype, scratch sizing, per-thread non-aliasing.
+- `operator cache construction is side-effect-free`: legacy M2M/M2L/L2L outputs and
+  module-global invariant lengths unchanged across cache/scratch construction.
+- `cache and scratch drive translations identically to legacy workspace` (added in
+  review): feeds cache/scratch fields into the real M2M/M2L/L2L kernels and asserts
+  bit-identical results vs. the legacy global workspace for Float32/Float64 ×
+  `Val(false)`/`Val(true)`, proving correct drop-in behavior and that the P+1-padded
+  LH cache reproduces the P-order result exactly.
+
+Verification commands and result:
+
+```
+julia --project=. -e 'using FastMultipole; using FastMultipole.StaticArrays;
+using FastMultipole: Branch, initialize_expansion, length_Ts; using Test;
+include("test/operator_cache_types_test.jl")'
+# operator cache support types ............................... 152/152 pass
+# operator cache construction is side-effect-free .............. 5/5  pass
+# cache and scratch drive translations identically to legacy ... 4/4  pass
+```

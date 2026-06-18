@@ -148,7 +148,18 @@ production code work starts.
 | Done | Approved | Task | Summary | Blocking |
 | --- | --- | --- | --- | --- |
 | [x] | [x] | `008b-implementation-replan.md` | User-in-the-loop Implementation re-plan after Theory is approved and before production code work begins. | All Theory rows, `008a` |
-| [x] | [ ] | `008c-implementation-performance-baseline.md` | Pre-implementation performance, allocation/storage baseline, and design gate before production code work begins. | All Theory rows, `008a`, `008b` |
+| [x] | [x] | `008c-implementation-performance-baseline.md` | Pre-implementation performance, allocation/storage baseline, and design gate before production code work begins. | All Theory rows, `008a`, `008b` |
+
+## Implementation Code Placement
+
+Implementation tasks that touch production `src/` must follow these placement
+rules:
+
+1. New struct and type definitions go in `src/containers.jl` alongside the
+   existing core data structures. Do not create standalone type files.
+2. New translation operators go in a new file named after the closest existing
+   source file with `_batched` inserted before `.jl` (for example
+   `translate.jl` -> `translate_batched.jl`, `rotate.jl` -> `rotate_batched.jl`).
 
 ## Implementation Phase
 
@@ -166,7 +177,7 @@ Milestone Review blocks every Implementation task.
 
 | Done | Approved | Task | Summary | Blocking |
 | --- | --- | --- | --- | --- |
-| [ ] | [ ] | `009-impl-basis-and-operator-cache-types.md` | Define basis and operator-cache types without changing production translation calls. | All Theory rows, `008b`, `008c` |
+| [x] | [x] | `009-impl-basis-and-operator-cache-types.md` | Define basis and operator-cache types without changing production translation calls. | All Theory rows, `008b`, `008c` |
 | [ ] | [ ] | `010-impl-z-rotation-operators.md` | Implement explicit z-rotation operators and parity tests. | All Theory rows, `008b`, `008c`, `009` |
 | [ ] | [ ] | `011-impl-m2l-z-translation-blocks.md` | Implement fixed-`m` M2L z-translation blocks with approved scaling. | All Theory rows, `008b`, `008c`, `009` |
 | [ ] | [ ] | `012-impl-lamb-helmholtz-operators.md` | Implement Lamb-Helmholtz transform operators and parity tests. | All Theory rows, `008b`, `008c`, `009` |
