@@ -4,7 +4,7 @@
 
 Improve and document performance, allocation behavior, and retained storage of
 completed operator paths after M2M, M2L, L2L, flat buffers, and real-basis
-evaluation are implemented.
+transform parity are implemented.
 
 ## Dependencies
 
@@ -18,13 +18,12 @@ evaluation are implemented.
 - Approved dependency task files listed above
 - Stable M2M, M2L, and L2L operator implementation notes
 - Stable flat-buffer implementation notes
-- Stable real-basis transform and native execution notes
+- Stable real-basis transform notes
 - Existing benchmark scripts and results, including `008c` baseline notes
 
 ## Artifacts or Production Surface
 
-- Production operator paths for M2M, M2L, L2L, flat buffers, and real-basis
-  execution
+- Production operator paths for M2M, M2L, L2L, and flat buffers
 - Benchmark scripts or benchmark test files
 - Benchmark result artifacts under `MATRIX_OPERATOR_REFACTOR/data/` if needed
 - Parity tests covering optimized paths
@@ -32,8 +31,8 @@ evaluation are implemented.
 ## Deliverables
 
 - Whole-operator benchmark suite and recorded results
-- Allocation and memory-footprint benchmarks for completed M2M, M2L, L2L,
-  flat-buffer, and real-basis paths
+- Allocation and memory-footprint benchmarks for completed M2M, M2L, L2L, and
+  flat-buffer paths
 - Bottleneck notes for completed operator paths
 - Data-structure review identifying avoidable allocations, over-retained
   operator/cache data, duplicate transforms, poor scratch reuse, and storage

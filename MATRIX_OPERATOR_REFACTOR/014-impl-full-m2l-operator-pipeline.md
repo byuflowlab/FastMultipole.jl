@@ -16,6 +16,8 @@ behavior.
 - `011-impl-m2l-z-translation-blocks.md`
 - `012-impl-lamb-helmholtz-operators.md`
 - `013-impl-axis-swap-operators.md`
+- `013b-impl-fixed-y-swap-primitives.md`
+- `013c-impl-factored-rotation-alignment.md`
 
 ## Required Reading
 
@@ -32,8 +34,24 @@ behavior.
 
 ## Deliverables
 
-- End-to-end explicit M2L operator composition
+- End-to-end explicit M2L operator composition.
+- Swappable whole-M2L operator interfaces:
+  - `MaterializedYRotationM2L`: uses `Ts(theta)` materialized by `013`.
+  - `FactoredRotationM2L`: uses explicit `Z/S/Z/S` rotation alignment stages from
+    `013c`, built on the fixed y-swap primitives from `013b`.
+- The factored path must preserve the 013c requirement to reuse the same y-swap
+  apply operator for forward and return y stages when possible; any separate
+  inverse-y operator must be justified by production-parity evidence.
 - Cache and scratch usage integrated with earlier implementation tasks
+- Both M2L variants share the same `011` z-axis M2L blocks, `012`
+  Lamb-Helmholtz coupling, common cache/scratch conventions, and common parity
+  tests against production M2L.
+- Stage API that can compose either near-term variant without rewriting the
+  batching layer. The folded no-`Ts` y-rotation path is not a `014` deliverable
+  except as temporary debug scaffolding for validating explicit stages.
+- Z-translation reuse should distinguish shared direction from shared distance:
+  pre/post scaling is reusable only when the physical `r` / offset norm / level
+  key matches.
 - `Val(true)` M2L policy uses `P_phi` as the requested physical order and
   carries `chi` at `P_chi = P_phi + 1` through the M2L/evaluation pipeline.
   The constant-`P` stencil should use `B_phi(P_phi)` and

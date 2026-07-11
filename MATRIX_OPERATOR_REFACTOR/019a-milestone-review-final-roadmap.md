@@ -2,7 +2,7 @@
 
 ## Objective
 
-Review Implementation tasks `017` through `019` and confirm the completed
+Review Implementation tasks `017` through `024` and confirm the completed
 Matrix Operator Refactor still matches the background roadmap.
 
 ## Dependencies
@@ -12,6 +12,10 @@ Matrix Operator Refactor still matches the background roadmap.
 - `017-impl-flat-coefficient-buffers.md`
 - `018-impl-real-solid-harmonic-basis.md`
 - `019-impl-operator-performance-tuning.md`
+- `019b-exploratory-smallp-fallback-and-channel-layout.md`
+- `022-impl-gpu-device-resident-m2l.md`
+- `023-impl-production-integration.md`
+- `024-impl-operator-ab-benchmark.md`
 
 ## Required Reading
 
@@ -23,28 +27,31 @@ Matrix Operator Refactor still matches the background roadmap.
 ## Artifacts or Production Surface
 
 Review the production files, tests, benchmarks, generated artifacts, and final
-notes listed by tasks `017` through `019`.
+notes listed by tasks `017` through `024`.
 
 ## Deliverables
 
 - Final roadmap-alignment notes recorded in this file
 - Any required coordination-document fixes identified before the refactor is
   considered complete
-- **Revisit (deferred from `008b`/`008d`): feasibility of porting the old
+- **Final go/no-go (feasibility scoped earlier in `013a`): porting the old
   per-interaction error machinery onto the new expansion operators.** Using the
-  `019` performance-tuning evidence, decide whether to port the dynamic-`P` /
-  `get_P` / `predict_error` machinery onto the new operators or leave the two
-  paths independent (old ops + old error machinery; new ops + constant-`P`
-  interaction-list stencil). Record the decision and rationale here.
+  `013a` feasibility finding and the `019` performance-tuning evidence, decide
+  whether to port the dynamic-`P` / `get_P` / `predict_error` machinery onto the new
+  operators or leave the two paths independent (old ops + old error machinery; new
+  ops + constant-`P` interaction-list stencil). Record the decision and rationale
+  here.
 - **Review `008b-implementation-replan.md` (including its re-plan addenda) and
   confirm all recorded decisions and feedback have been incorporated** into the
   completed refactor and coordination documents. Note any gaps and the required
   fixes here.
-- **Revisit small-`P` / tiny-batch fallback policy using final `019` benchmark
-  evidence.** The `008c` prototype harness leaves this undecided for cases where
-  dense packing, BLAS launch overhead, or fused-kernel overhead may dominate
-  (`P <= 3`, `batch == 1`, and nearby regimes). Record whether production should
-  keep a recurrence/compiled-loop fallback or always use the dense operator path.
+- **Confirm the small-`P` / tiny-batch fallback and channel-layout decisions from
+  `019b`.** These were resolved in `019b` (exploratory benchmark plus user
+  discussion). Confirm the chosen fallback policy and padded-vs-ragged `chi` layout
+  are implemented and consistent with the coordination documents; note any gaps.
+- **Confirm the M2L operator recommendation from `024`.** Record the final
+  per-platform recommendation between `MaterializedYRotationM2L` and
+  `FactoredRotationM2L`, and note any crossover regimes or integration caveats.
 
 ## Verification
 
