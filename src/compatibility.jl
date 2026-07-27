@@ -436,9 +436,14 @@ end
 
 function target_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]), switches=DerivativesSwitch(true, true, true, systems))
     @assert length(switches) == length(systems) "target switches must match target systems"
-    for (buffer, system, sort_index, switch) in zip(buffers, systems, sort_index_list, switches)
-        target_to_buffer!(buffer, system, sort_index, switch)
-    end
+    _target_to_buffer!(buffers, systems, sort_index_list, switches, 1)
+end
+
+@inline _target_to_buffer!(buffers, systems::Tuple{}, sort_index_list, switches::Tuple{}, i) = nothing
+
+@inline function _target_to_buffer!(buffers, systems::Tuple, sort_index_list, switches::Tuple, i)
+    target_to_buffer!(buffers[i], systems[1], sort_index_list[i], switches[1])
+    _target_to_buffer!(buffers, Base.tail(systems), sort_index_list, Base.tail(switches), i + 1)
 end
 
 function target_to_buffer!(buffer::Matrix, system, sort_index=1:get_n_bodies(system), switch=DerivativesSwitch(true, true, true, system))

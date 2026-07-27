@@ -1097,7 +1097,9 @@ function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_i
         small_buffer[2,this_i] = buffer[2, i_body]
         small_buffer[3,this_i] = buffer[3, i_body]
         if ncarried > 3
-            small_buffer[4:ncarried,this_i] .= buffer[4:ncarried, i_body]
+            for k in 4:ncarried
+                small_buffer[k, this_i] = buffer[k, i_body]
+            end
         end
         # tmp = system[i_body, Body()]
         # buffer[this_i] = tmp
@@ -1117,7 +1119,9 @@ function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_i
     end
     if ncarried > 3
          for i_body in bodies_index
-            buffer[4:ncarried,i_body] .= small_buffer[4:ncarried, i_body]
+            for k in 4:ncarried
+                buffer[k, i_body] = small_buffer[k, i_body]
+            end
         end
     end
 
@@ -1180,7 +1184,9 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
             small_buffer[2,this_i] = buffer[2, i_body]
             small_buffer[3,this_i] = buffer[3, i_body]
             if ncarried > 3
-                small_buffer[4:ncarried,this_i] .= buffer[4:ncarried, i_body]
+                for k in 4:ncarried
+                    small_buffer[k, this_i] = buffer[k, i_body]
+                end
             end
 
             # update sort index
@@ -1198,7 +1204,9 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
         buffer[2, i_body] = small_buffer[2, i_body]
         buffer[3, i_body] = small_buffer[3, i_body]
         if ncarried > 3
-            buffer[4:ncarried,i_body] .= small_buffer[4:ncarried, i_body]
+            for k in 4:ncarried
+                buffer[k, i_body] = small_buffer[k, i_body]
+            end
         end
         sort_index[i_body] = sort_index_buffer[i_body]
     end
@@ -1841,18 +1849,23 @@ function update_min_influence!(branches, levels_index, buffers, systems, switche
     end
 end
 
+@inline get_prev_metadata_indices(systems::Tuple{}) = ()
+@inline get_prev_metadata_indices(systems::Tuple) =
+    ((previous_potential_metadata_index(systems[1]), previous_gradient_metadata_index(systems[1])),
+     get_prev_metadata_indices(Base.tail(systems))...)
+
 function update_min_influence_leaf!(branches, i_branch, buffers, systems, switches)
     # extract branch
     branch = branches[i_branch]
+
+    # precompute per-system metadata indices without indexing into the heterogeneous `systems` tuple at runtime
+    prev_indices = get_prev_metadata_indices(systems)
 
     # initialize min_influence
     min_potential, min_gradient = zero(eltype(branches[1].min_potential)), zero(eltype(branches[1].min_gradient))
     for i_buffer in eachindex(buffers)
         buffer = buffers[i_buffer]
-        switch = switches[i_buffer]
-        system = systems[i_buffer]
-        i_prev_potential = previous_potential_metadata_index(system)
-        i_prev_gradient = previous_gradient_metadata_index(system)
+        i_prev_potential, i_prev_gradient = prev_indices[i_buffer]
         # extract body index
         bodies_index = branch.bodies_index[i_buffer]
         if length(bodies_index) > 0
@@ -1864,10 +1877,7 @@ function update_min_influence_leaf!(branches, i_branch, buffers, systems, switch
     # loop over buffers
     for i_buffer in eachindex(buffers)
         buffer = buffers[i_buffer]
-        switch = switches[i_buffer]
-        system = systems[i_buffer]
-        i_prev_potential = previous_potential_metadata_index(system)
-        i_prev_gradient = previous_gradient_metadata_index(system)
+        i_prev_potential, i_prev_gradient = prev_indices[i_buffer]
 
         # extract body index
         bodies_index = branch.bodies_index[i_buffer]
