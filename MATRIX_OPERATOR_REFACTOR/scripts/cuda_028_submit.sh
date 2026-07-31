@@ -13,7 +13,9 @@ MODE="${1:-pilot}"
 case "$MODE" in
   pilot) SBATCH_EXTRA="--time=03:00:00" ;;
   sweep) SBATCH_EXTRA="--time=06:00:00" ;;   # 25 tiered cases at ~2.5 min each
-  *) echo "usage: cuda_028_submit.sh [pilot|sweep]" >&2; exit 1 ;;
+  derisk) SBATCH_EXTRA="--time=02:00:00" ;;  # 6 cache builds + profiling
+  verify) SBATCH_EXTRA="--time=01:00:00" ;;  # 2 cases at the verdict config
+  *) echo "usage: cuda_028_submit.sh [pilot|sweep|derisk|verify]" >&2; exit 1 ;;
 esac
 
 # the remote tree can vanish (2026-07-31: FastMultipole-023 disappeared during

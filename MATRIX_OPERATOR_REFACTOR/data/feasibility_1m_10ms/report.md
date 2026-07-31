@@ -251,6 +251,63 @@ already realized in the measured configuration and need only to be made default.
 
 ---
 
+## 6b. Phase B progress — de-risking (job 12998146/12998189) + lever 3 (job 12998517)
+
+### De-risking resolved all three Phase A inferences; two were wrong
+
+1. **The fused stage is 98% nearfield, not 85%.** `_launch_cuda_resident_l2b!`
+   gates the nearfield kernel on `state.counts.n_direct`, so setting it to 0 gives an
+   exact split. At n=1e6/ell=5/F64: fused 52.84 = **L2B 0.96 + nearfield 51.88 (98.2%)**;
+   ell=4 98.5%, ell=6 94.0%, F32/ell=5 98.2%. **The §1 ell-sweep fit (L2B ≈ 9.3 ms) was
+   wrong** — nearfield is not cleanly proportional to interaction count, because at ell=6
+   there are 8x more cell-pairs of ~4 bodies each and per-pair overhead dominates; the fit
+   absorbed that into its constant. **Lever 1 is a pure nearfield lever; L2B needs nothing.**
+2. **Host allocation placed exactly.** refresh 8.23 MB + lifecycle 49.42 MB = 57.65 MB,
+   matching the 57.7 MB of §3.4. Two sites are 73%: `_assert_cuda_scratch_value!`
+   (1,346,598 allocations/step, 33.81 MB) and `_canonical_cuda_source_buffer`'s
+   `collect(1:n)` (3 allocations, 8.00 MB). The M2L window loop allocates 0.05 MB and
+   finalize 0.01 MB — the §3.4 suspicion that `accumulate!` scratch was the driver was
+   **wrong**.
+3. **Leaf M2L's mechanism identified.** `CUDA.@profile` shows
+   `_cuda_hier_dense_fused_kernel_` launching **Threads=32, Blocks=31,307,680** —
+   one single-warp block per route — for 20.28 ms. It is **block-dispatch-bound**, which
+   is why the §3.1 precision A/B showed no movement. Fix: grid-stride loop over routes.
+
+### Lever 3 delivered 21-22 ms (predicted 10-14)
+
+Two `src/` changes in `translate_batched_cuda.jl`, both preserving the 023 invariant
+contract:
+- `_cuda_scratch_value_ok` — an allocation-free predicate proving device residency
+  without building a `"$path[$i]"` String per visited element. The original walker still
+  runs whenever the cheap proof fails, so failure messages are unchanged. Conservative by
+  construction: it may fail to prove a valid value, never passes an invalid one. Large
+  device-typed vectors are accepted by `eltype`; struct fields are walked by a
+  `@generated` unrolled function (a `fieldnames`/`getfield` loop is type-unstable and
+  would box per field, reintroducing the allocation).
+- `collect(1:get_n_bodies(system))` → `Base.OneTo(...)` on the device-resident path,
+  matching the documented `sort_index` default at `compatibility.jl:516`.
+
+| metric | before | after | delta |
+|---|---|---|---|
+| host allocation / step | 57.7 MB | **0.80 MB** | **-99%** |
+| verdict step, F32 | 91.40 ms | **69.64 ms** | -21.8 (-24%) |
+| verdict step, F64 | 104.00 ms | **82.90 ms** | -21.1 (-20%) |
+| `l2b_ms` / `m2l_ms` | 38.43 / 26.67 | 38.39 / 26.64 | unchanged |
+| gradient rel RMS | 3.186e-4 | 3.186e-4 | unchanged |
+
+Device stages unchanged to within noise — the whole gain is host overhead, where the
+profile placed it. Counter contract holds (0/0/0), accuracy gate passes, 215-test
+lifecycle gate and convection gate both exit 0. The 10-14 ms prediction undercounted
+because the assertion cost more than its allocation (1.35M calls plus induced GC), part
+of which had been absorbed into other stages' wall time and the +-5 ms residual noise.
+
+### Standing after lever 3
+
+**F32 verdict step 69.64 ms = 7.0x over target** (was 9.1x). The budget is now almost
+entirely the two kernels: nearfield 38.4 ms (55%) + M2L 26.6 ms (38%) = **93%**, with
+~4.6 ms of everything else. This is the state §5 anticipated: overhead is spent, and the
+remaining gap requires ~6.5x from the two dominant kernels.
+
 ## 7. Methodology, anchoring, and threats to validity
 
 - **Harness anchored at n=10⁶.** The flat dense ell=4 row reproduces the 024b record's

@@ -1,0 +1,141 @@
+=== node: m13h-1-2
+GPU 0: NVIDIA H200 (UUID: GPU-9f966cde-3e95-53a5-d8e0-8aede5368e43)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=0e57eca91e2c725b
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Precompiling CUDA...
+   2687.9 ms  ✓ CUDA_Driver_jll
+   2855.8 ms  ✓ CUDA_Runtime_jll
+   2101.6 ms  ✓ CUDA_Compiler_jll
+   7973.5 ms  ✓ LLVM
+   2201.6 ms  ✓ LLVM → BFloat16sExt
+   2353.7 ms  ✓ GPUToolbox
+   3100.8 ms  ✓ UnsafeAtomics → UnsafeAtomicsLLVM
+   7474.5 ms  ✓ GPUArrays
+  20206.0 ms  ✓ PrettyTables
+  18295.0 ms  ✓ GPUCompiler
+  19261.8 ms  ✓ CUDACore
+   8662.0 ms  ✓ cuFFT
+   8441.6 ms  ✓ cuRAND
+  10452.4 ms  ✓ NVML
+  10360.2 ms  ✓ CUPTI
+  12786.4 ms  ✓ cuSPARSE
+  14757.7 ms  ✓ cuBLAS
+  15091.4 ms  ✓ CUDATools
+  12753.3 ms  ✓ cuSOLVER
+   9131.8 ms  ✓ CUDA
+   9176.8 ms  ✓ Atomix → AtomixCUDAExt
+  21 dependencies successfully precompiled in 98 seconds. 79 already precompiled.
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m10.8s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.8s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl (028)
+Test Summary:                          | Pass  Total   Time
+device convection lifecycle (task 028) |   24     24  53.4s
+CONVECTION_TEST_EXIT=0
+=== FM028_MODE=derisk
+=== derisk
+
+==============================================================================
+A. EXACT L2B / nearfield split  (n=1000000, P=3, K=1740, hier12/dense)
+==============================================================================
+prec     ell    fused_ms     l2b_ms    near_ms   near_%    cells   interactions
+Float64  4       332.224      4.938    327.287    98.5%     4096      3.399e+10
+Float64  5        52.837      0.959     51.878    98.2%    32768      4.833e+09
+Float64  6        17.378      1.045     16.333    94.0%   252494      6.536e+08
+Float32  5        38.362      0.694     37.668    98.2%    32768      4.833e+09
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/derisk_m13h-1-2_20260731-101021.csv
+
+==============================================================================
+B. HOST ALLOCATION PROFILE — update_cuda_radix_state! (ell=5)
+==============================================================================
+measured host allocation: 8.23 MB/refresh
+sampled 6885 allocations, 8.19 MB total
+
+top allocation sites by bytes:
+  site                                                    count           MB
+  translate_batched_cuda.jl:824 _canonical_cuda_source        3        8.000
+  translate_batched_cuda.jl:3324 _cuda_sortperm_into!      3296        0.083
+  translate_batched_cuda.jl:3622 _cuda_update_radix_gr     1488        0.039
+  translate_batched_cuda.jl:4027 _cuda_hier_generate_d      385        0.010
+  translate_batched_cuda.jl:3721 update_cuda_radix_sta       50        0.007
+  translate_batched_cuda.jl:3594 _cuda_update_radix_gr      269        0.007
+  translate_batched_cuda.jl:3638 _cuda_update_radix_gr      180        0.004
+  translate_batched_cuda.jl:3728 update_cuda_radix_sta        4        0.003
+  translate_batched_cuda.jl:3210 _cuda_refresh_residen      170        0.002
+  translate_batched_cuda.jl:3197 _cuda_refresh_residen      170        0.002
+  translate_batched_cuda.jl:3762 update_cuda_radix_sta        2        0.002
+  fm028_device_system.jl:64 source_to_buffer!                71        0.002
+  translate_batched_cuda.jl:3618 _cuda_update_radix_gr       84        0.002
+  translate_batched_cuda.jl:3707 update_cuda_radix_sta        4        0.002
+  fm028_device_system.jl:65 source_to_buffer!                71        0.002
+  fm028_device_system.jl:66 source_to_buffer!                71        0.002
+  translate_batched_cuda.jl:3621 _cuda_update_radix_gr       84        0.002
+  translate_batched_cuda.jl:3768 update_cuda_radix_sta        1        0.001
+  translate_batched_cuda.jl:3691 update_cuda_radix_sta        1        0.001
+  translate_batched_cuda.jl:3692 update_cuda_radix_sta        1        0.001
+
+top allocation types by bytes:
+  Profile.Allocs.BufferType                                   1        8.000
+  CUDACore.CUstreamCaptureStatus_enum                      1539        0.018
+  @NamedTuple{multipoles::FlatCoefficientBuffer{Float6       11        0.016
+  Base.RefValue{CUDACore.CUlaunchConfig_st}                 178        0.011
+  Memory{Ptr{Nothing}}                                      178        0.011
+  Tuple{CuArray{UInt64, 1, CUDACore.DeviceMemory}, CuA      432        0.008
+  CuDeviceVector{Int64, 1}                                  136        0.006
+  Vector{CUDACore.CUlaunchAttribute_st}                     178        0.006
+  Vector{Ptr{Nothing}}                                      178        0.006
+  Tuple{Tuple{CuArray{UInt64, 1, CUDACore.DeviceMemory      172        0.006
+  CUDACore.HostKernel{typeof(CUDACore.BitonicSortImpl.      133        0.005
+  @NamedTuple{blocks::Tuple{Int64, Int64, Int64}, thre      132        0.005
+
+==============================================================================
+C. PER-KERNEL TRACE — one full lifecycle (ell=5, F64)
+   look for: leaf-M2L kernel launch count, duration, occupancy, regs
+==============================================================================
+
+--- M2L stage alone (isolates the leaf apply) ---
+
+--- fused L2B+nearfield stage alone ---
+
+done.
+DERISK_EXIT=0

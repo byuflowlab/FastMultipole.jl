@@ -72,6 +72,43 @@ if [ "$MODE" = "pilot" ]; then
     bench2_status=$?
     echo "PILOT2_EXIT=$bench2_status"
     bench_status=$(( bench1_status || bench2_status ))
+elif [ "$MODE" = "verify" ]; then
+    # Lever 3 before/after: re-run the exact Phase A verdict config so
+    # verdict_step_ms, verdict_step_host_alloc_bytes, the counter contract and
+    # the accuracy gate are all directly comparable to job 12997508.
+    # Phase A baseline: F64 104.0-106.3 ms / F32 91.4 ms, 57.7 MB/step.
+    : "${FM028_N:=1000000}"
+    : "${FM028_P:=3}"
+    : "${FM028_ELL:=5}"
+    : "${FM028_K:=1740}"
+    : "${FM028_POLICY:=hier12}"
+    : "${FM028_STRAT:=dense}"
+    : "${FM028_TF:=Float64,Float32}"
+    : "${FM028_LH:=0}"
+    : "${FM028_REPS:=5}"
+    : "${FM028_STEPS:=5}"
+    : "${FM028_STALE:=0}"
+    export FM028_N FM028_P FM028_ELL FM028_K FM028_POLICY FM028_STRAT \
+        FM028_TF FM028_LH FM028_REPS FM028_STEPS FM028_STALE
+    echo "=== verify (lever 3 before/after)"
+    julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    bench_status=$?
+    echo "VERIFY_EXIT=$bench_status"
+elif [ "$MODE" = "derisk" ]; then
+    # Phase B step 2: resolve the three Phase A inferences (exact L2B/nearfield
+    # split, host-allocation profile, per-kernel trace). No src/ changes.
+    : "${FM028_N:=1000000}"
+    : "${FM028_P:=3}"
+    # the {4,5,6} L2B/nearfield bracket was measured in job 12998146 (part A);
+    # subsequent runs only need the verdict ell
+    : "${FM028_ELL:=5}"
+    : "${FM028_K:=1740}"
+    : "${FM028_REPS:=5}"
+    export FM028_N FM028_P FM028_ELL FM028_K FM028_REPS
+    echo "=== derisk"
+    julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_derisk.jl
+    bench_status=$?
+    echo "DERISK_EXIT=$bench_status"
 else
     # 04-phase-sweep.md core matrix, TIERED using pilot 12996475 evidence.
     # The original full cross product (2 n x 3 ell x 2 K x 2 policy x 2 strat x

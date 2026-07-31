@@ -821,7 +821,10 @@ end
 
 function _canonical_cuda_source_buffer(system, ::Type{TF},
         counters::CUDARadixTransferCounters, ::DeviceResident) where TF
-    sort_index = collect(1:get_n_bodies(system))
+    # identity permutation: a range, matching the documented `sort_index`
+    # default in compatibility.jl. `collect` here allocated an 8 MB Vector{Int}
+    # every step at n=1e6 (14% of per-step host allocation, task 028).
+    sort_index = Base.OneTo(get_n_bodies(system))
     device_buffer = CUDA.CuArray{TF}(undef, data_per_body(system), length(sort_index))
     if _has_device_source_to_buffer_method(device_buffer, system, sort_index)
         source_to_buffer!(device_buffer, system, sort_index)
@@ -1187,10 +1190,91 @@ end
 
 function _assert_cuda_scratch_resident!(scratch, stage::Symbol)
     scratch === nothing && return nothing
+    # Fast path (task 028): `_assert_cuda_scratch_value!` builds a `$path[$i]`
+    # String for every element it walks, purely to have a message ready if the
+    # invariant fails. At n=1e6/ell=5 that was 1,346,598 allocations and
+    # 33.8 MB per step -- 59% of all per-step host allocation -- on a path that
+    # essentially never throws. Prove the invariant allocation-free first and
+    # fall through to the walker only when the cheap proof fails, so failures
+    # still report the exact same path and message.
+    _cuda_scratch_value_ok(scratch) && return nothing
     _assert_cuda_scratch_value!(scratch, stage, "scratch")
     return nothing
 end
 
+# Unrolled, type-stable struct walk. A plain `for f in fieldnames(typeof(v))`
+# loop with `getfield(v, f)` is type-unstable and boxes on every field, which
+# would reintroduce the allocation this fast path exists to remove.
+@generated function _cuda_scratch_struct_ok(value)
+    checks = [:(_cuda_scratch_value_ok(getfield(value, $(QuoteNode(f)))) || return false)
+              for f in fieldnames(value)]
+    return Expr(:block, checks..., :(return true))
+end
+
+"""
+Allocation-free residency predicate mirroring the accept conditions of
+`_assert_cuda_scratch_value!`.
+
+**This must stay in sync with `_assert_cuda_scratch_value!` below.** It is
+deliberately conservative: it may return `false` for a value that is in fact
+valid (the walker then confirms it), but it must never return `true` for a
+value the walker would reject, since that would silently weaken the
+device-residency invariant contract.
+"""
+function _cuda_scratch_value_ok(value)
+    if value isa FlatCoefficientBuffer || value isa DegreeMajorRealBuffer
+        value.phi isa CUDA.AnyCuArray || return false
+        return size(value.chi, 1) == 0 || value.chi isa CUDA.AnyCuArray
+    elseif value isa CUDA.AnyCuArray || value === nothing ||
+            value isa Number || value isa Symbol || value isa Type ||
+            value isa OperatorBasisInfo || value isa Base.RefValue
+        return true
+    elseif value isa AbstractVector
+        # a concretely device-typed vector satisfies the invariant by type, so
+        # the large route/class vectors need no element-wise walk at all
+        eltype(value) <: CUDA.AnyCuArray && isconcretetype(eltype(value)) &&
+            return true
+        for item in value
+            _cuda_scratch_value_ok(item) || return false
+        end
+        return true
+    elseif value isa Union{Tuple,NamedTuple}
+        for item in value
+            _cuda_scratch_value_ok(item) || return false
+        end
+        return true
+    elseif value isa ResidentM2LFactoredPlan
+        _cuda_scratch_value_ok(value.route_class) || return false
+        groups = value.groups
+        isempty(groups) || _cuda_scratch_value_ok(groups[1]) || return false
+        _cuda_scratch_value_ok(value.class_counts) || return false
+        _cuda_scratch_value_ok(value.ym_flat) || return false
+        _cuda_scratch_value_ok(value.z_flat) || return false
+        return _cuda_scratch_value_ok(value.whole_pass[])
+    elseif value isa ResidentM2LPrecomputedYPlan
+        _cuda_scratch_value_ok(value.route_class) || return false
+        _cuda_scratch_value_ok(value.class_counts) || return false
+        _cuda_scratch_value_ok(value.y_flat_mult) || return false
+        _cuda_scratch_value_ok(value.y_flat_loc) || return false
+        _cuda_scratch_value_ok(value.z_flat) || return false
+        return _cuda_scratch_value_ok(value.whole_pass[])
+    elseif value isa ResidentM2LDenseCUDAPlan
+        _cuda_scratch_value_ok(value.route_class) || return false
+        _cuda_scratch_value_ok(value.operators) || return false
+        _cuda_scratch_value_ok(value.class_counts) || return false
+        _cuda_scratch_value_ok(value.src_slab) || return false
+        _cuda_scratch_value_ok(value.dst_slab) || return false
+        return _cuda_scratch_value_ok(value.whole_pass[])
+    elseif value isa ResidentOperatorGroup || value isa ResidentOperatorWorkspace ||
+            value isa DegreeMajorMaps || value isa ResidentM2LConcatPlan ||
+            value isa ConcatChannelOps || value isa StackedYChannel
+        return _cuda_scratch_struct_ok(value)
+    end
+    return false   # unsupported/unknown -> let the walker produce the error
+end
+
+# NOTE: keep the accept conditions here in sync with `_cuda_scratch_value_ok`
+# above, which is the allocation-free fast path guarding this walker.
 function _assert_cuda_scratch_value!(value, stage::Symbol, path::AbstractString)
     if value isa FlatCoefficientBuffer || value isa DegreeMajorRealBuffer
         value.phi isa CUDA.AnyCuArray ||

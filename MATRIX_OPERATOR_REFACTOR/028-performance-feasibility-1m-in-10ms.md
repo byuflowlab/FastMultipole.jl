@@ -198,6 +198,33 @@ Two levers the task file named are **demoted by the data**: per-level M2L strate
 (3.9 ms, and its accuracy test at dt=1e-5 is too weak to trust). Recommended Phase B
 order: **host-alloc elimination → nearfield kernel rewrite → leaf-M2L profiler pass**.
 
+### Phase B (in progress — "bank the certain wins first", user decision 2026-07-31)
+
+De-risking jobs 12998146 / 12998189 resolved the three Phase A inferences; **two were
+wrong** (details in report.md §6b):
+- fused stage is **98% nearfield**, not 85% — L2B is ~1 ms, so lever 1 is a pure
+  nearfield lever;
+- host allocation is `_assert_cuda_scratch_value!` path strings (1.35M allocs/step,
+  33.8 MB) + `collect(1:n)` (8.0 MB), **not** the `accumulate!` scratch;
+- leaf M2L is **block-dispatch-bound**: `_cuda_hier_dense_fused_kernel_` launches
+  Threads=32 / Blocks=31,307,680, one warp per route.
+
+**Lever 3 complete** (job 12998517), two `src/translate_batched_cuda.jl` changes that
+preserve the 023 invariant contract — an allocation-free `_cuda_scratch_value_ok`
+fast path guarding the existing walker, and `Base.OneTo` in place of `collect(1:n)` on
+the device-resident path:
+
+| metric | before | after |
+|---|---|---|
+| host allocation / step | 57.7 MB | **0.80 MB** (-99%) |
+| verdict step F32 | 91.40 ms | **69.64 ms** (-24%) |
+| verdict step F64 | 104.00 ms | **82.90 ms** (-20%) |
+| gradient rel RMS | 3.186e-4 | 3.186e-4 (unchanged) |
+
+**Standing: 7.0x over target** (was 9.1x). Remaining budget is 93% the two kernels
+(nearfield 38.4 ms, M2L 26.6 ms). Levers 1 and 2 are **not** approved for
+implementation yet.
+
 ## Verification Notes
 
 ### Phase A
