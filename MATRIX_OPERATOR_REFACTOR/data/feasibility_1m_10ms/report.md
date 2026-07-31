@@ -301,12 +301,55 @@ lifecycle gate and convection gate both exit 0. The 10-14 ms prediction undercou
 because the assertion cost more than its allocation (1.35M calls plus induced GC), part
 of which had been absorbed into other stages' wall time and the +-5 ms residual noise.
 
+### Lever 2 (job 13010174): partial — 5 ms on the F32 verdict path, 0 on F64
+
+Grid-stride the fused dense M2L kernel instead of one block per route
+(`blocks = min(n_routes, DENSE_CUDA_FUSED_MAX_BLOCKS[])`, cap 16384), cutting leaf
+block count 31,307,680 -> 16,384.
+
+| | after lever 3 | after lever 2 | delta |
+|---|---|---|---|
+| F32 `m2l_ms` (leaf L5) | 26.64 (23.58) | **21.61 (19.60)** | **-5.03 (-19%)** |
+| F32 verdict step | 69.64 | **64.56** | **-5.08** |
+| F64 `m2l_ms` (leaf L5) | 25.13 (22.41) | 25.69 (23.27) | +0.57 (+2%) |
+| F64 verdict step | 82.90 | 83.38 | +0.48 |
+| gradient rel RMS | 3.186e-4 | 3.186e-4 | unchanged |
+
+**The §6b block-dispatch attribution was only partly right.** A 1900x dispatch
+reduction bought 19% in F32 and nothing in F64, so dispatch was a real but minor
+contributor rather than the dominant cost inferred from the kernel trace. Scoped at
+10-20 ms, delivered ~5 ms on the verdict path.
+
+What the experiment does establish: *before* lever 2 the leaf was 22.41 ms (F64) vs
+23.58 ms (F32) — precision-insensitive, as a dispatch-bound stage should be. *After*,
+it is 23.27 (F64) vs 19.60 (F32) — 16% faster in F32. Removing dispatch exposed an
+underlying limit that **is** precision-sensitive, i.e. bandwidth or atomic throughput
+(~500M atomic accumulations per step). Which of the two is unmeasured and is the next
+question for this stage — a different lever from the one pulled here.
+
+Kept because it is a clear 5 ms gain on the F32 verdict configuration; the F64
+regression is inside the ~8% run-to-run variance recorded in §7.
+
+Correctness: a new `fused dense M2L grid-stride parity` testset (8 tests) runs the
+same problem at `DENSE_CUDA_FUSED_MAX_BLOCKS` = `typemax(Int)`, 3 and 1, forcing many
+grid-stride iterations, and requires identical results up to atomic-reassociation
+rounding. It is also **the only hierarchical coverage in the CUDA gate** —
+`cuda_radix_lifecycle_test.jl` never builds a hierarchical cache, so its 215 tests
+passed against a kernel that compiled to invalid IR (jobs 13000341/13009348/13009363).
+
 ### Standing after lever 3
 
 **F32 verdict step 69.64 ms = 7.0x over target** (was 9.1x). The budget is now almost
 entirely the two kernels: nearfield 38.4 ms (55%) + M2L 26.6 ms (38%) = **93%**, with
 ~4.6 ms of everything else. This is the state §5 anticipated: overhead is spent, and the
 remaining gap requires ~6.5x from the two dominant kernels.
+
+### Standing after lever 2
+
+**F32 verdict step 64.56 ms = 6.5x over target** (9.1x -> 7.0x -> 6.5x). Budget:
+nearfield 38.37 ms (59%), M2L 21.61 ms (33%, leaf 19.60), everything else ~4.6 ms (7%).
+The nearfield is now the majority of the step on its own, so lever 1 is where any
+further material gain has to come from.
 
 ## 7. Methodology, anchoring, and threats to validity
 

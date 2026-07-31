@@ -11,6 +11,7 @@ const CUDA = Base.require(Base.PkgId(Base.UUID("052768ef-5323-5732-b1bb-66c8b648
 const blockIdx = CUDA.blockIdx
 const blockDim = CUDA.blockDim
 const threadIdx = CUDA.threadIdx
+const gridDim = CUDA.gridDim
 
 function cuda_radix_available()
     try
@@ -2322,6 +2323,17 @@ const DENSE_CUDA_CHUNK = Ref(1 << 14)
 # which is launch-bound at 1e3+ gemms per step.
 const DENSE_CUDA_FUSED = Ref(true)
 
+# Persistent-CTA cap for the fused dense kernel (task 028 lever 2). The kernel
+# originally launched one 32-thread block per route: at n=1e6/ell=5 that is
+# 31,307,680 blocks for 20.28 ms of leaf M2L, i.e. ~1.5 G blocks/s, which is
+# block-dispatch rate rather than compute or bandwidth (a Float32/Float64 A/B
+# moved the stage 22.41 -> 23.55 ms, ruling both out). Each block now
+# grid-strides over many routes, so the block count is bounded by this cap
+# instead of the route count -- ~1900x less dispatch at the leaf level. At
+# P=4 the block is 32 threads, so 16384 blocks is 524288 threads against an
+# H200's 132 SMs x 2048 = 270336 thread capacity: still oversubscribed.
+const DENSE_CUDA_FUSED_MAX_BLOCKS = Ref(16384)
+
 # Gather the stacked degree-major [phi; chi] slab column j from the source column
 # `src_cols[j]`, mapping degree-major row i to flat storage through phi/chi_flat_idx.
 function _cuda_dense_gather_kernel!(slab, phi, chi, phi_flat_idx, chi_flat_idx,
@@ -4258,16 +4270,25 @@ end
 # so one operator per union offset serves every level. The two diagonals differ (and
 # are asymmetric across the Lamb-Helmholtz phi/chi row blocks), so they are separate
 # columns of `src_scale`/`tgt_scale` indexed by the window's level.
+# Task 028 lever 2: grid-stride over routes instead of one block per route.
+# Previously `blocks = n_routes`, which at n=1e6/ell=5 is 31,307,680 blocks for
+# 20.28 ms of leaf M2L (~1.5 G blocks/s) -- block-dispatch rate, not compute or
+# bandwidth (a Float32/Float64 A/B moved the stage 22.41 -> 23.55 ms, ruling
+# both out). The block count is now capped by DENSE_CUDA_FUSED_MAX_BLOCKS and
+# each block walks many routes.
+#
+# `j` advances by `gridDim()`, so it is uniform across the block and every
+# thread reaches both barriers the same number of times.
 function _cuda_hier_dense_fused_kernel!(loc_phi, loc_chi, ops, route_class,
         route_sources, route_targets, mp_phi, mp_chi, phi_flat_idx, chi_flat_idx,
-        ndof_phi, src_scale, tgt_scale, lcol, ::Val{LH}) where LH
+        ndof_phi, src_scale, tgt_scale, lcol, n_routes, ::Val{LH}) where LH
     T = eltype(ops)
     D = size(ops, 1)
-    j = blockIdx().x
     tid = threadIdx().x
     nthreads = blockDim().x
     shm = CUDA.CuDynamicSharedArray(T, D)
-    @inbounds begin
+    j = blockIdx().x
+    @inbounds while j <= n_routes
         src_col = route_sources[j]
         k = Int(route_class[j])
         tgt_col = route_targets[j]
@@ -4297,6 +4318,12 @@ function _cuda_hier_dense_fused_kernel!(loc_phi, loc_chi, ops, route_class,
             end
             r += nthreads
         end
+        # WAR barrier: the next iteration's gather must not overwrite `shm`
+        # while a slower thread is still reading it in the matvec above. The
+        # single-route-per-block original never looped, so it needed only the
+        # RAW barrier.
+        CUDA.sync_threads()
+        j += gridDim().x
     end
     return nothing
 end
@@ -4378,11 +4405,12 @@ function _cuda_hier_dense_apply_window!(state::DeviceResidentRadixState{TF,B,LH}
     if DENSE_CUDA_FUSED[]
         threads = min(256, cld(plan.ndof, 32) * 32)
         shmem = plan.ndof * sizeof(TF)
-        CUDA.@cuda threads=threads blocks=n_routes shmem=shmem _cuda_hier_dense_fused_kernel!(
+        blocks = min(n_routes, DENSE_CUDA_FUSED_MAX_BLOCKS[])
+        CUDA.@cuda threads=threads blocks=blocks shmem=shmem _cuda_hier_dense_fused_kernel!(
             state.locals.phi, state.locals.chi, plan.operators, plan.route_class,
             state.route_sources, state.route_targets, state.multipoles.phi,
             state.multipoles.chi, ws.phi_flat_idx, ws.chi_flat_idx, plan.ndof_phi,
-            hctx.source_scale, hctx.target_scale, lcol, Val(LH),
+            hctx.source_scale, hctx.target_scale, lcol, n_routes, Val(LH),
         )
         return state
     end

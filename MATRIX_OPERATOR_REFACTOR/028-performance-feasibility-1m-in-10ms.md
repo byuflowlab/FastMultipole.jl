@@ -221,9 +221,34 @@ the device-resident path:
 | verdict step F64 | 104.00 ms | **82.90 ms** (-20%) |
 | gradient rel RMS | 3.186e-4 | 3.186e-4 (unchanged) |
 
-**Standing: 7.0x over target** (was 9.1x). Remaining budget is 93% the two kernels
-(nearfield 38.4 ms, M2L 26.6 ms). Levers 1 and 2 are **not** approved for
-implementation yet.
+**Lever 2 complete** (job 13010174) — grid-stride the fused dense M2L kernel instead
+of one block per route, cutting leaf blocks 31,307,680 -> 16,384:
+
+| | after lever 3 | after lever 2 |
+|---|---|---|
+| F32 `m2l_ms` (leaf) | 26.64 (23.58) | **21.61 (19.60)** (-19%) |
+| F32 verdict step | 69.64 ms | **64.56 ms** (-5.08) |
+| F64 `m2l_ms` / verdict | 25.13 / 82.90 | 25.69 / 83.38 (+2% / +0.6%) |
+| gradient rel RMS | 3.186e-4 | 3.186e-4 (unchanged) |
+
+**Partial: scoped 10-20 ms, delivered ~5 ms on the verdict path.** The
+block-dispatch attribution was only partly right — a 1900x dispatch reduction bought
+19% in F32 and nothing in F64. What it did establish: the leaf was precision-*in*sensitive
+before (22.41 F64 vs 23.58 F32) and is precision-sensitive after (23.27 vs 19.60), so
+removing dispatch exposed a bandwidth- or atomic-throughput limit (~500M atomics/step).
+Distinguishing those two is the next question for this stage. Kept because it is a clear
+gain on the F32 verdict config and the F64 delta is inside the ~8% run-to-run variance.
+
+Also added `fused dense M2L grid-stride parity` (8 tests) — **the only hierarchical
+coverage in the CUDA gate**. `cuda_radix_lifecycle_test.jl` never builds a hierarchical
+cache, so its 215 tests passed against a kernel compiling to invalid IR across jobs
+13000341/13009348/13009363. Root cause of those was a missing
+`const gridDim = CUDA.gridDim` binding (the file aliases `blockIdx`/`blockDim`/
+`threadIdx` but not `gridDim`); an audit now checks every bare intrinsic has a binding.
+
+**Standing: 6.5x over target** (9.1x -> 7.0x -> 6.5x). Budget is nearfield 38.37 ms
+(59%), M2L 21.61 ms (33%), other ~4.6 ms (7%). **Lever 1 (nearfield) is not approved
+for implementation yet.**
 
 ## Verification Notes
 
