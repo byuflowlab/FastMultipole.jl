@@ -627,4 +627,81 @@ within-round jitter.
 
 ## Approval Notes
 
-To be filled by a different agent after this task is complete.
+**APPROVED — 2026-07-31**, clear-context review by a different agent per
+`START_HERE.md` step 6 (read: `START_HERE.md`, this task file, and the listed
+production/test/script/data surfaces; the completing agent did not approve its own
+work).
+
+### Verification performed
+
+- **Production surface matches the Implementation Notes.**
+  `DeviceHierarchicalM2LContext` (`src/containers.jl:461`) is CUDA-free with
+  array-type parameters; the six `_cuda_hier_*` kernels and
+  `_launch_cuda_hierarchical_m2l!` (`src/translate_batched_cuda.jl:3837-4404`)
+  implement source-major phase-masked windowed generation inside the M2L stage
+  with `clear_locals=false` accumulation; the 026 device rejection is removed and
+  `_verify_hierarchical_classifier!` gates before device construction
+  (`src/translate_batched_resident.jl:843-870`). Dense uses per-union-offset
+  tables with `Lambda` scaling confined to the dense path only; the other three
+  strategies keep level-true tables (`translate_batched_cuda.jl:3348-3357`,
+  `:4421-4476`) — the `026` scoping rule is respected.
+- **Default flip is correct and backward compatible.** `_default_radix_policy`
+  returns `HierarchicalRigidStencil(near_radius2=12)` with epsilon from
+  `rigid_stencil_epsilon` (`src/interaction_list_batched.jl:112`);
+  `RADIX_DEVICE_WINDOW_CLASSES=256` / host 4; explicit `stencil_epsilon` still
+  selects the flat policy. The latent silent-substitution defect fix is real:
+  `options.m2l_strategy` is validated before any policy-dependent substitution
+  (`translate_batched_resident.jl:827-835`), so `SharedRotationM2L` is rejected
+  identically under both policies.
+- **Tests match the claims.** `test/cuda_radix_hierarchical_test.jl` (445 lines,
+  included in both `test/runtests.jl` and `test/cuda/runtests.jl`) covers every
+  item listed in the Implementation Notes, including elementwise route parity,
+  exactly-once coverage, K-invariance (1/8/1740), the 4-strategy × TF × LH
+  lifecycle matrix at `P = 4` (standing rule honored), the counter/identity/
+  allocation-stability contract, both construction gates, the CUDA-absent throw,
+  and the no-policy device-default block asserting `near_radius2=12` /
+  `window_classes=256`. The flat-pinning triage is exactly as described (three
+  files fully pinned with rationale comments; only the factored-vs-concat block
+  pinned in `radix_fmm_integration_test.jl`); no tolerances loosened.
+- **Artifacts and data check out.** All scripts
+  (`benchmark_027_hierarchical_cuda.jl`, `cuda_027_{submit,run,fetch,tune,gate,
+  tiebreak}.sh`) and the data for jobs 12977812 / 12992039 / 12993753 / 12994269
+  exist under `data/hierarchical_m2l_cuda/`. Headline numbers reproduce from the
+  raw CSVs (hier3 dense `ell=5, n=2e5`: 20.10 ms at K=4, 3.64 ms at K=1740;
+  tiebreak has the claimed 8×15 alternating structure).
+  `compare_026_regression.jl` gates `m2l_ms_median` and `step_ms_median`
+  independently with the stated 5%/10%/geomean policy plus allocation/counter
+  checks.
+- **Verification is genuine and honestly reported.** 7039/7039 H200 hierarchical
+  tests green; Checkpoint D was reinstated, run, and PASSED on the flat common
+  surface with its scope limit stated plainly; the one ambiguous cell was settled
+  by a proper alternating-round tiebreaker rather than hand-waved. Known gaps
+  (matched-accuracy flat comparison, K-tuned concat/factored/Float32/LH rows,
+  shallow-regime extrapolation) are recorded, not argued away, and routed to
+  `028`.
+
+### Criteria verdicts
+
+1. Consistent with objectives — yes (device mirror of `026`, both radii, `023`
+   contract preserved, H200 data, measured default). 2. Correctness — yes.
+3. Performance — yes (322× M2L / 24× step at the headline point; K=256 default is
+   measurement-backed). 4. Robustness — yes. 5. Minimally invasive — yes (flat
+   device path unchanged and regression-tested; CPU-only import stays CUDA-free).
+6. Readable — yes.
+
+### Minor non-blocking notes (for future rows / maintenance)
+
+- An explicitly constructed `HierarchicalRigidStencil(...)` on device gets the
+  constructor default `window_classes=4`, not 256 — the measured device default
+  flows only through `_default_radix_policy`. Defensible override semantics, but
+  worth a docstring warning.
+- `compare_026_regression.jl` silently degrades to a single-metric gate if a
+  metric column is missing (both were present in the actual gate run).
+- The allocation-stability assertions compare only two warmed samples.
+- `_cuda_hier_generate_window!`'s early `return 0` leaves stale
+  `window_lo`/`window_hi`; safe only because the `n == 0` guard skips
+  refresh/apply — fragile if that guard moves.
+- Stale `src/*.jl.56968.mem` coverage artifacts contain removed pre-027 code and
+  can confuse future greps; candidates for deletion in maintenance.
+- `cuda_027_shallow.sh` was only ever a suggested pattern for the dropped shallow
+  confirmation run, not a deliverable; it is correctly absent.

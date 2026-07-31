@@ -151,7 +151,88 @@ section.
 
 ## Implementation Notes
 
-To be filled by the implementing agent.
+### Phase A (complete; Phase B not started — user checkpoint pending)
+
+**Full report: `MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms/report.md`.**
+
+No `src/` changes. All Phase A work is benchmark/test-side:
+
+| Artifact | Role |
+|---|---|
+| `MOR/scripts/benchmark_028_feasibility.jl` | Case matrix; three boundaries; per-stage CUDA-event medians; counter contract; sampled-direct accuracy; per-level M2L + class histograms |
+| `MOR/scripts/fm028_device_system.jl` | `FM028DeviceSystem` + device Euler convection kernel |
+| `MOR/scripts/cuda_028_{submit,run,fetch}.sh` | Cluster driver; `pilot`/`sweep` tiered case presets |
+| `test/cuda_radix_convection_test.jl` | Convection/residency gate (runs before the benchmark) |
+
+Commands:
+```bash
+bash MATRIX_OPERATOR_REFACTOR/scripts/cuda_028_submit.sh pilot   # -> job 12996475
+bash MATRIX_OPERATOR_REFACTOR/scripts/cuda_028_submit.sh sweep   # -> job 12997508
+bash MATRIX_OPERATOR_REFACTOR/scripts/cuda_028_fetch.sh <jobid>
+```
+
+**Answer: no at present — 91.4 ms vs the 10 ms target (9.1×)** at the best
+accuracy-admissible configuration, hier12 · dense · **Float32** · ell=5 · **K=1740**,
+n=10⁶, P=4. Float64: 104.0–106.3 ms. Boundaries: eval-only 86.4 ms, verdict 91.4 ms,
+verdict+transfers 93.2 ms, fully host-resident 159.4 ms.
+
+Newly established at n=10⁶ (all first-ever measurements on the hierarchical path):
+- **hier12 confirmed as the verdict config**; hier3 is faster (52.7 ms) but its
+  3.995e-3 gradient error is **3.4× over the accuracy gate** — inadmissible.
+- **Float32 is admissible** (3.186e-4 vs F64 3.185e-4, +0.03%), worth 1.14×.
+- **`ell`=5 is the optimum**; ell=4 → 349.5 ms, ell=6 → 546.7 ms.
+- **K=1740 cures route_gen** (24.19 → 2.13 ms); that lever is now spent.
+- **`precomputed_y` loses to `dense`** everywhere (172.3 vs 106.3 ms).
+- **Lamb–Helmholtz costs 1.41×** (149.5 ms), entirely in M2L.
+
+Bound classification — the step is dominated by two kernels, 68% in F32:
+- **L2B+nearfield 38.4 ms (42%)**: partially compute-bound, FP64-rsqrt-limited.
+  4.83e9 interactions/step; 91.5 G/s (F64) → 125.8 G/s (F32); 2% of HBM3e ⇒ not bandwidth.
+- **Leaf M2L 23.6 ms (26%)**: **neither bandwidth- nor compute-bound** — proven by
+  precision A/B at fixed work (22.41 ms F64 → 23.55 ms F32, unchanged). Overhead-bound,
+  mechanism unidentified.
+- **Host allocation 57.7 MB/step** (~1.76 KB/cell/step), ~14 ms.
+
+Two levers the task file named are **demoted by the data**: per-level M2L strategy mix
+(≤3 ms, because coarse levels cost 2.86 ms total at K=1740) and stale-tree refresh
+(3.9 ms, and its accuracy test at dt=1e-5 is too weak to trust). Recommended Phase B
+order: **host-alloc elimination → nearfield kernel rewrite → leaf-M2L profiler pass**.
+
+## Verification Notes
+
+### Phase A
+
+Cluster gates (both jobs): `LIFECYCLE_TEST_EXIT=0`, `CONVECTION_TEST_EXIT=0`.
+**27 rows, all `fit=true`** — no failures, no OOM, empty failure ledger. Peak device
+memory 1.65–1.99 GB of 140 GB at n=10⁶.
+
+- **Counter contract asserted per case** (harness `error()`s on violation):
+  `body_uploads=0`, `metadata_downloads=0`, `expansion_host_copies=0`, route/operator
+  uploads flat across recurring steps. All 27 rows pass ⇒ the device-resident boundary
+  is genuinely achieved.
+- **Accuracy hard-gate** (≤10× of 1.19e-4 = 1.19e-3): hier12 3.185e-4 ✓ (F64),
+  3.186e-4 ✓ (F32), flat 1.187e-4 ✓. hier3 3.995e-3 ✗ — recorded as failing.
+- **Reference integrity**: `ref_cross_check_grad_rel = 2.76e-14` against the checksummed
+  024b CSV (`ec96762990...`), so the gate is not measuring harness error.
+- **024b cross-check**: flat dense ell=4 n=10⁶ reproduces 1.1873e-4 (F64) and 1.1889e-4
+  (F32) to 5 digits, and reproduces itself across jobs 12996475/12997508 to 0.05%
+  (363.50 vs 363.33 ms).
+- **Convection sanity**: after 3–5 device Euler steps, re-evaluated field vs a *fresh*
+  on-device direct reference at moved positions = 3.1842e-4 (step-0: 3.1852e-4).
+  Host/device paths agree to 13 digits.
+
+Threats to validity, recorded in full in report.md §7:
+1. **Run-to-run variance on the hierarchical path is ~8%** (127.2 vs 117.1 ms for an
+   identical config across the two jobs; the flat path reproduced to 0.05%). Lever gains
+   below ~10 ms are within noise.
+2. **The n=2e5 027 tie-in row is not like-for-like and implies no speedup.** 028 pins
+   `bounds=(-0.01, 1.02)` (4,096 cells at ell=4); 027 fitted the tree to the body bounds
+   (2,744 cells). 028 therefore has 48.8 vs 72.9 bodies/leaf and ~30% less nearfield
+   work. 028's own n-scaling remains internally valid (identical grid at every n).
+3. **ell=6 was measured at K=256**, where route_gen is uncured (195.2 of its 546.7 ms);
+   corrected to the K=1740 regime it is still ≈354 ms, so the ell conclusion holds.
+4. A pilot extrapolation of ell=6 ≈ 220 ms was **wrong by 2.5×** (measured 546.7 ms) and
+   has been discarded in favour of the measurement.
 
 ## Approval Notes
 
