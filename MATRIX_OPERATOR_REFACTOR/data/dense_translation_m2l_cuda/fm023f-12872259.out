@@ -1,0 +1,214 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-a92ec0ee-a588-ec50-5c0e-61536751caf1)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  208    208  1m28.1s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  6.9s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_integration_test.jl (023f dense sections)
+Test Summary:                          |   Pass   Total      Time
+CUDA radix fmm! integration (task 023) | 429847  429847  52m14.4s
+INTEGRATION_TEST_EXIT=0
+=== benchmark_023f_dense_m2l_cuda.jl
+concat           Float64  P=4  LH=false N=150    fit=true  m2l    0.281 ms  step    4.501 ms  mem   134.2 MB
+factored         Float64  P=4  LH=false N=150    fit=true  m2l    0.056 ms  step    4.053 ms  mem    33.6 MB
+precomputed_y    Float64  P=4  LH=false N=150    fit=true  m2l    0.040 ms  step    3.998 ms  mem    33.6 MB
+dense            Float64  P=4  LH=false N=150    fit=true  m2l    5.787 ms  step    9.855 ms  mem    33.6 MB
+dense_perclass   Float64  P=4  LH=false N=150    fit=true  m2l   12.837 ms  step   17.138 ms  mem    33.6 MB
+dense_fused      Float64  P=4  LH=false N=150    fit=true  m2l    0.018 ms  step    3.904 ms  mem    33.6 MB
+dense            Float32  P=4  LH=false N=150    fit=true  m2l    5.355 ms  step    9.385 ms  mem   123.7 MB
+dense_perclass   Float32  P=4  LH=false N=150    fit=true  m2l   12.352 ms  step   16.324 ms  mem    33.6 MB
+dense_fused      Float32  P=4  LH=false N=150    fit=true  m2l    0.015 ms  step    3.830 ms  mem    33.6 MB
+concat           Float64  P=4  LH=true  N=150    fit=true  m2l    0.577 ms  step    6.381 ms  mem   167.8 MB
+factored         Float64  P=4  LH=true  N=150    fit=true  m2l    0.121 ms  step    5.582 ms  mem    67.1 MB
+precomputed_y    Float64  P=4  LH=true  N=150    fit=true  m2l    0.100 ms  step    5.562 ms  mem    67.1 MB
+dense            Float64  P=4  LH=true  N=150    fit=true  m2l    4.456 ms  step    9.987 ms  mem    67.1 MB
+dense_perclass   Float64  P=4  LH=true  N=150    fit=true  m2l   10.236 ms  step   16.238 ms  mem    67.1 MB
+dense_fused      Float64  P=4  LH=true  N=150    fit=true  m2l    0.028 ms  step    5.418 ms  mem    67.1 MB
+dense            Float32  P=4  LH=true  N=150    fit=true  m2l    4.099 ms  step    9.553 ms  mem    33.6 MB
+dense_perclass   Float32  P=4  LH=true  N=150    fit=true  m2l   10.028 ms  step   15.305 ms  mem    33.6 MB
+dense_fused      Float32  P=4  LH=true  N=150    fit=true  m2l    0.025 ms  step    5.207 ms  mem    33.6 MB
+concat           Float64  P=8  LH=false N=150    fit=true  m2l    0.283 ms  step    4.728 ms  mem   167.8 MB
+factored         Float64  P=8  LH=false N=150    fit=true  m2l    0.174 ms  step    4.500 ms  mem    67.1 MB
+precomputed_y    Float64  P=8  LH=false N=150    fit=true  m2l    0.111 ms  step    4.542 ms  mem   100.7 MB
+dense            Float64  P=8  LH=false N=150    fit=true  m2l   20.325 ms  step   24.225 ms  mem   201.3 MB
+dense_perclass   Float64  P=8  LH=false N=150    fit=true  m2l   39.302 ms  step   44.556 ms  mem   201.3 MB
+dense_fused      Float64  P=8  LH=false N=150    fit=true  m2l    0.088 ms  step    4.535 ms  mem   201.3 MB
+dense            Float32  P=8  LH=false N=150    fit=true  m2l   14.623 ms  step   19.094 ms  mem   100.7 MB
+dense_perclass   Float32  P=8  LH=false N=150    fit=true  m2l   33.598 ms  step   38.246 ms  mem   100.7 MB
+dense_fused      Float32  P=8  LH=false N=150    fit=true  m2l    0.063 ms  step    4.312 ms  mem   100.7 MB
+concat           Float64  P=8  LH=true  N=150    fit=true  m2l    0.619 ms  step    6.660 ms  mem   436.2 MB
+factored         Float64  P=8  LH=true  N=150    fit=true  m2l    0.459 ms  step    6.138 ms  mem   167.8 MB
+precomputed_y    Float64  P=8  LH=true  N=150    fit=true  m2l    0.285 ms  step    6.136 ms  mem   167.8 MB
+dense            Float64  P=8  LH=true  N=150    fit=true  m2l   31.891 ms  step   36.841 ms  mem   906.0 MB
+dense_perclass   Float64  P=8  LH=true  N=150    fit=true  m2l   47.047 ms  step   52.467 ms  mem   906.0 MB
+dense_fused      Float64  P=8  LH=true  N=150    fit=true  m2l    0.366 ms  step    6.157 ms  mem   906.0 MB
+dense            Float32  P=8  LH=true  N=150    fit=true  m2l   49.181 ms  step   54.281 ms  mem   469.8 MB
+dense_perclass   Float32  P=8  LH=true  N=150    fit=true  m2l   63.991 ms  step   69.321 ms  mem   469.8 MB
+dense_fused      Float32  P=8  LH=true  N=150    fit=true  m2l    0.482 ms  step    6.047 ms  mem   469.8 MB
+concat           Float64  P=12 LH=false N=150    fit=true  m2l    0.652 ms  step    6.850 ms  mem   369.1 MB
+factored         Float64  P=12 LH=false N=150    fit=true  m2l    0.468 ms  step    6.677 ms  mem   167.8 MB
+precomputed_y    Float64  P=12 LH=false N=150    fit=true  m2l    0.264 ms  step    6.498 ms  mem   167.8 MB
+dense            Float64  P=12 LH=false N=150    fit=true  m2l   29.167 ms  step   35.460 ms  mem   805.3 MB
+dense_perclass   Float64  P=12 LH=false N=150    fit=true  m2l   44.679 ms  step   50.839 ms  mem   805.3 MB
+dense_fused      Float64  P=12 LH=false N=150    fit=true  m2l    0.369 ms  step    6.622 ms  mem   805.3 MB
+dense            Float32  P=12 LH=false N=150    fit=true  m2l   56.297 ms  step   61.528 ms  mem   402.7 MB
+dense_perclass   Float32  P=12 LH=false N=150    fit=true  m2l   70.564 ms  step   75.966 ms  mem   402.7 MB
+dense_fused      Float32  P=12 LH=false N=150    fit=true  m2l    0.233 ms  step    5.766 ms  mem   402.7 MB
+concat           Float64  P=12 LH=true  N=150    fit=true  m2l    1.154 ms  step    8.862 ms  mem   906.0 MB
+factored         Float64  P=12 LH=true  N=150    fit=true  m2l    0.914 ms  step    8.356 ms  mem   302.0 MB
+precomputed_y    Float64  P=12 LH=true  N=150    fit=true  m2l    0.544 ms  step    8.393 ms  mem   335.5 MB
+dense            Float64  P=12 LH=true  N=150    fit=true  m2l   19.221 ms  step   28.036 ms  mem  3590.3 MB
+dense_perclass   Float64  P=12 LH=true  N=150    fit=true  m2l   43.131 ms  step   52.546 ms  mem  3590.3 MB
+dense_fused      Float64  P=12 LH=true  N=150    fit=true  m2l    1.516 ms  step    9.084 ms  mem  3590.3 MB
+dense            Float32  P=12 LH=true  N=150    fit=true  m2l   20.469 ms  step   28.308 ms  mem  1811.9 MB
+dense_perclass   Float32  P=12 LH=true  N=150    fit=true  m2l   42.574 ms  step   51.679 ms  mem  1811.9 MB
+dense_fused      Float32  P=12 LH=true  N=150    fit=true  m2l    2.183 ms  step    8.925 ms  mem  1811.9 MB
+concat           Float64  P=4  LH=false N=2000   fit=true  m2l    0.261 ms  step    4.243 ms  mem   335.5 MB
+factored         Float64  P=4  LH=false N=2000   fit=true  m2l    0.163 ms  step    4.018 ms  mem    67.1 MB
+precomputed_y    Float64  P=4  LH=false N=2000   fit=true  m2l    0.107 ms  step    4.012 ms  mem    67.1 MB
+dense            Float64  P=4  LH=false N=2000   fit=true  m2l   11.878 ms  step   15.976 ms  mem    67.1 MB
+dense_perclass   Float64  P=4  LH=false N=2000   fit=true  m2l   24.317 ms  step   29.036 ms  mem    67.1 MB
+dense_fused      Float64  P=4  LH=false N=2000   fit=true  m2l    0.040 ms  step    3.962 ms  mem    67.1 MB
+dense            Float32  P=4  LH=false N=2000   fit=true  m2l   12.281 ms  step   16.573 ms  mem    33.6 MB
+dense_perclass   Float32  P=4  LH=false N=2000   fit=true  m2l   24.898 ms  step   29.170 ms  mem    33.6 MB
+dense_fused      Float32  P=4  LH=false N=2000   fit=true  m2l    0.034 ms  step    4.035 ms  mem    33.6 MB
+concat           Float64  P=4  LH=true  N=2000   fit=true  m2l    0.536 ms  step    6.279 ms  mem   872.4 MB
+factored         Float64  P=4  LH=true  N=2000   fit=true  m2l    0.340 ms  step    5.942 ms  mem   100.7 MB
+precomputed_y    Float64  P=4  LH=true  N=2000   fit=true  m2l    0.233 ms  step    5.897 ms  mem   100.7 MB
+dense            Float64  P=4  LH=true  N=2000   fit=true  m2l   10.064 ms  step   15.970 ms  mem   100.7 MB
+dense_perclass   Float64  P=4  LH=true  N=2000   fit=true  m2l   22.127 ms  step   28.805 ms  mem   100.7 MB
+dense_fused      Float64  P=4  LH=true  N=2000   fit=true  m2l    0.094 ms  step    5.690 ms  mem   100.7 MB
+dense            Float32  P=4  LH=true  N=2000   fit=true  m2l   10.077 ms  step   15.625 ms  mem    67.1 MB
+dense_perclass   Float32  P=4  LH=true  N=2000   fit=true  m2l   22.062 ms  step   27.457 ms  mem    67.1 MB
+dense_fused      Float32  P=4  LH=true  N=2000   fit=true  m2l    0.072 ms  step    5.444 ms  mem    67.1 MB
+concat           Float64  P=8  LH=false N=2000   fit=true  m2l    2.935 ms  step    8.524 ms  mem   973.1 MB
+factored         Float64  P=8  LH=false N=2000   fit=true  m2l    2.324 ms  step    7.937 ms  mem   100.7 MB
+precomputed_y    Float64  P=8  LH=false N=2000   fit=true  m2l    1.276 ms  step    6.891 ms  mem   100.7 MB
+dense            Float64  P=8  LH=false N=2000   fit=true  m2l   26.057 ms  step   31.938 ms  mem   234.9 MB
+dense_perclass   Float64  P=8  LH=false N=2000   fit=true  m2l   51.807 ms  step   57.959 ms  mem   234.9 MB
+dense_fused      Float64  P=8  LH=false N=2000   fit=true  m2l    0.932 ms  step    6.551 ms  mem   234.9 MB
+dense            Float32  P=8  LH=false N=2000   fit=true  m2l   25.729 ms  step   31.177 ms  mem   134.2 MB
+dense_perclass   Float32  P=8  LH=false N=2000   fit=true  m2l   49.470 ms  step   54.985 ms  mem   134.2 MB
+dense_fused      Float32  P=8  LH=false N=2000   fit=true  m2l    0.649 ms  step    5.153 ms  mem   134.2 MB
+concat           Float64  P=8  LH=true  N=2000   fit=true  m2l    6.470 ms  step   14.401 ms  mem  2516.6 MB
+factored         Float64  P=8  LH=true  N=2000   fit=true  m2l    6.036 ms  step   14.026 ms  mem   167.8 MB
+precomputed_y    Float64  P=8  LH=true  N=2000   fit=true  m2l    3.479 ms  step   11.468 ms  mem   201.3 MB
+dense            Float64  P=8  LH=true  N=2000   fit=true  m2l   26.238 ms  step   35.014 ms  mem   906.0 MB
+dense_perclass   Float64  P=8  LH=true  N=2000   fit=true  m2l   54.160 ms  step   64.758 ms  mem   906.0 MB
+dense_fused      Float64  P=8  LH=true  N=2000   fit=true  m2l    3.957 ms  step   11.948 ms  mem   906.0 MB
+dense            Float32  P=8  LH=true  N=2000   fit=true  m2l   47.707 ms  step   54.517 ms  mem   469.8 MB
+dense_perclass   Float32  P=8  LH=true  N=2000   fit=true  m2l   64.848 ms  step   71.740 ms  mem   469.8 MB
+dense_fused      Float32  P=8  LH=true  N=2000   fit=true  m2l    6.003 ms  step   12.714 ms  mem   469.8 MB
+concat           Float64  P=12 LH=false N=2000   fit=true  m2l    8.690 ms  step   25.947 ms  mem  2013.3 MB
+factored         Float64  P=12 LH=false N=2000   fit=true  m2l    6.486 ms  step   23.789 ms  mem   167.8 MB
+precomputed_y    Float64  P=12 LH=false N=2000   fit=true  m2l    3.360 ms  step   20.621 ms  mem   201.3 MB
+dense            Float64  P=12 LH=false N=2000   fit=true  m2l   27.471 ms  step   39.559 ms  mem   838.9 MB
+dense_perclass   Float64  P=12 LH=false N=2000   fit=true  m2l   55.277 ms  step   68.214 ms  mem   838.9 MB
+dense_fused      Float64  P=12 LH=false N=2000   fit=true  m2l    4.367 ms  step   21.684 ms  mem   838.9 MB
+dense            Float32  P=12 LH=false N=2000   fit=true  m2l   48.690 ms  step   61.739 ms  mem   436.2 MB
+dense_perclass   Float32  P=12 LH=false N=2000   fit=true  m2l   65.004 ms  step   77.962 ms  mem   436.2 MB
+dense_fused      Float32  P=12 LH=false N=2000   fit=true  m2l    2.755 ms  step   15.773 ms  mem   436.2 MB
+concat           Float64  P=12 LH=true  N=2000   fit=true  m2l   16.379 ms  step   35.410 ms  mem  5033.2 MB
+factored         Float64  P=12 LH=true  N=2000   fit=true  m2l   14.002 ms  step   33.097 ms  mem   335.5 MB
+precomputed_y    Float64  P=12 LH=true  N=2000   fit=true  m2l    7.811 ms  step   26.888 ms  mem   335.5 MB
+dense            Float64  P=12 LH=true  N=2000   fit=true  m2l   29.433 ms  step   46.511 ms  mem  3623.9 MB
+dense_perclass   Float64  P=12 LH=true  N=2000   fit=true  m2l   58.984 ms  step   74.980 ms  mem  3623.9 MB
+dense_fused      Float64  P=12 LH=true  N=2000   fit=true  m2l   18.827 ms  step   37.985 ms  mem  3623.9 MB
+dense            Float32  P=12 LH=true  N=2000   fit=true  m2l   33.693 ms  step   46.586 ms  mem  1845.5 MB
+dense_perclass   Float32  P=12 LH=true  N=2000   fit=true  m2l   62.461 ms  step   76.503 ms  mem  1845.5 MB
+dense_fused      Float32  P=12 LH=true  N=2000   fit=true  m2l   29.056 ms  step   43.869 ms  mem  1845.5 MB
+concat           Float64  P=4  LH=false N=20000  fit=true  m2l    0.255 ms  step   10.541 ms  mem   335.5 MB
+factored         Float64  P=4  LH=false N=20000  fit=true  m2l    0.203 ms  step   10.545 ms  mem    67.1 MB
+precomputed_y    Float64  P=4  LH=false N=20000  fit=true  m2l    0.133 ms  step   10.623 ms  mem    67.1 MB
+dense            Float64  P=4  LH=false N=20000  fit=true  m2l   11.882 ms  step   22.521 ms  mem    67.1 MB
+dense_perclass   Float64  P=4  LH=false N=20000  fit=true  m2l   24.377 ms  step   35.475 ms  mem    67.1 MB
+dense_fused      Float64  P=4  LH=false N=20000  fit=true  m2l    0.042 ms  step   10.391 ms  mem    67.1 MB
+dense            Float32  P=4  LH=false N=20000  fit=true  m2l   12.317 ms  step   21.783 ms  mem    33.6 MB
+dense_perclass   Float32  P=4  LH=false N=20000  fit=true  m2l   24.126 ms  step   33.239 ms  mem    33.6 MB
+dense_fused      Float32  P=4  LH=false N=20000  fit=true  m2l    0.036 ms  step    8.903 ms  mem    33.6 MB
+concat           Float64  P=4  LH=true  N=20000  fit=true  m2l    0.532 ms  step   14.874 ms  mem   872.4 MB
+factored         Float64  P=4  LH=true  N=20000  fit=true  m2l    0.361 ms  step   14.414 ms  mem   100.7 MB
+precomputed_y    Float64  P=4  LH=true  N=20000  fit=true  m2l    0.246 ms  step   14.481 ms  mem   100.7 MB
+dense            Float64  P=4  LH=true  N=20000  fit=true  m2l   10.121 ms  step   24.899 ms  mem   100.7 MB
+dense_perclass   Float64  P=4  LH=true  N=20000  fit=true  m2l   22.233 ms  step   37.565 ms  mem   100.7 MB
+dense_fused      Float64  P=4  LH=true  N=20000  fit=true  m2l    0.102 ms  step   14.753 ms  mem   100.7 MB
+dense            Float32  P=4  LH=true  N=20000  fit=true  m2l   10.108 ms  step   22.418 ms  mem    67.1 MB
+dense_perclass   Float32  P=4  LH=true  N=20000  fit=true  m2l   22.099 ms  step   34.282 ms  mem    67.1 MB
+dense_fused      Float32  P=4  LH=true  N=20000  fit=true  m2l    0.079 ms  step   12.014 ms  mem    67.1 MB
+concat           Float64  P=8  LH=false N=20000  fit=true  m2l    3.163 ms  step   30.194 ms  mem   973.1 MB
+factored         Float64  P=8  LH=false N=20000  fit=true  m2l    2.525 ms  step   29.653 ms  mem   100.7 MB
+precomputed_y    Float64  P=8  LH=false N=20000  fit=true  m2l    1.384 ms  step   28.467 ms  mem   100.7 MB
+dense            Float64  P=8  LH=false N=20000  fit=true  m2l   25.947 ms  step   46.211 ms  mem   234.9 MB
+dense_perclass   Float64  P=8  LH=false N=20000  fit=true  m2l   50.802 ms  step   74.655 ms  mem   234.9 MB
+dense_fused      Float64  P=8  LH=false N=20000  fit=true  m2l    1.008 ms  step   28.185 ms  mem   234.9 MB
+dense            Float32  P=8  LH=false N=20000  fit=true  m2l   25.981 ms  step   41.698 ms  mem   134.2 MB
+dense_perclass   Float32  P=8  LH=false N=20000  fit=true  m2l   49.658 ms  step   66.144 ms  mem   134.2 MB
+dense_fused      Float32  P=8  LH=false N=20000  fit=true  m2l    0.699 ms  step   20.182 ms  mem   134.2 MB
+concat           Float64  P=8  LH=true  N=20000  fit=true  m2l    6.712 ms  step   40.673 ms  mem  2516.6 MB
+factored         Float64  P=8  LH=true  N=20000  fit=true  m2l    6.228 ms  step   40.243 ms  mem   167.8 MB
+precomputed_y    Float64  P=8  LH=true  N=20000  fit=true  m2l    3.596 ms  step   37.682 ms  mem   201.3 MB
+dense            Float64  P=8  LH=true  N=20000  fit=true  m2l   25.946 ms  step   54.224 ms  mem   906.0 MB
+dense_perclass   Float64  P=8  LH=true  N=20000  fit=true  m2l   54.427 ms  step   85.912 ms  mem   906.0 MB
+dense_fused      Float64  P=8  LH=true  N=20000  fit=true  m2l    4.101 ms  step   38.245 ms  mem   906.0 MB
+dense            Float32  P=8  LH=true  N=20000  fit=true  m2l   47.302 ms  step   72.014 ms  mem   469.8 MB
+dense_perclass   Float32  P=8  LH=true  N=20000  fit=true  m2l   64.359 ms  step   89.355 ms  mem   469.8 MB
+dense_fused      Float32  P=8  LH=true  N=20000  fit=true  m2l    6.230 ms  step   30.966 ms  mem   469.8 MB
+concat           Float64  P=12 LH=false N=20000  fit=true  m2l    8.995 ms  step  100.306 ms  mem  2013.3 MB
+factored         Float64  P=12 LH=false N=20000  fit=true  m2l    6.751 ms  step   98.091 ms  mem   201.3 MB
+precomputed_y    Float64  P=12 LH=false N=20000  fit=true  m2l    3.498 ms  step   94.802 ms  mem   201.3 MB
+dense            Float64  P=12 LH=false N=20000  fit=true  m2l   27.980 ms  step  112.888 ms  mem   838.9 MB
+dense_perclass   Float64  P=12 LH=false N=20000  fit=true  m2l   54.380 ms  step  142.131 ms  mem   838.9 MB
+dense_fused      Float64  P=12 LH=false N=20000  fit=true  m2l    4.501 ms  step   95.977 ms  mem   838.9 MB
+dense            Float32  P=12 LH=false N=20000  fit=true  m2l   48.191 ms  step  114.093 ms  mem   436.2 MB
+dense_perclass   Float32  P=12 LH=false N=20000  fit=true  m2l   64.590 ms  step  130.341 ms  mem   436.2 MB
+dense_fused      Float32  P=12 LH=false N=20000  fit=true  m2l    2.846 ms  step   68.762 ms  mem   436.2 MB
+concat           Float64  P=12 LH=true  N=20000  fit=true  m2l   17.886 ms  step  122.859 ms  mem  5066.7 MB
+factored         Float64  P=12 LH=true  N=20000  fit=true  m2l   15.286 ms  step  120.430 ms  mem   335.5 MB
+precomputed_y    Float64  P=12 LH=true  N=20000  fit=true  m2l    8.562 ms  step  113.660 ms  mem   369.1 MB
+dense            Float64  P=12 LH=true  N=20000  fit=true  m2l   29.429 ms  step  132.844 ms  mem  3623.9 MB
+dense_perclass   Float64  P=12 LH=true  N=20000  fit=true  m2l   58.800 ms  step  160.656 ms  mem  3623.9 MB
+dense_fused      Float64  P=12 LH=true  N=20000  fit=true  m2l   20.530 ms  step  125.703 ms  mem  3623.9 MB
+dense            Float32  P=12 LH=true  N=20000  fit=true  m2l   33.912 ms  step  109.523 ms  mem  1845.5 MB
+dense_perclass   Float32  P=12 LH=true  N=20000  fit=true  m2l   63.045 ms  step  137.741 ms  mem  1845.5 MB
+dense_fused      Float32  P=12 LH=true  N=20000  fit=true  m2l   31.960 ms  step  109.816 ms  mem  1845.5 MB
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/dense_translation_m2l_cuda/cuda_m13h-1-1_20260723-024604.csv
+BENCH_EXIT=0

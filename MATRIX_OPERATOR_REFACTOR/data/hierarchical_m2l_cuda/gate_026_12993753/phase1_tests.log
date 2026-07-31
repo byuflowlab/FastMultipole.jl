@@ -1,0 +1,14 @@
+--- test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m30.8s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  8.5s
+cuda_radix_lifecycle_test_EXIT=0
+--- test/cuda_radix_integration_test.jl
+Test Summary:                          |   Pass   Total      Time
+CUDA radix fmm! integration (task 023) | 416797  416797  23m50.9s
+cuda_radix_integration_test_EXIT=0
+--- test/cuda_radix_hierarchical_test.jl
+Test Summary:                          | Pass  Total     Time
+CUDA hierarchical rigid M2L (task 027) | 7048   7048  3m11.7s
+cuda_radix_hierarchical_test_EXIT=0

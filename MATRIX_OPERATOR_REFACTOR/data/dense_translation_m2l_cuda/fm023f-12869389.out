@@ -1,0 +1,336 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-7b752b40-664e-5fc8-43c4-e5f600c8fa42)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  208    208  1m29.1s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  6.9s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_integration_test.jl (023f dense sections)
+ERROR: LoadError: Some tests did not pass: 429781 passed, 12 failed, 0 errored, 0 broken.
+in expression starting at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:12
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 22400 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 19328 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 11200 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 9664 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 46352 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 46352 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 23176 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 23176 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 48896 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 48416 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 24448 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:869
+  Expression: dev_alloc == 0
+   Evaluated: 24208 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:869 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+Test Summary:                          |   Pass  Fail   Total      Time
+CUDA radix fmm! integration (task 023) | 429781    12  429793  49m24.9s
+INTEGRATION_TEST_EXIT=1
+=== benchmark_023f_dense_m2l_cuda.jl
+concat           Float64  P=4  LH=false N=150    fit=true  m2l    0.270 ms  step    4.268 ms  mem   134.2 MB
+factored         Float64  P=4  LH=false N=150    fit=true  m2l    0.055 ms  step    4.051 ms  mem    33.6 MB
+precomputed_y    Float64  P=4  LH=false N=150    fit=true  m2l    0.041 ms  step    3.983 ms  mem    33.6 MB
+dense            Float64  P=4  LH=false N=150    fit=true  m2l   19.546 ms  step   25.888 ms  mem    33.6 MB
+dense_perclass   Float64  P=4  LH=false N=150    fit=true  m2l   25.846 ms  step   32.803 ms  mem    33.6 MB
+dense            Float32  P=4  LH=false N=150    fit=true  m2l   19.249 ms  step   25.265 ms  mem   123.7 MB
+dense_perclass   Float32  P=4  LH=false N=150    fit=true  m2l   26.609 ms  step   32.484 ms  mem    33.6 MB
+concat           Float64  P=4  LH=true  N=150    fit=true  m2l    0.574 ms  step    6.366 ms  mem   167.8 MB
+factored         Float64  P=4  LH=true  N=150    fit=true  m2l    0.118 ms  step    5.539 ms  mem    67.1 MB
+precomputed_y    Float64  P=4  LH=true  N=150    fit=true  m2l    0.099 ms  step    5.483 ms  mem    67.1 MB
+dense            Float64  P=4  LH=true  N=150    fit=true  m2l   14.121 ms  step   22.050 ms  mem    67.1 MB
+dense_perclass   Float64  P=4  LH=true  N=150    fit=true  m2l   20.256 ms  step   28.391 ms  mem    67.1 MB
+dense            Float32  P=4  LH=true  N=150    fit=true  m2l   14.324 ms  step   21.390 ms  mem    33.6 MB
+dense_perclass   Float32  P=4  LH=true  N=150    fit=true  m2l   20.085 ms  step   28.321 ms  mem    33.6 MB
+concat           Float64  P=8  LH=false N=150    fit=true  m2l    0.282 ms  step    4.789 ms  mem   167.8 MB
+factored         Float64  P=8  LH=false N=150    fit=true  m2l    0.172 ms  step    4.581 ms  mem    67.1 MB
+precomputed_y    Float64  P=8  LH=false N=150    fit=true  m2l    0.109 ms  step    4.526 ms  mem   100.7 MB
+dense            Float64  P=8  LH=false N=150    fit=true  m2l   56.573 ms  step   66.615 ms  mem   201.3 MB
+dense_perclass   Float64  P=8  LH=false N=150    fit=true  m2l   77.483 ms  step   86.757 ms  mem   201.3 MB
+dense            Float32  P=8  LH=false N=150    fit=true  m2l   50.709 ms  step   58.078 ms  mem   100.7 MB
+dense_perclass   Float32  P=8  LH=false N=150    fit=true  m2l   69.432 ms  step   77.173 ms  mem   100.7 MB
+concat           Float64  P=8  LH=true  N=150    fit=true  m2l    0.617 ms  step    6.486 ms  mem   436.2 MB
+factored         Float64  P=8  LH=true  N=150    fit=true  m2l    0.456 ms  step    6.120 ms  mem   167.8 MB
+precomputed_y    Float64  P=8  LH=true  N=150    fit=true  m2l    0.283 ms  step    6.187 ms  mem   167.8 MB
+dense            Float64  P=8  LH=true  N=150    fit=true  m2l   59.657 ms  step   70.646 ms  mem   906.0 MB
+dense_perclass   Float64  P=8  LH=true  N=150    fit=true  m2l   84.282 ms  step   94.758 ms  mem   906.0 MB
+dense            Float32  P=8  LH=true  N=150    fit=true  m2l   62.617 ms  step   72.970 ms  mem   469.8 MB
+dense_perclass   Float32  P=8  LH=true  N=150    fit=true  m2l   85.180 ms  step   95.460 ms  mem   469.8 MB
+concat           Float64  P=12 LH=false N=150    fit=true  m2l    0.652 ms  step    6.820 ms  mem   369.1 MB
+factored         Float64  P=12 LH=false N=150    fit=true  m2l    0.465 ms  step    6.680 ms  mem   167.8 MB
+precomputed_y    Float64  P=12 LH=false N=150    fit=true  m2l    0.262 ms  step    6.472 ms  mem   167.8 MB
+dense            Float64  P=12 LH=false N=150    fit=true  m2l   61.956 ms  step   73.541 ms  mem   805.3 MB
+dense_perclass   Float64  P=12 LH=false N=150    fit=true  m2l   84.490 ms  step   95.337 ms  mem   805.3 MB
+dense            Float32  P=12 LH=false N=150    fit=true  m2l   68.610 ms  step   77.373 ms  mem   436.2 MB
+dense_perclass   Float32  P=12 LH=false N=150    fit=true  m2l   89.092 ms  step   95.668 ms  mem   436.2 MB
+concat           Float64  P=12 LH=true  N=150    fit=true  m2l    1.149 ms  step    8.781 ms  mem   906.0 MB
+factored         Float64  P=12 LH=true  N=150    fit=true  m2l    0.910 ms  step    8.398 ms  mem   302.0 MB
+precomputed_y    Float64  P=12 LH=true  N=150    fit=true  m2l    0.542 ms  step    8.345 ms  mem   335.5 MB
+dense            Float64  P=12 LH=true  N=150    fit=true  m2l   58.601 ms  step   71.729 ms  mem  3590.3 MB
+dense_perclass   Float64  P=12 LH=true  N=150    fit=true  m2l   81.438 ms  step   95.098 ms  mem  3590.3 MB
+dense            Float32  P=12 LH=true  N=150    fit=true  m2l   58.115 ms  step   69.730 ms  mem  1811.9 MB
+dense_perclass   Float32  P=12 LH=true  N=150    fit=true  m2l   80.843 ms  step   91.085 ms  mem  1811.9 MB
+concat           Float64  P=4  LH=false N=2000   fit=true  m2l    0.260 ms  step    4.341 ms  mem   335.5 MB
+factored         Float64  P=4  LH=false N=2000   fit=true  m2l    0.160 ms  step    4.099 ms  mem    67.1 MB
+precomputed_y    Float64  P=4  LH=false N=2000   fit=true  m2l    0.105 ms  step    4.066 ms  mem    67.1 MB
+dense            Float64  P=4  LH=false N=2000   fit=true  m2l   34.931 ms  step   41.747 ms  mem    67.1 MB
+dense_perclass   Float64  P=4  LH=false N=2000   fit=true  m2l   47.299 ms  step   55.168 ms  mem    67.1 MB
+dense            Float32  P=4  LH=false N=2000   fit=true  m2l   34.853 ms  step   40.545 ms  mem    33.6 MB
+dense_perclass   Float32  P=4  LH=false N=2000   fit=true  m2l   47.040 ms  step   54.991 ms  mem    33.6 MB
+concat           Float64  P=4  LH=true  N=2000   fit=true  m2l    0.537 ms  step    6.254 ms  mem   872.4 MB
+factored         Float64  P=4  LH=true  N=2000   fit=true  m2l    0.339 ms  step    5.919 ms  mem   100.7 MB
+precomputed_y    Float64  P=4  LH=true  N=2000   fit=true  m2l    0.230 ms  step    5.867 ms  mem   100.7 MB
+dense            Float64  P=4  LH=true  N=2000   fit=true  m2l   29.885 ms  step   37.955 ms  mem   100.7 MB
+dense_perclass   Float64  P=4  LH=true  N=2000   fit=true  m2l   42.994 ms  step   50.942 ms  mem   100.7 MB
+dense            Float32  P=4  LH=true  N=2000   fit=true  m2l   29.691 ms  step   37.082 ms  mem    67.1 MB
+dense_perclass   Float32  P=4  LH=true  N=2000   fit=true  m2l   41.821 ms  step   48.436 ms  mem    67.1 MB
+concat           Float64  P=8  LH=false N=2000   fit=true  m2l    2.931 ms  step    8.494 ms  mem   973.1 MB
+factored         Float64  P=8  LH=false N=2000   fit=true  m2l    2.313 ms  step    7.918 ms  mem   100.7 MB
+precomputed_y    Float64  P=8  LH=false N=2000   fit=true  m2l    1.268 ms  step    6.860 ms  mem   100.7 MB
+dense            Float64  P=8  LH=false N=2000   fit=true  m2l   74.762 ms  step   85.503 ms  mem   234.9 MB
+dense_perclass   Float64  P=8  LH=false N=2000   fit=true  m2l   98.924 ms  step  110.452 ms  mem   234.9 MB
+dense            Float32  P=8  LH=false N=2000   fit=true  m2l   72.049 ms  step   80.580 ms  mem   134.2 MB
+dense_perclass   Float32  P=8  LH=false N=2000   fit=true  m2l   97.801 ms  step  104.413 ms  mem   134.2 MB
+concat           Float64  P=8  LH=true  N=2000   fit=true  m2l    6.465 ms  step   14.384 ms  mem  2516.6 MB
+factored         Float64  P=8  LH=true  N=2000   fit=true  m2l    5.987 ms  step   13.931 ms  mem   167.8 MB
+precomputed_y    Float64  P=8  LH=true  N=2000   fit=true  m2l    3.451 ms  step   11.405 ms  mem   201.3 MB
+dense            Float64  P=8  LH=true  N=2000   fit=true  m2l   74.944 ms  step   88.434 ms  mem   906.0 MB
+dense_perclass   Float64  P=8  LH=true  N=2000   fit=true  m2l  104.170 ms  step  118.434 ms  mem   906.0 MB
+dense            Float32  P=8  LH=true  N=2000   fit=true  m2l   75.771 ms  step   86.457 ms  mem   469.8 MB
+dense_perclass   Float32  P=8  LH=true  N=2000   fit=true  m2l  102.099 ms  step  117.435 ms  mem   469.8 MB
+concat           Float64  P=12 LH=false N=2000   fit=true  m2l    8.680 ms  step   25.919 ms  mem  2013.3 MB
+factored         Float64  P=12 LH=false N=2000   fit=true  m2l    6.476 ms  step   23.727 ms  mem   167.8 MB
+precomputed_y    Float64  P=12 LH=false N=2000   fit=true  m2l    3.344 ms  step   20.549 ms  mem   201.3 MB
+dense            Float64  P=12 LH=false N=2000   fit=true  m2l   77.044 ms  step   94.082 ms  mem   838.9 MB
+dense_perclass   Float64  P=12 LH=false N=2000   fit=true  m2l  103.940 ms  step  119.902 ms  mem   838.9 MB
+dense            Float32  P=12 LH=false N=2000   fit=true  m2l   81.969 ms  step   92.693 ms  mem   436.2 MB
+dense_perclass   Float32  P=12 LH=false N=2000   fit=true  m2l  107.453 ms  step  118.950 ms  mem   436.2 MB
+concat           Float64  P=12 LH=true  N=2000   fit=true  m2l   16.352 ms  step   35.416 ms  mem  5033.2 MB
+factored         Float64  P=12 LH=true  N=2000   fit=true  m2l   13.954 ms  step   33.010 ms  mem   335.5 MB
+precomputed_y    Float64  P=12 LH=true  N=2000   fit=true  m2l    7.790 ms  step   26.879 ms  mem   335.5 MB
+dense            Float64  P=12 LH=true  N=2000   fit=true  m2l   81.158 ms  step  102.259 ms  mem  3623.9 MB
+dense_perclass   Float64  P=12 LH=true  N=2000   fit=true  m2l  109.221 ms  step  130.251 ms  mem  3623.9 MB
+dense            Float32  P=12 LH=true  N=2000   fit=true  m2l   85.334 ms  step   99.260 ms  mem  1845.5 MB
+dense_perclass   Float32  P=12 LH=true  N=2000   fit=true  m2l  115.200 ms  step  129.472 ms  mem  1845.5 MB
+concat           Float64  P=4  LH=false N=20000  fit=true  m2l    0.257 ms  step   10.738 ms  mem   335.5 MB
+factored         Float64  P=4  LH=false N=20000  fit=true  m2l    0.201 ms  step   10.539 ms  mem    67.1 MB
+precomputed_y    Float64  P=4  LH=false N=20000  fit=true  m2l    0.131 ms  step   10.597 ms  mem    67.1 MB
+dense            Float64  P=4  LH=false N=20000  fit=true  m2l   35.058 ms  step   48.351 ms  mem    67.1 MB
+dense_perclass   Float64  P=4  LH=false N=20000  fit=true  m2l   47.405 ms  step   61.262 ms  mem    67.1 MB
+dense            Float32  P=4  LH=false N=20000  fit=true  m2l   34.927 ms  step   46.172 ms  mem    33.6 MB
+dense_perclass   Float32  P=4  LH=false N=20000  fit=true  m2l   47.551 ms  step   59.730 ms  mem    33.6 MB
+concat           Float64  P=4  LH=true  N=20000  fit=true  m2l    0.540 ms  step   14.854 ms  mem   872.4 MB
+factored         Float64  P=4  LH=true  N=20000  fit=true  m2l    0.355 ms  step   14.552 ms  mem   100.7 MB
+precomputed_y    Float64  P=4  LH=true  N=20000  fit=true  m2l    0.243 ms  step   14.591 ms  mem   100.7 MB
+dense            Float64  P=4  LH=true  N=20000  fit=true  m2l   30.767 ms  step   47.822 ms  mem   100.7 MB
+dense_perclass   Float64  P=4  LH=true  N=20000  fit=true  m2l   42.919 ms  step   60.175 ms  mem   100.7 MB
+dense            Float32  P=4  LH=true  N=20000  fit=true  m2l   29.781 ms  step   43.672 ms  mem    67.1 MB
+dense_perclass   Float32  P=4  LH=true  N=20000  fit=true  m2l   42.012 ms  step   55.483 ms  mem    67.1 MB
+concat           Float64  P=8  LH=false N=20000  fit=true  m2l    3.161 ms  step   30.292 ms  mem   973.1 MB
+factored         Float64  P=8  LH=false N=20000  fit=true  m2l    2.508 ms  step   29.746 ms  mem   100.7 MB
+precomputed_y    Float64  P=8  LH=false N=20000  fit=true  m2l    1.371 ms  step   28.470 ms  mem   100.7 MB
+dense            Float64  P=8  LH=false N=20000  fit=true  m2l   72.952 ms  step   96.805 ms  mem   234.9 MB
+dense_perclass   Float64  P=8  LH=false N=20000  fit=true  m2l   98.910 ms  step  123.505 ms  mem   234.9 MB
+dense            Float32  P=8  LH=false N=20000  fit=true  m2l   73.707 ms  step   89.946 ms  mem   134.2 MB
+dense_perclass   Float32  P=8  LH=false N=20000  fit=true  m2l   94.625 ms  step  113.565 ms  mem   134.2 MB
+concat           Float64  P=8  LH=true  N=20000  fit=true  m2l    6.707 ms  step   40.672 ms  mem  2516.6 MB
+factored         Float64  P=8  LH=true  N=20000  fit=true  m2l    6.190 ms  step   40.208 ms  mem   167.8 MB
+precomputed_y    Float64  P=8  LH=true  N=20000  fit=true  m2l    3.564 ms  step   37.673 ms  mem   201.3 MB
+dense            Float64  P=8  LH=true  N=20000  fit=true  m2l   73.674 ms  step  104.804 ms  mem   906.0 MB
+dense_perclass   Float64  P=8  LH=true  N=20000  fit=true  m2l  103.170 ms  step  135.194 ms  mem   906.0 MB
+dense            Float32  P=8  LH=true  N=20000  fit=true  m2l   75.288 ms  step   98.382 ms  mem   469.8 MB
+dense_perclass   Float32  P=8  LH=true  N=20000  fit=true  m2l  103.442 ms  step  126.055 ms  mem   469.8 MB
+concat           Float64  P=12 LH=false N=20000  fit=true  m2l    8.994 ms  step  100.623 ms  mem  2013.3 MB
+factored         Float64  P=12 LH=false N=20000  fit=true  m2l    6.728 ms  step   98.384 ms  mem   201.3 MB
+precomputed_y    Float64  P=12 LH=false N=20000  fit=true  m2l    3.480 ms  step   95.262 ms  mem   201.3 MB
+dense            Float64  P=12 LH=false N=20000  fit=true  m2l   77.677 ms  step  164.989 ms  mem   838.9 MB
+dense_perclass   Float64  P=12 LH=false N=20000  fit=true  m2l  104.069 ms  step  192.659 ms  mem   838.9 MB
+dense            Float32  P=12 LH=false N=20000  fit=true  m2l   82.167 ms  step  141.766 ms  mem   436.2 MB
+dense_perclass   Float32  P=12 LH=false N=20000  fit=true  m2l  104.878 ms  step  169.945 ms  mem   436.2 MB
+concat           Float64  P=12 LH=true  N=20000  fit=true  m2l   17.862 ms  step  123.371 ms  mem  5066.7 MB
+factored         Float64  P=12 LH=true  N=20000  fit=true  m2l   15.239 ms  step  120.652 ms  mem   335.5 MB
+precomputed_y    Float64  P=12 LH=true  N=20000  fit=true  m2l    8.523 ms  step  114.178 ms  mem   369.1 MB
+dense            Float64  P=12 LH=true  N=20000  fit=true  m2l   81.734 ms  step  184.725 ms  mem  3623.9 MB
+dense_perclass   Float64  P=12 LH=true  N=20000  fit=true  m2l  110.820 ms  step  213.984 ms  mem  3623.9 MB
+dense            Float32  P=12 LH=true  N=20000  fit=true  m2l   85.181 ms  step  158.000 ms  mem  1845.5 MB
+dense_perclass   Float32  P=12 LH=true  N=20000  fit=true  m2l  115.020 ms  step  187.473 ms  mem  1845.5 MB
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/dense_translation_m2l_cuda/cuda_m13h-1-1_20260722-174514.csv
+BENCH_EXIT=0

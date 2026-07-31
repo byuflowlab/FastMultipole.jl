@@ -1,0 +1,4 @@
+# 023 benchmark_023_m13h-1-1, radix path P=4 ell=4; one-shot RadixFMMCache construction vs the recurring step it enables. n order = 10000/100000. gpu construct at n=1e4 (23.7 s) is dominated by one-time CUDA kernel compilation -- the n=1e5 value (0.126 s) is the representative setup cost; m13h-2-1 reads 24.7 s / 0.030 s for the same pair.
+n_index,cpu_construct_s,cpu_step_s,gpu_construct_s,gpu_step_s
+1,0.853943576,8.662578369,23.687613822,0.0331270694732666
+2,0.407384913,24.608854071,0.125845542,0.0858769416809082

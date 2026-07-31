@@ -1,0 +1,2 @@
+phase,attempt,n,threads,leaf_size,warmups,samples,step_seconds_min,step_seconds_median,host,timestamp
+coarse,1,1000000,1,5,1,3,55.087461617,55.186597112,m12-2-30,2026-07-28T02:50:57Z

@@ -1,0 +1,68 @@
+=== task 024b direct-reference environment
+node=m12-2-9 cpus=64 job=12894172
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           48 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  128
+On-line CPU(s) list:                     0-127
+Vendor ID:                               AuthenticAMD
+Model name:                              AMD EPYC 7763 64-Core Processor
+CPU family:                              25
+Model:                                   1
+Thread(s) per core:                      1
+Core(s) per socket:                      64
+Socket(s):                               2
+Stepping:                                1
+BogoMIPS:                                4890.52
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 invpcid cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin brs arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold v_vmsave_vmload vgif v_spec_ctrl umip pku ospke vaes vpclmulqdq rdpid overflow_recov succor smca debug_swap
+Virtualization:                          AMD-V
+L1d cache:                               4 MiB (128 instances)
+L1i cache:                               4 MiB (128 instances)
+L2 cache:                                64 MiB (128 instances)
+L3 cache:                                512 MiB (16 instances)
+NUMA node(s):                            8
+NUMA node0 CPU(s):                       0-15
+NUMA node1 CPU(s):                       16-31
+NUMA node2 CPU(s):                       32-47
+NUMA node3 CPU(s):                       48-63
+NUMA node4 CPU(s):                       64-79
+NUMA node5 CPU(s):                       80-95
+NUMA node6 CPU(s):                       96-111
+NUMA node7 CPU(s):                       112-127
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Mitigation; Safe RET
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Mitigation; Clear CPU buffers
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+julia version 1.11.7
+Precompiling FastMultipole...
+   6620.5 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+reference n=1000 samples=1000 checksum=9f8751085387c1936ad0afa4b8e2cb4710eaaa5d7c5fd3824a7ac10bbd263d64
+reference n=3162 samples=3162 checksum=a26eead0ba43130fdca3bb5640bbe634fe69bfd5d8cfc5164b7b736dbb7e8763
+reference n=10000 samples=10000 checksum=a6b0c70dbfe2dbb9df9b8c9675bf6e6427c2ccc053c2bda0a87d72d7606a33e2
+reference n=31623 samples=512 checksum=f7aaf0cf3d77e4db265b6c58bb9745bf737d4e22b67266394999489818988512
+reference n=100000 samples=512 checksum=4acc286fedfd6ae94d7cc8017a0192dc8663c57e12bba3ff8abd2d1da798d77c
+reference n=316228 samples=512 checksum=a2b3b37fb5a31e7983e0eef51c4860f925f839b4dd4943c5aa28419cf54d6dc2
+reference n=1000000 samples=512 checksum=ec967629907c6e730d2389886b9f8e865fbec35c3a831d8c7220cdfad6e511bc
+024b direct-reference manifest wrote /home/rander39/FastMultipole-024b/data/cpu_gpu_scaling/direct_reference_checksums.sha256
+direct_reference_n1000.csv: OK
+direct_reference_n3162.csv: OK
+direct_reference_n10000.csv: OK
+direct_reference_n31623.csv: OK
+direct_reference_n100000.csv: OK
+direct_reference_n316228.csv: OK
+direct_reference_n1000000.csv: OK

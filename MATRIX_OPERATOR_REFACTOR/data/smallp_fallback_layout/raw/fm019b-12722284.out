@@ -1,0 +1,41 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-8156c75c-bae4-2773-8c60-afad0cf9d059)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.0
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.22.7
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+0
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== cuda_019b_tuning.jl
+slurmstepd: error: *** JOB 12722284 ON m13h-1-1 CANCELLED AT 2026-07-11T23:25:51 DUE TO TIME LIMIT ***

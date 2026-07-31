@@ -1,0 +1,5 @@
+# 024 memory_feasibility, H200 concat plan, uniform Float64 n=20000; plan-reported expansion and scratch footprints. This is a within-strategy order/channel comparison, not a cross-strategy scratch comparison.
+P,expansion_phi_mib,expansion_lh_mib,scratch_phi_mib,scratch_lh_mib
+4,0.267791748046875,0.6427001953125,0.02973175048828125,0.038970947265625
+8,0.803375244140625,1.7852783203125,0.03635406494140625,0.047332763671875
+12,1.624603271484375,3.4991455078125,0.04297637939453125,0.055694580078125

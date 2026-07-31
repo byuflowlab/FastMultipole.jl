@@ -1,0 +1,21 @@
+near_radius2,check,ell,cases,failures,pass,minimum_child_norm2,detail
+3,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
+3,level_branch_geometric,2,3096,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
+3,downward_monotonicity,0,20224,0,true,9,|o_k| >= 2|p_k|-1 for every enumerated child
+12,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
+12,level_branch_geometric,2,752,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
+12,level2_formula_range_preliminary,2,1312,0,true,0,164 separated bounded offsets x 8 phases; stronger q=12 audit
+12,downward_monotonicity,0,73728,0,true,34,|o_k| >= 2|p_k|-1 for every enumerated child
+3,epsilon_interval,2,4,0,true,0,accepted iff epsilon >= 9.9574145432890813 and epsilon < Inf
+3,epsilon_interval,3,4,0,true,0,accepted iff epsilon >= 19.914829086578163 and epsilon < Inf
+3,epsilon_interval,4,4,0,true,0,accepted iff epsilon >= 39.829658173156325 and epsilon < Inf
+3,epsilon_interval,5,4,0,true,0,accepted iff epsilon >= 79.65931634631265 and epsilon < Inf
+3,epsilon_interval,6,4,0,true,0,accepted iff epsilon >= 159.3186326926253 and epsilon < Inf
+3,epsilon_interval,7,4,0,true,0,accepted iff epsilon >= 318.6372653852506 and epsilon < Inf
+12,epsilon_interval,2,13,0,true,0,accepted iff epsilon >= 0.041807761156300173 and epsilon < 0.055904165498874434
+12,epsilon_interval,3,13,0,true,0,accepted iff epsilon >= 0.083615522312600346 and epsilon < 0.11180833099774887
+12,epsilon_interval,4,13,0,true,0,accepted iff epsilon >= 0.16723104462520069 and epsilon < 0.22361666199549773
+12,epsilon_interval,5,13,0,true,0,accepted iff epsilon >= 0.33446208925040138 and epsilon < 0.44723332399099547
+12,epsilon_interval,6,13,0,true,0,accepted iff epsilon >= 0.66892417850080277 and epsilon < 0.89446664798199094
+12,epsilon_interval,7,13,0,true,0,accepted iff epsilon >= 1.3378483570016055 and epsilon < 1.7889332959639819
+3,classic_epsilon_price,0,4,0,true,0,238.17143678330069 times q=12 lower compatible epsilon endpoint

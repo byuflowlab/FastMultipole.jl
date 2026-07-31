@@ -1,0 +1,9 @@
+mode,tf,n,ell,status,job_id
+gpu,Float64,100000,6,failed_after_fallback,12894403
+gpu,Float32,100000,6,failed_after_fallback,12894403
+gpu,Float64,316228,6,failed_after_fallback,12894403
+gpu,Float32,316228,6,failed_after_fallback,12894403
+gpu,Float64,1000000,6,failed_after_fallback,12894403
+gpu,Float32,1000000,6,failed_after_fallback,12894403
+gpu,Float64,1000000,7,failed_after_fallback,12894403
+gpu,Float32,1000000,7,failed_after_fallback,12894403

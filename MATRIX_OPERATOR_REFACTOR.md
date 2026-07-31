@@ -95,6 +95,15 @@ This sequence is blocked until every Theory task is complete and approved:
 
 ## Operator Layer
 
+> **As-built note (016b).** This section is background/design rationale only. The
+> shipped operator layer is described authoritatively by the `START_HERE.md`
+> roadmap amendments (`2026-06-18`/`-19`/`-23`). In particular, the non-z rotation
+> is realized as *two* benchmarked variants — a materialized `Ts(θ)` y-rotation
+> and a Plain-H factored path using fixed per-degree mode matrices `U_n`/`V_n`
+> (rank-1 Fourier modes of the production y-operator, ζ/η dressing absorbed) —
+> rather than a single fixed chain. Consult `START_HERE.md` for the operative
+> operator set; do not treat the derivations below as the as-built API.
+
 Each high-level translation applies the same pieces as the current code:
 
 1. z-axis rotation;
@@ -176,6 +185,13 @@ and sparse/banded coupling across degree and potential/LH channel space.
 
 ## Operator Cache
 
+> **As-built note (016b).** The `Hs_π2`/`ζs_mag`/`ηs_mag`/`M̃`/`L̃` list below is
+> the original design sketch. The shipped `OperatorInvariantCache` additionally
+> carries the fixed `S_pos`/`S_neg` swap data and the Plain-H `U_n`/`V_n` mode
+> matrices, and the `Val(true)` Lamb-Helmholtz channel runs the `P_chi = P_phi + 1`
+> accuracy-order policy. See the `START_HERE.md` roadmap amendments
+> (`2026-06-18`/`-19`/`-23`) for the operative cache contents.
+
 Implementation should add an operator-cache object that owns invariant
 matrices and reusable buffers, not branch-local state. The cache should absorb
 current mutable reusable data such as `Hs_π2`, `ζs_mag`, `ηs_mag`, `M̃`, and
@@ -239,6 +255,44 @@ FMM, Lamb-Helmholtz, and evaluation tests:
 Keep tree/radix-sort work separate from the operator refactor. The operator
 layer can be written against the current `Tree.branches`, `levels_index`,
 `leaf_index`, and sort-index behavior.
+
+## Radix Far Field Is Single-Level (found `2026-07-28`)
+
+The `024b` clear-context review established that the shipped radix path's far
+field is single-level, and that this — not allocation sizing — is the cause of
+the `024b` `n=1e6` regression and its eight unconstructible `ell=6/7` cases.
+
+`build_radix_routes!` stamps a constant `route_levels = ell` and routes both
+endpoints through `leaf_to_node`, so every M2L is leaf-node to leaf-node.
+`ParentNeighborM2L` is not an exception: it walks levels but expands each
+ancestor interaction back down to all descendant leaf pairs, and
+`RadixFMMCache` cannot select it in any case. Consequences: `M2M` and `L2L`
+run every step but feed nothing, M2L cost is `O(C^2)` in occupied cells, and
+with direct cost `~|near|*n*(n/C)` the total is `O(n^(4/3))` — measured GPU
+exponent `1.46`. The route reservation is tight to within 4% of actual, so no
+lazy-allocation change helps.
+
+Rows `025`, `026`, and `027` address this with a rigid, source-major,
+phase-indexed, level-invariant stencil that is never compiled into a full pair
+list. Level-invariance follows from the `024b` `epsilon ∝ 2^ell` scaling, which
+fixes one integer-lattice cutoff at every depth; the V-list then depends only on
+a source node's parity phase within its parent. The stencil is parameterized by a
+single near radius, so the same construction yields both the `024b` `theta=0.5`
+stencil and the classic FMM `27/189` stencil for direct comparison. This is a
+genuine change to the interaction structure and therefore an intentional, scoped
+exception to the "do not mix tree/radix-sort migration into this operator
+refactor" non-goal below: it changes which node pairs the operators are applied
+to, not the operators themselves, and the shipped flat stencil is retained as a
+selectable oracle and remains the default until measurement justifies a switch.
+
+Row `028` (added `2026-07-28`) follows `025`–`027`: a measured feasibility study
+and optimization campaign toward solving 1,000,000 particles in at most 0.01 s
+per time step on a single H200 at `P=4`, using the `024b` sampled-direct error
+methodology (Float32 admissible within the `P=4` truncation error). The verdict
+boundary is the per-time-step resident cost — evaluation plus device convection
+and tree refresh, no per-step body transfers. See the `028` task file and the
+`START_HERE.md` row for the full definition; user sign-off gates each optimize
+cycle.
 
 ## Non-Goals
 

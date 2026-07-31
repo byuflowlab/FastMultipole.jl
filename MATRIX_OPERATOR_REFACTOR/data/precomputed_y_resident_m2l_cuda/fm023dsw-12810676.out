@@ -1,0 +1,59 @@
+=== node: m13h-2-2
+GPU 0: NVIDIA H200 (UUID: GPU-b2a96752-fe5e-4972-7bd7-a492f165e037)
+=== chunk=4096
+concat                 Float64  P=8  LH=false N=20000   m2l    3.170 ms  step   30.664 ms  mem  1040.2 MB
+factored               Float64  P=8  LH=false N=20000   m2l    3.765 ms  step   31.422 ms  mem    67.1 MB
+precomputed_y          Float64  P=8  LH=false N=20000   m2l    2.098 ms  step   29.766 ms  mem    67.1 MB
+precomputed_y_perclass Float64  P=8  LH=false N=20000   m2l   94.749 ms  step  117.703 ms  mem    67.1 MB
+concat                 Float64  P=8  LH=true  N=20000   m2l    6.718 ms  step   41.298 ms  mem  2516.6 MB
+factored               Float64  P=8  LH=true  N=20000   m2l    9.161 ms  step   43.811 ms  mem   100.7 MB
+precomputed_y          Float64  P=8  LH=true  N=20000   m2l    5.408 ms  step   39.974 ms  mem   100.7 MB
+precomputed_y_perclass Float64  P=8  LH=true  N=20000   m2l  283.037 ms  step  312.558 ms  mem   100.7 MB
+concat                 Float64  P=12 LH=false N=20000   m2l    8.996 ms  step  100.973 ms  mem  2013.3 MB
+factored               Float64  P=12 LH=false N=20000   m2l    8.117 ms  step  100.375 ms  mem   100.7 MB
+precomputed_y          Float64  P=12 LH=false N=20000   m2l    4.436 ms  step   96.658 ms  mem   134.2 MB
+precomputed_y_perclass Float64  P=12 LH=false N=20000   m2l   96.622 ms  step  187.746 ms  mem   134.2 MB
+concat                 Float64  P=12 LH=true  N=20000   m2l   17.893 ms  step  123.517 ms  mem  5066.7 MB
+factored               Float64  P=12 LH=true  N=20000   m2l   20.025 ms  step  125.735 ms  mem   167.8 MB
+precomputed_y          Float64  P=12 LH=true  N=20000   m2l   10.988 ms  step  116.602 ms  mem   167.8 MB
+precomputed_y_perclass Float64  P=12 LH=true  N=20000   m2l  298.060 ms  step  396.739 ms  mem   167.8 MB
+wrote MATRIX_OPERATOR_REFACTOR/data/precomputed_y_resident_m2l_cuda/chunk_sweep_4096_m13h-2-2.csv
+CHUNK_4096_EXIT=0
+=== chunk=16384
+concat                 Float64  P=8  LH=false N=20000   m2l    3.173 ms  step   30.830 ms  mem  1040.2 MB
+factored               Float64  P=8  LH=false N=20000   m2l    2.525 ms  step   30.165 ms  mem   100.7 MB
+precomputed_y          Float64  P=8  LH=false N=20000   m2l    1.387 ms  step   29.000 ms  mem   100.7 MB
+precomputed_y_perclass Float64  P=8  LH=false N=20000   m2l   94.717 ms  step  118.509 ms  mem   100.7 MB
+concat                 Float64  P=8  LH=true  N=20000   m2l    6.715 ms  step   41.107 ms  mem  2516.6 MB
+factored               Float64  P=8  LH=true  N=20000   m2l    6.226 ms  step   40.821 ms  mem   167.8 MB
+precomputed_y          Float64  P=8  LH=true  N=20000   m2l    3.598 ms  step   38.055 ms  mem   201.3 MB
+precomputed_y_perclass Float64  P=8  LH=true  N=20000   m2l  273.920 ms  step  312.952 ms  mem   201.3 MB
+concat                 Float64  P=12 LH=false N=20000   m2l    9.004 ms  step  101.120 ms  mem  2013.3 MB
+factored               Float64  P=12 LH=false N=20000   m2l    6.749 ms  step   99.012 ms  mem   201.3 MB
+precomputed_y          Float64  P=12 LH=false N=20000   m2l    3.499 ms  step   94.991 ms  mem   201.3 MB
+precomputed_y_perclass Float64  P=12 LH=false N=20000   m2l   96.761 ms  step  186.951 ms  mem   201.3 MB
+concat                 Float64  P=12 LH=true  N=20000   m2l   17.881 ms  step  123.676 ms  mem  5066.7 MB
+factored               Float64  P=12 LH=true  N=20000   m2l   15.286 ms  step  121.060 ms  mem   335.5 MB
+precomputed_y          Float64  P=12 LH=true  N=20000   m2l    8.556 ms  step  114.359 ms  mem   369.1 MB
+precomputed_y_perclass Float64  P=12 LH=true  N=20000   m2l  298.485 ms  step  397.623 ms  mem   369.1 MB
+wrote MATRIX_OPERATOR_REFACTOR/data/precomputed_y_resident_m2l_cuda/chunk_sweep_16384_m13h-2-2.csv
+CHUNK_16384_EXIT=0
+=== chunk=65536
+concat                 Float64  P=8  LH=false N=20000   m2l    3.162 ms  step   30.668 ms  mem  1040.2 MB
+factored               Float64  P=8  LH=false N=20000   m2l    2.126 ms  step   29.639 ms  mem   268.4 MB
+precomputed_y          Float64  P=8  LH=false N=20000   m2l    1.166 ms  step   28.739 ms  mem   268.4 MB
+precomputed_y_perclass Float64  P=8  LH=false N=20000   m2l   97.951 ms  step  118.867 ms  mem   268.4 MB
+concat                 Float64  P=8  LH=true  N=20000   m2l    6.713 ms  step   41.217 ms  mem  2516.6 MB
+factored               Float64  P=8  LH=true  N=20000   m2l    5.242 ms  step   39.777 ms  mem   536.9 MB
+precomputed_y          Float64  P=8  LH=true  N=20000   m2l    3.081 ms  step   37.606 ms  mem   536.9 MB
+precomputed_y_perclass Float64  P=8  LH=true  N=20000   m2l  280.954 ms  step  317.868 ms  mem   536.9 MB
+concat                 Float64  P=12 LH=false N=20000   m2l    8.998 ms  step  101.188 ms  mem  2013.3 MB
+factored               Float64  P=12 LH=false N=20000   m2l    6.018 ms  step   98.234 ms  mem   503.3 MB
+precomputed_y          Float64  P=12 LH=false N=20000   m2l    3.174 ms  step   95.411 ms  mem   536.9 MB
+precomputed_y_perclass Float64  P=12 LH=false N=20000   m2l  100.485 ms  step  188.651 ms  mem   536.9 MB
+concat                 Float64  P=12 LH=true  N=20000   m2l   17.888 ms  step  123.493 ms  mem  5066.7 MB
+factored               Float64  P=12 LH=true  N=20000   m2l   13.722 ms  step  119.478 ms  mem  1040.2 MB
+precomputed_y          Float64  P=12 LH=true  N=20000   m2l    7.783 ms  step  113.592 ms  mem  1073.7 MB
+precomputed_y_perclass Float64  P=12 LH=true  N=20000   m2l  307.604 ms  step  402.238 ms  mem  1073.7 MB
+wrote MATRIX_OPERATOR_REFACTOR/data/precomputed_y_resident_m2l_cuda/chunk_sweep_65536_m13h-2-2.csv
+CHUNK_65536_EXIT=0

@@ -1,0 +1,262 @@
+=== task 024 H200 environment
+node=m13h-1-1 cpus=16 job=12892013
+Linux m13h-1-1 5.14.0-570.120.1.el9_6.x86_64 #1 SMP PREEMPT_DYNAMIC Wed Jun 3 21:41:02 EDT 2026 x86_64 x86_64 x86_64 GNU/Linux
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           46 bits physical, 57 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  96
+On-line CPU(s) list:                     0-95
+Vendor ID:                               GenuineIntel
+Model name:                              INTEL(R) XEON(R) PLATINUM 8568Y+
+CPU family:                              6
+Model:                                   207
+Thread(s) per core:                      1
+Core(s) per socket:                      48
+Socket(s):                               2
+Stepping:                                2
+CPU(s) scaling MHz:                      90%
+CPU max MHz:                             4000.0000
+CPU min MHz:                             800.0000
+BogoMIPS:                                4600.00
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid dca sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb cat_l3 cat_l2 cdp_l3 cdp_l2 ssbd mba ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid cqm rdt_a avx512f avx512dq rdseed adx smap avx512ifma clflushopt clwb intel_pt avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local split_lock_detect avx_vnni avx512_bf16 wbnoinvd dtherm ida arat pln pts hfi vnmi avx512vbmi umip pku ospke waitpkg avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg tme avx512_vpopcntdq la57 rdpid bus_lock_detect cldemote movdiri movdir64b enqcmd fsrm md_clear serialize tsxldtrk pconfig arch_lbr ibt amx_bf16 avx512_fp16 amx_tile amx_int8 flush_l1d arch_capabilities
+Virtualization:                          VT-x
+L1d cache:                               4.5 MiB (96 instances)
+L1i cache:                               3 MiB (96 instances)
+L2 cache:                                192 MiB (96 instances)
+L3 cache:                                600 MiB (2 instances)
+NUMA node(s):                            2
+NUMA node0 CPU(s):                       0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58,60,62,64,66,68,70,72,74,76,78,80,82,84,86,88,90,92,94
+NUMA node1 CPU(s):                       1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35,37,39,41,43,45,47,49,51,53,55,57,59,61,63,65,67,69,71,73,75,77,79,81,83,85,87,89,91,93,95
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; RSB filling; PBRSB-eIBRS SW sequence; BHI BHI_DIS_S
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+Fri Jul 24 15:06:32 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.159.04             Driver Version: 580.159.04     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H200                    On  |   00000000:19:00.0 Off |                    0 |
+| N/A   29C    P0             76W /  700W |       0MiB / 143771MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+julia version 1.11.7
+git_commit=4d5ea4ee1f3a303e4df1dba19f8e160766ac65b1
+git_tree=37ea598b9100c7a617c334b60736e5f45114f9bd
+git_worktree=dirty
+source_manifest=c37ecc3acdd9ca70f873f9c4852be22a22e46b69f38f6e650792fca52879e31f
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.0
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.22.7
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+0
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== required CUDA lifecycle/integration gate
+Precompiling FastMultipole...
+   5431.7 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  208    208  1m27.2s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  6.7s
+Precompiling FastMultipole...
+   5381.8 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+Test Summary:                          |   Pass   Total      Time
+CUDA radix fmm! integration (task 023) | 416797  416797  22m19.5s
+=== cuda_m13h-1-1_uniform_Float32_lhfalse_p4_n150_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5385.0 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhfalse_p4_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhfalse_p4_n2000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhfalse_p4_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhfalse_p4_n20000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhfalse_p4_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhfalse_p8_n150_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhfalse_p8_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhfalse_p8_n2000_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5430.7 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhfalse_p8_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhfalse_p8_n20000_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5461.4 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhfalse_p8_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhfalse_p12_n150_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhfalse_p12_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhfalse_p12_n2000_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5382.1 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhfalse_p12_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhfalse_p12_n20000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhfalse_p12_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhtrue_p4_n150_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5447.3 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhtrue_p4_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhtrue_p4_n2000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhtrue_p4_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhtrue_p4_n20000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhtrue_p4_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhtrue_p8_n150_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhtrue_p8_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhtrue_p8_n2000_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5544.3 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhtrue_p8_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhtrue_p8_n20000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhtrue_p8_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhtrue_p12_n150_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5513.6 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhtrue_p12_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhtrue_p12_n2000_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5685.0 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhtrue_p12_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float32_lhtrue_p12_n20000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float32_lhtrue_p12_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhfalse_p4_n150_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhfalse_p4_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhfalse_p4_n2000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhfalse_p4_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhfalse_p4_n20000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhfalse_p4_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhfalse_p8_n150_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5526.3 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhfalse_p8_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhfalse_p8_n2000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhfalse_p8_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhfalse_p8_n20000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhfalse_p8_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhfalse_p12_n150_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhfalse_p12_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhfalse_p12_n2000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhfalse_p12_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhfalse_p12_n20000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhfalse_p12_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhtrue_p4_n150_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhtrue_p4_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhtrue_p4_n2000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhtrue_p4_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhtrue_p4_n20000_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5550.8 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhtrue_p4_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhtrue_p8_n150_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5429.2 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhtrue_p8_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhtrue_p8_n2000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhtrue_p8_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhtrue_p8_n20000_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhtrue_p8_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhtrue_p12_n150_ell3_20260724-153102.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhtrue_p12_n150_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhtrue_p12_n2000_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5483.6 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhtrue_p12_n2000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_uniform_Float64_lhtrue_p12_n20000_ell3_20260724-153102.csv
+Precompiling FastMultipole...
+   5499.6 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_uniform_Float64_lhtrue_p12_n20000_ell3_20260724-153102.csv
+=== cuda_m13h-1-1_clustered_Float64_lhfalse_p4_n20000_ell4_20260724-153102.csv
+Precompiling FastMultipole...
+   5860.0 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_clustered_Float64_lhfalse_p4_n20000_ell4_20260724-153102.csv
+=== cuda_m13h-1-1_clustered_Float64_lhfalse_p8_n20000_ell4_20260724-153102.csv
+Precompiling FastMultipole...
+   5567.5 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_clustered_Float64_lhfalse_p8_n20000_ell4_20260724-153102.csv
+=== cuda_m13h-1-1_clustered_Float64_lhfalse_p12_n20000_ell4_20260724-153102.csv
+Precompiling FastMultipole...
+   5511.5 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_clustered_Float64_lhfalse_p12_n20000_ell4_20260724-153102.csv
+=== cuda_m13h-1-1_clustered_Float64_lhtrue_p4_n20000_ell4_20260724-153102.csv
+Precompiling FastMultipole...
+   5669.9 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_clustered_Float64_lhtrue_p4_n20000_ell4_20260724-153102.csv
+=== cuda_m13h-1-1_clustered_Float64_lhtrue_p8_n20000_ell4_20260724-153102.csv
+Precompiling FastMultipole...
+   5431.0 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_clustered_Float64_lhtrue_p8_n20000_ell4_20260724-153102.csv
+=== cuda_m13h-1-1_clustered_Float64_lhtrue_p12_n20000_ell4_20260724-153102.csv
+Precompiling FastMultipole...
+   5518.3 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cuda_m13h-1-1_clustered_Float64_lhtrue_p12_n20000_ell4_20260724-153102.csv
+validated 304 rows from 76 files; wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/summary

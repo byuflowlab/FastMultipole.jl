@@ -1,0 +1,150 @@
+\documentclass[border=8pt,varwidth=185mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 2 --- Whole-slab speedups across order, route count, and integrated GPU problem size}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=52mm, height=48mm,
+  group style={group size=2 by 1, horizontal sep=15mm},
+]
+
+% --- (a) and (b): concat host stage vs per-route legacy recurrence ----------
+\nextgroupplot[title={(a) CPU host stage, BLAS=1}, xlabel={expansion order $P$},
+               ylabel={legacy recurrence / whole-slab concat}, ymode=log,
+               xmin=0.6, xmax=8.5, xtick={1,2,3,4,6,8}, ymin=0.5, ymax=9,
+               ytick={0.5,1,2,4,8}, legend pos=south west, legend columns=1]
+\addplot[fmrule, forget plot] coordinates {(0.6,1) (8.5,1)};
+\addplot[fmA] table[x=P, y=tinyparent_phi, col sep=comma] {tables/fig02a_concat_speedup_blas1.csv};
+\addlegendentry{tiny, $\varphi$}
+\addplot[fmA, fmalt] table[x=P, y=tinyparent_lh, col sep=comma] {tables/fig02a_concat_speedup_blas1.csv};
+\addlegendentry{tiny, LH}
+\addplot[fmB] table[x=P, y=smallconstp_phi, col sep=comma] {tables/fig02a_concat_speedup_blas1.csv};
+\addlegendentry{small, $\varphi$}
+\addplot[fmB, fmalt] table[x=P, y=smallconstp_lh, col sep=comma] {tables/fig02a_concat_speedup_blas1.csv};
+\addlegendentry{small, LH}
+\addplot[fmC] table[x=P, y=mediumconstp_phi, col sep=comma] {tables/fig02a_concat_speedup_blas1.csv};
+\addlegendentry{medium, $\varphi$}
+\addplot[fmC, fmalt] table[x=P, y=mediumconstp_lh, col sep=comma] {tables/fig02a_concat_speedup_blas1.csv};
+\addlegendentry{medium, LH}
+
+\nextgroupplot[title={(b) CPU host stage, BLAS=64}, xlabel={expansion order $P$}, ymode=log,
+               xmin=0.6, xmax=8.5, xtick={1,2,3,4,6,8}, ymin=0.2, ymax=9,
+               ytick={0.25,0.5,1,2,4,8}]
+\addplot[fmrule, forget plot] coordinates {(0.6,1) (8.5,1)};
+\addplot[fmA] table[x=P, y=tinyparent_phi, col sep=comma] {tables/fig02a_concat_speedup_blas64.csv};
+\addplot[fmA, fmalt] table[x=P, y=tinyparent_lh, col sep=comma] {tables/fig02a_concat_speedup_blas64.csv};
+\addplot[fmB] table[x=P, y=smallconstp_phi, col sep=comma] {tables/fig02a_concat_speedup_blas64.csv};
+\addplot[fmB, fmalt] table[x=P, y=smallconstp_lh, col sep=comma] {tables/fig02a_concat_speedup_blas64.csv};
+\addplot[fmC] table[x=P, y=mediumconstp_phi, col sep=comma] {tables/fig02a_concat_speedup_blas64.csv};
+\addplot[fmC, fmalt] table[x=P, y=mediumconstp_lh, col sep=comma] {tables/fig02a_concat_speedup_blas64.csv};
+\node[anchor=south west, font=\tiny, color=fmCritical, align=left]
+  at (rel axis cs:0.03,0.03) {64-thread BLAS collapses\\at small route counts};
+
+\end{groupplot}
+\end{tikzpicture}
+
+\vspace{4mm}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=47mm, height=45mm,
+  group style={group size=3 by 1, horizontal sep=10mm},
+]
+
+% --- (c) explicit CPU route-count axis, every (config, P) point ------------
+% Scatter, not a curve: the route count is non-monotonic in P, so connecting
+% these points would draw an ordering the experiment does not have.
+\nextgroupplot[title={(c) CPU speedup vs route count, BLAS=1}, xlabel={routed expansions},
+               ylabel={legacy recurrence / whole-slab concat},
+               xmode=log, ymode=log, xmin=4, xmax=4e7,
+               xtick={10,1000,100000,10000000}, xticklabels={8,1k,100k,10M},
+               ymin=0.5, ymax=22, ytick={0.5,1,2,4,8},
+               legend pos=north east, legend columns=3,
+               every axis plot/.append style={only marks, mark size=2.4pt}]
+% \draw, not \addplot: this axis forces `only marks` on every plot, which would
+% turn a reference \addplot into two stray dots.
+\draw[fmruleline] (axis cs:4,1) -- (axis cs:4e7,1);
+\addplot[color=fmSone, mark=*] table[x=routes, y=phi, col sep=comma] {tables/fig02c_routes_tinyparent.csv};
+\addlegendentry{tiny $\varphi$}
+\addplot[color=fmSone, mark=square*] table[x=routes, y=phi, col sep=comma] {tables/fig02c_routes_smallconstp.csv};
+\addlegendentry{small $\varphi$}
+\addplot[color=fmSone, mark=triangle*] table[x=routes, y=phi, col sep=comma] {tables/fig02c_routes_mediumconstp.csv};
+\addlegendentry{med.\ $\varphi$}
+\addplot[color=fmStwo, mark=*, mark options={fill=white}] table[x=routes, y=lh, col sep=comma] {tables/fig02c_routes_tinyparent.csv};
+\addlegendentry{tiny LH}
+\addplot[color=fmStwo, mark=square*, mark options={fill=white}] table[x=routes, y=lh, col sep=comma] {tables/fig02c_routes_smallconstp.csv};
+\addlegendentry{small LH}
+\addplot[color=fmStwo, mark=triangle*, mark options={fill=white}] table[x=routes, y=lh, col sep=comma] {tables/fig02c_routes_mediumconstp.csv};
+\addlegendentry{med.\ LH}
+
+% --- (d) H200 device-resident vs host corner sweep -------------------------
+\nextgroupplot[title={(d) 019b H200 corner vs host, $P=4$}, xlabel={bodies $n$},
+               ylabel={host time / device time}, xmode=log, ymode=log,
+               xmin=90, xmax=16000, xtick={100,1000,10000},
+               legend pos=north west, legend columns=1]
+\addplot[fmrule, forget plot] coordinates {(100,1) (13000,1)};
+\addplot[fmA] table[x=n, y=lifecycle_phi, col sep=comma] {tables/fig02b_gpu_speedup.csv};
+\addlegendentry{lifecycle, $\varphi$}
+\addplot[fmA, fmalt] table[x=n, y=lifecycle_lh, col sep=comma] {tables/fig02b_gpu_speedup.csv};
+\addlegendentry{lifecycle, LH}
+\addplot[fmB] table[x=n, y=m2l_vs_host_concat_phi, col sep=comma] {tables/fig02b_gpu_speedup.csv};
+\addlegendentry{M2L vs host concat}
+\addplot[fmC] table[x=n, y=m2l_vs_host_recurrence_phi, col sep=comma] {tables/fig02b_gpu_speedup.csv};
+\addlegendentry{M2L vs host recurrence}
+
+% --- (e) integrated 024 best-resident comparison ---------------------------
+\nextgroupplot[title={(e) integrated 024 platform speedup}, xlabel={bodies $n$},
+               ylabel={best CPU resident / best H200 resident},
+               xmode=log, ymode=log, xmin=120, xmax=26000,
+               xtick={150,2000,20000}, xticklabels={150,2k,20k},
+               legend pos=north west, legend columns=1]
+\addplot[fmrule, forget plot] coordinates {(150,1) (20000,1)};
+\addplot[fmA] table[x=n, y=best_resident_phi, col sep=comma] {tables/fig02d_integrated_gpu_speedup.csv};
+\addlegendentry{$\varphi$ only}
+\addplot[fmA, fmalt] table[x=n, y=best_resident_lh, col sep=comma] {tables/fig02d_integrated_gpu_speedup.csv};
+\addlegendentry{Lamb--Helmholtz}
+
+\end{groupplot}
+\end{tikzpicture}
+
+\fmnote{\textbf{Machines / regimes:} (a--c) \texttt{m12-1-7}, AMD EPYC 7763, OpenBLAS pinned at process
+start to 1 and 64 threads, Float64. (d) \texttt{m13h-1-1}, NVIDIA H200 (140\,GiB, CUDA 12.8),
+device-resident lifecycle, \texttt{ConcatenatedFixedZM2L}. (e) matched task-024 uniform Float64
+$P=4$ cases: \texttt{m12-2-17} EPYC 7763 BLAS=1 vs \texttt{m13h-1-1} H200, fastest eligible
+resident strategy on each platform.
+\textbf{Data:} task 019b, \texttt{crossover\_stage\_blas\{1,64\}.csv} and
+\texttt{m13h-1-1/gpu\_smallp.csv}; task 024,
+\texttt{operator\_ab\_benchmark/summary/case\_rankings.csv}
+(tables \texttt{fig02a\_*}, \texttt{fig02b\_*}, \texttt{fig02c\_*}, \texttt{fig02d\_*}).
+\textbf{Reads as:} unlike the per-column operators of Fig.\ 1, the whole-slab concat path wins on the CPU
+at small $P$ ($7.6\times$ at $P=1$, $1.7\times$ at $P=4$) but gives the advantage back for
+Lamb--Helmholtz at $P\ge6$. The explicit route-count panel answers the ``vs routes'' question directly and
+its answer is no: route count alone does not predict the win. The largest speedup in the whole sweep
+($7.6\times$) is at the \emph{smallest} population, 3096 routes, while 11.4M routes gives $1.9\times$ and
+8 routes --- a legitimate tiny-batch extreme, not an outlier --- gives $3.2\times$. Order and channel
+dominate; ``batch'' is not one number. The 019b H200 corner reaches
+$\sim\!860\times$ end-to-end at $n=10^4$ against its single-thread host mirror; the integrated 024
+comparison is deliberately more conservative and compares the fastest eligible resident strategy
+on each platform at matched uniform Float64 cases.
+\textbf{Scope:} panels (a--c) time the far-field M2L stage alone (per route); panel (d)'s lifecycle
+series and panel (e)'s recurring step are complete evaluations including nearfield direct pairs,
+which are evaluated inside L2B. These scopes must not be multiplied together.
+\textbf{Caveats:} panel (c) is a scatter, not a curve --- the route count is non-monotonic in $P$
+(\texttt{small\_constp} runs 8, 59334, 144290, 31254, 144290, 15492 for $P=1,2,3,4,6,8$), so the points
+carry no left-to-right ordering in $P$; where two orders report the same route count the better speedup
+is drawn. It shows BLAS=1 only; the $P=4$ BLAS=64 route slice is in
+\texttt{fig02c\_concat\_speedup\_routes.csv} and its $P$-axis view is panel (b).
+The three CPU configurations differ in $n$ and tree depth
+(tiny $n{=}256,\ell{=}2$; small $n{=}2048,\ell{=}3$; medium $n{=}20000,\ell{=}4$) and only $P\in\{2,4\}$ was
+run for medium --- gaps are genuine missing points, not zeros. Panel (d) points also differ in $\ell$
+($n{=}128{:}\,\ell{=}2$; $512{:}\,3$; $1000{:}\,3$; $10^4{:}\,4$), and its host baseline is the
+single-thread host mirror of the same path, not the tuned legacy CPU FMM. The M2L-vs-host-recurrence
+point at $n=10^4$ was not recorded. Panel (e) compares different machines
+(\texttt{m12-2-17} EPYC BLAS=1 and \texttt{m13h-1-1} H200), but identical 024
+case definitions and complete recurring-step timing; it is a platform comparison, not a kernel-only ratio.}
+
+\end{document}

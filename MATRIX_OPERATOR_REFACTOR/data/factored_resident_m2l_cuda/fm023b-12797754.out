@@ -1,0 +1,212 @@
+=== node: m13h-2-2
+GPU 0: NVIDIA H200 (UUID: GPU-b27350b7-628d-2b61-66f9-d5b8f1f0107a)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  205    205  1m30.6s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.2s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_integration_test.jl (023b factored sections)
+ERROR: LoadError: Some tests did not pass: 127140 passed, 8 failed, 0 errored, 0 broken.
+in expression starting at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:12
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:231
+  Expression: maximum(abs.((Array(dev_fcache.state.locals.phi))[:, 1:nnodes] .- host_fcache.state.locals.phi[:, 1:nnodes])) < m2l_tol
+   Evaluated: 1.3969838619232178e-9 < 1.0e-9
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:231 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:231
+  Expression: maximum(abs.((Array(dev_fcache.state.locals.phi))[:, 1:nnodes] .- host_fcache.state.locals.phi[:, 1:nnodes])) < m2l_tol
+   Evaluated: 1.3969838619232178e-9 < 1.0e-9
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:231 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:231
+  Expression: maximum(abs.((Array(dev_fcache.state.locals.phi))[:, 1:nnodes] .- host_fcache.state.locals.phi[:, 1:nnodes])) < m2l_tol
+   Evaluated: 4.5f0 < 0.002f0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:231 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:231
+  Expression: maximum(abs.((Array(dev_fcache.state.locals.phi))[:, 1:nnodes] .- host_fcache.state.locals.phi[:, 1:nnodes])) < m2l_tol
+   Evaluated: 4.5f0 < 0.002f0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:231 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:231
+  Expression: maximum(abs.((Array(dev_fcache.state.locals.phi))[:, 1:nnodes] .- host_fcache.state.locals.phi[:, 1:nnodes])) < m2l_tol
+   Evaluated: 0.3125 < 1.0e-9
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:231 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:231
+  Expression: maximum(abs.((Array(dev_fcache.state.locals.phi))[:, 1:nnodes] .- host_fcache.state.locals.phi[:, 1:nnodes])) < m2l_tol
+   Evaluated: 0.125 < 1.0e-9
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:231 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:231
+  Expression: maximum(abs.((Array(dev_fcache.state.locals.phi))[:, 1:nnodes] .- host_fcache.state.locals.phi[:, 1:nnodes])) < m2l_tol
+   Evaluated: 1.2247368f9 < 0.002f0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:231 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+CUDA radix fmm! integration (task 023): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:231
+  Expression: maximum(abs.((Array(dev_fcache.state.locals.phi))[:, 1:nnodes] .- host_fcache.state.locals.phi[:, 1:nnodes])) < m2l_tol
+   Evaluated: 6.039798f8 < 0.002f0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:231 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+Test Summary:                          |   Pass  Fail   Total     Time
+CUDA radix fmm! integration (task 023) | 127140     8  127148  2m05.6s
+INTEGRATION_TEST_EXIT=1
+=== benchmark_023b_factored_cuda.jl
+concat    P=4  LH=false N=150     m2l    0.275 ms  step    4.224 ms  mem   134.2 MB
+factored  P=4  LH=false N=150     m2l    0.058 ms  step    4.380 ms  mem    33.6 MB
+factored_perclass P=4  LH=false N=150     m2l   35.199 ms  step   40.196 ms  mem    33.6 MB
+concat    P=4  LH=true  N=150     m2l    0.551 ms  step    6.059 ms  mem   167.8 MB
+factored  P=4  LH=true  N=150     m2l    0.125 ms  step    5.623 ms  mem    67.1 MB
+factored_perclass P=4  LH=true  N=150     m2l   66.377 ms  step   72.241 ms  mem    67.1 MB
+concat    P=8  LH=false N=150     m2l    0.284 ms  step    4.810 ms  mem   167.8 MB
+factored  P=8  LH=false N=150     m2l    0.184 ms  step    4.625 ms  mem    67.1 MB
+factored_perclass P=8  LH=false N=150     m2l   95.697 ms  step   95.469 ms  mem    67.1 MB
+concat    P=8  LH=true  N=150     m2l    0.621 ms  step    6.719 ms  mem   436.2 MB
+factored  P=8  LH=true  N=150     m2l    0.455 ms  step    6.324 ms  mem   167.8 MB
+factored_perclass P=8  LH=true  N=150     m2l  259.856 ms  step  268.901 ms  mem   167.8 MB
+concat    P=12 LH=false N=150     m2l    0.654 ms  step    6.915 ms  mem   369.1 MB
+factored  P=12 LH=false N=150     m2l    0.468 ms  step    6.750 ms  mem   167.8 MB
+factored_perclass P=12 LH=false N=150     m2l  126.334 ms  step  133.057 ms  mem   167.8 MB
+concat    P=12 LH=true  N=150     m2l    1.153 ms  step    8.988 ms  mem   906.0 MB
+factored  P=12 LH=true  N=150     m2l    0.914 ms  step    8.568 ms  mem   302.0 MB
+factored_perclass P=12 LH=true  N=150     m2l  251.353 ms  step  274.862 ms  mem   302.0 MB
+concat    P=4  LH=false N=2000    m2l    0.266 ms  step    4.291 ms  mem   335.5 MB
+factored  P=4  LH=false N=2000    m2l    0.162 ms  step    4.100 ms  mem    67.1 MB
+factored_perclass P=4  LH=false N=2000    m2l   57.554 ms  step   65.052 ms  mem    67.1 MB
+concat    P=4  LH=true  N=2000    m2l    0.546 ms  step    6.310 ms  mem   872.4 MB
+factored  P=4  LH=true  N=2000    m2l    0.346 ms  step    5.970 ms  mem   100.7 MB
+factored_perclass P=4  LH=true  N=2000    m2l  138.295 ms  step  146.133 ms  mem   100.7 MB
+concat    P=8  LH=false N=2000    m2l    2.936 ms  step    8.542 ms  mem   973.1 MB
+factored  P=8  LH=false N=2000    m2l    2.322 ms  step    7.989 ms  mem   100.7 MB
+factored_perclass P=8  LH=false N=2000    m2l  119.865 ms  step  125.085 ms  mem   100.7 MB
+concat    P=8  LH=true  N=2000    m2l    6.474 ms  step   14.505 ms  mem  2516.6 MB
+factored  P=8  LH=true  N=2000    m2l    6.002 ms  step   14.088 ms  mem   167.8 MB
+factored_perclass P=8  LH=true  N=2000    m2l  318.207 ms  step  322.716 ms  mem   167.8 MB
+concat    P=12 LH=false N=2000    m2l    8.687 ms  step   26.004 ms  mem  2013.3 MB
+factored  P=12 LH=false N=2000    m2l    6.495 ms  step   23.936 ms  mem   167.8 MB
+factored_perclass P=12 LH=false N=2000    m2l  160.985 ms  step  183.031 ms  mem   167.8 MB
+concat    P=12 LH=true  N=2000    m2l   16.379 ms  step   35.676 ms  mem  5033.2 MB
+factored  P=12 LH=true  N=2000    m2l   13.974 ms  step   33.322 ms  mem   335.5 MB
+factored_perclass P=12 LH=true  N=2000    m2l  350.881 ms  step  382.473 ms  mem   335.5 MB
+concat    P=4  LH=false N=20000   m2l    0.260 ms  step   10.862 ms  mem   335.5 MB
+factored  P=4  LH=false N=20000   m2l    0.204 ms  step   10.855 ms  mem    67.1 MB
+factored_perclass P=4  LH=false N=20000   m2l   57.750 ms  step   72.122 ms  mem    67.1 MB
+concat    P=4  LH=true  N=20000   m2l    0.549 ms  step   15.168 ms  mem   872.4 MB
+factored  P=4  LH=true  N=20000   m2l    0.364 ms  step   14.694 ms  mem   100.7 MB
+factored_perclass P=4  LH=true  N=20000   m2l  138.491 ms  step  155.189 ms  mem   100.7 MB
+concat    P=8  LH=false N=20000   m2l    3.163 ms  step   30.691 ms  mem   973.1 MB
+factored  P=8  LH=false N=20000   m2l    2.522 ms  step   30.190 ms  mem   100.7 MB
+factored_perclass P=8  LH=false N=20000   m2l  119.377 ms  step  146.152 ms  mem   100.7 MB
+concat    P=8  LH=true  N=20000   m2l    6.713 ms  step   41.234 ms  mem  2516.6 MB
+factored  P=8  LH=true  N=20000   m2l    6.193 ms  step   40.834 ms  mem   167.8 MB
+factored_perclass P=8  LH=true  N=20000   m2l  320.529 ms  step  345.914 ms  mem   167.8 MB
+concat    P=12 LH=false N=20000   m2l    8.995 ms  step  101.101 ms  mem  2013.3 MB
+factored  P=12 LH=false N=20000   m2l    6.747 ms  step   99.011 ms  mem   201.3 MB
+factored_perclass P=12 LH=false N=20000   m2l  161.297 ms  step  257.613 ms  mem   201.3 MB
+concat    P=12 LH=true  N=20000   m2l   17.882 ms  step  123.597 ms  mem  5066.7 MB
+factored  P=12 LH=true  N=20000   m2l   15.290 ms  step  121.261 ms  mem   335.5 MB
+factored_perclass P=12 LH=true  N=20000   m2l  353.289 ms  step  470.684 ms  mem   335.5 MB
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/factored_resident_m2l_cuda/cuda_m13h-2-2_20260718-072727.csv
+BENCH_EXIT=0

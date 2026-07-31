@@ -1,0 +1,81 @@
+\documentclass[border=8pt,varwidth=190mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 8 --- The end-user comparison: the radix path against the shipping legacy octree \texttt{fmm!}}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=72mm, height=50mm,
+  group style={group size=2 by 1, horizontal sep=17mm},
+  ymode=log,
+  fmbaraxis,
+  xtick={1,2,3,4,5,6},
+  xticklabels={m13h-1-1\\$10^4$, m13h-1-1\\$10^5$, m13h-2-1\\$10^4$, m13h-2-1\\$10^5$,
+               Mac\,(t=1)\\$10^4$, Mac\,(t=1)\\$10^5$},
+  xticklabel style={align=center, font=\tiny},
+]
+
+% --- (a) absolute per-step wall time ---------------------------------------
+\nextgroupplot[title={(a) per-step wall time}, ylabel={time per step (s)},
+               ymin=0.01, ymax=400, legend pos=north west, legend columns=2]
+\addplot[fmbars, fill=fmSone] table[x=case_index, y=radix_host_s, col sep=comma] {tables/fig08a_abs_step.csv};
+\addlegendentry{radix, host}
+\addplot[fmbars, fill=fmStwo] table[x=case_index, y=legacy_s, col sep=comma] {tables/fig08a_abs_step.csv};
+\addlegendentry{legacy octree}
+\addplot[fmbars, fill=fmSthree] table[x=case_index, y=direct_s, col sep=comma] {tables/fig08a_abs_step.csv};
+\addlegendentry{brute-force \texttt{direct!}}
+\addplot[fmbars, fill=fmSfour] table[x=case_index, y=radix_gpu_s, col sep=comma] {tables/fig08a_abs_step.csv};
+\addlegendentry{radix, H200}
+
+% --- (b) speedup over the shipping default ---------------------------------
+\nextgroupplot[title={(b) speedup over the legacy octree}, ylabel={legacy time / path time},
+               ymin=2e-3, ymax=2000, ytick={0.01,0.1,1,10},
+               legend pos=north west, legend columns=2]
+\addplot[fmbars, fill=fmSone] table[x=case_index, y=radix_host_x, col sep=comma] {tables/fig08b_speedup_vs_legacy.csv};
+\addlegendentry{radix, host}
+\addplot[fmbars, fill=fmSthree] table[x=case_index, y=direct_x, col sep=comma] {tables/fig08b_speedup_vs_legacy.csv};
+\addlegendentry{brute-force \texttt{direct!}}
+\addplot[fmbars, fill=fmSfour] table[x=case_index, y=radix_gpu_x, col sep=comma] {tables/fig08b_speedup_vs_legacy.csv};
+\addlegendentry{radix, H200}
+\draw[fmruleline] (axis cs:0.35,1) -- (axis cs:6.65,1);
+\node[anchor=south east, font=\tiny, color=fmCritical] at (rel axis cs:0.99,0.44) {break-even vs legacy};
+
+\end{groupplot}
+\end{tikzpicture}
+
+\fmnote{\textbf{Machines / regime:} \texttt{m13h-1-1} and \texttt{m13h-2-1} (Julia 1.11.7,
+\texttt{threads=8}, NVIDIA H200) and a local Apple-silicon Mac (Julia 1.12.5, \texttt{threads=1}, no
+GPU); $P=4$, $\ell=4$, $n\in\{10^4,10^5\}$. Thread counts come from the run sidecar \texttt{.md} files ---
+the CSVs omit them. \textbf{Data:} task 023,
+\texttt{production\_integration/benchmark\_023\_\{m13h-1-1,m13h-2-1,mecsrs-MacBook-Pro-188.local\}\_*.csv}
+(tables \texttt{fig08a\_*}, \texttt{fig08b\_*}).
+\textbf{Reads as:} the \emph{device-resident} radix path is a real end-user win at $P=4$ ---
+$1.71\times$ the legacy octree at $n=10^4$ growing to $11.99\times$ at $n=10^5$ on \texttt{m13h-1-1}
+($1.83\times$ / $11.76\times$ on \texttt{m13h-2-1}). The \emph{host} radix path is not: it is
+$152\times$ slower than legacy at $n=10^4$ and $24\times$ slower at $n=10^5$, and at $n=10^4$ it is
+$\approx\!120\times$ slower than brute-force \texttt{direct!} --- i.e.\ slower than doing no FMM at
+all. That is consistent with the \texttt{019b} decision: the legacy octree remains the CPU default and
+the radix cache exists to feed the GPU loop. \textbf{There is no roadmap item to optimize the host
+radix path.}
+\textbf{Caveats --- this is not an apples-to-apples comparison, in four independent ways, none of them
+disclosed in task 023.} (1) \emph{Threading.} \texttt{src/fmm.jl} has nine
+\texttt{Threads.@threads}/\texttt{@spawn} sites; the radix host path
+(\texttt{src/translate\_batched\{,\_resident\}.jl}) has none. Legacy is multithreaded and host radix is
+not, which is why the gap collapses from $152\times$ at 8 threads to $28\times$ at 1 thread on the Mac.
+BLAS threads were never set or recorded. (2) \emph{Different admissibility criteria.} Radix uses
+\texttt{ConstantPAnalyticStencil} at \texttt{stencil\_epsilon=1e-4} on a fixed uniform $2^4$ grid;
+legacy uses \texttt{multipole\_acceptance=0.4} with \texttt{leaf\_size=20} on a shrunk adaptive octree.
+Same $P$, structurally different work. (3) \emph{No error check at the benchmarked $n$.} The 023 script
+computes no error norms and never uses the \texttt{direct!} result as a reference; the only accuracy
+evidence in task 023 is at $n=500$. (4) \emph{Asymmetric timing boundary, against legacy.} The legacy
+timing includes both octree builds and the interaction-list build on every call
+(\texttt{src/fmm.jl:1037-1058}), while the radix \emph{step} excludes its one-shot cache construction,
+recorded separately in Fig.\ 3(c) --- so the boundary favours radix and legacy still wins by $152\times$;
+the bias understates how slow the host path is. \textbf{Protocol:} times are the \emph{minimum} over
+repetitions (radix 5 jittered steps, legacy 3 reps); \texttt{direct!} is a \emph{single} un-repeated
+\texttt{@elapsed} and was run only at $n=10^4$. Missing bars are unrun configurations, not zeros.
+\textbf{Scope:} every bar is a complete evaluation --- far field \emph{and} nearfield --- on both paths.}
+
+\end{document}

@@ -1,0 +1,106 @@
+=== task 024b CPU environment
+node=m12-2-9 cpus=64 job=12894176
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           48 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  128
+On-line CPU(s) list:                     0-127
+Vendor ID:                               AuthenticAMD
+Model name:                              AMD EPYC 7763 64-Core Processor
+CPU family:                              25
+Model:                                   1
+Thread(s) per core:                      1
+Core(s) per socket:                      64
+Socket(s):                               2
+Stepping:                                1
+BogoMIPS:                                4890.52
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 invpcid cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin brs arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold v_vmsave_vmload vgif v_spec_ctrl umip pku ospke vaes vpclmulqdq rdpid overflow_recov succor smca debug_swap
+Virtualization:                          AMD-V
+L1d cache:                               4 MiB (128 instances)
+L1i cache:                               4 MiB (128 instances)
+L2 cache:                                64 MiB (128 instances)
+L3 cache:                                512 MiB (16 instances)
+NUMA node(s):                            8
+NUMA node0 CPU(s):                       0-15
+NUMA node1 CPU(s):                       16-31
+NUMA node2 CPU(s):                       32-47
+NUMA node3 CPU(s):                       48-63
+NUMA node4 CPU(s):                       64-79
+NUMA node5 CPU(s):                       80-95
+NUMA node6 CPU(s):                       96-111
+NUMA node7 CPU(s):                       112-127
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Mitigation; Safe RET
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Mitigation; Clear CPU buffers
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+julia version 1.11.7
+direct_reference_n1000.csv: OK
+direct_reference_n3162.csv: OK
+direct_reference_n10000.csv: OK
+direct_reference_n31623.csv: OK
+direct_reference_n100000.csv: OK
+direct_reference_n316228.csv: OK
+direct_reference_n1000000.csv: OK
+=== CPU threads=1 n=1000
+Precompiling FastMultipole...
+   6443.9 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu1 n=1000 leaf=1000 min=0.007611871 s grad_rel=0.0
+=== CPU threads=64 n=1000
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu64 n=1000 leaf=1000 min=0.007605227 s grad_rel=0.0
+=== CPU threads=1 n=3162
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu1 n=3162 leaf=10 min=0.044163366 s grad_rel=0.0005209209991903715
+=== CPU threads=64 n=3162
+Precompiling FastMultipole...
+   7009.3 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 10 seconds. 20 already precompiled.
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu64 n=3162 leaf=10 min=0.044835469 s grad_rel=0.0005209209991903715
+=== CPU threads=1 n=10000
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu1 n=10000 leaf=10 min=0.206461398 s grad_rel=0.0006279491516593264
+=== CPU threads=64 n=10000
+Precompiling FastMultipole...
+   6576.4 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 9 seconds. 20 already precompiled.
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu64 n=10000 leaf=35 min=0.016515026 s grad_rel=0.000532793813703262
+=== CPU threads=1 n=31623
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu1 n=31623 leaf=15 min=0.861951166 s grad_rel=0.0006941718028932656
+=== CPU threads=64 n=31623
+Precompiling FastMultipole...
+   6658.2 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu64 n=31623 leaf=45 min=0.061588673 s grad_rel=0.0005455169048102165
+=== CPU threads=1 n=100000
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu1 n=100000 leaf=15 min=3.196693772 s grad_rel=0.0006557356508439279
+=== CPU threads=64 n=100000
+Precompiling FastMultipole...
+   6525.9 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 9 seconds. 20 already precompiled.
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu64 n=100000 leaf=40 min=0.23740565 s grad_rel=0.000638842337448556
+=== CPU threads=1 n=316228
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu1 n=316228 leaf=15 min=12.282153245 s grad_rel=0.0006466517187182001
+=== CPU threads=64 n=316228
+Precompiling FastMultipole...
+   6512.1 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu64 n=316228 leaf=40 min=0.742567001 s grad_rel=0.0006345294123240046
+=== CPU threads=64 n=1000000
+Precompiling FastMultipole...
+   7521.5 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 9 seconds. 20 already precompiled.
+024b CPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/cpu_m12-2-9_12894176.csv: mode=cpu64 n=1000000 leaf=20 min=2.686510492 s grad_rel=0.0006084961250206076
+=== CPU threads=1 n=1000000
+slurmstepd: error: *** JOB 12894176 ON m12-2-9 CANCELLED AT 2026-07-26T03:01:38 DUE TO TIME LIMIT ***

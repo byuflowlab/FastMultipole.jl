@@ -1,0 +1,4 @@
+# 019 local_macos_allocations_storage; per-route concat-plan geometry payload, precision order = Float64/Float32 (n=2000, ell=3, P=4, constant-P)
+precision_index,before_analytic_bytes,current_measured_bytes
+1,32,5.575
+2,16,4.787

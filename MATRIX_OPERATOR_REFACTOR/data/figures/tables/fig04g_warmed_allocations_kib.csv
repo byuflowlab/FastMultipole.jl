@@ -1,0 +1,5 @@
+# 019 local_macos_allocations_storage, warmed host launches, Float64 P=4 n=2000 ell=3; stage order = concat M2L / resident M2M / resident L2L; unit = chunk / group / group
+stage_index,phi_kib_per_unit,lh_kib_per_unit
+1,6.375,13.765625
+2,0.8501416015625,2.0211396484375
+3,0.8125,1.96875

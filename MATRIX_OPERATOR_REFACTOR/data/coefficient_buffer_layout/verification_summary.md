@@ -8,6 +8,7 @@
 - Max complex legacy/native round-trip error: `0.0`
 - Fixed-channel slab requirement: `stride(view, 1) == 1`, `stride(view, 2) == basis_dof`
 - Production `harmonic_index` cross-check: `PASS`
+- Production `flat_basis_index` cross-check: `PASS`
 
 ## Compressed Complex Cases
 

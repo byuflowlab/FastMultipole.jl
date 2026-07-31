@@ -1,0 +1,8 @@
+# 023 production_integration, all three hosts, P=4 ell=4; per-step wall time. case order = m13h-1-1 t=8 n=10000 | m13h-1-1 t=8 n=100000 | m13h-2-1 t=8 n=10000 | m13h-2-1 t=8 n=100000 | mac t=1 n=10000 | mac t=1 n=100000. Legacy timing includes both octree builds and the interaction-list build every call; the radix step excludes its one-shot cache construction (see fig03d). direct! is a single un-repeated timing and was not run at n=1e5; the Mac has no GPU.
+case_index,radix_host_s,legacy_s,direct_s,radix_gpu_s
+1,8.662578369,0.056773269,0.072500329,0.0331270694732666
+2,24.608854071,1.029846872,nan,0.0858769416809082
+3,7.260174643,0.056911062,0.072347167,0.031134843826293945
+4,22.963785331,0.997332848,nan,0.08477306365966797
+5,5.345660167,0.19167125,0.2895845,nan
+6,20.177517292,3.549609291,nan,nan

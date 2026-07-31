@@ -1,0 +1,168 @@
+=== node: m12-1-7  cpus=64
+Model name:                              AMD EPYC 7763 64-Core Processor
+Thread(s) per core:                      1
+Core(s) per socket:                      64
+Socket(s):                               2
+=== single-thread BLAS pass
+[22:26:10] Writing 019b benchmarks to: /home/rander39/projects/FastMultipole-022/MATRIX_OPERATOR_REFACTOR/data/smallp_fallback_layout/m12-1-7
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+[22:26:10] Wrote environment metadata
+[22:26:11] sanity check OK at P=1 (max abs diff vs production = 0.00e+00)
+[22:26:11] sanity check OK at P=12 (max abs diff vs production = 0.00e+00)
+[22:26:11] [1/4] isolated crossover sweep (BLAS threads = 1) ...
+[22:26:11] isolated crossover: P=1 lamb_helmholtz=false
+[22:26:13] isolated crossover: P=1 lamb_helmholtz=true
+[22:26:15] isolated crossover: P=2 lamb_helmholtz=false
+[22:26:15] isolated crossover: P=2 lamb_helmholtz=true
+[22:26:16] isolated crossover: P=3 lamb_helmholtz=false
+[22:26:17] isolated crossover: P=3 lamb_helmholtz=true
+[22:26:18] isolated crossover: P=4 lamb_helmholtz=false
+[22:26:19] isolated crossover: P=4 lamb_helmholtz=true
+[22:26:21] isolated crossover: P=5 lamb_helmholtz=false
+[22:26:22] isolated crossover: P=5 lamb_helmholtz=true
+[22:26:25] isolated crossover: P=6 lamb_helmholtz=false
+[22:26:27] isolated crossover: P=6 lamb_helmholtz=true
+[22:26:30] isolated crossover: P=8 lamb_helmholtz=false
+[22:26:33] isolated crossover: P=8 lamb_helmholtz=true
+[22:26:39] isolated crossover: P=12 lamb_helmholtz=false
+[22:26:49] isolated crossover: P=12 lamb_helmholtz=true
+[22:27:04] [1/4] wrote crossover_isolated_blas1.csv
+[22:27:04] [2/4] state-level M2L stage crossover ...
+[22:27:04] stage crossover: tiny_parent P=1 lamb_helmholtz=false routes=3096
+[22:27:12] stage crossover: tiny_parent P=1 lamb_helmholtz=true routes=3096
+[22:27:14] stage crossover: tiny_parent P=2 lamb_helmholtz=false routes=3096
+[22:27:15] stage crossover: tiny_parent P=2 lamb_helmholtz=true routes=3096
+[22:27:15] stage crossover: tiny_parent P=3 lamb_helmholtz=false routes=3096
+[22:27:16] stage crossover: tiny_parent P=3 lamb_helmholtz=true routes=3096
+[22:27:17] stage crossover: tiny_parent P=4 lamb_helmholtz=false routes=3096
+[22:27:17] stage crossover: tiny_parent P=4 lamb_helmholtz=true routes=3096
+[22:27:18] stage crossover: tiny_parent P=6 lamb_helmholtz=false routes=3096
+[22:27:20] stage crossover: tiny_parent P=6 lamb_helmholtz=true routes=3096
+[22:27:22] stage crossover: tiny_parent P=8 lamb_helmholtz=false routes=3096
+[22:27:24] stage crossover: tiny_parent P=8 lamb_helmholtz=true routes=3096
+[22:27:27] stage crossover: small_constp P=1 lamb_helmholtz=false routes=8
+[22:27:27] stage crossover: small_constp P=1 lamb_helmholtz=true routes=8
+[22:27:27] stage crossover: small_constp P=2 lamb_helmholtz=false routes=59334
+[22:27:34] stage crossover: small_constp P=2 lamb_helmholtz=true routes=59334
+[22:27:45] stage crossover: small_constp P=3 lamb_helmholtz=false routes=144290
+[22:28:07] stage crossover: small_constp P=3 lamb_helmholtz=true routes=144290
+[22:28:46] stage crossover: small_constp P=4 lamb_helmholtz=false routes=31254
+[22:28:52] stage crossover: small_constp P=4 lamb_helmholtz=true routes=31254
+[22:29:03] stage crossover: small_constp P=6 lamb_helmholtz=false routes=144290
+[22:29:54] stage crossover: small_constp P=6 lamb_helmholtz=true routes=144290
+[22:31:35] stage crossover: small_constp P=8 lamb_helmholtz=false routes=15492
+[22:31:45] stage crossover: small_constp P=8 lamb_helmholtz=true routes=15492
+[22:32:05] stage crossover: medium_constp P=2 lamb_helmholtz=false routes=12177052
+[22:36:02] stage crossover: medium_constp P=2 lamb_helmholtz=true routes=12177052
+[22:42:17] stage crossover: medium_constp P=4 lamb_helmholtz=false routes=11433838
+[22:48:29] stage crossover: medium_constp P=4 lamb_helmholtz=true routes=11433838
+[22:59:36] [2/4] wrote crossover_stage_blas1.csv
+[22:59:36] [3/4] padded-vs-ragged LH layout chain ...
+[22:59:36] layout: P=2 (P_active=3) batch=64
+[22:59:37] layout: P=2 (P_active=3) batch=4096
+[22:59:37] layout: P=4 (P_active=5) batch=64
+[22:59:37] layout: P=4 (P_active=5) batch=4096
+[22:59:38] layout: P=8 (P_active=9) batch=64
+[22:59:38] layout: P=8 (P_active=9) batch=4096
+[22:59:42] layout: P=12 (P_active=13) batch=64
+[22:59:42] layout: P=12 (P_active=13) batch=4096
+[22:59:56] layout: P=20 (P_active=21) batch=64
+[22:59:57] layout: P=20 (P_active=21) batch=4096
+[23:01:09] [3/4] wrote layout_lh_blas1.csv
+[23:01:09] [4/4] storage table ...
+[23:01:10] [4/4] wrote layout_storage.csv
+[23:01:10] Done. Results in: /home/rander39/projects/FastMultipole-022/MATRIX_OPERATOR_REFACTOR/data/smallp_fallback_layout/m12-1-7
+Precompiling FastMultipole...
+   5967.9 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+BLAS1_EXIT=0
+=== multithread BLAS pass (threads=64)
+[23:01:32] Writing 019b benchmarks to: /home/rander39/projects/FastMultipole-022/MATRIX_OPERATOR_REFACTOR/data/smallp_fallback_layout/m12-1-7
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+[23:01:32] Wrote environment metadata
+[23:01:33] sanity check OK at P=1 (max abs diff vs production = 0.00e+00)
+[23:01:33] sanity check OK at P=12 (max abs diff vs production = 0.00e+00)
+[23:01:33] [1/4] isolated crossover sweep (BLAS threads = 64) ...
+[23:01:33] isolated crossover: P=1 lamb_helmholtz=false
+[23:01:34] isolated crossover: P=1 lamb_helmholtz=true
+[23:01:37] isolated crossover: P=2 lamb_helmholtz=false
+[23:01:37] isolated crossover: P=2 lamb_helmholtz=true
+[23:01:38] isolated crossover: P=3 lamb_helmholtz=false
+[23:01:39] isolated crossover: P=3 lamb_helmholtz=true
+[23:01:40] isolated crossover: P=4 lamb_helmholtz=false
+[23:01:41] isolated crossover: P=4 lamb_helmholtz=true
+[23:01:43] isolated crossover: P=5 lamb_helmholtz=false
+[23:01:44] isolated crossover: P=5 lamb_helmholtz=true
+[23:01:46] isolated crossover: P=6 lamb_helmholtz=false
+[23:01:48] isolated crossover: P=6 lamb_helmholtz=true
+[23:01:52] isolated crossover: P=8 lamb_helmholtz=false
+[23:01:55] isolated crossover: P=8 lamb_helmholtz=true
+[23:02:01] isolated crossover: P=12 lamb_helmholtz=false
+[23:02:11] isolated crossover: P=12 lamb_helmholtz=true
+[23:02:25] [1/4] wrote crossover_isolated_blas64.csv
+[23:02:25] [2/4] state-level M2L stage crossover ...
+[23:02:25] stage crossover: tiny_parent P=1 lamb_helmholtz=false routes=3096
+[23:02:33] stage crossover: tiny_parent P=1 lamb_helmholtz=true routes=3096
+[23:02:36] stage crossover: tiny_parent P=2 lamb_helmholtz=false routes=3096
+[23:02:36] stage crossover: tiny_parent P=2 lamb_helmholtz=true routes=3096
+[23:02:37] stage crossover: tiny_parent P=3 lamb_helmholtz=false routes=3096
+[23:02:37] stage crossover: tiny_parent P=3 lamb_helmholtz=true routes=3096
+[23:02:38] stage crossover: tiny_parent P=4 lamb_helmholtz=false routes=3096
+[23:02:39] stage crossover: tiny_parent P=4 lamb_helmholtz=true routes=3096
+[23:02:40] stage crossover: tiny_parent P=6 lamb_helmholtz=false routes=3096
+[23:02:42] stage crossover: tiny_parent P=6 lamb_helmholtz=true routes=3096
+[23:02:47] stage crossover: tiny_parent P=8 lamb_helmholtz=false routes=3096
+[23:02:51] stage crossover: tiny_parent P=8 lamb_helmholtz=true routes=3096
+[23:03:00] stage crossover: small_constp P=1 lamb_helmholtz=false routes=8
+[23:03:00] stage crossover: small_constp P=1 lamb_helmholtz=true routes=8
+[23:03:00] stage crossover: small_constp P=2 lamb_helmholtz=false routes=59334
+[23:03:07] stage crossover: small_constp P=2 lamb_helmholtz=true routes=59334
+[23:03:23] stage crossover: small_constp P=3 lamb_helmholtz=false routes=144290
+[23:03:49] stage crossover: small_constp P=3 lamb_helmholtz=true routes=144290
+[23:04:31] stage crossover: small_constp P=4 lamb_helmholtz=false routes=31254
+[23:04:38] stage crossover: small_constp P=4 lamb_helmholtz=true routes=31254
+[23:04:53] stage crossover: small_constp P=6 lamb_helmholtz=false routes=144290
+[23:05:46] stage crossover: small_constp P=6 lamb_helmholtz=true routes=144290
+[23:07:27] stage crossover: small_constp P=8 lamb_helmholtz=false routes=15492
+[23:07:38] stage crossover: small_constp P=8 lamb_helmholtz=true routes=15492
+[23:07:59] stage crossover: medium_constp P=2 lamb_helmholtz=false routes=12177052
+[23:12:39] stage crossover: medium_constp P=2 lamb_helmholtz=true routes=12177052
+[23:20:59] stage crossover: medium_constp P=4 lamb_helmholtz=false routes=11433838
+[23:27:56] stage crossover: medium_constp P=4 lamb_helmholtz=true routes=11433838
+[23:39:21] [2/4] wrote crossover_stage_blas64.csv
+[23:39:21] [3/4] padded-vs-ragged LH layout chain ...
+[23:39:21] layout: P=2 (P_active=3) batch=64
+[23:39:22] layout: P=2 (P_active=3) batch=4096
+[23:39:22] layout: P=4 (P_active=5) batch=64
+[23:39:22] layout: P=4 (P_active=5) batch=4096
+[23:39:25] layout: P=8 (P_active=9) batch=64
+[23:39:25] layout: P=8 (P_active=9) batch=4096
+[23:39:45] layout: P=12 (P_active=13) batch=64
+[23:39:45] layout: P=12 (P_active=13) batch=4096
+[23:39:54] layout: P=20 (P_active=21) batch=64
+[23:40:04] layout: P=20 (P_active=21) batch=4096
+[23:40:30] [3/4] wrote layout_lh_blas64.csv
+[23:40:30] [4/4] storage table ...
+[23:40:30] [4/4] wrote layout_storage.csv
+[23:40:30] Done. Results in: /home/rander39/projects/FastMultipole-022/MATRIX_OPERATOR_REFACTOR/data/smallp_fallback_layout/m12-1-7
+Precompiling FastMultipole...
+   5772.3 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+BLASN_EXIT=0
+=== data files
+total 101
+-rw-rw-r-- 1 rander39 rander39 41131 Jul 11 22:27 crossover_isolated_blas1.csv
+-rw-rw-r-- 1 rander39 rander39 41611 Jul 11 23:02 crossover_isolated_blas64.csv
+-rw-rw-r-- 1 rander39 rander39  5312 Jul 11 22:59 crossover_stage_blas1.csv
+-rw-rw-r-- 1 rander39 rander39  5312 Jul 11 23:39 crossover_stage_blas64.csv
+-rw-rw-r-- 1 rander39 rander39   602 Jul 11 23:01 env_blas1.md
+-rw-rw-r-- 1 rander39 rander39   603 Jul 11 23:01 env.md
+-rw-rw-r-- 1 rander39 rander39  2035 Jul 11 23:01 layout_lh_blas1.csv
+-rw-rw-r-- 1 rander39 rander39  2065 Jul 11 23:40 layout_lh_blas64.csv
+-rw-rw-r-- 1 rander39 rander39  1068 Jul 11 23:40 layout_storage.csv

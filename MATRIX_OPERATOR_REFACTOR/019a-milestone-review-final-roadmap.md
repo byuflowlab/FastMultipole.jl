@@ -16,6 +16,8 @@ Matrix Operator Refactor still matches the background roadmap.
 - `022-impl-gpu-device-resident-m2l.md`
 - `023-impl-production-integration.md`
 - `024-impl-operator-ab-benchmark.md`
+- `024a-impl-benchmark-visualization.md`
+- `024b-impl-cpu-gpu-scaling-benchmark.md`
 
 ## Required Reading
 
@@ -49,9 +51,44 @@ notes listed by tasks `017` through `024`.
   `019b`.** These were resolved in `019b` (exploratory benchmark plus user
   discussion). Confirm the chosen fallback policy and padded-vs-ragged `chi` layout
   are implemented and consistent with the coordination documents; note any gaps.
-- **Confirm the M2L operator recommendation from `024`.** Record the final
-  per-platform recommendation between `MaterializedYRotationM2L` and
-  `FactoredRotationM2L`, and note any crossover regimes or integration caveats.
+- **Confirm the resident M2L strategy recommendations from `024`.** Record the
+  final CPU/GPU and workload-regime recommendations among whole-slab concat,
+  per-degree factored, precomputed-y, and full dense-translation execution, and
+  note construction/memory constraints, crossover regimes, and integration
+  caveats. The reconstructed per-column `Ts(theta)` path is an oracle, not a
+  resident candidate.
+- **Batched-GEMM speedup verdict (from `016b` watch item 1, deferred `2026-06-24`).**
+  `015` observed no batched-GEMM speedup on the macOS host; this was deferred as a
+  likely Apple-M2/OpenBLAS artifact, to be re-tested on a non-macOS / different-BLAS
+  host in `024`. Record the cross-machine result here as a go/no-go: did the batched
+  speedup materialize, and does it change the operator recommendation or the GPU
+  (`022`) outlook?
+- **Remaining lifecycle cost levers (carried in from the `023` clear-context
+  review, `2026-07-15`).** With the `023` per-step update/finalize overhead
+  reduced, the resident lifecycle dominates the recurring GPU step (~83% at
+  n=1e5/P=4); the identified levers are the `019`-deferred L2B kernel and a
+  grouped-GEMM M2L. Using the `024` stage breakdowns, record whether these are
+  worth a follow-on task or are formally deferred.
+- **Minor observations from the `023` approval (`2026-07-15`, non-blocking).**
+  (a) The device per-step update performs a few small blocking scalar downloads
+  that no transfer counter tracks (the out-of-box flag read and the route/direct
+  prefix-total reads); `metadata_downloads` deliberately counts only the 3
+  perm/system/index mirrors. If a future row tightens the per-step sync budget,
+  start from these untracked syncs. (b) `_cuda_radix_keys_checked_kernel!`
+  writes `oob_flag[1] = Int32(1)` from every out-of-box thread without atomics —
+  safe because all writers store the same value; do not extend it to
+  multi-value writes without adding atomics. Confirm both remain acceptable or
+  note follow-up.
+- **End-user scaling evidence (`024b`, added `2026-07-25`).** Use fig09 to
+  record how fixed-MAC, manually leaf-searched legacy CPU 64-thread and resident
+  H200 speedup over the corresponding legacy CPU single-thread baseline change
+  from `n=1e3` through `1e6` at literature `P=4`
+  (`expansion_order=3`). The GPU stencil must use the independently reviewed
+  ell-scaled equal-cell compatibility rule, and fig09 must show the shared
+  sampled-direct relative gradient RMS errors as well as timing. Treat Float64
+  as the primary fair comparison and Float32 as an additional throughput
+  result; include any dense-to-precomputed-y OOM fallback, Float64 error-order
+  failure, or non-monotonic regime in the final recommendation.
 
 ## Verification
 

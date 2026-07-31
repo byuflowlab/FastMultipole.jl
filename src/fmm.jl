@@ -844,6 +844,60 @@ fmm!(target_system, source_system; scalar_potential=false, gradient=true, hessia
 
 fmm!(system, cache::Cache; leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
 
+"""
+    fmm!(system, cache::RadixFMMCache; kwargs...)
+    fmm!(target_systems, source_systems, cache::RadixFMMCache; kwargs...)
+
+Opt-in radix-grid / matrix-operator FMM step (task 023). Construct the cache once
+with [`RadixFMMCache`](@ref) and call this each time step: it refreshes the
+step-varying state in place (grid, routes, packed bodies — zero reallocation),
+runs the resident lifecycle, and writes results back through
+[`buffer_to_target!`](@ref). The legacy octree `fmm!` methods are untouched; this
+path is only selected by passing a `RadixFMMCache`.
+
+**Keyword arguments**
+
+- `scalar_potential::Bool=false`, `gradient::Bool=true`: which outputs to write back
+- `hessian::Bool=false`: must remain `false` — the radix output carries potential +
+  gradient only (`ArgumentError` otherwise)
+- `lamb_helmholtz=nothing`: optional cross-check against the cache's `LH` parameter
+
+v1 restrictions: `target_systems === source_systems`; body count `<= max_n_bodies`;
+positions inside the cache's fixed box.
+"""
+fmm!(system, cache::RadixFMMCache; optargs...) = fmm!(system, system, cache; optargs...)
+
+function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
+        scalar_potential::Bool=false, gradient::Bool=true, hessian::Bool=false,
+        lamb_helmholtz::Union{Nothing,Bool}=nothing) where {TF,LH}
+    targets = to_tuple(target_systems)
+    sources = to_tuple(source_systems)
+    _assert_radix_targets_are_sources(targets, sources)
+    hessian && throw(ArgumentError(
+        "the radix fmm! path computes scalar potential + gradient only (4-row output); " *
+        "hessian is unavailable — use the legacy octree fmm! for hessians"))
+    lamb_helmholtz === nothing || Bool(lamb_helmholtz) == LH || throw(ArgumentError(
+        "lamb_helmholtz=$(lamb_helmholtz) conflicts with the cache's lamb_helmholtz=$LH; " *
+        "the Lamb-Helmholtz channel is fixed at cache construction"))
+    !has_vector_potential(sources) || LH || throw(ArgumentError(
+        "source systems carry a vector potential but the cache was built with " *
+        "lamb_helmholtz=false; rebuild the cache with lamb_helmholtz=true"))
+
+    switches = DerivativesSwitch(
+        to_vector(scalar_potential, length(targets)),
+        to_vector(gradient, length(targets)),
+        to_vector(false, length(targets)), targets)
+    if cache.device
+        _radix_cache_device_step!(cache, targets, switches)
+    else
+        update_radix_state!(cache, sources)
+        run_host_radix_lifecycle!(cache.state)
+        finalize_radix_output!(cache.state, targets; derivatives_switches=switches,
+            target_buffers=_radix_cache_target_buffers!(cache, switches))
+    end
+    return cache
+end
+
 function fmm!(target_systems, source_systems, cache::Cache; optargs...)
     # promote arguments to Tuples and dispatch to the main method
     return fmm!(to_tuple(target_systems), to_tuple(source_systems), cache; optargs...)

@@ -1,0 +1,23 @@
+category,metric,precision,lamb_helmholtz,P,n,ell,count,total_bytes,bytes_per_count,notes
+allocation,concat_m2l,Float64,false,4,2000,3,2,13056,6528.0,warmed host launch; unit=chunk
+allocation,resident_m2m,Float64,false,4,2000,3,22,19152,870.545,warmed host launch; unit=group
+allocation,resident_l2l,Float64,false,4,2000,3,22,18304,832.0,warmed host launch; unit=group
+allocation,concat_m2l,Float64,true,4,2000,3,2,28192,14096.0,warmed host launch; unit=chunk
+allocation,resident_m2m,Float64,true,4,2000,3,17,35184,2069.647,warmed host launch; unit=group
+allocation,resident_l2l,Float64,true,4,2000,3,17,34272,2016.0,warmed host launch; unit=group
+allocation,concat_m2l,Float32,false,4,2000,3,2,13056,6528.0,warmed host launch; unit=chunk
+allocation,resident_m2m,Float32,false,4,2000,3,23,19984,868.87,warmed host launch; unit=group
+allocation,resident_l2l,Float32,false,4,2000,3,23,19136,832.0,warmed host launch; unit=group
+allocation,concat_m2l,Float32,true,4,2000,3,2,28192,14096.0,warmed host launch; unit=chunk
+allocation,resident_m2m,Float32,true,4,2000,3,31,63408,2045.419,warmed host launch; unit=group
+allocation,resident_l2l,Float32,true,4,2000,3,31,62496,2016.0,warmed host launch; unit=group
+storage,geometry_before_analytic,Float64,false,4,2000,3,31210,998720,32.0,constant-P; 4 per-route floating-point vectors; analytical payload
+storage,geometry_current_measured,Float64,false,4,2000,3,31210,173992,5.575,constant-P; class r/theta/phi/invr plus Int32 route_class; measured payload
+storage,geometry_before_analytic,Float32,false,4,2000,3,31210,499360,16.0,constant-P; 4 per-route floating-point vectors; analytical payload
+storage,geometry_current_measured,Float32,false,4,2000,3,31210,149416,4.787,constant-P; class r/theta/phi/invr plus Int32 route_class; measured payload
+storage,cache_S_pos_S_neg,Float64,false,4,0,0,1,2240,2240.0,measured vector payload
+storage,cache_factored_y_modes,Float64,false,4,0,0,1,10560,10560.0,measured vector payload
+storage,cache_S_pos_S_neg,Float64,false,8,0,0,1,18480,18480.0,measured vector payload
+storage,cache_factored_y_modes,Float64,false,8,0,0,1,62016,62016.0,measured vector payload
+storage,cache_S_pos_S_neg,Float64,false,20,0,0,1,453376,453376.0,measured vector payload
+storage,cache_factored_y_modes,Float64,false,20,0,0,1,789824,789824.0,measured vector payload

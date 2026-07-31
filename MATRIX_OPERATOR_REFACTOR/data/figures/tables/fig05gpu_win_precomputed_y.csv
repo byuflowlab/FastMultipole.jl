@@ -1,0 +1,23 @@
+# 024 gpu_crossovers.csv; cases whose complete recurring step is won by precomputed_y. regime_slot indexes the generated tick list.
+P,regime_slot
+4,1
+4,8
+4,11
+8,5
+8,6
+8,11
+8,13
+8,14
+12,1
+12,2
+12,3
+12,4
+12,5
+12,6
+12,7
+12,8
+12,9
+12,10
+12,11
+12,13
+12,14

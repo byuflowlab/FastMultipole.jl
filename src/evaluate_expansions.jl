@@ -397,3 +397,187 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
 
     return u * ONE_OVER_4π, SVector{3}(vx,vy,vz) * ONE_OVER_4π, SMatrix{3,3,eltype(local_expansion),9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz) * ONE_OVER_4π
 end
+
+function evaluate_local(Δx, harmonics, gradient_n_m,
+                        local_expansion::FlatCoefficientBuffer{TF,A,RealSolidHarmonicBasis,LH},
+                        expansion_order, lamb_helmholtz::Val{LH},
+                        derivatives_switch::DerivativesSwitch{PS,GS,HS}) where {TF,A,LH,PS,GS,HS}
+    return evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, 1,
+        expansion_order, lamb_helmholtz, derivatives_switch)
+end
+
+function evaluate_local(Δx, harmonics, gradient_n_m,
+                        local_expansion::FlatCoefficientBuffer{TF,A,RealSolidHarmonicBasis,LH},
+                        column::Integer, expansion_order, ::Val{LH},
+                        ::DerivativesSwitch{PS,GS,HS}) where {TF,A,LH,PS,GS,HS}
+    info = local_expansion.basis_info
+    P_phi = info.orders.P_phi
+    P_active = info.orders.P_active
+    Int(expansion_order) == P_phi ||
+        throw(ArgumentError("real-basis evaluation expects expansion_order == P_phi"))
+
+    r, θ, ϕ = cartesian_to_spherical(Δx)
+    regular_harmonics!(harmonics, r, θ, ϕ, P_active)
+
+    ph = phi_slab(local_expansion)
+    ch = chi_slab(local_expansion)
+    u = zero(TF)
+    vx = zero(TF); vy = zero(TF); vz = zero(TF)
+    vxx = zero(TF); vxy = zero(TF); vxz = zero(TF)
+    vyx = zero(TF); vyy = zero(TF); vyz = zero(TF)
+    vzx = zero(TF); vzy = zero(TF); vzz = zero(TF)
+
+    if PS && !LH
+        u = _real_scalar_contract(harmonics, ph, column, P_phi)
+    end
+
+    if GS || HS
+        fill!(gradient_n_m, zero(eltype(gradient_n_m)))
+        _real_gradient_coefficients!(gradient_n_m, ph, ch, column, P_phi, P_active, Val(LH))
+        vx = _complex_scalar_contract(harmonics, view(gradient_n_m, :, 1, :), P_active)
+        vy = _complex_scalar_contract(harmonics, view(gradient_n_m, :, 2, :), P_active)
+        vz = _complex_scalar_contract(harmonics, view(gradient_n_m, :, 3, :), P_active)
+    end
+
+    if HS
+        vxx, vyx, vzx = _complex_gradient_contract(harmonics, view(gradient_n_m, :, 1, :), P_active)
+        vxy, vyy, vzy = _complex_gradient_contract(harmonics, view(gradient_n_m, :, 2, :), P_active)
+        vxz, vyz, vzz = _complex_gradient_contract(harmonics, view(gradient_n_m, :, 3, :), P_active)
+    end
+
+    return u * ONE_OVER_4π,
+        SVector{3}(vx, vy, vz) * ONE_OVER_4π,
+        SMatrix{3,3,TF,9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz) * ONE_OVER_4π
+end
+
+@inline function _real_coeff_re(slab, j, P, n, m)
+    (n < 0 || n > P || m < 0 || m > n) && return zero(eltype(slab))
+    return m == 0 ? slab[real_basis_index(n, 0), j] : slab[real_basis_index(n, m, Val(:cos)), j]
+end
+
+@inline function _real_coeff_im(slab, j, P, n, m)
+    (n < 0 || n > P || m <= 0 || m > n) && return zero(eltype(slab))
+    return slab[real_basis_index(n, m, Val(:sin)), j]
+end
+
+function _real_scalar_contract(harmonics, slab, j, P)
+    acc = zero(eltype(slab))
+    @inbounds for n in 0:P
+        i = harmonic_index(n, 0)
+        acc += harmonics[1, 1, i] * slab[real_basis_index(n, 0), j]
+        for m in 1:n
+            i = harmonic_index(n, m)
+            a = slab[real_basis_index(n, m, Val(:cos)), j]
+            b = slab[real_basis_index(n, m, Val(:sin)), j]
+            acc += 2 * (harmonics[1, 1, i] * a - harmonics[2, 1, i] * b)
+        end
+    end
+    return acc
+end
+
+function _complex_scalar_contract(harmonics, coeffs, P)
+    acc = zero(eltype(coeffs))
+    @inbounds for n in 0:P
+        i = harmonic_index(n, 0)
+        acc += harmonics[1, 1, i] * coeffs[1, i] - harmonics[2, 1, i] * coeffs[2, i]
+        for m in 1:n
+            i = harmonic_index(n, m)
+            acc += 2 * (harmonics[1, 1, i] * coeffs[1, i] - harmonics[2, 1, i] * coeffs[2, i])
+        end
+    end
+    return acc
+end
+
+function _real_gradient_coefficients!(g, ph, ch, j, P_phi, P_active, ::Val{LH}) where LH
+    @inbounds for n in 0:P_active
+        i0 = harmonic_index(n, 0)
+        phi1c = _real_coeff_re(ph, j, P_phi, n + 1, 1)
+        phi1s = _real_coeff_im(ph, j, P_phi, n + 1, 1)
+        phi0c = _real_coeff_re(ph, j, P_phi, n + 1, 0)
+
+        g[1, 1, i0] = -phi1s
+        g[1, 2, i0] = -phi1c
+        g[1, 3, i0] = -phi0c
+        if LH
+            g[1, 1, i0] += n * _real_coeff_re(ch, j, P_active, n, 1)
+            g[1, 2, i0] -= n * _real_coeff_im(ch, j, P_active, n, 1)
+        end
+
+        for m in 1:n
+            i = harmonic_index(n, m)
+            amm1 = _real_coeff_re(ph, j, P_phi, n + 1, m - 1)
+            bmm1 = _real_coeff_im(ph, j, P_phi, n + 1, m - 1)
+            amp1 = _real_coeff_re(ph, j, P_phi, n + 1, m + 1)
+            bmp1 = _real_coeff_im(ph, j, P_phi, n + 1, m + 1)
+            am = _real_coeff_re(ph, j, P_phi, n + 1, m)
+            bm = _real_coeff_im(ph, j, P_phi, n + 1, m)
+
+            g[1, 1, i] = -(bmm1 + bmp1) * 0.5
+            g[2, 1, i] = (amm1 + amp1) * 0.5
+            g[1, 2, i] = (amm1 - amp1) * 0.5
+            g[2, 2, i] = (bmm1 - bmp1) * 0.5
+            g[1, 3, i] = -am
+            g[2, 3, i] = -bm
+
+            if LH
+                cmm1 = _real_coeff_re(ch, j, P_active, n, m - 1)
+                dmm1 = _real_coeff_im(ch, j, P_active, n, m - 1)
+                cmp1 = _real_coeff_re(ch, j, P_active, n, m + 1)
+                dmp1 = _real_coeff_im(ch, j, P_active, n, m + 1)
+                cm = _real_coeff_re(ch, j, P_active, n, m)
+                dm = _real_coeff_im(ch, j, P_active, n, m)
+
+                g[1, 1, i] += ((n - m) * cmp1 - (n + m) * cmm1) * 0.5
+                g[2, 1, i] += ((n - m) * dmp1 - (n + m) * dmm1) * 0.5
+                g[1, 2, i] -= ((n - m) * dmp1 + (n + m) * dmm1) * 0.5
+                g[2, 2, i] += ((n - m) * cmp1 + (n + m) * cmm1) * 0.5
+                g[1, 3, i] += m * dm
+                g[2, 3, i] -= m * cm
+            end
+        end
+    end
+    return g
+end
+
+@inline function _complex_coeff_re(coeffs, P, n, m)
+    (n < 0 || n > P || m < 0 || m > n) && return zero(eltype(coeffs))
+    return coeffs[1, harmonic_index(n, m)]
+end
+
+@inline function _complex_coeff_im(coeffs, P, n, m)
+    (n < 0 || n > P || m < 0 || m > n) && return zero(eltype(coeffs))
+    return coeffs[2, harmonic_index(n, m)]
+end
+
+function _complex_gradient_contract(harmonics, coeffs, P)
+    gx = zero(eltype(coeffs)); gy = zero(eltype(coeffs)); gz = zero(eltype(coeffs))
+    @inbounds for n in 0:(P - 1)
+        i0 = harmonic_index(n, 0)
+        Rr = harmonics[1, 1, i0]
+        gx += -_complex_coeff_im(coeffs, P, n + 1, 1) * Rr
+        gy += -_complex_coeff_re(coeffs, P, n + 1, 1) * Rr
+        ar = -_complex_coeff_re(coeffs, P, n + 1, 0)
+        ai = -_complex_coeff_im(coeffs, P, n + 1, 0)
+        gz += ar * Rr - ai * harmonics[2, 1, i0]
+
+        for m in 1:n
+            i = harmonic_index(n, m)
+            Rr = harmonics[1, 1, i]
+            Ri = harmonics[2, 1, i]
+            xr = -(_complex_coeff_im(coeffs, P, n + 1, m - 1) +
+                   _complex_coeff_im(coeffs, P, n + 1, m + 1)) * 0.5
+            xi = (_complex_coeff_re(coeffs, P, n + 1, m - 1) +
+                  _complex_coeff_re(coeffs, P, n + 1, m + 1)) * 0.5
+            yr = (_complex_coeff_re(coeffs, P, n + 1, m - 1) -
+                  _complex_coeff_re(coeffs, P, n + 1, m + 1)) * 0.5
+            yi = (_complex_coeff_im(coeffs, P, n + 1, m - 1) -
+                  _complex_coeff_im(coeffs, P, n + 1, m + 1)) * 0.5
+            zr = -_complex_coeff_re(coeffs, P, n + 1, m)
+            zi = -_complex_coeff_im(coeffs, P, n + 1, m)
+            gx += 2 * (xr * Rr - xi * Ri)
+            gy += 2 * (yr * Rr - yi * Ri)
+            gz += 2 * (zr * Rr - zi * Ri)
+        end
+    end
+    return gx, gy, gz
+end

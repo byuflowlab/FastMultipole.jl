@@ -1,0 +1,134 @@
+\documentclass[border=8pt,varwidth=175mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 4 --- Storage and allocation: buffers, operators, caches, geometry, and warmed launches}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=66mm, height=44mm,
+  group style={group size=2 by 3, horizontal sep=16mm, vertical sep=20mm},
+]
+
+% --- (a) padded-vs-ragged chi overhead ------------------------------------
+\nextgroupplot[title={(a) padded-vs-ragged $\chi$ storage}, xlabel={$P_\varphi$},
+               ylabel={padding overhead (\% / column)}, xmode=log, log basis x=2, xminorticks=false,
+               xtick={1,2,4,8,20}, xticklabels={1,2,4,8,20},
+               ymin=0, ymax=42, legend pos=north east]
+\addplot[fmA] table[x=P_phi, y=flat_pct, col sep=comma] {tables/fig04a_layout_overhead.csv};
+\addlegendentry{\texttt{FlatCoefficientBuffer}}
+\addplot[fmB] table[x=P_phi, y=degreemajor_pct, col sep=comma] {tables/fig04a_layout_overhead.csv};
+\addlegendentry{\texttt{DegreeMajorRealBuffer}}
+\node[anchor=north east, font=\tiny, color=fmInkTwo, align=right]
+  at (rel axis cs:0.97,0.62) {worst exactly at the\\small $P$ the GPU runs};
+
+% --- (b) dense operator payload and the feasibility gate ------------------
+\nextgroupplot[title={(b) \texttt{DenseTranslationM2L} operator payload}, xlabel={expansion order $P$},
+               ylabel={operator bytes (MiB)}, ymode=log, xmin=3, xmax=13, xtick={4,8,12},
+               ymin=1, ymax=1.2e5, legend pos=north west, legend columns=2]
+\addplot[fmrule] coordinates {(3,12288) (13,12288)};
+\addplot[fmA] table[x=P, y=f64_phi_mib, col sep=comma] {tables/fig04b_dense_operator_mib.csv};
+\addlegendentry{F64 $\varphi$}
+\addplot[fmA, fmalt] table[x=P, y=f64_lh_mib, col sep=comma] {tables/fig04b_dense_operator_mib.csv};
+\addlegendentry{F64 LH}
+\addplot[fmB] table[x=P, y=f32_phi_mib, col sep=comma] {tables/fig04b_dense_operator_mib.csv};
+\addlegendentry{F32 $\varphi$}
+\addplot[fmB, fmalt] table[x=P, y=f32_lh_mib, col sep=comma] {tables/fig04b_dense_operator_mib.csv};
+\addlegendentry{F32 LH}
+\addplot[fmC] table[x=P, y=clustered_f64_phi_mib, col sep=comma] {tables/fig04b_dense_operator_mib.csv};
+\addlegendentry{clust.\ F64 $\varphi$}
+\addplot[fmC, fmalt] table[x=P, y=clustered_f64_lh_mib, col sep=comma] {tables/fig04b_dense_operator_mib.csv};
+\addlegendentry{clust.\ F64 LH}
+\node[anchor=south east, font=\tiny, color=fmCritical] at (rel axis cs:0.98,0.56) {12\,GiB feasibility gate};
+
+% --- (c) device peak memory per strategy ---------------------------------
+\nextgroupplot[title={(c) H200 peak device memory}, xlabel={expansion order $P$},
+               ylabel={peak device delta (MiB)}, ymode=log, xmin=3, xmax=13, xtick={4,8,12},
+               legend pos=north west, legend columns=2]
+\addplot[fmA] table[x=P, y=concat_mib, col sep=comma] {tables/fig04c_cuda_peak_mib.csv};
+\addlegendentry{concat}
+\addplot[fmB] table[x=P, y=factored_mib, col sep=comma] {tables/fig04c_cuda_peak_mib.csv};
+\addlegendentry{factored}
+\addplot[fmC] table[x=P, y=precomputed_y_mib, col sep=comma] {tables/fig04c_cuda_peak_mib.csv};
+\addlegendentry{precomputed-$y$}
+\addplot[fmD] table[x=P, y=dense_mib, col sep=comma] {tables/fig04c_cuda_peak_mib.csv};
+\addlegendentry{dense}
+
+% --- (d) 019 geometry reduction + invariant cache growth -----------------
+\nextgroupplot[title={(d) 019 invariant-cache payload}, xlabel={expansion order $P$},
+               ylabel={cache payload (KiB)}, ymode=log, xmode=log, log basis x=2, xminorticks=false,
+               xtick={4,8,20}, xticklabels={4,8,20}, legend pos=north west]
+\addplot[fmA] table[x=P, y=S_pos_S_neg_kib, col sep=comma] {tables/fig04e_cache_kib.csv};
+\addlegendentry{$S_{\pm}$ (materialized)}
+\addplot[fmB] table[x=P, y=factored_y_modes_kib, col sep=comma] {tables/fig04e_cache_kib.csv};
+\addlegendentry{$U_n/V_n$ (factored)}
+\node[anchor=south east, font=\tiny, color=fmInkTwo, align=right] at (rel axis cs:0.98,0.02)
+  {concat-plan route geometry:\\32.0 $\to$ 5.6 B/route (F64)\\16.0 $\to$ 4.8 B/route (F32)};
+
+% --- (e) expansion and scratch footprints, one consistently reported plan -
+\nextgroupplot[title={(e) concat expansion and scratch buffers}, xlabel={expansion order $P$},
+               ylabel={plan-reported footprint (MiB)}, ymode=log,
+               xmin=3, xmax=13, xtick={4,8,12}, ymin=0.02, ymax=5,
+               legend pos=north west, legend columns=2]
+\addplot[fmA] table[x=P, y=expansion_phi_mib, col sep=comma] {tables/fig04f_concat_buffers_mib.csv};
+\addlegendentry{expansion, $\varphi$}
+\addplot[fmA, fmalt] table[x=P, y=expansion_lh_mib, col sep=comma] {tables/fig04f_concat_buffers_mib.csv};
+\addlegendentry{expansion, LH}
+\addplot[fmB] table[x=P, y=scratch_phi_mib, col sep=comma] {tables/fig04f_concat_buffers_mib.csv};
+\addlegendentry{scratch, $\varphi$}
+\addplot[fmB, fmalt] table[x=P, y=scratch_lh_mib, col sep=comma] {tables/fig04f_concat_buffers_mib.csv};
+\addlegendentry{scratch, LH}
+
+% --- (f) measured warmed host allocation ---------------------------------
+\nextgroupplot[title={(f) warmed host allocation, $P=4$},
+               ylabel={allocated per launch unit (KiB)}, xlabel={launch unit},
+               xmin=0.4, xmax=3.6, xtick={1,2,3},
+               xticklabels={M2L/chunk,M2M/group,L2L/group},
+               xticklabel style={rotate=20, anchor=east, font=\tiny},
+               ymin=0, ymax=16, fmbaraxis, /tikz/bar width=7pt,
+               legend pos=north east]
+\addplot[fmbars, fill=fmSone] table[x=stage_index, y=phi_kib_per_unit, col sep=comma]
+  {tables/fig04g_warmed_allocations_kib.csv};
+\addlegendentry{$\varphi$ only}
+\addplot[fmbars, fill=fmStwo] table[x=stage_index, y=lh_kib_per_unit, col sep=comma]
+  {tables/fig04g_warmed_allocations_kib.csv};
+\addlegendentry{Lamb--Helmholtz}
+
+\end{groupplot}
+\end{tikzpicture}
+
+\fmnote{\textbf{Machines / regimes:} (a) analytic, host-independent. (b,c) \texttt{m13h-1-1} H200, task 024
+CUDA campaign, uniform $n=20000$ except the clustered series. (d,f) local macOS measurement, task 019.
+Panel (e) uses the task-024 H200 concat plan at uniform $n=20000$, Float64.
+\textbf{Data:} \texttt{smallp\_fallback\_layout/m12-1-7/layout\_storage.csv},
+\texttt{operator\_ab\_benchmark/summary/memory\_feasibility.csv},
+\texttt{operator\_performance\_tuning/local\_macos\_allocations\_storage.csv}
+(tables \texttt{fig04a\_*} \dots \texttt{fig04g\_*}).
+\textbf{Reads as:} padding $\chi$ to $P_\varphi$ costs 17--33\% (flat) / 18--39\% (degree-major) extra storage
+per column at $P\le4$ --- worst precisely where the GPU operates --- which is why the ragged layout was kept.
+The dense strategy's operator payload grows by roughly $20\times$ per doubling of $P$ and crosses the
+12\,GiB gate for Lamb--Helmholtz at $P=12$ under clustering (30.1\,GiB) --- the 21 infeasible cases of task 024.
+Panel (c) is the counter-intuitive part: for $\varphi$-only $n=20000$ the \emph{highest} measured device peak is
+the whole-slab concat path ($405\to2082$\,MiB), not dense ($136\to908$\,MiB), because concat's peak is dominated
+by slab scratch rather than by operators, while factored and precomputed-$y$ stay flat at 136--271\,MiB. Dense
+becomes the memory-limited strategy only once $P$, Lamb--Helmholtz or clustering inflate its operator payload
+past the gate, as in panel (b). Panel (e) separates the concat plan's coefficient storage from its reported
+operator scratch: expansion storage grows from 0.27 to 1.62\,MiB for $\varphi$ and from 0.64 to 3.50\,MiB
+for Lamb--Helmholtz over $P=4\to12$, while this plan's reported scratch remains 0.03--0.06\,MiB.
+Panel (f) records the remaining warmed host dynamic overhead after tuning: 6.4\,KiB per M2L chunk and
+0.8--0.9\,KiB per M2M/L2L group for $\varphi$, rising to 13.8 and about 2.0\,KiB with $\chi$.
+\textbf{Caveats:} panel (c) uses \texttt{peak\_bytes}, which on CUDA is a per-strategy device-memory delta and
+therefore comparable; the CPU \texttt{peak\_bytes} column is a process-wide \texttt{Sys.maxrss()} shared by all
+four strategies and is deliberately not plotted. Likewise \texttt{persistent\_bytes}/\texttt{scratch\_bytes} are
+plan-reported for dense and precomputed-$y$ but fall back to \texttt{Base.summarysize} for concat and factored,
+so panel (e) is deliberately a within-concat order/channel view, not a cross-strategy scratch comparison.
+Panel (f)'s unit is stage-specific (chunk for M2L, group for M2M/L2L), as recorded by the source campaign;
+it compares warmed launch overhead, not total stage allocation. Only dense reports a non-zero
+\texttt{operator\_bytes}: the other three build no
+materialized per-class operator. In panel (c) the factored and precomputed-$y$ curves coincide exactly at all
+three orders (136/170/271\,MiB) --- the device peak is quantised by the CUDA allocation pool at this scale, so
+the orange squares sit underneath the green triangles. Dense Float32 at $P=12$ is a hard-coded skip in the 024 harness, not an
+observed failure, so that series ends at $P=8$.}
+
+\end{document}

@@ -1,0 +1,2 @@
+mode,n,threads,leaf_size,multipole_acceptance,expansion_order,P_literature,leaf_search_seconds,step_seconds_min,step_seconds_median,err_potential_abs_rms,err_potential_rel_rms,err_gradient_abs_rms,err_gradient_rel_rms,err_gradient_max,reference_samples,reference_checksum,host,timestamp
+cpu1,1000000,1,15,0.5,3,4,45225.502677692,40.006065077,40.047332886,9.909011326362183e-7,1.3218877720196702e-5,4.644452821739434e-5,0.0006073513787358259,0.00016680485651106658,512,ec967629907c6e730d2389886b9f8e865fbec35c3a831d8c7220cdfad6e511bc,m12-2-21,2026-07-28T15:32:53Z

@@ -208,3 +208,21 @@ Findings in `START_HERE.md` priority order:
 Non-blocking note: `T_y_neg90` could be derived from `T_y_pos90` rather than rebuilt
 independently, but the independent rebuild is a one-time cost and is clearer; fine
 as-is. `013c` is now unblocked.
+
+## Superseded As The 013c Building Block (`2026-06-23`)
+
+User-directed roadmap amendment ("Plain-H"). A `013c` spike proved that composing
+these **ζ-dressed** `T_y_pos90` / `T_y_neg90` primitives (applied through the
+production `_rotate_*_y!` kernel) with a `Z_theta` z-rotation **cannot** reproduce the
+production `R_y(theta)`: the kernel re-applies the ζ dressing around the swap, so
+`(ζS)·Z·(ζS⁻¹) ≠ ζ·(S·Z·S⁻¹)` — ζ does not commute through `S`. `013c` therefore does
+**not** use these primitives as its `S`/`S_inv`. The shipped factored swap is the
+**plain** fixed per-degree mode matrices `V_n`/`U_n` (rank-1 Fourier modes of the
+production y-operator, with ζ/η dressing absorbed); see the `013c` Revised
+Implementation Notes and `theory/axis-swap-conventions.md`.
+
+These `013b` primitives remain valid as a fixed-`±π/2` parity reference for the
+materialized (`013`) path and are still covered by the `013b` tests; they are simply
+not the load-bearing swap for the factored (`013c`) path. The task `013b` deliverable
+(cache the fixed `±π/2` matrices and expose the primitives) stands; only its intended
+downstream *use* in `013c` changed.

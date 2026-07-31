@@ -1,0 +1,4 @@
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+FastMultipole = "ce07d0d3-2b9f-49ba-89eb-12c800257c85"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"

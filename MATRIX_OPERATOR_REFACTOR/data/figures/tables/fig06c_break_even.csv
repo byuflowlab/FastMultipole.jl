@@ -1,0 +1,5 @@
+# 024 construction_amortization; steps of recurring work needed to amortize the dense-vs-precomputed_y construction difference (min/max over all cases at each P)
+P,cpu_min,cpu_max,gpu_min,gpu_max
+4,4,5834,542,18208
+8,6,4188,4120,733902
+12,10,18930,nan,nan

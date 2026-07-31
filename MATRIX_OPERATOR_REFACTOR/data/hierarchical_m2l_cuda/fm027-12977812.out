@@ -1,0 +1,193 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-7b752b40-664e-5fc8-43c4-e5f600c8fa42)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=4baff1ed0e418148
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Precompiling CUDA...
+   1509.9 ms  ✓ LibTracyClient_jll
+   2562.5 ms  ✓ CUDA_Driver_jll
+   1290.1 ms  ✓ Tracy
+   2897.1 ms  ✓ CUDA_Runtime_jll
+   1990.1 ms  ✓ CUDA_Compiler_jll
+   7963.5 ms  ✓ LLVM
+   2322.2 ms  ✓ GPUToolbox
+   2522.5 ms  ✓ UnsafeAtomics → UnsafeAtomicsLLVM
+   3019.4 ms  ✓ LLVM → BFloat16sExt
+   5608.9 ms  ✓ GPUArrays
+  20306.1 ms  ✓ PrettyTables
+  18946.7 ms  ✓ GPUCompiler
+  19672.8 ms  ✓ CUDACore
+   8390.8 ms  ✓ cuFFT
+   8271.7 ms  ✓ cuRAND
+   9679.3 ms  ✓ NVML
+  10190.7 ms  ✓ CUPTI
+  12519.1 ms  ✓ cuSPARSE
+  14572.8 ms  ✓ cuBLAS
+  14887.7 ms  ✓ CUDATools
+  12276.7 ms  ✓ cuSOLVER
+   9978.4 ms  ✓ CUDA
+   8350.7 ms  ✓ Atomix → AtomixCUDAExt
+  23 dependencies successfully precompiled in 98 seconds. 77 already precompiled.
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m12.7s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.9s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_integration_test.jl
+Test Summary:                          |   Pass   Total      Time
+CUDA radix fmm! integration (task 023) | 416797  416797  23m54.4s
+INTEGRATION_TEST_EXIT=0
+=== test/cuda_radix_hierarchical_test.jl (027)
+Test Summary:                          | Pass  Total     Time
+CUDA hierarchical rigid M2L (task 027) | 7039   7039  3m07.8s
+HIERARCHICAL_TEST_EXIT=0
+=== benchmark_027_hierarchical_cuda.jl
+flat    concat         Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l     0.483 ms  step     3.964 ms  mem    402.7 MB  routes 20964
+flat    factored       Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l     0.134 ms  step     3.995 ms  mem     67.1 MB  routes 20964
+flat    precomputed_y  Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l     0.088 ms  step     3.746 ms  mem     67.1 MB  routes 20964
+flat    dense          Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l     0.032 ms  step     3.831 ms  mem     67.1 MB  routes 20964
+hier12  concat         Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l   169.381 ms  step   164.172 ms  mem     33.6 MB  routes 123368
+hier12  factored       Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l   176.882 ms  step   173.292 ms  mem     33.6 MB  routes 123368
+hier12  precomputed_y  Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l    55.372 ms  step    57.546 ms  mem     33.6 MB  routes 123368
+hier12  dense          Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l    43.557 ms  step    47.995 ms  mem     33.6 MB  routes 123368
+hier3   concat         Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l    45.325 ms  step    50.970 ms  mem     33.6 MB  routes 46616
+hier3   factored       Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l    47.356 ms  step    51.078 ms  mem     33.6 MB  routes 46616
+hier3   precomputed_y  Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l    12.238 ms  step    16.281 ms  mem     33.6 MB  routes 46616
+hier3   dense          Float64  P=4  LH=false n=2000    ell=3 K=4    fit=true  m2l     8.452 ms  step    11.856 ms  mem     33.6 MB  routes 46616
+flat    concat         Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l     5.380 ms  step    11.721 ms  mem    637.5 MB  routes 1153614
+flat    factored       Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l     5.270 ms  step    11.719 ms  mem    402.7 MB  routes 1153614
+flat    precomputed_y  Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l     3.317 ms  step    10.053 ms  mem    402.7 MB  routes 1153614
+flat    dense          Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l     1.213 ms  step     8.149 ms  mem    503.3 MB  routes 1153614
+hier12  concat         Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l   302.726 ms  step   298.465 ms  mem     67.1 MB  routes 596894
+hier12  factored       Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l   302.607 ms  step   300.976 ms  mem     67.1 MB  routes 596894
+hier12  precomputed_y  Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l    92.723 ms  step    98.725 ms  mem     33.6 MB  routes 596894
+hier12  dense          Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l    72.803 ms  step    81.405 ms  mem     33.6 MB  routes 596894
+hier3   concat         Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l    69.686 ms  step    79.744 ms  mem     33.6 MB  routes 147952
+hier3   factored       Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l    75.781 ms  step    79.888 ms  mem     33.6 MB  routes 147952
+hier3   precomputed_y  Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l    19.088 ms  step    25.293 ms  mem     33.6 MB  routes 147952
+hier3   dense          Float64  P=4  LH=false n=2000    ell=4 K=4    fit=true  m2l    13.580 ms  step    20.365 ms  mem     33.6 MB  routes 147952
+flat    concat         Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l    15.189 ms  step    44.837 ms  mem    671.1 MB  routes 3259174
+flat    factored       Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l    14.763 ms  step    44.927 ms  mem    503.3 MB  routes 3259174
+flat    precomputed_y  Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l     9.386 ms  step    39.554 ms  mem    536.9 MB  routes 3259174
+flat    dense          Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l     3.342 ms  step    33.540 ms  mem   1610.6 MB  routes 3259174
+hier12  concat         Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l   437.786 ms  step   442.138 ms  mem     67.1 MB  routes 767168
+hier12  factored       Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l   437.532 ms  step   447.718 ms  mem     67.1 MB  routes 767168
+hier12  precomputed_y  Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l   137.716 ms  step   140.218 ms  mem     33.6 MB  routes 767168
+hier12  dense          Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l   102.036 ms  step   117.481 ms  mem     33.6 MB  routes 767168
+hier3   concat         Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l    94.177 ms  step   108.613 ms  mem     33.6 MB  routes 177640
+hier3   factored       Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l    94.309 ms  step   108.635 ms  mem     33.6 MB  routes 177640
+hier3   precomputed_y  Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l    26.050 ms  step    36.600 ms  mem     33.6 MB  routes 177640
+hier3   dense          Float64  P=4  LH=false n=2000    ell=5 K=4    fit=true  m2l    18.938 ms  step    28.860 ms  mem     33.6 MB  routes 177640
+flat    concat         Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l     0.252 ms  step    13.118 ms  mem    335.5 MB  routes 36100
+flat    factored       Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l     0.204 ms  step    13.205 ms  mem     67.1 MB  routes 36100
+flat    precomputed_y  Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l     0.134 ms  step    13.069 ms  mem     67.1 MB  routes 36100
+flat    dense          Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l     0.041 ms  step    13.030 ms  mem     67.1 MB  routes 36100
+hier12  concat         Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l   168.832 ms  step   172.741 ms  mem     33.6 MB  routes 159762
+hier12  factored       Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l   168.830 ms  step   174.120 ms  mem     33.6 MB  routes 159762
+hier12  precomputed_y  Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l    56.454 ms  step    68.829 ms  mem     33.6 MB  routes 159762
+hier12  dense          Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l    43.393 ms  step    55.919 ms  mem     33.6 MB  routes 159762
+hier3   concat         Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l    47.394 ms  step    58.651 ms  mem     33.6 MB  routes 56168
+hier3   factored       Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l    47.516 ms  step    58.603 ms  mem     33.6 MB  routes 56168
+hier3   precomputed_y  Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l    12.306 ms  step    23.690 ms  mem     33.6 MB  routes 56168
+hier3   dense          Float64  P=4  LH=false n=20000   ell=3 K=4    fit=true  m2l     8.438 ms  step    19.196 ms  mem     33.6 MB  routes 56168
+flat    concat         Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l    21.204 ms  step    35.795 ms  mem   1577.1 MB  routes 4561018
+flat    factored       Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l    20.577 ms  step    35.490 ms  mem   1308.6 MB  routes 4561018
+flat    precomputed_y  Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l    12.794 ms  step    27.254 ms  mem   1308.6 MB  routes 4561018
+flat    dense          Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l     4.593 ms  step    18.908 ms  mem   1409.3 MB  routes 4561018
+hier12  concat         Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l   309.408 ms  step   324.094 ms  mem    100.7 MB  routes 1796874
+hier12  factored       Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l   318.894 ms  step   324.210 ms  mem    100.7 MB  routes 1796874
+hier12  precomputed_y  Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l    97.324 ms  step   111.206 ms  mem     67.1 MB  routes 1796874
+hier12  dense          Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l    75.131 ms  step    85.881 ms  mem     67.1 MB  routes 1796874
+hier3   concat         Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l    69.345 ms  step    84.398 ms  mem     67.1 MB  routes 397036
+hier3   factored       Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l    71.517 ms  step    85.215 ms  mem     67.1 MB  routes 397036
+hier3   precomputed_y  Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l    19.158 ms  step    28.791 ms  mem     67.1 MB  routes 397036
+hier3   dense          Float64  P=4  LH=false n=20000   ell=4 K=4    fit=true  m2l    13.626 ms  step    23.982 ms  mem     33.6 MB  routes 397036
+flat    concat         Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l   673.751 ms  step   832.353 ms  mem  25870.5 MB  routes 145141134
+flat    factored       Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l   650.814 ms  step   866.020 ms  mem  25702.7 MB  routes 145141134
+flat    precomputed_y  Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l   400.643 ms  step   602.855 ms  mem  25769.8 MB  routes 145141134
+flat    dense          Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l   135.259 ms  step   321.417 ms  mem  26810.0 MB  routes 145141134
+hier12  concat         Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l   448.055 ms  step   465.132 ms  mem    369.1 MB  routes 9156646
+hier12  factored       Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l   444.201 ms  step   481.034 ms  mem    369.1 MB  routes 9156646
+hier12  precomputed_y  Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l   147.382 ms  step   194.885 ms  mem    201.3 MB  routes 9156646
+hier12  dense          Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l    99.716 ms  step   141.935 ms  mem    201.3 MB  routes 9156646
+hier3   concat         Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l    97.502 ms  step   137.853 ms  mem    268.4 MB  routes 1686178
+hier3   factored       Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l    98.540 ms  step   126.762 ms  mem    268.4 MB  routes 1686178
+hier3   precomputed_y  Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l    27.526 ms  step    69.894 ms  mem    134.2 MB  routes 1686178
+hier3   dense          Float64  P=4  LH=false n=20000   ell=5 K=4    fit=true  m2l    18.919 ms  step    60.754 ms  mem    100.7 MB  routes 1686178
+flat    concat         Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l     0.256 ms  step   525.486 ms  mem    369.1 MB  routes 36816
+flat    factored       Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l     0.206 ms  step   527.479 ms  mem    100.7 MB  routes 36816
+flat    precomputed_y  Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l     0.135 ms  step   527.425 ms  mem    100.7 MB  routes 36816
+flat    dense          Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l     0.042 ms  step   523.466 ms  mem    100.7 MB  routes 36816
+hier12  concat         Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l   170.065 ms  step   515.129 ms  mem     67.1 MB  routes 160944
+hier12  factored       Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l   169.190 ms  step   514.724 ms  mem     67.1 MB  routes 160944
+hier12  precomputed_y  Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l    56.640 ms  step   411.910 ms  mem     67.1 MB  routes 160944
+hier12  dense          Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l    43.482 ms  step   399.906 ms  mem     67.1 MB  routes 160944
+hier3   concat         Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l    47.566 ms  step   396.319 ms  mem     67.1 MB  routes 56448
+hier3   factored       Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l    47.668 ms  step   395.846 ms  mem     67.1 MB  routes 56448
+hier3   precomputed_y  Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l    12.323 ms  step   362.765 ms  mem     67.1 MB  routes 56448
+hier3   dense          Float64  P=4  LH=false n=200000  ell=3 K=4    fit=true  m2l     8.474 ms  step   353.522 ms  mem     67.1 MB  routes 56448
+flat    concat         Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l    21.287 ms  step   211.977 ms  mem   1610.6 MB  routes 4582920
+flat    factored       Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l    20.680 ms  step   211.722 ms  mem   1342.2 MB  routes 4582920
+flat    precomputed_y  Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l    12.822 ms  step   203.218 ms  mem   1342.2 MB  routes 4582920
+flat    dense          Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l     4.608 ms  step   194.781 ms  mem   1442.8 MB  routes 4582920
+hier12  concat         Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l   308.784 ms  step   357.111 ms  mem    134.2 MB  routes 1800440
+hier12  factored       Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l   308.386 ms  step   359.977 ms  mem    134.2 MB  routes 1800440
+hier12  precomputed_y  Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l    97.504 ms  step   148.984 ms  mem    100.7 MB  routes 1800440
+hier12  dense          Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l    75.644 ms  step   122.460 ms  mem    100.7 MB  routes 1800440
+hier3   concat         Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l    69.355 ms  step   111.742 ms  mem    100.7 MB  routes 397672
+hier3   factored       Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l    69.800 ms  step   111.977 ms  mem    100.7 MB  routes 397672
+hier3   precomputed_y  Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l    19.158 ms  step    52.197 ms  mem    100.7 MB  routes 397672
+hier3   dense          Float64  P=4  LH=false n=200000  ell=4 K=4    fit=true  m2l    13.617 ms  step    47.445 ms  mem     67.1 MB  routes 397672
+flat    concat         Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l  1979.298 ms  step  2403.471 ms  mem  67310.2 MB  routes 426826100
+flat    factored       Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l  1911.770 ms  step  2451.780 ms  mem  67142.4 MB  routes 426826100
+flat    precomputed_y  Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l  1172.031 ms  step  1730.488 ms  mem  67209.5 MB  routes 426826100
+flat    dense          Float64  P=4  LH=false n=200000  ell=5 K=4    fit=false m2l       NaN ms  step       NaN ms  mem      0.0 MB  routes 0
+    note: ArgumentError: DenseTranslationM2L device persistent payload exceeds max_persistent_bytes (=4294967296 bytes (4096.0 MiB)): dense operators=1234880000 bytes (1177.67333984375 MiB); route metadata=4295955200 bytes; expansion buffers=0 bytes (0.0 MiB); packing/application slabs=6553600 bytes (6.25 MiB); other scratch=0 bytes (0.0 MiB); persistent total=5537388800 bytes (5280.865478515625 MiB); estimated device peak=60463761584 bytes (57662.73649597168 MiB); D=25; classes=246976; chunk=16384. Lower P; disable Lamb-Helmholtz; reduce the applicable scratch chunk (DENSE_CUDA_CHUNK); or select PrecomputedFactoredYM2L / FactoredRotationM2L / ConcatenatedFixedZM2L (5-30x smaller footprint); chunking does not reduce dense operator storage.
+hier12  concat         Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l   451.272 ms  step   532.509 ms  mem    604.0 MB  routes 21675006
+hier12  factored       Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l   463.499 ms  step   530.792 ms  mem    604.0 MB  routes 21675006
+hier12  precomputed_y  Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l   178.779 ms  step   255.482 ms  mem    335.5 MB  routes 21675006
+hier12  dense          Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l   106.705 ms  step   191.826 ms  mem    335.5 MB  routes 21675006
+hier3   concat         Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l   101.102 ms  step   176.026 ms  mem    469.8 MB  routes 3895658
+hier3   factored       Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l   100.260 ms  step   175.832 ms  mem    469.8 MB  routes 3895658
+hier3   precomputed_y  Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l    34.587 ms  step   105.222 ms  mem    201.3 MB  routes 3895658
+hier3   dense          Float64  P=4  LH=false n=200000  ell=5 K=4    fit=true  m2l    20.097 ms  step    88.989 ms  mem    201.3 MB  routes 3895658
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/hierarchical_m2l_cuda/cuda_m13h-1-1_20260730-220713.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/hierarchical_m2l_cuda/cuda_m13h-1-1_20260730-220713.csv.classes.csv
+BENCH_EXIT=0

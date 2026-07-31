@@ -90,14 +90,92 @@ include("complex.jl")
 include("derivatives.jl")
 include("harmonics.jl")
 include("rotate.jl")
+include("rotate_batched.jl")
 include("translate.jl")
+include("translate_batched.jl")
 include("evaluate_expansions.jl")
 include("tree.jl")
+include("tree_batched.jl")
+include("interaction_list_batched.jl")
+include("translate_batched_resident.jl")
 
 export Branch, SingleBranch, MultiBranch, Tree, SingleTree, MultiTree, initialize_expansion, initialize_harmonics
+export RadixGrid, DeviceRadixGrid, RadixSortBackend, HostRadixSort, DeviceRadixSort, AutoRadixSort, radix_grid
+export ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L, ConstantPAnalyticStencil, HierarchicalRigidStencil, classic_fmm_stencil, rigid_stencil_epsilon, RadixTraversalStrategy
+export RigidHierarchicalTables, RadixLevelOccupancy
+export RigidImplicitStencil, SparseOffsetIntersection, BlockedOccupancyBitsets, LazyMaterializedBatches
+export RadixM2LBatch, RadixInteractionList
+export Residency, HostResident, DeviceResident, residency
+export CUDARadixTransferCounters, CUDARadixLifecycleOptions, DeviceResidentRadixState
+export AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M
+export AbstractResidentM2LStrategy, DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L, PrecomputedFactoredYM2L
+export constant_p_stencil_bound, constant_p_stencil_accepts, accepted_radix_stencil
+export foreach_radix_m2l_pair, foreach_radix_m2l_route, foreach_radix_direct_pair, build_radix_interaction_list
 export unsort!, resort!, unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
 export AbstractOperatorBasis, CompressedComplexBasis, RealSolidHarmonicBasis
 export OperatorOrders, OperatorBasisInfo, OperatorInvariantCache, OperatorScratch, ThreadedOperatorScratch
+export FlatCoefficientBuffer, real_basis_index, complex_to_real_basis!, real_to_complex_basis!
+export AbstractM2LOperator, MaterializedYRotationM2L, FactoredRotationM2L, M2LOperatorScratch
+export AbstractM2MOperator, MaterializedYRotationM2M, FactoredRotationM2M, M2MOperatorScratch
+export AbstractL2LOperator, MaterializedYRotationL2L, FactoredRotationL2L, L2LOperatorScratch
+export load_cuda_radix_lifecycle!, cuda_radix_available, cuda_radix_status
+export CUDARadixUnavailable, cuda_radix_state, run_cuda_radix_lifecycle!
+export copy_cuda_radix_output!, finalize_cuda_radix_output!, take_cuda_radix_output!, cuda_radix_grid
+export host_radix_state, run_host_radix_lifecycle!, host_resident_radix_grid
+export finalize_radix_output!
+export RadixFMMCache, update_radix_state!
+
+struct CUDARadixUnavailable <: Exception
+    reason::String
+end
+
+Base.showerror(io::IO, err::CUDARadixUnavailable) = print(io, err.reason)
+
+const _CUDA_RADIX_LIFECYCLE_LOADED = Ref(false)
+const _CUDA_RADIX_LIFECYCLE_LOAD_ERROR = Ref{Any}(nothing)
+
+function _cuda_radix_preflight_error()
+    get(ENV, "FASTMULTIPOLE_FORCE_CUDA_LOAD", "0") == "1" && return nothing
+    Sys.isapple() && return "CUDA is not available on macOS in this runtime"
+    if Sys.islinux() && !ispath("/dev/nvidiactl") && !ispath("/proc/driver/nvidia/version")
+        return "no NVIDIA device nodes detected; set FASTMULTIPOLE_FORCE_CUDA_LOAD=1 to force CUDA.jl loading"
+    end
+    return nothing
+end
+
+cuda_radix_available() = false
+function cuda_radix_status()
+    err = _CUDA_RADIX_LIFECYCLE_LOAD_ERROR[]
+    err === nothing && return "CUDA radix lifecycle not loaded; call load_cuda_radix_lifecycle!()"
+    return "CUDA radix lifecycle failed to load: $(err)"
+end
+
+function load_cuda_radix_lifecycle!()
+    # cuda_radix_available/cuda_radix_status are redefined by the include below,
+    # so they must be reached through invokelatest from this (older-world) frame.
+    _CUDA_RADIX_LIFECYCLE_LOADED[] && return Base.invokelatest(cuda_radix_available)::Bool
+    _CUDA_RADIX_LIFECYCLE_LOAD_ERROR[] = nothing
+    preflight = _cuda_radix_preflight_error()
+    if preflight !== nothing
+        _CUDA_RADIX_LIFECYCLE_LOAD_ERROR[] = preflight
+        return false
+    end
+    try
+        include(joinpath(@__DIR__, "translate_batched_cuda.jl"))
+    catch err
+        _CUDA_RADIX_LIFECYCLE_LOAD_ERROR[] = err
+        return false
+    end
+    _CUDA_RADIX_LIFECYCLE_LOADED[] = true
+    return Base.invokelatest(cuda_radix_available)::Bool
+end
+
+cuda_radix_state(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
+cuda_radix_grid(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
+run_cuda_radix_lifecycle!(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
+copy_cuda_radix_output!(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
+finalize_cuda_radix_output!(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
+take_cuda_radix_output!(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
 
 include("compatibility.jl")
 
@@ -106,7 +184,7 @@ export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Pane
 export PowerAbsolutePotential, PowerAbsoluteGradient, RotatedCoefficientsAbsoluteGradient
 # export PowerRelativePotential, PowerRelativeGradient, RotatedCoefficientsRelativeGradient
 export get_n_bodies, buffer_element, body_to_multipole!, direct!, direct_gpu!
-export source_to_buffer!, source_to_buffer
+export source_system_to_device_buffer!, target_system_from_device_buffer!, source_to_buffer!, source_to_buffer
 
 include("direct_conditioning.jl")
 

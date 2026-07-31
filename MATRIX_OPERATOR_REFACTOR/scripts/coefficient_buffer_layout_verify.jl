@@ -31,6 +31,25 @@ function production_harmonic_index_check()
     return (; available = true, ok)
 end
 
+# Independent cross-check that the production flat_basis_index (task 017) agrees
+# with this spec's basis_index, so the implemented buffer layout cannot drift from
+# the approved layout this script encodes.
+const PROD_FLAT_BASIS_INDEX = try
+    @eval import FastMultipole
+    getfield(FastMultipole, :flat_basis_index)
+catch
+    nothing
+end
+
+function production_flat_basis_index_check()
+    PROD_FLAT_BASIS_INDEX === nothing && return (; available = false, ok = false)
+    ok = true
+    for P in ORDERS, n in 0:P, m in 0:n, reim in 1:2
+        ok &= Base.invokelatest(PROD_FLAT_BASIS_INDEX, n, m, reim) == basis_index(n, m, reim)
+    end
+    return (; available = true, ok)
+end
+
 nreal(P::Int) = (P + 1)^2
 mode_index(n::Int, ::Val{:zero}) = n^2 + 1
 mode_index(n::Int, m::Int, ::Val{:cos}) = n^2 + 2m
@@ -134,7 +153,7 @@ function verify_real_case(P::Int)
     return (; P, basis_dof, contiguous_unique, degree_blocks_ok)
 end
 
-function write_summary(complex_results, real_results, prod_check)
+function write_summary(complex_results, real_results, prod_check, flat_check)
     mkpath(DATA_DIR)
 
     max_roundtrip_error = maximum(r.max_error for r in complex_results)
@@ -143,9 +162,12 @@ function write_summary(complex_results, real_results, prod_check)
     # A failed production cross-check fails the run; an unavailable package is
     # recorded but does not fail (the script can run standalone).
     prod_passed = !prod_check.available || prod_check.ok
-    passed = complex_passed && real_passed && prod_passed
+    flat_passed = !flat_check.available || flat_check.ok
+    passed = complex_passed && real_passed && prod_passed && flat_passed
     prod_status = !prod_check.available ? "SKIPPED (FastMultipole not loadable)" :
         (prod_check.ok ? "PASS" : "FAIL")
+    flat_status = !flat_check.available ? "SKIPPED (FastMultipole not loadable)" :
+        (flat_check.ok ? "PASS" : "FAIL")
 
     open(SUMMARY_PATH, "w") do io
         println(io, "# Coefficient Buffer Layout Verification Summary")
@@ -158,6 +180,7 @@ function write_summary(complex_results, real_results, prod_check)
         println(io, "- Max complex legacy/native round-trip error: `$(max_roundtrip_error)`")
         println(io, "- Fixed-channel slab requirement: `stride(view, 1) == 1`, `stride(view, 2) == basis_dof`")
         println(io, "- Production `harmonic_index` cross-check: `$(prod_status)`")
+        println(io, "- Production `flat_basis_index` cross-check: `$(flat_status)`")
         println(io)
         println(io, "## Compressed Complex Cases")
         println(io)
@@ -191,7 +214,8 @@ function main()
     ]
     real_results = [verify_real_case(P) for P in ORDERS]
     prod_check = production_harmonic_index_check()
-    summary = write_summary(complex_results, real_results, prod_check)
+    flat_check = production_flat_basis_index_check()
+    summary = write_summary(complex_results, real_results, prod_check, flat_check)
 
     println("coefficient_buffer_layout_verify: $(summary.passed ? "PASS" : "FAIL")")
     println("summary: $(SUMMARY_PATH)")

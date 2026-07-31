@@ -1,0 +1,6 @@
+# 024 case_rankings, cpu; complete-recurring-step wins per strategy out of 84 cases. Strategy order = concat/factored/precomputed_y/dense
+strategy_index,wins
+1,0
+2,0
+3,21
+4,63

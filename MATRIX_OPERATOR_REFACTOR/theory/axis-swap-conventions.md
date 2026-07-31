@@ -83,6 +83,53 @@ with the production `pi` z-axis convention folded into the selected fixed
 axis-swap signs. The return alignment uses the same fixed convention and the
 inverse/conjugate z phases already documented in the z-rotation theory.
 
+### Realization Amendment (`2026-06-23`, task `013c`, user-directed "Plain-H")
+
+The implementation work above warned to expose this as *fixed axis-swap matrices
+plus z-rotation phase vectors* rather than dense arbitrary-angle matrices. Task
+`013c` did so, and a spike pinned the exact convention-faithful form. Two points
+must be recorded so the derivation is not mis-applied.
+
+**The swap is the plain operator, not the dressed one.** The production y-alignment
+applies, per degree `n`, the matrix `A_n[m,mp] = zeta_n^{mp,m} * T_n^{mp,m}(theta)`
+(the `eta` table for the local path), where `T_n` is the *plain* (dressing-free) real
+Wigner block and `zeta_n^{mp,m} = (beta_n^{mp}/beta_n^m) * i^{|mp|-|m|}` is the
+compressed-complex dressing of the table above. The genuine factorization
+`T_n(theta) = S_n Z_n(theta) S_n^{-1}` holds for the **plain** `T_n` (its `S_n` are
+built from `H(pi/2)`). It does **not** survive being applied through the dressed
+kernel, because the dressing does not commute through the swap:
+
+```text
+(zeta . S) * Z_theta * (zeta . S)^{-1}  !=  zeta . (S * Z_theta * S^{-1}).
+```
+
+Equivalently, composing the production-kernel `±pi/2` y-swaps (`013b`'s ζ-dressed
+`T_y_pos90` / `T_y_neg90`) with a `Z_theta` produces an `R_x`-type, not `R_y`,
+operator. The dressing `zeta_n^{mp,m} = a(mp) * b(m)` is separable (verified to
+machine precision), so the correct staged form keeps the swap plain and carries the
+dressing as outer diagonals: `a(mp)` pre, `b(m)` post. Either fold those diagonals
+into the fixed swap matrices (the shipped choice) or apply them separately.
+
+**Executable fixed-mode form.** For every degree `n`, every angular Fourier component
+of the production y-operator on the `2n+1` real dofs is **rank 1**, so
+
+```text
+Y_n(theta) = U_n * diag(exp(i nu theta)) * V_n,   nu = -n..n,
+```
+
+with `U_n`, `V_n` fixed (angle/geometry-independent, batch-shared) per-degree
+matrices — the executable `S_n` / `S_n^{-1}` of the form above, with `Z_n(theta) =
+diag(exp(i nu theta))` the cheap z-rotation in the swapped (`nu`) frame. The cost is
+`O(P^3)` per column (two `O(n^2)` fixed-matrix contractions and one `O(n)` diagonal),
+versus the materialized `O(P^4)` per-call `Ts(theta)` rebuild. The shipped code builds
+`U_n`/`V_n` once at cache construction (sample the production-parity kernels at `2n+1`
+angles, DFT to the components, rank-1-factor each) and the `pi`/extra-`pi` and sign
+conventions are inherited exactly from the sampled kernels. The multipole (`zeta`) and
+local (`eta`) paths carry separate `U,V` (dressing absorbed); the staged arithmetic is
+identical and is selected by which modes are supplied. See task `013c` Revised
+Implementation Notes for the verification (~1e-13 vs production, P up to 8, both
+`Val`).
+
 ## Compressed Complex Sign Tables
 
 Only nonnegative `m` coefficients are stored. Contributions from negative

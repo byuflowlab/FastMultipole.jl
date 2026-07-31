@@ -1,0 +1,9 @@
+near_radius2,case,depth,occupied_leaves,ordered_pairs,direct_pairs,m2l_pairs,first_separated_counts_levels_2_to_depth,missing,duplicates,wrong_kind,pass
+3,dense_depth3,3,512,262144,10648,251496,198144;53352,0,0,0,true
+3,dense_depth4,4,4096,16777216,97336,16679880,12681216;3414528;584136,0,0,0,true
+3,boundary_truncated,4,158,24964,2220,22744,0;14044;8700,0,0,0,true
+3,sparse_fixed,4,36,1296,36,1260,1096;134;30,0,0,0,true
+12,dense_depth3,3,512,262144,53824,208320,48128;160192,0,0,0,true
+12,dense_depth4,4,4096,16777216,570272,16206944,3080192;10252288;2874464,0,0,0,true
+12,boundary_truncated,4,158,24964,9940,15024,0;744;14280,0,0,0,true
+12,sparse_fixed,4,36,1296,62,1234,464;650;120,0,0,0,true

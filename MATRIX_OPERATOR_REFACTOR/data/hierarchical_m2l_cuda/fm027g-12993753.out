@@ -1,0 +1,216 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-7b752b40-664e-5fc8-43c4-e5f600c8fa42)
+=== new source manifest
+MANIFEST=2f45fde7eee60f81
+1379:struct CUDARadixLifecycleOptions{TF}
+=== CUDA.jl
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== phase 1: CUDA test suites (new default policy)
+--- test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m30.8s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  8.5s
+Precompiling CUDA...
+   2914.3 ms  ✓ CUDA_Driver_jll
+   3359.0 ms  ✓ CUDA_Runtime_jll
+   2432.7 ms  ✓ CUDA_Compiler_jll
+   9389.6 ms  ✓ LLVM
+   2885.1 ms  ✓ GPUToolbox
+   3023.4 ms  ✓ LLVM → BFloat16sExt
+   3040.6 ms  ✓ UnsafeAtomics → UnsafeAtomicsLLVM
+   8198.5 ms  ✓ GPUArrays
+  23154.3 ms  ✓ PrettyTables
+  20766.1 ms  ✓ GPUCompiler
+  21434.8 ms  ✓ CUDACore
+   9279.0 ms  ✓ cuFFT
+   9079.6 ms  ✓ cuRAND
+  10687.7 ms  ✓ NVML
+  10928.4 ms  ✓ CUPTI
+  13544.7 ms  ✓ cuSPARSE
+  15438.2 ms  ✓ cuBLAS
+  16276.5 ms  ✓ CUDATools
+  13712.0 ms  ✓ cuSOLVER
+  10695.1 ms  ✓ CUDA
+  10377.8 ms  ✓ Atomix → AtomixCUDAExt
+  21 dependencies successfully precompiled in 110 seconds. 79 already precompiled.
+cuda_radix_lifecycle_test_EXIT=0
+--- test/cuda_radix_integration_test.jl
+Test Summary:                          |   Pass   Total      Time
+CUDA radix fmm! integration (task 023) | 416797  416797  23m50.9s
+cuda_radix_integration_test_EXIT=0
+--- test/cuda_radix_hierarchical_test.jl
+Test Summary:                          | Pass  Total     Time
+CUDA hierarchical rigid M2L (task 027) | 7048   7048  3m11.7s
+cuda_radix_hierarchical_test_EXIT=0
+PHASE1_NONZERO_EXITS=0
+=== phase 2 round 1: NEW source
+MANIFEST=2f45fde7eee60f81
+new_r1    concat         P=4 n=2000  m2l=0.2728 ms  step=4.1075 ms  m2l_alloc=80
+new_r1    factored       P=4 n=2000  m2l=0.1997 ms  step=3.7538 ms  m2l_alloc=0
+new_r1    precomputed_y  P=4 n=2000  m2l=0.1322 ms  step=3.7335 ms  m2l_alloc=0
+new_r1    dense          P=4 n=2000  m2l=0.0445 ms  step=3.7238 ms  m2l_alloc=0
+new_r1    concat         P=4 n=20000  m2l=0.2566 ms  step=10.4391 ms  m2l_alloc=80
+new_r1    factored       P=4 n=20000  m2l=0.2041 ms  step=10.4382 ms  m2l_alloc=0
+new_r1    precomputed_y  P=4 n=20000  m2l=0.1347 ms  step=10.4392 ms  m2l_alloc=0
+new_r1    dense          P=4 n=20000  m2l=0.0444 ms  step=10.3615 ms  m2l_alloc=0
+new_r1    concat         P=8 n=2000  m2l=3.0634 ms  step=8.2196 ms  m2l_alloc=160
+new_r1    factored       P=8 n=2000  m2l=2.4503 ms  step=7.6545 ms  m2l_alloc=0
+new_r1    precomputed_y  P=8 n=2000  m2l=1.3468 ms  step=6.7205 ms  m2l_alloc=0
+new_r1    dense          P=8 n=2000  m2l=0.9854 ms  step=6.2222 ms  m2l_alloc=0
+new_r1    concat         P=8 n=20000  m2l=3.1677 ms  step=31.1865 ms  m2l_alloc=160
+new_r1    factored       P=8 n=20000  m2l=2.5212 ms  step=30.4972 ms  m2l_alloc=0
+new_r1    precomputed_y  P=8 n=20000  m2l=1.3866 ms  step=29.3292 ms  m2l_alloc=0
+new_r1    dense          P=8 n=20000  m2l=1.0199 ms  step=29.1002 ms  m2l_alloc=0
+wrote MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_cuda/gate_026_12993753/new_r1/cases.csv  (16 cases)
+=== phase 2 round 1: OLD (pre-026) source
+MANIFEST=f3104332cd4132f3
+old_r1    concat         P=4 n=2000  m2l=0.3416 ms  step=4.299 ms  m2l_alloc=80
+old_r1    factored       P=4 n=2000  m2l=0.2007 ms  step=4.0736 ms  m2l_alloc=0
+old_r1    precomputed_y  P=4 n=2000  m2l=0.1314 ms  step=4.0723 ms  m2l_alloc=0
+old_r1    dense          P=4 n=2000  m2l=0.0458 ms  step=4.1526 ms  m2l_alloc=0
+old_r1    concat         P=4 n=20000  m2l=0.2576 ms  step=10.7063 ms  m2l_alloc=80
+old_r1    factored       P=4 n=20000  m2l=0.2046 ms  step=10.5173 ms  m2l_alloc=0
+old_r1    precomputed_y  P=4 n=20000  m2l=0.1346 ms  step=10.499 ms  m2l_alloc=0
+old_r1    dense          P=4 n=20000  m2l=0.0461 ms  step=10.5217 ms  m2l_alloc=0
+old_r1    concat         P=8 n=2000  m2l=3.0667 ms  step=8.2456 ms  m2l_alloc=160
+old_r1    factored       P=8 n=2000  m2l=2.4542 ms  step=7.709 ms  m2l_alloc=0
+old_r1    precomputed_y  P=8 n=2000  m2l=1.3557 ms  step=6.5603 ms  m2l_alloc=0
+old_r1    dense          P=8 n=2000  m2l=0.9832 ms  step=6.1948 ms  m2l_alloc=0
+old_r1    concat         P=8 n=20000  m2l=3.1704 ms  step=31.2489 ms  m2l_alloc=160
+old_r1    factored       P=8 n=20000  m2l=2.5199 ms  step=30.5813 ms  m2l_alloc=0
+old_r1    precomputed_y  P=8 n=20000  m2l=1.3859 ms  step=29.41 ms  m2l_alloc=0
+old_r1    dense          P=8 n=20000  m2l=1.0186 ms  step=28.9929 ms  m2l_alloc=0
+Precompiling FastMultipole...
+   5788.0 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_cuda/gate_026_12993753/old_r1/cases.csv  (16 cases)
+=== phase 2 round 2: NEW source
+MANIFEST=2f45fde7eee60f81
+new_r2    concat         P=4 n=2000  m2l=0.4059 ms  step=3.9287 ms  m2l_alloc=80
+new_r2    factored       P=4 n=2000  m2l=0.2035 ms  step=3.7281 ms  m2l_alloc=0
+new_r2    precomputed_y  P=4 n=2000  m2l=0.1334 ms  step=3.7895 ms  m2l_alloc=0
+new_r2    dense          P=4 n=2000  m2l=0.0435 ms  step=3.5875 ms  m2l_alloc=0
+new_r2    concat         P=4 n=20000  m2l=0.2523 ms  step=10.5505 ms  m2l_alloc=80
+new_r2    factored       P=4 n=20000  m2l=0.2064 ms  step=10.4504 ms  m2l_alloc=0
+new_r2    precomputed_y  P=4 n=20000  m2l=0.136 ms  step=10.3487 ms  m2l_alloc=0
+new_r2    dense          P=4 n=20000  m2l=0.0444 ms  step=10.3148 ms  m2l_alloc=0
+new_r2    concat         P=8 n=2000  m2l=3.0657 ms  step=8.2404 ms  m2l_alloc=160
+new_r2    factored       P=8 n=2000  m2l=2.463 ms  step=7.6671 ms  m2l_alloc=0
+new_r2    precomputed_y  P=8 n=2000  m2l=1.3569 ms  step=6.5647 ms  m2l_alloc=0
+new_r2    dense          P=8 n=2000  m2l=0.9849 ms  step=6.1847 ms  m2l_alloc=0
+new_r2    concat         P=8 n=20000  m2l=3.1726 ms  step=31.3109 ms  m2l_alloc=160
+new_r2    factored       P=8 n=20000  m2l=2.5305 ms  step=30.559 ms  m2l_alloc=0
+new_r2    precomputed_y  P=8 n=20000  m2l=1.411 ms  step=29.4111 ms  m2l_alloc=0
+new_r2    dense          P=8 n=20000  m2l=1.0198 ms  step=28.9367 ms  m2l_alloc=0
+Precompiling FastMultipole...
+   5941.5 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_cuda/gate_026_12993753/new_r2/cases.csv  (16 cases)
+=== phase 2 round 2: OLD (pre-026) source
+MANIFEST=f3104332cd4132f3
+old_r2    concat         P=4 n=2000  m2l=0.2897 ms  step=4.5475 ms  m2l_alloc=80
+old_r2    factored       P=4 n=2000  m2l=0.2015 ms  step=4.0745 ms  m2l_alloc=0
+old_r2    precomputed_y  P=4 n=2000  m2l=0.1315 ms  step=4.0588 ms  m2l_alloc=0
+old_r2    dense          P=4 n=2000  m2l=0.0455 ms  step=4.0287 ms  m2l_alloc=0
+old_r2    concat         P=4 n=20000  m2l=0.2557 ms  step=10.623 ms  m2l_alloc=80
+old_r2    factored       P=4 n=20000  m2l=0.2039 ms  step=10.5202 ms  m2l_alloc=0
+old_r2    precomputed_y  P=4 n=20000  m2l=0.1342 ms  step=10.4888 ms  m2l_alloc=0
+old_r2    dense          P=4 n=20000  m2l=0.0454 ms  step=10.4023 ms  m2l_alloc=0
+old_r2    concat         P=8 n=2000  m2l=3.0609 ms  step=8.2305 ms  m2l_alloc=160
+old_r2    factored       P=8 n=2000  m2l=2.4498 ms  step=7.6619 ms  m2l_alloc=0
+old_r2    precomputed_y  P=8 n=2000  m2l=1.343 ms  step=6.5662 ms  m2l_alloc=0
+old_r2    dense          P=8 n=2000  m2l=0.9846 ms  step=6.1962 ms  m2l_alloc=0
+old_r2    concat         P=8 n=20000  m2l=3.1718 ms  step=31.1514 ms  m2l_alloc=160
+old_r2    factored       P=8 n=20000  m2l=2.5191 ms  step=30.6046 ms  m2l_alloc=0
+old_r2    precomputed_y  P=8 n=20000  m2l=1.3857 ms  step=29.4075 ms  m2l_alloc=0
+old_r2    dense          P=8 n=20000  m2l=1.0185 ms  step=29.029 ms  m2l_alloc=0
+Precompiling FastMultipole...
+   5867.8 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_cuda/gate_026_12993753/old_r2/cases.csv  (16 cases)
+GATE_RUNS_EXIT=0
+=== phase 3: verdict (new vs old, round 1)
+new cases:            16
+matched to baseline:  16
+unmatched (no base):  0
+m2l_ms_median    ratios: n=16  geomean=0.9814  min=0.7986  max=1.006
+step_ms_median   ratios: n=16  geomean=0.9776  min=0.8967  max=1.0244
+construction_ms ratio (report-only): geomean=1.1805  max=2.8029
+
+BLOCKERS  >10% slower  [m2l_ms_median] (0)
+
+FLAGGED   >5% slower   [m2l_ms_median] (0)
+
+BLOCKERS  >10% slower  [step_ms_median] (0)
+
+FLAGGED   >5% slower   [step_ms_median] (0)
+
+ALLOCATION regressions (0)
+
+COUNTER violations (0)
+m2l_ms_median    verdict: PASS
+step_ms_median   verdict: PASS
+
+VERDICT: PASS
+VERDICT_R1_EXIT=0
+=== phase 3: verdict (new vs old, round 2)
+new cases:            16
+matched to baseline:  16
+unmatched (no base):  0
+m2l_ms_median    ratios: n=16  geomean=1.0221  min=0.9574  max=1.4011
+step_ms_median   ratios: n=16  geomean=0.972  min=0.8639  max=1.0051
+construction_ms ratio (report-only): geomean=1.1949  max=2.7517
+
+BLOCKERS  >10% slower  [m2l_ms_median] (1)
+  flat|concat|1|3|2000|0|uniform|Float64|false|4  ratio=1.4011
+
+FLAGGED   >5% slower   [m2l_ms_median] (0)
+
+BLOCKERS  >10% slower  [step_ms_median] (0)
+
+FLAGGED   >5% slower   [step_ms_median] (0)
+
+ALLOCATION regressions (0)
+
+COUNTER violations (0)
+m2l_ms_median    verdict: FAIL
+step_ms_median   verdict: PASS
+
+VERDICT: FAIL
+VERDICT_R2_EXIT=1
+GATE_DIR=MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_cuda/gate_026_12993753

@@ -1,5 +1,15 @@
 #------- functions that should be overloaded for each user-defined system for use in the FMM -------#
 
+"""
+    residency(system)
+
+Return whether a system's canonical FastMultipole buffers live on the host or on
+the active device. Systems are host-resident by default. Device-backed systems
+may opt into CUDA device-native materialization by overloading this method to
+return [`DeviceResident()`](@ref).
+"""
+residency(system) = HostResident()
+
 #--- buffer functions ---#
 
 """
@@ -21,6 +31,42 @@ Note that any system acting only as a target need not overload `source_system_to
 function source_system_to_buffer!(buffer, i_buffer, system, i_body)
     throw("source_system_to_buffer! not overloaded for type $(typeof(system))")
 end
+
+"""
+    source_system_to_device_buffer!(device_buffer, system, sort_index)
+
+Deprecated CUDA bulk analogue of [`source_system_to_buffer!`](@ref). New
+device-native source systems should define `residency(system) = DeviceResident()`
+and overload [`source_to_buffer!`](@ref) for their device buffer type.
+
+Implementations must write the same column layout as `source_system_to_buffer!`:
+rows `1:3` contain position, row `4` contains radius,
+rows `5:4+strength_dims(system)` contain strength, and any remaining rows contain
+system-specific data. Column `i` must contain body `sort_index[i]`.
+
+This hook is intentionally bulk-oriented. CUDA implementations should use
+kernels, broadcast, `copyto!`, or other device-to-device operations rather than
+scalar host loops. Systems that do not overload this method remain supported
+through the CPU `source_system_to_buffer!` path followed by one host-to-device
+upload.
+"""
+function source_system_to_device_buffer! end
+
+"""
+    target_system_from_device_buffer!(target_system, device_output_buffer, sort_index, derivatives_switch)
+
+Deprecated CUDA bulk analogue of target writeback from FastMultipole's canonical
+device-resident output buffer. New device-native target systems should define
+`residency(system) = DeviceResident()` and overload [`buffer_to_target!`](@ref)
+for their device output buffer type.
+
+Column `i` of `device_output_buffer` corresponds to body `sort_index[i]`, in the
+same sorted body order used by the radix lifecycle. Implementations should write
+the requested output channels described by `derivatives_switch` using
+device-native operations. Systems without this method remain supported through a
+host destination buffer followed by the existing target writeback path.
+"""
+function target_system_from_device_buffer! end
 
 """
     data_per_body(system::{UserDefinedSystem})

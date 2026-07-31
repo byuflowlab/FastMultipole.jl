@@ -1,0 +1,221 @@
+task=026 node=m12-1-25 cpus=64 job=12954303 phase=accuracy
+source_hash=34106787d876f81998fcf235af459f82b76eec11513b72460a64a1c3250749d3
+Linux m12-1-25 5.14.0-570.120.1.el9_6.x86_64 #1 SMP PREEMPT_DYNAMIC Wed Jun 3 21:41:02 EDT 2026 x86_64 x86_64 x86_64 GNU/Linux
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           48 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  128
+On-line CPU(s) list:                     0-127
+Vendor ID:                               AuthenticAMD
+Model name:                              AMD EPYC 7763 64-Core Processor
+CPU family:                              25
+Model:                                   1
+Thread(s) per core:                      1
+Core(s) per socket:                      64
+Socket(s):                               2
+Stepping:                                1
+BogoMIPS:                                4890.78
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 invpcid cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin brs arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold v_vmsave_vmload vgif v_spec_ctrl umip pku ospke vaes vpclmulqdq rdpid overflow_recov succor smca debug_swap
+Virtualization:                          AMD-V
+L1d cache:                               4 MiB (128 instances)
+L1i cache:                               4 MiB (128 instances)
+L2 cache:                                64 MiB (128 instances)
+L3 cache:                                512 MiB (16 instances)
+NUMA node(s):                            8
+NUMA node0 CPU(s):                       0-15
+NUMA node1 CPU(s):                       16-31
+NUMA node2 CPU(s):                       32-47
+NUMA node3 CPU(s):                       48-63
+NUMA node4 CPU(s):                       64-79
+NUMA node5 CPU(s):                       80-95
+NUMA node6 CPU(s):                       96-111
+NUMA node7 CPU(s):                       112-127
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Mitigation; Safe RET
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Vulnerable: No microcode
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+julia version 1.11.7
+=== focused validation
+Precompiling FastMultipole...
+    485.5 ms  ✓ Unicode
+    524.7 ms  ✓ Zlib_jll
+    651.3 ms  ✓ Base64
+    604.0 ms  ✓ Printf
+    663.6 ms  ✓ CodecZlib
+   2256.7 ms  ✓ Dates
+    672.5 ms  ✓ TOML
+    922.9 ms  ✓ Preferences
+    662.7 ms  ✓ PrecompileTools
+    882.2 ms  ✓ JLLWrappers
+    850.2 ms  ✓ Libiconv_jll
+    958.0 ms  ✓ XML2_jll
+    997.2 ms  ✓ LightXML
+   1568.1 ms  ✓ WriteVTK
+   6369.8 ms  ✓ StaticArrays
+   1226.9 ms  ✓ FillArrays → FillArraysStaticArraysExt
+   6159.5 ms  ✓ FastMultipole
+  17 dependencies successfully precompiled in 20 seconds. 4 already precompiled.
+Test Summary:                          | Pass  Total   Time
+hierarchical rigid host M2L (task 026) |  399    399  49.9s
+=== accuracy selected_window=4
+=== bt1_flat_12_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float32_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float32_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float64_lhfalse_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell3_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell4_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_12_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_12_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_flat_3_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_flat_3_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_12_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+=== bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue.csv
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/raw/12954303/bt1_hierarchical_3_precomputed_y_n5000_ell5_w4_Float64_lhtrue_uniform_acctrue_levels.csv
+selected_window=4
+wrote /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/summary/12954303
+task 026 campaign complete: /home/rander39/FastMultipole-026/MATRIX_OPERATOR_REFACTOR/data/hierarchical_m2l_host/summary/12954303

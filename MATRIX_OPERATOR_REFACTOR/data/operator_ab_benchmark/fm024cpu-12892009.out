@@ -1,0 +1,306 @@
+=== task 024 CPU environment
+node=m12-2-17 cpus=64 job=12892009
+Linux m12-2-17 5.14.0-570.120.1.el9_6.x86_64 #1 SMP PREEMPT_DYNAMIC Wed Jun 3 21:41:02 EDT 2026 x86_64 x86_64 x86_64 GNU/Linux
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           48 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  128
+On-line CPU(s) list:                     0-127
+Vendor ID:                               AuthenticAMD
+Model name:                              AMD EPYC 7763 64-Core Processor
+CPU family:                              25
+Model:                                   1
+Thread(s) per core:                      1
+Core(s) per socket:                      64
+Socket(s):                               2
+Stepping:                                1
+BogoMIPS:                                4890.76
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 invpcid cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin brs arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold v_vmsave_vmload vgif v_spec_ctrl umip pku ospke vaes vpclmulqdq rdpid overflow_recov succor smca debug_swap
+Virtualization:                          AMD-V
+L1d cache:                               4 MiB (128 instances)
+L1i cache:                               4 MiB (128 instances)
+L2 cache:                                64 MiB (128 instances)
+L3 cache:                                512 MiB (16 instances)
+NUMA node(s):                            8
+NUMA node0 CPU(s):                       0-15
+NUMA node1 CPU(s):                       16-31
+NUMA node2 CPU(s):                       32-47
+NUMA node3 CPU(s):                       48-63
+NUMA node4 CPU(s):                       64-79
+NUMA node5 CPU(s):                       80-95
+NUMA node6 CPU(s):                       96-111
+NUMA node7 CPU(s):                       112-127
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Mitigation; Safe RET
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Vulnerable: No microcode
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+julia version 1.11.7
+git_commit=4d5ea4ee1f3a303e4df1dba19f8e160766ac65b1
+git_tree=37ea598b9100c7a617c334b60736e5f45114f9bd
+git_worktree=dirty
+source_manifest=c37ecc3acdd9ca70f873f9c4852be22a22e46b69f38f6e650792fca52879e31f
+=== focused host validation
+Precompiling FastMultipole...
+   6613.3 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 9 seconds. 20 already precompiled.
+Test Summary:                                | Pass  Total     Time
+radix fmm! production integration (task 023) |   63     63  1m07.2s
+Precompiling FastMultipole...
+   6203.2 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+Test Summary:                               |  Pass  Total   Time
+factored resident M2L lifecycle (task 023a) | 51065  51065  18.4s
+Test Summary:                            | Pass  Total  Time
+radix fmm! mock time stepping (task 023) |  694    694  2.2s
+Test Summary:                          | Pass  Total   Time
+precomputed-y resident M2L (task 023c) |   73     73  32.3s
+Precompiling FastMultipole...
+   6122.8 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+Test Summary:                     | Pass  Total   Time
+dense translation M2L (task 023e) |  100    100  56.0s
+Test Summary:                             | Pass  Total  Time
+dense translation M2L P=8 direct accuracy |    4      4  3.4s
+=== cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p4_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p4_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p4_n2000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6471.6 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p4_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p4_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p4_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p8_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p8_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p8_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p8_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p8_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p8_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p12_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p12_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p12_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p12_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p12_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhfalse_p12_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p4_n150_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6202.3 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p4_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p4_n2000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6316.6 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p4_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p4_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p4_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p8_n150_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6233.1 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p8_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p8_n2000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6243.4 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p8_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p8_n20000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6260.9 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 9 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p8_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p12_n150_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6187.8 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p12_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p12_n2000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6247.6 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p12_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p12_n20000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6630.2 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 9 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float32_lhtrue_p12_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p4_n150_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6379.0 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p4_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p4_n2000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6199.9 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p4_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p4_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p4_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p8_n150_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6197.5 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p8_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p8_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p8_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p8_n20000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6341.2 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p8_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p12_n150_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6176.2 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p12_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p12_n2000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6462.5 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p12_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p12_n20000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6170.1 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhfalse_p12_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p4_n150_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6269.2 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p4_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p4_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p4_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p4_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p4_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p8_n150_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6333.3 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p8_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p8_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p8_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p8_n20000_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   6394.8 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 8 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p8_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p12_n150_ell3_20260724-150801.csv
+Precompiling FastMultipole...
+   7213.7 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 9 seconds. 20 already precompiled.
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p12_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p12_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p12_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p12_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_uniform_Float64_lhtrue_p12_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas1_clustered_Float64_lhfalse_p4_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_clustered_Float64_lhfalse_p4_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas1_clustered_Float64_lhfalse_p8_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_clustered_Float64_lhfalse_p8_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas1_clustered_Float64_lhfalse_p12_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_clustered_Float64_lhfalse_p12_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas1_clustered_Float64_lhtrue_p4_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_clustered_Float64_lhtrue_p4_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas1_clustered_Float64_lhtrue_p8_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_clustered_Float64_lhtrue_p8_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas1_clustered_Float64_lhtrue_p12_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas1_clustered_Float64_lhtrue_p12_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p4_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p4_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p4_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p4_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p4_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p4_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p8_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p8_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p8_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p8_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p8_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p8_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p12_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p12_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p12_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p12_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p12_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhfalse_p12_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p4_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p4_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p4_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p4_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p4_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p4_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p8_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p8_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p8_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p8_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p8_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p8_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p12_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p12_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p12_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p12_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p12_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float32_lhtrue_p12_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p4_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p4_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p4_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p4_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p4_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p4_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p8_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p8_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p8_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p8_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p8_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p8_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p12_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p12_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p12_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p12_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p12_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhfalse_p12_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p4_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p4_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p4_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p4_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p4_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p4_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p8_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p8_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p8_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p8_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p8_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p8_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p12_n150_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p12_n150_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p12_n2000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p12_n2000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p12_n20000_ell3_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_uniform_Float64_lhtrue_p12_n20000_ell3_20260724-150801.csv
+=== cpu_m12-2-17_blas64_clustered_Float64_lhfalse_p4_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_clustered_Float64_lhfalse_p4_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas64_clustered_Float64_lhfalse_p8_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_clustered_Float64_lhfalse_p8_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas64_clustered_Float64_lhfalse_p12_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_clustered_Float64_lhfalse_p12_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas64_clustered_Float64_lhtrue_p4_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_clustered_Float64_lhtrue_p4_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas64_clustered_Float64_lhtrue_p8_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_clustered_Float64_lhtrue_p8_n20000_ell4_20260724-150801.csv
+=== cpu_m12-2-17_blas64_clustered_Float64_lhtrue_p12_n20000_ell4_20260724-150801.csv
+wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/raw/cpu_m12-2-17_blas64_clustered_Float64_lhtrue_p12_n20000_ell4_20260724-150801.csv
+validated 504 rows from 126 files; wrote /home/rander39/FastMultipole-024/MATRIX_OPERATOR_REFACTOR/data/operator_ab_benchmark/summary
