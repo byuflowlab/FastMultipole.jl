@@ -351,6 +351,73 @@ nearfield 38.37 ms (59%), M2L 21.61 ms (33%, leaf 19.60), everything else ~4.6 m
 The nearfield is now the majority of the step on its own, so lever 1 is where any
 further material gain has to come from.
 
+### Lever 1 (jobs 13015315 / 13015316 / 13015336): -26.5 ms on the F32 verdict path
+
+The nearfield kernel `_cuda_direct_pairs_output_kernel!` was one thread per
+cell-pair — a serial ~(30x30)-interaction dependent chain with `inv(sqrt)` — at ~4%
+of the FP32 peak rate. It is now **warp-per-pair with a grid-stride** (lanes stride
+the target bodies, the source loop is lane-uniform so body loads broadcast; block
+count capped by a new `DIRECT_CUDA_MAX_BLOCKS` = 16384), and `inv(sqrt)` became
+`_cuda_fast_rsqrt`: hardware `rsqrt.approx` in F32, plus two Newton refinements in
+F64 because raw `CUDA.rsqrt(::Float64)` is only ~1e-7 accurate — using it bare would
+have silently degraded the F64 path to single-precision quality.
+
+Riders in the same approved cycle: L2B warp-per-cell (0.96 -> 0.72 ms F64); the
+per-step `CUDA.zeros` in `finalize_cuda_radix_output!` replaced by a cached device
+buffer (also removes a double zero-fill); dead `_cuda_find_cell_for_sorted_body`
+deleted. A B2M warp-per-cell rider was measured **slower** (1.02 -> 2.03 ms F64 —
+113 registers and 15/32 active lanes at P=4, trace in fm028-13015316.out) and was
+reverted; the measurement is recorded in a comment on the kernel.
+
+| | before (13010174) | after (13015336) | delta |
+|---|---|---|---|
+| nearfield exact split, F32 | 37.7 ms | **11.45 ms** | **3.3x** |
+| nearfield exact split, F64 | 51.9 ms | 37.6 ms | 1.38x |
+| L2B alone, F64 | 0.96 ms | 0.72 ms | — |
+| F32 verdict step | 64.56 ms | **38.04 ms** | **-41%** |
+| F64 verdict step | 83.38 ms | 68.99 ms | -17% |
+| gradient rel RMS | 3.186e-4 | 3.186e-4 | unchanged |
+
+Scoped 20-33 ms, delivered 26.5 ms — inside the scoped band. The F64/F32 asymmetry
+is informative: with dispatch and parallelism fixed, the remaining F64 cost is
+genuine FP64 arithmetic throughput (rsqrt Newton chain + FP64 vector rate), i.e. the
+F64 nearfield is now honestly compute-bound, while F32 — the verdict precision —
+runs at 422 G interactions/s (4.83e9 / 11.45 ms), 3.4x the pre-lever rate.
+
+Correctness: new `_cuda_fast_rsqrt accuracy` testset (max relative error 1e-14 F64 /
+5e-7 F32 over 60 decades) and `nearfield warp-per-pair parity` testset (16 tests:
+caps typemax/3/1 forcing deep grid-strides, F64+F32, n=2000 and n=40 for
+ragged/empty cells). All gates green on all three jobs.
+
+### Leaf-M2L mechanism resolved (derisk section D): loads/compute, not atomics
+
+New A/B at fixed work on the captured leaf window (31,307,680 routes), comparing the
+production fused kernel against script-local variants with plain racing stores
+(same loads, no atomics) and no stores at all (loads+flops only):
+
+| | atomic | plain store | no store |
+|---|---|---|---|
+| F64 | 21.07 ms | 25.15 ms | 24.35 ms |
+| F32 | 17.21 ms | 19.37 ms | 19.00 ms |
+
+Atomics are **not** the limit — they are slightly *faster* than plain racing stores,
+and removing every write still leaves >95% of the cost. The leaf M2L is bound by the
+operator/multipole **loads and the matvec compute** (each 32-thread block re-reads
+its route's D x D operator column from L2 per route). The right next lever is data
+reuse — shared-memory operator tiles with class-batched routes per block — not
+atomic elimination.
+
+### Standing after lever 1
+
+**F32 verdict step 38.04 ms = 3.8x over target** (9.1x -> 7.0x -> 6.5x -> 3.8x).
+Budget: leaf M2L 19.6 ms (52%), nearfield 11.45 ms (30%), L2B 0.4 ms, everything
+else ~6 ms. The leaf M2L is now the dominant stage, with a measured mechanism and a
+concrete rewrite direction. Remaining structural candidates beyond it: two-stream
+nearfield/far-field overlap (nearfield reads only bodies + direct pairs and writes
+`output` atomically, so it is independent of the whole far-field chain; needs the
+blocking-sync/pageable-copy cleanup first) and a counting sort replacing the bitonic
+`sortperm` in the grid rebuild (~2 ms of the 2.4-2.7 ms grid stage).
+
 ## 7. Methodology, anchoring, and threats to validity
 
 - **Harness anchored at n=10⁶.** The flat dense ell=4 row reproduces the 024b record's

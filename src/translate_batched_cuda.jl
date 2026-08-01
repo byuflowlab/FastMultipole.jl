@@ -995,6 +995,10 @@ function _cuda_b2m_kernel!(phi, source_bodies, cell_centers, cell_ranges, P, nce
     return nothing
 end
 
+# Task 028 note: a warp-per-cell variant (lanes striding the (n, m) list) was
+# measured SLOWER on H200 (1.02 -> 2.03 ms F64 at n=1e6/ell=5, job 13015315:
+# 113 registers and only 15 of 32 active lanes at P=4), so the original
+# thread-per-cell form is retained.
 function _cuda_b2m_leaf_nodes_kernel!(phi, source_bodies, cell_centers, cell_ranges,
         leaf_to_node, P, ncell)
     i_cell = (blockIdx().x - 1) * blockDim().x + threadIdx().x
@@ -1393,71 +1397,101 @@ function _zero_cuda_nonleaf_multipoles!(state::DeviceResidentRadixState{TF,B,LH}
     return state
 end
 
-function _cuda_find_cell_for_sorted_body(cell_ranges, sorted_i)
-    @inbounds for cell in 1:size(cell_ranges, 2)
-        first = cell_ranges[1, cell]
-        count = cell_ranges[2, cell]
-        if sorted_i >= first && sorted_i < first + count
-            return cell
-        end
-    end
-    return 0
+# CUDA.rsqrt lowers to rsqrt.approx (~1e-7 relative error in Float64, i.e.
+# single-precision quality), so the Float64 method refines it with two Newton
+# steps back to ~1-2 ulp — still far cheaper than the sqrt + divide it replaces.
+# Callers must guard x > 0: the Newton step turns rsqrt(0) = Inf into NaN.
+@inline _cuda_fast_rsqrt(x::Float32) = CUDA.rsqrt(x)
+@inline function _cuda_fast_rsqrt(x::Float64)
+    y = CUDA.rsqrt(x)
+    hx = 0.5 * x
+    y *= 1.5 - hx * y * y
+    y *= 1.5 - hx * y * y
+    return y
 end
 
+# Task 028 lever 1: warp-per-pair, grid-stride. The original kernel gave each
+# thread a whole cell-pair — a serial ~(30x30)-interaction dependent chain with
+# warp divergence on ragged cell counts, measured at ~4% of the FP32 peak rate.
+# Now each warp owns one pair: lanes stride the target bodies, so the inner
+# source loop is lane-uniform (the four loads of body `j` broadcast from cache)
+# and the per-thread chain shrinks by ~32x. Warps advance by the total warp
+# count, so the block count is capped by DIRECT_CUDA_MAX_BLOCKS instead of
+# scaling with npairs. `_cuda_fast_rsqrt` replaces inv(sqrt): hardware-rate in
+# Float32, Newton-refined approx in Float64 (the stage was FP64-rsqrt-limited).
+# Accumulation stays 4 atomics per (pair, target body) — a target cell appears
+# in many pairs, so plain stores would race across warps.
 function _cuda_direct_pairs_output_kernel!(output, source_bodies, cell_ranges,
         direct_targets, direct_sources, npairs)
-    pair_i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    pair_i > npairs && return nothing
-    target_cell = direct_targets[pair_i]
-    source_cell = direct_sources[pair_i]
-    tfirst = cell_ranges[1, target_cell]
-    tcount = cell_ranges[2, target_cell]
-    sfirst = cell_ranges[1, source_cell]
-    scount = cell_ranges[2, source_cell]
-    c = inv(eltype(output)(4) * eltype(output)(π))
-    @inbounds for i in tfirst:(tfirst + tcount - 1)
-        xi = source_bodies[1, i]
-        yi = source_bodies[2, i]
-        zi = source_bodies[3, i]
-        u = zero(eltype(output))
-        gx = zero(eltype(output))
-        gy = zero(eltype(output))
-        gz = zero(eltype(output))
-        for j in sfirst:(sfirst + scount - 1)
-            i == j && continue
-            dx = xi - source_bodies[1, j]
-            dy = yi - source_bodies[2, j]
-            dz = zi - source_bodies[3, j]
-            r2 = dx * dx + dy * dy + dz * dz
-            if r2 > zero(r2)
-                invr = inv(sqrt(r2))
-                q = source_bodies[5, j] * c
-                u += q * invr
-                invr3 = invr * invr * invr
-                gx -= q * dx * invr3
-                gy -= q * dy * invr3
-                gz -= q * dz * invr3
+    T = eltype(output)
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    pair_i = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    warp_stride = gridDim().x * warps_per_block
+    c = inv(T(4) * T(π))
+    @inbounds while pair_i <= npairs
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + lane
+        while i <= tlast
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            u = zero(T)
+            gx = zero(T)
+            gy = zero(T)
+            gz = zero(T)
+            for j in sfirst:slast
+                i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                if r2 > zero(r2)
+                    invr = _cuda_fast_rsqrt(r2)
+                    q = source_bodies[5, j] * c
+                    u += q * invr
+                    invr3 = invr * invr * invr
+                    gx -= q * dx * invr3
+                    gy -= q * dy * invr3
+                    gz -= q * dz * invr3
+                end
             end
+            CUDA.@atomic output[1, i] += u
+            CUDA.@atomic output[2, i] += gx
+            CUDA.@atomic output[3, i] += gy
+            CUDA.@atomic output[4, i] += gz
+            i += 32
         end
-        CUDA.@atomic output[1, i] += u
-        CUDA.@atomic output[2, i] += gx
-        CUDA.@atomic output[3, i] += gy
-        CUDA.@atomic output[4, i] += gz
+        pair_i += warp_stride
     end
     return nothing
 end
 
+# Task 028 rider: warp-per-cell (was one thread per cell looping its ~30 bodies
+# serially, i.e. only ncell threads of parallelism). Lanes stride the cell's
+# bodies; each body belongs to exactly one cell and one lane, so the `+=` into
+# `output` stays non-atomic.
 function _cuda_l2b_output_kernel!(output, source_bodies, cell_centers, cell_ranges,
         leaf_to_node, local_phi, local_chi, P_phi, P_active, lhv, ncell)
-    cell = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    cell = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
     cell > ncell && return nothing
     node = leaf_to_node[cell]
     first = cell_ranges[1, cell]
-    count = cell_ranges[2, cell]
+    last = first + cell_ranges[2, cell] - 1
     cx = cell_centers[1, cell]
     cy = cell_centers[2, cell]
     cz = cell_centers[3, cell]
-    @inbounds for i in first:(first + count - 1)
+    i = first + lane
+    @inbounds while i <= last
         scalar_potential, gx, gy, gz = _resident_local_eval_flat(
             local_phi, local_chi, node,
             source_bodies[1, i] - cx,
@@ -1469,6 +1503,7 @@ function _cuda_l2b_output_kernel!(output, source_bodies, cell_centers, cell_rang
         output[2, i] += gx
         output[3, i] += gy
         output[4, i] += gz
+        i += 32
     end
     return nothing
 end
@@ -2334,6 +2369,12 @@ const DENSE_CUDA_FUSED = Ref(true)
 # H200's 132 SMs x 2048 = 270336 thread capacity: still oversubscribed.
 const DENSE_CUDA_FUSED_MAX_BLOCKS = Ref(16384)
 
+# Grid-stride cap for the warp-per-pair nearfield kernel (task 028 lever 1),
+# same role as DENSE_CUDA_FUSED_MAX_BLOCKS above: blocks = min(cld(npairs,
+# warps_per_block), this cap), and each warp walks pairs `total_warps` apart.
+# At n=1e6/ell=5 there are 5,189,728 direct cell-pairs of ~30x30 bodies.
+const DIRECT_CUDA_MAX_BLOCKS = Ref(16384)
+
 # Gather the stacked degree-major [phi; chi] slab column j from the source column
 # `src_cols[j]`, mapping degree-major row i to flat storage through phi/chi_flat_idx.
 function _cuda_dense_gather_kernel!(slab, phi, chi, phi_flat_idx, chi_flat_idx,
@@ -2819,7 +2860,8 @@ function _launch_cuda_resident_l2b!(state::DeviceResidentRadixState{TF,B,LH}) wh
     fill!(state.output, zero(TF))
     threads = 128
     npairs = state.counts.n_direct
-    direct_blocks = cld(npairs, threads)
+    # warp-per-pair (task 028 lever 1): 4 warps per 128-thread block
+    direct_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
     if direct_blocks > 0
         CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_output_kernel!(
             state.output, state.source_bodies, state.cell_ranges,
@@ -2829,7 +2871,8 @@ function _launch_cuda_resident_l2b!(state::DeviceResidentRadixState{TF,B,LH}) wh
     P_phi = state.invariant_cache.basis_info.orders.P_phi
     P_active = state.invariant_cache.basis_info.orders.P_active
     ncell = state.counts.n_cells
-    l2b_blocks = cld(ncell, threads)
+    # warp-per-cell (task 028 rider): 4 warps per 128-thread block
+    l2b_blocks = cld(ncell, threads ÷ 32)
     if l2b_blocks > 0
         CUDA.@cuda threads=threads blocks=l2b_blocks _cuda_l2b_output_kernel!(
             state.output, state.source_bodies, state.cell_centers, state.cell_ranges,
@@ -3061,9 +3104,25 @@ function buffer_to_target!(target_system, device_output_buffer::CUDA.AnyCuArray,
     ))
 end
 
+# Per-system cached device scatter buffer for the recurring finalize (task 028
+# rider): CUDA.zeros here was a fresh pool allocation plus memset every step,
+# and the scatter copy zero-fills the buffer again anyway. With a cache dict the
+# buffer is allocated (undef) once per (rows, n_bodies) layout and reused.
+function _cuda_cached_target_buffer(cache, isys::Integer, ::Type{TF},
+        rows::Integer, nb::Integer) where TF
+    cache === nothing && return CUDA.CuArray{TF}(undef, rows, nb)
+    buf = get(cache, isys, nothing)
+    if !(buf isa CUDA.CuArray{TF,2}) || size(buf) != (rows, nb)
+        buf = CUDA.CuArray{TF}(undef, rows, nb)
+        cache[isys] = buf
+    end
+    return buf
+end
+
 function finalize_cuda_radix_output!(state::DeviceResidentRadixState{TF}, target_systems;
         derivatives_switches=DerivativesSwitch(true, true, false, to_tuple(target_systems)),
-        host_output_staging=nothing, target_buffers=nothing) where TF
+        host_output_staging=nothing, target_buffers=nothing,
+        device_target_buffers=nothing) where TF
     _require_cuda_radix_available()
     systems = to_tuple(target_systems)
     switches = to_tuple(derivatives_switches)
@@ -3073,7 +3132,8 @@ function finalize_cuda_radix_output!(state::DeviceResidentRadixState{TF}, target
     host_output = nothing
     for (isys, target_system, switch) in zip(eachindex(systems), systems, switches)
         if residency(target_system) isa DeviceResident
-            target_buffer = CUDA.zeros(TF, target_buffer_rows(switch), get_n_bodies(target_system))
+            target_buffer = _cuda_cached_target_buffer(device_target_buffers, isys,
+                TF, target_buffer_rows(switch), get_n_bodies(target_system))
             _copy_radix_output_to_device_target_buffer!(
                 target_buffer, state.output, state.body_perm, state.body_system_ids,
                 state.body_indices, isys, switch, state.counts.n_bodies,
@@ -3593,6 +3653,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         host_body_system=_pin_host_array(zeros(Int, maxn)),
         host_body_index=_pin_host_array(zeros(Int, maxn)),
         host_output=_pin_host_array(zeros(TF, 4, maxn)),
+        # per-system device scatter buffers for the recurring finalize (028 rider)
+        device_target_buffers=Dict{Int,Any}(),
     )
     cache = RadixFMMCache{TF,LH}(
         P, ell, x_min, h0, maxn, true, options, stencil_policy,
@@ -3897,7 +3959,8 @@ function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switche
     run_cuda_radix_lifecycle!(cache.state)
     finalize_cuda_radix_output!(cache.state, targets; derivatives_switches=switches,
         host_output_staging=cache.device_ctx.host_output,
-        target_buffers=_radix_cache_target_buffers!(cache, switches))
+        target_buffers=_radix_cache_target_buffers!(cache, switches),
+        device_target_buffers=cache.device_ctx.device_target_buffers)
     return cache
 end
 

@@ -227,4 +227,147 @@ let
     GC.gc(); CUDA.reclaim()
 end
 
+# ---- D. leaf M2L: atomic-throughput vs bandwidth A/B (028 lever-2 follow-up) --
+#
+# After the lever-2 grid-stride fix the leaf M2L became precision-SENSITIVE
+# (23.27 ms F64 vs 19.60 ms F32), i.e. limited by bandwidth or by atomic
+# throughput (~500M atomic accumulations/step); the two were indistinguishable.
+# Discriminator: relaunch the leaf window's fused kernel on throwaway locals
+# with (a) the production atomics, (b) plain stores (same loads/flops/traffic,
+# no atomics; results are garbage — timing only), (c) no stores at all
+# (loads+flops only). near(b) ≈ (a) → not atomic-bound; (b) ≪ (a) → atomic-bound.
+
+function _derisk_fused_kernel_store!(loc_phi, loc_chi, ops, route_class,
+        route_sources, route_targets, mp_phi, mp_chi, phi_flat_idx, chi_flat_idx,
+        ndof_phi, src_scale, tgt_scale, lcol, n_routes, ::Val{LH}) where LH
+    T = eltype(ops)
+    D = size(ops, 1)
+    tid = threadIdx().x
+    nthreads = blockDim().x
+    shm = CUDA.CuDynamicSharedArray(T, D)
+    j = blockIdx().x
+    @inbounds while j <= n_routes
+        src_col = route_sources[j]
+        k = Int(route_class[j])
+        tgt_col = route_targets[j]
+        i = tid
+        while i <= D
+            if i <= ndof_phi
+                shm[i] = mp_phi[phi_flat_idx[i], src_col] * src_scale[i, lcol]
+            elseif LH
+                shm[i] = mp_chi[chi_flat_idx[i - ndof_phi], src_col] * src_scale[i, lcol]
+            else
+                shm[i] = zero(T)
+            end
+            i += nthreads
+        end
+        CUDA.sync_threads()
+        r = tid
+        while r <= D
+            acc = zero(T)
+            for i in 1:D
+                acc += ops[r, i, k] * shm[i]
+            end
+            acc *= tgt_scale[r, lcol]
+            # plain racing stores: identical loads and address stream, no atomics
+            if r <= ndof_phi
+                loc_phi[phi_flat_idx[r], tgt_col] = acc
+            elseif LH
+                loc_chi[chi_flat_idx[r - ndof_phi], tgt_col] = acc
+            end
+            r += nthreads
+        end
+        CUDA.sync_threads()
+        j += gridDim().x
+    end
+    return nothing
+end
+
+function _derisk_fused_kernel_nostore!(loc_phi, loc_chi, ops, route_class,
+        route_sources, route_targets, mp_phi, mp_chi, phi_flat_idx, chi_flat_idx,
+        ndof_phi, src_scale, tgt_scale, lcol, n_routes, ::Val{LH}) where LH
+    T = eltype(ops)
+    D = size(ops, 1)
+    tid = threadIdx().x
+    nthreads = blockDim().x
+    shm = CUDA.CuDynamicSharedArray(T, D)
+    j = blockIdx().x
+    @inbounds while j <= n_routes
+        src_col = route_sources[j]
+        k = Int(route_class[j])
+        i = tid
+        while i <= D
+            if i <= ndof_phi
+                shm[i] = mp_phi[phi_flat_idx[i], src_col] * src_scale[i, lcol]
+            elseif LH
+                shm[i] = mp_chi[chi_flat_idx[i - ndof_phi], src_col] * src_scale[i, lcol]
+            else
+                shm[i] = zero(T)
+            end
+            i += nthreads
+        end
+        CUDA.sync_threads()
+        r = tid
+        while r <= D
+            acc = zero(T)
+            for i in 1:D
+                acc += ops[r, i, k] * shm[i]
+            end
+            acc *= tgt_scale[r, lcol]
+            # defeat DCE without a memory write on any realizable value
+            acc == T(Inf) && (loc_phi[1, route_targets[j]] = acc)
+            r += nthreads
+        end
+        CUDA.sync_threads()
+        j += gridDim().x
+    end
+    return nothing
+end
+
+println("\n", "="^78)
+println("D. LEAF M2L ATOMIC vs BANDWIDTH A/B  (ell=5, K=$K, hier12/dense)")
+println("="^78)
+println(@sprintf("%-8s %10s %12s %12s %12s", "prec", "routes", "atomic_ms",
+    "store_ms", "nostore_ms"))
+for TF in (Float64, Float32)
+    sys, cache = build(TF, 5)
+    state = cache.state
+    hctx = cache.device_ctx.hierarchical_ctx
+    ws = state.scratch
+    plan = hctx.apply_plan
+    L = hctx.ell
+    noffsets = hctx.noffsets
+    if noffsets > hctx.window_classes
+        println("SKIP $(TF): leaf level spans multiple windows (noffsets=$noffsets > K)")
+        continue
+    end
+    # regenerate the (single) leaf-level window into the reusable route buffers
+    n = FM._cuda_hier_generate_window!(state, hctx, plan.route_class, L, 1,
+        noffsets, 0)
+    FM._cuda_hier_refresh_dense_window!(plan, hctx, 1, noffsets, n)
+    state.counts.n_routes = n
+    scratch_phi = CUDA.zeros(TF, size(state.locals.phi))
+    scratch_chi = CUDA.zeros(TF, size(state.locals.chi))
+    lcol = L - 1
+    threads = min(256, cld(plan.ndof, 32) * 32)
+    shmem = plan.ndof * sizeof(TF)
+    blocks = min(n, FM.DENSE_CUDA_FUSED_MAX_BLOCKS[])
+    args = (plan.operators, plan.route_class, state.route_sources,
+        state.route_targets, state.multipoles.phi, state.multipoles.chi,
+        ws.phi_flat_idx, ws.chi_flat_idx, plan.ndof_phi,
+        hctx.source_scale, hctx.target_scale, lcol, n, Val(false))
+    launch_atomic!(_) = CUDA.@cuda threads=threads blocks=blocks shmem=shmem FM._cuda_hier_dense_fused_kernel!(
+        scratch_phi, scratch_chi, args...)
+    launch_store!(_) = CUDA.@cuda threads=threads blocks=blocks shmem=shmem _derisk_fused_kernel_store!(
+        scratch_phi, scratch_chi, args...)
+    launch_nostore!(_) = CUDA.@cuda threads=threads blocks=blocks shmem=shmem _derisk_fused_kernel_nostore!(
+        scratch_phi, scratch_chi, args...)
+    t_atomic = _median_gpu_ms(launch_atomic!, nothing, REPS)
+    t_store = _median_gpu_ms(launch_store!, nothing, REPS)
+    t_nostore = _median_gpu_ms(launch_nostore!, nothing, REPS)
+    println(@sprintf("%-8s %10d %12.3f %12.3f %12.3f", TF, n, t_atomic, t_store,
+        t_nostore))
+    GC.gc(); CUDA.reclaim()
+end
+
 println("\ndone.")

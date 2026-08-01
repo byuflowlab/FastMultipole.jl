@@ -139,4 +139,66 @@ if _CONV_LOADED
             FastMultipole.DENSE_CUDA_FUSED_MAX_BLOCKS[] = saved_cap
         end
     end
+
+    # Task 028 lever 1: _cuda_fast_rsqrt is new numerics — CUDA.rsqrt lowers to
+    # rsqrt.approx (~1e-7 relative in Float64), and the Float64 method must
+    # recover full precision through its two Newton steps.
+    function _rsqrt_probe_kernel!(out, x)
+        i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+        i <= length(x) && (@inbounds out[i] = FastMultipole._cuda_fast_rsqrt(x[i]))
+        return nothing
+    end
+    @testset "_cuda_fast_rsqrt accuracy (task 028 lever 1)" begin
+        for (TF, tol) in ((Float64, 1e-14), (Float32, 5.0e-7))
+            xs = TF.(exp10.(range(-30, 30; length=1001)))
+            x = CuArray(xs)
+            out = similar(x)
+            @cuda threads=256 blocks=cld(length(x), 256) _rsqrt_probe_kernel!(out, x)
+            rel = abs.(Float64.(Array(out)) .- 1 ./ sqrt.(Float64.(xs))) .*
+                sqrt.(Float64.(xs))
+            @test maximum(rel) < tol
+        end
+    end
+
+    # Task 028 lever 1: the nearfield kernel is warp-per-pair with a grid-stride
+    # capped by DIRECT_CUDA_MAX_BLOCKS. Squeezing the cap forces every warp
+    # through many pairs (cap=1 runs all pairs through 4 warps), exercising the
+    # stride logic a single-wave launch never reaches. n=2000 at ell=3 gives
+    # ragged cells (empty, single-body, and target cells shared by many pairs).
+    # Results must be identical up to atomic-reassociation rounding.
+    @testset "nearfield warp-per-pair parity (task 028 lever 1)" begin
+        ell = 3
+        P = 3
+        box_min = SVector(-0.01, -0.01, -0.01)
+        box_size = 1.02
+        saved_cap = FastMultipole.DIRECT_CUDA_MAX_BLOCKS[]
+        try
+            for TF in (Float64, Float32), n in (2000, 40)
+                indices = collect(1:n)
+                results = map((typemax(Int), 3, 1)) do cap
+                    FastMultipole.DIRECT_CUDA_MAX_BLOCKS[] = cap
+                    bodies = fm028_body_matrix(24025, n)
+                    sys = FM028DeviceSystem{TF}(bodies)
+                    opts = CUDARadixLifecycleOptions(; precision=TF,
+                        operator=MaterializedYRotationM2L(),
+                        m2l_strategy=DenseTranslationM2L())
+                    cache = RadixFMMCache(sys; expansion_order=P, ell,
+                        max_n_bodies=n, bounds=(box_min, box_size), device=true,
+                        options=opts, near_radius2=12, window_classes=8)
+                    fmm!(sys, cache; scalar_potential=true, gradient=true)
+                    fm028_sampled_output(sys, indices)
+                end
+                ref_pot, ref_grad = results[1]
+                for (pot, grad) in results[2:end]
+                    tol = TF === Float64 ? 1e-10 : 1e-4
+                    @test maximum(abs.(pot .- ref_pot)) <=
+                        tol * max(1, maximum(abs.(ref_pot)))
+                    @test maximum(abs.(grad .- ref_grad)) <=
+                        tol * max(1, maximum(abs.(ref_grad)))
+                end
+            end
+        finally
+            FastMultipole.DIRECT_CUDA_MAX_BLOCKS[] = saved_cap
+        end
+    end
 end

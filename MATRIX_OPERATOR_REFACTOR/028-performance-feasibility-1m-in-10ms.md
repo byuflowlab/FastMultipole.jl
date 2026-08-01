@@ -246,9 +246,45 @@ cache, so its 215 tests passed against a kernel compiling to invalid IR across j
 `const gridDim = CUDA.gridDim` binding (the file aliases `blockIdx`/`blockDim`/
 `threadIdx` but not `gridDim`); an audit now checks every bare intrinsic has a binding.
 
-**Standing: 6.5x over target** (9.1x -> 7.0x -> 6.5x). Budget is nearfield 38.37 ms
-(59%), M2L 21.61 ms (33%), other ~4.6 ms (7%). **Lever 1 (nearfield) is not approved
-for implementation yet.**
+**Lever 1 complete** (approved with riders 2026-07-31; jobs 13015315/13015316/13015336) —
+the nearfield kernel `_cuda_direct_pairs_output_kernel!` is now **warp-per-pair with a
+grid-stride** capped by a new `DIRECT_CUDA_MAX_BLOCKS` knob (was one thread per pair
+running a serial ~30x30 loop), and `inv(sqrt)` is replaced by `_cuda_fast_rsqrt`
+(hardware `rsqrt.approx` in F32; in F64 two Newton refinements restore ~1-2 ulp, since
+raw `CUDA.rsqrt(::Float64)` is only ~1e-7 accurate). Riders in the same cycle: L2B is
+warp-per-cell (0.96 -> 0.72 ms); the per-step `CUDA.zeros` in
+`finalize_cuda_radix_output!` became a cached device buffer; dead
+`_cuda_find_cell_for_sorted_body` deleted. A B2M warp-per-cell rider was measured
+**slower** (1.02 -> 2.03 ms, 113 regs, 15/32 lanes at P=4) and reverted with a comment.
+
+| metric | before (13010174) | after (13015336) |
+|---|---|---|
+| nearfield (exact split) F32 / F64 | 37.7 / 51.9 ms | **11.45 / 37.6 ms** |
+| F32 verdict step | 64.56 ms | **38.04 ms** (-41%) |
+| F64 verdict step | 83.38 ms | **68.99 ms** (-17%) |
+| gradient rel RMS | 3.186e-4 | 3.186e-4 (unchanged) |
+
+Scoped 20-33 ms, delivered **26.5 ms** on the F32 verdict path. F64 improved only
+1.38x: with dispatch and parallelism fixed, the F64 nearfield is genuinely
+FP64-throughput-bound (rsqrt Newton chain + FP64 vector rate), which is why F32 —
+already the verdict precision — gains 3.3x.
+
+New tests: `_cuda_fast_rsqrt accuracy` (1e-14 F64 / 5e-7 F32) and
+`nearfield warp-per-pair parity` (16 tests: F64+F32, caps typemax/3/1, n=2000 and
+n=40 for ragged/empty cells, expansion_order=3).
+
+**Leaf-M2L mechanism resolved** (derisk section D, job 13015316): at fixed work,
+atomic 21.07 / plain-store 25.15 / no-store 24.35 ms (F64; F32 17.21/19.37/19.00).
+Atomics are **not** the limit — removing every write leaves >95% of the cost. The
+leaf M2L is bound by operator/multipole **loads and compute**, so the next M2L lever
+is data reuse (shared-memory operator tiles + class-batched routes), not atomics.
+
+**Standing: 3.8x over target** (9.1x -> 7.0x -> 6.5x -> **3.8x**, F32 verdict
+38.04 ms). Budget: leaf M2L 19.6 ms (52%), nearfield 11.45 ms (30%), L2B 0.4 ms,
+other ~6 ms. Next-cycle candidates (need user sign-off): shared-memory operator-tile
+M2L rewrite (the new dominant stage), two-stream nearfield/far-field overlap
+(hides min(11.5, ~26) ms; needs the blocking-sync cleanup first), counting sort for
+the Morton grid (~2 ms).
 
 ## Verification Notes
 
@@ -285,6 +321,23 @@ Threats to validity, recorded in full in report.md §7:
    corrected to the K=1740 regime it is still ≈354 ms, so the ell conclusion holds.
 4. A pilot extrapolation of ell=6 ≈ 220 ms was **wrong by 2.5×** (measured 546.7 ms) and
    has been discarded in favour of the measurement.
+
+### Phase B lever 1 (2026-07-31)
+
+- Jobs: **13015315** (verify, lever 1 + riders), **13015316** (derisk: exact
+  nearfield split + new leaf-M2L atomic-vs-bandwidth A/B), **13015336** (verify,
+  final, after the B2M rider revert). All H200; `LIFECYCLE_TEST_EXIT=0` and
+  `CONVECTION_TEST_EXIT=0` on every job (215 + 24 + 8 + 2 + 16 tests).
+- Commands: `bash MATRIX_OPERATOR_REFACTOR/scripts/cuda_028_submit.sh verify|derisk`,
+  fetched with `cuda_028_fetch.sh <jobid>`.
+- Accuracy: gradient rel RMS 3.185e-4 (F64) / 3.186e-4 (F32), identical to the
+  pre-lever record; the parity testset bounds the launch-decomposition effect to
+  atomic-reassociation rounding (1e-10 F64 / 1e-4 F32).
+- Counter/alloc contract: `verdict_step_host_alloc_bytes` 0.80-0.81 MB (unchanged
+  from lever 3), route/operator uploads flat, `expansion_host_copies=0`.
+- Final data: `cuda_m13h-1-1_20260731-183510.csv` (+`.classes.csv`),
+  `cuda_m13h-2-1_20260731-181908.csv`, `derisk_m13h-2-2_20260731-181957.csv`,
+  `fm028-1301531{5,6}.out`, `fm028-13015336.out`.
 
 ## Approval Notes
 
