@@ -301,13 +301,22 @@ The tiled leaf is nearly precision-insensitive again (13.66 F64 vs 12.71 F32), s
 the removed traffic was the precision-sensitive component; the residual ~13 ms is
 compute/atomic/latency and would need its own attribution pass before further work.
 
+**Cycle 3 complete — negative result** (user-approved 2026-07-31; job 13015982):
+nearfield/far-field stream overlap via side stream + device events
+(`CUDA_OVERLAP_NEARFIELD`, begin/done event ordering against the previous step's
+finalize and L2B). Parity 4/4 across a convection loop. **Measured gain: 0 ms**
+(F32 verdict 30.718 vs 30.724): after levers 1-2 both dominant kernels saturate
+the device (eval 27.5 ms vs ~28.6 ms stage sum, >95% busy), and saturating kernels
+time-share SMs — wall time is the sum with or without streams. The 5-15 ms overlap
+estimate was conditioned on the pre-lever-1 latency-bound nearfield; lever 1's
+success retired this lever. Kept, default on (correctness-neutral; can only help
+in launch-bound regimes at small n).
+
 **Standing: 3.1x over target** (9.1x -> 7.0x -> 6.5x -> 3.8x -> **3.1x**, F32
-verdict 30.72 ms). Budget: leaf M2L 12.7 ms (41%), nearfield 11.45 ms (37%), other
-~6.6 ms. The two kernels are now balanced. Next-cycle candidates (need user
-sign-off): two-stream nearfield/far-field overlap (the stages are independent and
-now comparable in size — overlap hides ~11 ms; requires the blocking-sync +
-pageable-copy cleanup), a fresh attribution pass on the residual leaf M2L and
-nearfield (both now within ~8x of their roofline floors), counting sort (~2 ms).
+verdict 30.72 ms), now established as ~95% device-saturated compute. Further gains
+require reducing work or per-kernel efficiency: fresh attribution passes on the
+residual leaf M2L (~12.7 ms, precision-insensitive) and F32 nearfield (~11.45 ms
+vs ~1.6 ms roofline floor), plus the ~2 ms counting sort.
 
 ## Verification Notes
 
@@ -369,6 +378,13 @@ Threats to validity, recorded in full in report.md §7:
   parity` 12/12 alongside all prior testsets.
 - Accuracy 3.185e-4 / 3.186e-4 — unchanged; counter/alloc contracts hold.
 - Data: `cuda_m13h-1-2_20260731-210422.csv` (+`.classes.csv`), `fm028-13015753.out`.
+
+### Phase B cycle 3 (2026-08-01)
+
+- Job **13015982** (verify): gates green incl. `nearfield stream-overlap parity`
+  4/4; accuracy and counter/alloc contracts unchanged; verdict timings identical
+  to cycle 2 (the recorded negative result). Data: `fm028-13015982.out` and the
+  fetched `cuda_*.csv` of that run.
 
 ## Approval Notes
 

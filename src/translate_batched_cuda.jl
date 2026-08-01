@@ -2868,7 +2868,35 @@ function _launch_cuda_resident_l2l!(state::DeviceResidentRadixState{TF,B,LH}) wh
     return _launch_resident_l2l!(state)
 end
 
-function _launch_cuda_resident_l2b!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
+# Task 028 cycle 3: nearfield/far-field stream overlap. The nearfield kernel
+# reads only refresh-final data (source_bodies, cell_ranges, direct pair lists)
+# and accumulates into `output` with atomics, while B2M/M2M/M2L/L2L touch only
+# the multipole/local buffers — the two are independent, so the fill+nearfield
+# runs on a non-blocking side stream concurrently with the whole far-field
+# chain. Ordering is device-side events only, no host syncs:
+#   begin event (default stream)  -> side stream waits: the previous step's
+#     finalize scatter reads `output` on the default stream, so the side
+#     stream's fill must not overtake it;
+#   done event (side stream)      -> default stream waits before L2B: L2B's
+#     `+=` on `output` is non-atomic and must not race the nearfield atomics.
+const CUDA_OVERLAP_NEARFIELD = Ref(true)
+const _NEARFIELD_STREAM = Ref{Any}(nothing)
+const _NEARFIELD_BEGIN = Ref{Any}(nothing)
+const _NEARFIELD_DONE = Ref{Any}(nothing)
+
+function _nearfield_overlap_handles()
+    s = _NEARFIELD_STREAM[]
+    if s === nothing
+        s = CUDA.CuStream(; flags=CUDA.STREAM_NON_BLOCKING)
+        _NEARFIELD_STREAM[] = s
+        _NEARFIELD_BEGIN[] = CUDA.CuEvent(CUDA.EVENT_DISABLE_TIMING)
+        _NEARFIELD_DONE[] = CUDA.CuEvent(CUDA.EVENT_DISABLE_TIMING)
+    end
+    return s::CUDA.CuStream, _NEARFIELD_BEGIN[]::CUDA.CuEvent,
+        _NEARFIELD_DONE[]::CUDA.CuEvent
+end
+
+function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF}) where TF
     fill!(state.output, zero(TF))
     threads = 128
     npairs = state.counts.n_direct
@@ -2880,6 +2908,25 @@ function _launch_cuda_resident_l2b!(state::DeviceResidentRadixState{TF,B,LH}) wh
             state.direct_targets, state.direct_sources, npairs,
         )
     end
+    return state
+end
+
+# fill + nearfield on the side stream; returns the event L2B must wait on
+function _launch_cuda_nearfield_async!(state::DeviceResidentRadixState)
+    s, begin_ev, done_ev = _nearfield_overlap_handles()
+    CUDA.record(begin_ev)          # current (default) stream
+    CUDA.wait(begin_ev, s)
+    CUDA.stream!(s) do
+        _launch_cuda_nearfield_kernel!(state)
+    end
+    CUDA.record(done_ev, s)
+    return done_ev
+end
+
+function _launch_cuda_resident_l2b_only!(state::DeviceResidentRadixState{TF,B,LH},
+        nearfield_done) where {TF,B,LH}
+    nearfield_done === nothing || CUDA.wait(nearfield_done)
+    threads = 128
     P_phi = state.invariant_cache.basis_info.orders.P_phi
     P_active = state.invariant_cache.basis_info.orders.P_active
     ncell = state.counts.n_cells
@@ -2895,7 +2942,15 @@ function _launch_cuda_resident_l2b!(state::DeviceResidentRadixState{TF,B,LH}) wh
     return state
 end
 
-function _launch_cuda_resident_operator_pipeline!(state::DeviceResidentRadixState)
+# standalone (non-overlapped) fused stage: benchmarks time this directly, and
+# the pipeline uses it whenever CUDA_OVERLAP_NEARFIELD is off
+function _launch_cuda_resident_l2b!(state::DeviceResidentRadixState)
+    _launch_cuda_nearfield_kernel!(state)
+    return _launch_cuda_resident_l2b_only!(state, nothing)
+end
+
+function _launch_cuda_resident_operator_pipeline!(state::DeviceResidentRadixState;
+        nearfield_done=nothing)
     _assert_cuda_supported_operator!(state.options)
     _assert_cuda_resident_stage!(state, :b2m)
     _launch_cuda_resident_m2m!(state)
@@ -2910,7 +2965,12 @@ function _launch_cuda_resident_operator_pipeline!(state::DeviceResidentRadixStat
     _assert_cuda_resident_stage!(state, :m2l)
     _launch_cuda_resident_l2l!(state)
     _assert_cuda_resident_stage!(state, :l2l)
-    _launch_cuda_resident_l2b!(state)
+    if nearfield_done === nothing
+        _launch_cuda_resident_l2b!(state)
+    else
+        # cycle 3 overlap: the nearfield already ran on the side stream
+        _launch_cuda_resident_l2b_only!(state, nearfield_done)
+    end
     _assert_cuda_resident_stage!(state, :l2b)
     return state
 end
@@ -3076,9 +3136,13 @@ function run_cuda_radix_lifecycle!(state::DeviceResidentRadixState)
     _assert_cuda_supported_operator!(state.options)
     state.counters.expansion_host_copies == 0 ||
         throw(AssertionError("resident CUDA radix lifecycle observed expansion host copies before execution"))
+    # cycle 3: launch fill+nearfield on the side stream before B2M so it runs
+    # concurrently with the whole far-field chain; L2B joins on the event
+    nearfield_done = CUDA_OVERLAP_NEARFIELD[] ?
+        _launch_cuda_nearfield_async!(state) : nothing
     _launch_cuda_b2m!(state)
     _assert_cuda_resident_stage!(state, :b2m)
-    _launch_cuda_resident_operator_pipeline!(state)
+    _launch_cuda_resident_operator_pipeline!(state; nearfield_done)
     return state
 end
 

@@ -140,6 +140,53 @@ if _CONV_LOADED
         end
     end
 
+    # Task 028 cycle 3: with overlap on, fill+nearfield run on a side stream
+    # concurrently with the far-field chain, joined to L2B by a device event.
+    # The arithmetic is identical to the serial path (the nearfield accumulates
+    # atomically either way and L2B is ordered after it), so on/off must agree —
+    # any divergence means a missed ordering edge (fill racing the previous
+    # step's finalize, or L2B racing the nearfield). The convection loop below
+    # stresses the cross-step begin-event edge.
+    @testset "nearfield stream-overlap parity (task 028 cycle 3)" begin
+        n = 2000
+        ell = 3
+        P = 3
+        box_min = SVector(-0.01, -0.01, -0.01)
+        box_size = 1.02
+        indices = collect(1:n)
+        saved_overlap = FastMultipole.CUDA_OVERLAP_NEARFIELD[]
+        try
+            for TF in (Float64, Float32)
+                results = map((false, true)) do overlap
+                    FastMultipole.CUDA_OVERLAP_NEARFIELD[] = overlap
+                    bodies = fm028_body_matrix(24025, n)
+                    sys = FM028DeviceSystem{TF}(bodies)
+                    opts = CUDARadixLifecycleOptions(; precision=TF,
+                        operator=MaterializedYRotationM2L(),
+                        m2l_strategy=DenseTranslationM2L())
+                    cache = RadixFMMCache(sys; expansion_order=P, ell,
+                        max_n_bodies=n, bounds=(box_min, box_size), device=true,
+                        options=opts, near_radius2=12, window_classes=8)
+                    for _ in 1:3
+                        fmm!(sys, cache; scalar_potential=true, gradient=true)
+                        fm028_euler!(sys, 1e-3, 0.0, 1.0)
+                    end
+                    fmm!(sys, cache; scalar_potential=true, gradient=true)
+                    fm028_sampled_output(sys, indices)
+                end
+                ref_pot, ref_grad = results[1]
+                pot, grad = results[2]
+                tol = TF === Float64 ? 1e-10 : 1e-4
+                @test maximum(abs.(pot .- ref_pot)) <=
+                    tol * max(1, maximum(abs.(ref_pot)))
+                @test maximum(abs.(grad .- ref_grad)) <=
+                    tol * max(1, maximum(abs.(ref_grad)))
+            end
+        finally
+            FastMultipole.CUDA_OVERLAP_NEARFIELD[] = saved_overlap
+        end
+    end
+
     # Task 028 cycle 2: the operator-tiled dense M2L kernel must agree with the
     # plain fused kernel. Forcing MIN_ROUTES=0 routes every window (including
     # the tiny coarse levels) through the tiled kernel, and a squeezed blocks

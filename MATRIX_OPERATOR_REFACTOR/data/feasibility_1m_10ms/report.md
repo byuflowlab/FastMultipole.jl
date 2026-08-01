@@ -454,6 +454,37 @@ balanced, which makes the two-stream nearfield/far-field overlap (~11 ms of
 hideable work, prerequisite: blocking-sync + pageable-copy cleanup) the natural
 next structural lever, followed by fresh per-kernel attribution passes.
 
+### Cycle 3 (job 13015982): nearfield/far-field stream overlap — 0 ms, negative result
+
+The nearfield (fill + `_cuda_direct_pairs_output_kernel!`) now launches on a
+non-blocking side stream before B2M, ordered by device events only: a begin event
+keeps the side-stream fill behind the previous step's finalize scatter, and a done
+event orders L2B (non-atomic `+=` on `output`) after the nearfield atomics. Gated
+by `CUDA_OVERLAP_NEARFIELD`; the standalone `_launch_cuda_resident_l2b!` is
+unchanged for every benchmark that times it. Parity: 4/4 across a 3-step
+convection loop, on vs off, both precisions.
+
+Measured effect at the verdict config: **none** — F32 verdict 30.718 vs 30.724 ms,
+F64 58.73 vs 58.77, eval-only identical to 0.01%. The mechanism is instructive:
+overlap shortens wall time only when one stream leaves SMs idle, and after levers
+1-2 both dominant kernels saturate the device (F32 eval 27.5 ms vs a ~28.6 ms
+per-stage sum ⇒ >95% busy). Two saturating kernels time-share SMs and take the sum
+regardless of streams. The Phase-A-era overlap estimate (5-15 ms) was conditioned
+on the old latency-bound nearfield, which lever 1 eliminated — **succeeding at
+lever 1 retired this lever.** Kept (default on) because it is correctness-neutral,
+parity-tested, and can only help in launch/latency-bound regimes (small n, thin
+windows); it does nothing at n=10⁶.
+
+### Standing after cycle 3
+
+Unchanged from cycle 2: **F32 verdict 30.72 ms = 3.1x over target.** The step is
+now ~95% device-saturated compute in three kernels (leaf M2L 12.7, nearfield 11.45,
+plus ~6.6 ms of small stages). With saturation established, further gains must come
+from *reducing work or increasing per-kernel efficiency* — fresh attribution passes
+on the residual leaf M2L (precision-insensitive again ⇒ compute/atomic/latency) and
+the F32 nearfield (422 G interactions/s vs the ~1.6 ms roofline floor) are the
+remaining levers, plus the ~2 ms counting sort.
+
 ## 7. Methodology, anchoring, and threats to validity
 
 - **Harness anchored at n=10⁶.** The flat dense ell=4 row reproduces the 024b record's
