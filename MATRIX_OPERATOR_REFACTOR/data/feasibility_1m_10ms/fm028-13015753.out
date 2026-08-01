@@ -1,0 +1,89 @@
+=== node: m13h-1-2
+GPU 0: NVIDIA H200 (UUID: GPU-06c58ce4-35b4-30cf-fbd9-bec4a8af8522)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=53ce7da0e9b81517
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Precompiling CUDA...
+   2979.6 ms  ✓ CUDA_Driver_jll
+   3196.2 ms  ✓ CUDA_Runtime_jll
+   3589.9 ms  ✓ CUDA_Compiler_jll
+   8478.4 ms  ✓ LLVM
+   2919.9 ms  ✓ GPUToolbox
+   3631.3 ms  ✓ LLVM → BFloat16sExt
+   3387.4 ms  ✓ UnsafeAtomics → UnsafeAtomicsLLVM
+  21950.1 ms  ✓ PrettyTables
+   9293.9 ms  ✓ GPUArrays
+  21807.3 ms  ✓ GPUCompiler
+  22888.0 ms  ✓ CUDACore
+   8892.7 ms  ✓ cuRAND
+   9761.1 ms  ✓ cuFFT
+  10118.5 ms  ✓ NVML
+  10903.4 ms  ✓ CUPTI
+  13675.7 ms  ✓ cuSPARSE
+  15370.0 ms  ✓ cuBLAS
+  15972.3 ms  ✓ CUDATools
+  13753.6 ms  ✓ cuSOLVER
+  10134.9 ms  ✓ CUDA
+   9557.3 ms  ✓ Atomix → AtomixCUDAExt
+  21 dependencies successfully precompiled in 110 seconds. 79 already precompiled.
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m27.2s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  8.2s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl (028)
+Test Summary:                          | Pass  Total     Time
+device convection lifecycle (task 028) |   24     24  1m04.9s
+Test Summary:                                         | Pass  Total  Time
+fused dense M2L grid-stride parity (task 028 lever 2) |    8      8  3.3s
+Test Summary:                                     | Pass  Total  Time
+dense M2L operator-tile parity (task 028 cycle 2) |   12     12  2.1s
+Test Summary:                                | Pass  Total  Time
+_cuda_fast_rsqrt accuracy (task 028 lever 1) |    2      2  0.8s
+Test Summary:                                     | Pass  Total  Time
+nearfield warp-per-pair parity (task 028 lever 1) |   16     16  2.3s
+CONVECTION_TEST_EXIT=0
+=== FM028_MODE=verify
+=== verify (lever 3 before/after)
+hier12  dense          Float64  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    55.375  verdict    58.770  host   161.001 ms  grad_err 3.185e-04
+hier12  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    27.509  verdict    30.724  host   102.417 ms  grad_err 3.186e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-2_20260731-210422.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-2_20260731-210422.csv.classes.csv
+VERIFY_EXIT=0

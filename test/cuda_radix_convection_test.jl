@@ -140,6 +140,58 @@ if _CONV_LOADED
         end
     end
 
+    # Task 028 cycle 2: the operator-tiled dense M2L kernel must agree with the
+    # plain fused kernel. Forcing MIN_ROUTES=0 routes every window (including
+    # the tiny coarse levels) through the tiled kernel, and a squeezed blocks
+    # cap forces large per-block chunks spanning many class segments, which
+    # exercises the segment binary search and both WAR barriers.
+    @testset "dense M2L operator-tile parity (task 028 cycle 2)" begin
+        n = 2000
+        ell = 3
+        P = 3
+        box_min = SVector(-0.01, -0.01, -0.01)
+        box_size = 1.02
+        indices = collect(1:n)
+        saved_tiled = FastMultipole.DENSE_CUDA_TILED[]
+        saved_min = FastMultipole.DENSE_CUDA_TILED_MIN_ROUTES[]
+        saved_cap = FastMultipole.DENSE_CUDA_FUSED_MAX_BLOCKS[]
+        try
+            for TF in (Float64, Float32)
+                configs = ((false, typemax(Int), typemax(Int)),  # fused reference
+                           (true, 0, typemax(Int)),              # tiled, wide launch
+                           (true, 0, 3),                         # tiled, deep chunks
+                           (true, 0, 1))                         # tiled, one block
+                results = map(configs) do (tiled, minroutes, cap)
+                    FastMultipole.DENSE_CUDA_TILED[] = tiled
+                    FastMultipole.DENSE_CUDA_TILED_MIN_ROUTES[] = minroutes
+                    FastMultipole.DENSE_CUDA_FUSED_MAX_BLOCKS[] = cap
+                    bodies = fm028_body_matrix(24025, n)
+                    sys = FM028DeviceSystem{TF}(bodies)
+                    opts = CUDARadixLifecycleOptions(; precision=TF,
+                        operator=MaterializedYRotationM2L(),
+                        m2l_strategy=DenseTranslationM2L())
+                    cache = RadixFMMCache(sys; expansion_order=P, ell,
+                        max_n_bodies=n, bounds=(box_min, box_size), device=true,
+                        options=opts, near_radius2=12, window_classes=8)
+                    fmm!(sys, cache; scalar_potential=true, gradient=true)
+                    fm028_sampled_output(sys, indices)
+                end
+                ref_pot, ref_grad = results[1]
+                for (pot, grad) in results[2:end]
+                    tol = TF === Float64 ? 1e-10 : 1e-4
+                    @test maximum(abs.(pot .- ref_pot)) <=
+                        tol * max(1, maximum(abs.(ref_pot)))
+                    @test maximum(abs.(grad .- ref_grad)) <=
+                        tol * max(1, maximum(abs.(ref_grad)))
+                end
+            end
+        finally
+            FastMultipole.DENSE_CUDA_TILED[] = saved_tiled
+            FastMultipole.DENSE_CUDA_TILED_MIN_ROUTES[] = saved_min
+            FastMultipole.DENSE_CUDA_FUSED_MAX_BLOCKS[] = saved_cap
+        end
+    end
+
     # Task 028 lever 1: _cuda_fast_rsqrt is new numerics — CUDA.rsqrt lowers to
     # rsqrt.approx (~1e-7 relative in Float64), and the Float64 method must
     # recover full precision through its two Newton steps.

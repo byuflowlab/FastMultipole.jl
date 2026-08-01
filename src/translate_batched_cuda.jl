@@ -2369,6 +2369,18 @@ const DENSE_CUDA_FUSED = Ref(true)
 # H200's 132 SMs x 2048 = 270336 thread capacity: still oversubscribed.
 const DENSE_CUDA_FUSED_MAX_BLOCKS = Ref(16384)
 
+# Operator-tiled hierarchical dense M2L (task 028 cycle 2). The fused kernel
+# re-reads its route's full D x D operator from L2 on every route; the derisk
+# atomic/store/no-store A/B (job 13015316) proved the leaf M2L is bound by
+# exactly those loads plus the matvec, not by atomics. Window routes are
+# class-sorted, so a block can stage one class's operator in shared memory —
+# with both level diagonals folded into the tile — and stream that class's
+# routes through it. The tiled path is taken when it fits in default dynamic
+# shared memory and the window is large enough to amortize the tile loads;
+# small windows (coarse levels) keep the plain fused kernel.
+const DENSE_CUDA_TILED = Ref(true)
+const DENSE_CUDA_TILED_MIN_ROUTES = Ref(65536)
+
 # Grid-stride cap for the warp-per-pair nearfield kernel (task 028 lever 1),
 # same role as DENSE_CUDA_FUSED_MAX_BLOCKS above: blocks = min(cld(npairs,
 # warps_per_block), this cap), and each warp walks pairs `total_warps` apart.
@@ -4391,6 +4403,93 @@ function _cuda_hier_dense_fused_kernel!(loc_phi, loc_chi, ops, route_class,
     return nothing
 end
 
+# Task 028 cycle 2: operator-tiled variant of the fused kernel above. Each block
+# owns a contiguous route chunk; within it, same-class segments (route_class is
+# non-decreasing inside a window) are processed with the class operator staged
+# once in shared memory, both level diagonals pre-folded:
+# tile[r + (i-1)D] = tgt_scale[r] * ops[r,i,k] * src_scale[i]. Warps then stream
+# routes through the tile — lanes stride rows, the multipole column sits in a
+# per-warp shared slice — so the per-route global traffic drops from D^2 + D
+# loads to D loads (plus the unchanged D atomics). Block-level barriers only
+# bracket tile (re)loads; j0/je/hi are computed identically by every thread from
+# the same route_class reads, so the segment loop is block-uniform.
+function _cuda_hier_dense_tiled_kernel!(loc_phi, loc_chi, ops, route_class,
+        route_sources, route_targets, mp_phi, mp_chi, phi_flat_idx, chi_flat_idx,
+        ndof_phi, src_scale, tgt_scale, lcol, n_routes, ::Val{LH}) where LH
+    T = eltype(ops)
+    D = size(ops, 1)
+    tid = threadIdx().x
+    nthreads = blockDim().x
+    lane = Int((tid - Int32(1)) % Int32(32))
+    w = Int((tid - Int32(1)) ÷ Int32(32))
+    nwarps = Int(nthreads ÷ Int32(32))
+    tile = CUDA.CuDynamicSharedArray(T, D * D)
+    mp_buf = CUDA.CuDynamicSharedArray(T, (D, nwarps), D * D * sizeof(T))
+    chunk = cld(n_routes, gridDim().x)
+    j0 = (blockIdx().x - 1) * chunk + 1
+    hi = min(j0 + chunk - 1, n_routes)
+    @inbounds while j0 <= hi
+        k = Int(route_class[j0])
+        # binary search for the segment end (last route of class k in [j0, hi])
+        slo = j0
+        shi = hi
+        while slo < shi
+            mid = (slo + shi + 1) >> 1
+            if Int(route_class[mid]) == k
+                slo = mid
+            else
+                shi = mid - 1
+            end
+        end
+        je = slo
+        idx = Int(tid)
+        while idx <= D * D
+            r = (idx - 1) % D + 1
+            i = (idx - 1) ÷ D + 1
+            tile[idx] = tgt_scale[r, lcol] * ops[r, i, k] * src_scale[i, lcol]
+            idx += nthreads
+        end
+        CUDA.sync_threads()
+        j = j0 + w
+        while j <= je
+            src_col = route_sources[j]
+            tgt_col = route_targets[j]
+            i = lane + 1
+            while i <= D
+                if i <= ndof_phi
+                    mp_buf[i, w + 1] = mp_phi[phi_flat_idx[i], src_col]
+                elseif LH
+                    mp_buf[i, w + 1] = mp_chi[chi_flat_idx[i - ndof_phi], src_col]
+                else
+                    mp_buf[i, w + 1] = zero(T)
+                end
+                i += 32
+            end
+            CUDA.sync_warp()
+            r = lane + 1
+            while r <= D
+                acc = zero(T)
+                for i in 1:D
+                    acc += tile[r + (i - 1) * D] * mp_buf[i, w + 1]
+                end
+                if r <= ndof_phi
+                    CUDA.@atomic loc_phi[phi_flat_idx[r], tgt_col] += acc
+                elseif LH
+                    CUDA.@atomic loc_chi[chi_flat_idx[r - ndof_phi], tgt_col] += acc
+                end
+                r += 32
+            end
+            # WAR: this warp's next route rewrites its mp_buf slice
+            CUDA.sync_warp()
+            j += nwarps
+        end
+        # WAR: the next segment's tile load must wait for every warp's matvec
+        CUDA.sync_threads()
+        j0 = je + 1
+    end
+    return nothing
+end
+
 # Scaled gather/scatter for the unfused GEMM reference drivers: the same level
 # diagonals applied at the slab boundaries instead of inside the fused kernel, so
 # the two routes are independently testable.
@@ -4466,8 +4565,23 @@ function _cuda_hier_dense_apply_window!(state::DeviceResidentRadixState{TF,B,LH}
     n_routes == 0 && return state
     lcol = L - 1
     if DENSE_CUDA_FUSED[]
-        threads = min(256, cld(plan.ndof, 32) * 32)
-        shmem = plan.ndof * sizeof(TF)
+        D = plan.ndof
+        # tiled path (task 028 cycle 2): 128 threads = 4 warps; shm holds the
+        # folded D x D class tile plus one multipole column per warp
+        tiled_shmem = (D * D + 4 * D) * sizeof(TF)
+        if DENSE_CUDA_TILED[] && n_routes >= DENSE_CUDA_TILED_MIN_ROUTES[] &&
+                tiled_shmem <= 48 * 1024
+            blocks = min(cld(n_routes, 4), DENSE_CUDA_FUSED_MAX_BLOCKS[])
+            CUDA.@cuda threads=128 blocks=blocks shmem=tiled_shmem _cuda_hier_dense_tiled_kernel!(
+                state.locals.phi, state.locals.chi, plan.operators, plan.route_class,
+                state.route_sources, state.route_targets, state.multipoles.phi,
+                state.multipoles.chi, ws.phi_flat_idx, ws.chi_flat_idx, plan.ndof_phi,
+                hctx.source_scale, hctx.target_scale, lcol, n_routes, Val(LH),
+            )
+            return state
+        end
+        threads = min(256, cld(D, 32) * 32)
+        shmem = D * sizeof(TF)
         blocks = min(n_routes, DENSE_CUDA_FUSED_MAX_BLOCKS[])
         CUDA.@cuda threads=threads blocks=blocks shmem=shmem _cuda_hier_dense_fused_kernel!(
             state.locals.phi, state.locals.chi, plan.operators, plan.route_class,

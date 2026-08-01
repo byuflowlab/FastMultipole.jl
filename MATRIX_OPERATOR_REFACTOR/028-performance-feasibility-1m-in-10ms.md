@@ -279,12 +279,35 @@ Atomics are **not** the limit — removing every write leaves >95% of the cost. 
 leaf M2L is bound by operator/multipole **loads and compute**, so the next M2L lever
 is data reuse (shared-memory operator tiles + class-batched routes), not atomics.
 
-**Standing: 3.8x over target** (9.1x -> 7.0x -> 6.5x -> **3.8x**, F32 verdict
-38.04 ms). Budget: leaf M2L 19.6 ms (52%), nearfield 11.45 ms (30%), L2B 0.4 ms,
-other ~6 ms. Next-cycle candidates (need user sign-off): shared-memory operator-tile
-M2L rewrite (the new dominant stage), two-stream nearfield/far-field overlap
-(hides min(11.5, ~26) ms; needs the blocking-sync cleanup first), counting sort for
-the Morton grid (~2 ms).
+**Cycle 2 complete** (user-approved 2026-07-31; job 13015753) — operator-tiled leaf
+M2L, `_cuda_hier_dense_tiled_kernel!` in `translate_batched_cuda.jl`. Each block owns
+a contiguous route chunk; same-class segments (window routes are class-sorted) run
+with the class operator staged once in shared memory, both level diagonals folded
+into the tile, warps streaming routes with a per-warp shared multipole column.
+Per-route global traffic falls from `D^2 + D` loads to `D` loads + `D` atomics.
+Gated by `DENSE_CUDA_TILED` / `DENSE_CUDA_TILED_MIN_ROUTES=65536` (coarse windows
+keep the plain fused kernel) and a 48 KB shared-memory fit check with fallback.
+12-test tiled-vs-fused parity set (forced-tiled / deep-chunk / one-block, F64+F32).
+
+| metric | after lever 1 (13015336) | after cycle 2 (13015753) |
+|---|---|---|
+| leaf M2L F32 / F64 | 19.60 / 23.27 ms | **12.71 / 13.66 ms** (-35% / -41%) |
+| M2L total F32 / F64 | 21.62 / 25.63 ms | **14.23 / 15.31 ms** |
+| F32 verdict step | 38.04 ms | **30.72 ms** (-19%) |
+| F64 verdict step | 68.99 ms | **58.77 ms** |
+| gradient rel RMS | 3.186e-4 | 3.186e-4 (unchanged) |
+
+The tiled leaf is nearly precision-insensitive again (13.66 F64 vs 12.71 F32), so
+the removed traffic was the precision-sensitive component; the residual ~13 ms is
+compute/atomic/latency and would need its own attribution pass before further work.
+
+**Standing: 3.1x over target** (9.1x -> 7.0x -> 6.5x -> 3.8x -> **3.1x**, F32
+verdict 30.72 ms). Budget: leaf M2L 12.7 ms (41%), nearfield 11.45 ms (37%), other
+~6.6 ms. The two kernels are now balanced. Next-cycle candidates (need user
+sign-off): two-stream nearfield/far-field overlap (the stages are independent and
+now comparable in size — overlap hides ~11 ms; requires the blocking-sync +
+pageable-copy cleanup), a fresh attribution pass on the residual leaf M2L and
+nearfield (both now within ~8x of their roofline floors), counting sort (~2 ms).
 
 ## Verification Notes
 
@@ -338,6 +361,14 @@ Threats to validity, recorded in full in report.md §7:
 - Final data: `cuda_m13h-1-1_20260731-183510.csv` (+`.classes.csv`),
   `cuda_m13h-2-1_20260731-181908.csv`, `derisk_m13h-2-2_20260731-181957.csv`,
   `fm028-1301531{5,6}.out`, `fm028-13015336.out`.
+
+### Phase B cycle 2 (2026-07-31)
+
+- Job **13015336** is the before; job **13015753** (verify) is the after. Gates:
+  `LIFECYCLE_TEST_EXIT=0`, `CONVECTION_TEST_EXIT=0`; new `dense M2L operator-tile
+  parity` 12/12 alongside all prior testsets.
+- Accuracy 3.185e-4 / 3.186e-4 — unchanged; counter/alloc contracts hold.
+- Data: `cuda_m13h-1-2_20260731-210422.csv` (+`.classes.csv`), `fm028-13015753.out`.
 
 ## Approval Notes
 

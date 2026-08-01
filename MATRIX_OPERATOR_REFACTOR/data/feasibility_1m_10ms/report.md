@@ -418,6 +418,42 @@ nearfield/far-field overlap (nearfield reads only bodies + direct pairs and writ
 blocking-sync/pageable-copy cleanup first) and a counting sort replacing the bitonic
 `sortperm` in the grid rebuild (~2 ms of the 2.4-2.7 ms grid stage).
 
+### Cycle 2 (job 13015753): operator-tiled leaf M2L, -7.3 ms on the F32 verdict
+
+Acting directly on the section-D attribution: `_cuda_hier_dense_tiled_kernel!`
+stages each class's D x D operator in shared memory once per contiguous same-class
+route segment (window routes are class-sorted; a binary search finds segment ends),
+folds both level diagonals into the tile at load time, and streams routes through
+it with 4 warps and per-warp shared multipole columns. Per-route global traffic
+drops from D^2 + D loads (~8.4 KB at P=4/F64) to D loads + D atomics (~0.5 KB).
+Coarse windows below `DENSE_CUDA_TILED_MIN_ROUTES` = 65536 and any P whose tile
+exceeds 48 KB keep the plain fused kernel.
+
+| | after lever 1 | after cycle 2 | delta |
+|---|---|---|---|
+| leaf M2L, F64 | 23.27 ms | **13.66 ms** | -41% |
+| leaf M2L, F32 | 19.60 ms | **12.71 ms** | -35% |
+| F32 verdict step | 38.04 ms | **30.72 ms** | -7.3 ms |
+| F64 verdict step | 68.99 ms | **58.77 ms** | -10.2 ms |
+| gradient rel RMS | 3.186e-4 | 3.186e-4 | unchanged |
+
+L4 (2.87M routes, also above the tiling threshold) improved in the same move
+(1.85 -> 1.34 ms F32). The tiled leaf is nearly precision-INsensitive again
+(13.66 F64 vs 12.71 F32), confirming the removed operator traffic was the
+precision-sensitive component the lever-2 experiment exposed; the residual ~13 ms
+is compute/atomic/latency-bound and needs a fresh attribution pass before more
+work goes in. Correctness: `dense M2L operator-tile parity` 12/12 (tiled-vs-fused
+across forced-tiled / deep-chunk / one-block launches, F64+F32).
+
+### Standing after cycle 2
+
+**F32 verdict step 30.72 ms = 3.1x over target**
+(9.1x -> 7.0x -> 6.5x -> 3.8x -> 3.1x). Budget: leaf M2L 12.7 ms (41%), nearfield
+11.45 ms (37%), everything else ~6.6 ms (21%). The two dominant kernels are now
+balanced, which makes the two-stream nearfield/far-field overlap (~11 ms of
+hideable work, prerequisite: blocking-sync + pageable-copy cleanup) the natural
+next structural lever, followed by fresh per-kernel attribution passes.
+
 ## 7. Methodology, anchoring, and threats to validity
 
 - **Harness anchored at n=10⁶.** The flat dense ell=4 row reproduces the 024b record's
