@@ -298,8 +298,11 @@ Row `029` follows clear-context approval of `028` and turns the reproduced
 9.591 ms single-H200 result into an open high-score campaign with a 1 ms goal.
 It preserves the fixed 1,000,000-body, literature-P=4 accuracy and complete
 recurring-step boundary, adds separate single- and multi-H200 leaderboards, and
-requires independent reproduction of any qualifying score. The final `019a`
-roadmap Milestone Review follows `029` and reviews work through that row.
+requires independent reproduction of any qualifying score. **Deferral
+(user direction `2026-08-03`):** `029` is deferred and is no longer a blocker
+for the final `019a` roadmap Milestone Review, which reviews work through
+`028`. `029` may be resumed later; if it completes after `019a`, its results
+are recorded as an addendum review note rather than reopening `019a`.
 
 ## Non-Goals
 

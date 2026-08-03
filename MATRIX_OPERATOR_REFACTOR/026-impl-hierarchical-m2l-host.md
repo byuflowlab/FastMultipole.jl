@@ -671,3 +671,31 @@ was fictional on a clean checkout) was resolved by committing the surface.
 
 Because this review modified production code and tests, per `START_HERE.md`
 a fresh clear-context agent must re-approve task 026.
+
+### Re-approval (2026-08-03, 019a reviewing agent, per user direction)
+
+The outstanding re-approval was performed by the `019a` milestone-review agent
+as an explicit review sub-step (user direction `2026-08-03`; that agent did not
+perform the 2026-07-31 improvement-review work or any prior 026 work).
+Evidence, reviewed at commit `6f15eb1` (which includes the subsequent approved
+`028` changes to the same surface):
+
+- **Src spot-checks — all present as recorded.** `_assert_flat_resident_state`
+  defined and wired at the flat resident launchers
+  (`src/translate_batched.jl:3154` and five call sites, with the
+  `clear_locals=false` exemption at `:3821`); explicit `policy=` keyword
+  conflicts throw (`src/translate_batched_resident.jl:773`; radius/window
+  guards `src/interaction_list_batched.jl:263-273`); `RadixLevelOccupancy`
+  returns a consistent all-zero prefix on overflow/over-budget
+  (`src/tree_batched.jl:509-511`); `SUPERSEDED.md` provenance markers exist in
+  both `raw/final_026/` and `summary/final_026/`.
+- **Tests — pass on the current tree** (macOS, Julia, `--threads=4` for the
+  focused suite): `test/hierarchical_m2l_host_test.jl` **681/681** (the
+  improvement review's 431 grew further under approved `028` work),
+  `test/radix_interaction_list_test.jl` **61076/61076**,
+  `test/radix_fmm_integration_test.jl` **89/89**.
+- The review's added guards are behavior-preserving on valid inputs
+  (throw-on-misuse only), its test additions are strictly additive, and its
+  two wording corrections in this file match the data record.
+
+**Verdict: re-approved.** Row 026 `Approved` stands.

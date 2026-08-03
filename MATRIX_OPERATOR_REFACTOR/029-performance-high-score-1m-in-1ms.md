@@ -2,6 +2,10 @@
 
 ## Status and Entry Gate
 
+**Deferred by user direction on `2026-08-03`; may be resumed later.** This task
+no longer blocks the `019a` final Milestone Review; if completed after `019a`,
+its results are recorded there as an addendum review note.
+
 **Not started. Blocked until task 028 is clear-context approved.** Approval must
 be recorded in `START_HERE.md` by an agent other than the agent that completed
 028. No profiling, prototype, implementation, or H200 run for this task may
