@@ -7,7 +7,7 @@
 #SBATCH --output=%x-%j.out
 # Task 028: H200 feasibility measurement — can n=1e6 run in 10 ms per step?
 # Preflight: CUDA lifecycle test + the new 028 convection test, then the
-# feasibility benchmark. FM028_MODE=pilot|sweep selects the case matrix
+# feasibility benchmark. FM028_MODE selects the case matrix
 # (individual FM028_* overrides exported at submit time win over the presets).
 # Pattern: cuda_027_run.sh.
 source /etc/profile
@@ -43,6 +43,18 @@ echo "=== test/cuda_radix_convection_test.jl (028)"
 FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 julia --project="$ENVDIR" test/cuda_radix_convection_test.jl
 convection_status=$?
 echo "CONVECTION_TEST_EXIT=$convection_status"
+
+# Small and fast, and the counting sort is on by default for bounded depths, so
+# it belongs in the preflight rather than only in the stage6sort A/B mode.
+echo "=== test/cuda_radix_counting_sort_test.jl (028 stage 6)"
+FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 julia --project="$ENVDIR" test/cuda_radix_counting_sort_test.jl
+counting_sort_status=$?
+echo "COUNTING_SORT_TEST_EXIT=$counting_sort_status"
+
+if (( lifecycle_status || convection_status || counting_sort_status )); then
+    echo "PREFLIGHT_EXIT=1"
+    exit 1
+fi
 
 # ---- case matrix presets (any FM028_* already exported wins) ----------------
 MODE="${FM028_MODE:-pilot}"
@@ -109,6 +121,226 @@ elif [ "$MODE" = "derisk" ]; then
     julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_derisk.jl
     bench_status=$?
     echo "DERISK_EXIT=$bench_status"
+elif [ "$MODE" = "attribute" ]; then
+    # Cycle 4 evidence-only pass: fixed-work A/Bs and launch-shape sweeps for
+    # the two residual kernels, followed by fresh optimized q=3/q=12 endpoint
+    # timings + sampled-direct errors. No src changes belong to this pass.
+    : "${FM028_N:=1000000}"
+    : "${FM028_P:=3}"
+    : "${FM028_ELL:=5}"
+    : "${FM028_K:=1740}"
+    : "${FM028_REPS:=7}"
+    export FM028_N FM028_P FM028_ELL FM028_K FM028_REPS
+
+    echo "=== cycle 4 residual kernel attribution"
+    julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_attribution.jl
+    attr_status=$?
+    echo "ATTRIBUTION_EXIT=$attr_status"
+
+    echo "=== cycle 4 optimized radius endpoints (q=3/q=12)"
+    FM028_POLICY=hier3,hier12 FM028_STRAT=dense FM028_TF=Float32 FM028_LH=0 \
+        FM028_STEPS=0 FM028_STALE=0 FM028_BOUND=ab \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    endpoint_status=$?
+    echo "RADIUS_ENDPOINT_EXIT=$endpoint_status"
+    bench_status=$(( attr_status || endpoint_status ))
+elif [ "$MODE" = "stage5" ]; then
+    # Complete intermediate-radius accuracy/performance frontier.  Each shell
+    # uses one full union-class window, eliminating window-count as a confounder.
+    : "${FM028_N:=1000000}"
+    : "${FM028_P:=3}"
+    : "${FM028_ELL:=5}"
+    : "${FM028_K:=full}"
+    : "${FM028_POLICY:=hier3,hier4,hier5,hier6,hier8,hier9,hier10,hier11,hier12}"
+    : "${FM028_STRAT:=dense}"
+    : "${FM028_TF:=Float32}"
+    : "${FM028_LH:=0}"
+    : "${FM028_REPS:=7}"
+    : "${FM028_STEPS:=0}"
+    : "${FM028_STALE:=0}"
+    : "${FM028_BOUND:=ab}"
+    export FM028_N FM028_P FM028_ELL FM028_K FM028_POLICY FM028_STRAT \
+        FM028_TF FM028_LH FM028_REPS FM028_STEPS FM028_STALE FM028_BOUND
+
+    echo "=== stage 5: complete rigid-radius frontier"
+    julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    bench_status=$?
+    echo "STAGE5_EXIT=$bench_status"
+elif [ "$MODE" = "stage6" ]; then
+    # Selected-shell depth bracket plus complete-verdict M2L launch A/B.
+    # FM028_SELECTED_Q is set after Stage 5; no public API is introduced.
+    : "${FM028_SELECTED_Q:?stage6 requires FM028_SELECTED_Q}"
+    : "${FM028_N:=1000000}"
+    : "${FM028_P:=3}"
+    : "${FM028_REPS:=9}"
+    export FM028_N FM028_P FM028_REPS
+    common=(FM028_N="$FM028_N" FM028_P="$FM028_P" FM028_K=full
+        FM028_POLICY="hier$FM028_SELECTED_Q" FM028_STRAT=dense FM028_LH=0
+        FM028_STEPS=0 FM028_STALE=0 FM028_BOUND=ab FM028_REPS="$FM028_REPS")
+
+    echo "=== stage 6a: q=$FM028_SELECTED_Q ell=4,5,6 bracket"
+    env "${common[@]}" FM028_ELL=4,5,6 FM028_TF=Float32 \
+        FM028_M2L_THREADS=128 FM028_M2L_BLOCK_CAP=16384 \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    bracket_status=$?
+
+    echo "=== stage 6b: current tiled-M2L launch, independent F32/F64 verdict"
+    env "${common[@]}" FM028_ELL=5 FM028_TF=Float32,Float64 \
+        FM028_M2L_THREADS=128 FM028_M2L_BLOCK_CAP=16384 \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    launch_a_status=$?
+
+    echo "=== stage 6b: candidate tiled-M2L launch, independent F32/F64 verdict"
+    env "${common[@]}" FM028_ELL=5 FM028_TF=Float32,Float64 \
+        FM028_M2L_THREADS=64 FM028_M2L_BLOCK_CAP=65536 \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    launch_b_status=$?
+    bench_status=$(( bracket_status || launch_a_status || launch_b_status ))
+    echo "STAGE6_EXIT=$bench_status"
+elif [ "$MODE" = "stage6sort" ]; then
+    : "${FM028_SELECTED_Q:?stage6sort requires FM028_SELECTED_Q}"
+    : "${FM028_N:=1000000}"
+    : "${FM028_P:=3}"
+    : "${FM028_REPS:=9}"
+    common=(FM028_N="$FM028_N" FM028_P="$FM028_P" FM028_ELL=5 FM028_K=full
+        FM028_POLICY="hier$FM028_SELECTED_Q" FM028_STRAT=dense
+        FM028_TF=Float32,Float64 FM028_LH=0 FM028_STEPS=0 FM028_STALE=0
+        FM028_BOUND=ab FM028_REPS="$FM028_REPS")
+
+    echo "=== stage 6c counting-sort parity/lifecycle gate"
+    FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 julia --project="$ENVDIR" \
+        test/cuda_radix_counting_sort_test.jl
+    counting_test_status=$?
+
+    echo "=== stage 6c: existing device sortperm!"
+    env "${common[@]}" FM028_COUNTING_SORT=0 \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    sort_a_status=$?
+    echo "=== stage 6c: bounded Morton counting sort"
+    env "${common[@]}" FM028_COUNTING_SORT=1 \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    sort_b_status=$?
+    bench_status=$(( counting_test_status || sort_a_status || sort_b_status ))
+    echo "STAGE6SORT_EXIT=$bench_status"
+elif [ "$MODE" = "stage56gate" ]; then
+    # Final combined production-default gate: every supported shell's compact
+    # host/device geometry parity plus q=6 F32/F64 full verdicts with both
+    # retained Stage 6 optimizations enabled by default.
+    echo "=== stages 5-6 all-radius CUDA parity gate"
+    FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 julia --project="$ENVDIR" \
+        test/cuda_radix_hierarchical_test.jl
+    radius_gate_status=$?
+    echo "=== stages 5-6 final selected production defaults"
+    FM028_N=1000000 FM028_P=3 FM028_ELL=5 FM028_K=full \
+        FM028_POLICY=hier6 FM028_STRAT=dense FM028_TF=Float32,Float64 \
+        FM028_LH=0 FM028_REPS=9 FM028_STEPS=0 FM028_STALE=0 FM028_BOUND=ab \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    final_status=$?
+    bench_status=$(( radius_gate_status || final_status ))
+    echo "STAGE56GATE_EXIT=$bench_status"
+elif [ "$MODE" = "stage7" ]; then
+    # Stage 7 adjacent q=5/q=6 shell frontier. The four schedule entries are
+    # levels 2:5; every entry selects a complete rigid cubic-orbit table and
+    # the leaf entry controls the direct list.
+    echo "=== stage 7 schedule host/device route and output gate"
+    FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 julia --project="$ENVDIR" \
+        test/cuda_radix_hierarchical_test.jl
+    schedule_gate_status=$?
+    if (( schedule_gate_status )); then
+        echo "STAGE7_GATE_EXIT=$schedule_gate_status"
+        exit 1
+    fi
+    echo "=== stage 7 q5/q6 sampled-field replay attribution"
+    FM028_N=1000000 FM028_P=3 FM028_ELL=5 FM028_TF=Float32 \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_stage7_replay.jl
+    replay_status=$?
+    if (( replay_status )); then
+        echo "STAGE7_REPLAY_EXIT=$replay_status"
+        exit 1
+    fi
+    echo "=== stage 7 complete adjacent-shell schedule frontier"
+    FM028_N=1000000 FM028_P=3 FM028_ELL=5 FM028_K=full \
+        FM028_POLICY=hier5,sched6-5-5-5,sched6-6-5-5,sched6-6-6-5,hier6 \
+        FM028_STRAT=dense FM028_TF=Float32 FM028_LH=0 FM028_REPS=9 \
+        FM028_STEPS=0 FM028_STALE=0 FM028_BOUND=ab \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    frontier_status=$?
+    bench_status=$(( schedule_gate_status || replay_status || frontier_status ))
+    echo "STAGE7_EXIT=$bench_status"
+elif [ "$MODE" = "stage8" ]; then
+    if [[ -z "${FM028_SELECTED_POLICY:-}" || -z "${FM028_SELECTED_SCHEDULE:-}" ]]; then
+        read -r FM028_SELECTED_POLICY FM028_SELECTED_SCHEDULE < <(
+            julia --project="$ENVDIR" \
+                MATRIX_OPERATOR_REFACTOR/scripts/select_028_stage7_winner.jl)
+    fi
+    export FM028_SELECTED_POLICY FM028_SELECTED_SCHEDULE
+    echo "=== stage 8 selected geometry: $FM028_SELECTED_POLICY ($FM028_SELECTED_SCHEDULE)"
+    echo "=== stage 8 symmetric/tensor CUDA parity and fallback gate"
+    FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 julia --project="$ENVDIR" \
+        test/cuda_radix_hierarchical_test.jl
+    bakeoff_gate_status=$?
+    if (( bakeoff_gate_status )); then
+        echo "STAGE8_GATE_EXIT=$bakeoff_gate_status"
+        exit 1
+    fi
+
+    echo "=== stage 8 Float64 singular-spectrum audit"
+    FM028_P=3 FM028_ELL=5 FM028_SCHEDULE="$FM028_SELECTED_SCHEDULE" \
+        julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/audit_028_low_rank.jl
+    lowrank_status=$?
+
+    common=(FM028_N=1000000 FM028_P=3 FM028_ELL=5 FM028_K=full
+        FM028_POLICY="$FM028_SELECTED_POLICY" FM028_STRAT=dense FM028_LH=0
+        FM028_REPS=9 FM028_STEPS=0 FM028_STALE=0 FM028_BOUND=ab)
+    echo "=== stage 8 baseline F32/F64 budgets"
+    env "${common[@]}" FM028_TF=Float32,Float64 FM028_SYMMETRIC=0 \
+        FM028_TENSOR_FORMAT=off julia --project="$ENVDIR" \
+        MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    baseline_status=$?
+    echo "=== stage 8 unordered symmetric nearfield F32/F64"
+    env "${common[@]}" FM028_TF=Float32,Float64 FM028_SYMMETRIC=1 \
+        FM028_TENSOR_FORMAT=off julia --project="$ENVDIR" \
+        MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    symmetric_status=$?
+
+    tensor_status=0
+    for format in tf32 fp16 bf16; do
+        echo "=== stage 8 tensor M2L format=$format"
+        env "${common[@]}" FM028_TF=Float32 FM028_SYMMETRIC=0 \
+            FM028_TENSOR_FORMAT="$format" julia --project="$ENVDIR" \
+            MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+        s=$?
+        echo "TENSOR_${format}_EXIT=$s"
+        tensor_status=$(( tensor_status || s ))
+    done
+    bench_status=$(( bakeoff_gate_status || lowrank_status || baseline_status || symmetric_status || tensor_status ))
+    echo "STAGE8_EXIT=$bench_status"
+elif [ "$MODE" = "stage8repro" ]; then
+    : "${FM028_SELECTED_POLICY:?stage8repro requires FM028_SELECTED_POLICY}"
+    : "${FM028_SELECTED_SCHEDULE:?stage8repro requires FM028_SELECTED_SCHEDULE}"
+    echo "=== stage 8 independent tensor reproduction: $FM028_SELECTED_POLICY ($FM028_SELECTED_SCHEDULE)"
+    FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 julia --project="$ENVDIR" \
+        test/cuda_radix_hierarchical_test.jl
+    repro_gate_status=$?
+    if (( repro_gate_status )); then
+        echo "STAGE8_REPRO_GATE_EXIT=$repro_gate_status"
+        exit 1
+    fi
+    common=(FM028_N=1000000 FM028_P=3 FM028_ELL=5 FM028_K=full
+        FM028_POLICY="$FM028_SELECTED_POLICY" FM028_STRAT=dense FM028_TF=Float32
+        FM028_LH=0 FM028_REPS=9 FM028_STEPS=0 FM028_STALE=0 FM028_BOUND=ab
+        FM028_SYMMETRIC=0)
+    repro_status=0
+    for format in fp16 bf16; do
+        echo "=== stage 8 independent tensor reproduction format=$format"
+        env "${common[@]}" FM028_TENSOR_FORMAT="$format" \
+            julia --project="$ENVDIR" \
+            MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+        s=$?
+        echo "STAGE8_REPRO_${format}_EXIT=$s"
+        repro_status=$(( repro_status || s ))
+    done
+    echo "STAGE8_REPRO_EXIT=$repro_status"
 else
     # 04-phase-sweep.md core matrix, TIERED using pilot 12996475 evidence.
     # The original full cross product (2 n x 3 ell x 2 K x 2 policy x 2 strat x

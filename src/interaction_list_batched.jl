@@ -90,6 +90,14 @@ function classify_radix_stencil_offsets(h0::Real, ell::Integer,
 end
 
 @inline _rigid_offset_order(o) = (o[3], o[2], o[1])
+@inline function _rigid_orbit_key(o)
+    a = abs(Int(o[1]))
+    b = abs(Int(o[2]))
+    c = abs(Int(o[3]))
+    hi = max(a, b, c)
+    lo = min(a, b, c)
+    return (hi, a + b + c - hi - lo, lo)
+end
 @inline _rigid_near(o, radius2::Int) =
     o[1] * o[1] + o[2] * o[2] + o[3] * o[3] <= radius2
 @inline _rigid_phase_index(c1::Integer, c2::Integer, c3::Integer) =
@@ -111,13 +119,28 @@ nearest far offset's bound works.
 """
 function rigid_stencil_epsilon(P_phi::Integer, h0::Real, ell::Integer,
         near_radius2::Integer; lamb_helmholtz::Bool=false, TF::Type=Float64)
-    near_radius2 in (3, 12) ||
-        throw(ArgumentError("rigid stencil near_radius2 must be 3 or 12"))
+    q = _validate_rigid_near_radius2(near_radius2, "rigid stencil")
     probe = ConstantPStencilConfig(P_phi, one(TF); lamb_helmholtz)
-    # farthest near offset / nearest far offset for each supported radius
-    near_far = near_radius2 == 3 ?
-        (SVector{3,Int}(1, 1, 1), SVector{3,Int}(2, 0, 0)) :
-        (SVector{3,Int}(2, 2, 2), SVector{3,Int}(3, 2, 0))
+    # Enumerate representatives of the farthest occupied near shell and the
+    # nearest nonempty far shell.  Not every integer is a sum of three squares
+    # (q=7 is redundant with q=6), hence this cannot safely assume q + 1.
+    extent = isqrt(q)
+    near_shell = SVector{3,Int}[]
+    for z in -extent:extent, y in -extent:extent, x in -extent:extent
+        x*x + y*y + z*z == q && push!(near_shell, SVector(x, y, z))
+    end
+    isempty(near_shell) && error("supported rigid radius q=$q has no lattice shell")
+    far_q = q + 1
+    far_shell = SVector{3,Int}[]
+    while isempty(far_shell)
+        far_extent = isqrt(far_q)
+        for z in -far_extent:far_extent, y in -far_extent:far_extent,
+                x in -far_extent:far_extent
+            x*x + y*y + z*z == far_q && push!(far_shell, SVector(x, y, z))
+        end
+        isempty(far_shell) && (far_q += 1)
+    end
+    near_far = (first(near_shell), first(far_shell))
     upper = constant_p_stencil_bound(TF(h0), ell, probe, near_far[1])
     lower = constant_p_stencil_bound(TF(h0), ell, probe, near_far[2])
     isfinite(lower) || throw(ArgumentError(
@@ -133,9 +156,7 @@ Enumerate the level-invariant source-major V-list from task 025.  This is
 construction-time work and contains no occupancy-dependent state.
 """
 function RigidHierarchicalTables(near_radius2::Integer)
-    q = Int(near_radius2)
-    q in (3, 12) ||
-        throw(ArgumentError("rigid hierarchical near_radius2 must be 3 or 12"))
+    q = _validate_rigid_near_radius2(near_radius2, "rigid hierarchical")
     near_extent = isqrt(q)
     near_offsets = SVector{3,Int}[]
     for z in -near_extent:near_extent, y in -near_extent:near_extent,
@@ -145,8 +166,9 @@ function RigidHierarchicalTables(near_radius2::Integer)
     end
     sort!(near_offsets; by=_rigid_offset_order)
 
-    # The exact task-025 union has infinity radius 3 (q=3) or 7 (q=12).
-    extent = q == 3 ? 3 : 7
+    # If a parent offset is near, each child coordinate is bounded by twice
+    # the parent extent plus its phase bit.
+    extent = 2isqrt(q) + 1
     by_phase = [SVector{3,Int}[] for _ in 1:8]
     union_offsets = Set{SVector{3,Int}}()
     for phase in 0:7
@@ -183,15 +205,114 @@ function RigidHierarchicalTables(near_radius2::Integer)
         phase_index, class_of)
 end
 
+# Scheduled transition table: children outside q_child are emitted when their
+# parent lies inside q_parent. For q_parent == q_child this is exactly the
+# production fixed-radius V-list. Keeping this constructor internal avoids a new
+# public geometry surface while making the exact-once transition explicit.
+function _rigid_transition_tables(q_parent::Integer, q_child::Integer)
+    qp = _validate_rigid_near_radius2(q_parent, "rigid parent transition")
+    qc = _validate_rigid_near_radius2(q_child, "rigid child transition")
+    qc <= qp || throw(ArgumentError(
+        "rigid transition requires q_child <= q_parent; got $qc > $qp"))
+    child_base = RigidHierarchicalTables(qc)
+    extent = 2isqrt(qp) + 1
+    by_phase = [SVector{3,Int}[] for _ in 1:8]
+    union_offsets = Set{SVector{3,Int}}()
+    for phase in 0:7
+        ux = phase & 1
+        uy = (phase >> 1) & 1
+        uz = (phase >> 2) & 1
+        phase_offsets = by_phase[phase + 1]
+        for z in -extent:extent, y in -extent:extent, x in -extent:extent
+            o = SVector{3,Int}(x, y, z)
+            _rigid_near(o, qc) && continue
+            parent = SVector{3,Int}(
+                fld(ux + x, 2), fld(uy + y, 2), fld(uz + z, 2))
+            _rigid_near(parent, qp) || continue
+            push!(phase_offsets, o)
+            push!(union_offsets, o)
+        end
+        sort!(phase_offsets; by=_rigid_offset_order)
+    end
+    push_offsets = sort!(collect(union_offsets); by=_rigid_offset_order)
+    offset_id = Dict(o => Int32(i) for (i, o) in enumerate(push_offsets))
+    phase_index = Int32[]
+    starts = Vector{Int}(undef, 9)
+    class_of = zeros(Int32, 8, length(push_offsets))
+    for phase in 1:8
+        starts[phase] = length(phase_index) + 1
+        for o in by_phase[phase]
+            k = offset_id[o]
+            push!(phase_index, k)
+            class_of[phase, k] = k
+        end
+    end
+    starts[9] = length(phase_index) + 1
+    return RigidHierarchicalTables(child_base.near_offsets, push_offsets,
+        Tuple(starts), phase_index, class_of)
+end
+
+"""
+Build the shared offset union and per-level phase masks for an internal radius
+schedule. The leaf table supplies the direct list; every M2L level selects a
+complete rigid (and therefore complete cubic-symmetry-orbit) table. Uniform
+policies take this same path, which keeps scheduled and production geometry
+directly comparable.
+"""
+function _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::Int)
+    ell >= 2 || throw(ArgumentError(
+        "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
+    nlevels = max(ell - 1, 0)
+    qs = isempty(policy.level_radii2) ? fill(policy.near_radius2, nlevels) :
+        collect(policy.level_radii2)
+    length(qs) == nlevels || throw(ArgumentError(
+        "hierarchical level schedule has $(length(qs)) entries, but ell=$ell " *
+        "requires $nlevels entries for levels 2:$ell"))
+    all(qs[i + 1] <= qs[i] for i in 1:length(qs)-1) || throw(ArgumentError(
+        "hierarchical level schedule must be non-increasing with depth; got $(Tuple(qs))"))
+    isempty(qs) || last(qs) == policy.near_radius2 || throw(ArgumentError(
+        "hierarchical schedule leaf radius must equal near_radius2"))
+
+    level_tables = [_rigid_transition_tables(j == 1 ? qs[j] : qs[j - 1], qs[j])
+                    for j in eachindex(qs)]
+    leaf = RigidHierarchicalTables(last(qs))
+    push_offsets = sort!(collect(union((Set(t.push_offsets) for t in level_tables)...));
+        by=_rigid_offset_order)
+    offset_id = Dict(o => k for (k, o) in enumerate(push_offsets))
+    level_class_of = zeros(Int32, 8, length(push_offsets), ell + 1)
+    for (j, table) in enumerate(level_tables)
+        L = j + 1
+        for (oldk, o) in enumerate(table.push_offsets)
+            k = offset_id[o]
+            # Only membership is load-bearing; carrying the shared-union id
+            # rather than the per-level one aids host-side diagnostics.
+            @views level_class_of[:, k, L + 1] .=
+                ifelse.(table.class_of[:, oldk] .== 0, Int32(0), Int32(k))
+        end
+    end
+    # Legacy fields retain leaf semantics. Route construction uses the explicit
+    # level masks above; direct construction uses leaf.near_offsets.
+    leaf_class = zeros(Int32, 8, length(push_offsets))
+    leaf_map = Dict(o => k for (k, o) in enumerate(leaf.push_offsets))
+    for (k, o) in enumerate(push_offsets)
+        oldk = get(leaf_map, o, 0)
+        oldk == 0 || (@views leaf_class[:, k] .=
+            ifelse.(leaf.class_of[:, oldk] .== 0, Int32(0), Int32(k)))
+    end
+    tables = RigidHierarchicalTables(leaf.near_offsets, push_offsets,
+        leaf.phase_starts, leaf.phase_index, leaf_class)
+    return tables, level_class_of, qs
+end
+
 function _verify_hierarchical_classifier!(h0, ell::Int,
         policy::HierarchicalRigidStencil, tables::RigidHierarchicalTables)
     ell >= 2 || throw(ArgumentError(
         "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
     # The task-025 accepted/rejected boundary lies strictly inside the rigid
-    # push-union cube (radius 3 or 7).  Evaluate the production analytic
+    # push-union cube.  Evaluate the production analytic
     # classifier on that complete cube without materializing the full
     # `(2^(ell+1)-1)^3` flat route-class domain.
-    extent = policy.near_radius2 == 3 ? 3 : 7
+    extent = 2isqrt(policy.near_radius2) + 1
     actual = Set{SVector{3,Int}}()
     for z in -extent:extent, y in -extent:extent, x in -extent:extent
         o = SVector{3,Int}(x, y, z)
@@ -280,7 +401,7 @@ source-major inside each class and endpoints are flat node indices.
         for source in first_source:last_source
             phase = _rigid_phase_index(grid.node_coords[1, source],
                 grid.node_coords[2, source], grid.node_coords[3, source])
-            ctx.tables.class_of[phase, k] == 0 && continue
+            ctx.level_class_of[phase, k, L + 1] == 0 && continue
             source_coord = SVector{3,Int}(grid.node_coords[1, source],
                 grid.node_coords[2, source], grid.node_coords[3, source])
             target = _hierarchical_node_lookup(ctx.occupancy, grid,

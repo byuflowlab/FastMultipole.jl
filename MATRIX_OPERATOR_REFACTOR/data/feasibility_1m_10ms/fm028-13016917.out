@@ -1,0 +1,107 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=ccd4e5554d47a929
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Precompiling CUDA...
+   2503.1 ms  ✓ CUDA_Driver_jll
+   2780.3 ms  ✓ CUDA_Runtime_jll
+   1896.2 ms  ✓ CUDA_Compiler_jll
+   8060.5 ms  ✓ LLVM
+   2072.4 ms  ✓ LLVM → BFloat16sExt
+   2508.7 ms  ✓ UnsafeAtomics → UnsafeAtomicsLLVM
+   3035.3 ms  ✓ GPUToolbox
+   5589.9 ms  ✓ GPUArrays
+  20430.2 ms  ✓ PrettyTables
+  19604.6 ms  ✓ GPUCompiler
+  19193.5 ms  ✓ CUDACore
+   7540.6 ms  ✓ cuFFT
+   7460.2 ms  ✓ cuRAND
+   9466.8 ms  ✓ CUPTI
+   9517.7 ms  ✓ NVML
+  12423.8 ms  ✓ cuSPARSE
+  13729.3 ms  ✓ cuBLAS
+  14797.7 ms  ✓ CUDATools
+  11926.1 ms  ✓ cuSOLVER
+   8443.9 ms  ✓ CUDA
+   8513.6 ms  ✓ Atomix → AtomixCUDAExt
+  21 dependencies successfully precompiled in 95 seconds. 79 already precompiled.
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m09.1s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.8s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl (028)
+ERROR: LoadError: Some tests did not pass: 3 passed, 1 failed, 0 errored, 0 broken.
+in expression starting at /home/rander39/FastMultipole-023/test/cuda_radix_convection_test.jl:29
+Test Summary:                          | Pass  Total     Time
+device convection lifecycle (task 028) |   24     24  1m03.9s
+Test Summary:                                         | Pass  Total  Time
+fused dense M2L grid-stride parity (task 028 lever 2) |    8      8  3.4s
+nearfield stream-overlap parity (task 028 cycle 3): Test Failed at /home/rander39/FastMultipole-023/test/cuda_radix_convection_test.jl:182
+  Expression: maximum(abs.(grad .- ref_grad)) <= tol * max(1, maximum(abs.(ref_grad)))
+   Evaluated: 0.07245636f0 <= 0.02311000671386719
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FastMultipole-023/test/cuda_radix_convection_test.jl:182 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FastMultipole-023/test/cuda_radix_convection_test.jl:151
+Test Summary:                                      | Pass  Fail  Total  Time
+nearfield stream-overlap parity (task 028 cycle 3) |    3     1      4  2.1s
+CONVECTION_TEST_EXIT=1
+=== FM028_MODE=stage5
+=== stage 5: complete rigid-radius frontier
+hier3   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=316   fit=true  eval     6.511  verdict     9.517  host       NaN ms  grad_err 3.995e-03
+hier4   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=418   fit=true  eval     7.470  verdict    10.559  host       NaN ms  grad_err 1.683e-03
+hier5   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=682   fit=true  eval    11.110  verdict    14.221  host       NaN ms  grad_err 1.422e-03
+hier6   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=850   fit=true  eval    14.337  verdict    17.431  host       NaN ms  grad_err 5.745e-04
+hier8   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=982   fit=true  eval    16.045  verdict    19.128  host       NaN ms  grad_err 5.508e-04
+hier9   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1252  fit=true  eval    20.064  verdict    23.168  host       NaN ms  grad_err 5.563e-04
+hier10  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1516  fit=true  eval    23.418  verdict    26.703  host       NaN ms  grad_err 3.436e-04
+hier11  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1684  fit=true  eval    26.531  verdict    29.708  host       NaN ms  grad_err 3.682e-04
+hier12  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    27.495  verdict    30.664  host       NaN ms  grad_err 3.186e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-081258.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-081258.csv.classes.csv
+STAGE5_EXIT=0

@@ -294,6 +294,13 @@ and tree refresh, no per-step body transfers. See the `028` task file and the
 `START_HERE.md` row for the full definition; user sign-off gates each optimize
 cycle.
 
+Row `029` follows clear-context approval of `028` and turns the reproduced
+9.591 ms single-H200 result into an open high-score campaign with a 1 ms goal.
+It preserves the fixed 1,000,000-body, literature-P=4 accuracy and complete
+recurring-step boundary, adds separate single- and multi-H200 leaderboards, and
+requires independent reproduction of any qualifying score. The final `019a`
+roadmap Milestone Review follows `029` and reviews work through that row.
+
 ## Non-Goals
 
 - Do not change the mathematical translation algorithm in the first

@@ -208,4 +208,65 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     @test _radix_gradient_error(sys_a, ref_a) < 1e-4
     @test _radix_potential_error(sys_b, ref_b) < 1e-6
     @test _radix_gradient_error(sys_b, ref_b) < 1e-4
+
+    #--- (h) measured option defaults (tasks 024 / 028) ---#
+
+    # Precision depends only on the expansion order; the strategy also gates on the
+    # Lamb-Helmholtz channel, the platform, and the dense operator footprint.
+    for (eo, TF) in ((1, Float32), (3, Float32), (4, Float64), (12, Float64))
+        @test FastMultipole._default_radix_precision(eo) === TF
+    end
+    _sel(eo, LH, device; nclasses=874) = nameof(typeof(
+        FastMultipole._default_radix_m2l_strategy(
+            FastMultipole._default_radix_precision(eo), eo, LH, device, nclasses,
+            FastMultipole._dense_m2m_dof(
+                FastMultipole.OperatorBasisInfo(
+                    FastMultipole.CompressedComplexBasis(), eo, Val(LH)), Val(LH)))))
+    for device in (false, true)
+        @test _sel(3, false, device) === :DenseTranslationM2L      # literature P = 4
+        @test _sel(3, true, device) === :DenseTranslationM2L
+        @test _sel(7, false, device) === :DenseTranslationM2L      # P = 8, LH off
+        @test _sel(8, false, device) === :PrecomputedFactoredYM2L  # P >= 12
+        @test _sel(11, true, device) === :PrecomputedFactoredYM2L
+    end
+    # P = 8 with Lamb-Helmholtz is the one measured platform split.
+    @test _sel(7, true, false) === :DenseTranslationM2L
+    @test _sel(7, true, true) === :PrecomputedFactoredYM2L
+    # A dense operator payload over its gate falls back instead of throwing.
+    @test _sel(7, false, true; nclasses=10^7) === :PrecomputedFactoredYM2L
+
+    # The resolved choice must reach the cache, and each strategy must carry the
+    # rotation operator its plan is built from.
+    auto_sys = generate_gravitational(seed + 2, 400)
+    auto_cache = RadixFMMCache(auto_sys; expansion_order=3, ell=4)
+    @test auto_cache.state.options.precision === Float32
+    @test auto_cache.state.options.m2l_strategy isa DenseTranslationM2L
+    @test auto_cache.state.options.operator isa MaterializedYRotationM2L
+    hi_sys = generate_gravitational(seed + 3, 400)
+    hi_cache = RadixFMMCache(hi_sys; expansion_order=8, ell=3)
+    @test hi_cache.state.options.precision === Float64
+    @test hi_cache.state.options.m2l_strategy isa PrecomputedFactoredYM2L
+    @test hi_cache.state.options.operator isa FactoredRotationM2L
+    # Explicit options bypass the rules entirely.
+    exp_sys = generate_gravitational(seed + 4, 400)
+    exp_cache = RadixFMMCache(exp_sys; expansion_order=3, ell=4,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=ConcatenatedFixedZM2L()))
+    @test exp_cache.state.options.precision === Float64
+    @test exp_cache.state.options.m2l_strategy isa ConcatenatedFixedZM2L
+
+    # Float32 at literature P = 4 must cost no measurable accuracy against Float64
+    # at the same geometry: the stencil truncation error dominates (task 028 §4.3).
+    f32 = generate_gravitational(seed + 5, 1500)
+    f64 = generate_gravitational(seed + 5, 1500)
+    ref32 = _radix_direct_reference(seed + 5, 1500)
+    c32 = RadixFMMCache(f32; expansion_order=3, ell=4)
+    c64 = RadixFMMCache(f64; expansion_order=3, ell=4,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=DenseTranslationM2L()))
+    fmm!(f32, c32; scalar_potential=true, gradient=true)
+    fmm!(f64, c64; scalar_potential=true, gradient=true)
+    e32 = _radix_gradient_error(f32, ref32)
+    e64 = _radix_gradient_error(f64, ref32)
+    @test e32 <= 1.05 * e64
 end

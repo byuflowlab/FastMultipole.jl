@@ -2,6 +2,27 @@ near_radius2,check,ell,cases,failures,pass,minimum_child_norm2,detail
 3,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
 3,level_branch_geometric,2,3096,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
 3,downward_monotonicity,0,20224,0,true,9,|o_k| >= 2|p_k|-1 for every enumerated child
+4,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
+4,level_branch_geometric,2,2904,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
+4,downward_monotonicity,0,44544,0,true,10,|o_k| >= 2|p_k|-1 for every enumerated child
+5,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
+5,level_branch_geometric,2,2328,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
+5,downward_monotonicity,0,43008,0,true,11,|o_k| >= 2|p_k|-1 for every enumerated child
+6,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
+6,level_branch_geometric,2,1896,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
+6,downward_monotonicity,0,41472,0,true,18,|o_k| >= 2|p_k|-1 for every enumerated child
+8,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
+8,level_branch_geometric,2,1704,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
+8,downward_monotonicity,0,40704,0,true,19,|o_k| >= 2|p_k|-1 for every enumerated child
+9,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
+9,level_branch_geometric,2,1320,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
+9,downward_monotonicity,0,77312,0,true,26,|o_k| >= 2|p_k|-1 for every enumerated child
+10,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
+10,level_branch_geometric,2,1032,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
+10,downward_monotonicity,0,75776,0,true,27,|o_k| >= 2|p_k|-1 for every enumerated child
+11,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
+11,level_branch_geometric,2,816,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
+11,downward_monotonicity,0,74240,0,true,27,|o_k| >= 2|p_k|-1 for every enumerated child
 12,level_branch,1,64,0,true,0,exhaustive 8x8 ordered cells; all level-1 offsets are near
 12,level_branch_geometric,2,752,0,true,0,all separated ordered level-2 cell pairs have near geometric parents
 12,level2_formula_range_preliminary,2,1312,0,true,0,164 separated bounded offsets x 8 phases; stronger q=12 audit
@@ -12,6 +33,48 @@ near_radius2,check,ell,cases,failures,pass,minimum_child_norm2,detail
 3,epsilon_interval,5,4,0,true,0,accepted iff epsilon >= 79.65931634631265 and epsilon < Inf
 3,epsilon_interval,6,4,0,true,0,accepted iff epsilon >= 159.3186326926253 and epsilon < Inf
 3,epsilon_interval,7,4,0,true,0,accepted iff epsilon >= 318.6372653852506 and epsilon < Inf
+4,epsilon_interval,2,5,0,true,0,accepted iff epsilon >= 2.484452847967527 and epsilon < 9.9574145432890813
+4,epsilon_interval,3,5,0,true,0,accepted iff epsilon >= 4.9689056959350539 and epsilon < 19.914829086578163
+4,epsilon_interval,4,5,0,true,0,accepted iff epsilon >= 9.9378113918701079 and epsilon < 39.829658173156325
+4,epsilon_interval,5,5,0,true,0,accepted iff epsilon >= 19.875622783740216 and epsilon < 79.65931634631265
+4,epsilon_interval,6,5,0,true,0,accepted iff epsilon >= 39.751245567480431 and epsilon < 159.3186326926253
+4,epsilon_interval,7,5,0,true,0,accepted iff epsilon >= 79.502491134960863 and epsilon < 318.6372653852506
+5,epsilon_interval,2,6,0,true,0,accepted iff epsilon >= 0.97812475734249094 and epsilon < 2.484452847967527
+5,epsilon_interval,3,6,0,true,0,accepted iff epsilon >= 1.9562495146849819 and epsilon < 4.9689056959350539
+5,epsilon_interval,4,6,0,true,0,accepted iff epsilon >= 3.9124990293699637 and epsilon < 9.9378113918701079
+5,epsilon_interval,5,6,0,true,0,accepted iff epsilon >= 7.8249980587399275 and epsilon < 19.875622783740216
+5,epsilon_interval,6,6,0,true,0,accepted iff epsilon >= 15.649996117479855 and epsilon < 39.751245567480431
+5,epsilon_interval,7,6,0,true,0,accepted iff epsilon >= 31.29999223495971 and epsilon < 79.502491134960863
+6,epsilon_interval,2,8,0,true,0,accepted iff epsilon >= 0.27133200996996559 and epsilon < 0.97812475734249094
+6,epsilon_interval,3,8,0,true,0,accepted iff epsilon >= 0.54266401993993119 and epsilon < 1.9562495146849819
+6,epsilon_interval,4,8,0,true,0,accepted iff epsilon >= 1.0853280398798624 and epsilon < 3.9124990293699637
+6,epsilon_interval,5,8,0,true,0,accepted iff epsilon >= 2.1706560797597247 and epsilon < 7.8249980587399275
+6,epsilon_interval,6,8,0,true,0,accepted iff epsilon >= 4.3413121595194495 and epsilon < 15.649996117479855
+6,epsilon_interval,7,8,0,true,0,accepted iff epsilon >= 8.682624319038899 and epsilon < 31.29999223495971
+8,epsilon_interval,2,9,0,true,0,accepted iff epsilon >= 0.16778514603800276 and epsilon < 0.27133200996996559
+8,epsilon_interval,3,9,0,true,0,accepted iff epsilon >= 0.33557029207600553 and epsilon < 0.54266401993993119
+8,epsilon_interval,4,9,0,true,0,accepted iff epsilon >= 0.67114058415201105 and epsilon < 1.0853280398798624
+8,epsilon_interval,5,9,0,true,0,accepted iff epsilon >= 1.3422811683040221 and epsilon < 2.1706560797597247
+8,epsilon_interval,6,9,0,true,0,accepted iff epsilon >= 2.6845623366080442 and epsilon < 4.3413121595194495
+8,epsilon_interval,7,9,0,true,0,accepted iff epsilon >= 5.3691246732160884 and epsilon < 8.682624319038899
+9,epsilon_interval,2,10,0,true,0,accepted iff epsilon >= 0.1109504403026965 and epsilon < 0.16778514603800276
+9,epsilon_interval,3,10,0,true,0,accepted iff epsilon >= 0.22190088060539301 and epsilon < 0.33557029207600553
+9,epsilon_interval,4,10,0,true,0,accepted iff epsilon >= 0.44380176121078602 and epsilon < 0.67114058415201105
+9,epsilon_interval,5,10,0,true,0,accepted iff epsilon >= 0.88760352242157203 and epsilon < 1.3422811683040221
+9,epsilon_interval,6,10,0,true,0,accepted iff epsilon >= 1.7752070448431441 and epsilon < 2.6845623366080442
+9,epsilon_interval,7,10,0,true,0,accepted iff epsilon >= 3.5504140896862881 and epsilon < 5.3691246732160884
+10,epsilon_interval,2,11,0,true,0,accepted iff epsilon >= 0.077198798155542717 and epsilon < 0.1109504403026965
+10,epsilon_interval,3,11,0,true,0,accepted iff epsilon >= 0.15439759631108543 and epsilon < 0.22190088060539301
+10,epsilon_interval,4,11,0,true,0,accepted iff epsilon >= 0.30879519262217087 and epsilon < 0.44380176121078602
+10,epsilon_interval,5,11,0,true,0,accepted iff epsilon >= 0.61759038524434173 and epsilon < 0.88760352242157203
+10,epsilon_interval,6,11,0,true,0,accepted iff epsilon >= 1.2351807704886835 and epsilon < 1.7752070448431441
+10,epsilon_interval,7,11,0,true,0,accepted iff epsilon >= 2.4703615409773669 and epsilon < 3.5504140896862881
+11,epsilon_interval,2,12,0,true,0,accepted iff epsilon >= 0.055904165498874434 and epsilon < 0.077198798155542717
+11,epsilon_interval,3,12,0,true,0,accepted iff epsilon >= 0.11180833099774887 and epsilon < 0.15439759631108543
+11,epsilon_interval,4,12,0,true,0,accepted iff epsilon >= 0.22361666199549773 and epsilon < 0.30879519262217087
+11,epsilon_interval,5,12,0,true,0,accepted iff epsilon >= 0.44723332399099547 and epsilon < 0.61759038524434173
+11,epsilon_interval,6,12,0,true,0,accepted iff epsilon >= 0.89446664798199094 and epsilon < 1.2351807704886835
+11,epsilon_interval,7,12,0,true,0,accepted iff epsilon >= 1.7889332959639819 and epsilon < 2.4703615409773669
 12,epsilon_interval,2,13,0,true,0,accepted iff epsilon >= 0.041807761156300173 and epsilon < 0.055904165498874434
 12,epsilon_interval,3,13,0,true,0,accepted iff epsilon >= 0.083615522312600346 and epsilon < 0.11180833099774887
 12,epsilon_interval,4,13,0,true,0,accepted iff epsilon >= 0.16723104462520069 and epsilon < 0.22361666199549773

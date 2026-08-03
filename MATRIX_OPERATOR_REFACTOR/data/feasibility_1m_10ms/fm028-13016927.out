@@ -1,0 +1,98 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=ccd4e5554d47a929
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Precompiling CUDA...
+   2613.3 ms  ✓ CUDA_Driver_jll
+   2821.5 ms  ✓ CUDA_Runtime_jll
+   1999.2 ms  ✓ CUDA_Compiler_jll
+   8109.6 ms  ✓ LLVM
+   2149.6 ms  ✓ LLVM → BFloat16sExt
+   2566.4 ms  ✓ UnsafeAtomics → UnsafeAtomicsLLVM
+   3081.1 ms  ✓ GPUToolbox
+   7265.9 ms  ✓ GPUArrays
+  20575.9 ms  ✓ PrettyTables
+  18164.2 ms  ✓ GPUCompiler
+  20113.4 ms  ✓ CUDACore
+   7995.4 ms  ✓ cuFFT
+   7908.3 ms  ✓ cuRAND
+   9822.0 ms  ✓ CUPTI
+   9966.0 ms  ✓ NVML
+  12506.5 ms  ✓ cuSPARSE
+  14367.4 ms  ✓ cuBLAS
+  14301.8 ms  ✓ CUDATools
+  12256.2 ms  ✓ cuSOLVER
+   8407.4 ms  ✓ CUDA
+   8907.9 ms  ✓ Atomix → AtomixCUDAExt
+  21 dependencies successfully precompiled in 97 seconds. 79 already precompiled.
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m11.3s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.9s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl (028)
+Test Summary:                          | Pass  Total     Time
+device convection lifecycle (task 028) |   24     24  1m02.7s
+Test Summary:                                         | Pass  Total  Time
+fused dense M2L grid-stride parity (task 028 lever 2) |    8      8  3.2s
+Test Summary:                                      | Pass  Total  Time
+nearfield stream-overlap parity (task 028 cycle 3) |    4      4  1.1s
+Test Summary:                                     | Pass  Total  Time
+dense M2L operator-tile parity (task 028 cycle 2) |   12     12  2.1s
+Test Summary:                                | Pass  Total  Time
+_cuda_fast_rsqrt accuracy (task 028 lever 1) |    2      2  0.8s
+Test Summary:                                     | Pass  Total  Time
+nearfield warp-per-pair parity (task 028 lever 1) |   16     16  2.3s
+CONVECTION_TEST_EXIT=0
+=== FM028_MODE=stage5
+=== stage 5: complete rigid-radius frontier
+hier3   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=316   fit=true  eval     6.503  verdict     9.515  host       NaN ms  grad_err 3.995e-03
+hier4   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=418   fit=true  eval     7.475  verdict    10.515  host       NaN ms  grad_err 1.683e-03
+hier5   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=682   fit=true  eval    11.131  verdict    14.230  host       NaN ms  grad_err 1.422e-03
+hier6   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=850   fit=true  eval    14.336  verdict    17.383  host       NaN ms  grad_err 5.745e-04
+hier8   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=982   fit=true  eval    16.034  verdict    19.070  host       NaN ms  grad_err 5.508e-04
+hier9   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1252  fit=true  eval    20.044  verdict    23.175  host       NaN ms  grad_err 5.563e-04
+hier10  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1516  fit=true  eval    23.458  verdict    26.544  host       NaN ms  grad_err 3.436e-04
+hier11  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1684  fit=true  eval    26.518  verdict    29.707  host       NaN ms  grad_err 3.682e-04
+hier12  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    27.486  verdict    30.756  host       NaN ms  grad_err 3.186e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-082740.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-082740.csv.classes.csv
+STAGE5_EXIT=0

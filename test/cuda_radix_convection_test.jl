@@ -108,6 +108,10 @@ if _CONV_LOADED
         box_size = 1.02
         indices = collect(1:n)
         saved_cap = FastMultipole.DENSE_CUDA_FUSED_MAX_BLOCKS[]
+        # This testset is about the FP32 fused kernel's launch decomposition; the
+        # default tensor format would bypass that kernel entirely at Float32.
+        saved_format = FastMultipole.DENSE_CUDA_TENSOR_FORMAT[]
+        FastMultipole.DENSE_CUDA_TENSOR_FORMAT[] = :off
         try
             for TF in (Float64, Float32)
                 results = map((typemax(Int), 3, 1)) do cap
@@ -137,6 +141,7 @@ if _CONV_LOADED
             end
         finally
             FastMultipole.DENSE_CUDA_FUSED_MAX_BLOCKS[] = saved_cap
+            FastMultipole.DENSE_CUDA_TENSOR_FORMAT[] = saved_format
         end
     end
 
@@ -199,6 +204,9 @@ if _CONV_LOADED
         box_min = SVector(-0.01, -0.01, -0.01)
         box_size = 1.02
         indices = collect(1:n)
+        # Same reason as the grid-stride testset: pin the FP32 kernel under test.
+        saved_format = FastMultipole.DENSE_CUDA_TENSOR_FORMAT[]
+        FastMultipole.DENSE_CUDA_TENSOR_FORMAT[] = :off
         saved_tiled = FastMultipole.DENSE_CUDA_TILED[]
         saved_min = FastMultipole.DENSE_CUDA_TILED_MIN_ROUTES[]
         saved_cap = FastMultipole.DENSE_CUDA_FUSED_MAX_BLOCKS[]
@@ -233,6 +241,7 @@ if _CONV_LOADED
                 end
             end
         finally
+            FastMultipole.DENSE_CUDA_TENSOR_FORMAT[] = saved_format
             FastMultipole.DENSE_CUDA_TILED[] = saved_tiled
             FastMultipole.DENSE_CUDA_TILED_MIN_ROUTES[] = saved_min
             FastMultipole.DENSE_CUDA_FUSED_MAX_BLOCKS[] = saved_cap

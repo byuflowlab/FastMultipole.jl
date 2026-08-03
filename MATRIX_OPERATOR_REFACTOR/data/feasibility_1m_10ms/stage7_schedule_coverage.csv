@@ -1,0 +1,6 @@
+schedule,direct_cell_pairs,routes_total,routes_per_level,dense_exact_once,sparse_exact_once,boundary_exact_once,downward_monotone
+5-5-5-5,1729144,12277584,2328 92136 1145544 11037576,true,true,true,true
+6-5-5-5,1729144,12304800,1896 119784 1145544 11037576,true,true,true,true
+6-6-5-5,1729144,12749328,1896 112728 1597128 11037576,true,true,true,true
+6-6-6-5,1729144,17512128,1896 112728 1521528 15875976,true,true,true,true
+6-6-6-6,2421064,16820208,1896 112728 1521528 15184056,true,true,true,true

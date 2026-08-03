@@ -5,6 +5,7 @@
 # transfer accounting for the resident radix operator path.
 
 const CUDA = Base.require(Base.PkgId(Base.UUID("052768ef-5323-5732-b1bb-66c8b64840ba"), "CUDA"))
+const CUDABFloat16 = CUDA.CUDACore.BFloat16
 
 # Device intrinsics used bare inside the kernels below; without these bindings
 # they are undefined globals in FastMultipole and every kernel infers to Any.
@@ -157,6 +158,76 @@ function _cuda_gather_sorted_keys_kernel!(sorted_keys, keys, perm)
     i > length(perm) && return nothing
     @inbounds sorted_keys[i] = keys[perm[i]]
     return nothing
+end
+
+# Task 028 Stage 6 bounded-key counting-sort prototype.  The cache's fixed
+# Morton depth bounds keys to `0:2^(3ell)-1`; histogram, scan and scatter storage
+# is persistent and the whole path is included in recurring refresh timing.
+const RADIX_CUDA_COUNTING_SORT = Ref(true)
+const RADIX_CUDA_COUNTING_SORT_MAX_ELL = Ref(6)
+@inline _cuda_counting_sort_enabled(ell::Int) =
+    RADIX_CUDA_COUNTING_SORT[] && ell <= RADIX_CUDA_COUNTING_SORT_MAX_ELL[]
+
+# The histogram is sized at construction from `_cuda_counting_sort_enabled`, so a
+# step must also confirm the buffer it is about to scatter through actually spans
+# the key domain: flipping the knob on after construction would otherwise drive
+# `@inbounds` atomics through a length-1 array. Falling back is always safe.
+@inline _cuda_counting_sort_ready(ctx, ell::Int) =
+    _cuda_counting_sort_enabled(ell) && length(ctx.counting_histogram) == 1 << (3ell)
+
+function _cuda_counting_histogram_kernel!(histogram, keys)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > length(keys) && return nothing
+    @inbounds CUDA.@atomic histogram[Int(keys[i]) + 1] += Int32(1)
+    return nothing
+end
+
+function _cuda_counting_cursor_kernel!(cursor, prefix)
+    k = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    k > length(cursor) && return nothing
+    @inbounds cursor[k] = k == 1 ? Int32(0) : prefix[k - 1]
+    return nothing
+end
+
+
+function _cuda_counting_scatter_kernel!(perm, sorted_keys, cursor, keys)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > length(keys) && return nothing
+    @inbounds begin
+        key = keys[i]
+        slot = Int(CUDA.atomic_add!(pointer(cursor, Int(key) + 1), Int32(1))) + 1
+        perm[slot] = i
+        sorted_keys[slot] = key
+    end
+    return nothing
+end
+
+# Construct BF16 tensor-operator storage on device.  Broadcasting
+# `CUDABFloat16.(Kbuf)` on the host makes Julia's x86 LLVM backend select a
+# vector BF16 rounding instruction that is unavailable on the cluster login and
+# compute-node CPUs, even when the optional tensor path is disabled at runtime.
+# H200 supports the scalar conversion natively, and this cache is built only
+# once with the rest of the resident operator plan.
+function _cuda_convert_bf16_kernel!(dest, source)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > length(dest) && return nothing
+    @inbounds dest[i] = CUDABFloat16(source[i])
+    return nothing
+end
+
+function _cuda_counting_sort_into!(perm, sorted_keys, keys, histogram, prefix,
+        cursor, threads::Int)
+    fill!(histogram, Int32(0))
+    blocks = cld(length(keys), threads)
+    CUDA.@cuda threads=threads blocks=blocks _cuda_counting_histogram_kernel!(
+        histogram, keys)
+    accumulate!(+, prefix, histogram)
+    domain_blocks = cld(length(histogram), threads)
+    CUDA.@cuda threads=threads blocks=domain_blocks _cuda_counting_cursor_kernel!(
+        cursor, prefix)
+    CUDA.@cuda threads=threads blocks=blocks _cuda_counting_scatter_kernel!(
+        perm, sorted_keys, cursor, keys)
+    return perm
 end
 
 # Stage every level's unique-node count into one device vector so a single
@@ -1473,6 +1544,73 @@ function _cuda_direct_pairs_output_kernel!(output, source_bodies, cell_ranges,
     return nothing
 end
 
+# One warp per compact entry. Positive target ids denote an unordered cell pair;
+# negative ids retain an oversized directed fallback entry. Cross-cell and
+# triangular same-cell branches evaluate each ordinary body pair once and update
+# both endpoints. This is valid only for the same-source/target scalar kernel.
+function _cuda_symmetric_pairs_output_kernel!(output, source_bodies, cell_ranges,
+        pair_targets, pair_sources, npairs)
+    T = eltype(output)
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    pair_i = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    warp_stride = gridDim().x * warps_per_block
+    c = inv(T(4) * T(π))
+    @inbounds while pair_i <= npairs
+        encoded_target = pair_targets[pair_i]
+        source_cell = pair_sources[pair_i]
+        fallback = encoded_target < 0
+        target_cell = abs(encoded_target)
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + lane
+        while i <= tlast
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            qi = source_bodies[5, i] * c
+            ui = zero(T)
+            gxi = zero(T)
+            gyi = zero(T)
+            gzi = zero(T)
+            jfirst = fallback ? sfirst :
+                (target_cell == source_cell ? max(i + 1, sfirst) : sfirst)
+            for j in jfirst:slast
+                fallback && i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                if r2 > zero(r2)
+                    invr = _cuda_fast_rsqrt(r2)
+                    qj = source_bodies[5, j] * c
+                    invr3 = invr * invr * invr
+                    ui += qj * invr
+                    gxi -= qj * dx * invr3
+                    gyi -= qj * dy * invr3
+                    gzi -= qj * dz * invr3
+                    if !fallback
+                        CUDA.@atomic output[1, j] += qi * invr
+                        CUDA.@atomic output[2, j] += qi * dx * invr3
+                        CUDA.@atomic output[3, j] += qi * dy * invr3
+                        CUDA.@atomic output[4, j] += qi * dz * invr3
+                    end
+                end
+            end
+            CUDA.@atomic output[1, i] += ui
+            CUDA.@atomic output[2, i] += gxi
+            CUDA.@atomic output[3, i] += gyi
+            CUDA.@atomic output[4, i] += gzi
+            i += 32
+        end
+        pair_i += warp_stride
+    end
+    return nothing
+end
+
 # Task 028 rider: warp-per-cell (was one thread per cell looping its ~30 bodies
 # serially, i.e. only ncell threads of parallelism). Lanes stride the cell's
 # bodies; each body belongs to exactly one cell and one lane, so the `+=` into
@@ -2380,12 +2518,45 @@ const DENSE_CUDA_FUSED_MAX_BLOCKS = Ref(16384)
 # small windows (coarse levels) keep the plain fused kernel.
 const DENSE_CUDA_TILED = Ref(true)
 const DENSE_CUDA_TILED_MIN_ROUTES = Ref(65536)
+const DENSE_CUDA_TILED_THREADS = Ref(64)
+const DENSE_CUDA_TILED_MAX_BLOCKS = Ref(65536)
+"""
+Input format of the hierarchical dense leaf M2L: `:off` (FP32 tiled kernel),
+`:fp16`, or `:bf16` (WMMA 16x16 tensor kernel with FP32 accumulation).
+
+`:fp16` is the default: task 028 Stage 8 measured it at 2.54 ms against 5.47 ms
+for the FP32 tiled kernel on the shipped geometry, and it is the difference
+between 12.5 ms and 9.591 ms per complete resident step at `n = 1e6`, `P = 4`
+(job 13029878), at 1.0593e-3 sampled gradient relative RMS versus 1.0498e-3 for
+FP32 — inside the same accuracy gate.
+
+The tensor kernel is only reachable for `Float32`, no Lamb-Helmholtz, and
+`D == 16` (`expansion_order = 3`); every other configuration silently uses the
+FP32 tiled kernel, and switching this after cache construction falls back rather
+than using a cache that was never built.
+
+!!! warning "FP16 dynamic range is not scale-invariant"
+    Each operator column is rescaled to the top of the FP16 range and the
+    reciprocal is applied to the multipole side, so the *inputs* carry a factor
+    `max|K[:,i]| / 6e4`. The scale is derived from the operator alone, not from
+    the source strengths, so a problem whose strengths (and hence multipole
+    coefficients) are many orders of magnitude away from the validated
+    benchmark's can underflow the FP16 input to zero and silently lose a
+    contribution. Set this to `:off` for such problems, or validate against
+    `:off` on a sample.
+"""
+const DENSE_CUDA_TENSOR_FORMAT = Ref(:fp16) # :off, :fp16, or :bf16 (task 028 Stage 8)
 
 # Grid-stride cap for the warp-per-pair nearfield kernel (task 028 lever 1),
 # same role as DENSE_CUDA_FUSED_MAX_BLOCKS above: blocks = min(cld(npairs,
 # warps_per_block), this cap), and each warp walks pairs `total_warps` apart.
 # At n=1e6/ell=5 there are 5,189,728 direct cell-pairs of ~30x30 bodies.
 const DIRECT_CUDA_MAX_BLOCKS = Ref(16384)
+# Same-system scalar-only specialization remains internal until the Stage 8
+# bake-off banks it. Construction always provisions/refreshes its compact list
+# so A/B timing includes the required recurring compaction cost.
+const CUDA_SYMMETRIC_NEARFIELD = Ref(false)
+const SYMMETRIC_CUDA_MAX_CELL_BODIES = Ref(128)
 
 # Gather the stacked degree-major [phi; chi] slab column j from the source column
 # `src_cols[j]`, mapping degree-major row i to flat storage through phi/chi_flat_idx.
@@ -2680,7 +2851,17 @@ function _dense_cuda_lifecycle_footprint(::Type{TF}, basis_info::OperatorBasisIn
     # host-shared operator/slab/route-metadata payload accounting (device slabs are
     # 2 x D x chunk, matching the host apply-slab formula with apply_width = chunk)
     base = _dense_m2l_footprint(TF, basis_info, nclasses, route_capacity, chunk, D)
-    operator_bytes = base.operator_bytes
+    tensor_cached = DENSE_CUDA_TENSOR_FORMAT[] in (:fp16, :bf16)
+    tensor_operator_bytes = TF === Float32 && !LH && D == 16 && tensor_cached ?
+        _dense_sum_checked((
+            _dense_checked_mul(_dense_checked_mul(nclasses, D * D,
+                "tensor operator elements"), sizeof(Float16),
+                "tensor operator bytes"),
+            _dense_checked_mul(_dense_checked_mul(nclasses, D,
+                "tensor scale elements"), sizeof(Float32),
+                "tensor scale bytes")), "tensor cache bytes") : 0
+    operator_bytes = _dense_checked_add(base.operator_bytes, tensor_operator_bytes,
+        "dense plus tensor operator bytes")
     slab_bytes = base.scratch_bytes
     # device route metadata: Int32 route_class (capacity) + Int32 class histogram
     route_class_bytes = _dense_checked_mul(route_capacity, sizeof(Int32), "route class bytes")
@@ -2713,7 +2894,8 @@ function _dense_cuda_lifecycle_footprint(::Type{TF}, basis_info::OperatorBasisIn
         _dense_checked_mul(10, max_nodes, "per-node grid arrays"),
         _dense_checked_mul(8, max_cells, "per-cell grid arrays"),
         _dense_checked_mul(6, route_capacity, "route index arrays"),
-        _dense_checked_mul(4, direct_capacity, "direct index arrays"),
+        _dense_checked_mul(CUDA_SYMMETRIC_NEARFIELD[] && !LH ? 6 : 4,
+            direct_capacity, "direct/symmetric index arrays"),
         g3, hierarchical_occupancy_words, hierarchical_window_words),
         "dense CUDA other-scratch words")
     other_bytes = _dense_sum_checked((
@@ -2793,18 +2975,31 @@ function _build_cuda_dense_m2l_plan(::Type{TF}, basis_info::OperatorBasisInfo{B,
     W = max(min(DENSE_CUDA_CHUNK[], nroutes), 1)
 
     payload = _dense_m2l_footprint(TF, basis_info, nclasses, nroutes, W, D)
+    tensor_format = DENSE_CUDA_TENSOR_FORMAT[]
+    tensor_supported = TF === Float32 && !LH && D == 16 &&
+        tensor_format in (:fp16, :bf16)
+    tensor_operator_bytes = tensor_supported ?
+        _dense_sum_checked((
+            _dense_checked_mul(_dense_checked_mul(nclasses, D * D,
+                "tensor operator elements"), sizeof(Float16),
+                "tensor operator bytes"),
+            _dense_checked_mul(_dense_checked_mul(nclasses, D,
+                "tensor scale elements"), sizeof(Float32),
+                "tensor scale bytes")), "tensor cache bytes") : 0
+    operator_bytes = _dense_checked_add(payload.operator_bytes,
+        tensor_operator_bytes, "dense plus tensor operator bytes")
     route_class_bytes = _dense_checked_mul(nroutes, sizeof(Int32), "route class bytes")
     class_hist_bytes = _dense_checked_mul(nclasses, sizeof(Int32), "class histogram bytes")
     route_metadata_bytes = _dense_sum_checked((route_class_bytes, class_hist_bytes),
         "dense CUDA route metadata")
     persistent_bytes = _dense_sum_checked(
-        (payload.operator_bytes, payload.scratch_bytes, route_metadata_bytes),
+        (operator_bytes, payload.scratch_bytes, route_metadata_bytes),
         "dense CUDA persistent")
     plan_estimated_peak_bytes = max(_dense_to_int(estimated_peak_bytes,
         "dense CUDA estimated peak bytes"), persistent_bytes)
     persistent_bytes <= strategy.max_persistent_bytes || _dense_cuda_limit_error(
         strategy,
-        (; ndof=D, operator_bytes=payload.operator_bytes, slab_bytes=payload.scratch_bytes,
+        (; ndof=D, operator_bytes, slab_bytes=payload.scratch_bytes,
             route_metadata_bytes, expansion_bytes=0, other_bytes=0, persistent_bytes,
             estimated_peak_bytes=plan_estimated_peak_bytes),
         nclasses, W, 0, :persistent)
@@ -2820,12 +3015,38 @@ function _build_cuda_dense_m2l_plan(::Type{TF}, basis_info::OperatorBasisInfo{B,
     workspace = DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
     Kbuf = Matrix{TF}(undef, D, D)
     d_operators = CUDA.CuArray{TF,3}(undef, D, D, nclasses)
+    d_tensor_fp16 = tensor_supported && tensor_format === :fp16 ?
+        CUDA.CuArray{Float16,3}(undef, D, D, nclasses) :
+        CUDA.CuArray{Float16,3}(undef, 0, 0, 0)
+    d_tensor_bf16 = tensor_supported && tensor_format === :bf16 ?
+        CUDA.CuArray{CUDABFloat16,3}(undef, D, D, nclasses) :
+        CUDA.CuArray{CUDABFloat16,3}(undef, 0, 0, 0)
+    d_tensor_scale = tensor_supported ? CUDA.CuArray{Float32,2}(undef, D, nclasses) :
+        CUDA.CuArray{Float32,2}(undef, 0, 0)
+    tensor_scale = ones(Float32, D)
     @inbounds for (i, offset) in enumerate(accepted_offsets)
         delta = TF(cell_width) * SVector{3,TF}(offset)
         r, theta, phi = cartesian_to_spherical(delta)
         build_dense_m2l_operator!(Kbuf, r, theta, phi, invariant, workspace, Val(LH))
         _check_dense_m2l_operator_finite!(Kbuf, basis_info, offset)
         copyto!(view(d_operators, :, :, i), Kbuf)
+        if tensor_format === :fp16 && tensor_supported
+            for col in 1:D
+                # Column balancing keeps the physical inverse-distance powers
+                # inside FP16; the reciprocal factor is applied to B's row.
+                tensor_scale[col] = max(maximum(abs, @view Kbuf[:, col]) / 60000f0,
+                    floatmin(Float32))
+            end
+            copyto!(view(d_tensor_fp16, :, :, i),
+                Float16.(Kbuf ./ reshape(TF.(tensor_scale), 1, :)))
+        end
+        tensor_supported && copyto!(view(d_tensor_scale, :, i), tensor_scale)
+    end
+    if tensor_supported && tensor_format === :bf16
+        threads = 256
+        blocks = cld(length(d_tensor_bf16), threads)
+        CUDA.@cuda threads=threads blocks=blocks _cuda_convert_bf16_kernel!(
+            d_tensor_bf16, d_operators)
     end
 
     route_class = CUDA.zeros(Int32, nroutes)
@@ -2840,11 +3061,13 @@ function _build_cuda_dense_m2l_plan(::Type{TF}, basis_info::OperatorBasisInfo{B,
     # bytes, excluded from the byte accounting as negligible.
     gemm_alpha = CUDA.CuArray(TF[one(TF)])
     gemm_beta = CUDA.zeros(TF, 1)
-    plan = ResidentM2LDenseCUDAPlan{TF,typeof(d_operators),typeof(route_class),
+    plan = ResidentM2LDenseCUDAPlan{TF,typeof(d_operators),typeof(d_tensor_fp16),
+        typeof(d_tensor_bf16),typeof(d_tensor_scale),typeof(route_class),
         typeof(class_counts),typeof(src_slab)}(
-        route_class, d_operators, class_counts, host_class_counts, class_starts,
+        route_class, d_operators, d_tensor_fp16, d_tensor_bf16, d_tensor_scale,
+        class_counts, host_class_counts, class_starts,
         class_capacities, src_slab, dst_slab, nclasses, D, ndof_phi, W,
-        payload.operator_bytes, payload.scratch_bytes, route_metadata_bytes,
+        operator_bytes, payload.scratch_bytes, route_metadata_bytes,
         persistent_bytes, plan_estimated_peak_bytes,
         Ref{Any}((; chunk=W, alpha=gemm_alpha, beta=gemm_beta)))
     return plan
@@ -2896,17 +3119,27 @@ function _nearfield_overlap_handles()
         _NEARFIELD_DONE[]::CUDA.CuEvent
 end
 
-function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF}) where TF
+function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
     fill!(state.output, zero(TF))
     threads = 128
-    npairs = state.counts.n_direct
+    hctx = state.interaction_list
+    symmetric = CUDA_SYMMETRIC_NEARFIELD[] && !LH &&
+        hctx isa DeviceHierarchicalM2LContext
+    symmetric && isempty(hctx.symmetric_targets) && throw(ArgumentError(
+        "symmetric nearfield must be selected before cache construction"))
+    npairs = symmetric ? hctx.n_symmetric_pairs : state.counts.n_direct
     # warp-per-pair (task 028 lever 1): 4 warps per 128-thread block
     direct_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
     if direct_blocks > 0
-        CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_output_kernel!(
-            state.output, state.source_bodies, state.cell_ranges,
-            state.direct_targets, state.direct_sources, npairs,
-        )
+        if symmetric
+            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_symmetric_pairs_output_kernel!(
+                state.output, state.source_bodies, state.cell_ranges,
+                hctx.symmetric_targets, hctx.symmetric_sources, npairs)
+        else
+            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_output_kernel!(
+                state.output, state.source_bodies, state.cell_ranges,
+                state.direct_targets, state.direct_sources, npairs)
+        end
     end
     return state
 end
@@ -3569,6 +3802,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         hierarchical_tables::Union{Nothing,RigidHierarchicalTables}=nothing,
         class_level::Vector{Int32}=Int32[],
         class_offset::Matrix{Int32}=Matrix{Int32}(undef, 3, 0),
+        hierarchical_level_class_of::Array{Int32,3}=Array{Int32}(undef, 0, 0, 0),
+        hierarchical_level_radii2::Vector{Int}=Int[],
         max_level_nodes::Int=0) where {TF,B,LH}
     _require_cuda_radix_available()
     _assert_cuda_supported_operator!(options)
@@ -3681,7 +3916,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
     hierarchical_ctx = hierarchical ?
         _build_cuda_hierarchical_context(TF, basis_info, stencil_policy,
             hierarchical_tables, class_level, class_offset, accepted,
-            workspace.m2l_concat, ell, max_level_nodes, counters) :
+            hierarchical_level_class_of, hierarchical_level_radii2,
+            workspace.m2l_concat, ell, max_level_nodes, direct_capacity, counters) :
         nothing
     ctx = (;
         multipoles, locals, workspace, invariant, counters, grid,
@@ -3706,6 +3942,12 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         positions=CUDA.zeros(TF, 3, maxn),
         keys=CUDA.zeros(UInt64, maxn),
         sorted_keys=CUDA.zeros(UInt64, maxn),
+        counting_histogram=CUDA.zeros(Int32,
+            _cuda_counting_sort_enabled(ell) ? 1 << (3ell) : 1),
+        counting_prefix=CUDA.zeros(Int32,
+            _cuda_counting_sort_enabled(ell) ? 1 << (3ell) : 1),
+        counting_cursor=CUDA.zeros(Int32,
+            _cuda_counting_sort_enabled(ell) ? 1 << (3ell) : 1),
         body_flags=CUDA.zeros(Int, maxn),
         body_prefix=CUDA.zeros(Int, maxn),
         cell_coords=CUDA.zeros(Int, 3, max_cells),
@@ -3812,13 +4054,22 @@ function _cuda_update_radix_grid_in_place!(ctx, cache::RadixFMMCache{TF}, n::Int
             "bounds=(x_min, box_size) covering the trajectory)"))
     end
 
-    # sort bodies by key; same backend as the one-shot builder, so equal-key
-    # (same-cell) bodies keep their deterministic global order
+    # Sort bodies by key. The comparison backend is the same as the one-shot
+    # builder's, so equal-key (same-cell) bodies keep their deterministic global
+    # order; the bounded counting sort claims its slots with an atomic cursor and
+    # is therefore *unstable* — same-cell ordering, and hence the summation order
+    # of same-cell atomics, varies between otherwise identical runs.
     pv = view(grid.perm, 1:n)
     kv = view(ctx.keys, 1:n)
-    _cuda_sortperm_into!(pv, kv)
     sk = view(ctx.sorted_keys, 1:n)
-    CUDA.@cuda threads=threads blocks=blocks _cuda_gather_sorted_keys_kernel!(sk, ctx.keys, pv)
+    if _cuda_counting_sort_ready(ctx, ell)
+        _cuda_counting_sort_into!(pv, sk, kv, ctx.counting_histogram,
+            ctx.counting_prefix, ctx.counting_cursor, threads)
+    else
+        _cuda_sortperm_into!(pv, kv)
+        CUDA.@cuda threads=threads blocks=blocks _cuda_gather_sorted_keys_kernel!(
+            sk, ctx.keys, pv)
+    end
     CUDA.@cuda threads=threads blocks=blocks _cuda_fill_invperm_kernel!(grid.invperm, pv)
 
     # occupied leaf cells
@@ -3986,6 +4237,12 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
         end
         n_direct = _cuda_hier_generate_direct_pairs!(ctx, hctx, grid, n_cells,
             cache.level_offsets[cache.ell + 1], cache.ell)
+        if isempty(hctx.symmetric_targets)
+            hctx.n_symmetric_pairs = 0
+        else
+            _cuda_compact_symmetric_pairs!(ctx, hctx, grid.cell_ranges, n_direct,
+                SYMMETRIC_CUDA_MAX_CELL_BODIES[])
+        end
         if profiling
             CUDA.synchronize()
             hctx.update_stage_ns[3] = time_ns() - t_stage
@@ -4101,7 +4358,7 @@ function _cuda_hier_route_flags_kernel!(flags, node_at, node_coords, push_offset
         # same x/y/z bit convention as _rigid_phase_index
         phase = 1 + (cx & 1) + 2 * (cy & 1) + 4 * (cz & 1)
         hit = Int32(0)
-        if class_of[phase, k] != Int32(0)
+        if class_of[phase, k, L + 1] != Int32(0)
             tx = cx + push_offsets[1, k]
             ty = cy + push_offsets[2, k]
             tz = cz + push_offsets[3, k]
@@ -4276,6 +4533,66 @@ function _cuda_hier_generate_direct_pairs!(ctx, hctx::DeviceHierarchicalM2LConte
         f0 += len
     end
     return n_direct
+end
+
+# Task 028 Stage 8: compact the directed leaf-cell list to one unordered entry
+# for ordinary pairs. Oversized cells retain both directed entries and encode
+# fallback by a negative target id, so the measured refresh performs all
+# selection on device without a host decision or a second pair list.
+function _cuda_symmetric_pair_flags_kernel!(flags, direct_targets, direct_sources,
+        cell_ranges, n_direct, max_bodies)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > n_direct && return nothing
+    @inbounds begin
+        t = direct_targets[i]
+        s = direct_sources[i]
+        oversized = cell_ranges[2, t] > max_bodies ||
+            cell_ranges[2, s] > max_bodies
+        flags[i] = (oversized || t <= s) ? Int32(1) : Int32(0)
+    end
+    return nothing
+end
+
+function _cuda_symmetric_pair_compact_kernel!(targets, sources, flags, prefix,
+        direct_targets, direct_sources, cell_ranges, n_direct, max_bodies)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > n_direct && return nothing
+    @inbounds begin
+        flags[i] == Int32(1) || return nothing
+        t = direct_targets[i]
+        s = direct_sources[i]
+        oversized = cell_ranges[2, t] > max_bodies ||
+            cell_ranges[2, s] > max_bodies
+        p = Int(prefix[i])
+        targets[p] = oversized ? -t : t
+        sources[p] = s
+    end
+    return nothing
+end
+
+function _cuda_compact_symmetric_pairs!(ctx, hctx::DeviceHierarchicalM2LContext,
+        cell_ranges, n_direct::Int, max_bodies::Int)
+    n_direct == 0 && (hctx.n_symmetric_pairs = 0; return 0)
+    n_direct <= length(ctx.direct_flags) || throw(AssertionError(
+        "symmetric compaction exceeds direct scratch capacity"))
+    threads = 256
+    blocks = cld(n_direct, threads)
+    CUDA.@cuda threads=threads blocks=blocks _cuda_symmetric_pair_flags_kernel!(
+        ctx.direct_flags, ctx.direct_targets, ctx.direct_sources,
+        cell_ranges, n_direct, max_bodies)
+    fv = view(ctx.direct_flags, 1:n_direct)
+    pv = view(ctx.direct_prefix, 1:n_direct)
+    accumulate!(+, pv, fv)
+    copyto!(ctx.host_scalar32, 1, ctx.direct_prefix, n_direct, 1)
+    n = Int(ctx.host_scalar32[1])
+    n <= length(hctx.symmetric_targets) || throw(AssertionError(
+        "symmetric pair buffer exceeded capacity"))
+    n > 0 && CUDA.@cuda threads=threads blocks=blocks _cuda_symmetric_pair_compact_kernel!(
+        hctx.symmetric_targets, hctx.symmetric_sources, ctx.direct_flags,
+        ctx.direct_prefix, ctx.direct_targets, ctx.direct_sources,
+        cell_ranges, n_direct, max_bodies)
+    hctx.n_symmetric_pairs = n
+    return n
 end
 
 # Generate exactly one `(level, offset window)` into the start of the route buffers
@@ -4554,6 +4871,78 @@ function _cuda_hier_dense_tiled_kernel!(loc_phi, loc_chi, ops, route_class,
     return nothing
 end
 
+# Code-order-3 scalar tensor prototype: one warp applies a 16x16 operator to
+# sixteen same-class routes with FP32 accumulation. Global 16-route batches that
+# cross a class boundary (or the sparse final tail) execute the tiled FP32
+# matvec in the same kernel, preserving exact route coverage without host work.
+function _cuda_hier_dense_tensor16_kernel!(loc_phi, ops, ops_low, input_scale, route_class,
+        route_sources, route_targets, mp_phi, phi_flat_idx, src_scale, tgt_scale,
+        lcol, n_routes)
+    TI = eltype(ops_low)
+    lane = Int(threadIdx().x - Int32(1))
+    conf = CUDA.WMMA.Config{16,16,16,Float32}
+    bbuf = CUDA.CuDynamicSharedArray(TI, (16, 16))
+    dbuf = CUDA.CuDynamicSharedArray(Float32, (16, 16), 256 * sizeof(TI))
+    batch = Int(blockIdx().x)
+    batch_stride = Int(gridDim().x)
+    @inbounds while true
+        j0 = (batch - 1) * 16 + 1
+        j0 > n_routes && break
+        je = min(j0 + 15, n_routes)
+        k = Int(route_class[j0])
+        tensor_batch = je == j0 + 15 && Int(route_class[je]) == k
+        if tensor_batch
+            idx = lane + 1
+            while idx <= 256
+                r = (idx - 1) % 16 + 1
+                col = (idx - 1) ÷ 16 + 1
+                src = route_sources[j0 + col - 1]
+                bbuf[r, col] = TI(mp_phi[phi_flat_idx[r], src] *
+                    src_scale[r, lcol] * input_scale[r, k])
+                idx += 32
+            end
+            CUDA.sync_warp()
+            aoff = (k - 1) * 256 + 1
+            afrag = CUDA.WMMA.load_a(pointer(ops_low, aoff), 16,
+                CUDA.WMMA.ColMajor, conf)
+            bfrag = CUDA.WMMA.load_b(pointer(bbuf), 16,
+                CUDA.WMMA.ColMajor, conf)
+            cfrag = CUDA.WMMA.fill_c(0.0f0, conf)
+            dfrag = CUDA.WMMA.mma(afrag, bfrag, cfrag, conf)
+            CUDA.WMMA.store_d(pointer(dbuf), dfrag, 16,
+                CUDA.WMMA.ColMajor, conf)
+            CUDA.sync_warp()
+            idx = lane + 1
+            while idx <= 256
+                r = (idx - 1) % 16 + 1
+                col = (idx - 1) ÷ 16 + 1
+                tgt = route_targets[j0 + col - 1]
+                v = dbuf[r, col] * tgt_scale[r, lcol]
+                CUDA.@atomic loc_phi[phi_flat_idx[r], tgt] += v
+                idx += 32
+            end
+        else
+            # Sparse/class-boundary tail: route-wise FP32 reference arithmetic.
+            for j in j0:je
+                kk = Int(route_class[j])
+                src = route_sources[j]
+                tgt = route_targets[j]
+                r = lane + 1
+                if r <= 16
+                    acc = 0.0f0
+                    for i in 1:16
+                        acc += tgt_scale[r, lcol] * ops[r, i, kk] *
+                            src_scale[i, lcol] * mp_phi[phi_flat_idx[i], src]
+                    end
+                    CUDA.@atomic loc_phi[phi_flat_idx[r], tgt] += acc
+                end
+            end
+        end
+        batch += batch_stride
+    end
+    return nothing
+end
+
 # Scaled gather/scatter for the unfused GEMM reference drivers: the same level
 # diagonals applied at the slab boundaries instead of inside the fused kernel, so
 # the two routes are independently testable.
@@ -4630,13 +5019,38 @@ function _cuda_hier_dense_apply_window!(state::DeviceResidentRadixState{TF,B,LH}
     lcol = L - 1
     if DENSE_CUDA_FUSED[]
         D = plan.ndof
-        # tiled path (task 028 cycle 2): 128 threads = 4 warps; shm holds the
-        # folded D x D class tile plus one multipole column per warp
-        tiled_shmem = (D * D + 4 * D) * sizeof(TF)
+        tensor_format = DENSE_CUDA_TENSOR_FORMAT[]
+        if tensor_format !== :off && TF === Float32 && !LH && D == 16
+            tensor_format in (:fp16, :bf16) || throw(ArgumentError(
+                "DENSE_CUDA_TENSOR_FORMAT must be :off, :fp16, or :bf16"))
+            ops_low = tensor_format === :fp16 ? plan.tensor_fp16_operators :
+                plan.tensor_bf16_operators
+            isempty(ops_low) && throw(ArgumentError(
+                "tensor M2L operator cache is unavailable for this configuration"))
+            blocks = min(cld(n_routes, 16), DENSE_CUDA_TILED_MAX_BLOCKS[])
+            shmem = 256 * sizeof(eltype(ops_low)) + 256 * sizeof(Float32)
+            CUDA.@cuda threads=32 blocks=blocks shmem=shmem _cuda_hier_dense_tensor16_kernel!(
+                state.locals.phi, plan.operators, ops_low, plan.tensor_input_scale,
+                plan.route_class,
+                state.route_sources, state.route_targets, state.multipoles.phi,
+                ws.phi_flat_idx, hctx.source_scale, hctx.target_scale, lcol, n_routes)
+            return state
+        end
+        # tiled path (task 028 cycle 2/Stage 6): shared memory holds the folded
+        # D x D class tile plus one multipole column per warp.  Launch controls
+        # are internal Refs so complete-verdict A/Bs can be run without adding
+        # public cache/API surface.
+        tiled_threads = DENSE_CUDA_TILED_THREADS[]
+        32 <= tiled_threads <= 1024 && tiled_threads % 32 == 0 ||
+            throw(ArgumentError("DENSE_CUDA_TILED_THREADS must be a warp multiple in 32:1024"))
+        tiled_cap = DENSE_CUDA_TILED_MAX_BLOCKS[]
+        tiled_cap > 0 || throw(ArgumentError("DENSE_CUDA_TILED_MAX_BLOCKS must be positive"))
+        tiled_warps = tiled_threads ÷ 32
+        tiled_shmem = (D * D + tiled_warps * D) * sizeof(TF)
         if DENSE_CUDA_TILED[] && n_routes >= DENSE_CUDA_TILED_MIN_ROUTES[] &&
                 tiled_shmem <= 48 * 1024
-            blocks = min(cld(n_routes, 4), DENSE_CUDA_FUSED_MAX_BLOCKS[])
-            CUDA.@cuda threads=128 blocks=blocks shmem=tiled_shmem _cuda_hier_dense_tiled_kernel!(
+            blocks = min(cld(n_routes, tiled_warps), tiled_cap)
+            CUDA.@cuda threads=tiled_threads blocks=blocks shmem=tiled_shmem _cuda_hier_dense_tiled_kernel!(
                 state.locals.phi, state.locals.chi, plan.operators, plan.route_class,
                 state.route_sources, state.route_targets, state.multipoles.phi,
                 state.multipoles.chi, ws.phi_flat_idx, ws.chi_flat_idx, plan.ndof_phi,
@@ -4698,7 +5112,8 @@ Genuine multilevel device M2L. Locals are zeroed once, then every
 the step's total telemetry count at the end.
 """
 function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH},
-        hctx::DeviceHierarchicalM2LContext) where {TF,B,LH}
+        hctx::DeviceHierarchicalM2LContext; replay_levels=nothing,
+        replay_orbit=nothing, clear_locals::Bool=true) where {TF,B,LH}
     ws = state.scratch
     ws isa ResidentOperatorWorkspace || throw(ArgumentError(
         "hierarchical device M2L requires ResidentOperatorWorkspace scratch"))
@@ -4706,8 +5121,8 @@ function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH}
     plan isa Union{ResidentM2LConcatPlan,ResidentM2LPrecomputedYPlan,
         ResidentM2LDenseCUDAPlan} || throw(ArgumentError(
         "hierarchical device M2L has no compatible construction-time plan; got $(typeof(plan))"))
-    fill!(state.locals.phi, zero(TF))
-    LH && fill!(state.locals.chi, zero(TF))
+    clear_locals && fill!(state.locals.phi, zero(TF))
+    clear_locals && LH && fill!(state.locals.chi, zero(TF))
     route_class = plan.route_class
     noffsets = hctx.noffsets
     K = hctx.window_classes
@@ -4722,6 +5137,7 @@ function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH}
         hctx.update_stage_ns[4] = 0
     end
     for L in 2:ell
+        replay_levels === nothing || L in replay_levels || continue
         if hctx.profile_stages
             CUDA.synchronize()
             t_level = time_ns()
@@ -4730,8 +5146,12 @@ function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH}
         end
         level_total = 0
         class_base = dense ? 0 : (L - 2) * noffsets
-        for first_offset in 1:K:noffsets
-            last_offset = min(first_offset + K - 1, noffsets)
+        replay_K = replay_orbit === nothing ? K : 1
+        for first_offset in 1:replay_K:noffsets
+            last_offset = min(first_offset + replay_K - 1, noffsets)
+            replay_orbit === nothing ||
+                _rigid_orbit_key(hctx.tables.push_offsets[first_offset]) == replay_orbit ||
+                continue
             t_gen = hctx.profile_stages ? time_ns() : UInt64(0)
             n = _cuda_hier_generate_window!(state, hctx, route_class, L, first_offset,
                 last_offset, class_base)
@@ -4765,6 +5185,25 @@ function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH}
     hctx.total_routes = total
     state.counts.n_routes = total
     return state
+end
+
+
+"""
+Benchmark-only linear replay of complete hierarchical M2L groups. `levels`
+selects whole levels and `orbit=(a,b,c)` selects a complete signed/permuted
+cubic orbit via sorted absolute coordinates. Production calls never pass these
+controls; they exist for task-028 sampled-field reconstruction and attribution.
+"""
+function _launch_cuda_hierarchical_m2l_replay!(state::DeviceResidentRadixState;
+        levels=nothing, orbit=nothing, clear_locals::Bool=true)
+    hctx = state.interaction_list
+    hctx isa DeviceHierarchicalM2LContext || throw(ArgumentError(
+        "hierarchical M2L replay requires a device hierarchical state"))
+    orbit === nothing || (orbit isa NTuple{3,Int} &&
+        orbit[1] >= orbit[2] >= orbit[3] >= 0) || throw(ArgumentError(
+        "replay orbit must be a descending nonnegative integer triple"))
+    return _launch_cuda_hierarchical_m2l!(state, hctx;
+        replay_levels=levels, replay_orbit=orbit, clear_locals)
 end
 
 # Per-level Lambda columns for the hierarchical dense operator table. Level L uses
@@ -4802,8 +5241,10 @@ end
 function _build_cuda_hierarchical_context(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         policy::HierarchicalRigidStencil, tables::RigidHierarchicalTables,
         class_level::Vector{Int32}, class_offset::Matrix{Int32},
-        effective_offsets::Vector{SVector{3,Int}}, plan, ell::Int,
-        max_level_nodes::Int, counters::CUDARadixTransferCounters) where {TF,B,LH}
+        effective_offsets::Vector{SVector{3,Int}}, level_class_of::Array{Int32,3},
+        level_radii2::Vector{Int}, plan, ell::Int,
+        max_level_nodes::Int, direct_capacity::Int,
+        counters::CUDARadixTransferCounters) where {TF,B,LH}
     occupancy = RadixLevelOccupancy(ell; max_bytes=policy.dense_occupancy_max_bytes,
         max_dense_ell=policy.dense_occupancy_max_ell)
     isempty(occupancy.node_at) && throw(ArgumentError(
@@ -4819,7 +5260,9 @@ function _build_cuda_hierarchical_context(::Type{TF}, basis_info::OperatorBasisI
     node_at = CUDA.zeros(Int32, length(occupancy.node_at))
     d_level_base = CUDA.CuArray{Int}(occupancy.level_base)
     d_push_offsets = CUDA.CuArray{Int32}(_radix_offsets_matrix(tables.push_offsets))
-    d_class_of = CUDA.CuArray{Int32}(tables.class_of)
+    size(level_class_of) == (8, noffsets, ell + 1) || throw(ArgumentError(
+        "invalid hierarchical per-level class table dimensions $(size(level_class_of))"))
+    d_class_of = CUDA.CuArray{Int32}(level_class_of)
     d_near_offsets = CUDA.CuArray{Int32}(_radix_offsets_matrix(tables.near_offsets))
     counters.operator_uploads += 1
     dense = plan isa ResidentM2LDenseCUDAPlan
@@ -4828,15 +5271,17 @@ function _build_cuda_hierarchical_context(::Type{TF}, basis_info::OperatorBasisI
         (Matrix{TF}(undef, 0, 0), Matrix{TF}(undef, 0, 0))
     source_scale = CUDA.CuArray{TF}(host_source_scale)
     target_scale = CUDA.CuArray{TF}(host_target_scale)
+    symmetric_capacity = CUDA_SYMMETRIC_NEARFIELD[] && !LH ? direct_capacity : 0
     return DeviceHierarchicalM2LContext(
-        tables, class_level, class_offset, effective_offsets, plan,
+        tables, level_radii2, class_level, class_offset, effective_offsets, plan,
         K, ell, noffsets,
         copy(occupancy.level_base), zeros(Int, ell + 2),
         node_at, d_level_base, d_push_offsets, d_class_of, d_near_offsets,
+        CUDA.zeros(Int, symmetric_capacity), CUDA.zeros(Int, symmetric_capacity),
         CUDA.zeros(Int32, flag_capacity), CUDA.zeros(Int32, flag_capacity),
         CUDA.zeros(Int32, max(K, 1)), _pin_host_array(zeros(Int32, max(K, 1))),
         source_scale, target_scale,
-        0, zeros(Int, ell + 1), zeros(Int, ell + 1), 0, 1, 0,
+        0, zeros(Int, ell + 1), zeros(Int, ell + 1), 0, 0, 1, 0,
         false, zeros(UInt64, 5), zeros(UInt64, ell + 1),
     )
 end

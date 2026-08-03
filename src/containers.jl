@@ -326,6 +326,39 @@ end
 
 abstract type RadixSeparationPolicy end
 
+const _SUPPORTED_RIGID_NEAR_RADII2 = (3, 4, 5, 6, 8, 9, 10, 11, 12)
+const _SUPPORTED_RIGID_NEAR_RADII2_TEXT = "3, 4, 5, 6, 8, 9, 10, 11, 12"
+
+# Shipped rigid-stencil operating point, selected by measurement in task 028
+# Stage 7: `q = 5` at every M2L level except the coarsest, which uses `q = 6`.
+# At n = 1e6 / P = 4 / ell = 5 this measured 12.51 ms per resident step at
+# 1.05e-3 gradient relative RMS, against 15.45 ms at 5.75e-4 for uniform q = 6
+# and ~30 ms at 3.19e-4 for the previous uniform q = 12 default.
+const RADIX_DEFAULT_NEAR_RADIUS2 = 5
+const RADIX_DEFAULT_COARSE_NEAR_RADIUS2 = 6
+
+@inline function _validate_rigid_near_radius2(q::Integer, owner::AbstractString)
+    q in _SUPPORTED_RIGID_NEAR_RADII2 && return Int(q)
+    throw(ArgumentError("$owner near_radius2=$(Int(q)) is unsupported; " *
+        "supported values are ($_SUPPORTED_RIGID_NEAR_RADII2_TEXT)"))
+end
+
+# A level schedule lists one near radius per M2L level (levels 2:ell, coarse to
+# fine). Task 025's exact-once proof extends to a level-dependent radius only
+# while the radius is non-increasing with depth, and the leaf entry is what
+# defines the direct list, so it must agree with `near_radius2`.
+function _validate_rigid_level_schedule(level_radii2, near_radius2::Int)
+    qs = Tuple(Int(q) for q in level_radii2)
+    isempty(qs) && return ()
+    foreach(q -> _validate_rigid_near_radius2(q, "hierarchical level schedule"), qs)
+    all(qs[i + 1] <= qs[i] for i in 1:length(qs)-1) || throw(ArgumentError(
+        "hierarchical level schedule must be non-increasing with depth; got $qs"))
+    last(qs) == near_radius2 || throw(ArgumentError(
+        "hierarchical level schedule leaf radius $(last(qs)) must equal " *
+        "near_radius2=$near_radius2"))
+    return qs
+end
+
 struct ParentNeighborM2L <: RadixSeparationPolicy end
 
 """
@@ -354,48 +387,87 @@ ConstantPAnalyticStencil(args...; kwargs...) =
     ConstantPAnalyticStencil(ConstantPStencilConfig(args...; kwargs...))
 
 """
-    HierarchicalRigidStencil(config; near_radius2=12, window_classes=4,
-        dense_occupancy_max_bytes=256 << 20, dense_occupancy_max_ell=8)
+    HierarchicalRigidStencil(config; near_radius2=5, level_radii2=(),
+        window_classes=4, dense_occupancy_max_bytes=256 << 20,
+        dense_occupancy_max_ell=8)
 
 Host-resident, genuinely hierarchical rigid M2L policy.  The analytic
 `config` is retained as an accuracy contract: cache construction verifies that
 its rejected integer offsets are exactly the requested spherical near set.
 Since task 027 this is the default `RadixFMMCache` policy; the flat
 [`ConstantPAnalyticStencil`](@ref) remains selectable as the correctness oracle.
+
+`near_radius2` is the squared lattice near radius `q` at the leaf level: cell
+offsets with `|o|^2 <= q` are evaluated directly and everything beyond is M2L.
+Supported values are $(_SUPPORTED_RIGID_NEAR_RADII2_TEXT) (the omitted 7 has no
+integer lattice shell). Larger `q` means more direct work and a more accurate
+far field; `q = 3` is the classic `|o|_inf <= 1` FMM stencil and `q = 12` the
+`theta = 0.5` stencil.
+
+`level_radii2` optionally schedules one radius per M2L level, coarse to fine,
+for levels `2:ell` — task 028 Stage 7. It must be non-increasing with depth
+(the condition under which task 025's exact-once coverage proof still holds)
+and its last entry must equal `near_radius2`. An empty tuple means the uniform
+policy. The default `RadixFMMCache` policy is `near_radius2 = 5` with the
+schedule `(6, 5, 5, ..., 5)`, the fastest configuration that stayed inside task
+028's accuracy gate at `P = 4` (1.05e-3 gradient relative RMS at `n = 1e6`, vs
+3.19e-4 for the previous uniform `q = 12` default). Pass `near_radius2 = 12`
+for the older, more accurate and slower operating point.
 """
 struct HierarchicalRigidStencil{C<:ConstantPStencilConfig} <: RadixSeparationPolicy
     config::C
     near_radius2::Int
+    # One near radius per M2L level (levels 2:ell, coarse to fine); empty means
+    # the uniform policy. Validated by `_validate_rigid_level_schedule`.
+    level_radii2::Tuple{Vararg{Int}}
     window_classes::Int
     dense_occupancy_max_bytes::Int
     dense_occupancy_max_ell::Int
-    function HierarchicalRigidStencil(config::C; near_radius2::Integer=12,
+    function HierarchicalRigidStencil(config::C;
+            near_radius2::Integer=RADIX_DEFAULT_NEAR_RADIUS2,
+            level_radii2=(),
             window_classes::Integer=4,
             dense_occupancy_max_bytes::Integer=256 << 20,
             dense_occupancy_max_ell::Integer=8) where {C<:ConstantPStencilConfig}
-        near_radius2 in (3, 12) ||
-            throw(ArgumentError("HierarchicalRigidStencil near_radius2 must be 3 or 12"))
+        q = _validate_rigid_near_radius2(near_radius2,
+            "HierarchicalRigidStencil")
+        qs = _validate_rigid_level_schedule(level_radii2, q)
         window_classes > 0 ||
             throw(ArgumentError("HierarchicalRigidStencil window_classes must be positive"))
         dense_occupancy_max_bytes >= 0 ||
             throw(ArgumentError("dense_occupancy_max_bytes must be nonnegative"))
         dense_occupancy_max_ell >= 0 ||
             throw(ArgumentError("dense_occupancy_max_ell must be nonnegative"))
-        return new{C}(config, Int(near_radius2), Int(window_classes),
+        return new{C}(config, q, qs, Int(window_classes),
             Int(dense_occupancy_max_bytes), Int(dense_occupancy_max_ell))
     end
+end
+
+"""
+Return `policy` with its per-level radius schedule replaced. Equivalent to
+constructing the policy with the `level_radii2` keyword; retained because the
+schedule is often chosen after the base policy (benchmarks, sweeps).
+"""
+function _hierarchical_stencil_with_schedule(policy::HierarchicalRigidStencil,
+        level_radii2)
+    isempty(level_radii2) &&
+        throw(ArgumentError("hierarchical level schedule must be nonempty"))
+    return HierarchicalRigidStencil(policy.config;
+        policy.near_radius2, level_radii2, policy.window_classes,
+        policy.dense_occupancy_max_bytes, policy.dense_occupancy_max_ell)
 end
 
 function HierarchicalRigidStencil(P_phi::Integer, epsilon,
         source_strength=one(epsilon); chi_strength=source_strength,
         lamb_helmholtz::Bool=false, normalization::Symbol=:analytic,
-        near_radius2::Integer=12, window_classes::Integer=4,
+        near_radius2::Integer=RADIX_DEFAULT_NEAR_RADIUS2, level_radii2=(),
+        window_classes::Integer=4,
         dense_occupancy_max_bytes::Integer=256 << 20,
         dense_occupancy_max_ell::Integer=8)
     config = ConstantPStencilConfig(P_phi, epsilon, source_strength;
         chi_strength, lamb_helmholtz, normalization)
-    return HierarchicalRigidStencil(config; near_radius2, window_classes,
-        dense_occupancy_max_bytes, dense_occupancy_max_ell)
+    return HierarchicalRigidStencil(config; near_radius2, level_radii2,
+        window_classes, dense_occupancy_max_bytes, dense_occupancy_max_ell)
 end
 
 classic_fmm_stencil(config::ConstantPStencilConfig; kwargs...) =
@@ -428,6 +500,7 @@ end
 
 mutable struct HostHierarchicalM2LContext{O<:RadixLevelOccupancy,A}
     tables::RigidHierarchicalTables
+    level_class_of::Array{Int32,3}
     occupancy::O
     class_level::Vector{Int32}
     class_offset::Matrix{Int32}
@@ -458,8 +531,9 @@ are `D x (ell - 1)` and nonempty only for the dense strategy — the concatenate
 factored, and precomputed-y plans carry level-true `(level, offset)` tables
 through `effective_offsets` and must never be `Lambda`-scaled.
 """
-mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IV,SM}
+mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV,SM}
     tables::RigidHierarchicalTables
+    level_radii2::Vector{Int}
     class_level::Vector{Int32}
     class_offset::Matrix{Int32}
     effective_offsets::Vector{SVector{3,Int}}
@@ -474,8 +548,10 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IV,SM}
     node_at::IV32
     d_level_base::IV
     d_push_offsets::IM32
-    d_class_of::IM32
+    d_class_of::IA32
     d_near_offsets::IM32
+    symmetric_targets::IV
+    symmetric_sources::IV
     route_flags::IV32
     route_prefix::IV32
     window_cum::IV32
@@ -487,6 +563,7 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IV,SM}
     routes_per_level::Vector{Int}
     nodes_per_level::Vector{Int}
     last_window_routes::Int
+    n_symmetric_pairs::Int
     window_lo::Int
     window_hi::Int
     profile_stages::Bool
@@ -1426,9 +1503,12 @@ end
 # per-step refresh rebuilds in place. `src_slab`/`dst_slab` are the chunk-width
 # device gather/GEMM/scatter slabs. `whole_pass` carries the chunk-width execution
 # bundle filled by the CUDA cache build; the byte fields count array payloads only.
-struct ResidentM2LDenseCUDAPlan{TF,O,R,C,S}
+struct ResidentM2LDenseCUDAPlan{TF,O,OH,OB,OS,R,C,S}
     route_class::R
     operators::O
+    tensor_fp16_operators::OH
+    tensor_bf16_operators::OB
+    tensor_input_scale::OS
     class_counts::C
     host_class_counts::Vector{Int32}
     class_starts::Vector{Int}
@@ -1653,9 +1733,9 @@ Opt-in production cache for the radix-grid / matrix-operator FMM path (task 023)
 Construct once with [`RadixFMMCache`](@ref)`(target_systems, source_systems; ...)`
 and pass to `fmm!(system, cache)` each time step; construction eagerly builds the
 capacity-sized [`DeviceResidentRadixState`](@ref) plus all step-invariant operator
-data, so every `fmm!` call is the fast path and no host or device array is
-reallocated across steps (the only per-step device allocation is CUDA's internal
-sort scratch, served from the CUDA memory pool).
+data, so every `fmm!` call is the fast path and no persistent host or device array
+is reallocated across steps. Bounded Morton depths use persistent counting-sort
+scratch; larger depths retain CUDA's pool-served device sort scratch.
 
 The invariant contract: the domain box (`x_min`, `h0`), depth `ell`, expansion
 order, and `max_n_bodies` are fixed at construction. Each step may move bodies and

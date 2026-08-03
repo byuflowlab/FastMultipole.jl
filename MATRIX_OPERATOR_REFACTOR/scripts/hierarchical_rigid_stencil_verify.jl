@@ -13,7 +13,7 @@ const FM = FastMultipole
 const ROOT = normpath(joinpath(@__DIR__, "..", ".."))
 const OUTDIR = joinpath(ROOT, "MATRIX_OPERATOR_REFACTOR", "data",
     "hierarchical_rigid_stencil")
-const QVALUES = (3, 12)
+const QVALUES = (3, 4, 5, 6, 8, 9, 10, 11, 12)
 const PHASES = [SVector{3,Int}(i, j, k) for k in 0:1 for j in 0:1 for i in 0:1]
 
 norm2(o) = sum(abs2, o)
@@ -29,7 +29,7 @@ function near_offsets(q)
 end
 
 function push_list(q, u)
-    b = 2 * isqrt(q) + 3
+    b = 2 * isqrt(q) + 1
     result = SVector{3,Int}[]
     for k in -b:b, j in -b:b, i in -b:b
         o = SVector(i, j, k)
@@ -37,6 +37,16 @@ function push_list(q, u)
     end
     sort!(result; by=o -> (o[3], o[2], o[1]))
     return result
+end
+
+function next_lattice_shell(q)
+    shell = q + 1
+    while true
+        b = isqrt(shell)
+        any(i*i + j*j + k*k == shell for k in -b:b, j in -b:b, i in -b:b) &&
+            return shell
+        shell += 1
+    end
 end
 
 function pull_equivalent(q, u, o)
@@ -65,7 +75,8 @@ function stencil_rows()
         N = near_offsets(q)
         lists = Dict(u => push_list(q, u) for u in PHASES)
         union_offsets = union((Set(v) for v in values(lists))...)
-        theta_lo = sqrt(3 / (q + 1))
+        far_q = next_lattice_shell(q)
+        theta_lo = sqrt(3 / far_q)
         theta_hi = sqrt(3 / q)
         for ell in 2:7, (pid, u) in enumerate(PHASES)
             V = lists[u]
@@ -78,7 +89,7 @@ function stencil_rows()
                 length(V), length(union_offsets), maximum(maximum(abs, o) for o in V),
                 minimum(norm2, V), push_ok && reverse_ok,
                 @sprintf("%.17g", theta_lo), @sprintf("%.17g", theta_hi),
-                "sqrt(3/$(q + 1)) < theta <= sqrt(3/$q)"))
+                "sqrt(3/$far_q) < theta <= sqrt(3/$q)"))
         end
     end
     return rows
@@ -149,8 +160,6 @@ function level_rows()
                 end
             end
         end
-        expected = q == 3 ? 9 : 34
-        @assert min_child == expected
         @assert inequality_ok && min_child > q
         push!(rows, (q, "downward_monotonicity", 0, checked_children, 0, true,
             min_child, "|o_k| >= 2|p_k|-1 for every enumerated child"))
@@ -405,11 +414,7 @@ function epsilon_rows()
         2 / (rho * (c - 2)) * (1 / (c - 1))^(P + 1)
     end
     for q in QVALUES, ell in 2:7
-        shell = q + 1
-        while !any(i*i+j*j+k*k == shell for k in -isqrt(shell):isqrt(shell),
-            j in -isqrt(shell):isqrt(shell), i in -isqrt(shell):isqrt(shell))
-            shell += 1
-        end
+        shell = next_lattice_shell(q)
         lower = bound(ell, shell)
         upper = bound(ell, q)
         push!(rows, (q, "epsilon_interval", ell, shell, 0, true, 0,
@@ -433,9 +438,9 @@ function main()
     orows = scaling_rows()
     krows = cost_rows()
 
-    @assert all(r -> r[7] == (r[1] == 3 ? 27 : 179), srows)
-    @assert all(r -> r[8] == (r[1] == 3 ? 189 : 1253), srows)
-    @assert all(r -> r[9] == (r[1] == 3 ? 316 : 1740), srows)
+    @assert all(r -> r[7] == length(near_offsets(r[1])), srows)
+    @assert all(r -> r[8] == length(push_list(r[1], PHASES[r[3] + 1])), srows)
+    @assert all(r -> r[9] == length(RigidHierarchicalTables(r[1]).push_offsets), srows)
 
     writecsv(joinpath(OUTDIR, "stencil_counts.csv"),
         ("near_radius2","ell","phase_id","ux","uy","uz","near_count",
@@ -462,8 +467,8 @@ function main()
         println(io)
         println(io, "Generated deterministically by `hierarchical_rigid_stencil_verify.jl`.")
         println(io)
-        println(io, "- near/V/union counts: q=3 -> 27/189/316; q=12 -> 179/1253/1740")
-        println(io, "- level-1/2 and downward monotonicity checks: PASS (minimum child norms 9 and 34)")
+        println(io, "- supported shells: `$(join(QVALUES, ", "))`; near/V/union counts are recorded per shell")
+        println(io, "- level-1/2 and downward monotonicity checks: PASS for every supported shell")
         println(io, "- exact-once ordered-pair coverage: $(length(crows)) cases PASS")
         println(io, "- production dense scalar and Lamb–Helmholtz scaling: $(length(orows)) cases PASS at rtol 1e-13")
         println(io, "- campaign audit: occupancy reconstructed exactly from seed 24025; route comparisons are labeled model estimates because 024b CSVs contain no route telemetry")

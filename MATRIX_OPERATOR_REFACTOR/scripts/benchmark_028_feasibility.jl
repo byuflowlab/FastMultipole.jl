@@ -20,8 +20,8 @@
 #   FM028_N        body counts                        (default "1000000")
 #   FM028_P        expansion orders (P_literature-1)  (default "3")
 #   FM028_ELL      radix depths                       (default "4,5,6")
-#   FM028_K        window_classes, passed explicitly  (default "256,1740")
-#   FM028_POLICY   flat,hier12,hier3                  (default "hier12,hier3")
+#   FM028_K        window_classes, integers or "full" (default "256,1740")
+#   FM028_POLICY   flat or supported hier<q> policies (default "hier12,hier3")
 #   FM028_STRAT    dense,precomputed_y,concat,factored (default "dense,precomputed_y")
 #   FM028_TF       Float64,Float32                    (default "Float64,Float32")
 #   FM028_LH       0,1                                (default "0")
@@ -63,7 +63,7 @@ const FM = FastMultipole
 const NS = parse.(Int, split(get(ENV, "FM028_N", "1000000"), ','))
 const PS = parse.(Int, split(get(ENV, "FM028_P", "3"), ','))
 const ELLS = parse.(Int, split(get(ENV, "FM028_ELL", "4,5,6"), ','))
-const KS = parse.(Int, split(get(ENV, "FM028_K", "256,1740"), ','))
+const K_SPECS = split(get(ENV, "FM028_K", "256,1740"), ',')
 const POLICIES = split(get(ENV, "FM028_POLICY", "hier12,hier3"), ',')
 const STRATS = split(get(ENV, "FM028_STRAT", "dense,precomputed_y"), ',')
 const TFS = [t == "Float32" ? Float32 : Float64
@@ -80,6 +80,31 @@ const OUT = get(ENV, "FM028_OUT", joinpath(@__DIR__, "..", "data",
 const CLASS_OUT = OUT * ".classes.csv"
 const REFDIR = get(ENV, "FM028_REFDIR", joinpath(@__DIR__, "..", "data",
     "cpu_gpu_scaling", "references"))
+const M2L_THREADS = parse(Int, get(ENV, "FM028_M2L_THREADS", "64"))
+const M2L_BLOCK_CAP = parse(Int, get(ENV, "FM028_M2L_BLOCK_CAP", "65536"))
+const COUNTING_SORT = get(ENV, "FM028_COUNTING_SORT", "1") == "1"
+const SYMMETRIC_NEARFIELD = get(ENV, "FM028_SYMMETRIC", "0") == "1"
+const TENSOR_FORMAT = Symbol(get(ENV, "FM028_TENSOR_FORMAT", "off"))
+FM.DENSE_CUDA_TILED_THREADS[] = M2L_THREADS
+FM.DENSE_CUDA_TILED_MAX_BLOCKS[] = M2L_BLOCK_CAP
+FM.RADIX_CUDA_COUNTING_SORT[] = COUNTING_SORT
+FM.CUDA_SYMMETRIC_NEARFIELD[] = SYMMETRIC_NEARFIELD
+if TENSOR_FORMAT in (:fp16, :bf16, :off)
+    FM.DENSE_CUDA_TENSOR_FORMAT[] = TENSOR_FORMAT
+elseif TENSOR_FORMAT === :tf32
+    # CUDA.jl's high-level WMMA surface exposes FP16/BF16 but not TF32. The TF32
+    # competitor therefore uses cuBLAS FAST_MATH on production-sized per-class
+    # batches, still with FP32 storage/accumulation. A 16-route chunk would force
+    # roughly n_routes/16 host-driven gather/GEMM/scatter iterations and measure
+    # launch overhead rather than the TF32 method.
+    FM.DENSE_CUDA_TENSOR_FORMAT[] = :off
+    FM.DENSE_CUDA_FUSED[] = false
+    FM.DENSE_CUDA_WHOLE_PASS[] = false
+    FM.DENSE_CUDA_CHUNK[] = 1 << 14
+    CUDA.math_mode!(CUDA.FAST_MATH)
+else
+    error("FM028_TENSOR_FORMAT must be off, tf32, fp16, or bf16")
+end
 
 # 024b body/box/error conventions (seed 24025, sampler seed 24026)
 const SEED = 24025
@@ -113,24 +138,29 @@ const BLAS_THREADS = BLAS.get_num_threads()
 
 _used_device_bytes() = CUDA.total_memory() - CUDA.free_memory()
 
-function _median_gpu_ms(f!, state, reps)
+function _gpu_samples_ms(f!, state, reps)
     f!(state); CUDA.synchronize()
     ts = Float64[]
     for _ in 1:reps
         push!(ts, Float64(CUDA.@elapsed f!(state)) * 1e3)
     end
-    return median(ts)
+    return ts
 end
 
-function _median_wall_ms(f!, reps)
+_median_gpu_ms(f!, state, reps) = median(_gpu_samples_ms(f!, state, reps))
+
+function _wall_samples_ms(f!, reps)
     f!(); CUDA.synchronize()
     ts = Float64[]
     for _ in 1:reps
         t = @elapsed (f!(); CUDA.synchronize())
         push!(ts, t * 1e3)
     end
-    return median(ts)
+    return ts
 end
+
+
+_median_wall_ms(f!, reps) = median(_wall_samples_ms(f!, reps))
 
 # ---- configuration ----------------------------------------------------------
 
@@ -147,9 +177,60 @@ const STRATEGY_SPECS = Dict(
 
 # policy-specific cache kwargs; the K-default trap means window_classes is
 # ALWAYS passed explicitly for hierarchical rows
-function _cache_kwargs(policy, ell, K)
+function _policy_radius(policy)
+    policy == "flat" && return nothing
+    startswith(policy, "sched") && return last(_policy_schedule(policy))
+    m = match(r"^hier(\d+)$", policy)
+    m === nothing && throw(ArgumentError(
+        "invalid FM028 policy '$policy'; expected flat or hier<q>"))
+    q = parse(Int, only(m.captures))
+    # Construction is the single source of truth for supported radii and
+    # provides the public, supported-set diagnostic on invalid/redundant q.
+    RigidHierarchicalTables(q)
+    return q
+end
+
+
+function _policy_schedule(policy)
+    startswith(policy, "sched") || return nothing
+    fields = split(policy[6:end], '-')
+    qs = parse.(Int, fields)
+    isempty(qs) && throw(ArgumentError(
+        "invalid FM028 scheduled policy '$policy'; expected sched<q2>-...-<qell>"))
+    foreach(q -> RigidHierarchicalTables(q), qs)
+    all(qs[i + 1] <= qs[i] for i in 1:length(qs)-1) || throw(ArgumentError(
+        "FM028 scheduled policy must be non-increasing; got $qs"))
+    return qs
+end
+
+function _window_classes(policy, spec)
+    q = _policy_radius(policy)
+    spec == "full" && return q === nothing ? 1 :
+        (startswith(policy, "sched") ? length(union((Set((j == 1 ?
+            RigidHierarchicalTables(x) : FM._rigid_transition_tables(
+                _policy_schedule(policy)[j - 1], x)).push_offsets)
+            for (j, x) in enumerate(_policy_schedule(policy)))...)) :
+         length(RigidHierarchicalTables(q).push_offsets))
+    K = tryparse(Int, spec)
+    K === nothing && throw(ArgumentError(
+        "invalid FM028_K value '$spec'; expected a positive integer or full"))
+    K > 0 || throw(ArgumentError("FM028_K must be positive"))
+    return K
+end
+
+function _cache_kwargs(policy, ell, K, P, ::Type{TF}, LH) where TF
     policy == "flat" && return (; stencil_epsilon=_flat_epsilon(ell))
-    q = policy == "hier3" ? 3 : 12
+    q = _policy_radius(policy)
+    schedule = _policy_schedule(policy)
+    if schedule !== nothing
+        length(schedule) == ell - 1 || throw(ArgumentError(
+            "FM028 scheduled policy '$policy' needs $(ell - 1) entries at ell=$ell"))
+        h0 = TF(BOX_SIZE / 2)
+        eps = rigid_stencil_epsilon(P, h0, ell, q; lamb_helmholtz=LH, TF)
+        base = HierarchicalRigidStencil(ConstantPStencilConfig(P, eps;
+            lamb_helmholtz=LH); near_radius2=q, window_classes=K)
+        return (; policy=FM._hierarchical_stencil_with_schedule(base, schedule))
+    end
     return (; near_radius2=q, window_classes=K)
 end
 
@@ -189,17 +270,22 @@ const ROW_DEFAULTS = (
     manifest=MANIFEST, job=JOBID, host=HOST, gpu=GPU, julia=JULIA_V,
     cuda=CUDA_V, blas_threads=BLAS_THREADS, seed=SEED,
     policy="", strategy="", precision="", expansion_order=0, p_literature=0,
-    lh=false, n=0, ell=0, window_classes=0, fit=false, note="",
+    lh=false, n=0, ell=0, window_classes=0,
+    m2l_threads=M2L_THREADS, m2l_block_cap=M2L_BLOCK_CAP,
+    counting_sort=COUNTING_SORT, fit=false, note="",
+    symmetric_nearfield=SYMMETRIC_NEARFIELD, tensor_format=string(TENSOR_FORMAT),
     n_cells=0, n_nodes=0, nodes_per_level="", routes=0, routes_per_level="",
     n_direct=0, nonempty_classes=0, max_class=0, mean_class=0.0,
     class_p50=0.0, class_p90=0.0,
     construction_ms=NaN, persistent_device_bytes=0, peak_device_bytes=0,
     grid_ms=NaN, occupancy_ms=NaN, direct_gen_ms=NaN, route_gen_ms=NaN,
     groups_ms=NaN,
-    b2m_ms=NaN, m2m_ms=NaN, m2l_ms=NaN, m2l_per_level="", l2l_ms=NaN,
+    b2m_ms=NaN, m2m_ms=NaN, m2l_ms=NaN, m2l_min_ms=NaN,
+    m2l_max_ms=NaN, m2l_per_level="", l2l_ms=NaN,
     l2b_ms=NaN,
     eval_ms=NaN, refresh_ms=NaN, finalize_ms=NaN, euler_ms=NaN,
-    verdict_step_ms=NaN, stale_step_ms=NaN,
+    verdict_step_ms=NaN, verdict_step_min_ms=NaN, verdict_step_max_ms=NaN,
+    stale_step_ms=NaN,
     host_construction_ms=NaN, host_step_ms=NaN, h2d_ms=NaN, d2h_ms=NaN,
     m2l_device_alloc_bytes=0, step_device_alloc_bytes=0,
     verdict_step_host_alloc_bytes=0,
@@ -262,7 +348,7 @@ function measure(policy_name, strat_name, ::Type{TF}, P, LH, N, ell, K) where TF
     t0 = time_ns()
     cache = RadixFMMCache(sys; expansion_order=P, ell, max_n_bodies=N,
         bounds=(BOX_MIN, BOX_SIZE), lamb_helmholtz=LH, device=true,
-        options=opts, _cache_kwargs(policy_name, ell, K)...)
+        options=opts, _cache_kwargs(policy_name, ell, K, P, TF, LH)...)
     CUDA.synchronize()
     construction_ms = (time_ns() - t0) / 1e6
     persistent_device_bytes = _used_device_bytes() - used0
@@ -285,7 +371,10 @@ function measure(policy_name, strat_name, ::Type{TF}, P, LH, N, ell, K) where TF
     # per-stage CUDA-event medians
     b2m_ms = _median_gpu_ms(FM._launch_cuda_b2m!, state, REPS)
     m2m_ms = _median_gpu_ms(FM._launch_cuda_resident_m2m!, state, REPS)
-    m2l_ms = _median_gpu_ms(FM._launch_cuda_resident_m2l!, state, REPS)
+    m2l_samples = _gpu_samples_ms(FM._launch_cuda_resident_m2l!, state, REPS)
+    m2l_ms = median(m2l_samples)
+    m2l_min_ms = minimum(m2l_samples)
+    m2l_max_ms = maximum(m2l_samples)
     l2l_ms = _median_gpu_ms(FM._launch_cuda_resident_l2l!, state, REPS)
     l2b_ms = _median_gpu_ms(FM._launch_cuda_resident_l2b!, state, REPS)
     m2l_alloc = CUDA.@allocated FM._launch_cuda_resident_m2l!(state)
@@ -305,12 +394,17 @@ function measure(policy_name, strat_name, ::Type{TF}, P, LH, N, ell, K) where TF
 
     # boundary (b): full verdict step (refresh + lifecycle + finalize + Euler)
     verdict_step_ms = NaN
+    verdict_step_min_ms = NaN
+    verdict_step_max_ms = NaN
     step_alloc = 0
     host_alloc = 0
     if occursin('b', BOUND)
         step_alloc = CUDA.@allocated step!()
         host_alloc = @allocated step!()
-        verdict_step_ms = _median_wall_ms(step!, REPS)
+        verdict_samples = _wall_samples_ms(step!, REPS)
+        verdict_step_ms = median(verdict_samples)
+        verdict_step_min_ms = minimum(verdict_samples)
+        verdict_step_max_ms = maximum(verdict_samples)
     end
 
     # stale-tree policy: the only cheaper refresh policy that exists is
@@ -425,7 +519,7 @@ function measure(policy_name, strat_name, ::Type{TF}, P, LH, N, ell, K) where TF
         t0h = time_ns()
         host_cache = RadixFMMCache(gsys; expansion_order=P, ell, max_n_bodies=N,
             bounds=(BOX_MIN, BOX_SIZE), lamb_helmholtz=LH, device=true,
-            options=opts, _cache_kwargs(policy_name, ell, K)...)
+            options=opts, _cache_kwargs(policy_name, ell, K, P, TF, LH)...)
         CUDA.synchronize()
         host_construction_ms = (time_ns() - t0h) / 1e6
         fmm!(gsys, host_cache; scalar_potential=!LH, gradient=true)  # warm; values valid
@@ -465,8 +559,10 @@ function measure(policy_name, strat_name, ::Type{TF}, P, LH, N, ell, K) where TF
         class_p50=_q(class_counts, 0.5), class_p90=_q(class_counts, 0.9),
         construction_ms, persistent_device_bytes, peak_device_bytes,
         grid_ms, occupancy_ms, direct_gen_ms, route_gen_ms, groups_ms,
-        b2m_ms, m2m_ms, m2l_ms, m2l_per_level, l2l_ms, l2b_ms,
+        b2m_ms, m2m_ms, m2l_ms, m2l_min_ms, m2l_max_ms, m2l_per_level,
+        l2l_ms, l2b_ms,
         eval_ms, refresh_ms, finalize_ms, euler_ms, verdict_step_ms,
+        verdict_step_min_ms, verdict_step_max_ms,
         stale_step_ms,
         host_construction_ms, host_step_ms, h2d_ms, d2h_ms,
         m2l_device_alloc_bytes=m2l_alloc, step_device_alloc_bytes=step_alloc,
@@ -499,8 +595,8 @@ rows = NamedTuple[]
 class_rows = NamedTuple[]
 for N in NS, ell in ELLS, P in PS, TF in TFS, LH in LHS, policy in POLICIES,
         strat in STRATS
-    ks = policy == "flat" ? KS[1:1] : KS
-    for K in ks
+    specs = policy == "flat" ? K_SPECS[1:1] : K_SPECS
+    for K in (_window_classes(policy, spec) for spec in specs)
         local row, crows
         try
             row, crows = measure(policy, strat, TF, P, LH, N, ell, K)

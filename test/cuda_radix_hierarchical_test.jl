@@ -14,11 +14,7 @@ _cuda_hier_required() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0") == "1"
 # Same accuracy contract the host suite uses: an epsilon whose analytic classifier
 # rejects exactly the requested rigid near set at this (h0, ell).
 function _hcu_epsilon(P, q, h0, ell, ::Type{TF}, LH) where TF
-    q == 3 && return TF(1e12)
-    probe = ConstantPStencilConfig(P, one(TF); lamb_helmholtz=LH)
-    upper = constant_p_stencil_bound(TF(h0), ell, probe, SVector(2, 2, 2))
-    lower = constant_p_stencil_bound(TF(h0), ell, probe, SVector(3, 2, 0))
-    return (upper + lower) / 2
+    return rigid_stencil_epsilon(P, h0, ell, q; lamb_helmholtz=LH, TF)
 end
 
 function _hcu_policy(P, q, h0, ell, ::Type{TF}, LH; window_classes=8) where TF
@@ -108,14 +104,21 @@ const _HCU_STRATEGIES = (
 
         #--- occupancy, route, and direct-pair parity vs the 026 host oracle ---#
 
-        for q in (12, 3), ell in (3, 4, 5)
+        for q in (3, 4, 5, 6, 8, 9, 10, 11, 12), ell in (3, 4, 5)
             n = ell == 5 ? 4000 : 600
             sys = generate_gravitational(27000 + ell, n)
             ref = generate_gravitational(27000 + ell, n)
             policy = _hcu_policy(P, q, 0.6, ell, Float64, false; window_classes=8)
-            hcache = RadixFMMCache(sys; expansion_order=P, ell, bounds, policy)
+            # Route-class parity below is asserted against the host oracle's
+            # level-true ids, which is the concat convention; the dense plan's
+            # offset-local ids are covered by the schedule block further down.
+            # Pin the strategy rather than inheriting the measured default.
+            geom_opts = CUDARadixLifecycleOptions(; precision=Float64,
+                m2l_strategy=ConcatenatedFixedZM2L())
+            hcache = RadixFMMCache(sys; expansion_order=P, ell, bounds, policy,
+                options=geom_opts)
             dcache = RadixFMMCache(ref; expansion_order=P, ell, bounds, policy,
-                device=true)
+                options=geom_opts, device=true)
             hs, ds = hcache.state, dcache.state
             hctx, dctx = hs.interaction_list, ds.interaction_list
             @test dctx isa HCU_FM.DeviceHierarchicalM2LContext
@@ -171,6 +174,176 @@ const _HCU_STRATEGIES = (
             tail = (noffsets ÷ 8) * 8 + 1
             if tail <= noffsets
                 @test HCU_FM.cuda_hierarchical_route_window!(ds, ell, tail, noffsets) >= 0
+            end
+        end
+
+
+        #--- task-028 Stage 7 complete adjacent-shell schedule frontier ---#
+
+        let ell = 5
+            schedules = ((5, 5, 5, 5), (6, 5, 5, 5), (6, 6, 5, 5),
+                (6, 6, 6, 5), (6, 6, 6, 6))
+            for (isched, schedule) in enumerate(schedules)
+                hsys = generate_gravitational(27800 + isched, 1200)
+                dsys = generate_gravitational(27800 + isched, 1200)
+                base = _hcu_policy(P, last(schedule), 0.6, ell, Float64, false;
+                    window_classes=64)
+                policy = HCU_FM._hierarchical_stencil_with_schedule(base, schedule)
+                opts = CUDARadixLifecycleOptions(;
+                    m2l_strategy=DenseTranslationM2L(apply_chunk=64, build_chunk=8))
+                hc = RadixFMMCache(hsys; expansion_order=P, ell, bounds, policy,
+                    options=opts)
+                dc = RadixFMMCache(dsys; expansion_order=P, ell, bounds, policy,
+                    options=opts, device=true)
+                hs, ds = hc.state, dc.state
+                hctx, dctx = hs.interaction_list, ds.interaction_list
+                @test dctx.level_radii2 == collect(schedule)
+                @test Array(dctx.d_class_of) == hctx.level_class_of
+                @test ds.counts.n_direct == hs.counts.n_direct
+                nd = hs.counts.n_direct
+                @test Array(ds.direct_targets)[1:nd] == hs.direct_targets[1:nd]
+                @test Array(ds.direct_sources)[1:nd] == hs.direct_sources[1:nd]
+                noffsets = length(hctx.tables.push_offsets)
+                for L in 2:ell, first in 1:hctx.window_classes:noffsets
+                    lastoff = min(first + hctx.window_classes - 1, noffsets)
+                    nh = HCU_FM.build_hierarchical_routes_window!(
+                        hs.route_levels, hs.route_offsets, hs.route_targets,
+                        hs.route_sources, hs.scratch.m2l_concat.route_class,
+                        hctx, hs.grid, L, first, lastoff)
+                    nd_ = HCU_FM.cuda_hierarchical_route_window!(ds, L, first, lastoff)
+                    @test nd_ == nh
+                    nh == 0 && continue
+                    @test Array(view(ds.route_sources, 1:nh)) == hs.route_sources[1:nh]
+                    @test Array(view(ds.route_targets, 1:nh)) == hs.route_targets[1:nh]
+                    # Dense operators are shared across levels and apply the
+                    # level diagonal separately, so their device class ids are
+                    # offset-local. The host route oracle records the general
+                    # level-true class id used by the other strategies.
+                    @test Array(view(ds.scratch.m2l_concat.route_class, 1:nh)) ==
+                        Int32.(mod1.(hs.scratch.m2l_concat.route_class[1:nh], noffsets))
+                end
+                fmm!(hsys, hc; scalar_potential=true, gradient=true)
+                fmm!(dsys, dc; scalar_potential=true, gradient=true)
+                @test dsys.potential[1, :] ≈ hsys.potential[1, :] atol=3e-11 rtol=1e-10
+                @test dsys.potential[5:7, :] ≈ hsys.potential[5:7, :] atol=3e-10 rtol=1e-10
+            end
+        end
+
+
+        #--- task-028 Stage 8 symmetric nearfield compaction/kernel parity ---#
+
+        for TF in (Float32, Float64), threshold in (128, 1)
+            old_threshold = HCU_FM.SYMMETRIC_CUDA_MAX_CELL_BODIES[]
+            old_symmetric = HCU_FM.CUDA_SYMMETRIC_NEARFIELD[]
+            try
+                HCU_FM.SYMMETRIC_CUDA_MAX_CELL_BODIES[] = threshold
+                HCU_FM.CUDA_SYMMETRIC_NEARFIELD[] = true
+                sys = generate_gravitational(27900 + threshold, 2400)
+                cache = RadixFMMCache(sys; expansion_order=P, ell=4, bounds,
+                    device=true, options=CUDARadixLifecycleOptions(; precision=TF,
+                        m2l_strategy=DenseTranslationM2L(apply_chunk=64, build_chunk=8)),
+                    policy=_hcu_policy(P, 6, 0.6, 4, TF, false; window_classes=64))
+                state = cache.state
+                hctx = state.interaction_list
+                dt = Array(state.direct_targets)
+                ds = Array(state.direct_sources)
+                directed = [(dt[i], ds[i]) for i in 1:state.counts.n_direct]
+                ct = Array(hctx.symmetric_targets)[1:hctx.n_symmetric_pairs]
+                cs = Array(hctx.symmetric_sources)[1:hctx.n_symmetric_pairs]
+                expanded = Tuple{Int,Int}[]
+                for (tenc, s) in zip(ct, cs)
+                    if tenc < 0
+                        push!(expanded, (-tenc, s))
+                    else
+                        push!(expanded, (tenc, s))
+                        tenc == s || push!(expanded, (s, tenc))
+                    end
+                end
+                @test sort(expanded) == sort(directed)
+                @test any(t == s for (t, s) in zip(abs.(ct), cs))
+                threshold == 1 && @test any(x -> x < 0, ct)
+
+                HCU_FM.CUDA_SYMMETRIC_NEARFIELD[] = false
+                HCU_FM._launch_cuda_nearfield_kernel!(state)
+                refout = Array(state.output)
+                HCU_FM.CUDA_SYMMETRIC_NEARFIELD[] = true
+                HCU_FM._launch_cuda_nearfield_kernel!(state)
+                symout = Array(state.output)
+                tol = TF === Float32 ? 3e-4 : 2e-11
+                @test symout ≈ refout atol=tol rtol=tol
+
+                # Pair-list permutation may only change floating-point atomic
+                # reassociation, never coverage or the mathematical result.
+                copyto!(hctx.symmetric_targets, reverse(ct))
+                copyto!(hctx.symmetric_sources, reverse(cs))
+                HCU_FM._launch_cuda_nearfield_kernel!(state)
+                permout = Array(state.output)
+                @test permout ≈ symout atol=tol rtol=tol
+            finally
+                HCU_FM.SYMMETRIC_CUDA_MAX_CELL_BODIES[] = old_threshold
+                HCU_FM.CUDA_SYMMETRIC_NEARFIELD[] = old_symmetric
+            end
+        end
+
+
+        #--- task-028 Stage 8 class-batched 16x16 tensor M2L parity/reuse ---#
+
+        let ell = 4
+            outs = Dict{Symbol,Matrix{Float64}}()
+            old_format = HCU_FM.DENSE_CUDA_TENSOR_FORMAT[]
+            try
+                for format in (:off, :fp16, :bf16)
+                    HCU_FM.DENSE_CUDA_TENSOR_FORMAT[] = format
+                    sys = generate_gravitational(27950, 5000)
+                    cache = RadixFMMCache(sys; expansion_order=3, ell, bounds,
+                        device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
+                            m2l_strategy=DenseTranslationM2L(apply_chunk=64, build_chunk=8)),
+                        policy=_hcu_policy(3, 6, 0.6, ell, Float32, false;
+                            window_classes=64))
+                    plan = cache.state.scratch.m2l_concat
+                    if format === :fp16
+                        @test size(plan.tensor_fp16_operators) == size(plan.operators)
+                        @test isempty(plan.tensor_bf16_operators)
+                        @test size(plan.tensor_input_scale) == (16, plan.nclasses)
+                        @test all(isfinite, Array(plan.tensor_fp16_operators))
+                    elseif format === :bf16
+                        @test size(plan.tensor_bf16_operators) == size(plan.operators)
+                        @test isempty(plan.tensor_fp16_operators)
+                        @test size(plan.tensor_input_scale) == (16, plan.nclasses)
+                    else
+                        @test isempty(plan.tensor_fp16_operators)
+                        @test isempty(plan.tensor_bf16_operators)
+                        @test isempty(plan.tensor_input_scale)
+                    end
+                    cache_ids = (objectid(plan.tensor_fp16_operators),
+                        objectid(plan.tensor_bf16_operators))
+                    fmm!(sys, cache; scalar_potential=true, gradient=true)
+                    outs[format] = copy(sys.potential)
+                    fmm!(sys, cache; scalar_potential=true, gradient=true)
+                    @test cache_ids == (objectid(plan.tensor_fp16_operators),
+                        objectid(plan.tensor_bf16_operators))
+                end
+                @test outs[:fp16][1, :] ≈ outs[:off][1, :] atol=2e-3 rtol=2e-3
+                @test outs[:fp16][5:7, :] ≈ outs[:off][5:7, :] atol=2e-3 rtol=2e-3
+                @test outs[:bf16][1, :] ≈ outs[:off][1, :] atol=8e-3 rtol=8e-3
+                @test outs[:bf16][5:7, :] ≈ outs[:off][5:7, :] atol=8e-3 rtol=8e-3
+                # Unsupported precision/order/LH configurations keep the tiled
+                # FP32/Float64 path even while the internal tensor knob is set.
+                HCU_FM.DENSE_CUDA_TENSOR_FORMAT[] = :fp16
+                for (TF, PP, LH) in ((Float64, 3, false), (Float32, 4, false),
+                        (Float32, 3, true))
+                    fs = generate_gravitational(27951 + PP + LH, 600)
+                    fc = RadixFMMCache(fs; expansion_order=PP, ell=3, bounds,
+                        device=true, lamb_helmholtz=LH,
+                        options=CUDARadixLifecycleOptions(; precision=TF,
+                            m2l_strategy=DenseTranslationM2L(apply_chunk=64, build_chunk=8)),
+                        policy=_hcu_policy(PP, 6, 0.6, 3, TF, LH;
+                            window_classes=64))
+                    fmm!(fs, fc; scalar_potential=!LH, gradient=true)
+                    @test all(isfinite, fs.potential)
+                end
+            finally
+                HCU_FM.DENSE_CUDA_TENSOR_FORMAT[] = old_format
             end
         end
 
@@ -275,9 +448,12 @@ const _HCU_STRATEGIES = (
             @test plan.nclasses == noffsets
             @test size(hctx.source_scale) == (plan.ndof, ell - 1)
             @test size(hctx.target_scale) == (plan.ndof, ell - 1)
-            # only the dense strategy carries level scales
+            # only the dense strategy carries level scales — so this comparison
+            # must name a non-dense strategy, not inherit the measured default
             csys = generate_gravitational(27400, 300)
             ccache = RadixFMMCache(csys; expansion_order=P, ell, bounds, device=true,
+                options=CUDARadixLifecycleOptions(;
+                    m2l_strategy=ConcatenatedFixedZM2L()),
                 policy=_hcu_policy(P, 12, 0.6, ell, Float64, false; window_classes=8))
             @test isempty(ccache.state.interaction_list.source_scale)
             @test isempty(ccache.state.interaction_list.target_scale)
@@ -399,13 +575,16 @@ const _HCU_STRATEGIES = (
             ref = generate_gravitational(27650, 3000)
             cache = RadixFMMCache(sys; expansion_order=P, ell, bounds, device=true)
             @test cache.policy isa HierarchicalRigidStencil
-            @test cache.policy.near_radius2 == 12
+            @test cache.policy.near_radius2 == HCU_FM.RADIX_DEFAULT_NEAR_RADIUS2
+            @test cache.policy.level_radii2 == (6, 5, 5)
             @test cache.policy.window_classes == HCU_FM.RADIX_DEVICE_WINDOW_CLASSES
             @test cache.state.interaction_list isa HCU_FM.DeviceHierarchicalM2LContext
             fmm!(sys, cache; scalar_potential=true, gradient=true)
             HCU_FM.direct!(ref; scalar_potential=true, gradient=true)
-            # the derived tolerance reproduces the rigid near set exactly, so the
-            # accuracy is the theta=0.5 stencil's, not the flat classifier's
+            # The derived tolerance reproduces the rigid near set exactly, so the
+            # accuracy is the shipped stencil's, not the flat classifier's. The
+            # task-028 Stage 7 default geometry measures 4.60e-6 / 2.93e-4 here
+            # against 5.13e-7 / 2.99e-5 for the previous uniform q = 12 default.
             @test maximum(abs.(sys.potential[1, :] .- ref.potential[1, :])) < 1e-5
             @test maximum(abs.(sys.potential[5:7, :] .- ref.potential[5:7, :])) < 1e-3
             # host default agrees with the device default at matched policy
@@ -415,6 +594,37 @@ const _HCU_STRATEGIES = (
             @test hcache.policy isa HierarchicalRigidStencil
             fmm!(hsys, hcache; scalar_potential=true, gradient=true)
             @test maximum(abs.(sys.potential[5:7, :] .- hsys.potential[5:7, :])) < 1e-9
+            # This block passes no `options`, so it also pins the measured
+            # selection (024/028) on device: P = 5 here is Float64 + dense.
+            @test cache.state.options.precision === Float64
+            @test cache.state.options.m2l_strategy isa DenseTranslationM2L
+            @test cache.state.options.operator isa MaterializedYRotationM2L
+        end
+
+        #--- the shipped default stack at literature P = 4, end to end ---#
+        # expansion_order = 3 with no Lamb-Helmholtz is the one regime whose
+        # defaults resolve to the whole task-028 winner: Float32, dense, and
+        # therefore the FP16 tensor M2L, over the sched6-5-5-5 geometry. Nothing
+        # else in this file exercises that stack with no options passed.
+        let ell = 4
+            sys = generate_gravitational(27660, 1500)
+            ref = generate_gravitational(27660, 1500)
+            cache = RadixFMMCache(sys; expansion_order=3, ell, bounds, device=true)
+            @test cache.state.options.precision === Float32
+            @test cache.state.options.m2l_strategy isa DenseTranslationM2L
+            @test cache.state.options.operator isa MaterializedYRotationM2L
+            @test cache.policy.near_radius2 == HCU_FM.RADIX_DEFAULT_NEAR_RADIUS2
+            @test cache.policy.level_radii2 == (6, 5, 5)
+            plan = cache.state.scratch.m2l_concat
+            @test HCU_FM.DENSE_CUDA_TENSOR_FORMAT[] === :fp16
+            @test size(plan.tensor_fp16_operators) == size(plan.operators)
+            fmm!(sys, cache; scalar_potential=true, gradient=true)
+            HCU_FM.direct!(ref; scalar_potential=true, gradient=true)
+            @test all(isfinite, sys.potential)
+            # The same stack minus the FP16 M2L measures 2.08e-5 / 1.07e-3 on the
+            # host; the bounds carry headroom for the tensor input rounding.
+            @test maximum(abs.(sys.potential[1, :] .- ref.potential[1, :])) < 1e-4
+            @test maximum(abs.(sys.potential[5:7, :] .- ref.potential[5:7, :])) < 5e-3
         end
 
         #--- flat device path is unchanged ---#

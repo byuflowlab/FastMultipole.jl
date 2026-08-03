@@ -684,10 +684,68 @@ end
 # device-to-host round trip, so route generation scales as
 # `(ell - 1) * ceil(noffsets / K)` and K = 4 spends 72-164 ms per step on latency
 # alone. H200 job 12992039 measured route generation falling 109-193x from K = 4 to
-# a whole-level window; K = 256 captures nearly all of that at <= 5x the K = 4
-# device footprint (larger K grows the window buffers as `K * max_level_nodes`).
+# a whole-level window.
+#
+# Task 028 Phase A then measured the residual at n = 1e6: K = 256 still spent
+# 24.19 ms per step in route generation against 2.13 ms for a whole-level window,
+# so the device default is now larger than any supported shell's offset count and
+# every level is generated in one window. The cost is route-buffer memory, which
+# grows as `min(K, noffsets) * max_level_nodes` (2.0 GB persistent at n = 1e6,
+# ell = 5 on the default policy); pass a smaller `window_classes` on
+# memory-constrained devices.
 const RADIX_HOST_WINDOW_CLASSES = 4
-const RADIX_DEVICE_WINDOW_CLASSES = 256
+const RADIX_DEVICE_WINDOW_CLASSES = 4096
+
+# Measured defaults for `RadixFMMCache(...; options=nothing)` (tasks 024 and 028).
+# Both choices are made from the expansion order, the Lamb-Helmholtz channel, the
+# platform, and the dense operator footprint — the selectors 024 found sufficient —
+# and both are overridden by passing an explicit `options`.
+#
+# Precision. Task 024 measured Float32 max gradient error at 5.33e-4 (CPU) / 5.34e-4
+# (H200) essentially independently of `P`, against 5.25e-6 for Float64: Float32 has an
+# accuracy floor, not an accuracy cost proportional to the order. At literature P = 4
+# that floor sits under the stencil's own truncation error (task 028 measured 3.186e-4
+# Float32 vs 3.185e-4 Float64 at n = 1e6, +0.03%), so Float32 is free accuracy-wise and
+# worth 1.14x; above P = 4 the user is paying for accuracy Float32 would discard.
+_default_radix_precision(expansion_order::Int) =
+    expansion_order <= 3 ? Float32 : Float64
+
+# Strategy. Task 024's recurring-step rules: dense wins every measured P = 4 case on
+# both platforms and every P = 8 case with LH off; with LH on at P = 8 the platforms
+# split (H200 precomputed-y, CPU dense); precomputed-y wins P = 12 everywhere, where
+# dense is either unsupported (Float32) or over its memory gate. Task 028 confirmed
+# dense over precomputed-y on the hierarchical path at n = 1e6 (106.3 vs 172.3 ms).
+# Concat/factored won no steady-state case on either platform, so the historical
+# `ConcatenatedFixedZM2L` default was not the measured choice at any order.
+#
+# Dense trades construction for steady state (~20 s build and ~300-370 break-even
+# steps at the task-028 target), which suits the repeated-step cache this is, but not
+# one-shot evaluation: pass `PrecomputedFactoredYM2L()` explicitly for that.
+function _default_radix_m2l_strategy(::Type{TF}, expansion_order::Int, LH::Bool,
+        device::Bool, nclasses::Int, ndof::Int) where TF
+    dense = DenseTranslationM2L()
+    # 024 found the operator payload is dense's binding constraint; keep a margin
+    # under its own gate so the auto choice never construction-errors on storage.
+    dense_bytes = nclasses * ndof * ndof * sizeof(TF)
+    dense_bytes <= (dense.max_persistent_bytes * 3) ÷ 4 || return PrecomputedFactoredYM2L()
+    expansion_order <= 3 && return dense                  # literature P <= 4
+    expansion_order <= 7 || return PrecomputedFactoredYM2L()  # literature P >= 12
+    LH || return dense                                    # P = 8, LH off
+    return device ? PrecomputedFactoredYM2L() : dense     # P = 8, LH on: platform split
+end
+
+_default_radix_options(::Type{TF}, expansion_order::Int, LH::Bool, device::Bool,
+        nclasses::Int, ndof::Int) where TF =
+    _radix_options_for(TF, _default_radix_m2l_strategy(TF, expansion_order, LH,
+        device, nclasses, ndof))
+
+# Each resident strategy is bound to the rotation operator its plan is built from.
+_radix_options_for(::Type{TF}, m2l_strategy::PrecomputedFactoredYM2L) where TF =
+    CUDARadixLifecycleOptions(; precision=TF, operator=FactoredRotationM2L(),
+        m2l_strategy)
+_radix_options_for(::Type{TF}, m2l_strategy) where TF =
+    CUDARadixLifecycleOptions(; precision=TF, operator=MaterializedYRotationM2L(),
+        m2l_strategy)
 
 # Default separation policy (task 027). `HierarchicalRigidStencil` replaced the flat
 # `ConstantPAnalyticStencil` as the production default: the flat classifier's
@@ -696,13 +754,14 @@ const RADIX_DEVICE_WINDOW_CLASSES = 256
 # is level-invariant. An explicit `stencil_epsilon` still selects the flat policy, so
 # existing callers keep their exact behavior.
 function _default_radix_policy(policy, P::Int, ::Type{TF}, LH::Bool, h0, ell::Int,
-        device::Bool, stencil_epsilon, near_radius2, window_classes) where TF
+        device::Bool, stencil_epsilon, near_radius2, window_classes,
+        level_radii2=nothing) where TF
     if policy !== nothing
         (stencil_epsilon === nothing && near_radius2 === nothing &&
-            window_classes === nothing) ||
+            window_classes === nothing && level_radii2 === nothing) ||
             throw(ArgumentError("an explicit `policy` carries its own stencil " *
                 "parameters; do not combine it with `stencil_epsilon`, " *
-                "`near_radius2`, or `window_classes`"))
+                "`near_radius2`, `level_radii2`, or `window_classes`"))
         return policy
     end
     K = window_classes === nothing ?
@@ -710,24 +769,35 @@ function _default_radix_policy(policy, P::Int, ::Type{TF}, LH::Bool, h0, ell::In
         Int(window_classes)
     if stencil_epsilon !== nothing
         # explicit tolerance: the caller is asking for the flat analytic classifier
-        near_radius2 === nothing ||
+        (near_radius2 === nothing && level_radii2 === nothing) ||
             throw(ArgumentError("`stencil_epsilon` selects the flat " *
-                "ConstantPAnalyticStencil, which has no `near_radius2`; pass a " *
-                "HierarchicalRigidStencil `policy` for an explicit tolerance " *
-                "with a rigid near set"))
+                "ConstantPAnalyticStencil, which has no `near_radius2` or " *
+                "`level_radii2`; pass a HierarchicalRigidStencil `policy` for " *
+                "an explicit tolerance with a rigid near set"))
         return ConstantPAnalyticStencil(
             ConstantPStencilConfig(P, TF(stencil_epsilon); lamb_helmholtz=LH))
     end
-    q = near_radius2 === nothing ? 12 : Int(near_radius2)
+    q = near_radius2 === nothing ? RADIX_DEFAULT_NEAR_RADIUS2 : Int(near_radius2)
     if ell < 2
         # the first M2L level is 2; there is no hierarchy to walk below that
         return ConstantPAnalyticStencil(
             ConstantPStencilConfig(P, TF(1e-4); lamb_helmholtz=LH))
     end
+    # Only the untouched default carries the task-028 Stage 7 level schedule: an
+    # explicit `near_radius2` is honored as the uniform geometry the caller asked
+    # for. The schedule covers M2L levels 2:ell and is non-increasing with depth.
+    qs = if level_radii2 !== nothing
+        Tuple(Int(x) for x in level_radii2)
+    elseif near_radius2 === nothing && ell >= 3
+        (RADIX_DEFAULT_COARSE_NEAR_RADIUS2,
+            ntuple(_ -> RADIX_DEFAULT_NEAR_RADIUS2, ell - 2)...)
+    else
+        ()
+    end
     eps = rigid_stencil_epsilon(P, h0, ell, q; lamb_helmholtz=LH, TF)
     return HierarchicalRigidStencil(
         ConstantPStencilConfig(P, TF(eps); lamb_helmholtz=LH);
-        near_radius2=q, window_classes=K)
+        near_radius2=q, level_radii2=qs, window_classes=K)
 end
 
 """
@@ -750,25 +820,54 @@ is reallocated over the cache's lifetime.
 - `lamb_helmholtz=nothing`: override the `has_vector_potential` inference
 - `device::Bool=false`: run the lifecycle device-resident (CUDA; requires
   `load_cuda_radix_lifecycle!()`)
-- `options::CUDARadixLifecycleOptions`: operator strategies/precision; defaults to
-  the task-022 tuned `m2l_strategy=ConcatenatedFixedZM2L()`
-- `near_radius2`: rigid near set `{o : |o|^2 <= near_radius2}` of the default
-  hierarchical policy (default `12`, the `024b` `theta=0.5` stencil; `3` is the
-  classic FMM one)
+- `options::CUDARadixLifecycleOptions`: operator strategies/precision. Omitted, both
+  are selected from the measured 024/028 rules (see below); passed explicitly, it is
+  used verbatim. The resolved choice is readable as `cache.state.options`.
+- `near_radius2`: rigid leaf near set `{o : |o|^2 <= near_radius2}` of the default
+  hierarchical policy (default `$(RADIX_DEFAULT_NEAR_RADIUS2)`; `12` is the `024b`
+  `theta=0.5` stencil and `3` the classic FMM one). Passing it explicitly also
+  selects the *uniform* geometry, i.e. it drops the default level schedule below.
+- `level_radii2`: per-M2L-level near radii for levels `2:ell`, coarse to fine;
+  must be non-increasing and end at `near_radius2` (task 028 Stage 7)
 - `window_classes`: route-window width; defaults to the measured
   `$(RADIX_DEVICE_WINDOW_CLASSES)` on device and `$(RADIX_HOST_WINDOW_CLASSES)` on host
 - `stencil_epsilon::Real`: **selects the deprecated flat `ConstantPAnalyticStencil`**
   at this tolerance (task 027); omit it to get the hierarchical default
 - `policy`: explicit `ConstantPAnalyticStencil` or `HierarchicalRigidStencil`
   (both run host- or device-resident). A policy carries its own stencil
-  parameters, so combining it with `stencil_epsilon`, `near_radius2`, or
-  `window_classes` throws; likewise `stencil_epsilon` (flat) rejects `near_radius2`.
+  parameters, so combining it with `stencil_epsilon`, `near_radius2`,
+  `level_radii2`, or `window_classes` throws; likewise `stencil_epsilon` (flat)
+  rejects `near_radius2`.
 
-Since task 027 the default policy is [`HierarchicalRigidStencil`](@ref) at
-`near_radius2=12`, with a tolerance derived by [`rigid_stencil_epsilon`](@ref) so the
-analytic accuracy gate is satisfied by construction. The flat
+Since task 027 the default policy is [`HierarchicalRigidStencil`](@ref); since task
+028 Stage 7 its default geometry is `near_radius2=$(RADIX_DEFAULT_NEAR_RADIUS2)` with
+the level schedule `($(RADIX_DEFAULT_COARSE_NEAR_RADIUS2), $(RADIX_DEFAULT_NEAR_RADIUS2), ...)`,
+the fastest configuration inside task 028's `P = 4` accuracy gate. Its tolerance is
+derived by [`rigid_stencil_epsilon`](@ref) so the analytic accuracy gate is satisfied
+by construction; pass `near_radius2=12` for the previous, more accurate and slower
+default. The flat
 [`ConstantPAnalyticStencil`](@ref) is deprecated as a default but fully supported;
 it is still used automatically when `ell < 2`, where there is no hierarchy to walk.
+
+When no `options` are passed, precision and M2L strategy follow the measured rules
+of tasks 024 and 028:
+
+| selector | precision | M2L strategy |
+|---|---|---|
+| `expansion_order <= 3` (literature `P <= 4`) | `Float32` | dense |
+| `expansion_order <= 7`, no Lamb-Helmholtz | `Float64` | dense |
+| `expansion_order <= 7`, Lamb-Helmholtz | `Float64` | precomputed-y on device, dense on host |
+| `expansion_order >= 8` (literature `P >= 12`) | `Float64` | precomputed-y |
+| dense operator payload over its gate | unchanged | precomputed-y |
+
+`Float32` is selected only where task 024 measured its accuracy floor (~5.3e-4 max
+gradient error, essentially independent of `P`) to sit below the stencil's own
+truncation error; above `P = 4` it would discard accuracy the higher order was paid
+for. Dense trades a large construction cost for the best steady state (~300-370
+break-even steps at the task-028 target), which suits this repeated-step cache; pass
+`options=CUDARadixLifecycleOptions(; m2l_strategy=PrecomputedFactoredYM2L(),
+operator=FactoredRotationM2L())` for one-shot evaluation, or any explicit `options`
+to bypass the rules entirely.
 
 The domain box, `ell`, expansion order, and `max_n_bodies` are fixed for the
 cache's lifetime; bodies leaving the box throw `ArgumentError` at the next step.
@@ -784,14 +883,21 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         options::Union{Nothing,CUDARadixLifecycleOptions}=nothing,
         stencil_epsilon::Union{Nothing,Real}=nothing,
         near_radius2::Union{Nothing,Integer}=nothing,
+        level_radii2=nothing,
         window_classes::Union{Nothing,Integer}=nothing,
         policy::Union{Nothing,ConstantPAnalyticStencil,HierarchicalRigidStencil}=nothing)
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
     _assert_radix_targets_are_sources(targets, sources)
     LH = lamb_helmholtz === nothing ? has_vector_potential(sources) : Bool(lamb_helmholtz)
-    if options === nothing
-        options = CUDARadixLifecycleOptions(; m2l_strategy=ConcatenatedFixedZM2L())
+    # Measured defaults (024/028). Precision depends only on the expansion order and
+    # is needed for the bounds and stencil tolerance below; the strategy also depends
+    # on the class count, so it is resolved once the policy is built.
+    auto_options = options === nothing
+    if auto_options
+        options = CUDARadixLifecycleOptions(;
+            precision=_default_radix_precision(Int(expansion_order)),
+            m2l_strategy=ConcatenatedFixedZM2L())
     end
     TF = options.precision
     if device
@@ -836,10 +942,11 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
 
     P = Int(expansion_order)
     stencil_policy = _default_radix_policy(policy, P, TF, LH, h0, Int(ell), device,
-        stencil_epsilon, near_radius2, window_classes)
+        stencil_epsilon, near_radius2, window_classes, level_radii2)
     hierarchical = stencil_policy isa HierarchicalRigidStencil
-    hierarchical_tables = hierarchical ?
-        RigidHierarchicalTables(stencil_policy.near_radius2) : nothing
+    hierarchical_tables, hierarchical_level_class_of, hierarchical_level_radii2 = hierarchical ?
+        _hierarchical_scheduled_tables(stencil_policy, Int(ell)) :
+        (nothing, Array{Int32}(undef, 0, 0, 0), Int[])
     hierarchical && _verify_hierarchical_classifier!(h0, Int(ell),
         stencil_policy, hierarchical_tables)
     class_level, class_offset, effective_offsets = hierarchical ?
@@ -862,11 +969,17 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
 
     basis_info = OperatorBasisInfo(CompressedComplexBasis(), P, Val(LH))
 
+    if auto_options
+        options = _default_radix_options(TF, P, LH, device, length(accepted),
+            _dense_m2m_dof(basis_info, Val(LH)))
+    end
+
     if device
         cache = _radix_cache_device_build(sources, P, Int(ell), x_min, h0, maxn,
             options, stencil_policy, accepted, rejected, max_cells, max_nodes,
             route_capacity, direct_capacity, basis_info, Val(LH);
             hierarchical_tables, class_level, class_offset,
+            hierarchical_level_class_of, hierarchical_level_radii2,
             max_level_nodes)
         cache.built = true
         return cache
@@ -920,7 +1033,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         max_dense_ell=stencil_policy.dense_occupancy_max_ell) : nothing
     hierarchical_apply_plan = hierarchical ? scratch.m2l_concat : nothing
     hierarchical_ctx = hierarchical ? HostHierarchicalM2LContext(
-        hierarchical_tables, occupancy, class_level, class_offset,
+        hierarchical_tables, hierarchical_level_class_of, occupancy,
+        class_level, class_offset,
         effective_offsets, hierarchical_apply_plan, stencil_policy.window_classes,
         zeros(Int, Int(ell) + 2), 0, zeros(Int, Int(ell) + 1), 0,
         false, zeros(UInt64, 5), zeros(UInt64, Int(ell) + 1)) : nothing

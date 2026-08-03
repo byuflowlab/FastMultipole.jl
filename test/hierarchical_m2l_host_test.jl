@@ -10,12 +10,7 @@ end
 const HIER_FM = FastMultipole
 
 function _hier_epsilon(P, q, h0, ell)
-    q == 3 && return 1.0e12
-    rejected = SVector(2, 2, 2) # norm² = 12
-    accepted = SVector(3, 2, 0) # norm² = 13
-    upper = constant_p_stencil_bound(P, rejected, 1.0, h0 / (1 << ell))
-    lower = constant_p_stencil_bound(P, accepted, 1.0, h0 / (1 << ell))
-    return (upper + lower) / 2
+    return rigid_stencil_epsilon(P, h0, ell, q)
 end
 
 function _hier_system(coords, ell)
@@ -36,15 +31,8 @@ end
 
 function _hier_policy(P, q, h0, ell, ::Type{TF}, LH;
         window_classes=8) where TF
-    if q == 3
-        eps = TF(1e12)
-    else
-        probe = ConstantPStencilConfig(P, one(TF);
-            lamb_helmholtz=LH)
-        upper = constant_p_stencil_bound(TF(h0), ell, probe, SVector(2, 2, 2))
-        lower = constant_p_stencil_bound(TF(h0), ell, probe, SVector(3, 2, 0))
-        eps = (upper + lower) / 2
-    end
+    eps = rigid_stencil_epsilon(P, h0, ell, q;
+        lamb_helmholtz=LH, TF)
     return HierarchicalRigidStencil(ConstantPStencilConfig(P, eps;
         lamb_helmholtz=LH); near_radius2=q, window_classes)
 end
@@ -101,17 +89,20 @@ _hier_step_allocated(sys, cache) =
     @allocated fmm!(sys, cache; scalar_potential=true, gradient=true)
 
 @testset "hierarchical rigid host M2L (task 026)" begin
-    for (q, nnear, nphase, nunion, maxinf) in
-            ((3, 27, 189, 316, 3), (12, 179, 1253, 1740, 7))
+    supported_q = (3, 4, 5, 6, 8, 9, 10, 11, 12)
+    for q in supported_q
         tables = RigidHierarchicalTables(q)
-        @test length(tables.near_offsets) == nnear
-        @test length(tables.push_offsets) == nunion
-        @test all(tables.phase_starts[p + 1] - tables.phase_starts[p] == nphase
+        @test all(sum(abs2, o) <= q for o in tables.near_offsets)
+        @test length(Set(tables.near_offsets)) == length(tables.near_offsets)
+        @test length(Set(tables.push_offsets)) == length(tables.push_offsets)
+        @test all(tables.phase_starts[p + 1] > tables.phase_starts[p]
                   for p in 1:8)
         @test tables.phase_starts[end] == length(tables.phase_index) + 1
-        @test maximum(maximum(abs, o) for o in tables.push_offsets) == maxinf
-        @test minimum(sum(abs2, o) for o in tables.push_offsets) == q + 1
-        @test count(!iszero, tables.class_of) == 8 * nphase
+        @test maximum(maximum(abs, o) for o in tables.push_offsets) ==
+            2isqrt(q) + 1
+        @test minimum(sum(abs2, o) for o in tables.push_offsets) > q
+        @test count(!iszero, tables.class_of) == length(tables.phase_index)
+        @test rigid_stencil_epsilon(4, 0.5, 3, q) > 0
     end
 
     @test classic_fmm_stencil(4, 1e12).near_radius2 == 3
@@ -124,7 +115,7 @@ _hier_step_allocated(sys, cache) =
         SVector(7, 7, 7), SVector(6, 7, 7), SVector(0, 7, 3)]
     sparse_coords = [SVector(0, 0, 0), SVector(3, 1, 0),
         SVector(7, 7, 7), SVector(4, 6, 2), SVector(1, 7, 5)]
-    for q in (3, 12), coords in (dense_coords, boundary_coords, sparse_coords)
+    for q in supported_q, coords in (dense_coords, boundary_coords, sparse_coords)
         sys = _hier_system(coords, ell)
         cache = RadixFMMCache(sys; expansion_order=4, ell,
             bounds=(SVector(0.0, 0.0, 0.0), 1.0),
@@ -139,11 +130,29 @@ _hier_step_allocated(sys, cache) =
         @test ctx.last_window_routes <= cache.route_capacity
     end
 
+
+    # Task 028 Stage 7 internal per-level schedule. Every level uses a complete
+    # rigid/cubic orbit table; the leaf radius alone controls direct pairs.
+    for schedule in ((5, 5), (6, 5), (6, 6)),
+            coords in (dense_coords, boundary_coords, sparse_coords)
+        qleaf = last(schedule)
+        base = _hier_policy(4, qleaf, ell)
+        policy = HIER_FM._hierarchical_stencil_with_schedule(base, schedule)
+        sys = _hier_system(coords, ell)
+        cache = RadixFMMCache(sys; expansion_order=4, ell,
+            bounds=(SVector(0.0, 0.0, 0.0), 1.0), policy)
+        @test all(_hier_coverage(cache) .== 1)
+        ctx = cache.state.interaction_list
+        @test size(ctx.level_class_of) ==
+            (8, length(ctx.tables.push_offsets), ell + 1)
+        @test ctx.tables.near_offsets == RigidHierarchicalTables(qleaf).near_offsets
+    end
+
     # Random occupancy at ell = 4 must remain exactly-once for both radii.
     rand_cells = shuffle(MersenneTwister(0x026), 0:(16^3 - 1))[1:48]
     rand_coords = [SVector(c & 15, (c >> 4) & 15, (c >> 8) & 15)
                    for c in rand_cells]
-    for q in (3, 12)
+    for q in supported_q
         rsys = _hier_system(rand_coords, 4)
         rcache = RadixFMMCache(rsys; expansion_order=4, ell=4,
             bounds=(SVector(0.0, 0.0, 0.0), 1.0),
@@ -213,8 +222,8 @@ _hier_step_allocated(sys, cache) =
     lo, hi = HIER_FM._radix_bounds((a,), Float64)
     h0 = maximum((hi - lo) * 0.5) * 1.05
     eps = _hier_epsilon(4, 12, h0, ell)
-    p8 = HierarchicalRigidStencil(4, eps; window_classes=8)
-    pfull = HierarchicalRigidStencil(4, eps; window_classes=1740)
+    p8 = HierarchicalRigidStencil(4, eps; near_radius2=12, window_classes=8)
+    pfull = HierarchicalRigidStencil(4, eps; near_radius2=12, window_classes=1740)
     c8 = RadixFMMCache(a; expansion_order=4, ell, policy=p8)
     cfull = RadixFMMCache(b; expansion_order=4, ell, policy=pfull)
     fmm!(a, c8; scalar_potential=true, gradient=true)
@@ -256,13 +265,17 @@ _hier_step_allocated(sys, cache) =
 
     # A hierarchical class window is applied whole. Its stage slabs must cover
     # the full route-window capacity rather than the flat strategy's chunk;
-    # otherwise windows above the chunk write past the scratch matrices.
+    # otherwise windows above the chunk write past the scratch matrices. This is a
+    # concat-engine sizing test, so it pins that strategy rather than taking the
+    # measured default (which is dense at this order).
     wide_sys = generate_gravitational(26027, 520)
     wlo, whi = HIER_FM._radix_bounds((wide_sys,), Float64)
     wh0 = maximum((whi - wlo) * 0.5) * 1.05
     wide_cache = RadixFMMCache(wide_sys; expansion_order=4, ell=4,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=ConcatenatedFixedZM2L()),
         policy=HierarchicalRigidStencil(4,
-            _hier_epsilon(4, 12, wh0, 4); window_classes=64))
+            _hier_epsilon(4, 12, wh0, 4); near_radius2=12, window_classes=64))
     wide_plan = wide_cache.state.interaction_list.apply_plan
     @test length(wide_cache.state.route_sources) > 32_768
     @test size(wide_plan.aphi, 2) ==
@@ -276,7 +289,7 @@ _hier_step_allocated(sys, cache) =
     dlo, dhi = HIER_FM._radix_bounds((dense_sys,), Float64)
     dh0 = maximum((dhi - dlo) * 0.5) * 1.05
     dense_policy = HierarchicalRigidStencil(4,
-        _hier_epsilon(4, 12, dh0, ell); window_classes=8)
+        _hier_epsilon(4, 12, dh0, ell); near_radius2=12, window_classes=8)
     dense_cache = RadixFMMCache(dense_sys; expansion_order=4, ell,
         policy=dense_policy,
         options=CUDARadixLifecycleOptions(;
@@ -392,8 +405,43 @@ _hier_step_allocated(sys, cache) =
 
     # Stencil constructor negatives and cache keyword conflicts must throw.
     conflict_sys = generate_gravitational(26035, 20)
-    @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; near_radius2=5)
+    @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; near_radius2=7)
+    @test_throws ArgumentError RigidHierarchicalTables(13)
+    @test_throws ArgumentError rigid_stencil_epsilon(4, 0.5, 3, 7)
     @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; window_classes=0)
+    @test_throws ArgumentError HIER_FM._hierarchical_stencil_with_schedule(
+        _hier_policy(4, 5, 3), (5, 6))
+    @test_throws ArgumentError HIER_FM._hierarchical_stencil_with_schedule(
+        _hier_policy(4, 5, 3), (6, 6))
+    # The schedule is public on the policy constructor and on the cache; the
+    # same three invariants are enforced through either entry point.
+    @test HierarchicalRigidStencil(4, 1.0; near_radius2=5,
+        level_radii2=(6, 5, 5)).level_radii2 == (6, 5, 5)
+    @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; near_radius2=5,
+        level_radii2=(5, 6))            # increasing with depth
+    @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; near_radius2=5,
+        level_radii2=(6, 6))            # leaf entry != near_radius2
+    @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; near_radius2=5,
+        level_radii2=(6, 7, 5))         # unsupported shell
+    @test_throws ArgumentError RadixFMMCache(conflict_sys; expansion_order=4,
+        ell=3, policy=_hier_policy(4, 5, 3), level_radii2=(6, 5))
+    @test_throws ArgumentError RadixFMMCache(conflict_sys; expansion_order=4,
+        ell=3, stencil_epsilon=1e-4, level_radii2=(6, 5))
+
+    # Shipped default geometry (task 028 Stage 7): q = 5 at the leaf with the
+    # coarsest M2L level at q = 6, sized to `ell`. An explicit `near_radius2`
+    # means the caller asked for a uniform geometry and must get one.
+    for ell_default in (2, 3, 5)
+        dsys = generate_gravitational(26036, 200)
+        dcache = RadixFMMCache(dsys; expansion_order=4, ell=ell_default)
+        @test dcache.policy isa HierarchicalRigidStencil
+        @test dcache.policy.near_radius2 == HIER_FM.RADIX_DEFAULT_NEAR_RADIUS2
+        @test dcache.policy.level_radii2 == (ell_default == 2 ? () :
+            (6, ntuple(_ -> 5, ell_default - 2)...))
+        @test all(_hier_coverage(dcache) .== 1)
+    end
+    @test RadixFMMCache(generate_gravitational(26037, 200); expansion_order=4,
+        ell=4, near_radius2=12).policy.level_radii2 == ()
     @test_throws ArgumentError RadixFMMCache(conflict_sys; expansion_order=4,
         ell=3, policy=_hier_policy(4, 12, 3), near_radius2=12)
     @test_throws ArgumentError RadixFMMCache(conflict_sys; expansion_order=4,

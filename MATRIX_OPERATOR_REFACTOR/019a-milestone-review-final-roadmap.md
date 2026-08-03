@@ -2,7 +2,7 @@
 
 ## Objective
 
-Review Implementation tasks `017` through `024` and confirm the completed
+Review Implementation tasks `017` through `029` and confirm the completed
 Matrix Operator Refactor still matches the background roadmap.
 
 ## Dependencies
@@ -18,6 +18,11 @@ Matrix Operator Refactor still matches the background roadmap.
 - `024-impl-operator-ab-benchmark.md`
 - `024a-impl-benchmark-visualization.md`
 - `024b-impl-cpu-gpu-scaling-benchmark.md`
+- `025-theory-hierarchical-rigid-m2l-stencil.md`
+- `026-impl-hierarchical-m2l-host.md`
+- `027-impl-hierarchical-m2l-cuda.md`
+- `028-performance-feasibility-1m-in-10ms.md`
+- `029-performance-high-score-1m-in-1ms.md`
 
 ## Required Reading
 
@@ -29,7 +34,7 @@ Matrix Operator Refactor still matches the background roadmap.
 ## Artifacts or Production Surface
 
 Review the production files, tests, benchmarks, generated artifacts, and final
-notes listed by tasks `017` through `024`.
+notes listed by tasks `017` through `029`.
 
 ## Deliverables
 
@@ -89,6 +94,12 @@ notes listed by tasks `017` through `024`.
   as the primary fair comparison and Float32 as an additional throughput
   result; include any dense-to-precomputed-y OOM fallback, Float64 error-order
   failure, or non-monotonic regime in the final recommendation.
+- **Hierarchical and high-score evidence (`025`–`029`).** Record the final
+  hierarchical-vs-flat and radius/schedule verdict, task 028's independently
+  reproduced 9.591 ms FP16 result, and task 029's best reproducible single-H200
+  and multi-H200 scores. Confirm that every accepted score uses the unchanged
+  1M-body/P=4 accuracy and complete recurring-step boundary, and distinguish
+  measured conclusions from modeled opportunities.
 
 ## Verification
 

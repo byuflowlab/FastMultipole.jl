@@ -1,0 +1,99 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=1ffa6b7124d784fc
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Precompiling CUDA...
+   2545.0 ms  ✓ CUDA_Driver_jll
+   2809.3 ms  ✓ CUDA_Runtime_jll
+   2105.9 ms  ✓ CUDA_Compiler_jll
+   7856.8 ms  ✓ LLVM
+   2320.0 ms  ✓ GPUToolbox
+   2742.0 ms  ✓ LLVM → BFloat16sExt
+   2501.2 ms  ✓ UnsafeAtomics → UnsafeAtomicsLLVM
+   5362.8 ms  ✓ GPUArrays
+  20163.5 ms  ✓ PrettyTables
+  18686.4 ms  ✓ GPUCompiler
+  18850.3 ms  ✓ CUDACore
+   7429.2 ms  ✓ cuRAND
+   8353.1 ms  ✓ cuFFT
+   8852.5 ms  ✓ NVML
+   9264.0 ms  ✓ CUPTI
+  14123.5 ms  ✓ cuSPARSE
+  14633.2 ms  ✓ cuBLAS
+  14503.1 ms  ✓ CUDATools
+  11953.0 ms  ✓ cuSOLVER
+   8321.4 ms  ✓ CUDA
+   8058.3 ms  ✓ Atomix → AtomixCUDAExt
+  21 dependencies successfully precompiled in 94 seconds. 79 already precompiled.
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m07.6s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  8.2s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl (028)
+Test Summary:                          | Pass  Total     Time
+device convection lifecycle (task 028) |   24     24  1m03.6s
+Test Summary:                                         | Pass  Total  Time
+fused dense M2L grid-stride parity (task 028 lever 2) |    8      8  3.1s
+Test Summary:                                      | Pass  Total  Time
+nearfield stream-overlap parity (task 028 cycle 3) |    4      4  1.0s
+Test Summary:                                     | Pass  Total  Time
+dense M2L operator-tile parity (task 028 cycle 2) |   12     12  1.9s
+Test Summary:                                | Pass  Total  Time
+_cuda_fast_rsqrt accuracy (task 028 lever 1) |    2      2  0.8s
+Test Summary:                                     | Pass  Total  Time
+nearfield warp-per-pair parity (task 028 lever 1) |   16     16  2.2s
+CONVECTION_TEST_EXIT=0
+=== FM028_MODE=stage6sort
+=== stage 6c counting-sort parity/lifecycle gate
+Test Summary:                                   | Pass  Total   Time
+bounded Morton counting sort (task 028 stage 6) |   15     15  46.0s
+=== stage 6c: existing device sortperm!
+hier6   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=850   fit=true  eval    14.088  verdict    17.142  host       NaN ms  grad_err 5.745e-04
+hier6   dense          Float64  eo=3  LH=false n=1000000  ell=5 K=850   fit=true  eval    25.908  verdict    28.938  host       NaN ms  grad_err 5.745e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-101516.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-101516.csv.classes.csv
+=== stage 6c: bounded Morton counting sort
+hier6   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=850   fit=true  eval    14.111  verdict    15.428  host       NaN ms  grad_err 5.745e-04
+hier6   dense          Float64  eo=3  LH=false n=1000000  ell=5 K=850   fit=true  eval    25.878  verdict    27.162  host       NaN ms  grad_err 5.745e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-101642.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-101642.csv.classes.csv
+STAGE6SORT_EXIT=0

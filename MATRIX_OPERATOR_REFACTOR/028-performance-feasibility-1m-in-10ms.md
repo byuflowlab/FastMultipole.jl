@@ -1,5 +1,22 @@
 # 028 Performance Feasibility: 1,000,000 Particles in 10 ms
 
+## Status
+
+**Done and Approved (2026-08-03, third-agent clear-context approval).** The
+independently reproduced winner is FP16-input/FP32-accumulation WMMA at
+**9.591 ms** ([9.434, 9.631] ms), sampled-direct gradient relative RMS
+**1.0593e-3**, H200 job **13029878**, source manifest `42a6c254a11ac8a8`. This
+satisfies the fixed 10 ms and 1.19e-3 gates.
+
+The clear-context review (see `Approval Notes`) accepted the evidence and, on
+user direction, moved the production defaults onto the measured optimum and made
+the level-radius schedule a public keyword. Those default changes were then
+validated on H200 in job **13031482** (manifest `c0afa01083322fb8`): all gates
+green including the expanded 33,381-test hierarchy suite, winner reproduced at
+9.653 ms / 1.0593e-3 under the shipped defaults, counter/allocation contracts
+unchanged. A third agent verified the evidence chain and granted approval; see
+the final entry under `Approval Notes`.
+
 ## Objective
 
 Determine, with measured evidence, whether an accurate 1,000,000-particle solve can
@@ -312,11 +329,206 @@ estimate was conditioned on the pre-lever-1 latency-bound nearfield; lever 1's
 success retired this lever. Kept, default on (correctness-neutral; can only help
 in launch-bound regimes at small n).
 
-**Standing: 3.1x over target** (9.1x -> 7.0x -> 6.5x -> 3.8x -> **3.1x**, F32
+**Standing accuracy-admissible result: 3.1x over target** (9.1x -> 7.0x -> 6.5x -> 3.8x -> **3.1x**, F32
 verdict 30.72 ms), now established as ~95% device-saturated compute. Further gains
 require reducing work or per-kernel efficiency: fresh attribution passes on the
 residual leaf M2L (~12.7 ms, precision-insensitive) and F32 nearfield (~11.45 ms
 vs ~1.6 ms roofline floor), plus the ~2 ms counting sort.
+
+**Cycle 4 attribution complete (2026-08-01; H200 job 13016756).**  q=3 reaches
+**9.434 ms** but remains inadmissible at 3.995e-3 gradient relative RMS (3.4x over
+the 1.19e-3 gate); q=12 reproduces at 30.784 ms / 3.186e-4.  Thus 10 ms is bracketed,
+not achieved.  Exact work counts predict q=4 near 10.4 ms and q=5 near 14.0 ms,
+with accuracy unmeasured.  Every distinct shell q=3:12 passes the independent
+downward-monotonicity audit, making an intermediate-radius accuracy/timing sweep the
+highest-value next cycle.
+
+The same audit identifies a conditional second lever: q may decrease with depth
+while preserving the task-025 exact-once invariant. All 45 two-stage schedules
+over the distinct shells pass cross-level monotonicity. q=4 on levels 2--4 and
+q=3 at the leaf projects near 10.1 ms, but should be tested only after uniform q=4
+establishes the accuracy frontier. `radius_schedule_candidates.csv` records the
+exact route/direct counts. Expansion-order/radius co-design is excluded for now
+because the user-fixed target definition requires literature P=4.
+
+Mechanism A/Bs: tiled M2L is 10.461 ms atomic / 8.752 store / 8.660 no-store and
+has a 9.636 ms best isolated launch (64 threads, cap 65536), so it is mostly
+arithmetic/input with ~1.71 ms atomic cost. Nearfield is 11.452 / 11.470 / 11.438 ms,
+so neither output atomics nor launch shape is material. This promotes tensor/class-
+batched M2L and symmetric self-interaction nearfield, and demotes target-cell
+nearfield. No `src/` generalization or optimization was made in cycle 4. Full data
+and triage: `plans/20260801_028_attribution.md` and report.md "Cycle 4".
+
+## Staged Continuation Roadmap (reordered checkpoint, 2026-08-01)
+
+The following stages record the user/agent brainstorm after cycle 4. They are a
+decision-ready backlog, **not approval to begin production changes**. The order is
+measurement-driven: select the accuracy/work regime, re-optimize its geometry, bank
+cheap exact wins, then compare the dominant kernel opportunities before committing
+to new expansion theory. Stop as soon as an independently reproduced result meets
+both 10 ms and the 1.19e-3 accuracy gate. Every timing gate includes recurring
+construction, scratch reduction, and sorting introduced by the candidate;
+kernel-only wins do not qualify.
+
+### Stage 5 — uniform radius/accuracy frontier
+
+Generalize the rigid policy from `near_radius2 in (3, 12)` to the distinct lattice
+shells `q in (3, 4, 5, 6, 8, 9, 10, 11, 12)`. Derive the epsilon separator from the
+actual farthest-near/nearest-far lattice norms, derive rather than special-case the
+table extent, and expand the task-025/026/027 host and CUDA exact-once/classifier
+coverage. Then run the fixed n=1e6, P=4, ell=5, dense, Float32 sampled-direct
+accuracy and full verdict timing for every shell; use a window covering the complete
+operator-class set rather than inheriting a q=12-specific K blindly.
+
+Decision gate:
+
+- q=4 is first because the endpoint fit predicts ~10.4 ms; no prediction counts as
+  a result until its sampled-direct error is measured.
+- Select the fastest accuracy-admissible uniform shell. If it is <=10 ms, reproduce
+  it independently and stop before adding machinery.
+- Otherwise carry only that shell and the immediately faster inadmissible neighbor
+  into the following attribution; do not optimize all q values.
+
+### Stage 6 — re-optimize selected geometry and bank exact low-risk wins
+
+The q change invalidates the old claim that ell=5 is jointly optimal. Re-bracket ell
+on both sides of the selected shell, confirm the full-class K/window choice, and
+establish a repeated selected-q baseline before changing kernels. Then test:
+
+1. **M2L launch A/B:** confirm 64 threads / block cap 65536 end to end; cycle 4
+   measured an isolated 0.827 ms leaf-M2L gain at q=12.
+2. **15-bit Morton counting sort:** replace comparison/radix machinery only if the
+   exact bounded-key pass reduces the complete ~2.5 ms grid/refresh budget. Include
+   histogram clearing, scans, permutation, and any scratch initialization.
+
+These are independent changes and must each have an on/off full-verdict A/B. Bank
+only reproduced gains. If their combination crosses 10 ms at admissible accuracy,
+perform the independent final validation and stop.
+
+### Stage 7 — attribute error before refining the stencil
+
+If the fastest nearby q is inadmissible while the selected shell is materially
+slower, decompose the sampled field error by M2L level, offset norm, and complete
+cubic-symmetry orbit. Use linear partial-field/replay experiments at the fixed
+reference samples to determine whether the error is leaf-dominated or concentrated
+in a small set of close translation classes. Only then choose between:
+
+1. **Non-increasing level-dependent radius.** The task-025 proof extends when
+   `q_child <= q_parent`, and the deterministic audit verifies all 45 coarse/leaf
+   combinations. Candidate transition tables are parameterized by
+   `(q_parent, q_child)` and require brute-force exact-once tests. The first modeled
+   examples are q=4 on levels 2--4/q=3 at the leaf (7.55M routes, 0.831M direct cell
+   pairs, ~10.1 ms) and q=5 coarse/q=4 leaf.
+2. **Orbit-selective direct correction.** Promote selected complete cubic orbits
+   from M2L to direct evaluation only if attribution supports it. A non-spherical
+   near set cannot be certified by the current radial epsilon alone: it must preserve
+   inversion/cubic symmetry, pass an independently enumerated cross-level
+   downward-monotonicity/exact-once proof, and define a replacement accuracy
+   contract. Never select individual directions because a finite sample favors them.
+
+Promote either refinement only if it passes the full sampled-direct gate and beats
+the re-optimized uniform shell end to end. If a refined stencil crosses 10 ms,
+validate and stop.
+
+### Stage 8 — competitive residual-kernel bake-off
+
+At the best admissible geometry, remeasure the nearfield and M2L budgets and compare
+bounded prototypes before selecting a production rewrite. The first competitors are:
+
+1. **Unordered symmetric nearfield.** For the dedicated same-source/target verdict
+   path, enumerate each direct cell pair once, compute every unordered body pair
+   once, and update both endpoints; include a triangular same-cell kernel. Preserve
+   the directed kernel for the general rectangular source/target API. This comes
+   first because cycle 4 found no measurable output-atomic penalty, so the simpler
+   symmetric kernel may capture most of the arithmetic saving.
+2. **Tensor/mixed-precision 16x16 M2L.** Compare the optimized FP32 tiled kernel with
+   TF32, FP16, and BF16 inputs using FP32 accumulation. Every format is a numerical
+   method change and must pass the full sampled-direct gate, not only operator parity.
+3. **Class-dependent low-rank audit.** Record singular-value spectra and minimum
+   admissible ranks of all selected-radius operator classes. Prototype factored
+   batched application only if close-separation classes compress enough to reduce
+   both arithmetic and traffic. This is distinct from the already-slower analytic
+   rotation/factored strategy.
+
+Compare useful work, occupancy, scratch/accumulation cost, accuracy, and projected
+full-verdict gain on the real selected-q leaf geometry. Implement the strongest
+bounded candidate first, then remeasure and stop if the objective is reached; do not
+automatically implement all three.
+
+### Stage 9 — escalation branches if the simple bake-off is insufficient
+
+#### Stage 9a — shifted-macrocell nearfield
+
+Use this branch only if unordered symmetric cell pairs expose an accumulation or
+scheduling bottleneck that macrocell ownership can plausibly remove.
+
+1. **Two shifted coarse meshes plus fine mesh.** Let A be the aligned ell-1 mesh,
+   B the ell-1 mesh shifted by one fine cell in all axes, and C the ell mesh. In
+   exact arithmetic, `self(A) + self(B) - self(C)` counts the union of the A/B
+   coarse-cell cliques exactly once. On the full ell=5 grid this covers 250,236 of
+   431,676 unordered q=3 cell pairs (58.0%), 47.8% of q=4, and only 9.6% of q=12.
+   Its maximum distance-evaluation reduction is therefore ~29%, ~24%, and ~5%; use
+   it as a diagnostic rather than assuming the remaining 3-D mixed-parity pairs are
+   a small residual.
+2. **Eight-phase 2x2x2 ownership.** Use every coarse-grid shift, assign each q<=3
+   fine-cell pair to exactly one phase, accumulate one private result per phase, and
+   reduce the phase outputs. Handle q=4's six axial distance-two offsets separately.
+   This can halve the q=3 distance evaluations and covers about 82% of q=4's physical
+   cell pairs before its axial shell.
+
+Do not add recurring radix sorts to materialize these meshes: the aligned mesh is a
+Morton prefix of C, and shifted macrocells should gather existing C-cell spans from
+device occupancy metadata. Prefer unique pair ownership/masking to literal FP32
+`A+B-C` subtraction. Include all phase scratch and final reduction in the verdict;
+fall back to the unordered-pair kernel if macrocell bookkeeping consumes the gain.
+
+#### Stage 9b — advanced M2L
+
+Use this branch only if M2L remains a material part of the measured gap after the
+tensor/low-rank comparison.
+
+1. **Class-/target-owned M2L:** prototype only a design that improves input/operator
+   reuse as well as removing atomics; cycle 4 bounds the atomic-only opportunity near
+   1.7 ms.
+2. **Plane-wave/exponential theory:** derive the multipole-to-exponential, diagonal
+   translation/merge-and-shift, and exponential-to-local maps in the repository's
+   normalization. Determine quadrature/sample counts and an error bound for the
+   selected q at P=4, Float32 stability, and scalar verdict path; state Lamb--Helmholtz
+   requirements separately. Compare a one-level conversion-plus-translation prototype
+   on the real leaf geometry against the tensor baseline. Historical ~2x whole-FMM
+   results are not assumed: at q=12, halving 14.23 ms M2L changes 30.78 ms to ~23.7 ms
+   (1.30x overall), while at modeled q=4 it would move ~10.4 to ~8.7 ms.
+3. **Spatial/polyphase FFT:** for the full uniform 32^3 leaf grid, assess M2L as a
+   convolution of the 16 multipole coefficient fields. Account for the eight
+   source-phase channels in the task-025 V-list, open-boundary zero padding,
+   Fourier-kernel storage, and plan/workspace costs. Compare batched 3-D FFTs plus
+   per-frequency coefficient mixing against route-wise M2L. Preserve the route path
+   for sparse/adaptive grids. Tiny coefficient-space FFTs remain low priority at P=4
+   unless a primitive benchmark overturns their transform overhead.
+
+Plane waves diagonalize coefficient translation and preserve an adaptive FMM;
+spatial FFT amortizes all translations over this dense lattice. Select between them
+from the selected-radius cost model and prototype—not from asymptotic complexity.
+
+### Stage 10 — retained residuals, demotions, and scope boundary
+
+- **Target-cell-owned nearfield:** demoted behind unordered symmetry and shifted
+  macrocells. Pair-list removal/source reuse may help, but cycle 4 refuted its proposed
+  atomic benefit.
+- **Native real basis:** demoted; at P=4 its analytic lane ceiling is 20% before
+  conversion overhead.
+- **Tree/route incremental refresh:** retain only after defining a realistic motion/dt
+  contract and counting cell crossings. The stale-tree accuracy check is too weak.
+- **CUDA graphs, more stream overlap, and launch-only nearfield tuning:** closed unless
+  a later algorithm makes the step launch-bound; cycles 3--4 measured no opportunity
+  in the current saturated kernels.
+- **Re-bracket ell again** only after a later M2L backend changes the work complexity;
+  the first required re-bracket already occurs in Stage 6 immediately after q.
+
+Outside fixed 028 unless the user changes the target: expansion-order/radius co-design
+(higher P with smaller q), multi-GPU decomposition, and replacement by PME/PMMM or a
+global particle-mesh solver. Spatial FFT remains in scope only as an M2L backend that
+preserves the existing FMM accuracy and sparse/adaptive fallback semantics.
 
 ## Verification Notes
 
@@ -386,6 +598,269 @@ Threats to validity, recorded in full in report.md §7:
   to cycle 2 (the recorded negative result). Data: `fm028-13015982.out` and the
   fetched `cuda_*.csv` of that run.
 
+### Phase B cycle 4 (2026-08-01)
+
+- Local deterministic radius audit:
+  `julia --project=. MATRIX_OPERATOR_REFACTOR/scripts/analyze_028_radius_candidates.jl`.
+  All q=3:12 rows pass `minimum_child_norm2 > q`; q=12 reproduces the production
+  5,189,728 direct cell pairs and 31,307,680 leaf routes (34,343,088 all levels).
+  The companion two-stage audit verifies all 45 non-increasing coarse/leaf q
+  schedules and writes `radius_schedule_candidates.csv`.
+- Attribution script parses on Julia 1.12.5; `cuda_028_run.sh` and
+  `cuda_028_submit.sh` pass `bash -n`; `git diff --check` passes.
+- User approved the shown H200 payload; job **13016756** passed lifecycle 215/215,
+  concatenated host parity 37/37, convection 24/24, fused M2L 8/8, stream overlap
+  4/4, tiled M2L 12/12, rsqrt 2/2, and nearfield parity 16/16.
+- Endpoint results: q=3 9.434 ms / 3.995e-3 (accuracy fail); q=12 30.784 ms /
+  3.186e-4 (pass). Attribution results and decisions are recorded in the standing
+  summary and report. Data: `attribution_m13h-1-1_20260801-062135_*.csv`,
+  `cuda_m13h-1-1_20260801-062246.csv` (+ classes), `fm028-13016756.out`.
+- No `src/` file changed. The intermediate-radius production/theory change awaits
+  the next user checkpoint.
+
+### Phase B Stages 5–6 (2026-08-01)
+
+- Generalized the rigid policy, table construction, analytic epsilon separator,
+  task-025 verifier, host/CUDA tests, and 028 harness to the distinct shells
+  `q=(3,4,5,6,8,9,10,11,12)`. The q=12 production default and q=3 classic helper
+  are unchanged; unsupported/redundant radii report the full supported set.
+- The extended deterministic verifier and host hierarchical suite pass all nine
+  shells, including exact-once dense/sparse/boundary coverage and Float32/Float64
+  scalar/Lamb–Helmholtz surfaces.
+- Stage 5 jobs **13016917** and **13016927** independently reproduced the nine-row
+  frontier. The green run selected q=6 at 17.383 ms / 5.745e-4; q=3/4/5 failed
+  the 1.19e-3 gate, and no admissible shell crossed 10 ms. Job 13016917 is retained
+  as a failure-ledger entry for one pre-benchmark stochastic overlap parity miss;
+  its complete frontier agreed with the green run to <=0.9%.
+- Stage 6 job **13017112** re-bracketed q=6 at ell=4/5/6
+  (33.946/17.525/72.901 ms). The 64-thread/65,536-block tiled launch improved the
+  complete verdict from 17.455 to 17.142 ms in Float32 and 29.471 to 28.957 ms in
+  Float64, with identical errors; it is banked as the internal default.
+- Counting-sort job **13017128** passed the new 15/15 lifecycle/parity test. The
+  bounded Morton path reduced refresh 2.742 -> 0.967 ms and full Float32 verdict
+  17.142 -> **15.428 ms**; Float64 improved 28.938 -> 27.162 ms. Accuracy and
+  transfer/persistent-buffer contracts were unchanged, so the path is retained
+  for bounded depths. The 10 ms objective remains open.
+- Final independent job **13017362** passed the radix lifecycle (215/215), all
+  convection/optimized-kernel gates, and the expanded all-radius CUDA suite
+  (32,264/32,264). The retained q=6 production internals reproduced at
+  **15.401 ms** [15.226, 15.495] in Float32 and 27.350 ms [27.292, 27.437] in
+  Float64, both at 5.745e-4 gradient error. Source manifest
+  `437d12a2be8e14b5`; the 10 ms early-stop condition was not met.
+- Detailed medians/ranges, decisions, manifests, and raw CSV names are recorded
+  in `data/feasibility_1m_10ms/report.md` section 6.5. The 028 index row remains
+  open because later stages are still necessary.
+
+### Phase B Stage 7 — level-scheduled frontier (2026-08-03)
+
+- H200 job **13027263** passed the lifecycle (215/215), host parity (37/37),
+  convection/optimized-kernel, and expanded scheduled/symmetric/tensor CUDA gates
+  (33,367/33,367). Its source manifest was `42a6c254a11ac8a8`.
+- The q=5 replay reconstructed the device field to 1.760e-7 relative RMS (q=6:
+  1.842e-7), confirming that the linear level/orbit decomposition was faithful.
+  Uniform q=5 remained inadmissible at 1.4224e-3 gradient relative RMS.
+- The complete five-policy frontier selected `sched6-5-5-5`, i.e. q=6 only at
+  level 2 and q=5 at levels 3--5. It measured **12.514 ms** at 1.0498e-3,
+  18.9% faster than the same-run uniform-q=6 result of 15.445 ms at 5.745e-4.
+  The schedule is admissible but remains 2.514 ms above the target.
+- Raw evidence is `fm028-13027263.out`,
+  `stage7_replay_m13h-1-2_20260803-075304.csv`, and
+  `cuda_m13h-1-2_20260803-075427.csv` plus its class companion.
+- Jobs 13027048, 13027092, 13027167, 13027174, and 13027188 are retained only
+  in the failure ledger: their hard gates exposed, respectively, a device-context
+  array-rank type coupling, host BF16 lowering on Julia 1.11, route-class/test
+  portability defects, an invalid symmetric-context field access, and an invalid
+  replay-context field access. Job 13027374 was cancelled after discovering that
+  the winner selector compared prefixes against full paths. All defects were fixed
+  and covered by the green 13027263 gate; none of the failed jobs supplies timing
+  evidence.
+- Stage 8 finished its isolated bake-off. A combined symmetric/tensor run was not
+  warranted because symmetric nearfield was decisively slower. Stage 9 was not
+  started because the tensor winner met the early-stop condition.
+
+### Phase B Stage 8 — residual-kernel bake-off (2026-08-03)
+
+- H200 job **13029480** independently repeated every preflight and the expanded
+  33,367/33,367 CUDA gate before measuring the selected `sched6-5-5-5` geometry.
+  The Float32 baseline was 12.547 ms at 1.0498e-3 gradient relative RMS.
+- The low-rank audit rejected a prototype: its route-weighted admissible rank was
+  7.064 of 16 and its modeled operator-work fraction was 0.883, too little
+  compression to offset factor/application traffic.
+- Unordered symmetric nearfield was decisively negative (52.480 ms), and TF32
+  cuBLAS was also negative (41.673 ms at 1.1424e-3). Neither is combined or
+  promoted; both switches remain disabled by default.
+- FP16-input/FP32-accumulation WMMA measured **9.603 ms** [9.421, 9.658] at
+  1.0593e-3. BF16/FP32 measured **9.580 ms** [9.419, 12.097] at 1.0632e-3.
+  Both cross the timing and accuracy gates; FP16 has the tighter first-run range.
+- Job 13028465 is a failure-ledger entry only. Its 16-route TF32 harness forced
+  about 769,000 host-driven chunks per M2L pass and was cancelled; TF32 was rerun
+  with production-sized 16,384-route per-class batches in the green job 13029480.
+- Independent job **13029878** passed the lifecycle (215/215), host parity (37/37),
+  convection/optimized-kernel, and expanded CUDA hierarchy gates (33,367/33,367),
+  then reproduced FP16 at **9.591 ms** [9.434, 9.631] / 1.0593e-3 and BF16 at
+  **9.638 ms** [9.473, 9.713] / 1.0632e-3. Both satisfy the 10 ms and 1.19e-3
+  gates under source manifest `42a6c254a11ac8a8`; `STAGE8_REPRO_EXIT=0`.
+- Final reproduction artifacts are `fm028-13029878.out` and
+  `cuda_m13h-1-1_20260803-{131016,131129}.csv` plus class companions. FP16 is the
+  reproduced winner because it is faster and slightly more accurate in the final
+  run. The objective is met, task 028 stops here, and Stage 9 is not authorized or
+  necessary.
+
 ## Approval Notes
 
-To be filled by a different agent after this task is complete.
+### Clear-context review, 2026-08-03 — accepted with changes (approval still open)
+
+Reviewed against the `START_HERE.md` §6 order. Evidence verified directly:
+`fm028-13029878.out` records the green lifecycle (215/215), host parity (37/37),
+convection/optimized-kernel, and expanded hierarchy (33,367/33,367) gates and the
+`verdict 9.591 / grad_err 1.059e-03` row; `cuda_m13h-1-1_20260803-131016.csv`
+reconstructs the verdict boundary from its stages (refresh 0.955 + eval 8.236 +
+finalize 0.219 + euler 0.034) and holds the counter contract (`body_uploads=0`,
+`metadata_downloads=0`, `expansion_host_copies=0`). The 1.19e-3 accuracy gate was
+fixed in Phase A and never moved: hier3 was rejected under it in Phase A, uniform
+q=5 in Stage 7. Method quality is high — exact-once coverage extended from 2 to 9
+shells plus schedules, the epsilon separator derived rather than special-cased
+(q=7 correctly excluded as having no lattice shell), a maintained failure ledger,
+and negative results (symmetric nearfield, TF32, stream overlap) retained.
+
+Findings and their disposition:
+
+1. **The result was unreachable from the public API.** The 9.591 ms configuration
+   required two internal switches, an explicit strategy, and an explicit precision;
+   the shipped default was the pre-028 geometry with `ConcatenatedFixedZM2L`, which
+   task 024 measured as winning no steady-state case at any order. *Fixed by user
+   direction*: the geometry/window/tensor defaults moved onto the measured optimum,
+   `level_radii2` became a public keyword, and precision and M2L strategy are now
+   selected per regime from the 024/028 rules rather than being fixed constants — so
+   `expansion_order = 3` with no Lamb–Helmholtz now yields the reproduced winner by
+   default, while `P >= 12`, Lamb–Helmholtz, and over-gate dense footprints keep
+   Float64/precomputed-y. See report.md §6.8 for the rules, their evidence, and the
+   accuracy/memory consequences.
+2. **report.md opened with the superseded Phase A "no, 91.4 ms" answer.** *Fixed*:
+   a standing-answer header, and §1–§5 explicitly marked as the superseded record.
+3. **Counting sort: two robustness holes.** It is unstable (atomic cursor), yet the
+   surrounding comment still claimed deterministic same-cell order, and flipping
+   `RADIX_CUDA_COUNTING_SORT[]` on after construction drove `@inbounds` atomics
+   through a length-1 histogram. *Fixed*: comment corrected to state the
+   nondeterminism, and `_cuda_counting_sort_ready` falls back unless the buffer
+   actually spans the key domain. (The tensor and symmetric knobs already guarded
+   this case; this one did not.)
+4. **FP16 scaling is not scale-invariant.** The per-column scale comes from the
+   operator alone, so the multipole side carries a `max|K|/6e4` factor and a problem
+   whose strengths sit far from the benchmark's can silently underflow. *Documented*
+   in the `DENSE_CUDA_TENSOR_FORMAT` docstring and report.md §6.8; the arithmetic was
+   deliberately left untouched so the reproduced 9.591 ms measurement still applies.
+5. **Dead code** in `_hierarchical_scheduled_tables` (two broadcasts superseded by the
+   `ifelse` that followed). *Fixed*.
+6. **Stages 5–8 were uncommitted** while cycles 1–3 had each been committed.
+
+### Cluster re-gate of the new defaults (2026-08-03)
+
+`cuda_radix_counting_sort_test.jl` was added to the standard preflight; it previously
+ran only in the `stage6sort` A/B mode although the counting sort is on by default for
+bounded depths.
+
+**Job 13031187 (`stage8repro`) FAILED the hierarchical gate** — 4,015 of 33,368, from
+exactly two assertions, both in tests that used "pass no `options`" as a proxy for
+"the concat default" and so silently moved to the dense plan:
+
+1. 4,011 route-class parity failures in the geometry loop: device `[1…8]` against the
+   host oracle's `[317…324]`. Not a defect — the documented dense convention
+   (offset-local class ids, because dense operators are level-shared and apply the
+   level diagonal separately) meeting a host oracle that records level-true ids, the
+   exact `level-true = (L-2)*noffsets + offset` relation the schedule block already
+   asserts through `mod1`. The loop is written for concat and now pins it.
+2. 4 `isempty(source_scale)`/`isempty(target_scale)` failures in the block whose own
+   comment reads "only the dense strategy carries level scales" — its non-dense
+   comparison cache had become dense. Now pins concat.
+
+Every other options-free `RadixFMMCache` call in the CUDA tests was audited: three
+blocks (windowing invariance, the resident counter/allocation contract, flat
+host-vs-device parity at `P = 6`) now run on the shipped default and assert only
+strategy-independent properties, so they were left to exercise it.
+
+**Job 13031482 (`stage8repro`) PASSED**, source manifest `c0afa01083322fb8`:
+lifecycle 215/215, concat host parity 37/37, convection 24/24, grid-stride 8/8,
+stream overlap 4/4, operator-tile 12/12, rsqrt 2/2, warp-per-pair 16/16, counting
+sort 20/20, hierarchical **33,381/33,381** (up from 33,367: the schedule/default
+assertions and the new `expansion_order = 3` device default-stack block, which builds
+a device cache with no options and checks that Float32 + dense + FP16 tensor over
+`sched6-5-5-5` resolves and evaluates against direct). Winner reproduction under the
+new defaults:
+
+| format | verdict median [range] ms | gradient rel RMS | M2L ms |
+|---|---:|---:|---:|
+| FP16 / FP32 accumulate | **9.653** [9.473, 9.689] | 1.0593e-3 | 2.555 |
+| BF16 / FP32 accumulate | **9.632** [9.472, 9.690] | 1.0632e-3 | 2.558 |
+
+Both still meet the 10 ms and 1.19e-3 gates; the 0.06 ms against job 13029878's
+9.591 ms is inside the recorded run-to-run variance. Contracts unchanged
+(`body_uploads=0`, `expansion_host_copies=0`, 0.71 MB host allocation per step,
+2.00 GB persistent). `STAGE8_REPRO_EXIT=0`. Data: `fm028-1303118{7,2}.out` and
+`cuda_m13h-1-1_20260803-{154247,154359}.csv` plus class companions.
+
+Host verification of the same changes, on Julia 1.12.5 / macOS: full
+`julia --project=. --threads=4 -e 'using Pkg; Pkg.test()'` green ("Testing
+FastMultipole tests passed", exit 0, no failures in any file), including
+`hierarchical_m2l_host_test.jl` 681/681 and `radix_fmm_integration_test.jl` 89/89.
+The new host coverage is the default geometry (with exact-once checks at
+`ell = 2, 3, 5`), the public `level_radii2` keyword and its three invariants, the
+option-selection rules including their platform split and over-gate fallback, the
+resolved-choice plumbing, explicit-options bypass, and a Float32-vs-Float64
+equal-accuracy check at literature `P = 4`. The same "no options meant concat"
+coupling appeared once on the host — the concat-engine window-sizing test — and now
+pins that engine. The FP32 fused/tiled parity testsets are pinned to
+`DENSE_CUDA_TENSOR_FORMAT[] = :off` so they keep testing their own kernel.
+
+### Third-agent clear-context approval, 2026-08-03 — APPROVED
+
+Performed per `START_HERE.md` §6 by an agent distinct from both the completing
+agent and the 2026-08-03 reviewing agent. Evidence verified directly rather
+than taken from the notes:
+
+- **Raw job logs.** `fm028-13029878.out` (manifest `42a6c254a11ac8a8`) shows all
+  gates green (lifecycle 215/215, host parity 37/37, convection/optimized-kernel
+  suites, hierarchy 33,367/33,367) and the reproduced FP16 winner
+  `verdict 9.591 ms / grad_err 1.059e-3`; `fm028-13031482.out` (manifest
+  `c0afa01083322fb8`, the post-review defaults) shows the expanded hierarchy
+  gate 33,381/33,381 plus the new counting-sort suite 20/20 and reproduces
+  FP16 at 9.653 ms / 1.0593e-3 and BF16 at 9.632 ms / 1.0632e-3 — inside the
+  recorded run-to-run variance of the 9.591 ms record, both inside both gates.
+- **Counter/residency contract** re-read from `cuda_m13h-1-1_20260803-154247.csv`:
+  `body_uploads=0`, `expansion_host_copies=0`, `route_uploads`/`operator_uploads`
+  construction-only, 0.71 MB host allocation per verdict step, 2.00 GB
+  persistent device footprint, `ref_cross_check_grad_rel=2.76e-14`.
+- **Review fixes confirmed in source.** The counting-sort comment now states the
+  atomic-cursor nondeterminism and `_cuda_counting_sort_ready` refuses a
+  histogram that does not span the key domain; the `DENSE_CUDA_TENSOR_FORMAT`
+  docstring carries the FP16 dynamic-range warning with the `:off` escape; the
+  epsilon separator is derived by lattice-shell enumeration (q=7 correctly has
+  no shell) instead of special-cased; `level_radii2` is a validated public
+  keyword enforcing the non-increasing-with-depth and leaf-agreement invariants
+  from the task-025 proof; the untouched default resolves to `near_radius2=5`
+  with the `(6,5,…,5)` schedule while an explicit `near_radius2` deliberately
+  selects uniform geometry, both documented with the measured accuracy tradeoff
+  and the `near_radius2=12` fallback.
+- **Independent host re-run** (this machine, Julia project env):
+  `radix_fmm_integration_test.jl` 89/89 and `hierarchical_m2l_host_test.jl`
+  681/681, matching the recorded counts.
+
+Against the §6 criteria: (1) consistent with the fixed target definition — the
+verdict boundary, P=4, and the 1.19e-3 gate never moved, and the gate rejected
+hier3/q=3/q=4/uniform-q=5 along the way; (2) correctness is carried by green
+H200 and host gates plus the exact-once/coverage machinery extended to all nine
+shells and 45 schedules; (3) the performance objective is met and independently
+reproduced twice, including once under the shipped defaults; (4) robustness is
+strong — failure ledger, retained negative results (symmetric nearfield, TF32,
+stream overlap), guarded runtime knobs with fallbacks; (5) changes are confined
+to files owned by the resident-lifecycle rows per the placement rules; (6) the
+report and docstrings are clearly written, with the superseded Phase A record
+explicitly marked.
+
+Residual notes, none blocking: the FP16 default's scale-invariance caveat is a
+real (documented) accuracy hazard for problems whose strength scales differ by
+orders of magnitude from the benchmark — the docstring warning and `:off`
+escape are judged sufficient; and the Stage 5–8 + review surface (~2,900
+changed lines across 22 files) was still uncommitted at approval time and
+should be committed promptly, since every earlier cycle was committed
+individually. Row 029 is now unblocked.
