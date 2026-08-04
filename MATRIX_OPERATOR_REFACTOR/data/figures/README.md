@@ -42,6 +42,16 @@ counts that have all four comparison modes, and labels the figure `PROVISIONAL`.
 Figures 1–8 (task 024a) regenerate identically either way, so that gate is a 024b
 completeness check, not a 024a reproducibility problem.
 
+`FM030_ALLOW_PARTIAL=true` is the same escape hatch for `fig10` (task 030): it
+relaxes the 42-case completeness gate and labels the figure `PROVISIONAL`.
+`fig10` behaves differently from `fig09` in one respect, deliberately — when the
+030 campaign directory is absent or empty it **skips** with a printed notice
+rather than erroring, so an unrun campaign cannot block regeneration of figures
+1–9. Once any campaign CSV exists, the completeness, frozen-workload,
+schedule-per-depth and reference-checksum gates all apply; a partially complete
+campaign is an error unless the flag is set. Nothing is emitted on the skip
+path, so there is no empty panel to mistake for a measurement.
+
 **Known cosmetic item:** `fig05` leaves a large whitespace block between panels
 (d) and (e) — the two regime maps have very different row counts and the
 2-column `groupplot` cannot equalize them. Every series is legible; this is
@@ -67,6 +77,7 @@ and are never data series.
 | `fig07_baseline_provenance.pdf` | What did 008c project, why was device residency mandatory, and how much of the projection did the CPU operators actually realize? | `impl_performance_baseline/m13h-1-1/{dense_vs_loop_blas1,dense_gpu}.csv`, `impl_performance_baseline/m12-2-5/dense_vs_loop_blas72.csv`, `axis_swap/tmpfac-126-17.et.byu.edu/m2l_variants_blas1.csv` | m13h-1-1 Xeon 8568Y+ / H200; m12-2-5 EPYC 7763; tmpfac-126-17 Apple M2 |
 | `fig08_radix_vs_legacy.pdf` | Is the radix path faster than the legacy octree `fmm!` that ships today — the only comparison an end user makes? | `production_integration/benchmark_023_{m13h-1-1,m13h-2-1,mecsrs-MacBook-Pro-188.local}_*.csv` | m13h-1-1, m13h-2-1 (threads=8, H200); local macOS (threads=1); P=4, ℓ=4 |
 | `fig09_cpu_gpu_scaling.pdf` | How do legacy CPU 64-thread and resident H200 speedups over legacy CPU single-thread scale from 1e3 to 1e6 particles, and do their sampled-direct errors remain comparable? | `cpu_gpu_scaling/*.csv` | orc 64-CPU node and H200; literature P=4 / code order 3; fixed CPU MAC + manually searched leaf; reviewed compatible GPU stencil; Float64 primary + Float32 extra |
+| `fig10_cost_vs_n.pdf` | How does the task-028 per-time-step cost scale with `n` at the shipped defaults, at three *fixed* depths, and how far does the delivered accuracy drift from its `n=1e6` design point? | `cost_vs_n/cuda030_*.csv` | H200; literature P=4 / code order 3; 028 shipped defaults (hierarchical stencil, dense M2L, whole-level windows, counting sort); fixed `ell=3/4/5` with the `(6,5,…,5)` schedule; FP16-WMMA/Float32 and Float64 |
 
 Each figure's own footnote repeats its machine, BLAS regime, source files, the
 conclusion it supports, and its caveats, so a PDF is self-describing when read
@@ -86,6 +97,7 @@ on its own.
 | 7a / 7b / 7c | `fig07a_dense_speedup_blas{1,72}.csv` / `fig07b_gpu_transfer_floor.csv` + `fig07b_cpu_reference.csv` / `fig07c_axisswap_speedup_blas{1,8}.csv` |
 | 8a / 8b | `fig08a_abs_step.csv` / `fig08b_speedup_vs_legacy.csv` |
 | 9 speedup / accuracy | `fig09_speedup_vs_n.csv` |
+| 10 cost / accuracy | `fig10_cost_vs_n.csv` with `fig10_status.tex` |
 
 `fig05{cpu,gpu}_ticks.tex` is generated alongside the tables: it carries the
 regime tick labels as a `pgfplotsset` style, because pgfplots cannot read

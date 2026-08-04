@@ -1134,6 +1134,134 @@ function fig09()
 end
 
 # ---------------------------------------------------------------------------
+# fig10 -- per-step cost and accuracy vs n at the 028 defaults, fixed ell (030)
+# ---------------------------------------------------------------------------
+
+const FIG10_NS = [1000, 3162, 10000, 31623, 100000, 316228, 1000000]
+const FIG10_ELLS = [3, 4, 5]
+# (series key, precision, tensor_format, column suffix)
+const FIG10_SERIES = [("f32", "Float32", "fp16"), ("f64", "Float64", "off")]
+const FIG10_ALLOW_PARTIAL =
+    lowercase(get(ENV, "FM030_ALLOW_PARTIAL", "false")) in ("1", "true", "yes", "on")
+
+"The shipped (6,5,...,5) level radius schedule for a depth; see task 030."
+fig10_schedule(ell) = "sched" * join(vcat(6, fill(5, ell - 2)), '-')
+
+function fig10()
+    dir = joinpath(DATA_DIR, "cost_vs_n")
+    files = isdir(dir) ? sort(filter(f -> begin
+        b = basename(f)
+        startswith(b, "cuda030_") && endswith(b, ".csv") &&
+            !endswith(b, ".classes.csv") && !occursin("failures", b)
+    end, readdir(dir; join=true))) : String[]
+    # The 030 campaign may not have landed yet. Skipping outright keeps the
+    # shared build working for fig01-fig09 and, unlike emitting an empty panel,
+    # publishes nothing that could be mistaken for a measurement.
+    if isempty(files)
+        println("024a: fig10 skipped -- no 030 campaign CSVs in $(relpath(dir, REFACTOR_DIR))")
+        return
+    end
+
+    pts = Dict{Tuple{Int,Int,String},NamedTuple}()
+    for path in files
+        t = readtable(relpath(path, DATA_DIR))
+        for row in t.rows
+            sget(t, row, "fit") == "true" || continue
+            # the 030 frozen workload -- anything else in this directory is a
+            # different experiment and must not silently enter the figure
+            iget(t, row, "expansion_order") == 3 ||
+                error("024a: fig10 row with expansion_order != 3 in $path")
+            sget(t, row, "strategy") == "dense" ||
+                error("024a: fig10 row with strategy != dense in $path")
+            sget(t, row, "lh") == "false" ||
+                error("024a: fig10 row with Lamb-Helmholtz on in $path")
+            n = iget(t, row, "n")
+            ell = iget(t, row, "ell")
+            sget(t, row, "policy") == fig10_schedule(ell) || error(
+                "024a: fig10 row at ell=$ell has policy $(sget(t, row, "policy")), " *
+                "expected $(fig10_schedule(ell)) in $path")
+            sget(t, row, "reference_source") == "024b_csv" || error(
+                "024a: fig10 row at n=$n is not tied to the checksummed 024b " *
+                "reference (reference_source=$(sget(t, row, "reference_source"))) in $path")
+            prec = sget(t, row, "precision")
+            fmt = sget(t, row, "tensor_format")
+            key = findfirst(s -> s[2] == prec && s[3] == fmt, FIG10_SERIES)
+            key === nothing && error(
+                "024a: fig10 unexpected precision/tensor pair $prec/$fmt in $path")
+            series = FIG10_SERIES[key][1]
+            step = fget(t, row, "verdict_step_ms")
+            isfinite(step) && step > 0 ||
+                error("024a: fig10 invalid verdict_step_ms at n=$n ell=$ell in $path")
+            err = fget(t, row, "err_gradient_rel_rms")
+            isfinite(err) && err >= 0 ||
+                error("024a: fig10 invalid gradient error at n=$n ell=$ell in $path")
+            rec = (; step, err,
+                lo=fget(t, row, "verdict_step_min_ms"),
+                hi=fget(t, row, "verdict_step_max_ms"),
+                checksum=sget(t, row, "reference_checksum"))
+            k = (n, ell, series)
+            # a repeated case keeps its fastest measurement, as fig09 does
+            (!haskey(pts, k) || step < pts[k].step) && (pts[k] = rec)
+        end
+    end
+    isempty(pts) && error("024a: fig10 found campaign CSVs but no usable rows")
+
+    expected = length(FIG10_NS) * length(FIG10_ELLS) * length(FIG10_SERIES)
+    if !FIG10_ALLOW_PARTIAL && length(pts) != expected
+        missing = [(n, ell, s[1]) for n in FIG10_NS, ell in FIG10_ELLS, s in FIG10_SERIES
+                   if !haskey(pts, (n, ell, s[1]))]
+        error("024a: fig10 requires $expected measured cases, found $(length(pts)); " *
+              "missing $(missing). Set FM030_ALLOW_PARTIAL=true to plot a " *
+              "provisional snapshot.")
+    end
+
+    # every point must share the per-n reference identity
+    for n in FIG10_NS
+        sums = unique([r.checksum for ((nn, _, _), r) in pts if nn == n])
+        length(sums) <= 1 || error("024a: fig10 reference checksum mismatch at n=$n")
+    end
+
+    ns = [n for n in FIG10_NS if any(haskey(pts, (n, ell, s[1]))
+                                     for ell in FIG10_ELLS, s in FIG10_SERIES)]
+    colnames = String[]
+    cols = Vector{Vector{Float64}}()
+    for ell in FIG10_ELLS, s in FIG10_SERIES
+        push!(colnames, "step_ms_ell$(ell)_$(s[1])")
+        push!(cols, [haskey(pts, (n, ell, s[1])) ? pts[(n, ell, s[1])].step : NaN
+                     for n in ns])
+    end
+    for ell in FIG10_ELLS, s in FIG10_SERIES
+        push!(colnames, "err_grad_rel_ell$(ell)_$(s[1])")
+        push!(cols, [haskey(pts, (n, ell, s[1])) ? pts[(n, ell, s[1])].err : NaN
+                     for n in ns])
+    end
+
+    writewide("fig10_cost_vs_n.csv", "n", ns, colnames, cols;
+        comment = "030 $(FIG10_ALLOW_PARTIAL ? "PROVISIONAL " : "")per-time-step " *
+                  "verdict-boundary cost (refresh + eval + finalize + device Euler, " *
+                  "no per-step body transfers) and sampled-direct gradient relative " *
+                  "RMS error vs n at the 028 shipped defaults: literature P=4 " *
+                  "(expansion_order=3), hierarchical stencil, dense M2L, one route " *
+                  "window per level, three FIXED depths ell=3/4/5 with the " *
+                  "(6,5,...,5) level radius schedule, in the FP16-WMMA/Float32 " *
+                  "winner configuration and Float64. Errors use the checksummed " *
+                  "024b sampled-direct references. Geometry is tuned at n=1e6, so " *
+                  "the error drift across n is the measured quantity, not a defect.")
+
+    status_path = joinpath(OUT_DIR, "fig10_status.tex")
+    open(status_path, "w") do io
+        if FIG10_ALLOW_PARTIAL
+            println(io, "\\def\\fmfigstatusten{\\quad\\textbf{PROVISIONAL: $(length(pts))/$expected cases}}")
+            println(io, "\\def\\fmfigstatustennote{\\textbf{Provisional snapshot:} the 030 campaign was still running; only measured cases are drawn.}")
+        else
+            println(io, "\\def\\fmfigstatusten{}")
+            println(io, "\\def\\fmfigstatustennote{}")
+        end
+    end
+    push!(WRITTEN, "fig10_status.tex")
+end
+
+# ---------------------------------------------------------------------------
 
 function main()
     mkpath(OUT_DIR)
@@ -1145,7 +1273,7 @@ function main()
     fig05ab(); fig05cd()
     fig06a(); fig06b(); fig06c(); fig06d()
     fig07a(); fig07b(); fig07c()
-    fig08(); fig09()
+    fig08(); fig09(); fig10()
     println("024a: wrote $(length(WRITTEN)) files to $(relpath(OUT_DIR, REFACTOR_DIR))")
     for f in sort(WRITTEN)
         println("  ", f)
