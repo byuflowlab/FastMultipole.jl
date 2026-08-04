@@ -304,6 +304,15 @@ for the final `019a` roadmap Milestone Review, which reviews work through
 `028`. `029` may be resumed later; if it completes after `019a`, its results
 are recorded as an addendum review note rather than reopening `019a`.
 
+Row `030` was added by user request on `2026-08-03`, after `019a` was
+approved: a benchmark/analysis row measuring per-time-step cost versus `n`
+at the `028` shipped defaults as fixed `ell = 4/5/6` series in both the
+FP16-WMMA/Float32 winner configuration and Float64, followed by per-`n`
+optimization recommendations (including per-`n` error-targeted geometry
+retuning) with modeled savings validated by spot-check runs. It touches only
+`scripts/`, `data/`, and figures, does not reopen `019a` (results land as a
+`019a` addendum note), and neither depends on nor resumes the deferred `029`.
+
 ## Non-Goals
 
 - Do not change the mathematical translation algorithm in the first
