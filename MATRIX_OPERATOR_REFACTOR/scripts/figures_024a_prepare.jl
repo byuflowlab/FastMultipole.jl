@@ -1144,6 +1144,9 @@ const FIG10_SERIES = [("f32", "Float32", "fp16"), ("f64", "Float64", "off")]
 const FIG10_ALLOW_PARTIAL =
     lowercase(get(ENV, "FM030_ALLOW_PARTIAL", "false")) in ("1", "true", "yes", "on")
 
+"Accuracy target for the retuned-best series: the unchanged 028 gradient gate."
+const FIG10_ERR_TARGET = 1.19e-3
+
 "The shipped (6,5,...,5) level radius schedule for a depth; see task 030."
 fig10_schedule(ell) = "sched" * join(vcat(6, fill(5, ell - 2)), '-')
 
@@ -1163,6 +1166,9 @@ function fig10()
     end
 
     pts = Dict{Tuple{Int,Int,String},NamedTuple}()
+    # Every measured geometry, including the joint-retune campaign's non-shipped
+    # radius schedules, which feed the retuned-best series only.
+    allpts = NamedTuple[]
     for path in files
         t = readtable(relpath(path, DATA_DIR))
         for row in t.rows
@@ -1177,9 +1183,10 @@ function fig10()
                 error("024a: fig10 row with Lamb-Helmholtz on in $path")
             n = iget(t, row, "n")
             ell = iget(t, row, "ell")
-            sget(t, row, "policy") == fig10_schedule(ell) || error(
-                "024a: fig10 row at ell=$ell has policy $(sget(t, row, "policy")), " *
-                "expected $(fig10_schedule(ell)) in $path")
+            # The fixed-depth series are the shipped (6,5,...,5) schedule only;
+            # the joint retune campaign shares this directory and contributes
+            # other radius schedules, which belong to the retuned-best series.
+            shipped_geometry = sget(t, row, "policy") == fig10_schedule(ell)
             sget(t, row, "reference_source") == "024b_csv" || error(
                 "024a: fig10 row at n=$n is not tied to the checksummed 024b " *
                 "reference (reference_source=$(sget(t, row, "reference_source"))) in $path")
@@ -1199,6 +1206,9 @@ function fig10()
                 lo=fget(t, row, "verdict_step_min_ms"),
                 hi=fget(t, row, "verdict_step_max_ms"),
                 checksum=sget(t, row, "reference_checksum"))
+            push!(allpts, (; n, ell, series, step, err,
+                           policy = sget(t, row, "policy")))
+            shipped_geometry || continue
             k = (n, ell, series)
             # a repeated case keeps its fastest measurement, as fig09 does
             (!haskey(pts, k) || step < pts[k].step) && (pts[k] = rec)
@@ -1234,6 +1244,21 @@ function fig10()
         push!(colnames, "err_grad_rel_ell$(ell)_$(s[1])")
         push!(cols, [haskey(pts, (n, ell, s[1])) ? pts[(n, ell, s[1])].err : NaN
                      for n in ns])
+    end
+
+    # Retuned-best series: at each n, the fastest measured configuration that
+    # meets the accuracy target, over every depth, radius schedule and
+    # precision in the campaign. Empty until the joint retune campaign lands.
+    retuned = Dict{Int,NamedTuple}()
+    for r in allpts
+        r.err <= FIG10_ERR_TARGET || continue
+        (!haskey(retuned, r.n) || r.step < retuned[r.n].step) && (retuned[r.n] = r)
+    end
+    if length(unique(r.policy for r in allpts)) > length(FIG10_ELLS)
+        push!(colnames, "step_ms_retuned")
+        push!(cols, [haskey(retuned, n) ? retuned[n].step : NaN for n in ns])
+        push!(colnames, "err_grad_rel_retuned")
+        push!(cols, [haskey(retuned, n) ? retuned[n].err : NaN for n in ns])
     end
 
     writewide("fig10_cost_vs_n.csv", "n", ns, colnames, cols;

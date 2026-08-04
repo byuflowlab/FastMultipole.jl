@@ -394,11 +394,75 @@ prepare script returns to 62 generated files with `fig10` skipping cleanly.
 - Job **13035882** (`ell = 4/5/6`) was cancelled 2:44 in, during the lifecycle
   preflight, after the user revised the depth bracket. It wrote no case CSVs;
   the remote campaign directory was verified empty. No measurement is affected.
-- Job **13035897** (`ell = 3/4/5`) is the campaign of record. Preflight green
-  (`LIFECYCLE_TEST_EXIT=0`, `CONVECTION_TEST_EXIT=0`,
-  `COUNTING_SORT_TEST_EXIT=0`), `REFERENCE_GATE_EXIT=0`.
-  *(In progress — completion, per-case results and the failure ledger to be
-  recorded here.)*
+- Job **13035897** (`ell = 3/4/5`) is the fixed-`ell` campaign of record and is
+  **complete**: preflight green (`LIFECYCLE_TEST_EXIT=0`,
+  `CONVECTION_TEST_EXIT=0`, `COUNTING_SORT_TEST_EXIT=0`),
+  `REFERENCE_GATE_EXIT=0`, all **42/42** cases measured `fit=true`,
+  `failed_cases=0`, `SWEEP_EXIT=0` (`data/cost_vs_n/fm030-13035897.out`). The
+  **failure ledger is empty**: no case was unconstructible, so no ledger file
+  was written. Every case ran on node `m13h-1-1` with
+  `reference_source=024b_csv`.
+
+### Joint per-`n` retune campaign (`2026-08-04`)
+
+**User direction (`2026-08-04`).** The per-`n` recommendation table produced from
+the fixed-`ell` sweep retunes depth only, and every one of its rows was already
+measured, so the step-4 spot-check as originally staged would only have re-run
+existing points. The user directed instead: *"carefully retune `ell`, radius, and
+float type for each case so we can report the best case"*. The accuracy target
+stays the unchanged 028 gate, `1.19e-3`, at every `n` (user decision), and the
+`n = 1e4` FP16 gap — off target at every measured depth, best `1.36x` — is
+included as a case the retune must try to close (user decision). This supersedes
+the narrow spot-check framing of step 4; the predicted-versus-measured
+validation step 4 asks for is delivered over the **whole** retune grid rather
+than at 2–3 points, which is a strictly stronger check.
+
+**Runner change and why it is safe.** `cuda_030_run.sh` gains an `FM030_MODE=retune`
+branch taking an explicit `<n>:<geometry>:<tf>:<fmt>` case list (the same
+geometry grammar `spotcheck` already parses), read from a staged file named by
+`FM030_RETUNE_FILE` because the grid runs to ~110 cases. The `sweep` and
+`spotcheck` branches, `run_case`, the completed-case skip, the failure ledger,
+the reference gate and the frozen `COMMON` workload are untouched, so job
+13035897 remains reproducible byte-for-byte from the same script.
+`benchmark_028_feasibility.jl` is still reused **unchanged**.
+
+**Cost model (`scripts/analyze_030_costmodel.jl`, new).** The candidate grid was
+chosen by a model fitted to the 42 measured rows, not by hand:
+`verdict ~ a0 + a1*(ell-1) + a2*n + a3*routes + a4*routegen + a5*pairwork`, per
+precision, with the structural features supplied exactly by the validated
+`analyze_030_structure.jl` oracle and only the per-unit rates fitted. The fit is
+in relative error (measured verdicts span 1.9–582 ms, so an unweighted fit is
+decided entirely by the largest rows), with a non-negativity screen on the
+rates. Quality: **9.1% relative RMS (28% worst) FP16, 9.9% (21% worst) Float64**.
+The fitted level term, 0.44 ms/level, independently reproduces the measured
+`M2M+L2L` launch floor (0.38 ms/level), which the model was not told about.
+
+**Pre-registration.** The 110-case grid, and the modeled cost of every case, were
+written to `data/cost_vs_n/retune_cases.txt` and
+`data/cost_vs_n/cost_model_predictions.csv` and committed **before** the campaign
+ran, so the predicted-versus-measured comparison cannot be tuned after the fact.
+Selection rules, also fixed in advance (`candidate_grid` docstring): cost
+candidates within `1.3x` of the best measured admissible cost (above the model's
+worst residual, so model error cannot prune a winner), accuracy candidates
+(`rich`/`richer` shapes) wherever no admissible configuration exists at that
+`(n, precision)`, cheapest-geometry coverage at every candidate depth, and a
+budget of 6 cost candidates per `(n, precision)`.
+
+**Geometry pre-flight.** All 17 distinct candidate schedules construct locally at
+`P = 4`, `lh = false`, spanning `ell = 2..6` and leaf radii `q^2 ∈ {3,4,5,6,8}`
+— including the classic FMM near set `q^2 = 3` (`|o|_inf <= 1`, 27 near offsets,
+316 push offsets) that `025` singles out for like-for-like comparison against
+the `theta = 0.5` family. `sched6-4...` carries *more* push offsets (898) than
+uniform `q = 6` (850), because the coarse-to-leaf radius transition adds
+transition offsets; that is a modeled cost the campaign measures.
+
+**Driver verification.** `FM030_DRYRUN=1` exercised the `retune` branch end to
+end: 110 cases enumerated from the staged file, correct depth inference from
+each schedule string, distinct per-case CSV names, comment/blank lines ignored.
+
+- Job **13036854** (`retune`, 110 cases, node `m13h-1-1`, the same node as
+  13035897). *(In progress — completion, per-case results, predicted-versus-
+  measured outcome and the failure ledger to be recorded here.)*
 
 ## Approval Notes
 

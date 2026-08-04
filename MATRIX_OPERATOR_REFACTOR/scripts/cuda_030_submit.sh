@@ -1,7 +1,7 @@
 #!/bin/bash
 # Local driver (run on the Mac, from the repo root): sync the working tree to the
 # BYU cluster and submit the 030 cost-vs-n job.
-#   bash MATRIX_OPERATOR_REFACTOR/scripts/cuda_030_submit.sh [sweep|spotcheck]
+#   bash MATRIX_OPERATOR_REFACTOR/scripts/cuda_030_submit.sh [sweep|retune|spotcheck]
 # Default mode: sweep. Requires a live ssh master session to `orc` (if auth
 # expired: ssh -fN orc and complete the password/Duo prompts once;
 # ControlPersist keeps it alive).
@@ -11,6 +11,12 @@
 # where a geometry is a bare ell (the shipped (6,5,...,5) schedule at that
 # depth) or an explicit sched<q2>-...-<qell> string, e.g.
 #   FM030_SPOTCHECKS="10000:5:4:Float32:fp16 1000000:5:sched6-5-5-5:Float32:fp16"
+#
+# retune mode requires FM030_CASES, a LOCAL file listing one case per line as
+#   <n>:<geometry>:<tf>:<fmt>
+# (`#` comments and blank lines allowed). The file is staged to the cluster and
+# named to the runner through FM030_RETUNE_FILE; it is a file rather than an
+# exported variable because the joint retune grid runs to ~100 cases.
 set -euo pipefail
 REMOTE=orc
 RDIR=FastMultipole-023
@@ -19,13 +25,20 @@ SBATCH_EXPORT="ALL,FM030_MODE=$MODE"
 
 case "$MODE" in
   sweep) SBATCH_EXTRA="--time=06:00:00" ;;      # 42 cases at ~2.5 min each + preflight
+  retune) SBATCH_EXTRA="--time=08:00:00" ;;     # ~100 candidate cases + preflight
   spotcheck) SBATCH_EXTRA="--time=02:00:00" ;;  # baseline/candidate pairs at 2-3 n
-  *) echo "usage: cuda_030_submit.sh [sweep|spotcheck]" >&2; exit 1 ;;
+  *) echo "usage: cuda_030_submit.sh [sweep|retune|spotcheck]" >&2; exit 1 ;;
 esac
 
 if [[ "$MODE" == "spotcheck" ]]; then
   : "${FM030_SPOTCHECKS:?spotcheck requires FM030_SPOTCHECKS}"
   SBATCH_EXPORT+=",FM030_SPOTCHECKS=$FM030_SPOTCHECKS"
+fi
+if [[ "$MODE" == "retune" ]]; then
+  : "${FM030_CASES:?retune requires FM030_CASES (local case-list file)}"
+  [[ -s "$FM030_CASES" ]] || { echo "FM030_CASES=$FM030_CASES missing or empty" >&2; exit 1; }
+  REMOTE_CASES="$RDIR/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/$(basename "$FM030_CASES")"
+  SBATCH_EXPORT+=",FM030_RETUNE_FILE=\$HOME/$REMOTE_CASES"
 fi
 # optional narrowing overrides for a resume or a partial rerun
 for v in FM030_NS FM030_ELLS FM030_REPS FM030_BOUND; do
@@ -45,6 +58,11 @@ rsync -az --delete --exclude .git \
 # the runner hard-gates on their presence and checksums
 rsync -az MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/references \
     "$REMOTE:$RDIR/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/"
+
+# stage the pre-registered retune case list next to the campaign outputs
+if [[ "$MODE" == "retune" ]]; then
+  rsync -az "$FM030_CASES" "$REMOTE:$REMOTE_CASES"
+fi
 
 # refresh the tree, run the login-node instantiate (compute nodes have no
 # internet), then submit

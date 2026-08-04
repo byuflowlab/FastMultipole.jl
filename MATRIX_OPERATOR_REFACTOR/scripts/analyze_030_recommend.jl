@@ -69,13 +69,18 @@ function load(dir)
             !endswith(b, ".classes.csv") && !occursin("failures", b)
     end)
     isempty(files) && error("030: no campaign CSVs in $dir")
-    pts = Dict{Tuple{Int,Int,String},NamedTuple}()
+    # Keyed by geometry as well as (n, ell, precision): since the 2026-08-04
+    # joint retune campaign the directory holds several radius schedules at the
+    # same depth, and keying without the policy would silently overwrite the
+    # fixed-ell sweep rows the earlier sections report.
+    pts = Dict{Tuple{Int,Int,String,String},NamedTuple}()
     for path in files
         t = readtable(path)
         for row in t.rows
             sget(t, row, "fit") == "true" || continue
             prec = sget(t, row, "tensor_format") == "fp16" ? "fp16" : "f64"
-            key = (iget(t, row, "n"), iget(t, row, "ell"), prec)
+            key = (iget(t, row, "n"), iget(t, row, "ell"),
+                   sget(t, row, "policy"), prec)
             rec = (;
                 n = iget(t, row, "n"), ell = iget(t, row, "ell"), prec,
                 policy = sget(t, row, "policy"),
@@ -108,6 +113,19 @@ function load(dir)
     end
     return pts
 end
+
+"The shipped (6,5,...,5) schedule as a harness policy string, matching cuda_030_run.sh."
+shipped_policy(ell) = ell == 2 ? "sched5" : "sched6" * repeat("-5", ell - 2)
+
+"""
+    shipped_view(pts) -> Dict{(n, ell, prec)}
+
+The fixed-`ell` sweep alone: one geometry per depth, the shipped
+`(6,5,...,5)` schedule. Every section written before the joint retune campaign
+reads this view, so those tables are unchanged by the extra geometries.
+"""
+shipped_view(pts) = Dict((n, ell, prec) => r
+    for ((n, ell, pol, prec), r) in pts if pol == shipped_policy(ell))
 
 # ---------------------------------------------------------------------------
 # stage identities
@@ -328,16 +346,184 @@ function fp16_penalty(pts)
     println("scale-invariance caveat recorded in the 028 review, now quantified against `ell`.\n")
 end
 
+# ---------------------------------------------------------------------------
+# joint retune: depth x radius schedule x precision
+# ---------------------------------------------------------------------------
+
+"Schedule string of a policy, e.g. sched6-5-5 -> 6-5-5."
+sched_of(policy) = startswith(policy, "sched") ? policy[6:end] : policy
+
+"""
+    retune(all) -> rows
+
+Best measured configuration at each `n` over the whole joint grid: every depth,
+every radius schedule, both precisions. The saving is decomposed into the two
+levers so they can be recommended independently:
+
+  * DEPTH lever — best admissible while holding the shipped `(6,5,...,5)`
+    radius schedule, i.e. what the fixed-`ell` sweep alone could find.
+  * RADIUS lever ("fixing the error") — the additional saving from retuning the
+    level radii on top of the best depth. This is the lever the row was staged
+    to quantify: the shipped geometry was tuned at `n = 1e6`, so at other `n` it
+    delivers accuracy that is not needed, or not enough.
+
+Every entry here is measured; nothing in this table is modeled.
+"""
+function retune(all)
+    keys_by_n = Dict{Int,Vector{Any}}()
+    for k in keys(all)
+        push!(get!(keys_by_n, k[1], Any[]), k)
+    end
+    shipped_default(n) = get(all, (n, SHIPPED_ELL, shipped_policy(SHIPPED_ELL), "fp16"), nothing)
+
+    println("## Joint per-n retune: depth x radius schedule x precision\n")
+    println("Every configuration below was measured at the 028 frozen workload. ")
+    println("`shipped` is the production default (`ell=5`, `(6,5,5,5)`, FP16). ")
+    println("Admissible means gradient rel RMS <= $(TARGET).\n")
+    println("| n | shipped ms | depth-only best | + radius retune | total speedup | winner err | dominant stage |")
+    println("|---|---|---|---|---|---|---|")
+    rows = NamedTuple[]
+    for n in NS
+        base = shipped_default(n)
+        base === nothing && continue
+        ks = keys_by_n[n]
+        adm = [all[k] for k in ks if all[k].err <= TARGET]
+        isempty(adm) && (println("| $n | $(round(base.step; digits=3)) | ",
+                                 "none admissible | — | — | — | — |"); continue)
+        best = adm[argmin([c.step for c in adm])]
+        depth_only = filter(c -> c.policy == shipped_policy(c.ell), adm)
+        dbest = isempty(depth_only) ? nothing : depth_only[argmin([c.step for c in depth_only])]
+        dname, _, dshare = dominant_stage(best)
+        radius_gain = dbest === nothing ? NaN : dbest.step - best.step
+        println("| $n | $(round(base.step; digits=3)) | ",
+            dbest === nothing ? "—" :
+                "ell=$(dbest.ell) $(dbest.prec), $(round(dbest.step; digits=3)) ms",
+            " | ", isnan(radius_gain) || radius_gain <= 1e-6 ? "no gain" :
+                "$(sched_of(best.policy)) $(best.prec), $(round(best.step; digits=3)) ms " *
+                "(-$(round(radius_gain; digits=3)) ms)",
+            " | $(round(base.step / best.step; digits=2))x",
+            " | $(round(best.err / TARGET; digits=2))x target",
+            " | $dname ($(round(dshare*100; digits=0))%) |")
+        push!(rows, (; n, shipped_ms = base.step, shipped_err = base.err,
+            depth_ell = dbest === nothing ? 0 : dbest.ell,
+            depth_prec = dbest === nothing ? "" : dbest.prec,
+            depth_ms = dbest === nothing ? NaN : dbest.step,
+            best_ell = best.ell, best_schedule = sched_of(best.policy),
+            best_prec = best.prec, best_ms = best.step, best_err = best.err,
+            radius_saving_ms = radius_gain,
+            total_saving_ms = base.step - best.step,
+            total_saving_pct = 100 * (base.step - best.step) / base.step,
+            dominant = dname, evidence = "measured"))
+    end
+    println()
+    return rows
+end
+
+"""
+    geometry_table(all)
+
+Every measured geometry at each `n`, so the shape of the cost/accuracy tradeoff
+is visible rather than only its optimum.
+"""
+function geometry_table(all)
+    println("## All measured geometries\n")
+    println("| n | ell | schedule | prec | step ms | err | err/target | admissible |")
+    println("|---|---|---|---|---|---|---|---|")
+    ks = sort(collect(keys(all)); by = k -> (k[1], k[2], k[3], k[4]))
+    for k in ks
+        r = all[k]
+        println("| $(r.n) | $(r.ell) | $(sched_of(r.policy)) | $(r.prec) | ",
+            "$(round(r.step; digits=3)) | $(round(r.err; sigdigits=3)) | ",
+            "$(round(r.err/TARGET; digits=2))x | ",
+            r.err <= TARGET ? "yes" : "no", " |")
+    end
+    println()
+end
+
+"""
+    predicted_vs_measured(all, path)
+
+Compare the pre-registered modeled cost of every retune case (written before
+the campaign ran, in `cost_model_predictions.csv`) against what the H200
+measured. This is the validation of the modeling layer: it covers the whole
+retune grid, not a sample of it.
+"""
+function predicted_vs_measured(all, path)
+    isfile(path) || (println("(no cost_model_predictions.csv; skipping ",
+                             "predicted-vs-measured)\n"); return NamedTuple[])
+    t = readtable(path)
+    rows = NamedTuple[]
+    for row in t.rows
+        n = iget(t, row, "n"); ell = iget(t, row, "ell")
+        sched = sget(t, row, "schedule")
+        prec = sget(t, row, "tensor_format") == "fp16" ? "fp16" : "f64"
+        k = (n, ell, "sched" * sched, prec)
+        haskey(all, k) || continue
+        pred = fget(t, row, "predicted_ms")
+        meas = all[k].step
+        push!(rows, (; n, ell, sched, prec, pred, meas, rel = (pred - meas) / meas))
+    end
+    isempty(rows) && return rows
+    rel = [abs(r.rel) for r in rows]
+    println("## Predicted versus measured (model validation)\n")
+    println("The cost model was fitted to the fixed-`ell` sweep and its ",
+            "predictions were written to `cost_model_predictions.csv` **before** ",
+            "the retune campaign ran. Over $(length(rows)) measured cases:\n")
+    println("- relative RMS ", round(100 * sqrt(sum(rel .^ 2) / length(rel)); digits=1), "%")
+    println("- median ", round(100 * sort(rel)[cld(length(rel), 2)]; digits=1), "%")
+    println("- worst ", round(100 * maximum(rel); digits=1), "%\n")
+    sort!(rows; by = r -> -abs(r.rel))
+    println("| n | ell | schedule | prec | modeled ms | measured ms | rel |")
+    println("|---|---|---|---|---|---|---|")
+    for r in first(rows, 10)
+        println("| $(r.n) | $(r.ell) | $(r.sched) | $(r.prec) | ",
+            "$(round(r.pred; digits=3)) | $(round(r.meas; digits=3)) | ",
+            "$(round(100 * r.rel; digits=1))% |")
+    end
+    println()
+    return rows
+end
+
+function write_retune_csv(rows, path)
+    open(path, "w") do io
+        println(io, "# 030 joint per-n retune (depth x radius schedule x precision). ",
+                    "Every column is MEASURED at the 028 frozen workload: shipped = ",
+                    "production default (ell=5, sched6-5-5-5, FP16); depth_* = best ",
+                    "admissible holding the shipped radius schedule; best_* = best ",
+                    "admissible over the whole joint grid. radius_saving_ms is the ",
+                    "additional saving from retuning the level radii (the fixed-error ",
+                    "lever). Accuracy target $(TARGET) (unchanged 028 gate).")
+        println(io, "n,shipped_ms,shipped_err,depth_ell,depth_prec,depth_ms,",
+                    "best_ell,best_schedule,best_prec,best_ms,best_err,",
+                    "radius_saving_ms,total_saving_ms,total_saving_pct,dominant,evidence")
+        for r in rows
+            println(io, join((r.n, r.shipped_ms, r.shipped_err, r.depth_ell,
+                r.depth_prec, r.depth_ms, r.best_ell, r.best_schedule, r.best_prec,
+                r.best_ms, r.best_err, r.radius_saving_ms, r.total_saving_ms,
+                r.total_saving_pct, r.dominant, r.evidence), ','))
+        end
+    end
+    println("wrote $path")
+end
+
 function main()
-    pts = load(DATA_DIR)
+    all = load(DATA_DIR)
+    pts = shipped_view(all)
     println("# Task 030 analysis\n")
-    println("Campaign: $(length(pts)) measured cases from $(DATA_DIR).\n")
+    println("Campaign: $(length(all)) measured cases from $(DATA_DIR) ",
+            "($(length(pts)) in the fixed-`ell` sweep).\n")
     check_identities(pts)
     breakdown(pts)
     rows = recommend(pts)
     cross_precision(pts)
     fp16_penalty(pts)
     write_csv(rows, joinpath(DATA_DIR, "recommendations.csv"))
+    if length(all) > length(pts)
+        rrows = retune(all)
+        predicted_vs_measured(all, joinpath(DATA_DIR, "cost_model_predictions.csv"))
+        geometry_table(all)
+        write_retune_csv(rrows, joinpath(DATA_DIR, "retune_recommendations.csv"))
+    end
 end
 
 abspath(PROGRAM_FILE) == (@__FILE__) && main()
