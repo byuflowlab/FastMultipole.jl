@@ -24,6 +24,10 @@ const DATA_DIR = get(ENV, "FM030_DATADIR",
     joinpath(REFACTOR_DIR, "data", "cost_vs_n"))
 const TARGET = parse(Float64, get(ENV, "FM030_TARGET", "1.19e-3"))
 const SHIPPED_ELL = 5          # the 028 default depth, tuned at n = 1e6
+# Margin required of a configuration before it is called a defensible default:
+# the fastest admissible geometry at n = 1e6 passes the gate by 0.03%, which is
+# a measurement, not a safety margin.
+const ROBUST_FRACTION = 0.95
 const NS = [1000, 3162, 10000, 31623, 100000, 316228, 1000000]
 const ELLS = [3, 4, 5]
 
@@ -369,6 +373,14 @@ levers so they can be recommended independently:
     to quantify: the shipped geometry was tuned at `n = 1e6`, so at other `n` it
     delivers accuracy that is not needed, or not enough.
 
+Two winners are reported per `n`, because the fastest admissible configuration
+can sit on the gate: `best` is the fastest with `err <= TARGET`, and `robust` is
+the fastest with `err <= ROBUST_FRACTION * TARGET`, i.e. with margin against
+run-to-run and node-to-node variation (measured at <= 2% on timing; the error is
+deterministic for a fixed geometry, but a configuration passing by 0.03% is not
+a defensible default). Where the two differ, the robust one is what a default
+should use.
+
 Every entry here is measured; nothing in this table is modeled.
 """
 function retune(all)
@@ -382,7 +394,7 @@ function retune(all)
     println("Every configuration below was measured at the 028 frozen workload. ")
     println("`shipped` is the production default (`ell=5`, `(6,5,5,5)`, FP16). ")
     println("Admissible means gradient rel RMS <= $(TARGET).\n")
-    println("| n | shipped ms | depth-only best | + radius retune | total speedup | winner err | dominant stage |")
+    println("| n | shipped ms | depth-only best | + radius retune | total speedup | winner err | robust winner (err <= $(ROBUST_FRACTION)x gate) |")
     println("|---|---|---|---|---|---|---|")
     rows = NamedTuple[]
     for n in NS
@@ -396,6 +408,8 @@ function retune(all)
         depth_only = filter(c -> c.policy == shipped_policy(c.ell), adm)
         dbest = isempty(depth_only) ? nothing : depth_only[argmin([c.step for c in depth_only])]
         dname, _, dshare = dominant_stage(best)
+        rob = filter(c -> c.err <= ROBUST_FRACTION * TARGET, adm)
+        rbest = isempty(rob) ? nothing : rob[argmin([c.step for c in rob])]
         radius_gain = dbest === nothing ? NaN : dbest.step - best.step
         println("| $n | $(round(base.step; digits=3)) | ",
             dbest === nothing ? "—" :
@@ -405,13 +419,23 @@ function retune(all)
                 "(-$(round(radius_gain; digits=3)) ms)",
             " | $(round(base.step / best.step; digits=2))x",
             " | $(round(best.err / TARGET; digits=2))x target",
-            " | $dname ($(round(dshare*100; digits=0))%) |")
+            " | ", rbest === nothing ? "none" :
+                (rbest.step == best.step ? "same" :
+                 "ell=$(rbest.ell) $(sched_of(rbest.policy)) $(rbest.prec), " *
+                 "$(round(rbest.step; digits=3)) ms ($(round(rbest.err / TARGET; digits=2))x)"),
+            " |")
         push!(rows, (; n, shipped_ms = base.step, shipped_err = base.err,
             depth_ell = dbest === nothing ? 0 : dbest.ell,
             depth_prec = dbest === nothing ? "" : dbest.prec,
             depth_ms = dbest === nothing ? NaN : dbest.step,
             best_ell = best.ell, best_schedule = sched_of(best.policy),
             best_prec = best.prec, best_ms = best.step, best_err = best.err,
+            robust_ell = rbest === nothing ? 0 : rbest.ell,
+            robust_schedule = rbest === nothing ? "" : sched_of(rbest.policy),
+            robust_prec = rbest === nothing ? "" : rbest.prec,
+            robust_ms = rbest === nothing ? NaN : rbest.step,
+            robust_err = rbest === nothing ? NaN : rbest.err,
+            dominant_share = dshare,
             radius_saving_ms = radius_gain,
             total_saving_ms = base.step - best.step,
             total_saving_pct = 100 * (base.step - best.step) / base.step,
@@ -497,11 +521,13 @@ function write_retune_csv(rows, path)
                     "lever). Accuracy target $(TARGET) (unchanged 028 gate).")
         println(io, "n,shipped_ms,shipped_err,depth_ell,depth_prec,depth_ms,",
                     "best_ell,best_schedule,best_prec,best_ms,best_err,",
+                    "robust_ell,robust_schedule,robust_prec,robust_ms,robust_err,",
                     "radius_saving_ms,total_saving_ms,total_saving_pct,dominant,evidence")
         for r in rows
             println(io, join((r.n, r.shipped_ms, r.shipped_err, r.depth_ell,
                 r.depth_prec, r.depth_ms, r.best_ell, r.best_schedule, r.best_prec,
-                r.best_ms, r.best_err, r.radius_saving_ms, r.total_saving_ms,
+                r.best_ms, r.best_err, r.robust_ell, r.robust_schedule,
+                r.robust_prec, r.robust_ms, r.robust_err, r.radius_saving_ms, r.total_saving_ms,
                 r.total_saving_pct, r.dominant, r.evidence), ','))
         end
     end

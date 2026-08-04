@@ -41,7 +41,9 @@ if [[ "$MODE" == "retune" ]]; then
   SBATCH_EXPORT+=",FM030_RETUNE_FILE=\$HOME/$REMOTE_CASES"
 fi
 # optional narrowing overrides for a resume or a partial rerun
-for v in FM030_NS FM030_ELLS FM030_REPS FM030_BOUND; do
+# FM030_OUTDIR is forwarded so a control run can write to its own directory and
+# bypass the completed-case skip without touching the campaign of record.
+for v in FM030_NS FM030_ELLS FM030_REPS FM030_BOUND FM030_OUTDIR; do
   if [[ -n "${!v:-}" ]]; then SBATCH_EXPORT+=",$v=${!v}"; fi
 done
 

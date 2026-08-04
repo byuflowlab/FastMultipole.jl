@@ -478,6 +478,33 @@ winner — the eventual per-`n` optimum was in the pre-registered grid at every
 `n`. This is reported as it stands: the model is a candidate-selection tool, and
 the recommendation table contains no modeled numbers.
 
+### Refinement campaign and cross-node control (`2026-08-04`)
+
+**User direction (`2026-08-04`).** After the step-5 checkpoint the user directed
+a finer schedule search around each `n`'s measured winner before closing the row.
+
+- Job **13044695** (`retune`, 42 pre-registered cases, node `m13h-1-2`):
+  **42/42** measured, `failed_cases=0`, `SWEEP_EXIT=0`, empty ledger. The grid is
+  39 model-selected neighbours (each schedule entry moved one step along the
+  supported radius list, plus the staircases between a boosted coarsest level and
+  a reduced leaf — the shapes the first-pass two-family grid could not express)
+  at the winner depth and one depth either side, plus 3 manual probes at points
+  the model prunes. The model was refit on all 152 rows first (14.0%/18.9%
+  relative RMS, now including `ell = 2`), and the refined grid and its
+  predictions were again committed before the job ran.
+- Job **13045768** (cross-node control, 4 cases, node `m13h-1-1`): the first-pass
+  campaign ran on `m13h-1-1` and the refinement on `m13h-1-2`, so three
+  first-pass winners and the refined `n = 1e6` winner were re-measured together
+  in one job on one node. **Node-to-node and run-to-run spread is at most 1.8%**
+  (`6-4-4-3` at `n = 1e6`: 7.092 ms on `m13h-1-2` against 7.125 ms on
+  `m13h-1-1`; `6-4-4-4`: 7.604 -> 7.522 ms; `6-4-4` at 316228: 4.868 -> 4.780 ms;
+  `6-5-5` at 1e5: 3.130 -> 3.138 ms), far below the 5–35% differences the
+  recommendation table rests on. Control data is kept separate, in
+  `data/cost_vs_n_control/`, so it cannot enter the campaign tables.
+
+Total measured: **194 cases** (42 sweep + 110 retune + 42 refinement)
+plus 4 control.
+
 ### Results
 
 Best measured configuration at each `n`, against the shipped default
@@ -485,25 +512,36 @@ Best measured configuration at each `n`, against the shipped default
 is measured; `radius` is the additional saving from retuning the level radii on
 top of the best depth (the fixed-error lever).
 
-| `n` | shipped (ms) | best measured | ms | speedup | error | radius lever |
+| `n` | shipped (ms) | best measured | ms | speedup | err/gate | robust winner (`err <= 0.95x` gate) |
 |---|---|---|---|---|---|---|
-| 1e3 | 2.989 | `ell=2`, `sched5`, FP16 | 1.462 | 2.04x | 0.22x | — |
-| 3162 | 3.355 | `ell=2`, `sched4`, FP16 | 1.829 | 1.83x | 0.92x | -0.055 ms |
-| 1e4 | 3.744 | `ell=3`, `sched6-5`, F64 | 2.061 | 1.82x | 0.80x | — |
-| 31623 | 4.339 | `ell=3`, `sched6-6`, FP16 | 2.752 | 1.58x | 0.99x | -0.105 ms |
-| 1e5 | 5.479 | `ell=4`, `sched6-5-5`, FP16 | 3.130 | 1.75x | 0.89x | — |
-| 316228 | 6.250 | `ell=4`, `sched6-4-4`, FP16 | 4.868 | 1.28x | 0.86x | -0.788 ms |
-| 1e6 | 9.591 | `ell=5`, `sched6-4-4-4`, FP16 | 7.604 | 1.26x | 0.81x | -1.988 ms |
+| 1e3 | 2.989 | `ell=2`, `sched5`, FP16 | 1.462 | 2.04x | 0.22x | same |
+| 3162 | 3.355 | `ell=2`, `sched4`, FP16 | 1.829 | 1.83x | 0.92x | same |
+| 1e4 | 3.744 | `ell=3`, `sched6-5`, F64 | 2.061 | 1.82x | 0.80x | same |
+| 31623 | 4.339 | `ell=3`, `sched6-6`, FP16 | 2.752 | 1.58x | 0.99x | `ell=4` `6-6-5` FP16, 2.854 ms (0.73x) |
+| 1e5 | 5.479 | `ell=4`, `sched6-6-5`, FP16 | 3.097 | 1.77x | 0.71x | same |
+| 316228 | 6.250 | `ell=4`, `sched6-5-4`, FP16 | 4.784 | 1.31x | 0.86x | same |
+| 1e6 | 9.591 | `ell=5`, `sched6-4-4-3`, FP16 | 7.092 | 1.35x | **1.00x** | `ell=5` `6-5-4-4` FP16, 7.556 ms (0.87x) |
+
+The radius (fixed-error) lever contributes `-0.055` ms at 3162, `-0.105` at
+31623, `-0.033` at 1e5, `-0.871` at 316228 and `-2.499` ms at 1e6; nothing at
+1e3 or 1e4.
+
+**Knife-edge caveat.** The `n = 1e6` optimum `sched6-4-4-3` measures
+`1.18960e-3` against the `1.19e-3` gate — it passes by **0.03%**. It is reported
+as the fastest admissible configuration, and it is *not* the recommendation: the
+robust column (`err <= 0.95x` gate) gives `sched6-5-4-4` at 7.556 ms, still
+1.27x the shipped default. The same distinction applies at 31623.
 
 Findings, each measured:
 
 1. **The shipped default is never optimal away from `n = 1e6`, and is not
    optimal there either.** Retuning depth alone recovers 1.0–2.0x; adding the
-   radius lever takes `n = 1e6` from 9.591 ms to **7.604 ms** at *better*
-   accuracy (9.61e-4 against 1.06e-3). The `028` verdict result stands; this is
-   additional headroom under the same gate, not a correction to it.
+   radius lever takes `n = 1e6` from 9.591 ms to **7.556 ms** with margin
+   (`sched6-5-4-4`, 0.87x the gate) or **7.092 ms** on the gate
+   (`sched6-4-4-3`). The `028` verdict result stands; this is additional
+   headroom under the same gate, not a correction to it.
 2. **The fixed-error (radius) lever is a large-`n` lever.** It contributes
-   nothing below `n = 3162`, 0.1 ms at 31623, and 0.79/1.99 ms at 316228/1e6 —
+   nothing at 1e3/1e4, ~0.03–0.1 ms at 3162–1e5, and 0.87/2.50 ms at 316228/1e6 —
    because it works by shrinking the leaf near set (`q^2 = 5 -> 4`), and direct
    work is only dominant at large `n`. Below `n ~ 1e5` the cost floor is the
    per-level launch count, which only depth can move.

@@ -1,0 +1,94 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-7b752b40-664e-5fc8-43c4-e5f600c8fa42)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=c0afa01083322fb8
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  1m39.1s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  8.1s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl
+Test Summary:                          | Pass  Total     Time
+device convection lifecycle (task 028) |   24     24  1m08.2s
+Test Summary:                                         | Pass  Total  Time
+fused dense M2L grid-stride parity (task 028 lever 2) |    8      8  3.6s
+Test Summary:                                      | Pass  Total  Time
+nearfield stream-overlap parity (task 028 cycle 3) |    4      4  1.2s
+Test Summary:                                     | Pass  Total  Time
+dense M2L operator-tile parity (task 028 cycle 2) |   12     12  2.1s
+Test Summary:                                | Pass  Total  Time
+_cuda_fast_rsqrt accuracy (task 028 lever 1) |    2      2  0.8s
+Test Summary:                                     | Pass  Total  Time
+nearfield warp-per-pair parity (task 028 lever 1) |   16     16  2.5s
+CONVECTION_TEST_EXIT=0
+=== test/cuda_radix_counting_sort_test.jl
+Test Summary:                                   | Pass  Total   Time
+bounded Morton counting sort (task 028 stage 6) |   20     20  50.8s
+COUNTING_SORT_TEST_EXIT=0
+=== 024b reference integrity
+direct_reference_n1000.csv: OK
+direct_reference_n3162.csv: OK
+direct_reference_n10000.csv: OK
+direct_reference_n31623.csv: OK
+direct_reference_n100000.csv: OK
+direct_reference_n316228.csv: OK
+direct_reference_n1000000.csv: OK
+REFERENCE_GATE_EXIT=0
+=== FM030_MODE=retune
+=== retune case list from /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/retune_cases_control.txt
+=== retune ell=5 policy=sched6-4-4-4 tf=Float32 tensor=fp16 n=1000000
+sched6-4-4-4 dense          Float32  eo=3  LH=false n=1000000  ell=5 K=898   fit=true  eval     6.217  verdict     7.522  host       NaN ms  grad_err 9.615e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n_control/cuda030_retune_sched6_4_4_4_fp16_n1000000_m13h-1-1_13045768.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n_control/cuda030_retune_sched6_4_4_4_fp16_n1000000_m13h-1-1_13045768.csv.classes.csv
+=== retune ell=5 policy=sched6-4-4-3 tf=Float32 tensor=fp16 n=1000000
+sched6-4-4-3 dense          Float32  eo=3  LH=false n=1000000  ell=5 K=904   fit=true  eval     5.831  verdict     7.125  host       NaN ms  grad_err 1.190e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n_control/cuda030_retune_sched6_4_4_3_fp16_n1000000_m13h-1-1_13045768.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n_control/cuda030_retune_sched6_4_4_3_fp16_n1000000_m13h-1-1_13045768.csv.classes.csv
+=== retune ell=4 policy=sched6-4-4 tf=Float32 tensor=fp16 n=316228
+sched6-4-4 dense          Float32  eo=3  LH=false n=316228   ell=4 K=898   fit=true  eval     4.012  verdict     4.780  host       NaN ms  grad_err 1.027e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n_control/cuda030_retune_sched6_4_4_fp16_n316228_m13h-1-1_13045768.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n_control/cuda030_retune_sched6_4_4_fp16_n316228_m13h-1-1_13045768.csv.classes.csv
+=== retune ell=4 policy=sched6-5-5 tf=Float32 tensor=fp16 n=100000
+sched6-5-5 dense          Float32  eo=3  LH=false n=100000   ell=4 K=874   fit=true  eval     2.395  verdict     3.138  host       NaN ms  grad_err 1.059e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n_control/cuda030_retune_sched6_5_5_fp16_n100000_m13h-1-1_13045768.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n_control/cuda030_retune_sched6_5_5_fp16_n100000_m13h-1-1_13045768.csv.classes.csv
+=== 030 case loop complete; failed_cases=0
+SWEEP_EXIT=0
