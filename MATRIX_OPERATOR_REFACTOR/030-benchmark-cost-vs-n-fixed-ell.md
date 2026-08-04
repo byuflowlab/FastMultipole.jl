@@ -321,7 +321,84 @@ than taken from prose:
 
 ## Verification Notes
 
-To be filled during task execution.
+### Pre-sweep local verification (`2026-08-03`)
+
+**Geometry pre-flight.** `HierarchicalRigidStencil` constructs at `P = 4`,
+`lh = false` for every series depth in both precisions:
+`ell = 3` → `sched6-5` (eps 3.4626), `ell = 4` → `sched6-5-5` (6.9252),
+`ell = 5` → `sched6-5-5-5` (13.8503); `ell = 2` (`sched5`) and `ell = 6`
+(`sched6-5-5-5-5`) also construct and are available to spot-checks. `FM028_K=full`
+resolves to **874 window classes at `ell = 3, 4, 5` alike**, so `window_classes`
+is *not* an `ell`-dependent confounder across this sweep (it would be at
+`ell = 2`, where the union is 682).
+
+**Driver verification.** `cuda_030_run.sh` was exercised locally through
+`FM030_DRYRUN=1`: 42 cases, correct depth→schedule mapping, 21/21 precision
+split, all seven `n`; completed-case skip fires only on a `fit=true` file and
+correctly retries a `fit=false` one; the `*.classes.csv` companion does not
+cause a false skip; `sched6-5-5` and `sched6-5-5-5` do not collide in the
+per-case CSV name; unsupported geometries and an unknown mode are ledgered or
+rejected. `fit` was confirmed to be field 21 of the 86-column schema against a
+real 028 CSV.
+
+**Structure oracle.** `analyze_030_structure.jl` reproduces the measured
+structure of **19 independent 028 configurations** (nine uniform radii plus
+scheduled policies, `ell = 4/5/6`, up to `n = 1e6`): exact integer agreement on
+every saturated leaf grid, including the 028 winner's per-level route breakdown
+`1896 / 119784 / 1145544 / 11037576`, `n_nodes = 37449` and
+`n_direct = 1729144`. See the harness convection-drift finding below for why
+unsaturated grids are gated on a bound instead.
+
+**Harness finding — the structure columns are post-motion.**
+`benchmark_028_feasibility.jl` writes its row *after* the timing loops, and
+`step!()` advances every body by `FM028_DT` on each call; the boundary-b
+samples, the stale probe, the two allocation probes, the counter-contract step
+and the `FM028_STEPS` loop together run about `2*REPS + 5 + STEPS` Euler updates
+first. Because `fm028_euler!` clamps to `[0,1]`, the motion concentrates bodies
+and sparse cells empty out, drifting counts **down** by <0.01%. This is why one
+configuration recorded 252483 / 252477 / 252486 occupied cells in three
+different 028 jobs. Saturated grids cannot drift and are gated exactly;
+unsaturated grids are gated at `DRIFT_TOL = 5e-4` with the observed maximum
+(0.0067%) reported. Not stated in the 028 record; recorded here because it
+bounds how precisely any structure-keyed model can be held to the CSVs.
+
+**Stage-accounting identities, verified numerically on 028 rows** (four
+`sched*` rows in `cuda_m13h-1-1_20260803-131016.csv` and
+`cuda_m13h-1-2_20260803-075427.csv`) rather than assumed:
+
+1. **`route_gen_ms` is inside `m2l_ms`, not inside `refresh_ms`.** At the 028
+   winner, `refresh_ms = 0.955` against `grid+occupancy+direct_gen+groups =
+   1.196`, while adding `route_gen` gives 2.375 — far above the measured
+   refresh. Consequence for this row's deliverable: **`route_gen` is 1.179 ms of
+   the winner's 2.543 ms M2L, i.e. 46% of "M2L" is window generation, not the
+   tensor GEMM.** The dominant-stage column and the recommended lever change
+   accordingly — window generation scales as `|V_L|·N_L` and is reduced by fewer
+   levels or a smaller radius, not by a faster GEMM.
+2. **`eval_ms` is less than the sum of its stages, stably.** `eval − Σ(b2m, m2m,
+   m2l, l2l, l2b)` is −1.090, −1.081, −1.057, −1.106 ms across the four rows:
+   not noise, but the measured nearfield/L2B overlap gain, since
+   `CUDA_OVERLAP_NEARFIELD` is on in the pipeline while the harness times the
+   standalone fused L2B. It is carried as an explicit modeled term, never
+   absorbed.
+3. **Composite identity** `verdict − (refresh + eval + finalize + euler)` is
+   +0.11 to +0.15 ms (~1.2%), consistent with median-of-sum vs sum-of-medians;
+   carried as `unattributed_ms`.
+
+**Figure pipeline.** Figures 1–9 regenerate byte-identically with `fig10` added.
+A synthetic 42-case campaign exercised `fig10()` end to end (13-column table,
+compiling PDF); the synthetic inputs and outputs were then removed, and the
+prepare script returns to 62 generated files with `fig10` skipping cleanly.
+
+### Campaign
+
+- Job **13035882** (`ell = 4/5/6`) was cancelled 2:44 in, during the lifecycle
+  preflight, after the user revised the depth bracket. It wrote no case CSVs;
+  the remote campaign directory was verified empty. No measurement is affected.
+- Job **13035897** (`ell = 3/4/5`) is the campaign of record. Preflight green
+  (`LIFECYCLE_TEST_EXIT=0`, `CONVECTION_TEST_EXIT=0`,
+  `COUNTING_SORT_TEST_EXIT=0`), `REFERENCE_GATE_EXIT=0`.
+  *(In progress — completion, per-case results and the failure ledger to be
+  recorded here.)*
 
 ## Approval Notes
 
