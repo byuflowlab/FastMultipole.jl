@@ -1,0 +1,245 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-f5e4f9ac-61a3-33d2-e450-52ce58f47cc7)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=c0afa01083322fb8
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  1m40.4s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  8.0s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl
+Test Summary:                          | Pass  Total     Time
+device convection lifecycle (task 028) |   24     24  1m08.7s
+Test Summary:                                         | Pass  Total  Time
+fused dense M2L grid-stride parity (task 028 lever 2) |    8      8  4.0s
+Test Summary:                                      | Pass  Total  Time
+nearfield stream-overlap parity (task 028 cycle 3) |    4      4  1.2s
+Test Summary:                                     | Pass  Total  Time
+dense M2L operator-tile parity (task 028 cycle 2) |   12     12  2.1s
+Test Summary:                                | Pass  Total  Time
+_cuda_fast_rsqrt accuracy (task 028 lever 1) |    2      2  0.8s
+Test Summary:                                     | Pass  Total  Time
+nearfield warp-per-pair parity (task 028 lever 1) |   16     16  2.6s
+CONVECTION_TEST_EXIT=0
+=== test/cuda_radix_counting_sort_test.jl
+Test Summary:                                   | Pass  Total   Time
+bounded Morton counting sort (task 028 stage 6) |   20     20  50.8s
+COUNTING_SORT_TEST_EXIT=0
+=== 024b reference integrity
+direct_reference_n1000.csv: OK
+direct_reference_n3162.csv: OK
+direct_reference_n10000.csv: OK
+direct_reference_n31623.csv: OK
+direct_reference_n100000.csv: OK
+direct_reference_n316228.csv: OK
+direct_reference_n1000000.csv: OK
+REFERENCE_GATE_EXIT=0
+=== FM030_MODE=sweep
+=== sweep ell=3 policy=sched6-5 tf=Float32 tensor=fp16 n=1000
+sched6-5 dense          Float32  eo=3  LH=false n=1000     ell=3 K=874   fit=true  eval     1.424  verdict     1.926  host       NaN ms  grad_err 4.351e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n1000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n1000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float64 tensor=off n=1000
+sched6-5 dense          Float64  eo=3  LH=false n=1000     ell=3 K=874   fit=true  eval     1.438  verdict     1.970  host       NaN ms  grad_err 3.708e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n1000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n1000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float32 tensor=fp16 n=1000
+sched6-5-5 dense          Float32  eo=3  LH=false n=1000     ell=4 K=874   fit=true  eval     1.911  verdict     2.495  host       NaN ms  grad_err 7.018e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n1000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n1000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float64 tensor=off n=1000
+sched6-5-5 dense          Float64  eo=3  LH=false n=1000     ell=4 K=874   fit=true  eval     2.015  verdict     2.580  host       NaN ms  grad_err 7.003e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n1000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n1000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float32 tensor=fp16 n=1000
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=1000     ell=5 K=874   fit=true  eval     2.383  verdict     2.989  host       NaN ms  grad_err 1.671e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n1000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n1000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float64 tensor=off n=1000
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=1000     ell=5 K=874   fit=true  eval     2.507  verdict     3.122  host       NaN ms  grad_err 1.670e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n1000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n1000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float32 tensor=fp16 n=3162
+sched6-5 dense          Float32  eo=3  LH=false n=3162     ell=3 K=874   fit=true  eval     1.469  verdict     2.043  host       NaN ms  grad_err 1.015e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n3162_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n3162_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float64 tensor=off n=3162
+sched6-5 dense          Float64  eo=3  LH=false n=3162     ell=3 K=874   fit=true  eval     1.452  verdict     1.985  host       NaN ms  grad_err 7.410e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n3162_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n3162_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float32 tensor=fp16 n=3162
+sched6-5-5 dense          Float32  eo=3  LH=false n=3162     ell=4 K=874   fit=true  eval     2.001  verdict     2.714  host       NaN ms  grad_err 1.139e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n3162_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n3162_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float64 tensor=off n=3162
+sched6-5-5 dense          Float64  eo=3  LH=false n=3162     ell=4 K=874   fit=true  eval     2.154  verdict     2.915  host       NaN ms  grad_err 1.127e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n3162_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n3162_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float32 tensor=fp16 n=3162
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=3162     ell=5 K=874   fit=true  eval     2.541  verdict     3.355  host       NaN ms  grad_err 1.786e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n3162_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n3162_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float64 tensor=off n=3162
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=3162     ell=5 K=874   fit=true  eval     2.911  verdict     3.726  host       NaN ms  grad_err 1.784e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n3162_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n3162_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float32 tensor=fp16 n=10000
+sched6-5 dense          Float32  eo=3  LH=false n=10000    ell=3 K=874   fit=true  eval     1.450  verdict     2.009  host       NaN ms  grad_err 1.368e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n10000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n10000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float64 tensor=off n=10000
+sched6-5 dense          Float64  eo=3  LH=false n=10000    ell=3 K=874   fit=true  eval     1.573  verdict     2.061  host       NaN ms  grad_err 9.511e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n10000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n10000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float32 tensor=fp16 n=10000
+sched6-5-5 dense          Float32  eo=3  LH=false n=10000    ell=4 K=874   fit=true  eval     2.096  verdict     2.830  host       NaN ms  grad_err 1.262e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n10000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n10000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float64 tensor=off n=10000
+sched6-5-5 dense          Float64  eo=3  LH=false n=10000    ell=4 K=874   fit=true  eval     2.256  verdict     2.985  host       NaN ms  grad_err 1.229e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n10000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n10000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float32 tensor=fp16 n=10000
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=10000    ell=5 K=874   fit=true  eval     2.914  verdict     3.744  host       NaN ms  grad_err 1.620e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n10000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n10000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float64 tensor=off n=10000
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=10000    ell=5 K=874   fit=true  eval     3.432  verdict     4.212  host       NaN ms  grad_err 1.617e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n10000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n10000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float32 tensor=fp16 n=31623
+sched6-5 dense          Float32  eo=3  LH=false n=31623    ell=3 K=874   fit=true  eval     1.991  verdict     2.481  host       NaN ms  grad_err 1.422e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n31623_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n31623_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float64 tensor=off n=31623
+sched6-5 dense          Float64  eo=3  LH=false n=31623    ell=3 K=874   fit=true  eval     2.776  verdict     3.273  host       NaN ms  grad_err 9.438e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n31623_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n31623_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float32 tensor=fp16 n=31623
+sched6-5-5 dense          Float32  eo=3  LH=false n=31623    ell=4 K=874   fit=true  eval     2.124  verdict     2.857  host       NaN ms  grad_err 1.115e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n31623_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n31623_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float64 tensor=off n=31623
+sched6-5-5 dense          Float64  eo=3  LH=false n=31623    ell=4 K=874   fit=true  eval     2.406  verdict     3.136  host       NaN ms  grad_err 1.085e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n31623_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n31623_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float32 tensor=fp16 n=31623
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=31623    ell=5 K=874   fit=true  eval     3.477  verdict     4.339  host       NaN ms  grad_err 1.233e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n31623_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n31623_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float64 tensor=off n=31623
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=31623    ell=5 K=874   fit=true  eval     5.167  verdict     6.046  host       NaN ms  grad_err 1.230e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n31623_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n31623_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float32 tensor=fp16 n=100000
+sched6-5 dense          Float32  eo=3  LH=false n=100000   ell=3 K=874   fit=true  eval     5.027  verdict     5.542  host       NaN ms  grad_err 1.421e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n100000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n100000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float64 tensor=off n=100000
+sched6-5 dense          Float64  eo=3  LH=false n=100000   ell=3 K=874   fit=true  eval     8.112  verdict     8.606  host       NaN ms  grad_err 8.857e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n100000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n100000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float32 tensor=fp16 n=100000
+sched6-5-5 dense          Float32  eo=3  LH=false n=100000   ell=4 K=874   fit=true  eval     2.374  verdict     3.130  host       NaN ms  grad_err 1.059e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n100000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n100000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float64 tensor=off n=100000
+sched6-5-5 dense          Float64  eo=3  LH=false n=100000   ell=4 K=874   fit=true  eval     2.921  verdict     3.630  host       NaN ms  grad_err 1.019e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n100000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n100000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float32 tensor=fp16 n=100000
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=100000   ell=5 K=874   fit=true  eval     4.614  verdict     5.479  host       NaN ms  grad_err 1.108e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n100000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n100000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float64 tensor=off n=100000
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=100000   ell=5 K=874   fit=true  eval     8.295  verdict     9.176  host       NaN ms  grad_err 1.100e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n100000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n100000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float32 tensor=fp16 n=316228
+sched6-5 dense          Float32  eo=3  LH=false n=316228   ell=3 K=874   fit=true  eval    21.719  verdict    22.435  host       NaN ms  grad_err 1.496e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n316228_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n316228_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float64 tensor=off n=316228
+sched6-5 dense          Float64  eo=3  LH=false n=316228   ell=3 K=874   fit=true  eval    46.810  verdict    56.616  host       NaN ms  grad_err 8.425e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n316228_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n316228_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float32 tensor=fp16 n=316228
+sched6-5-5 dense          Float32  eo=3  LH=false n=316228   ell=4 K=874   fit=true  eval     4.886  verdict     5.655  host       NaN ms  grad_err 1.016e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n316228_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n316228_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float64 tensor=off n=316228
+sched6-5-5 dense          Float64  eo=3  LH=false n=316228   ell=4 K=874   fit=true  eval     8.229  verdict     9.047  host       NaN ms  grad_err 9.573e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n316228_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n316228_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float32 tensor=fp16 n=316228
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=316228   ell=5 K=874   fit=true  eval     5.402  verdict     6.250  host       NaN ms  grad_err 9.933e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n316228_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n316228_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float64 tensor=off n=316228
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=316228   ell=5 K=874   fit=true  eval    10.361  verdict    11.301  host       NaN ms  grad_err 9.878e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n316228_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n316228_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float32 tensor=fp16 n=1000000
+sched6-5 dense          Float32  eo=3  LH=false n=1000000  ell=3 K=874   fit=true  eval   192.640  verdict   213.878  host       NaN ms  grad_err 1.464e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n1000000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_fp16_n1000000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=3 policy=sched6-5 tf=Float64 tensor=off n=1000000
+sched6-5 dense          Float64  eo=3  LH=false n=1000000  ell=3 K=874   fit=true  eval   468.729  verdict   582.508  host       NaN ms  grad_err 8.949e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n1000000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_off_n1000000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float32 tensor=fp16 n=1000000
+sched6-5-5 dense          Float32  eo=3  LH=false n=1000000  ell=4 K=874   fit=true  eval    23.907  verdict    25.046  host       NaN ms  grad_err 1.034e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n1000000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_fp16_n1000000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=4 policy=sched6-5-5 tf=Float64 tensor=off n=1000000
+sched6-5-5 dense          Float64  eo=3  LH=false n=1000000  ell=4 K=874   fit=true  eval    58.804  verdict    65.175  host       NaN ms  grad_err 1.006e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n1000000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_off_n1000000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float32 tensor=fp16 n=1000000
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval     8.266  verdict     9.591  host       NaN ms  grad_err 1.059e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n1000000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_fp16_n1000000_m13h-1-1_13035897.csv.classes.csv
+=== sweep ell=5 policy=sched6-5-5-5 tf=Float64 tensor=off n=1000000
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval    19.271  verdict    20.740  host       NaN ms  grad_err 1.050e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n1000000_m13h-1-1_13035897.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/cost_vs_n/cuda030_sweep_sched6_5_5_5_off_n1000000_m13h-1-1_13035897.csv.classes.csv
+=== 030 case loop complete; failed_cases=0
+SWEEP_EXIT=0

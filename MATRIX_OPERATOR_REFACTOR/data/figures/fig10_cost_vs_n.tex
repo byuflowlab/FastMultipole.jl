@@ -51,27 +51,19 @@
   xlabel={number of particles $n$},
   ylabel={relative gradient RMS error},
   xmin=800, xmax=1.25e6,
-  legend columns=3,
-  legend style={at={(0.5,-0.40)}, anchor=north},
 ]
 \addplot[fmA] table[x=n, y=err_grad_rel_ell3_f64, col sep=comma]
   {tables/fig10_cost_vs_n.csv};
-\addlegendentry{$\ell=3$, F64}
 \addplot[fmB] table[x=n, y=err_grad_rel_ell4_f64, col sep=comma]
   {tables/fig10_cost_vs_n.csv};
-\addlegendentry{$\ell=4$, F64}
 \addplot[fmC] table[x=n, y=err_grad_rel_ell5_f64, col sep=comma]
   {tables/fig10_cost_vs_n.csv};
-\addlegendentry{$\ell=5$, F64}
 \addplot[fmA, fmalt] table[x=n, y=err_grad_rel_ell3_f32, col sep=comma]
   {tables/fig10_cost_vs_n.csv};
-\addlegendentry{$\ell=3$, FP16}
 \addplot[fmB, fmalt] table[x=n, y=err_grad_rel_ell4_f32, col sep=comma]
   {tables/fig10_cost_vs_n.csv};
-\addlegendentry{$\ell=4$, FP16}
 \addplot[fmC, fmalt] table[x=n, y=err_grad_rel_ell5_f32, col sep=comma]
   {tables/fig10_cost_vs_n.csv};
-\addlegendentry{$\ell=5$, FP16}
 
 % the unchanged task-028 accuracy gate, and the target this row's fixed-error
 % lever retunes against
