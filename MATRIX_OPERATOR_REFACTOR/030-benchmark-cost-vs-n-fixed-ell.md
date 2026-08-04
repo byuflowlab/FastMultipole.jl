@@ -265,8 +265,52 @@ one that completed the row. On approval, add the addendum note to `019a`.
 
 ## Reading Gate Record
 
-Not yet completed. Record the reader, date, every required file/artifact, and a
-statement that the full `028` verification history and failure ledger were read.
+**Completed `2026-08-03`** by the executing agent (Claude Opus 5, session
+implementing this row). Files read in full:
+
+1. `START_HERE.md` (all sections, both phase tables and the protocol rules) and
+   `../MATRIX_OPERATOR_REFACTOR.md` (all 326 lines).
+2. `028-performance-feasibility-1m-in-10ms.md` (all 866 lines), **including the
+   complete Verification Notes for Phase A and Phase B cycles 1–4 and Stages
+   5–8, every failure-ledger entry** (jobs 13016917; 13027048, 13027092,
+   13027167, 13027174, 13027188, cancelled 13027374; 13028465; failed re-gate
+   13031187), and all three Approval Notes sections.
+3. `data/feasibility_1m_10ms/report.md` (all 889 lines), including §1–§5 marked
+   as the superseded Phase A record, §6b–§6.8, and §7 threats to validity.
+4. `024b-impl-cpu-gpu-scaling-benchmark.md` (all 289 lines) — body-count grid,
+   sampled-direct reference methodology and checksums, and the per-`n` GPU
+   context this row re-measures under the `028` geometry.
+5. `024a-impl-benchmark-visualization.md` (all 474 lines) and the figure
+   pipeline it defines: `scripts/figures_024a_build.sh`,
+   `scripts/figures_024a_prepare.jl`, `data/figures/fmfigstyle.tex`,
+   `data/figures/fig09_cpu_gpu_scaling.tex`, `data/figures/README.md`.
+6. `scripts/benchmark_028_feasibility.jl` (all 639 lines) and its helpers
+   `scripts/fm028_device_system.jl`, `scripts/benchmark_024b_common.jl`; the
+   cluster pattern `scripts/cuda_028_{submit,run,fetch}.sh` and the
+   skip/failure-ledger idiom in `scripts/cuda_024b_run.sh`.
+
+Confirmed: the full `028` verification history and failure ledger were read.
+Facts carried into this row's design, each verified against the source rather
+than taken from prose:
+
+- The harness applies **no accuracy gate** (errors are recorded, never
+  thresholded), so `030`'s "no pass/fail error gate on sweep points" needs no
+  harness change. The `1.19e-3` constant lives in
+  `scripts/select_028_stage7_winner.jl:7`.
+- `FM028_OUT` is a **file path** opened `"w"` and written only at the end of a
+  process (`benchmark_028_feasibility.jl:622-629`); `FM028_TENSOR_FORMAT` is
+  process-global (`:87-107`); a `sched*` policy pins one `ell` because the
+  schedule must have exactly `ell-1` entries (`:226-227`), and policy/`K`
+  validation at `:599` sits outside the `try`. These three facts dictate the
+  one-process-per-case sweep structure adopted below.
+- A **missing reference silently degrades** a point to
+  `reference_source=device_direct` (`:325-340`), so the runner gates on
+  reference presence and checksum before any case.
+- The counter contract is asserted unconditionally (`:419-434`) regardless of
+  `FM028_BOUND`.
+- `028` pins `bounds=(BOX_MIN, BOX_SIZE)` at every `n` (`:349-351`), so the grid
+  is identical across the `n` sweep and this row's `n`-scaling is internally
+  clean — the same property report.md §7 relies on for `028` §4.8.
 
 ## Verification Notes
 
