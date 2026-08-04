@@ -378,9 +378,9 @@ function report_fit(models, fits)
     println()
 end
 
-function write_candidates(cands, dir::AbstractString)
+function write_candidates(cands, dir::AbstractString; tag::AbstractString = "")
     mkpath(dir)
-    listpath = joinpath(dir, "retune_cases.txt")
+    listpath = joinpath(dir, "retune_cases$(tag).txt")
     open(listpath, "w") do io
         println(io, "# 030 joint retune campaign: pre-registered case list ",
                     "(n:geometry:tf:tensor_format).")
@@ -391,7 +391,7 @@ function write_candidates(cands, dir::AbstractString)
             println(io, c.n, ":", policy_string(c.schedule), ":", c.tf, ":", c.fmt)
         end
     end
-    predpath = joinpath(dir, "cost_model_predictions.csv")
+    predpath = joinpath(dir, "cost_model_predictions$(tag).csv")
     open(predpath, "w") do io
         println(io, "# 030 cost model: MODELED per-step cost for the retune candidate grid. ",
                     "predicted_ms is modeled, not measured; ",
@@ -412,6 +412,94 @@ function write_candidates(cands, dir::AbstractString)
     return listpath, predpath
 end
 
+# ---------------------------------------------------------------------------
+# refinement grid: neighbours of each n's measured winner
+# ---------------------------------------------------------------------------
+
+"""
+    neighbour_schedules(sched, ell) -> Vector{Vector{Int}}
+
+Legal schedules one step away from `sched` at depth `ell`: each entry moved one
+place up or down the supported radius list, plus the intermediate shapes between
+a boosted coarsest level and a reduced leaf (e.g. `(6,4,4,4)` also reaches
+`(6,5,4,4)`, `(6,6,4,4)`, `(6,5,5,4)`). Non-increasing with depth is enforced,
+and the leaf entry defines the direct list, so it is varied explicitly rather
+than only as a side effect.
+
+This is the fine search the two-family candidate grid could not express: the
+first campaign sampled uniform and single-boost shapes, and this fills the
+space between the shapes that actually won.
+"""
+function neighbour_schedules(sched::Vector{Int}, ell::Int)
+    out = Vector{Int}[]
+    base = length(sched) == ell - 1 ? copy(sched) :
+           length(sched) < ell - 1 ? vcat(sched, fill(last(sched), ell - 1 - length(sched))) :
+           sched[end - (ell - 2):end]
+    push!(out, base)
+    for i in eachindex(base), dq in (-1, 1)
+        j = findfirst(==(base[i]), SUPPORTED_Q)
+        j === nothing && continue
+        k = j + dq
+        (1 <= k <= length(SUPPORTED_Q)) || continue
+        cand = copy(base); cand[i] = SUPPORTED_Q[k]
+        all(cand[t + 1] <= cand[t] for t in 1:length(cand)-1) || continue
+        push!(out, cand)
+    end
+    # staircases between the coarsest and the leaf entry
+    if length(base) >= 2 && base[1] > last(base)
+        lo = findfirst(==(last(base)), SUPPORTED_Q)
+        hi = findfirst(==(base[1]), SUPPORTED_Q)
+        if lo !== nothing && hi !== nothing
+            for mid in SUPPORTED_Q[lo:hi], cut in 2:length(base)
+                cand = vcat(base[1], fill(mid, cut - 1), fill(last(base), length(base) - cut))
+                length(cand) == length(base) || continue
+                all(cand[t + 1] <= cand[t] for t in 1:length(cand)-1) || continue
+                push!(out, cand)
+            end
+        end
+    end
+    return unique(out)
+end
+
+"""
+    refine_grid(rows, models) -> Vector{NamedTuple}
+
+Second-pass candidate grid: around each `n`'s measured winner, every neighbour
+schedule at the winner depth and at one depth either side, in both precisions,
+pruned to those predicted to beat the current best admissible cost (with the
+same `COST_SLACK`) and capped per `(n, precision)`. Everything already measured
+is dropped.
+"""
+function refine_grid(rows::Vector{MeasuredRow}, models::Dict{String,CostModel})
+    measured = Set((r.n, r.ell, join(r.schedule, '-'), r.tensor_format) for r in rows)
+    out = NamedTuple[]
+    for n in NS
+        atn = filter(r -> r.n == n, rows)
+        adm = filter(r -> r.err <= ERR_TARGET, atn)
+        isempty(adm) && continue
+        win = adm[argmin([r.verdict for r in adm])]
+        ok_cost = win.verdict
+        for (tf, fmt) in FORMATS
+            group = NamedTuple[]
+            for ell in max(2, win.ell - 1):(win.ell + 1)
+                for sched in neighbour_schedules(win.schedule, ell)
+                    (n, ell, join(sched, '-'), fmt) in measured && continue
+                    p = predict(models[fmt], n, ell, sched)
+                    p < COST_SLACK * ok_cost || continue
+                    push!(group, (; n, ell, schedule = join(sched, '-'),
+                                  shape = :refine, tf, fmt, predicted_ms = p,
+                                  accuracy_candidate = false,
+                                  best_measured_admissible_ms = ok_cost,
+                                  best_measured_err = win.err))
+                end
+            end
+            sort!(group; by = c -> c.predicted_ms)
+            append!(out, first(group, PER_GROUP_CAP))
+        end
+    end
+    return out
+end
+
 function main(mode::AbstractString)
     rows = measured_rows(DATA_DIR)
     isempty(rows) && error("030 cost model: no measured rows under $DATA_DIR")
@@ -425,7 +513,8 @@ function main(mode::AbstractString)
     end
     report_fit(models, fits)
     mode == "fit" && return
-    cands = candidate_grid(rows, models)
+    cands = mode == "refine" ? refine_grid(rows, models) :
+            candidate_grid(rows, models)
     sort!(cands; by = c -> (c.n, c.ell, c.schedule, c.fmt))
     println("## Candidate grid: $(length(cands)) cases\n")
     println("| n | ell | schedule | shape | fmt | modeled ms | best measured admissible ms |")
@@ -437,7 +526,7 @@ function main(mode::AbstractString)
                     @sprintf("%.3f", c.best_measured_admissible_ms))
     end
     println()
-    write_candidates(cands, DATA_DIR)
+    write_candidates(cands, DATA_DIR; tag = mode == "refine" ? "_refine" : "")
     return
 end
 
