@@ -26,11 +26,18 @@ Three deliverables:
 
 1. **Cost versus `n`** at the `028` optimal GPU settings, over the `024b`
    body-count grid `n ∈ {1000, 3162, 10000, 31623, 100000, 316228, 1000000}`.
-2. **Three fixed-depth series** `ell ∈ {4, 5, 6}` for comparison (user decision,
+2. **Three fixed-depth series** `ell ∈ {3, 4, 5}` for comparison (user decision,
    `2026-08-03`: each `ell` is held constant across the whole `n` sweep, rather
-   than choosing the best `ell` per `n`; `ell = 5` is the `028` optimum and
-   `ell = 4/6` bracket it, and `ell = 6` at `n = 1e6` is constructible on the
-   hierarchical path per `027`), in **both precisions** (user decision,
+   than choosing the best `ell` per `n`). `ell = 5` is the `028` optimum at
+   `n = 1e6`; the bracket runs **coarser**, not finer, because the optimal depth
+   tracks `n` downward — `028` §4.8 measured `ell = 4` as optimal at `n = 2e5`,
+   and `024b` selected `ell = 2/3` below `n = 1e5`. Over an `n = 1e3..1e6`
+   sweep the coarse side of `ell = 5` is therefore the informative bracket, and
+   `ell = 6` was only competitive above the target `n`. (**Revision note:** the
+   bracket was `4/5/6` when this row was staged; the user revised it to `3/4/5`
+   on `2026-08-03` before any sweep case had run. Job 13035882 was cancelled
+   during its preflight and produced no data, so no measurement is affected.)
+   Both series run in **both precisions** (user decision,
    `2026-08-03`): the `028` FP16-WMMA/Float32 winner configuration, and a
    Float64 series with `FM028_TENSOR_FORMAT=off`. That is `7 x 3 x 2 = 42`
    cases.
@@ -98,9 +105,9 @@ inconsistent with this file, stop and repair the coordination record first.
   `MaterializedYRotationM2L()`); `FM028_K = full` (one window per level; the
   shipped default `4096` has the same effect at these sizes); `m2l_threads = 64`;
   `m2l_block_cap = 65536`; counting sort on; symmetric nearfield off; TF32 off.
-- Depth/geometry: `ell ∈ {4, 5, 6}` with the radius schedule exactly
-  `sched6-5-5` (`ell = 4`), `sched6-5-5-5` (`ell = 5`, the `028` winner), and
-  `sched6-5-5-5-5` (`ell = 6`). The schedule must have exactly `ell - 1`
+- Depth/geometry: `ell ∈ {3, 4, 5}` with the radius schedule exactly
+  `sched6-5` (`ell = 3`), `sched6-5-5` (`ell = 4`), and `sched6-5-5-5`
+  (`ell = 5`, the `028` winner). The schedule must have exactly `ell - 1`
   non-increasing entries; the shipped rule is `(6, 5, …, 5)`.
 - Precisions: FP16-WMMA/Float32 (`FM028_TF=Float32`,
   `FM028_TENSOR_FORMAT=fp16`) and Float64 (`FM028_TF=Float64`,
@@ -179,7 +186,7 @@ shared pgfplots style `data/figures/fmfigstyle.tex`. Update
 
 Suggested panels:
 
-- (i) log-log `verdict_step_ms` versus `n`, six series (`ell` 4/5/6 x
+- (i) log-log `verdict_step_ms` versus `n`, six series (`ell` 3/4/5 x
   FP16-Float32/Float64), with the `n = 1e6` FP16 anchor annotated at 9.59 ms;
 - (ii) `err_gradient_rel_rms` versus `n` for the same six series, showing the
   fixed-geometry accuracy drift that motivates per-`n` retuning.

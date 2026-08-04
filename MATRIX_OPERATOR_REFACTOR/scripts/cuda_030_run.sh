@@ -6,7 +6,13 @@
 #SBATCH --time=06:00:00
 #SBATCH --output=%x-%j.out
 # Task 030: per-time-step cost vs n at the 028 shipped defaults, as three
-# fixed-depth series (ell = 4/5/6) in FP16-WMMA/Float32 and Float64.
+# fixed-depth series (ell = 3/4/5) in FP16-WMMA/Float32 and Float64.
+#
+# Depth bracket (user direction 2026-08-03, revised from 4/5/6): ell=5 is the
+# 028 optimum at n=1e6, and the optimal depth tracks n *downward* — 028 §4.8
+# measured ell=4 as optimal at n=2e5, and 024b selected ell=2/3 below n=1e5. A
+# sweep spanning n=1e3..1e6 therefore needs the coarse side of ell=5 bracketed,
+# not the fine side; ell=6 was only competitive above the target n.
 #
 # Preflight is the 028 set (lifecycle + convection + counting sort), then the
 # case loop. FM030_MODE selects the case matrix:
@@ -120,6 +126,8 @@ COMMON=(FM028_P=3 FM028_STRAT=dense FM028_LH=0 FM028_K=full
 # the harness re-validates that at `_cache_kwargs`.
 schedule_for_ell () {
   case "$1" in
+    2) echo "sched5" ;;
+    3) echo "sched6-5" ;;
     4) echo "sched6-5-5" ;;
     5) echo "sched6-5-5-5" ;;
     6) echo "sched6-5-5-5-5" ;;
@@ -235,7 +243,7 @@ if [ "$MODE" = "sweep" ]; then
     # 7 n x 3 ell x 2 precisions = 42 cases. Ordered n-outer so that a job that
     # runs out of walltime still leaves complete small-n series for every ell.
     for n in ${FM030_NS:-1000 3162 10000 31623 100000 316228 1000000}; do
-      for ell in ${FM030_ELLS:-4 5 6}; do
+      for ell in ${FM030_ELLS:-3 4 5}; do
         run_case sweep "$ell" Float32 fp16 "$n"
         run_case sweep "$ell" Float64 off  "$n"
       done

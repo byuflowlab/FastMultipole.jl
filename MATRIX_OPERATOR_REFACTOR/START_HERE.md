@@ -335,8 +335,12 @@ resident performance candidate.
 Row `030` was added by user request on `2026-08-03`, after the `019a` final
 review was approved. It measures the per-time-step verdict-boundary cost
 versus `n` (`1e3`–`1e6`, the `024b` grid) at the `028` shipped-default GPU
-settings, as three fixed-depth series `ell = 4/5/6` (user decision: fixed
-`ell` across the sweep, not per-`n` best) in both the FP16-WMMA/Float32
+settings, as three fixed-depth series `ell = 3/4/5` (user decision: fixed
+`ell` across the sweep, not per-`n` best; the bracket was revised from
+`4/5/6` to `3/4/5` on `2026-08-03` before any sweep case ran, because the
+optimal depth tracks `n` downward — `028` measured `ell = 4` best at
+`n = 2e5` and `024b` chose `ell = 2/3` below `n = 1e5`) in both the
+FP16-WMMA/Float32
 winner configuration and Float64, and then recommends a per-`n` optimization
 (including retuning the level-radius geometry to a per-`n` accuracy target —
 the "fixed error" lever) with estimated savings, modeled from the per-stage
@@ -385,7 +389,7 @@ depend on the deferred `029` and does not resume it.
 | [x] | [x] | `028-performance-feasibility-1m-in-10ms.md` | Measure, optimize, and retest toward an accurate 1,000,000-particle solve in `<= 0.01 s` at `P=4` on a single H200 (Float32 admissible within the `P=4` truncation error; verdict boundary = per-time-step resident cost including device convection and tree refresh, no per-step body transfers): consolidate existing evidence and fill material gaps; report end-to-end and per-stage timings at all three boundaries, compute/memory/transfer/latency bounds, GPU transfer and persistent-residency costs (including convection/time stepping), the per-level M2L strategy-mix lever, and bottleneck concentration; then, with user sign-off gating each optimize cycle, implement the highest-value justified production optimizations, verify correctness/accuracy, quantify realized gains, and iterate until the target is reached or the remaining feasibility gap and next steps are rigorously established. | `025`, `026`, `027`, `024b`, `024a`, `024`, `019`, `022`, `023` |
 | [ ] | [ ] | `029-performance-high-score-1m-in-1ms.md` | **Deferred (user direction `2026-08-03`; may be resumed later).** Pursue the lowest reproducible complete resident-step latency for the fixed 1M-body, literature-P=4 workload beyond task 028's 9.591 ms result, with separate single-H200 and multi-H200 leaderboards and a high-score goal of `<= 1 ms`; retain the unchanged accuracy and recurring-cost gates, require independent reproduction, and stop at the goal or when evidence closes every credible material lever. If completed after `019a`, its results are recorded as an addendum review note in `019a`, not a reopened review. | `028` (no longer blocks `019a`) |
 | [x] | [x] | `019a-milestone-review-final-roadmap.md` | Final roadmap Milestone Review after Implementation tasks `017` through `028` (`029` deferred by user direction `2026-08-03`), including the dynamic-`P` porting go/no-go, the platform/regime-specific resident M2L strategy recommendations from `024`, the hierarchical-vs-flat and `theta=0.5`-vs-classic stencil verdicts from `025`–`027`, the 1M-particle/10-ms feasibility conclusions from `028`, and a deferral note for the `029` high-score campaign. | `008b`, `008c`, `017`, `018`, `019`, `019b`, `022`, `023`, `024`, `024a`, `024b`, `025`, `026`, `027`, `028` |
-| [ ] | [ ] | `030-benchmark-cost-vs-n-fixed-ell.md` | Measure per-time-step verdict-boundary cost vs `n` (`1e3`–`1e6`) at the `028` shipped defaults as three fixed-`ell` series (`4/5/6`) in FP16-WMMA/Float32 and Float64, using the `024b` checksummed references; plot as fig10 in the `024a` set; then recommend per-`n` optimizations (including fixed-error geometry retuning) with modeled savings validated by H200 spot-checks at 2–3 representative `n`. Benchmark/analysis row: `scripts/`, `data/`, figures only; no production `src/` changes. | `028`, `019a` |
+| [ ] | [ ] | `030-benchmark-cost-vs-n-fixed-ell.md` | Measure per-time-step verdict-boundary cost vs `n` (`1e3`–`1e6`) at the `028` shipped defaults as three fixed-`ell` series (`3/4/5`) in FP16-WMMA/Float32 and Float64, using the `024b` checksummed references; plot as fig10 in the `024a` set; then recommend per-`n` optimizations (including fixed-error geometry retuning) with modeled savings validated by H200 spot-checks at 2–3 representative `n`. Benchmark/analysis row: `scripts/`, `data/`, figures only; no production `src/` changes. | `028`, `019a` |
 
 ## Future Dispatch Cleanup Notes
 
