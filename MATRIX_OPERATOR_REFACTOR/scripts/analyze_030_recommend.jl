@@ -38,7 +38,9 @@ struct Table
 end
 
 function readtable(path)
-    lines = filter(!isempty, strip.(readlines(path)))
+    # `#` provenance comments lead the project's generated tables (the harness
+    # CSVs have none); drop them so both classes of file read the same way.
+    lines = filter(l -> !isempty(l) && !startswith(l, "#"), strip.(readlines(path)))
     header = String.(split(lines[1], ','))
     rows = [String.(split(l, ',')) for l in lines[2:end]]
     for (i, r) in enumerate(rows)

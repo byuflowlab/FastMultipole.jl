@@ -1148,7 +1148,8 @@ const FIG10_ALLOW_PARTIAL =
 const FIG10_ERR_TARGET = 1.19e-3
 
 "The shipped (6,5,...,5) level radius schedule for a depth; see task 030."
-fig10_schedule(ell) = "sched" * join(vcat(6, fill(5, ell - 2)), '-')
+fig10_schedule(ell) = ell == 2 ? "sched5" :
+    "sched" * join(vcat(6, fill(5, ell - 2)), '-')
 
 function fig10()
     dir = joinpath(DATA_DIR, "cost_vs_n")
@@ -1186,7 +1187,8 @@ function fig10()
             # The fixed-depth series are the shipped (6,5,...,5) schedule only;
             # the joint retune campaign shares this directory and contributes
             # other radius schedules, which belong to the retuned-best series.
-            shipped_geometry = sget(t, row, "policy") == fig10_schedule(ell)
+            shipped_geometry = sget(t, row, "policy") == fig10_schedule(ell) &&
+                               ell in FIG10_ELLS
             sget(t, row, "reference_source") == "024b_csv" || error(
                 "024a: fig10 row at n=$n is not tied to the checksummed 024b " *
                 "reference (reference_source=$(sget(t, row, "reference_source"))) in $path")

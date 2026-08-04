@@ -34,6 +34,9 @@
 \addplot[fmC, fmalt] table[x=n, y=step_ms_ell5_f32, col sep=comma]
   {tables/fig10_cost_vs_n.csv};
 \addlegendentry{$\ell=5$, FP16}
+\addplot[fmD, line width=1.5pt] table[x=n, y=step_ms_retuned, col sep=comma]
+  {tables/fig10_cost_vs_n.csv};
+\addlegendentry{per-$n$ retuned}
 
 % the task-028 objective, met at n=1e6 by the FP16 / ell=5 configuration
 \addplot[fmrule, domain=800:1.25e6] {10};
@@ -64,6 +67,8 @@
   {tables/fig10_cost_vs_n.csv};
 \addplot[fmC, fmalt] table[x=n, y=err_grad_rel_ell5_f32, col sep=comma]
   {tables/fig10_cost_vs_n.csv};
+\addplot[fmD, line width=1.5pt] table[x=n, y=err_grad_rel_retuned, col sep=comma]
+  {tables/fig10_cost_vs_n.csv};
 
 % the unchanged task-028 accuracy gate, and the target this row's fixed-error
 % lever retunes against
@@ -85,6 +90,11 @@ enforced by an asserted counter contract. Median over 9 repetitions.
 \textbf{Series:} three \emph{fixed} depths $\ell=3/4/5$, each with the shipped
 $(6,5,\dots,5)$ level radius schedule, held constant across the whole sweep;
 solid = Float64, dashed/hollow = the FP16-WMMA/Float32 winner configuration.
+The heavy violet series is the \textbf{per-$n$ retuned} optimum: the fastest
+\emph{measured} configuration at each $n$ that meets the $1.19\times10^{-3}$
+gate, selected jointly over depth ($\ell=2\dots6$), level radius schedule
+($q^2\in\{3,4,5,6,8\}$, including the classic $|o|_\infty\le1$ near set) and
+float type --- 110 additional measured cases, campaign job 13036854.
 \textbf{Reading the lower panel:} the geometry was tuned at $n=10^6$, where
 $\ell=5$/FP16 delivers $1.0593\times10^{-3}$ against the $1.19\times10^{-3}$
 gate. At other $n$ the same fixed geometry delivers a different accuracy; that

@@ -461,8 +461,86 @@ end: 110 cases enumerated from the staged file, correct depth inference from
 each schedule string, distinct per-case CSV names, comment/blank lines ignored.
 
 - Job **13036854** (`retune`, 110 cases, node `m13h-1-1`, the same node as
-  13035897). *(In progress — completion, per-case results, predicted-versus-
-  measured outcome and the failure ledger to be recorded here.)*
+  13035897) is **complete**: preflight green, `REFERENCE_GATE_EXIT=0`, all
+  **110/110** cases measured `fit=true`, `failed_cases=0`, `SWEEP_EXIT=0`
+  (`data/cost_vs_n/fm030-13036854.out`). The **failure ledger is empty** — every
+  candidate geometry constructed and ran, including `ell = 6` at `n = 1e6`,
+  which `024b` could not build under the pre-`027` flat stencil. Total measured
+  campaign: **152 cases** (42 sweep + 110 retune).
+
+**Model validation (predicted versus measured, all 110 retune cases).** Median
+relative error **6.4%**, RMS **20.6%**, worst **62.8%**. Every case worse than
+40% is at `ell = 2`, which is outside the fitted depth range (the sweep covered
+`ell = 3/4/5` only) and where the model underestimates: at `n = 1e4, ell = 2`
+it predicted 1.7–1.9 ms against 3.06–4.71 ms measured. Within the fitted range
+the model tracked the measurement closely enough that its pruning never cost a
+winner — the eventual per-`n` optimum was in the pre-registered grid at every
+`n`. This is reported as it stands: the model is a candidate-selection tool, and
+the recommendation table contains no modeled numbers.
+
+### Results
+
+Best measured configuration at each `n`, against the shipped default
+(`ell = 5`, `sched6-5-5-5`, FP16), at the unchanged `1.19e-3` gate. Every entry
+is measured; `radius` is the additional saving from retuning the level radii on
+top of the best depth (the fixed-error lever).
+
+| `n` | shipped (ms) | best measured | ms | speedup | error | radius lever |
+|---|---|---|---|---|---|---|
+| 1e3 | 2.989 | `ell=2`, `sched5`, FP16 | 1.462 | 2.04x | 0.22x | — |
+| 3162 | 3.355 | `ell=2`, `sched4`, FP16 | 1.829 | 1.83x | 0.92x | -0.055 ms |
+| 1e4 | 3.744 | `ell=3`, `sched6-5`, F64 | 2.061 | 1.82x | 0.80x | — |
+| 31623 | 4.339 | `ell=3`, `sched6-6`, FP16 | 2.752 | 1.58x | 0.99x | -0.105 ms |
+| 1e5 | 5.479 | `ell=4`, `sched6-5-5`, FP16 | 3.130 | 1.75x | 0.89x | — |
+| 316228 | 6.250 | `ell=4`, `sched6-4-4`, FP16 | 4.868 | 1.28x | 0.86x | -0.788 ms |
+| 1e6 | 9.591 | `ell=5`, `sched6-4-4-4`, FP16 | 7.604 | 1.26x | 0.81x | -1.988 ms |
+
+Findings, each measured:
+
+1. **The shipped default is never optimal away from `n = 1e6`, and is not
+   optimal there either.** Retuning depth alone recovers 1.0–2.0x; adding the
+   radius lever takes `n = 1e6` from 9.591 ms to **7.604 ms** at *better*
+   accuracy (9.61e-4 against 1.06e-3). The `028` verdict result stands; this is
+   additional headroom under the same gate, not a correction to it.
+2. **The fixed-error (radius) lever is a large-`n` lever.** It contributes
+   nothing below `n = 3162`, 0.1 ms at 31623, and 0.79/1.99 ms at 316228/1e6 —
+   because it works by shrinking the leaf near set (`q^2 = 5 -> 4`), and direct
+   work is only dominant at large `n`. Below `n ~ 1e5` the cost floor is the
+   per-level launch count, which only depth can move.
+3. **Depth is the dominant per-`n` lever, and the optimum tracks `n` downward
+   past the sweep bracket:** `ell = 2` wins at `n <= 3162`, which the fixed-`ell`
+   sweep (`3/4/5`) could not see. The launch floor is 0.44 ms/level measured.
+4. **The `n = 1e4` FP16 gap is closed.** `ell = 3`, `sched6-6`, FP16 delivers
+   1.12e-3 (0.94x target) at 2.064 ms — admissible, and within 0.15% of the
+   Float64 winner (2.061 ms). Widening the radius is what buys the accuracy the
+   FP16 arithmetic penalty costs at coarse depth.
+5. **The classic FMM near set (`q^2 = 3`, `|o|_inf <= 1`) is inadmissible at
+   `P = 4`**: 3.9e-3 to 4.1e-3 gradient rel RMS at every `n` and depth measured,
+   i.e. 3.3–3.5x the gate, though it is always the cheapest geometry. This is
+   the like-for-like `025` comparison against the `theta = 0.5` family, now
+   measured end to end on the production path: the `theta = 0.5` near radius is
+   not conservatism, it is what `P = 4` requires.
+6. **FP16 versus Float64 is `n`- and depth-dependent**, and Float64 wins outright
+   at `n = 1e4`. At `n >= 1e5` FP16 is admissible and 1.5–2.7x faster.
+
+Artifacts: `data/cost_vs_n/report.md` (full tables, including all 152 measured
+geometries), `data/cost_vs_n/retune_recommendations.csv`,
+`data/cost_vs_n/recommendations.csv` (the fixed-`ell` table, unchanged),
+`data/cost_vs_n/cost_model_predictions.csv`, and fig10 with the per-`n` retuned
+series added to both panels.
+
+### Threats to validity
+
+- The per-stage split is unusable at `n = 316228` and `n = 1e6` (16.3% and
+  19.3% residual against the verdict median, each stage carrying its own sync);
+  the dominant-stage column at those `n` is indicative, and the verdict totals
+  are unaffected.
+- Structure columns are post-motion (the drift finding above); the winner
+  selection uses timing and error columns, which are not affected.
+- The retune grid is a spread over two schedule families (uniform, and one
+  boosted coarsest level), not the full non-increasing schedule space. A better
+  configuration may exist between the sampled shapes; every number reported is a
+  measured lower bound on the achievable per-`n` cost, not a proof of optimality.
 
 ## Approval Notes
 

@@ -1,0 +1,2 @@
+manifest,job,policy,strategy,precision,expansion_order,lh,n,ell,window_classes,level,nonempty_classes,total_routes,max_class,mean_class,p10,p50,p90
+c0afa01083322fb8,13036854,sched6,dense,Float32,3,false,1000,2,850,2,262,1896,16,7.236641221374046,2.0,6.0,12.0
