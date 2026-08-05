@@ -105,3 +105,71 @@ FastMultipole at all.
   `../FLOWVPM.jl`); this row makes no FLOWVPM changes.
 - H200 validation of the new packing/hessian kernels (correctness plus a
   before/after cost check on the `028` workload) is required before Done.
+
+## Work Record
+
+### Mandatory Reading Gate
+
+Completed 2026-08-05 (staging session) and re-completed 2026-08-05 by the
+continuing agent: `START_HERE.md` incl. Integration Phase preamble and
+placement rules, `031-integration-api-design.md` in full incl. the sign-off
+record, `integration-api-spec.md` in full, and
+`theory/kernel-splitting-nearfield.md` §§1, 3, 5.1–5.2, 6.2 (plus 6.3 for the
+032a divergence constraint context).
+
+Execution plan with user decisions (staged with checkpoints; `recenter!`
+fallback-first; adequacy gate rejects rather than enlarges):
+`032-implementation-plan.md` (this directory).
+
+### Stage 1 — generalized packing, vortex B2M + LH, 9-component hessian (Done)
+
+Committed as `e61fb95` ("stage 1 of 032"). Delivered: canonical
+all-`data_per_body`-row packed layout on both resident paths (radius row 4 now
+live; pack kernels `translate_batched_cuda.jl:922-941`,
+`translate_batched_resident.jl:1621`); `body_type` trait
+(`compatibility.jl:24`) carried in `CUDARadixLifecycleOptions` as a type
+parameter; `Point{Vortex}` B2M writing φ+χ on device
+(`translate_batched_cuda.jl:1199-1249`) and host
+(`translate_batched_resident.jl:292`), with `Point{Vortex}` + `LH=false` a
+construction-time `ArgumentError`; 13-row output (potential, gradient,
+9-component hessian) selected at cache construction via
+`RadixFMMCache(...; hessian=true)`, with `Val(HS)`-specialized L2B/direct
+kernels, switch-relative scatter, widened pinned staging, and the `fmm!`
+hessian throw replaced by validation against the cache flag; vortex direct
+nearfield kernels on both paths; tests
+`test/device_system_interface_test.jl` (host, no CUDA) and
+`test/cuda_radix_interface_test.jl` (device-vs-host parity) registered in both
+runners, sharing `test/interface_test_systems.jl` (`ExtendedVortex`,
+`data_per_body = 9`).
+
+### Checkpoint 1 (2026-08-05) — local host-path verification
+
+`test/device_system_interface_test.jl`: 930/930 pass. Full local suite
+(`Pkg.test()`, 4 threads, CUDA tests auto-skipped without a GPU): all pass,
+including the pre-existing radix/resident suites (023/023a/026 etc.).
+Measured parity numbers (n = 600, ell = 3, ConcatenatedFixedZM2L, host
+resident path):
+
+| case | max abs err | rel to field scale |
+|---|---|---|
+| scalar P=8 F64: potential / gradient / hessian | 4.7e-8 / 4.2e-6 / 3.7e-4 | — |
+| scalar P=4 F64: gradient / hessian | 2.4e-4 / 1.1e-2 | — |
+| hessian=true cache vs plain cache (P=4, P=8): potential, gradient | 0.0 (bit-identical) | — |
+| vortex P=8 F64: U / J | 2.8e-5 / 3.0e-3 | 7.9e-6 / 4.3e-6 |
+| vortex P=4 F64: U / J | 6.7e-4 / 6.2e-2 | 1.9e-4 / 8.7e-5 |
+| vortex P=4 F32: U / J | 6.7e-4 / 6.2e-2 | 1.9e-4 / 8.7e-5 |
+| ExtendedVortex (dpb=9) P=8 F64: U | 2.0e-5 | — |
+
+No accuracy surprises: vortex P=4 errors are truncation-dominated (Float32
+indistinguishable from Float64, consistent with the task-024 ~5e-4 F32 floor)
+and sit well inside the phase's 1e-3 relative-gradient gate; the
+hessian-capable cache leaves the shipped 4-row outputs bit-identical.
+
+Stage-1 residuals carried into Stages 2–3 (found in the continuing agent's
+code review): five `>= 5` row validators not yet relaxed to
+`>= 4 + strength_dims` (`translate_batched_cuda.jl:967, 975, 984`,
+`translate_batched_resident.jl:115` + one host sibling); output-row counts
+(4/13) recomputed locally rather than stored once on the cache/ctx; the
+one-shot reference kernel `_cuda_direct_source_output_kernel!` remains 4-row
+assign-only (reference path only). Device mirrors of the Stage-1 kernels
+remain unvalidated on hardware until the Stage-4 H200 run.
