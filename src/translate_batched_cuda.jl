@@ -925,12 +925,18 @@ function _cuda_pack_radix_body_kernel!(body, source_buffer, perm, body_system, b
     global_i = perm[sorted_i]
     body_system[global_i] == isys || return nothing
     ibody = body_index[global_i]
+    # canonical all-rows packed layout (task 032): every source-buffer row is
+    # carried, including radius row 4; systems narrower than the packed matrix
+    # are zero-padded
+    nrows = size(body, 1)
+    nsys = min(size(source_buffer, 1), nrows)
     @inbounds begin
-        body[1, sorted_i] = source_buffer[1, ibody]
-        body[2, sorted_i] = source_buffer[2, ibody]
-        body[3, sorted_i] = source_buffer[3, ibody]
-        body[4, sorted_i] = zero(eltype(body))
-        body[5, sorted_i] = source_buffer[5, ibody]
+        for row in 1:nsys
+            body[row, sorted_i] = source_buffer[row, ibody]
+        end
+        for row in (nsys + 1):nrows
+            body[row, sorted_i] = zero(eltype(body))
+        end
     end
     return nothing
 end
@@ -952,7 +958,8 @@ function _radix_body_matrix_from_source_buffers(grid::Union{RadixGrid{TF},Device
         source_buffers::Tuple,
         body_perm, body_system_ids, body_indices) where TF
     n = length(grid.perm)
-    body = CUDA.CuArray{TF}(undef, 5, n)
+    nrows = maximum(size(buffer, 1) for buffer in source_buffers)
+    body = CUDA.CuArray{TF}(undef, nrows, n)
     return _pack_radix_body_matrix!(body, source_buffers, body_perm, body_system_ids, body_indices)
 end
 
@@ -1137,7 +1144,8 @@ function _cuda_direct_source_output_kernel!(output, target_bodies, source_bodies
 end
 
 function _cuda_scatter_output_to_target_buffer_kernel!(target_buffer, output, perm,
-        body_system, body_index, isys, scalar_row, gradient_start, gradient_stop, n_bodies)
+        body_system, body_index, isys, scalar_row, gradient_start, gradient_stop,
+        hessian_start, hessian_stop, n_bodies)
     sorted_i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     sorted_i > n_bodies && return nothing
     global_i = perm[sorted_i]
@@ -1152,6 +1160,11 @@ function _cuda_scatter_output_to_target_buffer_kernel!(target_buffer, output, pe
             target_buffer[gradient_start + 1, ibody] = output[3, sorted_i]
             target_buffer[gradient_start + 2, ibody] = output[4, sorted_i]
         end
+        if hessian_start <= hessian_stop
+            for k in 0:8
+                target_buffer[hessian_start + k, ibody] = output[5 + k, sorted_i]
+            end
+        end
     end
     return nothing
 end
@@ -1160,22 +1173,87 @@ function _copy_radix_output_to_device_target_buffer!(target_buffer, output,
         body_perm, body_system_ids, body_indices, isys::Integer, derivatives_switch,
         n_bodies::Integer=size(output, 2))
     fill!(target_buffer, zero(eltype(target_buffer)))
-    isempty(hessian_range(derivatives_switch)) ||
-        throw(ArgumentError("CUDA radix output finalization does not provide hessian rows"))
+    hrange = hessian_range(derivatives_switch)
+    isempty(hrange) || size(output, 1) >= 13 ||
+        throw(ArgumentError("hessian output requested but the CUDA radix output " *
+            "carries potential + gradient only; construct RadixFMMCache(...; hessian=true)"))
     grange = gradient_range(derivatives_switch)
     gradient_start = isempty(grange) ? 1 : first(grange)
     gradient_stop = isempty(grange) ? 0 : last(grange)
+    hessian_start = isempty(hrange) ? 1 : first(hrange)
+    hessian_stop = isempty(hrange) ? 0 : last(hrange)
     threads = 128
     blocks = cld(n_bodies, threads)
     blocks == 0 && return target_buffer
     CUDA.@cuda threads=threads blocks=blocks _cuda_scatter_output_to_target_buffer_kernel!(
         target_buffer, output, body_perm, body_system_ids, body_indices, isys,
-        scalar_potential_index(derivatives_switch), gradient_start, gradient_stop, n_bodies,
+        scalar_potential_index(derivatives_switch), gradient_start, gradient_stop,
+        hessian_start, hessian_stop, n_bodies,
     )
     return target_buffer
 end
 
-function _launch_cuda_b2m!(state::DeviceResidentRadixState{TF}) where TF
+# Vortex B2M (task 032): device mirror of `_host_b2m_vortex_kernel!`, sharing
+# the `_resident_vortex_{phi,chi}_contrib` per-(n, m) math. One thread per leaf
+# cell, matching the retained scalar B2M form (see the task 028 note above).
+function _cuda_b2m_vortex_leaf_nodes_kernel!(phi, chi, source_bodies, cell_centers,
+        cell_ranges, leaf_to_node, P_phi, P_chi, ncell)
+    i_cell = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i_cell > ncell && return nothing
+    first = cell_ranges[1, i_cell]
+    count = cell_ranges[2, i_cell]
+    cx = cell_centers[1, i_cell]
+    cy = cell_centers[2, i_cell]
+    cz = cell_centers[3, i_cell]
+    node = leaf_to_node[i_cell]
+    @inbounds for n in 0:P_phi
+        for m in 0:n
+            acc_re = zero(eltype(phi))
+            acc_im = zero(eltype(phi))
+            for k in first:(first + count - 1)
+                mdx = cx - source_bodies[1, k]
+                mdy = cy - source_bodies[2, k]
+                mdz = cz - source_bodies[3, k]
+                vx = source_bodies[5, k]
+                vy = source_bodies[6, k]
+                vz = source_bodies[7, k]
+                re, im = _resident_vortex_phi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
+                acc_re += re
+                acc_im += im
+            end
+            row = _cuda_flat_basis_index(n, m, 1)
+            phi[row, node] = acc_re
+            phi[row + 1, node] = acc_im
+        end
+    end
+    @inbounds for n in 1:P_chi
+        for m in 0:n
+            acc_re = zero(eltype(chi))
+            acc_im = zero(eltype(chi))
+            for k in first:(first + count - 1)
+                mdx = cx - source_bodies[1, k]
+                mdy = cy - source_bodies[2, k]
+                mdz = cz - source_bodies[3, k]
+                vx = source_bodies[5, k]
+                vy = source_bodies[6, k]
+                vz = source_bodies[7, k]
+                re, im = _resident_vortex_chi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
+                acc_re += re
+                acc_im += im
+            end
+            row = _cuda_flat_basis_index(n, m, 1)
+            chi[row, node] = acc_re
+            chi[row + 1, node] = acc_im
+        end
+    end
+    return nothing
+end
+
+_launch_cuda_b2m!(state::DeviceResidentRadixState) =
+    _launch_cuda_b2m!(state, state.options.body_type)
+
+function _launch_cuda_b2m!(state::DeviceResidentRadixState{TF},
+        ::Type{<:Point{Source}}) where TF
     fill!(state.multipoles.phi, zero(TF))
     fill!(state.multipoles.chi, zero(TF))
     threads = 128
@@ -1194,6 +1272,29 @@ function _launch_cuda_b2m!(state::DeviceResidentRadixState{TF}) where TF
             state.cell_ranges, state.invariant_cache.basis_info.orders.P_phi, ncell,
         )
     end
+    return state
+end
+
+function _launch_cuda_b2m!(state::DeviceResidentRadixState{TF,B,LH},
+        ::Type{<:Point{Vortex}}) where {TF,B,LH}
+    LH || throw(ArgumentError(
+        "Point{Vortex} sources require the Lamb-Helmholtz channel; construct the " *
+        "cache with lamb_helmholtz=true"))
+    state.grid isa DeviceRadixGrid || throw(ArgumentError(
+        "the CUDA vortex B2M is supported on the recurring RadixFMMCache " *
+        "(DeviceRadixGrid) lifecycle only"))
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    threads = 128
+    ncell = state.counts.n_cells
+    blocks = cld(ncell, threads)
+    blocks == 0 && return state
+    orders = state.invariant_cache.basis_info.orders
+    CUDA.@cuda threads=threads blocks=blocks _cuda_b2m_vortex_leaf_nodes_kernel!(
+        state.multipoles.phi, state.multipoles.chi, state.source_bodies,
+        state.cell_centers, state.cell_ranges, state.grid.leaf_to_node,
+        orders.P_phi, orders.P_active, ncell,
+    )
     return state
 end
 
@@ -1493,7 +1594,7 @@ end
 # Accumulation stays 4 atomics per (pair, target body) — a target cell appears
 # in many pairs, so plain stores would race across warps.
 function _cuda_direct_pairs_output_kernel!(output, source_bodies, cell_ranges,
-        direct_targets, direct_sources, npairs)
+        direct_targets, direct_sources, npairs, ::Val{HS}=Val(false)) where HS
     T = eltype(output)
     lane = (threadIdx().x - Int32(1)) % Int32(32)
     warps_per_block = blockDim().x ÷ Int32(32)
@@ -1517,6 +1618,8 @@ function _cuda_direct_pairs_output_kernel!(output, source_bodies, cell_ranges,
             gx = zero(T)
             gy = zero(T)
             gz = zero(T)
+            hxx = zero(T); hxy = zero(T); hxz = zero(T)
+            hyy = zero(T); hyz = zero(T); hzz = zero(T)
             for j in sfirst:slast
                 i == j && continue
                 dx = xi - source_bodies[1, j]
@@ -1527,16 +1630,118 @@ function _cuda_direct_pairs_output_kernel!(output, source_bodies, cell_ranges,
                     invr = _cuda_fast_rsqrt(r2)
                     q = source_bodies[5, j] * c
                     u += q * invr
-                    invr3 = invr * invr * invr
+                    invr2 = invr * invr
+                    invr3 = invr * invr2
                     gx -= q * dx * invr3
                     gy -= q * dy * invr3
                     gz -= q * dz * invr3
+                    if HS
+                        # H = qc·(3ΔxΔxᵀ/r⁵ - I/r³), symmetric
+                        q3invr5 = 3 * q * invr3 * invr2
+                        qinvr3 = q * invr3
+                        hxx += q3invr5 * dx * dx - qinvr3
+                        hxy += q3invr5 * dx * dy
+                        hxz += q3invr5 * dx * dz
+                        hyy += q3invr5 * dy * dy - qinvr3
+                        hyz += q3invr5 * dy * dz
+                        hzz += q3invr5 * dz * dz - qinvr3
+                    end
                 end
             end
             CUDA.@atomic output[1, i] += u
             CUDA.@atomic output[2, i] += gx
             CUDA.@atomic output[3, i] += gy
             CUDA.@atomic output[4, i] += gz
+            if HS
+                CUDA.@atomic output[5, i] += hxx
+                CUDA.@atomic output[6, i] += hxy
+                CUDA.@atomic output[7, i] += hxz
+                CUDA.@atomic output[8, i] += hxy
+                CUDA.@atomic output[9, i] += hyy
+                CUDA.@atomic output[10, i] += hyz
+                CUDA.@atomic output[11, i] += hxz
+                CUDA.@atomic output[12, i] += hyz
+                CUDA.@atomic output[13, i] += hzz
+            end
+            i += 32
+        end
+        pair_i += warp_stride
+    end
+    return nothing
+end
+
+# Singular Biot-Savart pairs kernel for Point{Vortex} sources (task 032 stage 1):
+# device mirror of `_host_direct_pairs_vortex_kernel!`. No symmetric variant —
+# the symmetric kernel's shared-work trick assumes the scalar kernel.
+function _cuda_direct_pairs_vortex_kernel!(output, source_bodies, cell_ranges,
+        direct_targets, direct_sources, npairs, ::Val{HS}) where HS
+    T = eltype(output)
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    pair_i = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    warp_stride = gridDim().x * warps_per_block
+    c = inv(T(4) * T(π))
+    @inbounds while pair_i <= npairs
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + lane
+        while i <= tlast
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            ux = zero(T); uy = zero(T); uz = zero(T)
+            j11 = zero(T); j12 = zero(T); j13 = zero(T)
+            j21 = zero(T); j22 = zero(T); j23 = zero(T)
+            j31 = zero(T); j32 = zero(T); j33 = zero(T)
+            for j in sfirst:slast
+                i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                if r2 > zero(r2)
+                    gx = source_bodies[5, j]
+                    gy = source_bodies[6, j]
+                    gz = source_bodies[7, j]
+                    invr = _cuda_fast_rsqrt(r2)
+                    invr2 = invr * invr
+                    denom = c * invr * invr2
+                    ux += (dz * gy - dy * gz) * denom
+                    uy += (dx * gz - dz * gx) * denom
+                    uz += (dy * gx - dx * gy) * denom
+                    if HS
+                        denom *= invr2
+                        j11 += -3 * dx * (gy * dz - gz * dy) * denom
+                        j12 += (-3 * dx * (gz * dx - gx * dz) + gz * r2) * denom
+                        j13 += (-3 * dx * (gx * dy - gy * dx) - gy * r2) * denom
+                        j21 += (-3 * dy * (gy * dz - gz * dy) - gz * r2) * denom
+                        j22 += -3 * dy * (gz * dx - gx * dz) * denom
+                        j23 += (-3 * dy * (gx * dy - gy * dx) + gx * r2) * denom
+                        j31 += (-3 * dz * (gy * dz - gz * dy) + gy * r2) * denom
+                        j32 += (-3 * dz * (gz * dx - gx * dz) - gx * r2) * denom
+                        j33 += -3 * dz * (gx * dy - gy * dx) * denom
+                    end
+                end
+            end
+            CUDA.@atomic output[2, i] += ux
+            CUDA.@atomic output[3, i] += uy
+            CUDA.@atomic output[4, i] += uz
+            if HS
+                CUDA.@atomic output[5, i] += j11
+                CUDA.@atomic output[6, i] += j12
+                CUDA.@atomic output[7, i] += j13
+                CUDA.@atomic output[8, i] += j21
+                CUDA.@atomic output[9, i] += j22
+                CUDA.@atomic output[10, i] += j23
+                CUDA.@atomic output[11, i] += j31
+                CUDA.@atomic output[12, i] += j32
+                CUDA.@atomic output[13, i] += j33
+            end
             i += 32
         end
         pair_i += warp_stride
@@ -1549,7 +1754,7 @@ end
 # triangular same-cell branches evaluate each ordinary body pair once and update
 # both endpoints. This is valid only for the same-source/target scalar kernel.
 function _cuda_symmetric_pairs_output_kernel!(output, source_bodies, cell_ranges,
-        pair_targets, pair_sources, npairs)
+        pair_targets, pair_sources, npairs, ::Val{HS}=Val(false)) where HS
     T = eltype(output)
     lane = (threadIdx().x - Int32(1)) % Int32(32)
     warps_per_block = blockDim().x ÷ Int32(32)
@@ -1576,6 +1781,8 @@ function _cuda_symmetric_pairs_output_kernel!(output, source_bodies, cell_ranges
             gxi = zero(T)
             gyi = zero(T)
             gzi = zero(T)
+            hxxi = zero(T); hxyi = zero(T); hxzi = zero(T)
+            hyyi = zero(T); hyzi = zero(T); hzzi = zero(T)
             jfirst = fallback ? sfirst :
                 (target_cell == source_cell ? max(i + 1, sfirst) : sfirst)
             for j in jfirst:slast
@@ -1587,11 +1794,37 @@ function _cuda_symmetric_pairs_output_kernel!(output, source_bodies, cell_ranges
                 if r2 > zero(r2)
                     invr = _cuda_fast_rsqrt(r2)
                     qj = source_bodies[5, j] * c
-                    invr3 = invr * invr * invr
+                    invr2 = invr * invr
+                    invr3 = invr * invr2
                     ui += qj * invr
                     gxi -= qj * dx * invr3
                     gyi -= qj * dy * invr3
                     gzi -= qj * dz * invr3
+                    if HS
+                        # geometric hessian factor is even in Δx, so both
+                        # endpoints receive the same pattern scaled by the
+                        # other body's strength
+                        f3invr5 = 3 * invr3 * invr2
+                        hxx = f3invr5 * dx * dx - invr3
+                        hxy = f3invr5 * dx * dy
+                        hxz = f3invr5 * dx * dz
+                        hyy = f3invr5 * dy * dy - invr3
+                        hyz = f3invr5 * dy * dz
+                        hzz = f3invr5 * dz * dz - invr3
+                        hxxi += qj * hxx; hxyi += qj * hxy; hxzi += qj * hxz
+                        hyyi += qj * hyy; hyzi += qj * hyz; hzzi += qj * hzz
+                        if !fallback
+                            CUDA.@atomic output[5, j] += qi * hxx
+                            CUDA.@atomic output[6, j] += qi * hxy
+                            CUDA.@atomic output[7, j] += qi * hxz
+                            CUDA.@atomic output[8, j] += qi * hxy
+                            CUDA.@atomic output[9, j] += qi * hyy
+                            CUDA.@atomic output[10, j] += qi * hyz
+                            CUDA.@atomic output[11, j] += qi * hxz
+                            CUDA.@atomic output[12, j] += qi * hyz
+                            CUDA.@atomic output[13, j] += qi * hzz
+                        end
+                    end
                     if !fallback
                         CUDA.@atomic output[1, j] += qi * invr
                         CUDA.@atomic output[2, j] += qi * dx * invr3
@@ -1604,6 +1837,17 @@ function _cuda_symmetric_pairs_output_kernel!(output, source_bodies, cell_ranges
             CUDA.@atomic output[2, i] += gxi
             CUDA.@atomic output[3, i] += gyi
             CUDA.@atomic output[4, i] += gzi
+            if HS
+                CUDA.@atomic output[5, i] += hxxi
+                CUDA.@atomic output[6, i] += hxyi
+                CUDA.@atomic output[7, i] += hxzi
+                CUDA.@atomic output[8, i] += hxyi
+                CUDA.@atomic output[9, i] += hyyi
+                CUDA.@atomic output[10, i] += hyzi
+                CUDA.@atomic output[11, i] += hxzi
+                CUDA.@atomic output[12, i] += hyzi
+                CUDA.@atomic output[13, i] += hzzi
+            end
             i += 32
         end
         pair_i += warp_stride
@@ -1641,6 +1885,38 @@ function _cuda_l2b_output_kernel!(output, source_bodies, cell_centers, cell_rang
         output[2, i] += gx
         output[3, i] += gy
         output[4, i] += gz
+        i += 32
+    end
+    return nothing
+end
+
+# 13-row variant (task 032): identical warp-per-cell shape; the hessian rows
+# come from `_resident_local_eval_flat_hessian` (shared host/device math).
+function _cuda_l2b_output_hessian_kernel!(output, source_bodies, cell_centers,
+        cell_ranges, leaf_to_node, local_phi, local_chi, P_phi, P_active, lhv, ncell)
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    cell = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    cell > ncell && return nothing
+    node = leaf_to_node[cell]
+    first = cell_ranges[1, cell]
+    last = first + cell_ranges[2, cell] - 1
+    cx = cell_centers[1, cell]
+    cy = cell_centers[2, cell]
+    cz = cell_centers[3, cell]
+    i = first + lane
+    @inbounds while i <= last
+        vals = _resident_local_eval_flat_hessian(
+            local_phi, local_chi, node,
+            source_bodies[1, i] - cx,
+            source_bodies[2, i] - cy,
+            source_bodies[3, i] - cz,
+            P_phi, P_active, lhv,
+        )
+        for row in 1:13
+            output[row, i] += vals[row]
+        end
         i += 32
     end
     return nothing
@@ -3123,7 +3399,9 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
     fill!(state.output, zero(TF))
     threads = 128
     hctx = state.interaction_list
-    symmetric = CUDA_SYMMETRIC_NEARFIELD[] && !LH &&
+    hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
+    vortex = state.options.body_type <: Point{Vortex}
+    symmetric = CUDA_SYMMETRIC_NEARFIELD[] && !LH && !vortex &&
         hctx isa DeviceHierarchicalM2LContext
     symmetric && isempty(hctx.symmetric_targets) && throw(ArgumentError(
         "symmetric nearfield must be selected before cache construction"))
@@ -3131,14 +3409,18 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
     # warp-per-pair (task 028 lever 1): 4 warps per 128-thread block
     direct_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
     if direct_blocks > 0
-        if symmetric
+        if vortex
+            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_vortex_kernel!(
+                state.output, state.source_bodies, state.cell_ranges,
+                state.direct_targets, state.direct_sources, npairs, hsv)
+        elseif symmetric
             CUDA.@cuda threads=threads blocks=direct_blocks _cuda_symmetric_pairs_output_kernel!(
                 state.output, state.source_bodies, state.cell_ranges,
-                hctx.symmetric_targets, hctx.symmetric_sources, npairs)
+                hctx.symmetric_targets, hctx.symmetric_sources, npairs, hsv)
         else
             CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_output_kernel!(
                 state.output, state.source_bodies, state.cell_ranges,
-                state.direct_targets, state.direct_sources, npairs)
+                state.direct_targets, state.direct_sources, npairs, hsv)
         end
     end
     return state
@@ -3166,11 +3448,19 @@ function _launch_cuda_resident_l2b_only!(state::DeviceResidentRadixState{TF,B,LH
     # warp-per-cell (task 028 rider): 4 warps per 128-thread block
     l2b_blocks = cld(ncell, threads ÷ 32)
     if l2b_blocks > 0
-        CUDA.@cuda threads=threads blocks=l2b_blocks _cuda_l2b_output_kernel!(
-            state.output, state.source_bodies, state.cell_centers, state.cell_ranges,
-            state.grid.leaf_to_node, state.locals.phi, state.locals.chi,
-            P_phi, P_active, Val(LH), ncell,
-        )
+        if size(state.output, 1) >= 13
+            CUDA.@cuda threads=threads blocks=l2b_blocks _cuda_l2b_output_hessian_kernel!(
+                state.output, state.source_bodies, state.cell_centers, state.cell_ranges,
+                state.grid.leaf_to_node, state.locals.phi, state.locals.chi,
+                P_phi, P_active, Val(LH), ncell,
+            )
+        else
+            CUDA.@cuda threads=threads blocks=l2b_blocks _cuda_l2b_output_kernel!(
+                state.output, state.source_bodies, state.cell_centers, state.cell_ranges,
+                state.grid.leaf_to_node, state.locals.phi, state.locals.chi,
+                P_phi, P_active, Val(LH), ncell,
+            )
+        end
     end
     return state
 end
@@ -3804,7 +4094,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         class_offset::Matrix{Int32}=Matrix{Int32}(undef, 3, 0),
         hierarchical_level_class_of::Array{Int32,3}=Array{Int32}(undef, 0, 0, 0),
         hierarchical_level_radii2::Vector{Int}=Int[],
-        max_level_nodes::Int=0) where {TF,B,LH}
+        max_level_nodes::Int=0, hessian::Bool=false) where {TF,B,LH}
     _require_cuda_radix_available()
     _assert_cuda_supported_operator!(options)
     hierarchical = stencil_policy isa HierarchicalRigidStencil
@@ -3919,11 +4209,14 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
             hierarchical_level_class_of, hierarchical_level_radii2,
             workspace.m2l_concat, ell, max_level_nodes, direct_capacity, counters) :
         nothing
+    # canonical all-rows packed layout + construction-chosen output rows (032)
+    dpb = maximum(data_per_body(system) for system in sources)
+    n_output_rows = hessian ? 13 : 4
     ctx = (;
         multipoles, locals, workspace, invariant, counters, grid,
         counts=RadixStepCounts(0, 0, 0, 0, 0),
-        source_bodies=CUDA.zeros(TF, 5, maxn),
-        output=CUDA.zeros(TF, 4, maxn),
+        source_bodies=CUDA.zeros(TF, dpb, maxn),
+        output=CUDA.zeros(TF, n_output_rows, maxn),
         cell_at=CUDA.zeros(Int32, G, G, G),
         hierarchical_ctx,
         d_accepted, d_rejected, class_chunk,
@@ -3970,12 +4263,14 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         host_perm=_pin_host_array(zeros(Int, maxn)),
         host_body_system=_pin_host_array(zeros(Int, maxn)),
         host_body_index=_pin_host_array(zeros(Int, maxn)),
-        host_output=_pin_host_array(zeros(TF, 4, maxn)),
+        # must track the output row count, or the prefix copyto! in
+        # finalize_cuda_radix_output! silently mis-strides
+        host_output=_pin_host_array(zeros(TF, n_output_rows, maxn)),
         # per-system device scatter buffers for the recurring finalize (028 rider)
         device_target_buffers=Dict{Int,Any}(),
     )
     cache = RadixFMMCache{TF,LH}(
-        P, ell, x_min, h0, maxn, true, options, stencil_policy,
+        P, ell, x_min, h0, maxn, true, hessian, options, stencil_policy,
         accepted, rejected, max_cells, max_nodes, route_capacity, direct_capacity,
         nothing, zeros(Int32, 0, 0, 0), SVector{3,Int}[], zeros(Int, ell + 2),
         UInt64[], Int[], Int[], Int[], nothing, nothing, ctx,

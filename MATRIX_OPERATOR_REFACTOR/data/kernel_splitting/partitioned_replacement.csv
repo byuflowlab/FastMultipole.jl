@@ -1,0 +1,3 @@
+precision,rho_min,rho_max,max_rel_U_close,max_rel_J_close,max_rel_U_ordinary,max_rel_J_ordinary,max_rel_U_tail,max_rel_J_tail
+Float64,1e-6,10,8.117e-16,6.148e-16,5.070e-15,5.814e-15,2.547e-08,2.508e-07
+Float32,1e-6,10,3.348e-07,3.080e-07,1.451e-06,1.626e-06,3.077e-07,3.448e-07

@@ -10,6 +10,19 @@ return [`DeviceResident()`](@ref).
 """
 residency(system) = HostResident()
 
+"""
+    body_type(system)
+
+Return the element type used to form multipole expansions from `system` on the
+radix/resident path (task 032), e.g. `Point{Source}` (default) or
+`Point{Vortex}`. The returned value is the element *type* itself, matching the
+`body_to_multipole!(Point{Vortex}, system, args...)` convention of the legacy
+path. All source systems sharing one `RadixFMMCache` must return the same body
+type; `Point{Vortex}` requires `has_vector_potential(system) == true` (the
+Lamb-Helmholtz χ channel), which is checked at cache construction.
+"""
+body_type(system) = Point{Source}
+
 #--- buffer functions ---#
 
 """

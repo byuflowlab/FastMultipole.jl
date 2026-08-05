@@ -9,7 +9,9 @@ Routine task protocol:
 
 1. Read this `START_HERE.md` first.
 2. Select the first row, in table order, whose dependencies are complete and
-   clear-context approved.
+   clear-context approved. If a phase explicitly declares parallel lanes,
+   select the first eligible row within any lane; table order does not
+   serialize independent lanes.
 3. Open only the selected task file.
 4. Do not read sibling task files.
 5. Do not read `../MATRIX_OPERATOR_REFACTOR.md` unless the selected task
@@ -20,7 +22,8 @@ Routine task protocol:
    1) consistent with the stated objectives; 2) correctness; 3) performance; 4) robustness (of code and tests); 5) minimally invasive approach; 6) human-readable. If you can think of any significant way to improve any of these, ask my permission and do it. Don't worry about small improvements. If you must change anything, another agent will need to do the clear-context approval.
 
 No separate active-task pointer file should be added. The first unblocked row
-in this index is the active task selection mechanism.
+in the index—or the first unblocked row in each explicitly declared parallel
+lane—is the active task selection mechanism.
 
 ## Source Of Truth
 
@@ -390,6 +393,139 @@ depend on the deferred `029` and does not resume it.
 | [ ] | [ ] | `029-performance-high-score-1m-in-1ms.md` | **Deferred (user direction `2026-08-03`; may be resumed later).** Pursue the lowest reproducible complete resident-step latency for the fixed 1M-body, literature-P=4 workload beyond task 028's 9.591 ms result, with separate single-H200 and multi-H200 leaderboards and a high-score goal of `<= 1 ms`; retain the unchanged accuracy and recurring-cost gates, require independent reproduction, and stop at the goal or when evidence closes every credible material lever. If completed after `019a`, its results are recorded as an addendum review note in `019a`, not a reopened review. | `028` (no longer blocks `019a`) |
 | [x] | [x] | `019a-milestone-review-final-roadmap.md` | Final roadmap Milestone Review after Implementation tasks `017` through `028` (`029` deferred by user direction `2026-08-03`), including the dynamic-`P` porting go/no-go, the platform/regime-specific resident M2L strategy recommendations from `024`, the hierarchical-vs-flat and `theta=0.5`-vs-classic stencil verdicts from `025`–`027`, the 1M-particle/10-ms feasibility conclusions from `028`, and a deferral note for the `029` high-score campaign. | `008b`, `008c`, `017`, `018`, `019`, `019b`, `022`, `023`, `024`, `024a`, `024b`, `025`, `026`, `027`, `028` |
 | [ ] | [ ] | `030-benchmark-cost-vs-n-fixed-ell.md` | Measure per-time-step verdict-boundary cost vs `n` (`1e3`–`1e6`) at the `028` shipped defaults as three fixed-`ell` series (`3/4/5`) in FP16-WMMA/Float32 and Float64, using the `024b` checksummed references; plot as fig10 in the `024a` set; then recommend per-`n` optimizations (including fixed-error geometry retuning) with modeled savings validated by H200 spot-checks at 2–3 representative `n`. Benchmark/analysis row: `scripts/`, `data/`, figures only; no production `src/` changes. | `028`, `019a` |
+
+## Integration Phase
+
+This phase was added by user request on `2026-08-04`, after the `019a` final
+roadmap Milestone Review was approved. Now that the matrix operators deliver
+decent GPU speedups, the goal is to streamline the API so external codes can
+connect easily. FastMultipole provides a **generalizable** device-resident
+system interface; `../FLOWVPM.jl` (branch `gpu-full`) is optimized as its first
+consumer, and updating FLOWVPM to run its FMM velocity/Jacobian solve on the
+GPU as fast as possible is the main objective of the phase.
+
+Design intent: a consumer's particle states are stored and maintained on the
+GPU so no per-step host/device body transfer is required. Alternatively, if
+transfers prove cheap for a given consumer, this phase publishes measured
+guidelines for the transfer-based coupling instead. Memory allocation
+procedures are key: there must be no per-timestep reallocation when a maximum
+particle count is known a priori — the `RadixFMMCache` capacity contract
+(`max_n_bodies` plus derived capacities, zero per-step allocation) is the
+existing mechanism, and this phase generalizes and documents it rather than
+reinventing it. The storage layout of positions, strengths, extra states (such
+as the smoothing radius for finite-core models), potential, gradient, and
+hessian is a first-class design topic. The hessian is stored as **9
+components** (user decision `2026-08-04`): the 6-component symmetric option is
+skipped because the velocity gradient contributed by the Lamb-Helmholtz /
+vector-potential channel is not symmetric in general, and FLOWVPM requires
+Lamb-Helmholtz.
+
+Repository policy (user decision `2026-08-04`): FLOWVPM edits are committed on
+the `gpu-full` branch of `../FLOWVPM.jl`; FastMultipole edits are committed in
+this repository. All task files and coordination stay in
+`MATRIX_OPERATOR_REFACTOR/` and reference `../FLOWVPM.jl` paths. **Any agent
+working on FLOWVPM must read `../FLOWVPM.jl/CLAUDE.md` in full before touching
+that repository.** FLOWVPM public API changes (exported names, keyword
+defaults) can break the downstream consumers FLOWUnsteady and VortexLattice —
+the CPU path and public surface must be preserved.
+
+Benchmark ground rules: the baselines are single-thread and 64-thread CPU runs
+of FLOWVPM **at the `gpu-full` branch-point commit `e2bd487`** (2026-05-16,
+v4.0.4), profiled to show what costs what and where the bottlenecks lie, so the
+phase ends with clear documentation of every speedup achieved relative to those
+baselines. Two test cases are used throughout: (a) a random vortex particle
+field in a unit cube with average smoothing radius chosen to give an overlap
+factor of 2; (b) a **helical wake cylinder** — a solid cylinder of length
+5 diameters, particles uniform in its volume at overlap 2, strengths tangent to
+a helix of pitch `p = D` with tip-weighted magnitude `|Γ| ∝ r` (user direction
+`2026-08-05`, replacing the vortex ring; rationale and full definition in
+`033`'s wake amendment). The ring was abandoned because it is locally thin
+(near sets half-empty, breaking the `031a` §6 occupancy model) and has no single
+overlap factor (`σ/rl = 3` radially, `≈1.58` azimuthally); the wake is locally
+dense and isotropic with one `β`, while keeping the coherent aligned strengths
+the cube lacks. The wake still fills only 3.14% of its bounding cube, which is
+retained deliberately as representative of real wakes and staged as a
+production lever in `035`. The accuracy gate is a
+**fixed tolerance: sampled relative gradient (velocity) RMS error ≤ 1e-3**
+against the direct references (user decision `2026-08-05`, superseding the
+`2026-08-04` "match FLOWVPM default FMM parameter accuracy" gate — no
+default-settings accuracy check is required anymore; the sampled-direct
+references remain as the measurement instrument). The tolerance gates GPU
+winners and speedup eligibility; fixed historical CPU rows remain visible
+with their measured errors even when they fail. Parameters are tuned
+separately per case for optimal performance; the wake case is
+additionally benchmarked at the unit-cube-optimal parameters. CPU
+baseline runs go on cluster CPU nodes, never the local machine.
+
+Standing directive: **if significant speedup levers are identified during this
+phase, invest in them** — row `035` is the measured tuning and optimization
+campaign, with a user checkpoint gating each production optimization cycle.
+Only levers expected to improve end-to-end U/J-solve time by at least 5% enter
+that campaign.
+
+Gating uses explicit parallel lanes; table order does not serialize them:
+
+- interface: `031 -> 032`;
+- nearfield: `031 -> 031a`, then `031a + 032 -> 032a`;
+- CPU baseline: `033`, independent after `019a`;
+- consumer integration: `032 + 033 -> 034`, which may run in parallel with
+  `032a`;
+- performance join: `030 + 032a + 034 -> 035`;
+- milestone review: every Integration row above -> `036`.
+
+This phase does not reopen the Theory or Implementation gates.
+
+The fixed phase accuracy gate applies to sampled relative gradient (velocity)
+RMS error only: `U <= 1e-3`. Every reported configuration must also log the
+sampled Jacobian `J` RMS error as a diagnostic, but `J` does not select or
+disqualify a winner. Historical `033` CPU timings remain in the record even
+when they miss the velocity gate; a speedup ratio or headline may use only a
+baseline configuration that passes it. No additional tuned CPU baseline is
+required.
+
+**Amendment (user direction `2026-08-05`, revised after numerical review):**
+the resident vortex nearfield gets two candidate strategies. (i)
+*Regularized-everywhere*: evaluate the regularized Biot-Savart kernel for
+every direct-nearfield pair, borrowing FLOWVPM's GPU polynomial erf
+(`custom_erf`, an FDLIBM rational port) and fused U+J math. (ii)
+*Partitioned replacement*: keep the singular FMM far field; ensure the direct
+geometry contains every pair inside the conservative smoothing cutoff
+`r/σ_src ≤ ρ_t`; evaluate those pairs once with cancellation-safe
+regularized U/J formulas and use the cheaper singular kernel for remaining
+direct pairs. Row `031a` derives the cutoff, stable small-`ρ` series, and
+exact-once geometry contract; row `032a` implements it and selects the default
+by H200 measurement. (iii) *Two-pass additive correction* (added by user
+direction `2026-08-05` during the `031`/`031a` clear-context review): leave the
+FMM entirely unmodified and add a second pass carrying only the regularization
+deficit over the cutoff shell. It touches no `025` routing invariant, but its
+subtraction lands in the accumulator across two kernels, so it requires either
+Float64 accumulation of the singular direct term and its correction, or the
+`ρ_c = 2` hybrid; `031a` §6.1 derives it, bounds the conditioning, and shows
+that two-pass and partitioning have opposite depth trends. An earlier
+singular-minus-correction proposal had been removed as ill-conditioned as
+`ρ → 0`; the derivation now quantifies that failure as a Float32 tail effect
+and supplies the two remedies. **Kernel scope (user decision `2026-08-05`): only the FLOWVPM
+default `gaussianerf` kernel is supported in this phase** — it is the sole
+kernel compatible with the `CoreSpreading` viscous model
+(`_kernel_compatibility`), so nothing viscous-capable is lost; `winckelmans`
+support is dropped. (The `033` ring case was first redefined to `gaussianerf`
+before its large cases ran — job 13051516 partial ring data discarded — and the
+ring was then retired entirely later the same day in favour of the wake
+cylinder; the replacement case is `gaussianerf` throughout.) The
+SFS (`ζ`/`Estr`) kernel derivation is deferred to a later, not-yet-staged
+row.
+
+| Done | Approved | Task | Summary | Blocking |
+| --- | --- | --- | --- | --- |
+| [x] | [x] | `031-integration-api-design.md` | User-in-the-loop design of the generalizable device-resident system interface: gap analysis (vector strength `Γ` + `σ` packing, Lamb-Helmholtz channel end-to-end, 9-component hessian/`J` output, capacity/no-realloc contract, residency-trait promotion), FLOWVPM 46×N ↔ FastMultipole buffer mapping, resident-vs-transfer coupling guidelines, and the storage-layout spec. The signed-off spec was corrected across three review rounds and approved on `2026-08-05`. | `019a` |
+| [x] | [x] | `031a-theory-kernel-splitting-nearfield.md` | Derive the partitioned `gaussianerf` nearfield: stable regularized U/J inside a conservative `ρ_t` cutoff, singular U/J outside, exact-once direct/M2L geometry, per-precision cutoff/error bounds, cost model, and numerical validation. SFS kernel deferred. Derivation row: `theory/`, `scripts/`, `data/` only; does not reopen the Theory gate. | `019a`, `031` |
+| [ ] | [ ] | `032-impl-generalized-device-interface.md` | Implement the approved interface in FastMultipole `src/`: vector-strength/Lamb-Helmholtz body packing and device B2M, 9-component hessian output on the resident path, first-class documented device-system API (promote the `fm028_device_system.jl` pattern into `src/` + docs), external-code connection guidelines, parity tests incl. `P=4`, and a no-regression gate on the shipped scalar path. Nearfield: the regularized-everywhere `RegularizedVortex` (`gaussianerf` only) baseline, borrowing FLOWVPM's `custom_erf` + fused U+J pair math; the partitioned alternative and default selection are `032a`. | `031` |
+| [ ] | [ ] | `032a-impl-split-nearfield-comparison.md` | Implement `031a`'s partitioned resident nearfield (stable regularized U/J for direct pairs inside `ρ_t`, singular U/J outside, singular FMM far field, exact-once cutoff coverage) **and its two-pass additive-correction alternative** (`031a` §6.1: unmodified singular FMM plus a deficit-only second pass, in Float64 or the `ρ_c=2` Float32 hybrid), A/B both against `032`'s regularized-everywhere `RegularizedVortex` on H200 at fixed adequate geometry using a profile-triggered benchmark ladder, and ship the measured winner as the resident vortex-nearfield default. | `031a`, `032` |
+| [ ] | [ ] | `033-flowvpm-baseline-benchmarks.md` | Baseline CPU benchmarks of FLOWVPM at the `gpu-full` branch-point commit `e2bd487`: single-thread and 64-thread, both test cases, profiled per-stage cost breakdown and bottleneck identification, plus the checksummed sampled-direct references used to evaluate the phase's fixed 1e-3 relative-gradient-error tolerance. | `019a` |
+| [ ] | [ ] | `034-flowvpm-gpu-integration.md` | Modify FLOWVPM (`gpu-full` branch) to drive the resident GPU lifecycle: `CuArray`-backed `ParticleField` coupled device-to-device (no per-step body transfers), `RadixFMMCache` reuse across time steps, resolve the `nearfield_device` hazard, end-to-end correctness vs `UJ_direct` on both test cases. Read `../FLOWVPM.jl/CLAUDE.md` first. | `032`, `033` |
+| [ ] | [ ] | `035-flowvpm-performance-campaign.md` | Tune each case, benchmark the wake at cube-optimal parameters, rank profiled levers, and run user-approved optimization cycles. Own the sole definitive speedup/profile report and specify whether the equal-physical-cell rectangular radix grid in `037` clears the 5% end-to-end U/J-solve bar; structural radix implementation is owned by `037`. Compare one U/J solve to matched-`n` `030` by ratio (full RK3 step separate). | `034`, `030`, `032a` |
+| [ ] | [ ] | `036-milestone-review-integration-phase.md` | Milestone Review for Integration rows `031`–`035` including `031a`/`032a`: interface generality, FLOWVPM correctness/performance verdicts, speedup-documentation completeness, and downstream compatibility (FLOWVPM CPU users, FLOWUnsteady, VortexLattice). | `031`, `031a`, `032`, `032a`, `033`, `034`, `035` |
+| [ ] | [ ] | `037-impl-rectangular-isotropic-radix-grid.md` | Add an optional rectangular radix-grid path with approximately cubic physical cells for elongated domains: generalized quantization/keying, occupied-cell metadata, routing, CUDA refresh, and lifecycle parity. Start with a fixed-resolution rectangular leaf grid; generalize the hierarchy only if measured results require it. Preserve the cubic path and zero-allocation/device-residency contracts. | `035`, `036` |
 
 ## Future Dispatch Cleanup Notes
 

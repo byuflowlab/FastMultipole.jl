@@ -66,13 +66,12 @@ end
 
 function _cuda_radix_expected_body(grid, system::CUDARadixCPUScalarSystem{TF}) where TF
     source_buffer = FastMultipole.source_to_buffer(system)
-    body = zeros(TF, 5, length(grid.perm))
+    body = zeros(TF, size(source_buffer, 1), length(grid.perm))
     for sorted_i in eachindex(grid.perm)
         global_i = grid.perm[sorted_i]
         ibody = grid.body_index[global_i]
-        body[1:3, sorted_i] .= source_buffer[1:3, ibody]
-        body[4, sorted_i] = zero(TF)
-        body[5, sorted_i] = source_buffer[5, ibody]
+        # all data_per_body rows are carried, including radius row 4 (task 032)
+        body[:, sorted_i] .= source_buffer[:, ibody]
     end
     return body
 end

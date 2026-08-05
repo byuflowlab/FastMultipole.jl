@@ -858,8 +858,8 @@ path is only selected by passing a `RadixFMMCache`.
 **Keyword arguments**
 
 - `scalar_potential::Bool=false`, `gradient::Bool=true`: which outputs to write back
-- `hessian::Bool=false`: must remain `false` — the radix output carries potential +
-  gradient only (`ArgumentError` otherwise)
+- `hessian::Bool=false`: write back the 9-component hessian; requires a cache
+  built with `RadixFMMCache(...; hessian=true)` (`ArgumentError` otherwise)
 - `lamb_helmholtz=nothing`: optional cross-check against the cache's `LH` parameter
 
 v1 restrictions: `target_systems === source_systems`; body count `<= max_n_bodies`;
@@ -873,9 +873,9 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
     _assert_radix_targets_are_sources(targets, sources)
-    hessian && throw(ArgumentError(
-        "the radix fmm! path computes scalar potential + gradient only (4-row output); " *
-        "hessian is unavailable — use the legacy octree fmm! for hessians"))
+    hessian && !cache.hessian && throw(ArgumentError(
+        "hessian output requested but this RadixFMMCache was built with " *
+        "hessian=false (4-row output); construct RadixFMMCache(...; hessian=true)"))
     lamb_helmholtz === nothing || Bool(lamb_helmholtz) == LH || throw(ArgumentError(
         "lamb_helmholtz=$(lamb_helmholtz) conflicts with the cache's lamb_helmholtz=$LH; " *
         "the Lamb-Helmholtz channel is fixed at cache construction"))
@@ -886,7 +886,7 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
     switches = DerivativesSwitch(
         to_vector(scalar_potential, length(targets)),
         to_vector(gradient, length(targets)),
-        to_vector(false, length(targets)), targets)
+        to_vector(hessian, length(targets)), targets)
     if cache.device
         _radix_cache_device_step!(cache, targets, switches)
     else

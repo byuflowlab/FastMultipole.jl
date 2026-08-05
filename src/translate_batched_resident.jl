@@ -90,15 +90,23 @@ function _host_radix_source_buffers(systems::Tuple, ::Type{TF}) where TF
 end
 
 function _host_radix_body_matrix(grid::DeviceRadixGrid{TF}, source_buffers::Tuple) where TF
-    body = Matrix{TF}(undef, 5, length(grid.perm))
+    # canonical all-rows packed layout (task 032, spec §3 decision (c)): every
+    # source-buffer row is carried, including radius row 4; systems narrower than
+    # the widest are zero-padded
+    nrows = maximum(size(buffer, 1) for buffer in source_buffers)
+    body = Matrix{TF}(undef, nrows, length(grid.perm))
     @inbounds for sorted_i in eachindex(grid.perm)
         global_i = grid.perm[sorted_i]
         isys = grid.body_system[global_i]
         ibody = grid.body_index[global_i]
         source = source_buffers[isys]
-        body[1:3, sorted_i] .= source[1:3, ibody]
-        body[4, sorted_i] = zero(TF)
-        body[5, sorted_i] = source[5, ibody]
+        nsys = size(source, 1)
+        for row in 1:nsys
+            body[row, sorted_i] = source[row, ibody]
+        end
+        for row in (nsys + 1):nrows
+            body[row, sorted_i] = zero(TF)
+        end
     end
     return body
 end
@@ -161,13 +169,32 @@ end
     return zero(rho), zero(rho)
 end
 
-function _launch_host_b2m!(state::DeviceResidentRadixState{TF}) where TF
+_launch_host_b2m!(state::DeviceResidentRadixState) =
+    _launch_host_b2m!(state, state.options.body_type)
+
+function _launch_host_b2m!(state::DeviceResidentRadixState{TF},
+        ::Type{<:Point{Source}}) where TF
     fill!(state.multipoles.phi, zero(TF))
     fill!(state.multipoles.chi, zero(TF))
     P = state.invariant_cache.basis_info.orders.P_phi
     # Keep the scalar host loop behind a small array-specialized kernel.
     _host_b2m_kernel!(phi_slab(state.multipoles), state.source_bodies,
         state.cell_ranges, state.cell_centers, state.grid.leaf_to_node, P,
+        state.counts.n_cells)
+    return state
+end
+
+function _launch_host_b2m!(state::DeviceResidentRadixState{TF,B,LH},
+        ::Type{<:Point{Vortex}}) where {TF,B,LH}
+    LH || throw(ArgumentError(
+        "Point{Vortex} sources require the Lamb-Helmholtz channel; construct the " *
+        "cache with lamb_helmholtz=true"))
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    orders = state.invariant_cache.basis_info.orders
+    _host_b2m_vortex_kernel!(phi_slab(state.multipoles), chi_slab(state.multipoles),
+        state.source_bodies, state.cell_ranges, state.cell_centers,
+        state.grid.leaf_to_node, orders.P_phi, orders.P_active,
         state.counts.n_cells)
     return state
 end
@@ -198,6 +225,115 @@ function _host_b2m_kernel!(ph::AbstractMatrix{TF}, source_bodies, cell_ranges,
             row = flat_basis_index(n, m, 1)
             ph[row, node] = acc_re
             ph[row + 1, node] = acc_im
+        end
+    end
+    return ph
+end
+
+#------- vortex B2M (task 032) -------#
+#
+# Verbatim port of the legacy `mirrored_source_to_vortex!` (bodytomultipole.jl)
+# to the resident flat-buffer layout: regular harmonics of the *mirrored*
+# offset `-Δx` evaluated on the fly (matching the scalar resident B2M's
+# per-(n,m) recurrence style), with the legacy `get_n`/`get_nm1` negative-m
+# conjugate-symmetry rules folded into `_resident_vortex_q`. No sign changes:
+# the legacy chain `evaluate_local ∘ multipole_to_local! ∘ vortex B2M` was
+# verified machine-exact against the analytic Biot-Savart field for an
+# off-center vorton, and the resident M2L and L2B were verified numerically
+# identical to those legacy stages — so the legacy vortex coefficients are the
+# physical convention here. (The legacy *Point{Source}* B2M's strength negation
+# is a legacy-pipeline quirk the resident scalar B2M deliberately omits; it has
+# no analogue for the vortex.)
+
+@inline function _resident_vortex_q(mdx, mdy, mdz, n, m)
+    TF = typeof(mdx)
+    if m < 0
+        # conjugate symmetry per legacy get_n/get_nm1: Q_{n,-1} = -conj(Q_{n,1})
+        (m == -1 && n >= 1) || return zero(TF), zero(TF)
+        qre, qim = _resident_regular_harmonic_coeff(mdx, mdy, mdz, n, 1)
+        return -qre, qim
+    end
+    (m > n || n < 0) && return zero(TF), zero(TF)
+    return _resident_regular_harmonic_coeff(mdx, mdy, mdz, n, m)
+end
+
+@inline function _resident_vortex_phi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
+    TF = typeof(mdx)
+    qmm1_re, qmm1_im = _resident_vortex_q(mdx, mdy, mdz, n, m - 1)
+    qm_re, qm_im = _resident_vortex_q(mdx, mdy, mdz, n, m)
+    qmp1_re, qmp1_im = _resident_vortex_q(mdx, mdy, mdz, n, m + 1)
+    nmmp1_2 = TF(n - m + 1) * TF(0.5)
+    npmp1_2 = TF(n + m + 1) * TF(0.5)
+    _1_np1 = inv(TF(n + 1))
+    _1_m = isodd(m) ? -one(TF) : one(TF)
+    re = _1_m * ((-vx * qmm1_re + vy * qmm1_im) * nmmp1_2 +
+                 (vx * qmp1_re + vy * qmp1_im) * npmp1_2 - vz * m * qm_im) * _1_np1
+    im = _1_m * ((vx * qmm1_im + vy * qmm1_re) * nmmp1_2 +
+                 (-vx * qmp1_im + vy * qmp1_re) * npmp1_2 - vz * m * qm_re) * _1_np1
+    return re, im
+end
+
+@inline function _resident_vortex_chi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
+    TF = typeof(mdx)
+    qmm1_re, qmm1_im = _resident_vortex_q(mdx, mdy, mdz, n - 1, m - 1)
+    qm_re, qm_im = _resident_vortex_q(mdx, mdy, mdz, n - 1, m)
+    qmp1_re, qmp1_im = _resident_vortex_q(mdx, mdy, mdz, n - 1, m + 1)
+    # legacy get_nm1 zeroes (n-1, m) for m == n and (n-1, m+1) for m+1 >= n;
+    # _resident_vortex_q's m > n-1 bound check reproduces both
+    _1_over_n = inv(TF(n))
+    _1_m = isodd(m) ? -one(TF) : one(TF)
+    re = -_1_m * _1_over_n * (TF(0.5) * (-vy * qmm1_re - vx * qmm1_im +
+        vy * qmp1_re - vx * qmp1_im) - vz * qm_re)
+    im = -_1_m * _1_over_n * (TF(0.5) * (vy * qmm1_im - vx * qmm1_re -
+        vy * qmp1_im - vx * qmp1_re) + vz * qm_im)
+    return re, im
+end
+
+function _host_b2m_vortex_kernel!(ph::AbstractMatrix{TF}, ch, source_bodies,
+        cell_ranges, cell_centers, leaf_to_node, P_phi::Int, P_chi::Int,
+        n_cells::Int) where TF
+    @inbounds for i_cell in 1:n_cells
+        first_body = cell_ranges[1, i_cell]
+        count = cell_ranges[2, i_cell]
+        node = leaf_to_node[i_cell]
+        cx = cell_centers[1, i_cell]
+        cy = cell_centers[2, i_cell]
+        cz = cell_centers[3, i_cell]
+        for n in 0:P_phi, m in 0:n
+            acc_re = zero(TF)
+            acc_im = zero(TF)
+            for k in first_body:(first_body + count - 1)
+                mdx = cx - source_bodies[1, k]
+                mdy = cy - source_bodies[2, k]
+                mdz = cz - source_bodies[3, k]
+                vx = source_bodies[5, k]
+                vy = source_bodies[6, k]
+                vz = source_bodies[7, k]
+                re, im = _resident_vortex_phi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
+                acc_re += re
+                acc_im += im
+            end
+            row = flat_basis_index(n, m, 1)
+            ph[row, node] = acc_re
+            ph[row + 1, node] = acc_im
+        end
+        for n in 1:P_chi, m in 0:n
+            acc_re = zero(TF)
+            acc_im = zero(TF)
+            for k in first_body:(first_body + count - 1)
+                mdx = cx - source_bodies[1, k]
+                mdy = cy - source_bodies[2, k]
+                mdz = cz - source_bodies[3, k]
+                vx = source_bodies[5, k]
+                vy = source_bodies[6, k]
+                vz = source_bodies[7, k]
+                re, im = _resident_vortex_chi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
+                acc_re += re
+                acc_im += im
+            end
+            row = flat_basis_index(n, m, 1)
+            ch[row, node] = acc_re
+            ch[row + 1, node] = acc_im
         end
     end
     return ph
@@ -297,13 +433,86 @@ function _launch_host_l2l!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B
     return _launch_resident_l2l!(state)
 end
 
-function _add_host_direct_pairs!(state::DeviceResidentRadixState{TF}) where TF
+_add_host_direct_pairs!(state::DeviceResidentRadixState) =
+    _add_host_direct_pairs!(state, state.options.body_type)
+
+function _add_host_direct_pairs!(state::DeviceResidentRadixState{TF},
+        ::Type{<:Point{Source}}) where TF
     # Iterate the flat pair arrays (bounded by counts) rather than the one-shot
     # interaction list so the recurring update path never rebuilds the list object;
     # function barrier as in _launch_host_b2m!.
-    _host_direct_pairs_kernel!(state.output, state.source_bodies, state.cell_ranges,
-        state.direct_targets, state.direct_sources, state.counts.n_direct)
+    if size(state.output, 1) >= 13
+        _host_direct_pairs_hessian_kernel!(state.output, state.source_bodies,
+            state.cell_ranges, state.direct_targets, state.direct_sources,
+            state.counts.n_direct)
+    else
+        _host_direct_pairs_kernel!(state.output, state.source_bodies, state.cell_ranges,
+            state.direct_targets, state.direct_sources, state.counts.n_direct)
+    end
     return state
+end
+
+function _add_host_direct_pairs!(state::DeviceResidentRadixState{TF},
+        ::Type{<:Point{Vortex}}) where TF
+    hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
+    _host_direct_pairs_vortex_kernel!(state.output, state.source_bodies,
+        state.cell_ranges, state.direct_targets, state.direct_sources,
+        state.counts.n_direct, hsv)
+    return state
+end
+
+# Singular Biot-Savart direct kernel for Point{Vortex} sources (task 032 stage 1):
+# U = -Δx×Γ/(4πr³), J per theory §1 with g→1 (transcribed from the legacy
+# test-reference vortex direct!). No scalar potential is produced. The
+# regularized `RegularizedVortex` kernel and the `direct_kernel` functor trait
+# replace this fixed dispatch in stage 2.
+function _host_direct_pairs_vortex_kernel!(output::AbstractMatrix{TF}, source_bodies,
+        cell_ranges, direct_targets, direct_sources, n_direct::Int,
+        ::Val{HS}) where {TF,HS}
+    c = inv(TF(4) * TF(pi))
+    @inbounds for pair_i in 1:n_direct
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tcount = cell_ranges[2, target_cell]
+        sfirst = cell_ranges[1, source_cell]
+        scount = cell_ranges[2, source_cell]
+        for i in tfirst:(tfirst + tcount - 1)
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            for j in sfirst:(sfirst + scount - 1)
+                i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                r2 == zero(TF) && continue
+                gx = source_bodies[5, j]
+                gy = source_bodies[6, j]
+                gz = source_bodies[7, j]
+                invr = inv(sqrt(r2))
+                invr2 = invr * invr
+                denom = c * invr * invr2
+                output[2, i] += (dz * gy - dy * gz) * denom
+                output[3, i] += (dx * gz - dz * gx) * denom
+                output[4, i] += (dy * gx - dx * gy) * denom
+                if HS
+                    denom *= invr2
+                    output[5, i] += -3 * dx * (gy * dz - gz * dy) * denom
+                    output[6, i] += (-3 * dx * (gz * dx - gx * dz) + gz * r2) * denom
+                    output[7, i] += (-3 * dx * (gx * dy - gy * dx) - gy * r2) * denom
+                    output[8, i] += (-3 * dy * (gy * dz - gz * dy) - gz * r2) * denom
+                    output[9, i] += -3 * dy * (gz * dx - gx * dz) * denom
+                    output[10, i] += (-3 * dy * (gx * dy - gy * dx) + gx * r2) * denom
+                    output[11, i] += (-3 * dz * (gy * dz - gz * dy) + gy * r2) * denom
+                    output[12, i] += (-3 * dz * (gz * dx - gx * dz) - gx * r2) * denom
+                    output[13, i] += -3 * dz * (gx * dy - gy * dx) * denom
+                end
+            end
+        end
+    end
+    return output
 end
 
 function _host_direct_pairs_kernel!(output::AbstractMatrix{TF}, source_bodies,
@@ -334,6 +543,55 @@ function _host_direct_pairs_kernel!(output::AbstractMatrix{TF}, source_bodies,
                 output[2, i] -= q * dx * invr3
                 output[3, i] -= q * dy * invr3
                 output[4, i] -= q * dz * invr3
+            end
+        end
+    end
+    return output
+end
+
+# Singular scalar direct kernel with the 9-component hessian (task 032):
+# u = qc/r, g = -qc·Δx/r³, H = qc·(3ΔxΔxᵀ/r⁵ - I/r³) — symmetric, so the
+# column-major linear order equals the row-major one.
+function _host_direct_pairs_hessian_kernel!(output::AbstractMatrix{TF}, source_bodies,
+        cell_ranges, direct_targets, direct_sources, n_direct::Int) where TF
+    c = inv(TF(4) * TF(pi))
+    @inbounds for pair_i in 1:n_direct
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tcount = cell_ranges[2, target_cell]
+        sfirst = cell_ranges[1, source_cell]
+        scount = cell_ranges[2, source_cell]
+        for i in tfirst:(tfirst + tcount - 1)
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            for j in sfirst:(sfirst + scount - 1)
+                i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                r2 == zero(TF) && continue
+                invr = inv(sqrt(r2))
+                q = source_bodies[5, j] * c
+                output[1, i] += q * invr
+                invr2 = invr * invr
+                invr3 = invr * invr2
+                output[2, i] -= q * dx * invr3
+                output[3, i] -= q * dy * invr3
+                output[4, i] -= q * dz * invr3
+                q3invr5 = 3 * q * invr3 * invr2
+                qinvr3 = q * invr3
+                output[5, i] += q3invr5 * dx * dx - qinvr3
+                output[6, i] += q3invr5 * dx * dy
+                output[7, i] += q3invr5 * dx * dz
+                output[8, i] += q3invr5 * dy * dx
+                output[9, i] += q3invr5 * dy * dy - qinvr3
+                output[10, i] += q3invr5 * dy * dz
+                output[11, i] += q3invr5 * dz * dx
+                output[12, i] += q3invr5 * dz * dy
+                output[13, i] += q3invr5 * dz * dz - qinvr3
             end
         end
     end
@@ -423,15 +681,190 @@ end
     return u * c, vx * c, vy * c, vz * c
 end
 
+# Per-(n, m) local-expansion gradient coefficient (task 032): the values the
+# legacy `evaluate_local` stores in its `gradient_n_m` scratch, recomputed on
+# the fly from the flat zero-padded accessors so the hessian pass needs no
+# per-thread coefficient array. Must stay in lockstep with the coefficient
+# blocks inside `_resident_local_eval_flat` above.
+@inline function _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n, m,
+        ::Val{LH}) where LH
+    TF = eltype(ph)
+    if m == 0
+        phi1c = _resident_flat_phi_re(ph, node, P_phi, n + 1, 1)
+        phi1s = _resident_flat_phi_im(ph, node, P_phi, n + 1, 1)
+        phi0c = _resident_flat_phi_re(ph, node, P_phi, n + 1, 0)
+        phi0s = _resident_flat_phi_im(ph, node, P_phi, n + 1, 0)
+        vxr = -phi1s
+        vyr = -phi1c
+        vzr = -phi0c
+        vzi = -phi0s
+        if LH
+            vxr += n * _resident_flat_chi_re(ch, node, P_active, n, 1)
+            vyr -= n * _resident_flat_chi_im(ch, node, P_active, n, 1)
+        end
+        return vxr, zero(TF), vyr, zero(TF), vzr, vzi
+    end
+    amm1 = _resident_flat_phi_re(ph, node, P_phi, n + 1, m - 1)
+    bmm1 = _resident_flat_phi_im(ph, node, P_phi, n + 1, m - 1)
+    amp1 = _resident_flat_phi_re(ph, node, P_phi, n + 1, m + 1)
+    bmp1 = _resident_flat_phi_im(ph, node, P_phi, n + 1, m + 1)
+    am = _resident_flat_phi_re(ph, node, P_phi, n + 1, m)
+    bm = _resident_flat_phi_im(ph, node, P_phi, n + 1, m)
+
+    vxr = -(bmm1 + bmp1) * TF(0.5)
+    vxi = (amm1 + amp1) * TF(0.5)
+    vyr = (amm1 - amp1) * TF(0.5)
+    vyi = (bmm1 - bmp1) * TF(0.5)
+    vzr = -am
+    vzi = -bm
+
+    if LH
+        cmm1 = _resident_flat_chi_re(ch, node, P_active, n, m - 1)
+        dmm1 = _resident_flat_chi_im(ch, node, P_active, n, m - 1)
+        cmp1 = _resident_flat_chi_re(ch, node, P_active, n, m + 1)
+        dmp1 = _resident_flat_chi_im(ch, node, P_active, n, m + 1)
+        cm = _resident_flat_chi_re(ch, node, P_active, n, m)
+        dm = _resident_flat_chi_im(ch, node, P_active, n, m)
+        vxr += ((n - m) * cmp1 - (n + m) * cmm1) * TF(0.5)
+        vxi += ((n - m) * dmp1 - (n + m) * dmm1) * TF(0.5)
+        vyr -= ((n - m) * dmp1 + (n + m) * dmm1) * TF(0.5)
+        vyi += ((n - m) * cmp1 + (n + m) * cmm1) * TF(0.5)
+        vzr += m * dm
+        vzi -= m * cm
+    end
+    return vxr, vxi, vyr, vyi, vzr, vzi
+end
+
+# Hessian-emitting variant of `_resident_local_eval_flat` (task 032): identical
+# potential/gradient math (via `_resident_gradient_coeff`), plus a second pass
+# porting the `evaluate_expansions.jl` hessian recurrences — each velocity
+# component's coefficient field is differentiated with the same operator pattern
+# as the first pass. Returns
+# `(u, vx, vy, vz, hxx, hxy, hxz, hyx, hyy, hyz, hzx, hzy, hzz)` in the legacy
+# `SMatrix{3,3}` column-major linear order (`set_hessian!` order).
+@inline function _resident_local_eval_flat_hessian(ph, ch, node, dx, dy, dz,
+        P_phi, P_active, lhv::Val{LH}) where LH
+    TF = eltype(ph)
+    c = inv(TF(4) * TF(pi))
+    u = zero(TF)
+    vx = zero(TF); vy = zero(TF); vz = zero(TF)
+    @inbounds for n in 0:P_active
+        rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, 0)
+        if n <= P_phi && (!LH || n == 0)
+            u += rre * _resident_flat_phi_re(ph, node, P_phi, n, 0) -
+                 rim * _resident_flat_phi_im(ph, node, P_phi, n, 0)
+        end
+        vxr, vxi, vyr, vyi, vzr, vzi =
+            _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n, 0, lhv)
+        vx += vxr * rre - vxi * rim
+        vy += vyr * rre - vyi * rim
+        vz += vzr * rre - vzi * rim
+        for m in 1:n
+            rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, m)
+            if n <= P_phi && !LH
+                u += 2 * (rre * _resident_flat_phi_re(ph, node, P_phi, n, m) -
+                          rim * _resident_flat_phi_im(ph, node, P_phi, n, m))
+            end
+            vxr, vxi, vyr, vyi, vzr, vzi =
+                _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n, m, lhv)
+            vx += 2 * (vxr * rre - vxi * rim)
+            vy += 2 * (vyr * rre - vyi * rim)
+            vz += 2 * (vzr * rre - vzi * rim)
+        end
+    end
+
+    hxx = zero(TF); hxy = zero(TF); hxz = zero(TF)
+    hyx = zero(TF); hyy = zero(TF); hyz = zero(TF)
+    hzx = zero(TF); hzy = zero(TF); hzz = zero(TF)
+    @inbounds for n in 0:(P_active - 1)
+        rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, 0)
+        # gradient coefficients at (n+1, 0) and (n+1, 1)
+        g0x_r, g0x_i, g0y_r, g0y_i, g0z_r, g0z_i =
+            _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, 0, lhv)
+        g1x_r, g1x_i, g1y_r, g1y_i, g1z_r, g1z_i =
+            _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, 1, lhv)
+        hxx += -g1x_i * rre
+        hyx += -g1x_r * rre
+        hzx += -g0x_r * rre + g0x_i * rim
+        hxy += -g1y_i * rre
+        hyy += -g1y_r * rre
+        hzy += -g0y_r * rre + g0y_i * rim
+        hxz += -g1z_i * rre
+        hyz += -g1z_r * rre
+        hzz += -g0z_r * rre + g0z_i * rim
+        for m in 1:n
+            rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, m)
+            amx_r, amx_i, amy_r, amy_i, amz_r, amz_i =
+                _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, m - 1, lhv)
+            bmx_r, bmx_i, bmy_r, bmy_i, bmz_r, bmz_i =
+                _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, m, lhv)
+            cmx_r, cmx_i, cmy_r, cmy_i, cmz_r, cmz_i =
+                _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, m + 1, lhv)
+            # x column: ∂x, ∂y, ∂z of vx
+            tr = -(amx_i + cmx_i) * TF(0.5); ti = (amx_r + cmx_r) * TF(0.5)
+            hxx += 2 * (tr * rre - ti * rim)
+            tr = (amx_r - cmx_r) * TF(0.5); ti = (amx_i - cmx_i) * TF(0.5)
+            hyx += 2 * (tr * rre - ti * rim)
+            hzx += 2 * (-bmx_r * rre + bmx_i * rim)
+            # y column
+            tr = -(amy_i + cmy_i) * TF(0.5); ti = (amy_r + cmy_r) * TF(0.5)
+            hxy += 2 * (tr * rre - ti * rim)
+            tr = (amy_r - cmy_r) * TF(0.5); ti = (amy_i - cmy_i) * TF(0.5)
+            hyy += 2 * (tr * rre - ti * rim)
+            hzy += 2 * (-bmy_r * rre + bmy_i * rim)
+            # z column
+            tr = -(amz_i + cmz_i) * TF(0.5); ti = (amz_r + cmz_r) * TF(0.5)
+            hxz += 2 * (tr * rre - ti * rim)
+            tr = (amz_r - cmz_r) * TF(0.5); ti = (amz_i - cmz_i) * TF(0.5)
+            hyz += 2 * (tr * rre - ti * rim)
+            hzz += 2 * (-bmz_r * rre + bmz_i * rim)
+        end
+    end
+    return u * c, vx * c, vy * c, vz * c,
+        hxx * c, hxy * c, hxz * c, hyx * c, hyy * c, hyz * c, hzx * c, hzy * c, hzz * c
+end
+
 function _launch_host_l2b!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
     fill!(state.output, zero(TF))
     _add_host_direct_pairs!(state)
     P_phi = state.invariant_cache.basis_info.orders.P_phi
     P_active = state.invariant_cache.basis_info.orders.P_active
-    _host_l2b_kernel!(state.output, state.source_bodies, state.cell_ranges,
-        state.cell_centers, state.grid.leaf_to_node, phi_slab(state.locals),
-        chi_slab(state.locals), P_phi, P_active, Val(LH), state.counts.n_cells)
+    if size(state.output, 1) >= 13
+        _host_l2b_hessian_kernel!(state.output, state.source_bodies, state.cell_ranges,
+            state.cell_centers, state.grid.leaf_to_node, phi_slab(state.locals),
+            chi_slab(state.locals), P_phi, P_active, Val(LH), state.counts.n_cells)
+    else
+        _host_l2b_kernel!(state.output, state.source_bodies, state.cell_ranges,
+            state.cell_centers, state.grid.leaf_to_node, phi_slab(state.locals),
+            chi_slab(state.locals), P_phi, P_active, Val(LH), state.counts.n_cells)
+    end
     return state
+end
+
+function _host_l2b_hessian_kernel!(output::AbstractMatrix, source_bodies, cell_ranges,
+        cell_centers, leaf_to_node, ph, ch, P_phi::Int, P_active::Int,
+        lhv::Val{LH}, n_cells::Int) where LH
+    @inbounds for cell in 1:n_cells
+        node = leaf_to_node[cell]
+        first_body = cell_ranges[1, cell]
+        count = cell_ranges[2, cell]
+        cx = cell_centers[1, cell]
+        cy = cell_centers[2, cell]
+        cz = cell_centers[3, cell]
+        for i in first_body:(first_body + count - 1)
+            vals = _resident_local_eval_flat_hessian(
+                ph, ch, node,
+                source_bodies[1, i] - cx,
+                source_bodies[2, i] - cy,
+                source_bodies[3, i] - cz,
+                P_phi, P_active, lhv,
+            )
+            for row in 1:13
+                output[row, i] += vals[row]
+            end
+        end
+    end
+    return output
 end
 
 function _host_l2b_kernel!(output::AbstractMatrix, source_bodies, cell_ranges,
@@ -581,8 +1014,10 @@ function _copy_radix_output_to_host_target_buffer!(target_buffer, output, body_p
         body_system_ids, body_indices, isys::Integer, derivatives_switch,
         n_bodies::Integer=size(output, 2))
     reset!(target_buffer)
-    isempty(hessian_range(derivatives_switch)) ||
-        throw(ArgumentError("radix output finalization does not provide hessian rows"))
+    hrange = hessian_range(derivatives_switch)
+    isempty(hrange) || size(output, 1) >= 13 ||
+        throw(ArgumentError("hessian output requested but the radix output carries " *
+            "potential + gradient only; construct RadixFMMCache(...; hessian=true)"))
     scalar_row = scalar_potential_index(derivatives_switch)
     grange = gradient_range(derivatives_switch)
     @inbounds for sorted_i in 1:n_bodies
@@ -594,6 +1029,9 @@ function _copy_radix_output_to_host_target_buffer!(target_buffer, output, body_p
         end
         if !isempty(grange)
             target_buffer[grange, ibody] .= @view output[2:4, sorted_i]
+        end
+        if !isempty(hrange)
+            target_buffer[hrange, ibody] .= @view output[5:13, sorted_i]
         end
     end
     return target_buffer
@@ -611,9 +1049,10 @@ end
     finalize_radix_output!(state, target_systems; derivatives_switches, target_buffers)
 
 Scatter a host-resident radix lifecycle output back into the user target systems:
-de-permute `state.output` (4×n, sorted body order: scalar potential + gradient)
-into per-system target buffers and call [`buffer_to_target!`](@ref). Hessian rows
-are not available on the radix path; a derivatives switch requesting them throws.
+de-permute `state.output` (sorted body order: scalar potential + gradient, plus
+the 9-component hessian when the cache was built with `hessian=true`) into
+per-system target buffers and call [`buffer_to_target!`](@ref). A derivatives
+switch requesting hessian rows from a 4-row output throws.
 Pass preallocated `target_buffers` (one per system) to keep recurring steps
 allocation-free; otherwise buffers are allocated per call.
 """
@@ -818,6 +1257,9 @@ is reallocated over the cache's lifetime.
   a cube from the current positions inflated by `bounds_margin`
 - `bounds_margin::Real=0.05`: relative margin applied to derived bounds
 - `lamb_helmholtz=nothing`: override the `has_vector_potential` inference
+- `hessian::Bool=false`: allocate the 13-row output (potential + gradient +
+  9-component hessian) and enable `fmm!(...; hessian=true)`. Off by default so
+  the scalar path's output bandwidth is unchanged (task 032).
 - `device::Bool=false`: run the lifecycle device-resident (CUDA; requires
   `load_cuda_radix_lifecycle!()`)
 - `options::CUDARadixLifecycleOptions`: operator strategies/precision. Omitted, both
@@ -879,6 +1321,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         bounds=nothing,
         bounds_margin::Real=0.05,
         lamb_helmholtz::Union{Nothing,Bool}=nothing,
+        hessian::Bool=false,
         device::Bool=false,
         options::Union{Nothing,CUDARadixLifecycleOptions}=nothing,
         stencil_epsilon::Union{Nothing,Real}=nothing,
@@ -890,6 +1333,24 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     sources = to_tuple(source_systems)
     _assert_radix_targets_are_sources(targets, sources)
     LH = lamb_helmholtz === nothing ? has_vector_potential(sources) : Bool(lamb_helmholtz)
+    # B2M element resolution (task 032): one shared body type per cache, checked
+    # here so a Point{Vortex} system with the χ channel off fails at construction
+    # rather than inside a kernel (the LH=false chi buffer is 0×0).
+    BT = body_type(first(sources))
+    for system in sources
+        body_type(system) === BT || throw(ArgumentError(
+            "all source systems sharing a RadixFMMCache must report the same " *
+            "body_type; got $(body_type(system)) and $BT"))
+        strength_dims(system) == strength_dims(first(sources)) || throw(ArgumentError(
+            "all source systems sharing a RadixFMMCache must report the same " *
+            "strength_dims (the packed strength rows 5:4+strength_dims are shared)"))
+    end
+    if BT <: Point{Vortex} && !LH
+        throw(ArgumentError(
+            "Point{Vortex} sources require the Lamb-Helmholtz channel; construct " *
+            "the cache with lamb_helmholtz=true (or leave it to be inferred from " *
+            "has_vector_potential)"))
+    end
     # Measured defaults (024/028). Precision depends only on the expansion order and
     # is needed for the bounds and stencil tolerance below; the strategy also depends
     # on the class count, so it is resolved once the policy is built.
@@ -906,10 +1367,12 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
                 "radix lifecycle; call load_cuda_radix_lifecycle!() first ($(cuda_radix_status()))"))
     end
     for system in sources
-        data_per_body(system) >= 5 ||
-            throw(ArgumentError("the radix path packs bodies as [x, y, z, radius, strength]; " *
-                "data_per_body(system) must be >= 5"))
+        data_per_body(system) >= 4 + strength_dims(system) ||
+            throw(ArgumentError("the radix path packs bodies as [x, y, z, radius, " *
+                "strength..., extras...]; data_per_body(system) must be >= " *
+                "4 + strength_dims(system)"))
     end
+    dpb = maximum(data_per_body(system) for system in sources)
 
     n0 = get_n_bodies(sources)
     n0 > 0 || throw(ArgumentError("RadixFMMCache requires at least one body"))
@@ -973,6 +1436,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         options = _default_radix_options(TF, P, LH, device, length(accepted),
             _dense_m2m_dof(basis_info, Val(LH)))
     end
+    options = _options_with_body_type(options, BT)
 
     if device
         cache = _radix_cache_device_build(sources, P, Int(ell), x_min, h0, maxn,
@@ -980,7 +1444,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             route_capacity, direct_capacity, basis_info, Val(LH);
             hierarchical_tables, class_level, class_offset,
             hierarchical_level_class_of, hierarchical_level_radii2,
-            max_level_nodes)
+            max_level_nodes, hessian)
         cache.built = true
         return cache
     end
@@ -988,8 +1452,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     grid = _allocate_host_radix_grid(TF, x_min, h0, Int(ell), maxn, max_cells, max_nodes)
     multipoles = _host_flat_buffer(TF, basis_info, max_nodes)
     locals = _host_flat_buffer(TF, basis_info, max_nodes)
-    source_bodies = Matrix{TF}(undef, 5, maxn)
-    output = zeros(TF, 4, maxn)
+    source_bodies = Matrix{TF}(undef, dpb, maxn)
+    output = zeros(TF, hessian ? 13 : 4, maxn)
     route_levels = Vector{Int}(undef, route_capacity)
     route_offsets = Matrix{Int}(undef, 3, route_capacity)
     route_targets = Vector{Int}(undef, route_capacity)
@@ -1056,7 +1520,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     G = 1 << Int(ell)
     source_buffers = Tuple(Matrix{TF}(undef, data_per_body(system), maxn) for system in sources)
     cache = RadixFMMCache{TF,LH}(
-        P, Int(ell), x_min, h0, maxn, device, options, stencil_policy,
+        P, Int(ell), x_min, h0, maxn, device, hessian, options, stencil_policy,
         accepted, rejected, max_cells, max_nodes, route_capacity, direct_capacity,
         state, hierarchical ? zeros(Int32, 0, 0, 0) : zeros(Int32, G, G, G),
         Vector{SVector{3,Int}}(undef, max_cells),
@@ -1156,16 +1620,21 @@ end
 
 function _pack_radix_source_bodies!(source_bodies::AbstractMatrix{TF}, perm, body_system,
         body_index, source_buffers::Tuple, n::Int) where TF
+    # all data_per_body rows are carried, including radius row 4 (task 032);
+    # systems narrower than the packed matrix are zero-padded
+    nrows = size(source_bodies, 1)
     @inbounds for sorted_i in 1:n
         global_i = perm[sorted_i]
         isys = body_system[global_i]
         ibody = body_index[global_i]
         src = source_buffers[isys]
-        source_bodies[1, sorted_i] = src[1, ibody]
-        source_bodies[2, sorted_i] = src[2, ibody]
-        source_bodies[3, sorted_i] = src[3, ibody]
-        source_bodies[4, sorted_i] = zero(TF)
-        source_bodies[5, sorted_i] = src[5, ibody]
+        nsys = min(size(src, 1), nrows)
+        for row in 1:nsys
+            source_bodies[row, sorted_i] = src[row, ibody]
+        end
+        for row in (nsys + 1):nrows
+            source_bodies[row, sorted_i] = zero(TF)
+        end
     end
     return source_bodies
 end

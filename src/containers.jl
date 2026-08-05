@@ -1619,30 +1619,41 @@ end
 CUDARadixTransferCounters() = CUDARadixTransferCounters(0, 0, 0, 0, 0, 0)
 
 struct CUDARadixLifecycleOptions{TF,O<:AbstractM2LOperator,
-        M2M<:AbstractResidentM2MStrategy,M2L<:AbstractResidentM2LStrategy}
+        M2M<:AbstractResidentM2MStrategy,M2L<:AbstractResidentM2LStrategy,
+        BT<:AbstractElement}
     precision::Type{TF}
     operator::O
     m2m_strategy::M2M
     m2l_strategy::M2L
+    # B2M element selection (task 032): the element type shared by every source
+    # system on this cache, resolved from the `body_type` trait at cache
+    # construction. Part of the concrete options type so B2M launchers dispatch
+    # at compile time.
+    body_type::Type{BT}
 end
 
 # Preserve the historical partial form `CUDARadixLifecycleOptions{TF}(...)` while
-# making all three dispatch choices part of the concrete options type.
-CUDARadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy) where TF =
+# making all dispatch choices part of the concrete options type.
+CUDARadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy,
+        body_type::Type=Point{Source}) where TF =
     CUDARadixLifecycleOptions{TF,typeof(operator),typeof(m2m_strategy),
-        typeof(m2l_strategy)}(precision, operator, m2m_strategy, m2l_strategy)
+        typeof(m2l_strategy),body_type}(precision, operator, m2m_strategy,
+        m2l_strategy, body_type)
 
 CUDARadixLifecycleOptions{TF}(;
         operator=MaterializedYRotationM2L(),
         m2m_strategy=SharedRotationM2M(),
-        m2l_strategy=SharedRotationM2L()) where TF =
-    CUDARadixLifecycleOptions(; precision=TF, operator, m2m_strategy, m2l_strategy)
+        m2l_strategy=SharedRotationM2L(),
+        body_type=Point{Source}) where TF =
+    CUDARadixLifecycleOptions(; precision=TF, operator, m2m_strategy, m2l_strategy,
+        body_type)
 
 function CUDARadixLifecycleOptions(;
         precision::Type{TF}=Float64,
         operator=MaterializedYRotationM2L(),
         m2m_strategy=SharedRotationM2M(),
         m2l_strategy=SharedRotationM2L(),
+        body_type::Type=Point{Source},
     ) where TF
     TF <: Union{Float32,Float64} ||
         throw(ArgumentError("CUDA radix lifecycle precision must be Float32 or Float64"))
@@ -1652,14 +1663,23 @@ function CUDARadixLifecycleOptions(;
         throw(ArgumentError("m2m_strategy must be an AbstractResidentM2MStrategy"))
     m2l_strategy isa AbstractResidentM2LStrategy ||
         throw(ArgumentError("m2l_strategy must be an AbstractResidentM2LStrategy"))
+    body_type <: AbstractElement ||
+        throw(ArgumentError("body_type must be an AbstractElement type, e.g. Point{Source}"))
     if m2l_strategy isa PrecomputedFactoredYM2L && !(operator isa FactoredRotationM2L)
         throw(ArgumentError("PrecomputedFactoredYM2L requires operator=FactoredRotationM2L()"))
     end
     if m2l_strategy isa DenseTranslationM2L && !(operator isa MaterializedYRotationM2L)
         throw(ArgumentError("DenseTranslationM2L requires operator=MaterializedYRotationM2L()"))
     end
-    return CUDARadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy)
+    return CUDARadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy,
+        body_type)
 end
+
+# Rebuild options with a different body type (used by RadixFMMCache construction,
+# which resolves the shared `body_type` trait of the actual source systems).
+_options_with_body_type(options::CUDARadixLifecycleOptions{TF}, ::Type{BT}) where {TF,BT} =
+    CUDARadixLifecycleOptions{TF}(options.precision, options.operator,
+        options.m2m_strategy, options.m2l_strategy, BT)
 
 # Step-varying prefix lengths for a capacity-sized DeviceResidentRadixState (task
 # 023): arrays stay allocated at construction capacity and each count bounds the
@@ -1743,8 +1763,9 @@ change their number (up to `max_n_bodies`), but positions must stay inside the
 fixed box; violations throw `ArgumentError` rather than silently rebuilding the
 step-invariant geometry tables.
 
-v1 scope restrictions (documented at `fmm!`): `target_systems === source_systems`,
-no hessian output, host- or device-resident execution selected at construction.
+v1 scope restrictions (documented at `fmm!`): `target_systems === source_systems`;
+host- or device-resident execution and hessian output are selected at
+construction (`hessian=true` allocates the 13-row output).
 """
 mutable struct RadixFMMCache{TF,LH}
     # construction parameters — the invariant contract
@@ -1754,6 +1775,10 @@ mutable struct RadixFMMCache{TF,LH}
     h0::TF
     max_n_bodies::Int
     device::Bool
+    # 13-row (potential + gradient + 9-component hessian) vs 4-row output,
+    # chosen at construction (task 032): the scalar 4-row path stays
+    # bandwidth-identical when hessian output is off.
+    hessian::Bool
     options::CUDARadixLifecycleOptions{TF}
     policy::Any                     # ConstantPAnalyticStencil
     # step-invariant stencil classification and capacity bounds
