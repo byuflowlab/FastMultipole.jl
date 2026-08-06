@@ -173,3 +173,115 @@ code review): five `>= 5` row validators not yet relaxed to
 one-shot reference kernel `_cuda_direct_source_output_kernel!` remains 4-row
 assign-only (reference path only). Device mirrors of the Stage-1 kernels
 remain unvalidated on hardware until the Stage-4 H200 run.
+
+### Stage 2 — `direct_kernel` functor trait, `RegularizedVortex`, adequacy gate
+
+Committed as `704ab83`. Design decisions and deviations:
+
+- **Trait/functor plumbing.** `direct_kernel(system)` trait
+  (`compatibility.jl`) defaults per `body_type` (`SingularSource` /
+  `SingularVortex`); resolved once at cache construction and stamped into
+  `CUDARadixLifecycleOptions` as a sixth type parameter, so the pair kernels
+  specialize at compile time. An explicit `options.direct_kernel` is honored;
+  a conflict between a non-default trait and a non-default options choice is
+  an `ArgumentError`.
+- **Signature deviation from spec §5** (documented in the trait docstring):
+  the functor methods are `_direct_pair_ug(kernel, dx, dy, dz, r2, invr,
+  source_bodies, j)` / `_direct_pair_ugh(...)` — flat arguments plus the
+  caller-computed reciprocal sqrt rather than a column view, so one generic
+  method body compiles as both the host loop and the CUDA device function
+  (the CUDA caller supplies `_cuda_fast_rsqrt`, the host `inv(sqrt(r2))`).
+- **Hard-coded kernels retained** verbatim (host + CUDA, scalar + vortex) as
+  the functor-abstraction benchmark reference; production dispatch routes all
+  kernels through the generic functor kernels. The symmetric Newton-pair
+  kernel is gated to `SingularSource` (its shared-work trick assumes the
+  same-source/target scalar kernel).
+- **Erf-free g/h (task-file amendment honored).** The theory-§3 series is run
+  to ρ = 2, which required re-measuring term counts (the §3 6/10-term counts
+  hold only to its ρ = 0.5 partitioning switch): 13 terms (Float32) and 19
+  (Float64) hold ≤ 6.8e-7 / 1.7e-12 relative over the whole series branch;
+  above ρ = 2 the §6.2 one-`exp` degree-3 `s(u)` fit holds |δg| ≤ 2.1e-4
+  against the 3.69e-4 absolute budget, with the exact singular limit
+  (g → 1, h → −3) beyond the fit range. Constants measured by
+  `scripts/fit_032_nearfield_g.jl` → `data/kernel_splitting/nearfield_g_eval.csv`.
+  **Measured switch point: ρ_c = 2.0, both precisions.** No FDLIBM code is in
+  `src/`; the `custom_erf` candidate lives only in the benchmark script until
+  the H200 A/B decides (job 13058104). The §2 `r2 > 0` self-pair guard is kept
+  (scale-free) rather than FLOWVPM's absolute `r2 > 1e-6`.
+- **Adequacy gate (user decision: reject, don't enlarge).** Per-step, both
+  residency paths, regularized kernels only: `g_min·h_leaf > ρ_t·σ_max` with
+  σ_max from the packed σ row (host loop / device reduction) and `g_min` from
+  the live stencil (deepest-level near radius for hierarchical policies —
+  the constraint binds only at the leaf level — or the closest accepted
+  offset class for the flat stencil). Failure throws naming the measured
+  gap/cutoff ratio and the admissible depth. The `n/8^ℓ` form is not
+  implemented anywhere.
+- **`>= 5` validator resolution.** The three `_radix_body_matrix` validators
+  and the `_host_radix_body_matrix` sibling take bare pre-packed matrices on
+  one-shot/device-origin paths with no system object in scope, so
+  `4 + strength_dims` is not computable there; they are minimum-floor checks
+  only. The cache path validates `data_per_body >= 4 + strength_dims` per
+  system at construction. Left as-is, documented here.
+
+Local verification: `device_system_interface_test.jl` 930 + 22 pass (series /
+outer-branch accuracy vs a BigFloat reference — the naive Float64 reference
+itself cancels at small ρ, confirming the §3 hazard; functor-vs-hard-coded
+parity exact for the scalar kernel and ≤ 1e-13 relative for the vortex form
+change; `RegularizedVortex` end-to-end vs an erf-based O(N²) reference at
+≤ 1e-3 (F64) / 3e-3 (F32) relative max; gate + validation error paths). Full
+local `Pkg.test()` passes.
+
+### Checkpoint 2 (2026-08-05) — H200 validation + mandated benchmarks
+
+Job **13058240** (H200 `m13h-2-2`, 6m13s; two earlier submissions failed on
+environment: 13058104 used the CUDA-less `test` project, 13058142 hit `set -u`
+vs `/etc/profile`; 13058191 exposed that the cluster's default julia module
+moved from 1.11.7 to **1.12.6, which segfaults in host LLVM while
+JIT-compiling the device step** — `cuda_032_run.sh`/`cuda_032_submit.sh` now
+pin `julia/1.11.7-6bmogfl`, the toolchain of every H200 result of record).
+
+Device correctness — first hardware validation of the 032 device mirrors:
+`test/cuda_radix_interface_test.jl` **1238/1238** pass (stage-1 packing /
+vortex B2M+χ / 13-row hessian device-vs-host parity incl. P=4 and Float32,
+stage-2 `RegularizedVortex` device parity, device adequacy-gate rejection,
+counter contract); shipped lifecycle regression `cuda_radix_lifecycle_test.jl`
+215/215 + 37/37 pass.
+
+Benchmark A — functor abstraction (031 sign-off (b); n = 1e6, shipped
+hierarchical defaults, ell = 5, median of 9):
+
+| config | hard-coded | functor `SingularSource` | delta |
+|---|---:|---:|---:|
+| F32, 4-row (shipped default) | 3.825 ms | 3.826 ms | +0.0% |
+| F32, 13-row | 9.597 ms | 9.972 ms | +3.9% |
+| F64, 4-row | 10.977 ms | 10.844 ms | −1.2% |
+| F64, 13-row | 15.382 ms | 16.852 ms | +9.6% |
+
+The shipped scalar default (4-row) pays nothing for the abstraction; the
+13-row hessian path (new in 032, no shipped baseline) pays 4–10%, likely the
+13-value tuple return vs in-place accumulation — noted as a small future
+optimization, not a regression.
+
+Benchmark B — vortex kernel ladder (n = 1e6, ell = 4, `near_radius2 = 12`,
+β = 2, adequacy margin verified; 13-row output):
+
+| kernel | Float32 | Float64 |
+|---|---:|---:|
+| hard-coded singular vortex | 129.6 ms | 239.2 ms |
+| functor `SingularVortex` (crss/a/b form) | 114.3 ms | 227.4 ms |
+| functor `RegularizedVortex` (erf-free) | 190.2 ms | 432.6 ms |
+| functor `CustomErfVortex` (FDLIBM port) | 284.8 ms | 663.3 ms |
+
+**Decisions from the numbers:** (1) the functor `SingularVortex` is *faster*
+than the stage-1 hard-coded kernel (the crss/a/b factorization beats the
+expanded form) — functor dispatch stays the production path; (2) **erf-free
+wins the mandated A/B decisively — 1.50× (F32) / 1.53× (F64) faster than the
+`custom_erf` port at equal delivered accuracy** (device outputs agree to
+4.3e-5 relative, far inside the 1e-3 phase gate; host reference check confirms
+the erf-free |δg| = 2.07e-4 sits inside its 3.69e-4 §6.2 budget). The shipped
+erf-free form stands; **no FDLIBM code enters `src/`** (the port remains
+benchmark-only in `benchmark_032_nearfield.jl`). (3) Regularized-everywhere
+costs ~1.7× the singular kernel per pair — the baseline-vs-partitioned
+trade-off is 032a's question, unchanged. Data:
+`data/feasibility_1m_10ms/nearfield032_m13h-2-2_20260805-191230.csv` + job log
+`fm032-13058240.out` (same directory).

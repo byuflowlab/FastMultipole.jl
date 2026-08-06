@@ -1,0 +1,35 @@
+=== node: m13h-2-2
+GPU 0: NVIDIA H200 (UUID: GPU-b27350b7-628d-2b61-66f9-d5b8f1f0107a)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== preflight: CUDA interface tests (stage 1 + 2) ===
+Test Summary:                           | Pass  Total     Time
+CUDA device-system interface (task 032) | 1238   1238  2m13.7s
+=== preflight: shipped lifecycle regression test ===
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  1m35.1s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.4s
+=== stage 2 nearfield benchmarks ===
+--- host accuracy of the two g/h forms (abs err vs BigFloat, rho in (0, 6]) ---
+Float32  erf-free: |dg|=2.07e-04 |dh|=6.20e-04   custom_erf: |dg|=1.21e-07 |dh|=6.60e-07
+Float64  erf-free: |dg|=2.07e-04 |dh|=6.20e-04   custom_erf: |dg|=2.50e-16 |dh|=1.11e-15
+scalar-h4  hardcoded                   3.825 ms  (min 3.814)
+scalar-h4  functor_singular            3.826 ms  (min 3.819)
+scalar-h13 hardcoded                   9.597 ms  (min 9.577)
+scalar-h13 functor_singular            9.972 ms  (min 9.940)
+scalar-h4  hardcoded                  10.977 ms  (min 10.959)
+scalar-h4  functor_singular           10.844 ms  (min 10.822)
+scalar-h13 hardcoded                  15.382 ms  (min 15.353)
+scalar-h13 functor_singular           16.852 ms  (min 16.814)
+vortex-h13 hardcoded_vortex          129.646 ms  (min 129.554)
+vortex-h13 functor_singular_vortex   114.275 ms  (min 114.212)
+vortex-h13 regularized_erffree       190.193 ms  (min 189.799)
+vortex-h13 regularized_customerf     284.847 ms  (min 284.459)
+Float32 device candidate agreement: max|erffree - customerf| = 5.938e-06 (rel 4.279e-05)
+vortex-h13 hardcoded_vortex          239.241 ms  (min 239.083)
+vortex-h13 functor_singular_vortex   227.414 ms  (min 227.244)
+vortex-h13 regularized_erffree       432.598 ms  (min 432.237)
+vortex-h13 regularized_customerf     663.345 ms  (min 662.794)
+Float64 device candidate agreement: max|erffree - customerf| = 5.934e-06 (rel 4.276e-05)
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms/nearfield032_m13h-2-2_20260805-191230.csv
+fm032 job complete
