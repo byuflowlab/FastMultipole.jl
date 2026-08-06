@@ -77,42 +77,6 @@ function source_system_to_buffer!(buffer, i_buffer, system, i_body)
 end
 
 """
-    source_system_to_device_buffer!(device_buffer, system, sort_index)
-
-Deprecated CUDA bulk analogue of [`source_system_to_buffer!`](@ref). New
-device-native source systems should define `residency(system) = DeviceResident()`
-and overload [`source_to_buffer!`](@ref) for their device buffer type.
-
-Implementations must write the same column layout as `source_system_to_buffer!`:
-rows `1:3` contain position, row `4` contains radius,
-rows `5:4+strength_dims(system)` contain strength, and any remaining rows contain
-system-specific data. Column `i` must contain body `sort_index[i]`.
-
-This hook is intentionally bulk-oriented. CUDA implementations should use
-kernels, broadcast, `copyto!`, or other device-to-device operations rather than
-scalar host loops. Systems that do not overload this method remain supported
-through the CPU `source_system_to_buffer!` path followed by one host-to-device
-upload.
-"""
-function source_system_to_device_buffer! end
-
-"""
-    target_system_from_device_buffer!(target_system, device_output_buffer, sort_index, derivatives_switch)
-
-Deprecated CUDA bulk analogue of target writeback from FastMultipole's canonical
-device-resident output buffer. New device-native target systems should define
-`residency(system) = DeviceResident()` and overload [`buffer_to_target!`](@ref)
-for their device output buffer type.
-
-Column `i` of `device_output_buffer` corresponds to body `sort_index[i]`, in the
-same sorted body order used by the radix lifecycle. Implementations should write
-the requested output channels described by `derivatives_switch` using
-device-native operations. Systems without this method remain supported through a
-host destination buffer followed by the existing target writeback path.
-"""
-function target_system_from_device_buffer! end
-
-"""
     data_per_body(system::{UserDefinedSystem})
 
 Returns the number of values used to represent a single body in a source system. Should be overloaded for each user-defined system object (where `{UserDefinedSystem}` is replaced with the type of the user-defined system).
@@ -418,6 +382,27 @@ function buffer_to_target!(target_systems::Tuple, target_tree::Tree, derivatives
     buffer_to_target!(target_systems, target_tree.buffers, derivatives_switches, target_tree.sort_index_list)
 end
 
+"""
+    buffer_to_target!(target_system, target_buffer, derivatives_switch, sort_index, ...)
+
+Deliver an evaluation's results from the **framework-owned** output buffer to
+the consumer's own state. Called by the framework at the end of every
+evaluation; rows are switch-relative (`scalar_potential_index`,
+`gradient_range`, `hessian_range` of the `DerivativesSwitch`), and the call
+must be steady-state allocation-free.
+
+**Delivery semantics**: the buffer always holds the **total influence of this
+evaluation** — the framework zeroes its accumulators each step. Whether the
+consumer overwrites its state or accumulates into it (`.=` vs `.+=`) inside
+this call is the consumer's choice; both are correct (a time stepper typically
+overwrites, FLOWVPM-style resets accumulate).
+
+Host systems get this behavior for free by overloading
+[`buffer_to_target_system!`](@ref); `DeviceResident` systems overload
+`buffer_to_target!(system, device_output_buffer, derivatives_switch,
+sort_index)` for their device buffer type and consume it with device-to-device
+operations.
+"""
 function buffer_to_target!(target_systems::Tuple, target_buffers, derivatives_switches, sort_index_list=Tuple(1:get_n_bodies(system) for system in target_systems), buffer_index_list=Tuple(1:get_n_bodies(system) for system in target_systems))
     for (target_system, target_buffer, derivatives_switch, sort_index, buffer_index) in zip(target_systems, target_buffers, derivatives_switches, sort_index_list, buffer_index_list)
         buffer_to_target!(target_system, target_buffer, derivatives_switch, sort_index, buffer_index)
@@ -551,6 +536,20 @@ function target_to_buffer_multithread!(buffer::Matrix, system, sort_index=1:get_
     end
 end
 
+"""
+    source_to_buffer!(buffer, system, sort_index=1:get_n_bodies(system))
+
+Pack `system`'s live bodies into the **framework-owned** packed source buffer:
+column `i` holds body `sort_index[i]` as `[x, y, z, radius,
+strength (rows 5:4+strength_dims), extras...]`. Called by the framework every
+evaluation (and by [`recenter!`](@ref) when deriving bounds); the consumer
+never allocates or retains the buffer, and the call must be steady-state
+allocation-free. Host systems get this behavior for free by overloading
+[`source_system_to_buffer!`](@ref); `DeviceResident` systems overload this
+method for their device buffer type (the framework passes a view of the valid
+column prefix of a persistent device buffer, with the identity `sort_index`)
+and fill it with device-to-device operations.
+"""
 function source_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     for (buffer, system, sort_index) in zip(buffers, systems, sort_index_list)
         source_to_buffer!(buffer, system, sort_index)

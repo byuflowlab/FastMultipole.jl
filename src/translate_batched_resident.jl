@@ -1965,6 +1965,146 @@ function _refresh_hierarchical_route_telemetry!(state,
 end
 
 """
+    recenter!(cache::RadixFMMCache, systems; bounds=nothing, padding=0.05)
+
+Re-anchor the cache's fixed domain box (task 032, spec §4). The box is part of
+the cache's invariant contract: bodies leaving it make the next `fmm!` throw,
+and `fmm!` never recenters implicitly. When the physical domain should move or
+resize, the consumer calls `recenter!` explicitly between evaluations, before
+the next `fmm!`.
+
+- `bounds = (x_min, box_size)` is the deterministic fast path (recommended for
+  consumers that already track their domain); caller-supplied bounds are final
+  and are **not** padded.
+- With `bounds = nothing`, the union bounds of all live bodies are derived:
+  host-resident systems through `get_position`, device-resident systems by a
+  device min/max reduction over their persistent packed source buffers
+  (refilled via `source_to_buffer!` first; only six extrema scalars reach the
+  host). `padding` is a nonnegative fraction of the tight cube's side added on
+  each face: `x_min = lo - padding*L_tight`, `L = (1 + 2*padding)*L_tight`.
+
+Validation errors (`ArgumentError`) — an empty system, non-finite or
+nonpositive bounds, negative padding, a changed system count, or a live count
+above `max_n_bodies` — leave the cache unmodified and usable.
+
+Implementation (geometry-rebuild fallback, user decision 2026-08-05): the
+geometry-dependent state — stencil classification, operator tables, grid
+keying, device geometry — is re-derived by re-running the construction path at
+the new bounds with the cache's own parameters (`expansion_order`, `ell`,
+`max_n_bodies`, `hessian`, `options`, and the cache's policy re-anchored to the
+new box: a `HierarchicalRigidStencil` gets its box-derived tolerance re-derived
+via `rigid_stencil_epsilon` at the new `h0` — the rigid near set and level
+schedule are preserved exactly — while a flat `ConstantPAnalyticStencil` keeps
+its tolerance and re-classifies; a hierarchical policy carrying custom
+source/chi strengths incompatible with the re-derived tolerance fails the
+construction accuracy gate loudly rather than running wrong), then swapped into
+the existing cache object in place; the object identity consumers hold remains
+valid, and
+step-count prefixes restart so no stale state is trusted. Consequences to plan
+around: `recenter!` costs about as much as cache construction, transiently
+holds a second set of buffers (device caches: transiently ~2x device memory),
+and restarts the transfer counters (a construction-equivalent event — route and
+operator uploads recur here, never in ordinary steps). The zero-cost
+alternative — normalized unit-cube internal coordinates making the operator
+tables box-size-invariant — is recorded as a task 035 lever.
+"""
+function recenter!(cache::RadixFMMCache{TF,LH}, systems;
+        bounds=nothing, padding::Real=0.05) where {TF,LH}
+    systems_tuple = to_tuple(systems)
+    length(systems_tuple) == cache.n_systems || throw(ArgumentError(
+        "recenter! got $(length(systems_tuple)) systems for a cache built with " *
+        "$(cache.n_systems); the system set is part of the cache contract"))
+    padding >= 0 || throw(ArgumentError("recenter! padding must be nonnegative"))
+    n = get_n_bodies(systems_tuple)
+    n <= cache.max_n_bodies || throw(ArgumentError(
+        "recenter! live body count n=$n exceeds the cache capacity " *
+        "max_n_bodies=$(cache.max_n_bodies)"))
+    if bounds === nothing
+        lo, hi = _recenter_union_bounds(cache, systems_tuple)
+        (all(isfinite, lo) && all(isfinite, hi)) || throw(ArgumentError(
+            "recenter! derived non-finite body bounds; check body positions"))
+        L_tight = max(hi[1] - lo[1], hi[2] - lo[2], hi[3] - lo[3])
+        L_tight > zero(TF) || throw(ArgumentError(
+            "recenter! derived a degenerate (zero-extent) body cloud; pass " *
+            "explicit bounds=(x_min, box_size)"))
+        x_min_new = lo .- TF(padding) * L_tight
+        L_new = (1 + 2 * TF(padding)) * L_tight
+    else
+        x_min_new = SVector{3,TF}(bounds[1])
+        L_new = TF(bounds[2])
+        all(isfinite, x_min_new) && isfinite(L_new) || throw(ArgumentError(
+            "recenter! bounds must be finite"))
+        L_new > zero(TF) || throw(ArgumentError("recenter! box_size must be positive"))
+    end
+    # Build the replacement first: any failure (empty system, body outside the
+    # requested bounds, capacity) leaves the original cache untouched.
+    fresh = RadixFMMCache(systems_tuple, systems_tuple;
+        expansion_order=cache.expansion_order, ell=cache.ell,
+        max_n_bodies=cache.max_n_bodies, bounds=(x_min_new, L_new),
+        lamb_helmholtz=LH, hessian=cache.hessian, device=cache.device,
+        options=cache.options,
+        policy=_recentered_policy(cache.policy, cache.expansion_order,
+            L_new / 2, cache.ell, TF, LH))
+    for f in fieldnames(RadixFMMCache)
+        setfield!(cache, f, getfield(fresh, f))
+    end
+    return cache
+end
+
+_config_normalization(::ConstantPStencilConfig{TF,LH,N}) where {TF,LH,N} = N
+
+# The flat analytic stencil keeps its tolerance and re-classifies at the new
+# box; the hierarchical rigid stencil keeps its near set and level schedule
+# exactly and re-derives the box-scaled tolerance those sets realize (the
+# construction-time _verify_hierarchical_classifier! gate requires it).
+_recentered_policy(policy::ConstantPAnalyticStencil, P, h0_new, ell, ::Type, LH) = policy
+
+function _recentered_policy(policy::HierarchicalRigidStencil, P, h0_new, ell,
+        ::Type{TF}, LH) where TF
+    cfg = policy.config
+    eps_new = rigid_stencil_epsilon(cfg.P_phi, h0_new, ell, policy.near_radius2;
+        lamb_helmholtz=LH, TF)
+    config = ConstantPStencilConfig(cfg.P_phi, eps_new, cfg.source_strength;
+        chi_strength=cfg.chi_strength, lamb_helmholtz=LH,
+        normalization=_config_normalization(cfg))
+    return HierarchicalRigidStencil(config;
+        near_radius2=policy.near_radius2, level_radii2=policy.level_radii2,
+        window_classes=policy.window_classes,
+        dense_occupancy_max_bytes=policy.dense_occupancy_max_bytes,
+        dense_occupancy_max_ell=policy.dense_occupancy_max_ell)
+end
+
+function _recenter_union_bounds(cache::RadixFMMCache{TF}, systems::Tuple) where TF
+    lox = TF(Inf); loy = TF(Inf); loz = TF(Inf)
+    hix = -TF(Inf); hiy = -TF(Inf); hiz = -TF(Inf)
+    for (isys, system) in enumerate(systems)
+        n_sys = get_n_bodies(system)
+        n_sys > 0 || throw(ArgumentError(
+            "recenter! requires at least one live body in every system " *
+            "(system $isys is empty)"))
+        if residency(system) isa DeviceResident
+            cache.device || throw(ArgumentError(
+                "DeviceResident system $isys requires a device=true cache"))
+            buf = cache.device_ctx.device_sources[isys]
+            _fill_device_source_buffer!(view(buf, :, 1:n_sys), system)
+            lox = min(lox, TF(minimum(view(buf, 1, 1:n_sys))))
+            loy = min(loy, TF(minimum(view(buf, 2, 1:n_sys))))
+            loz = min(loz, TF(minimum(view(buf, 3, 1:n_sys))))
+            hix = max(hix, TF(maximum(view(buf, 1, 1:n_sys))))
+            hiy = max(hiy, TF(maximum(view(buf, 2, 1:n_sys))))
+            hiz = max(hiz, TF(maximum(view(buf, 3, 1:n_sys))))
+        else
+            for i in 1:n_sys
+                x = get_position(system, i)
+                lox = min(lox, TF(x[1])); loy = min(loy, TF(x[2])); loz = min(loz, TF(x[3]))
+                hix = max(hix, TF(x[1])); hiy = max(hiy, TF(x[2])); hiz = max(hiz, TF(x[3]))
+            end
+        end
+    end
+    return SVector{3,TF}(lox, loy, loz), SVector{3,TF}(hix, hiy, hiz)
+end
+
+"""
     update_radix_state!(cache, systems)
 
 Refresh every step-varying part of the cache's resident state from the systems'

@@ -261,3 +261,68 @@ end
     @test_throws ArgumentError RegularizedVortex(; sigma_row=4)
     @test_throws ArgumentError RegularizedVortex(; sigma_row=8, rho_t=0.0)
 end
+
+@testset "stage 3 (task 032): recenter!, deprecated hooks" begin
+
+    seed = 20260805
+    opts64 = CUDARadixLifecycleOptions(; precision=Float64,
+        m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+
+    #--- (a) deprecated device-buffer hooks are gone ---#
+
+    @test !isdefined(FastMultipole, :source_system_to_device_buffer!)
+    @test !isdefined(FastMultipole, :target_system_from_device_buffer!)
+
+    #--- (b) recenter! parity vs a fresh cache at the same bounds ---#
+
+    # hierarchical (ell = 3) and flat (ell = 2) policies, hessian on and off
+    for (ell, hessian) in ((3, true), (3, false), (2, true))
+        sys = generate_gravitational(seed, 500)
+        ref_sys = generate_gravitational(seed, 500)
+        cache = RadixFMMCache(sys; expansion_order=4, ell, hessian, options=opts64)
+        fmm!(sys, cache; scalar_potential=true, gradient=true, hessian)
+
+        # drift every body by a shift that leaves the old box
+        shift = SVector(1.5, 0.25, -0.75)
+        for s in (sys, ref_sys), i in eachindex(s.bodies)
+            b = s.bodies[i]
+            s.bodies[i] = Body(b.position + shift, b.radius, b.strength)
+        end
+        @test_throws ArgumentError fmm!(sys, cache; scalar_potential=true,
+            gradient=true, hessian)      # out-of-box throws, cache stays usable
+
+        new_bounds = (SVector(0.4, -0.85, -1.85), 2.3)
+        recenter!(cache, sys; bounds=new_bounds)
+        sys.potential .= 0
+        fmm!(sys, cache; scalar_potential=true, gradient=true, hessian)
+
+        fresh = RadixFMMCache(ref_sys; expansion_order=4, ell, hessian,
+            bounds=new_bounds, options=opts64)
+        fmm!(ref_sys, fresh; scalar_potential=true, gradient=true, hessian)
+        @test maximum(abs.(sys.potential .- ref_sys.potential)) < 1e-12
+
+        # derived bounds with padding also runs and stays accurate
+        recenter!(cache, sys; padding=0.1)
+        @test cache.h0 > 0
+        sys.potential .= 0
+        fmm!(sys, cache; scalar_potential=true, gradient=true, hessian)
+        @test maximum(abs.(sys.potential[5:7, :] .- ref_sys.potential[5:7, :])) < 5e-3
+    end
+
+    #--- (c) recenter! validation errors leave the cache untouched ---#
+
+    sys = generate_gravitational(seed, 200)
+    cache = RadixFMMCache(sys; expansion_order=4, ell=2, options=opts64)
+    x_min0, h00, step0 = cache.x_min, cache.h0, cache.step
+    @test_throws ArgumentError recenter!(cache, sys; padding=-0.1)
+    @test_throws ArgumentError recenter!(cache, sys; bounds=((0, 0, 0), -1.0))
+    @test_throws ArgumentError recenter!(cache, sys; bounds=((NaN, 0, 0), 1.0))
+    other = generate_gravitational(seed, 100)
+    @test_throws ArgumentError recenter!(cache, (sys, other))   # changed system count
+    # bounds that exclude the bodies: construction throws, cache unmodified
+    @test_throws ArgumentError recenter!(cache, sys; bounds=((10.0, 10.0, 10.0), 1.0))
+    @test cache.x_min == x_min0 && cache.h0 == h00 && cache.step == step0
+    # still usable after every rejected call
+    fmm!(sys, cache; gradient=true)
+    @test cache.step == step0 + 1
+end

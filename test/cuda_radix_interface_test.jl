@@ -20,8 +20,19 @@ end
 
 _cuda_interface_required() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0") == "1"
 
+# load + includes at top level so the FM028 method definitions are visible
+# inside the testset (no world-age hazard; same pattern as the convection test)
+const _IFACE_LOADED = FastMultipole.load_cuda_radix_lifecycle!()
+if _IFACE_LOADED
+    using CUDA
+    if !isdefined(@__MODULE__, :FM028DeviceSystem)
+        include(joinpath(@__DIR__, "..", "MATRIX_OPERATOR_REFACTOR", "scripts",
+            "fm028_device_system.jl"))
+    end
+end
+
 @testset "CUDA device-system interface (task 032)" begin
-    loaded = FastMultipole.load_cuda_radix_lifecycle!()
+    loaded = _IFACE_LOADED
     if !loaded
         if _cuda_interface_required()
             error(
@@ -33,7 +44,6 @@ _cuda_interface_required() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0") =
         @test_throws Exception RadixFMMCache(sys; expansion_order=4, ell=2,
             hessian=true, device=true)
     else
-        @eval using CUDA
         seed = 20260805
         opts64 = CUDARadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
@@ -150,5 +160,68 @@ _cuda_interface_required() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0") =
         bad = SmoothedVortex(generate_vortex(seed, 400), fill(0.2, 400))
         @test_throws ArgumentError RadixFMMCache(bad; expansion_order=4, ell=3,
             options=opts64, device=true)
+
+        #--- (8) stage 3: persistent device-resident source buffer (gap 5) ---#
+
+        let TF = Float64, n = 3000
+            bodies = fm028_body_matrix(24025, n)
+            dsys = FM028DeviceSystem{TF}(bodies)
+            dcache = RadixFMMCache(dsys; expansion_order=3, ell=3, max_n_bodies=n,
+                bounds=(SVector{3,TF}(-0.01, -0.01, -0.01), TF(1.02)),
+                device=true, options=CUDARadixLifecycleOptions(; precision=TF,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+            ctx = dcache.device_ctx
+            # device-resident systems now own a persistent construction-time
+            # buffer, refilled in place each refresh (no per-step CuArray)
+            @test ctx.device_sources[1] isa CUDA.CuArray{TF,2}
+            bufs = FastMultipole._radix_cache_refresh_source_buffers!(ctx, (dsys,), TF)
+            @test parent(bufs[1]) === ctx.device_sources[1]
+            counters = dcache.state.counters
+            uploads0 = counters.body_uploads
+            for _ in 1:3
+                fmm!(dsys, dcache; scalar_potential=true, gradient=true)
+            end
+            @test counters.body_uploads == uploads0      # zero per-step uploads
+            @test counters.expansion_host_copies == 0
+        end
+
+        #--- (9) stage 3: recenter! device parity vs a fresh device cache ---#
+
+        let TF = Float64
+            sys = generate_gravitational(seed, 1000)
+            ref_sys = generate_gravitational(seed, 1000)
+            dc = RadixFMMCache(sys; expansion_order=4, ell=3, hessian=true,
+                options=opts64, device=true)
+            fmm!(sys, dc; scalar_potential=true, gradient=true, hessian=true)
+            new_bounds = (SVector(-0.6, -0.6, -0.6), 2.4)
+            recenter!(dc, sys; bounds=new_bounds)
+            sys.potential .= 0
+            fmm!(sys, dc; scalar_potential=true, gradient=true, hessian=true)
+            fresh = RadixFMMCache(ref_sys; expansion_order=4, ell=3, hessian=true,
+                bounds=new_bounds, options=opts64, device=true)
+            fmm!(ref_sys, fresh; scalar_potential=true, gradient=true, hessian=true)
+            @test maximum(abs.(sys.potential .- ref_sys.potential)) < 1e-10
+            # derived-bounds path (host-resident systems -> get_position loop)
+            recenter!(dc, sys; padding=0.05)
+            sys.potential .= 0
+            fmm!(sys, dc; scalar_potential=true, gradient=true, hessian=true)
+            @test maximum(abs.(sys.potential[5:7, :] .-
+                ref_sys.potential[5:7, :])) < 5e-3
+        end
+
+        # derived-bounds device reduction for a device-resident system
+        let TF = Float64, n = 2000
+            bodies = fm028_body_matrix(24025, n)
+            dsys = FM028DeviceSystem{TF}(bodies)
+            dcache = RadixFMMCache(dsys; expansion_order=3, ell=3, max_n_bodies=n,
+                bounds=(SVector{3,TF}(-0.01, -0.01, -0.01), TF(1.02)),
+                device=true, options=CUDARadixLifecycleOptions(; precision=TF,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+            fmm!(dsys, dcache; scalar_potential=true, gradient=true)
+            g0 = Array(dsys.gradient)
+            recenter!(dcache, dsys)      # bounds from the device reduction
+            fmm!(dsys, dcache; scalar_potential=true, gradient=true)
+            @test maximum(abs.(Array(dsys.gradient) .- g0)) < 5e-4
+        end
     end
 end

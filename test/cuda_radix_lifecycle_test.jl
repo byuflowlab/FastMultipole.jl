@@ -237,7 +237,9 @@ _cuda_required_tests() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0") == "1
     require_cuda_tests = _cuda_required_tests()
 
     @test FastMultipole.residency(CUDARadixCPUScalarSystem(zeros(3, 0), Float64[], Float64[])) isa HostResident
-    @test FastMultipole.source_system_to_device_buffer! isa Function
+    # the deprecated device-buffer hooks were removed in task 032 stage 3
+    @test !isdefined(FastMultipole, :source_system_to_device_buffer!)
+    @test !isdefined(FastMultipole, :target_system_from_device_buffer!)
     @test FastMultipole.cuda_radix_available() == false
     @test occursin("not loaded", FastMultipole.cuda_radix_status())
 

@@ -877,11 +877,6 @@ function _has_device_source_to_buffer_method(device_buffer, system, sort_index)
     return hasmethod(source_to_buffer!, sig)
 end
 
-function _has_deprecated_cuda_source_buffer_method(device_buffer, system, sort_index)
-    sig = Tuple{typeof(device_buffer),typeof(system),typeof(sort_index)}
-    return hasmethod(source_system_to_device_buffer!, sig)
-end
-
 function _canonical_cuda_source_buffer(system, ::Type{TF},
         counters::CUDARadixTransferCounters, ::HostResident) where TF
     sort_index = collect(1:get_n_bodies(system))
@@ -893,25 +888,23 @@ end
 
 function _canonical_cuda_source_buffer(system, ::Type{TF},
         counters::CUDARadixTransferCounters, ::DeviceResident) where TF
-    # identity permutation: a range, matching the documented `sort_index`
-    # default in compatibility.jl. `collect` here allocated an 8 MB Vector{Int}
-    # every step at n=1e6 (14% of per-step host allocation, task 028).
+    # one-shot path only; the recurring cache path fills its persistent
+    # per-system buffer in _radix_cache_refresh_source_buffers! (task 032)
+    device_buffer = CUDA.CuArray{TF}(undef, data_per_body(system), get_n_bodies(system))
+    return _fill_device_source_buffer!(device_buffer, system)
+end
+
+# identity permutation: a range, matching the documented `sort_index` default in
+# compatibility.jl. `collect` here allocated an 8 MB Vector{Int} every step at
+# n=1e6 (14% of per-step host allocation, task 028).
+function _fill_device_source_buffer!(device_buffer, system)
     sort_index = Base.OneTo(get_n_bodies(system))
-    device_buffer = CUDA.CuArray{TF}(undef, data_per_body(system), length(sort_index))
-    if _has_device_source_to_buffer_method(device_buffer, system, sort_index)
-        source_to_buffer!(device_buffer, system, sort_index)
-        return device_buffer
-    elseif _has_deprecated_cuda_source_buffer_method(device_buffer, system, sort_index)
-        Base.depwarn(
-            "source_system_to_device_buffer! is deprecated; define residency(system) = DeviceResident() and overload source_to_buffer!(device_buffer, system, sort_index)",
-            :source_system_to_device_buffer!,
-        )
-        source_system_to_device_buffer!(device_buffer, system, sort_index)
-        return device_buffer
-    end
-    throw(ArgumentError(
-        "DeviceResident CUDA source systems must overload FastMultipole.source_to_buffer!(device_buffer, system, sort_index)",
-    ))
+    _has_device_source_to_buffer_method(device_buffer, system, sort_index) ||
+        throw(ArgumentError(
+            "DeviceResident CUDA source systems must overload FastMultipole.source_to_buffer!(device_buffer, system, sort_index)",
+        ))
+    source_to_buffer!(device_buffer, system, sort_index)
+    return device_buffer
 end
 
 function _canonical_cuda_source_buffers(systems::Tuple, ::Type{TF},
@@ -3761,20 +3754,8 @@ function copy_cuda_radix_output!(dest::AbstractArray, state::DeviceResidentRadix
     return dest
 end
 
-function _has_deprecated_cuda_target_method(target_system, device_output_buffer, sort_index, derivatives_switch)
-    sig = Tuple{typeof(target_system),typeof(device_output_buffer),typeof(sort_index),typeof(derivatives_switch)}
-    return hasmethod(target_system_from_device_buffer!, sig)
-end
-
 function buffer_to_target!(target_system, device_output_buffer::CUDA.AnyCuArray,
         derivatives_switch, sort_index=1:get_n_bodies(target_system))
-    if _has_deprecated_cuda_target_method(target_system, device_output_buffer, sort_index, derivatives_switch)
-        Base.depwarn(
-            "target_system_from_device_buffer! is deprecated; define residency(system) = DeviceResident() and overload buffer_to_target!(target_system, device_output_buffer, derivatives_switch, sort_index)",
-            :target_system_from_device_buffer!,
-        )
-        return target_system_from_device_buffer!(target_system, device_output_buffer, sort_index, derivatives_switch)
-    end
     throw(ArgumentError(
         "DeviceResident CUDA target systems must overload FastMultipole.buffer_to_target!(target_system, device_output_buffer, derivatives_switch, sort_index)",
     ))
@@ -4262,17 +4243,17 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
     )
     n_edges_capacity = max(max_nodes - 1, 0)
 
-    # per-system upload staging: host-resident systems get a pinned host buffer
-    # plus a persistent device buffer; device-resident systems materialize their
-    # own canonical buffer each step (see _radix_cache_refresh_source_buffers!)
+    # per-system source staging: host-resident systems get a pinned host buffer
+    # plus a persistent device buffer (one upload per step); device-resident
+    # systems get a persistent device buffer their source_to_buffer! overload
+    # fills in place each step (task 032 gap-5 fix — no per-step allocation,
+    # no transfer)
     host_stagings = Tuple(
         residency(system) isa HostResident ?
             _pin_host_array(Matrix{TF}(undef, data_per_body(system), maxn)) : nothing
         for system in sources)
     device_sources = Tuple(
-        residency(system) isa HostResident ?
-            CUDA.zeros(TF, data_per_body(system), maxn) : nothing
-        for system in sources)
+        CUDA.zeros(TF, data_per_body(system), maxn) for system in sources)
 
     # Flat occupancy/flag storage is leaf-only and unused by the hierarchical
     # path, which keeps its per-level `node_at` and its single-window flag/prefix
@@ -4359,23 +4340,24 @@ end
 
 # Refresh the persistent per-system device source buffers. Host-resident systems
 # repack into their pinned staging and upload the valid column prefix (one upload
-# per system per step); device-resident systems materialize a canonical buffer
-# through their own overloads.
+# per system per step); device-resident systems fill the valid prefix of their
+# persistent buffer in place through their source_to_buffer! overload (no
+# transfer, no allocation — task 032 gap-5 fix).
 function _radix_cache_refresh_source_buffers!(ctx, systems::Tuple, ::Type{TF}) where TF
     return ntuple(length(systems)) do isys
         system = systems[isys]
         n_sys = get_n_bodies(system)
+        device_buffer = ctx.device_sources[isys]
         if residency(system) isa HostResident
             staging = ctx.host_stagings[isys]
-            device_buffer = ctx.device_sources[isys]
             source_to_buffer!(staging, system, 1:n_sys)
             # linear-prefix copy: the first n_sys columns are contiguous
             copyto!(device_buffer, 1, staging, 1, size(staging, 1) * n_sys)
             ctx.counters.body_uploads += 1
-            view(device_buffer, :, 1:n_sys)
         else
-            _canonical_cuda_source_buffer(system, TF, ctx.counters, DeviceResident())
+            _fill_device_source_buffer!(view(device_buffer, :, 1:n_sys), system)
         end
+        view(device_buffer, :, 1:n_sys)
     end
 end
 
