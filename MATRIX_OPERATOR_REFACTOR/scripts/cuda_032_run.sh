@@ -12,24 +12,33 @@
 #      lifecycle regression test;
 #   2. the two mandated stage-2 nearfield benchmarks (functor-abstraction cost,
 #      erf-free vs custom_erf) via benchmark_032_nearfield.jl.
+# Environment pattern from cuda_030_run.sh: the fm023env project carries CUDA
+# (local-toolkit preferences; compute nodes have no internet).
 set -euo pipefail
-module load julia
+set -o pipefail
+source /etc/profile
+module load cuda julia
+echo "=== node: $(hostname)"
+nvidia-smi -L
+echo "CUDA_HOME=${CUDA_HOME:-unset}"
+
+WORKDIR="${FM032_DIR:-$HOME/FastMultipole-023}"
+ENVDIR="${FM032_ENV:-$HOME/fm023env}"
+OUTDIR="${FM032_OUTDIR:-$WORKDIR/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms}"
+cd "$WORKDIR"
+mkdir -p "$OUTDIR"
 
 export FASTMULTIPOLE_FORCE_CUDA_LOAD=1
 export FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1
 export JULIA_NUM_THREADS=8
 
-cd "$HOME/FastMultipole-023"
-OUTDIR="MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms"
-mkdir -p "$OUTDIR"
-
 echo "=== preflight: CUDA interface tests (stage 1 + 2) ==="
-julia --project=test test/cuda_radix_interface_test.jl
+julia --project="$ENVDIR" test/cuda_radix_interface_test.jl
 echo "=== preflight: shipped lifecycle regression test ==="
-julia --project=test test/cuda_radix_lifecycle_test.jl
+julia --project="$ENVDIR" test/cuda_radix_lifecycle_test.jl
 
 echo "=== stage 2 nearfield benchmarks ==="
-FM032_OUTDIR="$OUTDIR" julia --project=test \
+FM032_OUTDIR="$OUTDIR" julia --project="$ENVDIR" \
     MATRIX_OPERATOR_REFACTOR/scripts/benchmark_032_nearfield.jl
 
 echo "fm032 job complete"
