@@ -10,7 +10,8 @@
 # process-start env var; runtime set_num_threads is unreliable -- see 008c).
 source /etc/profile
 set -o pipefail
-module load julia
+# julia pinned: module default moved to 1.12.6 on 2026-08-05 which segfaults host LLVM JIT (job 13058191); 1.11.7 is the toolchain of record
+module load julia/1.11.7-6bmogfl
 echo "=== node: $(hostname)  cpus=$SLURM_CPUS_PER_TASK"
 lscpu | grep -E "Model name|Socket|Core|Thread" || true
 

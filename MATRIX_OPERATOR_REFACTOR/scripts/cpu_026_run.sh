@@ -6,7 +6,8 @@
 #SBATCH --output=%x-%j.out
 source /etc/profile
 set -euo pipefail
-module load julia
+# julia pinned: module default moved to 1.12.6 on 2026-08-05 which segfaults host LLVM JIT (job 13058191); 1.11.7 is the toolchain of record
+module load julia/1.11.7-6bmogfl
 
 # The m12 partition mixes CPU targets and concurrent jobs share ~/.julia, so a
 # job precompiling on one node can invalidate the pkgimage another running job

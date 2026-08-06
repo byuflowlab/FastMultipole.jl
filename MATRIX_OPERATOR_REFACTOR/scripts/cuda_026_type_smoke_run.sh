@@ -7,7 +7,8 @@
 #SBATCH --output=%x-%j.out
 source /etc/profile
 set -euo pipefail
-module load cuda julia
+# julia pinned: module default moved to 1.12.6 on 2026-08-05 which segfaults host LLVM JIT (job 13058191); 1.11.7 is the toolchain of record
+module load cuda julia/1.11.7-6bmogfl
 
 WORKDIR="${FM026_DIR:-$HOME/FastMultipole-026}"
 ENVDIR="${FM026_ENV:-$HOME/fm026env}"

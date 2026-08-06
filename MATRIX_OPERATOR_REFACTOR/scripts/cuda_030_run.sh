@@ -43,7 +43,8 @@ DRYRUN="${FM030_DRYRUN:-0}"
 set -o pipefail
 if [ "$DRYRUN" != "1" ]; then
     source /etc/profile
-    module load cuda julia
+    # julia pinned: module default moved to 1.12.6 on 2026-08-05 which segfaults host LLVM JIT (job 13058191); 1.11.7 is the toolchain of record
+    module load cuda julia/1.11.7-6bmogfl
     echo "=== node: $(hostname)"
     nvidia-smi -L
     echo "CUDA_HOME=${CUDA_HOME:-unset}"
