@@ -596,5 +596,58 @@ a different agent.
 
 ## Approval Notes
 
-To be filled by a different agent after review notes and verification are
-complete.
+**Approved** — clear-context approval subagent, `2026-08-05`. Reviewed per the
+`START_HERE.md` step-6 protocol: this task file in full, `START_HERE.md`, and
+the listed artifacts (`data/cost_vs_n/report.md`, `recommendations.csv`,
+`retune_recommendations.csv`, `cost_model_predictions.csv`, the three campaign
+logs `fm030-13035897/13036854/13044695.out` plus the control log
+`data/cost_vs_n_control/fm030-13045768.out`, `scripts/cuda_030_run.sh`,
+`cuda_030_submit.sh`, `analyze_030_structure.jl`, `analyze_030_costmodel.jl`,
+`analyze_030_recommend.jl`, the `fig10()` addition in
+`figures_024a_prepare.jl`, and `data/figures/fig10_cost_vs_n.tex` +
+`tables/fig10_cost_vs_n.csv`).
+
+Checks performed and results:
+
+1. **Objectives/completion rule.** All five completion-rule items verified:
+   42/42 sweep + 110/110 retune + 42/42 refinement case CSVs present, every
+   case `fit=true`, `reference_source=024b_csv`, all four job logs show
+   preflight green, `REFERENCE_GATE_EXIT=0`, `failed_cases=0`, `SWEEP_EXIT=0`,
+   and no failure-ledger file exists (empty ledger claim confirmed); fig10
+   built (tex/pdf/png + provenance-commented table); recommendation table
+   fully measured with the fixed-error lever quantified; predicted-vs-measured
+   delivered over the whole 110-case retune grid per the user's `2026-08-04`
+   direction; step-5 checkpoint recorded held `2026-08-05`.
+2. **Correctness spot-checks against raw campaign CSVs (all match):** shipped
+   `n=1e6` FP16 verdict 9.591456 ms / err 1.0593e-3 (job 13035897);
+   `sched6-4-4-3` FP16 7.092316 ms with the knife-edge err
+   **1.1895989e-3** vs the 1.19e-3 gate (passes by 0.03%, correctly flagged
+   and correctly *not* the recommendation); robust `sched6-5-4-4` 7.5564 ms /
+   err 1.030e-3 (0.87x gate); the whole Results table (per-`n` winners,
+   speedups 2.04x/1.83x/1.82x/1.58x/1.77x/1.31x/1.35x, and radius-lever
+   deltas −0.055/−0.105/−0.033/−0.871/−2.499 ms) recomputes exactly from
+   `report.md` and the retune CSV; fig10 table rows cross-check against the
+   campaign CSVs at `n=1e3`, `31623`, `1e5`, `316228`, and `1e6`, and its
+   retuned series matches the measured per-`n` winners.
+3. **Minimal invasiveness.** No `030` commit (`19581bf`..`6fac016`) touches
+   `src/`; the `src/` changes on the branch since `2026-08-03` all belong to
+   Integration row `032`.
+4. **Robustness.** The threats-to-validity are honest and sufficient: the
+   16.3%/19.3% per-stage residuals at `n=316228`/`1e6`, the post-motion
+   structure-column drift, and the two-family schedule-grid coverage limit
+   ("measured lower bound, not proof of optimality") are all stated where the
+   conclusions depend on them.
+
+Minor observations (non-blocking): (a) `scripts/cuda_030_run.sh` line 19's
+mode summary comment still says `ell in {4,5,6}`; the header comment and the
+actual default (`FM030_ELLS:-3 4 5`) are correct. (b) `report.md`'s "49 in the
+fixed-`ell` sweep" counts the shipped-schedule *view* (the 42 sweep cases plus
+the 7 `ell=2` `sched5` shipped-shape retune points), not the 42-case campaign;
+the wording could mislead a casual reader. (c) fig10's retuned series plots
+the knife-edge 7.092 ms point at `n=1e6` (the fastest admissible, per the
+pre-registered selection rule); the robust-winner distinction lives in the
+task file, `report.md`, and `retune_recommendations.csv`.
+
+Verdict: consistent with objectives, correct, honestly caveated, and
+minimally invasive. Approved; the `019a` addendum note is added per the
+completion rule.

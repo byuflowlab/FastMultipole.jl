@@ -421,3 +421,35 @@ scope): the working tree contains untracked `plot_inner_iterations.py` and
 `plots/` (inner-iterations cost figures) that are not artifacts of any
 reviewed task; they should be committed elsewhere or removed at the user's
 discretion.
+
+## Addendum (2026-08-05): task `030` cost-vs-n results
+
+Recorded per the `030` completion rule (mirroring the `029`-deferral
+convention: results land here as an addendum note, not a reopened review).
+Task `030` — Done and clear-context approved — measured the per-time-step
+verdict-boundary cost versus `n` (`1e3`–`1e6`, the `024b` grid) at the `028`
+shipped defaults as fixed-depth series `ell = 3/4/5` in FP16-WMMA/Float32 and
+Float64 (42 cases), then ran a pre-registered joint per-`n` retune over depth,
+level-radius schedule, and float type (110 + 42 refinement cases). Headline
+conclusions, all measured at the unchanged `1.19e-3` gradient gate:
+
+- **The shipped default (`ell = 5`, `sched6-5-5-5`, FP16) is never the per-`n`
+  optimum** — not even at `n = 1e6`, where it was tuned.
+- **At `n = 1e6` the robust retuned winner is `sched6-5-4-4` FP16 at
+  7.556 ms** (err 0.87x gate), a **1.27x** gain over the shipped 9.591 ms;
+  the knife-edge fastest admissible point is `sched6-4-4-3` FP16 at
+  **7.092 ms** (err 1.18960e-3, 0.03% inside the gate) and is reported but
+  not recommended.
+- **The radius (fixed-error) lever pays only at large `n`** (−0.87 ms at
+  316228, −2.50 ms at 1e6; ≤0.1 ms below that), because it works by shrinking
+  the leaf near set and direct work only dominates at large `n`.
+- **The classic FMM near set (`q^2 = 3`, `|o|_inf <= 1`) is inadmissible at
+  `P = 4`**: 3.3–3.5x the gate at every `n` and depth measured, though always
+  cheapest — the `theta = 0.5` near radius is what `P = 4` requires.
+- **The depth optimum tracks `n` downward past the sweep bracket**, to
+  `ell = 2` at `n <= 3162`; the small-`n` floor is the ~0.44 ms/level launch
+  cost that only depth can move.
+
+The full per-`n` winner table (all 194 measured cases) is in
+`data/cost_vs_n/report.md`; fig10 in the `024a` set plots both panels with the
+per-`n` retuned series. No production `src/` change was made by `030`.
