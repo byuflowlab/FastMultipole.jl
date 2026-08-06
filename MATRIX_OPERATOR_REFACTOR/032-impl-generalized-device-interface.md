@@ -285,3 +285,53 @@ costs ~1.7× the singular kernel per pair — the baseline-vs-partitioned
 trade-off is 032a's question, unchanged. Data:
 `data/feasibility_1m_10ms/nearfield032_m13h-2-2_20260805-191230.csv` + job log
 `fm032-13058240.out` (same directory).
+
+### Cluster toolchain note (2026-08-05)
+
+A clean-env probe (throwaway 1.12.6 env, current CUDA.jl stack, job 13058336)
+reproduced the device-step host-LLVM segfault exactly, while a CUDA smoke test
+passed — the crash is Julia 1.12.6's LLVM-18 JIT on FastMultipole's device
+step, not a stale-manifest artifact (the CUDA.jl full suite could not run on
+the offline compute node; verdict rests on the smoke test + repro). All 22
+cluster run scripts now pin `julia/1.11.7-6bmogfl` (commit `5bf0524`);
+1.12.x migration is blocked until the upstream crash is resolved. Evidence
+kept at `orc:~/fm112-13058336.out`.
+
+### Stage 3 — persistent buffers, hook removal, `recenter!`, API surface (Done)
+
+Committed as `ad1bef4` (core src, subagent), `3d2524b` (connection guide
+`docs/src/device_interface.md` + worked example
+`examples/device_resident_system.jl` + docs page registration), `af3d3df`
+(stage-4 validation script draft `scripts/cuda_032_validation.jl`, not yet
+submitted). Delivered:
+
+1. **Gap 5 closed**: persistent per-system device source buffers allocated at
+   construction for every residency; the recurring refresh fills the valid
+   prefix in place through the consumer's `source_to_buffer!` — no per-step
+   `CuArray` allocation, `body_uploads` untouched for device-resident systems.
+   One-shot builders keep the allocating path via a shared fill helper.
+2. **Gap 7 closed**: deprecated `source_system_to_device_buffer!` /
+   `target_system_from_device_buffer!` fully removed (definitions, exports,
+   `hasmethod` probes, depwarn shims); lifecycle regression test updated.
+3. **`recenter!(cache, systems; bounds=nothing, padding=0.05)`** with the full
+   spec-§4 validation contract (all error paths tested, failure leaves the
+   cache bit-identical); derived bounds via host `get_position` or a device
+   min/max reduction (six scalars downloaded). **Documented deviation**: the
+   geometry-rebuild fallback is construct-and-swap into the existing mutable
+   cache (object identity preserved) — a `recenter!` costs about one
+   construction, transiently ~2× memory, and restarts the transfer counters,
+   rather than the spec's zero-allocation ideal. The normalized-unit-cube
+   variant that would make `recenter!` a pure restamp is recorded as the `035`
+   lever (user decision: fallback first). Subtlety: a hierarchical policy's
+   stencil tolerance is box-derived, so the policy ε is re-derived at the new
+   box (near set/schedule preserved exactly).
+4. **API surface**: `body_type`, `direct_kernel`, `data_per_body`,
+   `strength_dims`, `has_vector_potential`, `get_position`,
+   `source_to_buffer!`, `buffer_to_target!`, `recenter!` exported with
+   ownership/lifecycle/allocation docstrings incl. total-influence delivery
+   semantics; connection guide + runnable worked example per spec §§2-8.
+
+Local verification: interface tests 930 + 22 + 21 pass; full `Pkg.test()`
+passes. CUDA mirrors (persistent-buffer identity, flat `body_uploads` across
+device-resident steps, device `recenter!` parity) are in
+`cuda_radix_interface_test.jl` awaiting the Stage-4 H200 job.
