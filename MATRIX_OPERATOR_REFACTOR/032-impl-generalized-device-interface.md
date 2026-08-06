@@ -391,3 +391,68 @@ All five deliverables are complete; task-local requirements hold (placement
 rules, counter contract on hardware, no FLOWVPM edits, H200 validation with
 before/after scalar cost check). Row marked Done in `START_HERE.md`;
 clear-context approval follows by a different agent.
+
+## Approval Notes
+
+**Reviewer**: clear-context approval subagent, 2026-08-06.
+
+**Read**: `START_HERE.md` (protocol, Integration Phase preamble + amendments,
+032 row), this task file in full, `integration-api-spec.md`,
+`032-implementation-plan.md`; production surface in `src/`
+(`compatibility.jl` traits, `containers.jl` `RegularizedVortex` /
+`_SUPPORTED_RIGID_NEAR_RADII2` / cache hessian flag,
+`translate_batched_resident.jl` erf-free `_gaussianerf_g_h` + functor pair
+kernels + `_direct_kernel_geometry_gate!` + `recenter!`,
+`translate_batched_cuda.jl` spot regions, `fmm.jl` hessian validation,
+`FastMultipole.jl` exports); `docs/src/device_interface.md` +
+`examples/device_resident_system.jl` existence and docs registration; tests
+(`device_system_interface_test.jl`, `cuda_radix_interface_test.jl`,
+`interface_test_systems.jl`, radius-extension edits in
+`hierarchical_m2l_host_test.jl` / `cuda_radix_hierarchical_test.jl`,
+registration in both runners); data artifacts and scripts listed by the row.
+
+**Verified**:
+
+- `grep -ri "fdlibm\|custom_erf" src/` — empty; no FDLIBM code shipped; the
+  `custom_erf` candidate lives only in `benchmark_032_nearfield.jl`.
+- Erf-free A/B: `nearfield032_m13h-2-2_20260805-191230.csv` reproduces every
+  Checkpoint-2 number; ratios 284.847/190.193 = 1.50× (F32) and
+  663.345/432.598 = 1.53× (F64) as recorded.
+- Stage-4 CSVs: n=1e5 `u_rel_rms = 5.182e-4` (F64+F32, margin 1.513), n=1e6
+  `9.487e-4` (post-conv 9.488e-4, margin 1.630), J diagnostics 1.886e-3 /
+  2.90e-3, `body_uploads = 0` and `expansion_host_copies = 0` in every row;
+  failed-gate q=12 file shows the recorded 1.088e-3.
+- No-regression: FP16 9.448 vs record 9.591 (`cuda030_sweep_..._fp16_...
+  _13035897.csv`), F64 20.495 vs record `verdict_step_ms = 20.740432` in the
+  named 030 CSV; F64 `err_gradient_rel_rms` matches to the last printed digit.
+- Job log `fm032-13059638.out`: interface 1246/1246, lifecycle 216/216 +
+  37/37, both validations "PASSED".
+- Radius extension: guard tuple is exactly {3..20} minus 7 and 15 (the two
+  8b+7 no-lattice-shell values); host property/coverage/schedule tests loop
+  all 16 radii at expansion_order 4; device parity loop covers q = 16 and 20;
+  q = 7 construction throws.
+- Adequacy gate rejects (throws with measured ratio + admissible depth), never
+  enlarges; `n/8^ℓ` form absent; gate is a no-op for singular kernels.
+- Functor abstraction free on the shipped 4-row path (+0.0% F32, −1.2% F64);
+  the 13-row +4–10% is recorded as future work — accepted, 13-row has no
+  shipped baseline.
+- Series math spot-checked symbolically (leading term `Aρ³/3`;
+  `h = Aρ³e^{−ρ²/2} − 3g` on the outer branch); coefficients generated
+  exactly from rationals.
+- Local re-run: `test/device_system_interface_test.jl` → 930 + 22 + 21 pass.
+- Minimal invasiveness: legacy `fmm!` touched only by the hessian-flag
+  validation replacing the throw; CPU path/public API unaffected without CUDA
+  (CUDA file loaded at runtime by flag); all cited commits present on
+  `matrix-ops`.
+
+**Verdict: APPROVED.**
+
+Minor non-blocking observations: (1) the FP16 no-regression bracket
+"[9.434, 9.631]" in the Stage-4 record does not match the cited 030 CSV's
+min/max (9.420, 9.694) — the headline 9.591 does match; the bracket likely
+came from a different record run. (2) "grad_err 1.059e-3 identical" for FP16
+is identical to 4 significant digits (1.0592322e-3 vs 1.0592539e-3), not
+bit-identical; the F64 pair is bit-identical to the printed precision.
+(3) The per-step 9–11 KB device / ~2.5 MB host allocations are already
+reconciled in the record (job 13058532: the 023 contract of record is the
+transfer counters); no action needed.
