@@ -3820,6 +3820,10 @@ function _cuda_graph_eligible(state::DeviceResidentRadixState)
     CUDA_GRAPH_LIFECYCLE[] && CUDA_CACHED_WINDOWS[] || return false
     hctx = state.interaction_list
     hctx isa DeviceHierarchicalM2LContext || return false
+    # typemin sentinel: a previous capture attempt hit a capture-illegal
+    # operation (CUDA error 900); this context stays on the launch-sequence
+    # path permanently rather than throwing once per step
+    hctx.graph_warm_epoch == typemin(Int) && return false
     hctx.win_valid && _cuda_windows_cacheable(hctx) || return false
     hctx.profile_stages && return false
     isempty(hctx.symmetric_targets) || return false
@@ -3842,8 +3846,18 @@ function _run_cuda_radix_lifecycle_graph!(state::DeviceResidentRadixState)
         hctx.graph_warm_epoch = hctx.epoch_id
         return state
     end
-    graph = CUDA.capture(; throw_error=false) do
-        _cuda_lifecycle_body!(state)
+    graph = try
+        CUDA.capture(; throw_error=false) do
+            _cuda_lifecycle_body!(state)
+        end
+    catch err
+        # `throw_error=false` only tolerates capture invalidation; a
+        # capture-illegal API inside the body throws eagerly (e.g. CUDA error
+        # 900). Disable graphing for this context and fall back for good — the
+        # launch-sequence path is always correct.
+        err isa CUDA.CuError || rethrow()
+        hctx.graph_warm_epoch = typemin(Int)
+        nothing
     end
     if graph === nothing
         # capture failed (e.g. a residual allocation); execute normally and
@@ -4465,6 +4479,23 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         # per-system device scatter buffers for the recurring finalize (028 rider)
         device_target_buffers=Dict{Int,Any}(),
     )
+    # 029 cycle 1: the nearfield side stream's ordering against the main stream
+    # is enforced by the cycle-3 begin/done events. CUDACore's per-array managed
+    # memory would ADDITIONALLY host-synchronize the previous owner stream on
+    # every cross-stream access — redundant given the events, a hidden per-step
+    # blocking sync, and illegal inside stream capture (CUDA error 900, observed
+    # job 13060540) — so implicit synchronization is disabled for exactly the
+    # arrays the side-stream fill+nearfield touches. Every ordering these
+    # arrays need is event- or stream-ordered by construction (see the
+    # CUDA_OVERLAP_NEARFIELD comment block).
+    for arr in (ctx.output, ctx.source_bodies, grid.cell_ranges,
+            ctx.direct_targets, ctx.direct_sources)
+        CUDA.enable_synchronization!(arr, false)
+    end
+    if hierarchical_ctx !== nothing && !isempty(hierarchical_ctx.symmetric_targets)
+        CUDA.enable_synchronization!(hierarchical_ctx.symmetric_targets, false)
+        CUDA.enable_synchronization!(hierarchical_ctx.symmetric_sources, false)
+    end
     cache = RadixFMMCache{TF,LH}(
         P, ell, x_min, h0, maxn, true, hessian, options, stencil_policy,
         accepted, rejected, max_cells, max_nodes, route_capacity, direct_capacity,
