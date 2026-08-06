@@ -257,6 +257,40 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         @test err isa ArgumentError
         @test occursin("hierarchical stencil", sprint(showerror, err))
 
+        #--- (5b) graph-captured lifecycle (dense fused M2L) with the stage-C
+        #    kernels inside the replayed graph: parity against the concat-path
+        #    device result and the graph must actually engage ---#
+
+        for (ctor, mode) in ((PartitionedSmoothedVortex, :classsplit),
+                (PartitionedSmoothedVortex, :ballot),
+                (TwoPassSmoothedVortex, :classsplit))
+            ref_sys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
+            ref_cache = RadixFMMCache(ref_sys; expansion_order=4, ell=3,
+                hessian=true, device=true,
+                options=CUDARadixLifecycleOptions(; precision=Float32,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+            _binning_device_run(ref_sys, ref_cache; mode, subsort=false)
+            gsys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
+            gcache = RadixFMMCache(gsys; expansion_order=4, ell=3, hessian=true,
+                device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
+                    m2l_strategy=FastMultipole.DenseTranslationM2L(
+                        apply_chunk=64, build_chunk=8)))
+            # step 1 warms, step 2 records, step 3 replays the captured graph
+            for _ in 1:3
+                _binning_device_run(gsys, gcache; mode, subsort=false)
+            end
+            hctx = gcache.state.interaction_list
+            if FastMultipole.CUDA_GRAPH_LIFECYCLE[] && FastMultipole.CUDA_CACHED_WINDOWS[]
+                @test hctx.graph_exec !== nothing
+                @test hctx.graph_epoch == hctx.epoch_id
+            end
+            # nearfield contribution identical; the far-field strategies differ
+            # by dense-vs-concat reassociation and (default) FP16-WMMA inputs,
+            # so gate at the F32/fp16 far-field comparability scale
+            @test maximum(abs.(_binning_inner(gsys).gradient_stretching[1:3, :] .-
+                _binning_inner(ref_sys).gradient_stretching[1:3, :])) / u_scale < 2e-3
+        end
+
         # invalid mode must be rejected at launch. NOTE: the mechanism Refs are
         # baked into a captured lifecycle graph at record time, so this check
         # uses a FRESH cache (first lifecycle of an epoch runs uncaptured).

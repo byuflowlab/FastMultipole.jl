@@ -115,8 +115,11 @@ function run_config!(io, point, def, TF, ctor, kernel_name, mode, subsort,
     FM.CUDA_NEARFIELD_SUBSORT[] = subsort
     FM.CUDA_TWOPASS_PASS2_QUEUED[] = pass2_queued
     sys = make_system(ctor, seed, def.n)
+    # dense fused M2L = the shipped production default at P=4; also the only
+    # strategy whose lifecycle is graph-captured, so the measured step includes
+    # the stage-C kernels inside a replayed CUDA graph (the production path)
     opts = CUDARadixLifecycleOptions(; precision=TF,
-        m2l_strategy=FM.ConcatenatedFixedZM2L())
+        m2l_strategy=FM.DenseTranslationM2L(apply_chunk=64, build_chunk=8))
     cache = RadixFMMCache(sys; expansion_order=3, ell=def.ell,
         near_radius2=def.q, hessian=true, device=true, options=opts)
     step!() = fmm!(sys, cache; scalar_potential=false, gradient=true, hessian=true)
