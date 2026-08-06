@@ -1,0 +1,297 @@
+Overhead ╎ [+additional indent] Count File:Line; Function
+=========================================================
+     ╎43    @Base/client.jl:531; _start()
+     ╎ 43    @Base/client.jl:323; exec_options(opts::Base.JLOptions)
+     ╎  43    @Base/Base.jl:562; include(mod::Module, _path::String)
+     ╎   43    @Base/loading.jl:2794; _include(mapexpr::Function, mod::Module, _path::String)
+     ╎    43    @Base/loading.jl:2734; include_string(mapexpr::typeof(identity), mod::Module, code::String, filename::String)
+    2╎     43    @Base/boot.jl:430; eval
+     ╎    ╎ 41    @FLOWVPM/src/FLOWVPM_UJ.jl:62; kwcall(::@NamedTuple{autotune::Bool}, ::typeof(FLOWVPM.UJ_fmm), pfield::FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVP…
+     ╎    ╎  41    @FLOWVPM/src/FLOWVPM_UJ.jl:90; UJ_fmm(pfield::FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.null_model)}, FLOWVPM.Ke…
+     ╎    ╎   41    @FastMultipole/src/fmm.jl:808; kwcall(::@NamedTuple{expansion_order::Int64, leaf_size_source::Int64, multipole_acceptance::Float64, error_tolerance::FastMultipole.PowerRelativeGradient{0.001, 0.001, true}, tune::Bool, shrink_rece…
+     ╎    ╎    41    @FastMultipole/src/fmm.jl:808; fmm!
+     ╎    ╎     41    @FastMultipole/src/fmm.jl:808; #fmm!#178
+     ╎    ╎    ╎ 41    @FastMultipole/src/fmm.jl:810; fmm!
+     ╎    ╎    ╎  41    @FastMultipole/src/fmm.jl:815; #fmm!#179
+     ╎    ╎    ╎   41    @FastMultipole/src/fmm.jl:863; fmm!
+     ╎    ╎    ╎    33    @FastMultipole/src/fmm.jl:887; #fmm!#180
+     ╎    ╎    ╎     33    @FastMultipole/src/fmm.jl:890; fmm!
+     ╎    ╎    ╎    ╎ 28    @FastMultipole/src/fmm.jl:921; fmm!(target_systems::Tuple{FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.nul…
+     ╎    ╎    ╎    ╎  28    @FastMultipole/src/fmm.jl:924; kwcall(::@NamedTuple{multipole_acceptance::Float64, t_source_tree::Float64, t_target_tree::Float64, t_lists::Float64, expansion_order::Int64, error_tolerance::FastMultipole.PowerRelativeGra…
+     ╎    ╎    ╎    ╎   26    @FastMultipole/src/fmm.jl:1112; fmm!(target_systems::Tuple{FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.…
+     ╎    ╎    ╎    ╎    26    @FastMultipole/src/fmm.jl:120; nearfield_multithread!(target_systems::Tuple{Matrix{Float64}}, target_branches::Vector{FastMultipole.Branch{Float64, 1}}, source_systems::Tuple{FLOWVPM.ParticleField{Float64, FLOWVPM.Refo…
+     ╎    ╎    ╎    ╎     26    @Base/timing.jl:421; macro expansion
+     ╎    ╎    ╎    ╎    ╎ 16    @FastMultipole/src/fmm.jl:157; nearfield_multithread!(target_buffer::Matrix{Float64}, i_target_buffer::Int64, target_branches::Vector{FastMultipole.Branch{Float64, 1}}, source_system::FLOWVPM.ParticleField{Float64, F…
+     ╎    ╎    ╎    ╎    ╎  16    @Base/threadingconstructs.jl:194; macro expansion
+     ╎    ╎    ╎    ╎    ╎   16    @Base/threadingconstructs.jl:168; threading_run(fun::FastMultipole.var"#721#threadsfor_fun#125"{FastMultipole.var"#721#threadsfor_fun#124#126"{Matrix{Float64}, Int64, Vector{FastMultipole.Branch{Float64, 1}}, FLOWV…
+     ╎    ╎    ╎    ╎    ╎    16    @Base/task.jl:328; _wait(t::Task)
+     ╎    ╎    ╎    ╎    ╎     16    @Base/condition.jl:125; wait
+     ╎    ╎    ╎    ╎    ╎    ╎ 16    @Base/condition.jl:130; wait(c::Base.GenericCondition{Base.Threads.SpinLock}; first::Bool)
+     ╎    ╎    ╎    ╎    ╎    ╎  16    @Base/task.jl:1021; wait()
+   16╎    ╎    ╎    ╎    ╎    ╎   16    @Base/task.jl:1012; poptask(W::Base.IntrusiveLinkedListSynchronized{Task})
+   30╎30    @Base/partr.jl:179; multiq_check_empty()
+     ╎2821  @Base/task.jl:694; task_done_hook(t::Task)
+     ╎ 2821  @Base/task.jl:1021; wait()
+ 2779╎  2821  @Base/task.jl:1012; poptask(W::Base.IntrusiveLinkedListSynchronized{Task})
+    4╎   39    @Base/task.jl:1004; trypoptask(W::Base.IntrusiveLinkedListSynchronized{Task})
+     ╎    15    @Base/partr.jl:140; multiq_deletemin()
+   15╎     15    @Base/partr.jl:23; cong
+     ╎    10    @Base/partr.jl:141; multiq_deletemin()
+    9╎     10    @Base/partr.jl:23; cong
+     ╎19852 @Base/threadingconstructs.jl:154; (::Base.Threads.var"#1#2"{FLOWVPM.var"#281#threadsfor_fun#86"{FLOWVPM.var"#281#threadsfor_fun#85#87"{FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLO…
+     ╎ 254   @Base/threadingconstructs.jl:220; #629#threadsfor_fun
+     ╎  254   @Base/threadingconstructs.jl:253; (::FastMultipole.var"#629#threadsfor_fun#112"{FastMultipole.var"#629#threadsfor_fun#110#113"{Vector{FastMultipole.Branch{Float64, 1}}, Vector{FastMultipole.Branch{Float64, 1}}, StaticArraysCore.SVector…
+  212╎   254   @FastMultipole/src/interaction_list.jl:45; macro expansion
+     ╎    20    @FastMultipole/src/interaction_list.jl:407; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int32, j_source::Int32, target_branches::Ve…
+     ╎     20    @FastMultipole/src/interaction_list.jl:414; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int64, j_source::Int32, target_branches::V…
+     ╎    ╎ 13    @FastMultipole/src/interaction_list.jl:407; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int64, j_source::Int64, target_branches::…
+    1╎    ╎  13    @FastMultipole/src/interaction_list.jl:414; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int64, j_source::Int64, target_branches:…
+     ╎    ╎   10    @FastMultipole/src/interaction_list.jl:378; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int64, j_source::Int64, target_branches…
+     ╎    ╎    10    @Base/array.jl:1261; push!
+     ╎    22    @FastMultipole/src/interaction_list.jl:414; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int32, j_source::Int32, target_branches::Ve…
+     ╎     22    @FastMultipole/src/interaction_list.jl:407; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int32, j_source::Int64, target_branches::V…
+     ╎    ╎ 16    @FastMultipole/src/interaction_list.jl:414; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int64, j_source::Int64, target_branches::…
+     ╎    ╎  13    @FastMultipole/src/interaction_list.jl:407; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int64, j_source::Int64, target_branches:…
+     ╎    ╎   11    @FastMultipole/src/interaction_list.jl:378; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int64, j_source::Int64, target_branches…
+     ╎    ╎    11    @Base/array.jl:1261; push!
+     ╎ 19529 @Base/threadingconstructs.jl:220; #721#threadsfor_fun
+     ╎  19529 @Base/threadingconstructs.jl:253; (::FastMultipole.var"#721#threadsfor_fun#125"{FastMultipole.var"#721#threadsfor_fun#124#126"{Matrix{Float64}, Int64, Vector{FastMultipole.Branch{Float64, 1}}, FLOWVPM.ParticleField{Float64, FLOWVPM.Ref…
+     ╎   19529 @FastMultipole/src/fmm.jl:161; macro expansion
+     ╎    19525 @FastMultipole/src/fmm.jl:109; execute_assignment!
+  121╎     121   @Base/special/exp.jl:329; exp(x::Float64)
+     ╎     10    @FLOWVPM/src/FLOWVPM_fmm.jl:106; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+     ╎    ╎ 10    @FastMultipole/src/compatibility.jl:343; get_strength
+     ╎    ╎  10    @StaticArrays/src/SArray.jl:57; StaticArray
+     ╎    ╎   10    @StaticArrays/src/SArray.jl:15; sacollect
+     ╎    ╎    10    @StaticArrays/src/SArray.jl:15; macro expansion
+     ╎    ╎     10    @Base/generator.jl:48; iterate
+     ╎    ╎    ╎ 10    none:0; #62
+     ╎    ╎    ╎  10    @Base/array.jl:929; getindex
+    3╎    ╎    ╎   10    @Base/abstractarray.jl:699; checkbounds
+     ╎     139   @FLOWVPM/src/FLOWVPM_fmm.jl:112; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+     ╎    ╎ 139   @FastMultipole/src/compatibility.jl:508; get_position
+     ╎    ╎  139   @Base/array.jl:930; getindex
+     ╎    ╎   132   @Base/abstractarray.jl:1347; _to_linear_index
+     ╎    ╎    132   @Base/abstractarray.jl:3048; _sub2ind
+     ╎    ╎     131   @Base/abstractarray.jl:3064; _sub2ind
+     ╎    ╎    ╎ 131   @Base/abstractarray.jl:3080; _sub2ind_recurse
+     ╎    ╎    ╎  131   @Base/abstractarray.jl:3080; _sub2ind_recurse
+  131╎    ╎    ╎   131   @Base/int.jl:88; *
+     ╎     143   @FLOWVPM/src/FLOWVPM_fmm.jl:116; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+   16╎    ╎ 16    @Base/float.jl:493; *
+     ╎    ╎ 127   @Base/operators.jl:596; +
+  127╎    ╎  127   @Base/float.jl:491; +
+     ╎     27    @FLOWVPM/src/FLOWVPM_fmm.jl:119; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+   27╎    ╎ 27    @Base/math.jl:609; sqrt
+     ╎     10321 @FLOWVPM/src/FLOWVPM_fmm.jl:122; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+  221╎    ╎ 2619  @FLOWVPM/src/FLOWVPM_kernel.jl:55; g_dgdr_gauserf
+   71╎    ╎  71    @Base/float.jl:493; *
+     ╎    ╎  451   @Base/operators.jl:596; *
+  451╎    ╎   451   @Base/float.jl:493; *
+     ╎    ╎  45    @Base/promotion.jl:432; /
+   45╎    ╎   45    @Base/float.jl:494; /
+  223╎    ╎  1831  @Base/special/exp.jl:329; exp(x::Float64)
+     ╎    ╎   12    @Base/special/exp.jl:210; exp_impl
+   12╎    ╎    12    @Base/essentials.jl:730; reinterpret
+     ╎    ╎   138   @Base/special/exp.jl:211; exp_impl
+  138╎    ╎    138   @Base/float.jl:492; -
+     ╎    ╎   75    @Base/special/exp.jl:212; exp_impl
+   75╎    ╎    75    @Base/float.jl:496; muladd
+     ╎    ╎   305   @Base/special/exp.jl:215; exp_impl
+     ╎    ╎    25    @Base/special/exp.jl:179; table_unpack
+     ╎    ╎     25    @Base/int.jl:1013; &
+   25╎    ╎    ╎ 25    @Base/int.jl:347; &
+     ╎    ╎    267   @Base/special/exp.jl:181; table_unpack
+  127╎    ╎     127   @Base/essentials.jl:730; reinterpret
+  127╎    ╎     127   @Base/int.jl:347; &
+   13╎    ╎     13    @Base/int.jl:372; |
+     ╎    ╎    13    @Base/special/exp.jl:182; table_unpack
+   12╎    ╎     12    @Base/essentials.jl:730; reinterpret
+     ╎    ╎   624   @Base/special/exp.jl:216; exp_impl
+  257╎    ╎    257   @Base/float.jl:496; muladd
+     ╎    ╎    367   @Base/special/exp.jl:78; expm1b_kernel
+     ╎    ╎     367   @Base/math.jl:94; evalpoly
+     ╎    ╎    ╎ 367   @Base/math.jl:95; macro expansion
+  367╎    ╎    ╎  367   @Base/float.jl:496; muladd
+   86╎    ╎   211   @Base/special/exp.jl:218; exp_impl
+  123╎    ╎    123   @Base/float.jl:692; abs
+     ╎    ╎   243   @Base/special/exp.jl:230; exp_impl
+  210╎    ╎    210   @Base/essentials.jl:730; reinterpret
+   33╎    ╎    33    @Base/int.jl:87; +
+     ╎    ╎ 7698  @FLOWVPM/src/FLOWVPM_kernel.jl:56; g_dgdr_gauserf
+  132╎    ╎  132   @Base/float.jl:493; *
+  137╎    ╎  137   @Base/float.jl:492; -
+  149╎    ╎  7429  @FLOWVPM/src/FLOWVPM_gpu_erf.jl:193; custom_erf
+  117╎    ╎   117   @FLOWVPM/src/FLOWVPM_gpu_erf.jl:0; custom_erf64(x::Float64)
+  131╎    ╎   131   @FLOWVPM/src/FLOWVPM_gpu_erf.jl:159; custom_erf64(x::Float64)
+     ╎    ╎   75    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:160; custom_erf64(x::Float64)
+   75╎    ╎    75    @Base/float.jl:692; abs
+     ╎    ╎   68    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:161; custom_erf64(x::Float64)
+     ╎    ╎    68    @Base/number.jl:162; sign
+   68╎    ╎     68    @Base/essentials.jl:796; ifelse
+    5╎    ╎   65    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:165; custom_erf64(x::Float64)
+   60╎    ╎    60    @Base/float.jl:618; <
+     ╎    ╎   10    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:170; custom_erf64(x::Float64)
+     ╎    ╎   11    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:173; custom_erf64(x::Float64)
+   11╎    ╎    11    @Base/float.jl:491; +
+     ╎    ╎   13    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:175; custom_erf64(x::Float64)
+   69╎    ╎   70    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:176; custom_erf64(x::Float64)
+     ╎    ╎   104   @FLOWVPM/src/FLOWVPM_gpu_erf.jl:178; custom_erf64(x::Float64)
+   19╎    ╎    19    @Base/float.jl:493; *
+   85╎    ╎    85    @Base/float.jl:491; +
+     ╎    ╎   14    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:179; custom_erf64(x::Float64)
+   11╎    ╎    11    @Base/float.jl:491; +
+    8╎    ╎   498   @FLOWVPM/src/FLOWVPM_gpu_erf.jl:180; custom_erf64(x::Float64)
+  126╎    ╎    126   @Base/float.jl:491; +
+   19╎    ╎    19    @Base/float.jl:494; /
+   16╎    ╎    345   @Base/special/exp.jl:329; exp(x::Float64)
+     ╎    ╎     31    @Base/special/exp.jl:210; exp_impl
+   31╎    ╎    ╎ 31    @Base/essentials.jl:730; reinterpret
+     ╎    ╎     27    @Base/special/exp.jl:211; exp_impl
+   27╎    ╎    ╎ 27    @Base/float.jl:492; -
+     ╎    ╎     39    @Base/special/exp.jl:212; exp_impl
+   39╎    ╎    ╎ 39    @Base/float.jl:496; muladd
+     ╎    ╎     42    @Base/special/exp.jl:215; exp_impl
+     ╎    ╎    ╎ 14    @Base/special/exp.jl:179; table_unpack
+     ╎    ╎    ╎  14    @Base/int.jl:1013; &
+   14╎    ╎    ╎   14    @Base/int.jl:347; &
+     ╎    ╎    ╎ 22    @Base/special/exp.jl:181; table_unpack
+     ╎    ╎     124   @Base/special/exp.jl:216; exp_impl
+   58╎    ╎    ╎ 58    @Base/float.jl:496; muladd
+     ╎    ╎    ╎ 66    @Base/special/exp.jl:78; expm1b_kernel
+     ╎    ╎    ╎  66    @Base/math.jl:94; evalpoly
+     ╎    ╎    ╎   66    @Base/math.jl:95; macro expansion
+   66╎    ╎    ╎    66    @Base/float.jl:496; muladd
+     ╎    ╎     29    @Base/special/exp.jl:218; exp_impl
+   29╎    ╎    ╎ 29    @Base/float.jl:692; abs
+     ╎    ╎     37    @Base/special/exp.jl:230; exp_impl
+   31╎    ╎    ╎ 31    @Base/essentials.jl:730; reinterpret
+     ╎    ╎   195   @FLOWVPM/src/FLOWVPM_gpu_erf.jl:181; custom_erf64(x::Float64)
+   10╎    ╎    10    @Base/float.jl:493; *
+  185╎    ╎    185   @Base/float.jl:494; /
+   76╎    ╎   76    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:182; custom_erf64(x::Float64)
+     ╎    ╎   67    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:183; custom_erf64(x::Float64)
+   66╎    ╎    66    @Base/float.jl:493; *
+     ╎    ╎   500   @FLOWVPM/src/FLOWVPM_gpu_erf.jl:184; custom_erf64(x::Float64)
+  495╎    ╎    495   @Base/float.jl:491; +
+     ╎    ╎   99    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:185; custom_erf64(x::Float64)
+   94╎    ╎    94    @Base/float.jl:493; *
+   64╎    ╎   3574  @FLOWVPM/src/FLOWVPM_gpu_erf.jl:186; custom_erf64(x::Float64)
+  782╎    ╎    782   @Base/float.jl:491; +
+  119╎    ╎    119   @Base/float.jl:494; /
+  126╎    ╎    2609  @Base/special/exp.jl:329; exp(x::Float64)
+     ╎    ╎     191   @Base/special/exp.jl:210; exp_impl
+  191╎    ╎    ╎ 191   @Base/essentials.jl:730; reinterpret
+     ╎    ╎     173   @Base/special/exp.jl:211; exp_impl
+  173╎    ╎    ╎ 173   @Base/float.jl:492; -
+     ╎    ╎     327   @Base/special/exp.jl:212; exp_impl
+  327╎    ╎    ╎ 327   @Base/float.jl:496; muladd
+     ╎    ╎     390   @Base/special/exp.jl:215; exp_impl
+     ╎    ╎    ╎ 106   @Base/special/exp.jl:179; table_unpack
+     ╎    ╎    ╎  106   @Base/int.jl:1013; &
+  106╎    ╎    ╎   106   @Base/int.jl:347; &
+     ╎    ╎    ╎ 217   @Base/special/exp.jl:181; table_unpack
+   69╎    ╎    ╎  69    @Base/essentials.jl:730; reinterpret
+  100╎    ╎    ╎  100   @Base/int.jl:347; &
+   48╎    ╎    ╎  48    @Base/int.jl:372; |
+     ╎    ╎    ╎ 67    @Base/special/exp.jl:182; table_unpack
+   57╎    ╎    ╎  57    @Base/essentials.jl:730; reinterpret
+     ╎    ╎    ╎  10    @Base/int.jl:534; >>
+   10╎    ╎    ╎   10    @Base/int.jl:528; >>
+     ╎    ╎     922   @Base/special/exp.jl:216; exp_impl
+  400╎    ╎    ╎ 400   @Base/float.jl:496; muladd
+     ╎    ╎    ╎ 522   @Base/special/exp.jl:78; expm1b_kernel
+     ╎    ╎    ╎  522   @Base/math.jl:94; evalpoly
+     ╎    ╎    ╎   522   @Base/math.jl:95; macro expansion
+  522╎    ╎    ╎    522   @Base/float.jl:496; muladd
+     ╎    ╎     174   @Base/special/exp.jl:218; exp_impl
+  174╎    ╎    ╎ 174   @Base/float.jl:692; abs
+     ╎    ╎     305   @Base/special/exp.jl:230; exp_impl
+  250╎    ╎    ╎ 250   @Base/essentials.jl:730; reinterpret
+   55╎    ╎    ╎ 55    @Base/int.jl:87; +
+     ╎    ╎   1516  @FLOWVPM/src/FLOWVPM_gpu_erf.jl:187; custom_erf64(x::Float64)
+  400╎    ╎    400   @Base/float.jl:493; *
+ 1116╎    ╎    1116  @Base/float.jl:494; /
+   62╎    ╎   62    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:190; custom_erf64(x::Float64)
+     ╎     1422  @FLOWVPM/src/FLOWVPM_fmm.jl:126; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+   20╎    ╎ 20    @Base/float.jl:493; *
+  165╎    ╎ 165   @Base/float.jl:492; -
+     ╎    ╎ 1237  @Base/operators.jl:596; *
+ 1237╎    ╎  1237  @Base/float.jl:493; *
+     ╎     60    @FLOWVPM/src/FLOWVPM_fmm.jl:128; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+   59╎    ╎ 59    @Base/float.jl:492; -
+     ╎     156   @FLOWVPM/src/FLOWVPM_fmm.jl:137; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+     ╎    ╎ 146   @FastMultipole/src/compatibility.jl:542; set_gradient!
+     ╎    ╎  12    @Base/array.jl:930; getindex
+     ╎    ╎   12    @Base/abstractarray.jl:1347; _to_linear_index
+     ╎    ╎    12    @Base/abstractarray.jl:3048; _sub2ind
+     ╎    ╎     12    @Base/abstractarray.jl:3064; _sub2ind
+     ╎    ╎    ╎ 12    @Base/abstractarray.jl:3080; _sub2ind_recurse
+     ╎    ╎    ╎  12    @Base/abstractarray.jl:3080; _sub2ind_recurse
+   12╎    ╎    ╎   12    @Base/int.jl:88; *
+  130╎    ╎  130   @Base/array.jl:994; setindex!
+     ╎    ╎ 10    @FastMultipole/src/compatibility.jl:544; set_gradient!
+     ╎     1067  @FLOWVPM/src/FLOWVPM_fmm.jl:143; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+  103╎    ╎ 103   @Base/float.jl:493; *
+     ╎    ╎ 954   @Base/promotion.jl:430; *
+  954╎    ╎  954   @Base/float.jl:493; *
+     ╎     701   @FLOWVPM/src/FLOWVPM_fmm.jl:149; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+   60╎    ╎ 60    @Base/float.jl:492; -
+     ╎    ╎ 641   @Base/operators.jl:596; *
+  641╎    ╎  641   @Base/float.jl:493; *
+     ╎     366   @FLOWVPM/src/FLOWVPM_fmm.jl:150; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+   39╎    ╎ 39    @Base/float.jl:493; *
+   94╎    ╎ 94    @Base/float.jl:491; +
+     ╎    ╎ 233   @Base/operators.jl:596; *
+  233╎    ╎  233   @Base/float.jl:493; *
+     ╎     103   @FLOWVPM/src/FLOWVPM_fmm.jl:152; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+     ╎    ╎ 95    @Base/operators.jl:596; *
+   95╎    ╎  95    @Base/float.jl:493; *
+     ╎     27    @FLOWVPM/src/FLOWVPM_fmm.jl:153; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+     ╎    ╎ 27    @Base/operators.jl:596; *
+   27╎    ╎  27    @Base/float.jl:493; *
+     ╎     311   @FLOWVPM/src/FLOWVPM_fmm.jl:154; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+  277╎    ╎ 277   @Base/float.jl:493; *
+     ╎    ╎ 26    @Base/operators.jl:596; *
+   26╎    ╎  26    @Base/float.jl:493; *
+     ╎     100   @FLOWVPM/src/FLOWVPM_fmm.jl:157; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+   22╎    ╎ 22    @Base/float.jl:491; +
+     ╎    ╎ 78    @Base/operators.jl:596; *
+   78╎    ╎  78    @Base/float.jl:493; *
+     ╎     69    @FLOWVPM/src/FLOWVPM_fmm.jl:158; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+     ╎    ╎ 69    @Base/operators.jl:596; *
+   69╎    ╎  69    @Base/float.jl:493; *
+     ╎     441   @FLOWVPM/src/FLOWVPM_fmm.jl:160; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+  441╎    ╎ 441   @StaticArrays/src/convert.jl:173; StaticArray
+  208╎     3824  @FLOWVPM/src/FLOWVPM_fmm.jl:161; direct!(target_buffer::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{false, true, true}, source_system::FLOWVPM.ParticleField{Float64, FLOWVPM.R…
+   57╎    ╎ 57    @FastMultipole/src/compatibility.jl:553; set_hessian!(system::Matrix{Float64}, i::Int64, hessian::StaticArraysCore.SMatrix{3, 3, Float64, 9})
+     ╎    ╎ 2801  @FastMultipole/src/compatibility.jl:554; set_hessian!(system::Matrix{Float64}, i::Int64, hessian::StaticArraysCore.SMatrix{3, 3, Float64, 9})
+     ╎    ╎  83    @Base/array.jl:930; getindex
+     ╎    ╎   83    @Base/abstractarray.jl:1347; _to_linear_index
+     ╎    ╎    83    @Base/abstractarray.jl:3048; _sub2ind
+     ╎    ╎     83    @Base/abstractarray.jl:3064; _sub2ind
+     ╎    ╎    ╎ 83    @Base/abstractarray.jl:3080; _sub2ind_recurse
+     ╎    ╎    ╎  83    @Base/abstractarray.jl:3080; _sub2ind_recurse
+     ╎    ╎    ╎   28    @Base/abstractarray.jl:3087; offsetin
+   28╎    ╎    ╎    28    @Base/int.jl:86; -
+   55╎    ╎    ╎   55    @Base/int.jl:88; *
+ 2715╎    ╎  2715  @Base/array.jl:994; setindex!
+     ╎    ╎ 598   @FastMultipole/src/compatibility.jl:558; set_hessian!(system::Matrix{Float64}, i::Int64, hessian::StaticArraysCore.SMatrix{3, 3, Float64, 9})
+  438╎    ╎  438   @Base/array.jl:994; setindex!
+  155╎    ╎  155   @Base/float.jl:491; +
+     ╎    ╎ 160   @FastMultipole/src/compatibility.jl:562; set_hessian!(system::Matrix{Float64}, i::Int64, hessian::StaticArraysCore.SMatrix{3, 3, Float64, 9})
+     ╎    ╎  152   @Base/array.jl:930; getindex
+  152╎    ╎   152   @Base/essentials.jl:917; getindex
+   64╎     64    @FLOWVPM/src/FLOWVPM_gpu_erf.jl:159; custom_erf64(x::Float64)
+     ╎ 21    @Base/threadingconstructs.jl:220; #788#threadsfor_fun
+     ╎  21    @Base/threadingconstructs.jl:253; (::FastMultipole.var"#788#threadsfor_fun#156"{FastMultipole.var"#788#threadsfor_fun#150#157"{Vector{StaticArraysCore.SVector{2, Int32}}, Val{true}, Int64, FastMultipole.PowerRelativeGradient{0.001, 0.0…
+     ╎   21    @FastMultipole/src/fmm.jl:590; macro expansion
+     ╎    21    @FastMultipole/src/fmm.jl:555; execute_m2l!(target_expansions::Array{Float64, 4}, target_branches::Vector{FastMultipole.Branch{Float64, 1}}, source_expansions::Array{Float64, 4}, source_branches::Vector{FastMultipole.Branch{Float64, …
+     ╎     15    @FastMultipole/src/translate.jl:581; multipole_to_local!(target_weights::SubArray{Float64, 3, Array{Float64, 4}, Tuple{Base.Slice{Base.OneTo{Int64}}, Base.Slice{Base.OneTo{Int64}}, Base.Slice{Base.OneTo{Int64}}, Int64}, true}, targe…
+     ╎ 34    @Base/threadingconstructs.jl:220; #881#threadsfor_fun
+     ╎  34    @Base/threadingconstructs.jl:253; (::FastMultipole.var"#881#threadsfor_fun#191"{FastMultipole.var"#881#threadsfor_fun#186#192"{FastMultipole.Tree{Float64, 1}, FastMultipole.Tree{Float64, 1}, Vector{StaticArraysCore.SVector{2, Int32}}, …
+     ╎   33    @FastMultipole/src/fmm.jl:1134; macro expansion
+     ╎    33    @Base/range.jl:908; iterate
+   33╎     33    @Base/promotion.jl:639; ==
+   32╎32    @FastMultipole/src/interaction_list.jl:362; build_interaction_lists!(m2l_list::Vector{StaticArraysCore.SVector{2, Int32}}, direct_list::Vector{StaticArraysCore.SVector{2, Int32}}, i_target::Int64, j_source::Int64, target_branches::Vector…
+Total snapshots: 33820. Utilization: 92% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.
