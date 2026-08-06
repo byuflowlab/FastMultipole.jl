@@ -328,3 +328,60 @@ every FMM-active default-parameter row fails, so 035 speedup headlines need
 tuned gate-passing baselines), and threats to validity.
 
 Row marked **Done** in `START_HERE.md` (Approved left unticked).
+
+## Approval Notes
+
+Reviewer: clear-context approval subagent, 2026-08-06. Read only
+`START_HERE.md` (protocol + Integration Phase preamble incl. the 1e-3
+tolerance policy and wake amendment), this task file in full, the deliverable
+`data/flowvpm_baseline/report.md`, the three campaign CSVs, job logs, the four
+cube/wake n=1e5 profiles, `references/` + manifest, and the five harness
+scripts.
+
+Re-verified:
+
+- **Checksums**: `shasum -a 256 -c direct_reference_checksums.sha256` — all
+  14 files (7 cube + 7 wake) OK, exit 0.
+- **Row counts**: 14/14 wake rows in `cpu_m12-2-18_13058428.csv`; 14/14 cube
+  rows across `cpu_m12-2-1_13051516.csv` + `cpu_m12-1-29_13051713.csv`;
+  `n_actual = n_target` on every cube/wake row.
+- **Report numbers vs raw CSVs** (spot checks all match): wake n=1e6
+  cpu1 1851.67 s / cpu64 31.55 s / u_rel 6.39e-2; cube n=1e6 1776.59 /
+  55.98 (min 34.42) / 6.75e-2; wake n=3162 3.48e-3; cube n=1e4 1.07e-2.
+  Gate audit confirmed: cube passes 1e-3 only at n<=3162 (~1e-15), wake only
+  at n=1000 — every FMM-active default-parameter row fails, exactly as the
+  report states. Scaling table recomputed from CSVs (cube 1e5 45.3x/71%,
+  wake 1e6 58.7x/92%, cube 1e6 min-based 51.4x) — matches.
+- **Sigma construction**: `fm033_wake_sigma(n) = 2*(pi*R^2*5D/n)^(1/3)` in
+  `benchmark_033_common.jl` matches the claimed convention; wake n=1000 gives
+  0.315537 = CSV value; cube n=1000 gives 0.2 = CSV value.
+- **Profiles**: report §4 frame counts traced to the profile files
+  (nearfield 112059/99.4% cube cpu1, g_dgdr 42767, custom_erf64 19664,
+  exp 14604, set_hessian 15158; wake analogues likewise). Bottleneck
+  identification is unambiguous.
+- **Harness vs stated policy**: reps (5/3 UJ, 3/2 step at n>=316228), warmup
+  excluded, medians+mins logged, per-row error logging, reference sampling
+  (all targets n<=1e4 else 512 at seed 33026+n), single-thread reference
+  generation (2.0.4 `direct_multithread!` bug) — all as documented.
+- **Minimal invasiveness**: 033 commits (0ad1ad5, af3d3df, 640933c, harness
+  commits) touch only `MATRIX_OPERATOR_REFACTOR/`; no `src/` changes.
+- **Policy framing**: report §5's consequence statement matches the
+  START_HERE preamble verbatim in substance — historical rows retained with
+  errors, speedup headlines restricted to gate-passing baselines.
+
+Verdict: **APPROVED**. Objectives met in full; report is clear and honest
+about threats to validity (in-run reference generation, node heterogeneity,
+large-n variance, retained ring history).
+
+Minor observations (no action required):
+
+1. In report §4 the cpu1 "exp" row (14604) is the child of the
+   "custom_erf64" row's :186 frame (19664), so the "~30% erf+exp" statement
+   overlaps at those frames; however the full `custom_erf` wrapper frame
+   alone is 41331 (36.7% of cube cpu1), so ~30% is if anything conservative
+   and the conclusion stands.
+2. The "g_dgdr_gauserf kernel math" row counts only the kernel.jl:56
+   call-site (42767); a second site at :55 adds 14644 — an under-attribution
+   that only strengthens the nearfield-dominance conclusion.
+3. §4's percentage base (112711 in-call samples) differs trivially from the
+   file's total snapshots (112787).
