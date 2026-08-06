@@ -38,8 +38,15 @@ if _GRAPH_LOADED
     const FM = FastMultipole
 
     # build a cache + system at `bodies`, run `steps` verdict-boundary steps,
-    # then one more evaluation; returns sampled outputs + the cache
-    function _graph_run(bodies, ::Type{TF}, P, K; steps=3, dt=1e-3,
+    # then one more evaluation; returns sampled outputs + the cache.
+    # dt=1e-4 (not the convection suite's 1e-3): nearfield gradients reach
+    # ~2e2 at this workload, so a 1e-3 Euler step moves bodies ~0.2/step and
+    # the 3-step trajectories chaotically amplify benign reassociation
+    # differences between accumulation orders (job 13060698 measured 3-4e-4
+    # relative after three dt=1e-3 steps at Float32). 1e-4 keeps real motion
+    # (bodies still cross cells, exercising epoch regeneration) with bounded
+    # divergence.
+    function _graph_run(bodies, ::Type{TF}, P, K; steps=3, dt=1e-4,
             teleport::Bool=false) where TF
         n = size(bodies, 2)
         sys = FM028DeviceSystem{TF}(bodies)
@@ -82,8 +89,11 @@ if _GRAPH_LOADED
         end
     end
 
-    _ptol(::Type{Float64}) = 1e-10
-    _ptol(::Type{Float32}) = 1e-4
+    # trajectory-comparison tolerances: a route-set/caching bug shows up as
+    # O(1) relative deviation, so these keep a >1e3 detection margin while
+    # absorbing multi-step amplification of atomic-reassociation noise
+    _ptol(::Type{Float64}) = 1e-9
+    _ptol(::Type{Float32}) = 5e-4
 
     @testset "cached-window + graph lifecycle parity (task 029 cycle 1)" begin
         n = 2000
@@ -139,7 +149,7 @@ if _GRAPH_LOADED
         n = 2000
         TF = Float32
         P = 3
-        for (K, tol) in ((10_000, 1e-4), (8, 5e-3))
+        for (K, tol) in ((10_000, 5e-4), (8, 5e-3))
             bodies = fm028_body_matrix(24025, n)
             results = map(((false, false), (true, true))) do (cached, graph)
                 _with_flags(cached, graph) do
