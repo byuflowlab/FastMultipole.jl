@@ -14,8 +14,8 @@
 #      erf-free vs custom_erf) via benchmark_032_nearfield.jl.
 # Environment pattern from cuda_030_run.sh: the fm023env project carries CUDA
 # (local-toolkit preferences; compute nodes have no internet).
-set -euo pipefail
-set -o pipefail
+# no -u: /etc/profile.d scripts reference unset vars on the cluster
+set -eo pipefail
 source /etc/profile
 module load cuda julia
 echo "=== node: $(hostname)"
