@@ -1864,8 +1864,17 @@ end
 # construction (or force a new occupancy epoch/cache), or the replayed graph
 # keeps the old mechanism silently. CUDA_NEARFIELD_SUBSORT is read in the
 # (uncaptured) host refresh and may be flipped per step.
-const CUDA_NEARFIELD_BINNING = Ref{Symbol}(:unbinned)
-const CUDA_NEARFIELD_SUBSORT = Ref(false)
+# Defaults set by the Stage C H200 measurement (job 13064834, three adequate
+# overlap-2 cube points, both precisions): :classsplit was fastest everywhere
+# (nearfield stage 1.14-1.34x over the regularized baseline, vs 1.06-1.22x
+# unbinned), sub-Morton ordering added a further 2-4% and raised warp
+# homogeneity (e.g. 0.826 -> 0.887 at n=1e5/ell=3/q=16); the ballot queue was
+# a measured loss at every point (votes + drains cost more than per-instant
+# hardware predication at the achievable regularized fractions) and is
+# retained as a selectable mechanism, not a default. These Refs affect only
+# the split vortex kernels — the shipped nearfield default is unchanged.
+const CUDA_NEARFIELD_BINNING = Ref{Symbol}(:classsplit)
+const CUDA_NEARFIELD_SUBSORT = Ref(true)
 # TwoPassVortex pass-2 deficit sweep kernel mode: shell-queue (ballot-compacted)
 # versus plain predicated evaluation of the (rho_c, rho_t] shell.
 const CUDA_TWOPASS_PASS2_QUEUED = Ref(false)

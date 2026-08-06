@@ -304,7 +304,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
             @test_throws ArgumentError fmm!(fresh, fcache; scalar_potential=false,
                 gradient=true, hessian=true)
         finally
-            FastMultipole.CUDA_NEARFIELD_BINNING[] = :unbinned
+            FastMultipole.CUDA_NEARFIELD_BINNING[] = :classsplit
         end
     end
 end

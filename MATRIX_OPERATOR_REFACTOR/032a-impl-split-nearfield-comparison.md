@@ -284,6 +284,72 @@ constructible regularized fraction). Reports step time, isolated
 nearfield-stage time, achieved homogeneity (all/mixed/shell), bucket
 occupancies, and sampled-direct u/J RMS per configuration.
 
+### Stage C — H200 measurement + mechanism decision (2026-08-06, job 13064834)
+
+Preflight all green on the H200 (interface 1246, lifecycle 216 + 37, **new
+binning test 301/301** — mechanism parity at P=4/P=8 × F64/F32, TwoPass pass-2
+device mirror, counters/allocation stability, graph capture with the stage-C
+kernels, homogeneity sanity). One earlier submission (13064698) failed on a
+test-geometry defect — the default near set (`g_min = 1`) is inadequate at
+`ell = 3` with `σ_max = 0.04`; fixed by constructing every `ell = 3` test case
+with the production-validated `near_radius2 = 16` (the geometry Stage D
+benchmarks), not by shallowing or thinning σ.
+
+Benchmark (`data/split_nearfield/cuda032a_stagec_{a,b,c}_*.csv`, overlap-2
+uniform cubes, `expansion_order = 3`, dense fused M2L, both precisions,
+20-rep steady state). Nearfield-stage time in ms (isolated fill+σ/bin/pass
+kernels; step-level times in the CSVs agree on ordering everywhere):
+
+| point (n, ℓ, q) | TF | reg-everywhere | part unbinned | part **classsplit+sub** | part ballot | twopass best | reg frac | best speedup |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| a (1e5, 3, 16) | F32 | 15.97 | 13.88 | **13.00** | 21.57 | 18.89 | 0.098 | 1.23x |
+| a | F64 | 35.53 | 29.06 | **26.47** | 48.68 | 39.61 | 0.098 | 1.34x |
+| b (1e6, 4, 12) | F32 | 205.7 | 182.8 | **165.4** | 254.5 | 236.1 | 0.087 | 1.24x |
+| b | F64 | 472.3 | 392.5 | **373.6** | 572.1 | 566.6 | 0.087 | 1.26x |
+| c (2e5, 4, 20) | F32 | 23.02 | 22.08 | **20.24** | 26.61 | 29.53 | 0.200 | 1.14x |
+| c | F64 | 50.31 | 45.65 | **41.06** | 55.97 | 60.70 | 0.200 | 1.22x |
+
+Achieved warp homogeneity (fraction of branch-homogeneous warp instants,
+`cuda_nearfield_homogeneity`): unbinned stream 0.826 / 0.820 / 0.781 at
+a/b/c; **sub-Morton ordering raises it to 0.887 / 0.892 / 0.813**; the mixed
+bucket alone is 0.672→0.788 (a), 0.734 (b), 0.690→0.813 (c); the two-pass
+shell predicate is 0.620-0.703. Bucket occupancies at the pass-1 cutoff:
+a = [33,624 pure-singular, 0 pure-reg, 37,576 mixed] (pure-reg is
+geometrically impossible at ℓ=3: min dmax = √3·h > ρ_t·σ_min), b = [187,000,
+0, 383,272], c = [310,152, 27,136, 805,216]. Sampled-direct accuracy is
+mechanism-independent to 5 digits; u_rel_rms = 5.41e-4 (a), 6.59e-4 (c) pass
+the phase gate; **point b at q=12 measures 1.49e-3 — Stage D must use q=16 at
+n=1e6/ℓ=4** (032 measured 9.49e-4 there).
+
+**Findings and decision (Checkpoint C):**
+
+1. **Mechanism chosen: `:classsplit` + sub-Morton ordering** — fastest at
+   every point and precision by both metrics; now the shipped default for the
+   split kernels (`CUDA_NEARFIELD_BINNING[] = :classsplit`,
+   `CUDA_NEARFIELD_SUBSORT[] = true`; the overall nearfield default kernel is
+   unchanged — that is Stage D).
+2. **The §6.3 catastrophe did not materialize**: the unbinned split kernel is
+   1.02-1.22x FASTER than regularized-everywhere, not 1.56x slower. The model
+   charged both paths to essentially every warp for the whole stream at
+   f = 0.31; the constructible geometries have f = 0.09-0.20, hardware
+   predication is per-instant, and the measured instant streams are already
+   78-83% homogeneous. Binning still pays (classsplit adds up to another
+   10-16%), but as a tuning gain, not a rescue.
+3. **The ballot/queue mechanism is a measured loss everywhere** (votes,
+   queue traffic, and drain raggedness cost more than predication at these
+   regularized fractions); retained as a selectable mechanism and recorded.
+4. **Two-pass loses to partitioned at every constructible point** (nearfield
+   1.4-1.5x slower than the classsplit partitioned kernel), consistent with
+   the §6.1 λ* table: its winning regime (ℓ ≥ 5-6 near sets, f ≥ 0.3) needs
+   |o|² > 20 near radii that the rigid tables do not currently support, so it
+   is unreachable in production. Pass-2 predicated beats the shell queue
+   (`CUDA_TWOPASS_PASS2_QUEUED[] = false` stays the default).
+5. Step-level gains exceed the isolated-stage gains under the overlapped
+   lifecycle (e.g. a/F64: step 70.7 → 40.1 ms while the isolated stage moves
+   35.5 → 26.5 ms) — the split kernels issue fewer instructions concurrently
+   with the far-field chain. Ordering is identical by either metric; Stage D's
+   A/B is step-level and will resolve the attribution.
+
 ## Placement and Reporting
 
 - Follow the `_batched`/`*_cuda.jl` placement rules; types stay in
