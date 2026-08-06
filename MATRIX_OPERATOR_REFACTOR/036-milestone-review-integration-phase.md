@@ -49,6 +49,26 @@ Review scope:
   Integration task and its listed artifacts, `../FLOWVPM.jl/CLAUDE.md`, and
   the relevant final state of FLOWVPM's `gpu-full` branch.
 
+## Accumulated Review Items
+
+Items flagged mid-phase for this review to verify (add here as the phase
+progresses; do not resolve them in this file):
+
+- **Consumer migration hazard (from `034`, 2026-08-06):** legacy consumer
+  hooks written against the old fixed-row target-buffer layout (switchless
+  `set_hessian!`-style setters or hard-coded rows `4`/`5:7`/`8:16` under
+  `@inbounds`) silently corrupt memory on `matrix-ops` when any preceding
+  standard output is disabled (e.g. `scalar_potential=false`). A "Migrating
+  From the Fixed-Row Buffer Layout" section was added to
+  `docs/src/advanced_usage.md` (2026-08-06). The review should confirm the
+  migration guidance is adequate under scope item 1 (third-party
+  connectability) and item 5 (downstream compatibility), and that FLOWVPM's
+  shims (`gpu-full` commit `4df2bc0`) match it.
+- **FLOWVPM `CLAUDE.md` staleness (from the `034` approval, 2026-08-06):**
+  its Phase 4 section claimed H200 validation was pending after jobs
+  13061046/13061128 had passed; refreshed 2026-08-06. Confirm it reflects
+  the final `gpu-full` state at review time.
+
 ## Review Notes
 
 (To be filled by the reviewing agent.)

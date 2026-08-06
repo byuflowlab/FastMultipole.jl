@@ -165,3 +165,37 @@ end
 
 !!! warning
     Target buffers are compact. Hard-coded target rows `4`, `5:7`, and `8:16` are valid only when `metadata=0` and only when all preceding standard outputs are enabled. Custom target code should use switch-aware getters, setters, and range helpers.
+
+## Migrating From the Fixed-Row Buffer Layout
+
+Earlier versions of FastMultipole used a fixed target-buffer layout: row `4`
+was always the scalar potential, `5:7` the gradient, and `8:16` the hessian,
+whether or not those outputs were requested. Target buffers are now
+**compact**: disabled outputs are not allocated, and each enabled output's
+rows shift accordingly (metadata rows shift them further). Consumer hooks
+written against the fixed layout — including any following the old published
+`direct!`/`buffer_to_target_system!` examples that call the switchless
+setters (e.g. `set_hessian!(buffer, i, hessian)`) or index rows directly
+under `@inbounds` — still compile and run, but when any preceding standard
+output is disabled (e.g. `scalar_potential=false`) they **silently write the
+wrong rows or past the end of the buffer**. There is no error; results are
+corrupted, and out-of-buffer writes are undefined behavior.
+
+To migrate a consumer:
+
+1. In every `direct!` overload and `buffer_to_target_system!` method, replace
+   switchless setters/getters and hard-coded rows with the switch-aware forms:
+   `set_scalar_potential!(buffer, switch, i, val)`,
+   `set_gradient!(buffer, switch, i, val)`,
+   `set_hessian!(buffer, switch, i, val)`, and the matching getters and
+   range helpers (`scalar_potential_index`, `gradient_range`,
+   `hessian_range`, `extra_output_range`, `metadata_index`).
+2. Guard each output with its switch parameter (`PS`, `GS`, `HS`) rather than
+   writing unconditionally; the switch-aware setters for disabled outputs
+   throw instead of corrupting, which converts a silent bug into a loud one.
+3. If your hooks read previously accumulated influence, note that
+   `get_previous_influence` has been removed; carry prior-step values through
+   metadata rows (`metadata_per_body` / `metadata_to_buffer!`) instead.
+4. Re-run your accuracy checks with at least one output disabled
+   (e.g. `scalar_potential=false, hessian=true`) — the configuration that
+   exposes fixed-row assumptions — in addition to the all-enabled case.
