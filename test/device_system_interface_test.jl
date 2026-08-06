@@ -262,6 +262,110 @@ end
     @test_throws ArgumentError RegularizedVortex(; sigma_row=8, rho_t=0.0)
 end
 
+@testset "partitioned nearfield stage A (task 032a)" begin
+
+    seed = 20260806
+    rho_t = 4.789
+
+    #--- (a) pair-level three-way parity: the partitioned kernel is bitwise the
+    #    regularized kernel inside the cutoff and bitwise the singular kernel
+    #    beyond it (same code paths, branch only) ---#
+
+    for TF in (Float64, Float32)
+        rk = RegularizedVortex(; sigma_row=8)
+        pk = PartitionedVortex(; sigma_row=8)
+        sk = SingularVortex()
+        rng = MersenneTwister(seed)
+        srcb = zeros(TF, 8, 1)
+        for trial in 1:200
+            sigma = TF(0.01 + 0.09 * rand(rng))
+            # stay clear of the threshold so recomputed rho cannot straddle it
+            inside = isodd(trial)
+            rho = inside ? TF(0.05 + 4.4 * rand(rng)) : TF(5.0 + 15.0 * rand(rng))
+            u = normalize(randn(rng, 3))
+            dx, dy, dz = TF.(u .* Float64(rho * sigma))
+            r2 = dx * dx + dy * dy + dz * dz
+            invr = inv(sqrt(r2))
+            srcb[5:7, 1] .= randn(rng, TF, 3)
+            srcb[8, 1] = sigma
+            want = inside ? FastMultipole._direct_pair_ugh(rk, dx, dy, dz, r2,
+                invr, srcb, 1) :
+                FastMultipole._direct_pair_ugh(sk, dx, dy, dz, r2, invr, srcb, 1)
+            @test FastMultipole._direct_pair_ugh(pk, dx, dy, dz, r2, invr,
+                srcb, 1) === want
+            want_ug = inside ? FastMultipole._direct_pair_ug(rk, dx, dy, dz, r2,
+                invr, srcb, 1) :
+                FastMultipole._direct_pair_ug(sk, dx, dy, dz, r2, invr, srcb, 1)
+            @test FastMultipole._direct_pair_ug(pk, dx, dy, dz, r2, invr,
+                srcb, 1) === want_ug
+        end
+        # σ <= 0 padding falls back to singular, as for RegularizedVortex
+        srcb[8, 1] = zero(TF)
+        @test FastMultipole._direct_pair_ugh(pk, TF(0.1), TF(0), TF(0), TF(0.01),
+            TF(10), srcb, 1) ===
+            FastMultipole._direct_pair_ugh(sk, TF(0.1), TF(0), TF(0), TF(0.01),
+            TF(10), srcb, 1)
+    end
+
+    #--- (b) end-to-end host resident A/B at identical geometry: partitioned vs
+    #    regularized-everywhere vs the erf-based direct reference; P=8 and P=4 ---#
+
+    nv = 400
+    for P in (8, 4), (TF, gtol) in ((Float64, 1e-3), (Float32, 3e-3))
+        tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates (task 032 record)
+        base_r = generate_vortex(seed, nv)
+        base_p = generate_vortex(seed, nv)
+        sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
+        rsys = SmoothedVortex(base_r, sigma)
+        psys = PartitionedSmoothedVortex(SmoothedVortex(base_p, sigma))
+        opts() = CUDARadixLifecycleOptions(; precision=TF,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+        rcache = RadixFMMCache(rsys; expansion_order=P, ell=2, hessian=true,
+            options=opts())
+        pcache = RadixFMMCache(psys; expansion_order=P, ell=2, hessian=true,
+            options=opts())
+        @test pcache.state.options.direct_kernel == PartitionedVortex(; sigma_row=8)
+        fmm!(rsys, rcache; scalar_potential=false, gradient=true, hessian=true)
+        fmm!(psys, pcache; scalar_potential=false, gradient=true, hessian=true)
+        U_ref, J_ref = _interface_regularized_direct(SmoothedVortex(
+            generate_vortex(seed, nv), sigma))
+        u_scale = maximum(abs.(U_ref)); j_scale = maximum(abs.(J_ref))
+        # partitioned meets the same reference tolerance as regularized-everywhere
+        @test maximum(abs.(base_p.gradient_stretching[1:3, :] .- U_ref)) / u_scale < tol
+        @test maximum(abs.(base_p.potential[5:13, :] .- J_ref)) / j_scale < tol
+        # and the two kernels differ only by the bounded beyond-cutoff tail
+        @test maximum(abs.(base_p.gradient_stretching[1:3, :] .-
+            base_r.gradient_stretching[1:3, :])) / u_scale < 5e-4
+        @test maximum(abs.(base_p.potential[5:13, :] .-
+            base_r.potential[5:13, :])) / j_scale < 5e-4
+    end
+
+    #--- (c) validation and error paths ---#
+
+    # partitioned trait conflicts with an explicit different kernel
+    base = generate_vortex(seed, 100)
+    thin = SmoothedVortex(base, fill(0.01, 100))
+    @test_throws ArgumentError RadixFMMCache(thin; expansion_order=4, ell=2,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
+            direct_kernel=PartitionedVortex(; sigma_row=8)))
+    # scalar body type rejected
+    plain = generate_gravitational(seed, 100)
+    @test_throws ArgumentError RadixFMMCache(plain; expansion_order=4, ell=2,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
+            direct_kernel=PartitionedVortex(; sigma_row=8)))
+    # adequacy gate applies identically to the partitioned kernel
+    fat = PartitionedSmoothedVortex(SmoothedVortex(generate_vortex(seed, 400),
+        fill(0.2, 400)))
+    @test_throws ArgumentError RadixFMMCache(fat; expansion_order=4, ell=3,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    # constructor negatives
+    @test_throws ArgumentError PartitionedVortex(; sigma_row=4)
+    @test_throws ArgumentError PartitionedVortex(; sigma_row=8, rho_t=0.0)
+end
+
 @testset "stage 3 (task 032): recenter!, deprecated hooks" begin
 
     seed = 20260805

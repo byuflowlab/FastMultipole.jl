@@ -655,6 +655,45 @@ end
     return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
 end
 
+# Partitioned replacement (task 032a candidate 2, theory §2): stable regularized
+# g/h inside the smoothing cutoff, exact singular limits beyond it — the branch
+# selects HOW a direct pair is evaluated, never WHICH pairs are direct (the
+# adequacy gate guarantees every cutoff pair is in the direct set).
+@inline function _direct_pair_ug(kernel::PartitionedVortex, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    g = one(T)
+    if sigma > zero(T)
+        rho = r2 * invr / sigma
+        if rho <= T(kernel.rho_t)
+            g, _ = _gaussianerf_g_h(rho)
+        end
+    end
+    return _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
+end
+
+@inline function _direct_pair_ugh(kernel::PartitionedVortex, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    g = one(T)
+    h = -T(3)
+    if sigma > zero(T)
+        rho = r2 * invr / sigma
+        if rho <= T(kernel.rho_t)
+            g, h = _gaussianerf_g_h(rho)
+        end
+    end
+    return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
+end
+
 # Singular Biot-Savart direct kernel for Point{Vortex} sources (task 032 stage 1):
 # U = -Δx×Γ/(4πr³), J per theory §1 with g→1 (transcribed from the legacy
 # test-reference vortex direct!). No scalar potential is produced. Retained
@@ -1344,7 +1383,7 @@ _direct_kernel_geometry_gate!(cache::RadixFMMCache, ::AbstractDirectKernel,
     source_bodies, n::Int) = nothing
 
 function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
-        kernel::RegularizedVortex, source_bodies, n::Int)
+        kernel::AbstractRegularizedVortex, source_bodies, n::Int)
     n > 0 || return nothing
     # works for Matrix and CuMatrix alike (device reduction + scalar download)
     sigma_max = Float64(maximum(view(source_bodies, kernel.sigma_row, 1:n)))
@@ -1727,12 +1766,13 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     isbits(dk) || throw(ArgumentError(
         "direct_kernel must be an isbits functor (GPU-compilable, no references); " *
         "got $(typeof(dk))"))
-    if dk isa RegularizedVortex
+    if dk isa AbstractRegularizedVortex
+        kname = nameof(typeof(dk))
         BT <: Point{Vortex} || throw(ArgumentError(
-            "RegularizedVortex requires body_type Point{Vortex}; got $BT"))
+            "$kname requires body_type Point{Vortex}; got $BT"))
         for system in sources
             dk.sigma_row <= data_per_body(system) || throw(ArgumentError(
-                "RegularizedVortex sigma_row=$(dk.sigma_row) exceeds " *
+                "$kname sigma_row=$(dk.sigma_row) exceeds " *
                 "data_per_body=$(data_per_body(system)) for $(typeof(system)); " *
                 "every source system must carry the smoothing radius σ in packed " *
                 "row sigma_row"))

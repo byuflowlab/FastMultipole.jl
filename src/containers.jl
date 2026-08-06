@@ -1653,14 +1653,55 @@ The `g(ρ)`/`h(ρ) = ρg'−3g` evaluation is erf-free: the theory-§3 Horner se
 below `ρ = 2` and the `031a` §6.2 one-`exp` form above (constants measured by
 `MATRIX_OPERATOR_REFACTOR/scripts/fit_032_nearfield_g.jl`).
 """
-struct RegularizedVortex <: AbstractDirectKernel
+# Regularized vortex nearfields share the sigma_row/rho_t contract and the
+# near-set adequacy gate; they differ only in how pairs beyond the smoothing
+# cutoff are evaluated (task 032a).
+abstract type AbstractRegularizedVortex <: AbstractDirectKernel end
+
+@inline function _validate_regularized_vortex_args(name, sigma_row, rho_t)
+    sigma_row >= 5 || throw(ArgumentError(
+        "$name sigma_row must point at a packed extra-state row " *
+        "(rows 1:4 are position and the MAC radius); got $sigma_row"))
+    rho_t > 0 || throw(ArgumentError("$name rho_t must be positive"))
+    return nothing
+end
+
+struct RegularizedVortex <: AbstractRegularizedVortex
     sigma_row::Int
     rho_t::Float64
     function RegularizedVortex(; sigma_row::Integer, rho_t::Real=4.789)
-        sigma_row >= 5 || throw(ArgumentError(
-            "RegularizedVortex sigma_row must point at a packed extra-state row " *
-            "(rows 1:4 are position and the MAC radius); got $sigma_row"))
-        rho_t > 0 || throw(ArgumentError("RegularizedVortex rho_t must be positive"))
+        _validate_regularized_vortex_args("RegularizedVortex", sigma_row, rho_t)
+        return new(Int(sigma_row), Float64(rho_t))
+    end
+end
+
+"""
+    PartitionedVortex(; sigma_row, rho_t=4.789)
+
+Partitioned-replacement Biot-Savart nearfield for `Point{Vortex}` sources
+(task 032a, candidate 2 of `031a` §6): pairs inside the smoothing cutoff
+`r/σ_src ≤ rho_t` are evaluated with the cancellation-safe regularized U/J
+formulas (the same erf-free `g`/`h` evaluation as [`RegularizedVortex`](@ref));
+the remaining direct pairs use the exact singular kernel (`g → 1`, `h → −3`),
+skipping the regularization transcendentals entirely. The FMM far field is
+singular under every nearfield strategy, so the near-set adequacy gate applies
+identically (`g_min·h_leaf > rho_t·σ_max`, asserted per evaluation): the
+geometry that makes this kernel exact-once is the same geometry
+`RegularizedVortex` already requires, and the `rho_t` branch never changes
+which pairs are direct — only how they are evaluated.
+
+`sigma_row` and `rho_t` follow the [`RegularizedVortex`](@ref) contract
+(`rho_t = 4.789` is the `031a` §4 per-pair J radius at `ε = 1e-3`; the §6.4
+RMS radius 4.252 is a measured opt-in). On GPU warps a naive `ρ ≤ rho_t`
+branch pays both paths on nearly every warp (`031a` §6.3); the CUDA path
+must present a distance-binned or sorted pair stream before this kernel's
+timings are meaningful.
+"""
+struct PartitionedVortex <: AbstractRegularizedVortex
+    sigma_row::Int
+    rho_t::Float64
+    function PartitionedVortex(; sigma_row::Integer, rho_t::Real=4.789)
+        _validate_regularized_vortex_args("PartitionedVortex", sigma_row, rho_t)
         return new(Int(sigma_row), Float64(rho_t))
     end
 end
@@ -1673,7 +1714,7 @@ _default_direct_kernel(::Type) = SingularSource()
 # kernels' atomics/stores skip it) — compile-time via the functor type.
 _emits_potential(::SingularSource) = true
 _emits_potential(::SingularVortex) = false
-_emits_potential(::RegularizedVortex) = false
+_emits_potential(::AbstractRegularizedVortex) = false
 
 mutable struct CUDARadixTransferCounters
     body_uploads::Int

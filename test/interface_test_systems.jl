@@ -97,6 +97,26 @@ FastMultipole.direct_kernel(::SmoothedVortex) = RegularizedVortex(; sigma_row=8)
 FastMultipole.buffer_to_target_system!(system::SmoothedVortex, i_target, switch, buffer, i_buffer) =
     FastMultipole.buffer_to_target_system!(system.inner, i_target, switch, buffer, i_buffer)
 
+# The same smoothed system with the task-032a partitioned-replacement trait:
+# delegates everything to an inner SmoothedVortex but selects PartitionedVortex,
+# so the end-to-end A/B runs on identical bodies/σ with only the kernel changed.
+struct PartitionedSmoothedVortex{TF}
+    smoothed::SmoothedVortex{TF}
+end
+FastMultipole.source_system_to_buffer!(buffer, i_buffer, system::PartitionedSmoothedVortex, i_body) =
+    FastMultipole.source_system_to_buffer!(buffer, i_buffer, system.smoothed, i_body)
+FastMultipole.data_per_body(::PartitionedSmoothedVortex) = 8
+FastMultipole.get_position(system::PartitionedSmoothedVortex, i) =
+    FastMultipole.get_position(system.smoothed, i)
+FastMultipole.strength_dims(::PartitionedSmoothedVortex) = 3
+FastMultipole.get_n_bodies(system::PartitionedSmoothedVortex) =
+    FastMultipole.get_n_bodies(system.smoothed)
+FastMultipole.has_vector_potential(::PartitionedSmoothedVortex) = true
+FastMultipole.body_type(::PartitionedSmoothedVortex) = Point{Vortex}
+FastMultipole.direct_kernel(::PartitionedSmoothedVortex) = PartitionedVortex(; sigma_row=8)
+FastMultipole.buffer_to_target_system!(system::PartitionedSmoothedVortex, i_target, switch, buffer, i_buffer) =
+    FastMultipole.buffer_to_target_system!(system.smoothed, i_target, switch, buffer, i_buffer)
+
 # O(N²) regularized gaussianerf U/J reference (Float64, stdlib _ref_erf),
 # theory §1 formulas with the source σ. Returns (U 3×n, J 9×n column-major).
 function _interface_regularized_direct(system::SmoothedVortex)
