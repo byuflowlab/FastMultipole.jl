@@ -330,3 +330,34 @@ are coarse single samples on unoptimized derived settings — 035 owns all
 performance claims. All remaining pre-Done items are closed: (a) deliverable-4
 sign-off recorded above; (b) this 033-checksummed comparison; (c) test wiring
 verified. **034 is Done; clear-context approval pending.**
+
+## Approval Notes
+
+**Clear-context approval `2026-08-06`.** Reviewed per the START_HERE protocol:
+this task file, the FLOWVPM `gpu-full` production surface
+(`src/FLOWVPM_fmm_radix.jl`, the task-034 hooks + `__init__` in
+`ext/FLOWVPMCUDAExt.jl`, the `UJ_fmm` routing diff in `src/FLOWVPM_UJ.jl`, the
+`4df2bc0` buffer-accessor shims in `src/FLOWVPM_fmm.jl`), the tests
+(`test/runtests_gpu_fmm.jl`, `test/runtests_gpu_fmm_device.jl`, `runtests.jl`
+wiring), and `scripts/cuda_034_refcheck.jl`; `../FLOWVPM.jl/CLAUDE.md` read in
+full first.
+
+All five deliverables are met with consistent evidence: device-to-device
+coupling with the identity-sort/shape preconditions asserted and accumulate
+delivery semantics; capacity-contract cache reuse (maxparticles sizing,
+WeakKeyDict release, varying-np tested); the `nearfield_device` silent-drop
+hazard structurally unreachable; correctness on H200 (job 13061046, user
+deliverable-4 sign-off) plus the closing sha256-verified 033-reference gate
+(job 13061128, all Float64 u_rel_rms ≤ 1e-3, 023 counters flat); CPU path and
+public API preserved and loadable against registry FastMultipole. The two
+root-caused pre-existing fixes (switch-relative buffer shims incl. the
+out-of-buffer `set_hessian!` write; extension-init lifecycle load fixing the
+world-age failure) are correct and minimal. Loud-error coverage
+(autotune/kernel/rbf/sfs), recenter policy, and P=4 test coverage all check
+out. Performance is correctly deferred to `035`. **Approved.**
+
+Non-blocking follow-up for the next FLOWVPM session (`035`): the FLOWVPM
+`CLAUDE.md` Phase 4 header still says "H200 validation pending" / "`UJ_fmm`
+on a GPU-backed field has NOT yet run on real hardware" — stale since jobs
+13061046/13061128 passed; refresh that wording when `035` next touches the
+repo.
