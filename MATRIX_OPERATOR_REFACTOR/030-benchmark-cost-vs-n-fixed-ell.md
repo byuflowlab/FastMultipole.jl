@@ -580,6 +580,20 @@ series added to both panels.
   configuration may exist between the sampled shapes; every number reported is a
   measured lower bound on the achievable per-`n` cost, not a proof of optimality.
 
+### Completion (2026-08-05, late evening MDT)
+
+The completion-rule step-5 checkpoint on the refined per-`n` recommendation
+table (the Results section above, including the knife-edge caveat and the
+robust-winner column) was presented to and accepted by the user on
+`2026-08-05`; the user directed closure with no further measurement. All five
+completion-rule items are satisfied: 42/42 sweep + empty ledger; fig10 built
+and reproducible; the recommendation table is fully measured (the cost model
+was selection-only); the predicted-versus-measured validation covers the whole
+110-case retune grid (strictly stronger than the staged 2–3-point spot-check,
+per the user's `2026-08-04` direction); checkpoint held. Row marked Done in
+`START_HERE.md`; clear-context approval and the `019a` addendum note follow by
+a different agent.
+
 ## Approval Notes
 
 To be filled by a different agent after review notes and verification are

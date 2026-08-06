@@ -2,14 +2,21 @@
 
 ## Status and Entry Gate
 
-**Deferred by user direction on `2026-08-03`; may be resumed later.** This task
-no longer blocks the `019a` final Milestone Review; if completed after `019a`,
-its results are recorded there as an addendum review note.
+**Resumed by user direction on `2026-08-05`** (deferred `2026-08-03` to
+`2026-08-05`). This task does not block the (already approved) `019a` final
+Milestone Review; its results are recorded there as an addendum review note on
+completion.
 
-**Not started. Blocked until task 028 is clear-context approved.** Approval must
-be recorded in `START_HERE.md` by an agent other than the agent that completed
-028. No profiling, prototype, implementation, or H200 run for this task may
-begin before that approval and the reading gate below are complete.
+The entry gate is satisfied: task 028 is Done and clear-context approved in
+`START_HERE.md`. The Mandatory Reading Gate below must still be completed and
+recorded before any profiling, prototype, implementation, or H200 run.
+
+Context accrued during the deferral that the baseline step must absorb: task
+`030` (Done `2026-08-05`) retuned the same frozen workload's geometry and
+measured **7.092 ms** (`ell=5`, `sched6-4-4-3`, FP16, err 1.18960e-3 — passes
+the 1.19e-3 gate by 0.03%) and **7.556 ms** robust (`sched6-5-4-4`, 0.87x
+gate) against 028's shipped 9.591 ms — so the 029 single-H200 baseline profile
+must include the 030 winner geometry, not only the 028 shipped default.
 
 ## Objective
 
