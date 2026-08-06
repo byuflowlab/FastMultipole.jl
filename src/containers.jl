@@ -1706,6 +1706,53 @@ struct PartitionedVortex <: AbstractRegularizedVortex
     end
 end
 
+"""
+    TwoPassVortex(; sigma_row, rho_t=4.789, rho_c=2.0)
+
+Two-pass additive-correction Biot-Savart nearfield for `Point{Vortex}` sources
+(task 032a, candidate 3 of `031a` §6.1), in the `rho_c` hybrid form. The FMM
+routing is left entirely unmodified:
+
+- **Pass 1** is the ordinary direct evaluation with the stable regularized U/J
+  for `ρ = r/σ_src ≤ rho_c` and the exact singular kernel beyond (the
+  [`PartitionedVortex`](@ref) pair math with cutoff `rho_c`), so the primary
+  near set only needs to reach `rho_c·σ_max` — the adequacy gate for this
+  kernel asserts `g_min·h_leaf > rho_c·σ_max`, not the full `rho_t` reach.
+- **Pass 2** sweeps every pair with `rho_c < ρ ≤ rho_t` — regardless of
+  whether pass 1 handled it as direct or M2L — and adds only the deficit
+  `ΔU = -ḡC`, `Δa = (ρg'+3ḡ)/r²`, `Δb = ḡ/(4πr³)` (`031a` §6.1), with `ḡ`
+  from the shipped §6.2 one-`exp` outer form. Its traversal is a self-sizing
+  offset ball of lattice radius `⌊rho_t·σ_max/h_leaf⌋+1` with per-offset
+  minimum-gap pruning, enumerated arithmetically from the live `σ_max` each
+  evaluation, so pass-2 reach covers `rho_t·σ_max` by construction with zero
+  per-step allocation.
+
+`rho_c = 2` is the measured hybrid switch: below it the accumulator-level
+singular-plus-deficit cancellation amplifies rounding by up to `~ρ⁻³` (fatal in
+Float32); at `rho_c = 2` the amplification is 3.3 and the hybrid holds
+working precision at every `ρ` (`031a` §6.1 conditioning table). `sigma_row`
+and `rho_t` follow the [`RegularizedVortex`](@ref) contract. Host-only until
+the 032a Stage C CUDA mirror lands.
+"""
+struct TwoPassVortex <: AbstractRegularizedVortex
+    sigma_row::Int
+    rho_t::Float64
+    rho_c::Float64
+    function TwoPassVortex(; sigma_row::Integer, rho_t::Real=4.789, rho_c::Real=2.0)
+        _validate_regularized_vortex_args("TwoPassVortex", sigma_row, rho_t)
+        rho_c > 0 || throw(ArgumentError("TwoPassVortex rho_c must be positive"))
+        rho_c < rho_t || throw(ArgumentError(
+            "TwoPassVortex rho_c must be below rho_t (the pass-2 correction " *
+            "shell (rho_c, rho_t] must be nonempty); got rho_c=$rho_c, rho_t=$rho_t"))
+        rho_c >= 1.5 || throw(ArgumentError(
+            "TwoPassVortex rho_c must be at least 1.5: the singular-plus-deficit " *
+            "cancellation amplifies rounding like ~1/ρ³ and the transverse J " *
+            "reference ρg'-2g changes sign at ρ=1.3688 (031a §6.1); the measured " *
+            "hybrid switch is rho_c=2"))
+        return new(Int(sigma_row), Float64(rho_t), Float64(rho_c))
+    end
+end
+
 _default_direct_kernel(::Type{<:Point{Source}}) = SingularSource()
 _default_direct_kernel(::Type{<:Point{Vortex}}) = SingularVortex()
 _default_direct_kernel(::Type) = SingularSource()

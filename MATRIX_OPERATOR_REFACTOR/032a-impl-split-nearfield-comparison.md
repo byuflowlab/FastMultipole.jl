@@ -106,6 +106,83 @@ Execution plan: `032a-implementation-plan.md` (this directory) — four stages
 each with a user checkpoint; §6.3 binned-stream mechanism selection is an
 explicit measured decision before any A/B number is recorded.
 
+### Stage B — host two-pass additive correction (2026-08-06)
+
+Done per `032a-implementation-plan.md` Stage B; Checkpoint B report issued.
+
+**Kernel.** `TwoPassVortex(; sigma_row, rho_t=4.789, rho_c=2.0)` (isbits,
+`containers.jl`, exported), the `rho_c=2` hybrid form only — the plain variant
+(F64 accumulation with singular pass 1 everywhere) was not built, since the
+hybrid strictly dominates it on the host (F32-admissible, same pass-2 work,
+and the theory table shows the hybrid at working precision for every ρ).
+Pass 1 reuses the Stage-A `PartitionedVortex` pair math verbatim via a
+`_pass1_regularized_cutoff` trait (branch at `rho_c` instead of `rho_t`), so
+pass 1 is bitwise the regularized kernel for `ρ ≤ 2` and bitwise singular
+beyond. The constructor enforces `1.5 ≤ rho_c < rho_t` (the `ρg'−2g` sign
+change at 1.3688 makes smaller floors meaningless).
+
+**Deficit math.** The §6.2 outer branch of `_gaussianerf_g_h` was factored
+into `_gaussianerf_gbar_rhogp` (ḡ = e^{−ρ²/2}(Aρ + s(1/ρ²)), ρg' =
+Aρ³e^{−ρ²/2}; same constants, no duplication), and the §6.1 deficit is
+expressed as an effective (g_e, h_e) = (−ḡ, ρg' + 3ḡ) pair through the
+existing `_vortex_pair_ugh` assembly — algebraically exact:
+(singular)+(deficit) = (regularized) identically, verified to 1e-14 (F64) /
+2e-6 (F32) relative at pair level across the shell.
+
+**Pass-2 traversal (deviation from the plan's two listed options).** Neither
+a second stored route list (plan option a) nor a stored offset-class
+complement (option b) was used. The host sweep
+(`_host_twopass_deficit_kernel!`) enumerates the offset ball
+*arithmetically* each evaluation: for every occupied leaf cell, all integer
+offsets of Chebyshev radius `R = ⌊rho_t·σ_max/h_leaf⌋ + 1` (σ_max read from
+the live packed bodies), pruned per offset by the minimum-gap test
+`gap(o)·h_leaf ≤ rho_t·σ_max`, each resolved by binary search on the sorted
+leaf Morton keys (works identically under the hierarchical and flat
+policies). Rationale: reach coverage holds **by construction** every step
+(offsets beyond R have gap ≥ R·h_leaf > rho_t·σ_max), so no fixed list can
+ever be stale-inadequate; there is zero per-step allocation (loop bounds and
+binary searches only); no state/counts struct changed, so the 023
+transfer-counter contract is untouched by construction. The per-pair kernel
+gates on `rho_c < ρ ≤ rho_t`, which also handles shell pairs *inside* the
+primary near set (pass 1 gave them singular; the deficit completes them).
+Stage C can materialize the same pruned ball as a compacted class list for
+the GPU (the §6.3 binned-stream requirement applies to pass 2 there).
+
+**Gate dispatch.** `_direct_kernel_geometry_gate!` now reads its reach from
+`_gate_reach_rho(kernel)`: `rho_t` for the single-pass regularized kernels,
+`rho_c` for `TwoPassVortex` — measured in the reach test: `σ = 0.05` at
+`ell = 3`, `q = 3`, unit box (g_min·h_leaf = 0.125) admits two-pass
+(needs 0.1) while `PartitionedVortex` correctly throws (needs 0.239).
+Device caches refuse `TwoPassVortex` at construction until the Stage C
+mirror lands (pass 2 would otherwise be silently skipped).
+
+**Tests** (`two-pass nearfield stage B (task 032a)` in
+`device_system_interface_test.jl`, `TwoPassSmoothedVortex` in
+`interface_test_systems.jl`; 1248 assertions, all passing):
+
+- pair identity per zone (inside/shell/beyond), F64 + F32;
+- end-to-end host two-pass vs the erf-based regularized reference at the
+  Stage-A tolerances — P=8 and P=4, Float64 (1e-3 / 1e-2) and Float32
+  (3e-3 / 3e-2), all met — plus the two-pass vs regularized-everywhere
+  delta bounded at 5e-4 exactly as Stage A's partitioned delta;
+- conditioning guard: at the §6.1 table's ρ ∈ {0.01…0.5}, the F32 hybrid
+  pair total holds < 1e-5 relative against the F64 erf truth (expected
+  ~1e-7) while the test-side plain F32 singular+deficit shows the > 1e-3
+  amplification at ρ ≤ 0.02; end-to-end F32 with twenty ρ = 0.02
+  near-coincident pairs stays under 3e-3 (the pipeline floor, not the
+  ~1e-1 amplification);
+- pass-2 reach: deterministic pair at cell offset (2,0,0) outside the
+  `q = 3` near set, ρ = 4.0 in the shell; (two-pass − singular-kernel) run
+  difference at the target equals the analytic §6.1 deficit to < 2e-3
+  relative (fit-error bound ~4e-4), proving the correction lands beyond the
+  primary near set;
+- constructor negatives (`sigma_row`, `rho_t`, `rho_c` floors/ordering),
+  trait-conflict and scalar-body rejections, the rho_c gate failure path,
+  and the device refusal.
+
+Full local suite green (`--threads=4`). CUDA mirrors, the §6.3 binned pass-2
+stream, and H200 measurements are Stage C/D.
+
 ## Placement and Reporting
 
 - Follow the `_batched`/`*_cuda.jl` placement rules; types stay in

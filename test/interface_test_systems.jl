@@ -117,6 +117,27 @@ FastMultipole.direct_kernel(::PartitionedSmoothedVortex) = PartitionedVortex(; s
 FastMultipole.buffer_to_target_system!(system::PartitionedSmoothedVortex, i_target, switch, buffer, i_buffer) =
     FastMultipole.buffer_to_target_system!(system.smoothed, i_target, switch, buffer, i_buffer)
 
+# The same smoothed system with the task-032a stage-B two-pass additive
+# correction trait (rho_c = 2 hybrid): identical bodies/σ, only the kernel
+# changes, so the A/B against SmoothedVortex/PartitionedSmoothedVortex is
+# apples-to-apples.
+struct TwoPassSmoothedVortex{TF}
+    smoothed::SmoothedVortex{TF}
+end
+FastMultipole.source_system_to_buffer!(buffer, i_buffer, system::TwoPassSmoothedVortex, i_body) =
+    FastMultipole.source_system_to_buffer!(buffer, i_buffer, system.smoothed, i_body)
+FastMultipole.data_per_body(::TwoPassSmoothedVortex) = 8
+FastMultipole.get_position(system::TwoPassSmoothedVortex, i) =
+    FastMultipole.get_position(system.smoothed, i)
+FastMultipole.strength_dims(::TwoPassSmoothedVortex) = 3
+FastMultipole.get_n_bodies(system::TwoPassSmoothedVortex) =
+    FastMultipole.get_n_bodies(system.smoothed)
+FastMultipole.has_vector_potential(::TwoPassSmoothedVortex) = true
+FastMultipole.body_type(::TwoPassSmoothedVortex) = Point{Vortex}
+FastMultipole.direct_kernel(::TwoPassSmoothedVortex) = TwoPassVortex(; sigma_row=8)
+FastMultipole.buffer_to_target_system!(system::TwoPassSmoothedVortex, i_target, switch, buffer, i_buffer) =
+    FastMultipole.buffer_to_target_system!(system.smoothed, i_target, switch, buffer, i_buffer)
+
 # O(N²) regularized gaussianerf U/J reference (Float64, stdlib _ref_erf),
 # theory §1 formulas with the source σ. Returns (U 3×n, J 9×n column-major).
 function _interface_regularized_direct(system::SmoothedVortex)

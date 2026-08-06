@@ -366,6 +366,263 @@ end
     @test_throws ArgumentError PartitionedVortex(; sigma_row=8, rho_t=0.0)
 end
 
+# Float64 erf-based regularized and singular U/J for one pair (theory §1),
+# used by the stage B tests below as the pair-level truth.
+function _ref_pair_uj(d, G, sigma)
+    A = sqrt(2 / pi)
+    r2 = dot(d, d)
+    r = sqrt(r2)
+    rho = r / sigma
+    g = _ref_erf(rho / sqrt2) - A * rho * exp(-rho^2 / 2)
+    gp = A * rho^2 * exp(-rho^2 / 2)
+    cr3 = 1 / (4pi * r2 * r)
+    crss = ((d[3] * G[2] - d[2] * G[3]) * cr3,
+            (d[1] * G[3] - d[3] * G[1]) * cr3,
+            (d[2] * G[1] - d[1] * G[2]) * cr3)
+    vals(gv, av, bv) = (gv * crss[1], gv * crss[2], gv * crss[3],
+        av * crss[1] * d[1], av * crss[2] * d[1] - bv * G[3], av * crss[3] * d[1] + bv * G[2],
+        av * crss[1] * d[2] + bv * G[3], av * crss[2] * d[2], av * crss[3] * d[2] - bv * G[1],
+        av * crss[1] * d[3] - bv * G[2], av * crss[2] * d[3] + bv * G[1], av * crss[3] * d[3])
+    reg = vals(g, (rho * gp - 3g) / r2, -g * cr3)
+    sing = vals(1.0, -3 / r2, -cr3)
+    return reg, sing
+end
+
+@testset "two-pass nearfield stage B (task 032a)" begin
+
+    seed = 20260807
+    rho_t = 4.789
+    rho_c = 2.0
+    tk = TwoPassVortex(; sigma_row=8)
+    rk = RegularizedVortex(; sigma_row=8)
+    sk = SingularVortex()
+
+    #--- (a) pair-level identity: pass 1 is bitwise regularized inside rho_c and
+    #    bitwise singular beyond; singular + deficit reproduces the regularized
+    #    kernel across the correction shell; the deficit vanishes off-shell ---#
+
+    for (TF, shell_tol) in ((Float64, 1e-14), (Float32, 2e-6))
+        rng = MersenneTwister(seed)
+        srcb = zeros(TF, 8, 1)
+        for trial in 1:300
+            sigma = TF(0.01 + 0.09 * rand(rng))
+            zone = mod1(trial, 3)   # 1: inside rho_c, 2: shell, 3: beyond rho_t
+            rho = zone == 1 ? TF(0.05 + 1.85 * rand(rng)) :
+                  zone == 2 ? TF(2.05 + 2.6 * rand(rng)) :
+                              TF(5.0 + 15.0 * rand(rng))
+            u = normalize(randn(rng, 3))
+            dx, dy, dz = TF.(u .* Float64(rho * sigma))
+            r2 = dx * dx + dy * dy + dz * dz
+            invr = inv(sqrt(r2))
+            srcb[5:7, 1] .= randn(rng, TF, 3)
+            srcb[8, 1] = sigma
+            p1 = FastMultipole._direct_pair_ugh(tk, dx, dy, dz, r2, invr, srcb, 1)
+            rho_eval = r2 * invr / srcb[8, 1]
+            ge, he = FastMultipole._twopass_deficit_gh(tk, rho_eval)
+            if zone == 1
+                @test p1 === FastMultipole._direct_pair_ugh(rk, dx, dy, dz, r2,
+                    invr, srcb, 1)
+                @test ge === zero(TF) && he === zero(TF)
+            else
+                @test p1 === FastMultipole._direct_pair_ugh(sk, dx, dy, dz, r2,
+                    invr, srcb, 1)
+                if zone == 2
+                    d = FastMultipole._vortex_pair_ugh(dx, dy, dz, r2, invr,
+                        srcb[5, 1], srcb[6, 1], srcb[7, 1], ge, he)
+                    reg = FastMultipole._direct_pair_ugh(rk, dx, dy, dz, r2,
+                        invr, srcb, 1)
+                    scale = maximum(abs.(reg))
+                    @test maximum(abs.((p1 .+ d) .- reg)) / scale < shell_tol
+                else
+                    @test ge === zero(TF) && he === zero(TF)
+                end
+            end
+        end
+    end
+
+    #--- (b) end-to-end host two-pass vs the erf-based regularized reference and
+    #    vs regularized-everywhere at identical geometry; P=8 and P=4, F64/F32 ---#
+
+    nv = 400
+    for P in (8, 4), (TF, gtol) in ((Float64, 1e-3), (Float32, 3e-3))
+        tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates (task 032 record)
+        base_r = generate_vortex(seed, nv)
+        base_t = generate_vortex(seed, nv)
+        sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
+        rsys = SmoothedVortex(base_r, sigma)
+        tsys = TwoPassSmoothedVortex(SmoothedVortex(base_t, sigma))
+        opts() = CUDARadixLifecycleOptions(; precision=TF,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+        rcache = RadixFMMCache(rsys; expansion_order=P, ell=2, hessian=true,
+            options=opts())
+        tcache = RadixFMMCache(tsys; expansion_order=P, ell=2, hessian=true,
+            options=opts())
+        @test tcache.state.options.direct_kernel == TwoPassVortex(; sigma_row=8)
+        fmm!(rsys, rcache; scalar_potential=false, gradient=true, hessian=true)
+        fmm!(tsys, tcache; scalar_potential=false, gradient=true, hessian=true)
+        U_ref, J_ref = _interface_regularized_direct(SmoothedVortex(
+            generate_vortex(seed, nv), sigma))
+        u_scale = maximum(abs.(U_ref)); j_scale = maximum(abs.(J_ref))
+        # two-pass meets the same reference tolerance as regularized-everywhere
+        @test maximum(abs.(base_t.gradient_stretching[1:3, :] .- U_ref)) / u_scale < tol
+        @test maximum(abs.(base_t.potential[5:13, :] .- J_ref)) / j_scale < tol
+        # and differs from regularized-everywhere only by the bounded tail +
+        # accumulator rounding (same bound as the stage A partitioned delta)
+        @test maximum(abs.(base_t.gradient_stretching[1:3, :] .-
+            base_r.gradient_stretching[1:3, :])) / u_scale < 5e-4
+        @test maximum(abs.(base_t.potential[5:13, :] .-
+            base_r.potential[5:13, :])) / j_scale < 5e-4
+    end
+
+    #--- (c) conditioning guard: the rho_c hybrid must NOT show the Float32
+    #    small-rho amplification (031a §6.1 table: hybrid holds ~1e-7 where the
+    #    plain F32 two-pass loses up to 16%) ---#
+
+    # pair level: hybrid total vs Float64 erf truth at the table's rho values
+    for rho in (0.01, 0.02, 0.05, 0.1, 0.5)
+        sigma = 0.03
+        d = (rho * sigma) .* (0.36, 0.48, 0.8)
+        G = (0.4, -0.3, 0.6)
+        reg, _ = _ref_pair_uj(d, G, sigma)
+        srcb = zeros(Float32, 8, 1)
+        srcb[5:7, 1] .= Float32.(G)
+        srcb[8, 1] = Float32(sigma)
+        dx, dy, dz = Float32.(d)
+        r2 = dx * dx + dy * dy + dz * dz
+        invr = inv(sqrt(r2))
+        p1 = FastMultipole._direct_pair_ugh(tk, dx, dy, dz, r2, invr, srcb, 1)
+        ge, he = FastMultipole._twopass_deficit_gh(tk, r2 * invr / srcb[8, 1])
+        @test ge == 0.0f0 && he == 0.0f0   # below rho_c: pass 1 owns the pair
+        scale = maximum(abs.(reg))
+        @test maximum(abs.(Float64.(p1[2:13]) .- collect(reg))) / scale < 1e-5
+        # contrast: the plain (non-hybrid) F32 singular + deficit for the same
+        # pair shows the amplification the hybrid exists to remove
+        if rho <= 0.02
+            s32 = FastMultipole._direct_pair_ugh(sk, dx, dy, dz, r2, invr, srcb, 1)
+            g32, h32 = FastMultipole._gaussianerf_g_h(Float32(rho))
+            gbar32 = 1.0f0 - g32
+            d32 = FastMultipole._vortex_pair_ugh(dx, dy, dz, r2, invr,
+                srcb[5, 1], srcb[6, 1], srcb[7, 1], -gbar32,
+                (h32 + 3.0f0 * g32) + 3.0f0 * gbar32)
+            naive = s32 .+ d32
+            @test maximum(abs.(Float64.(naive[2:13]) .- collect(reg))) / scale > 1e-3
+        end
+    end
+
+    # end to end: clusters of near-coincident particles (rho = 0.02) in Float32
+    # stay at the pipeline's F32 floor instead of the ~1e-1 amplification
+    rng = MersenneTwister(seed + 1)
+    nb = 60
+    pos = 0.05 .+ 0.9 .* rand(rng, 3, nb)
+    npair = 20
+    partners = zeros(3, npair)
+    for k in 1:npair
+        dir = normalize(randn(rng, 3))
+        partners[:, k] .= pos[:, k] .+ 6.0e-4 .* dir   # rho = 0.02 at sigma = 0.03
+    end
+    posc = hcat(pos, partners)
+    strength = 0.02 .* randn(rng, 3, nb + npair)
+    sigma_c = fill(0.03, nb + npair)
+    base_c = VortexParticles(posc, strength)
+    csys = TwoPassSmoothedVortex(SmoothedVortex(base_c, sigma_c))
+    ccache = RadixFMMCache(csys; expansion_order=8, ell=2, hessian=true,
+        bounds=(SVector(0.0, 0.0, 0.0), 1.0),
+        options=CUDARadixLifecycleOptions(; precision=Float32,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    fmm!(csys, ccache; scalar_potential=false, gradient=true, hessian=true)
+    U_cref, J_cref = _interface_regularized_direct(SmoothedVortex(
+        VortexParticles(copy(posc), copy(strength)), sigma_c))
+    @test maximum(abs.(base_c.gradient_stretching[1:3, :] .- U_cref)) /
+        maximum(abs.(U_cref)) < 3e-3
+    @test maximum(abs.(base_c.potential[5:13, :] .- J_cref)) /
+        maximum(abs.(J_cref)) < 3e-3
+
+    #--- (d) pass-2 reach: a shell pair whose cells lie OUTSIDE the primary near
+    #    set still receives its deficit (a missing shell would leave the exact
+    #    singular tail error at the target) ---#
+
+    # deterministic geometry: ell=3 on the unit box (h_leaf = 0.125),
+    # near_radius2 = 3, so cell offset (2,0,0) is M2L; sigma = 0.05 puts the
+    # designated pair (r = 0.2, rho = 4.0) in the correction shell while the
+    # pass-1 gate needs only rho_c*sigma = 0.1 < g_min*h_leaf = 0.125
+    n_bg = 24
+    rng = MersenneTwister(seed + 2)
+    posr = zeros(3, n_bg + 2)
+    posr[:, 1] .= (0.115, 0.0625, 0.0625)    # target T, cell (0,0,0)
+    posr[:, 2] .= (0.315, 0.0625, 0.0625)    # source S, cell (2,0,0), r = 0.2
+    posr[:, 3:end] .= 0.70 .+ 0.25 .* rand(rng, 3, n_bg)   # far background
+    strr = 0.02 .* randn(rng, 3, n_bg + 2)
+    strr[:, 1] .= (1.0, 0.0, 0.0)
+    strr[:, 2] .= (0.0, 0.0, 1.0)
+    sigr = fill(0.05, n_bg + 2)
+    kwargs = (expansion_order=8, ell=3, hessian=true,
+        bounds=(SVector(0.0, 0.0, 0.0), 1.0), near_radius2=3)
+    opts64 = () -> CUDARadixLifecycleOptions(; precision=Float64,
+        m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+    base_tp = VortexParticles(copy(posr), copy(strr))
+    tpsys = TwoPassSmoothedVortex(SmoothedVortex(base_tp, sigr))
+    tpcache = RadixFMMCache(tpsys; kwargs..., options=opts64())
+    # the designated pair is genuinely beyond the primary near set
+    ctx = tpcache.state.interaction_list
+    @test all(sum(abs2, o) <= 3 for o in ctx.tables.near_offsets)
+    # ... which is exactly why the partitioned kernel rejects this geometry
+    # while the two-pass rho_c gate admits it (gate dispatch)
+    part_sys = PartitionedSmoothedVortex(SmoothedVortex(
+        VortexParticles(copy(posr), copy(strr)), sigr))
+    @test_throws ArgumentError RadixFMMCache(part_sys; kwargs..., options=opts64())
+    fmm!(tpsys, tpcache; scalar_potential=false, gradient=true, hessian=true)
+    # singular-kernel run on identical bodies: the difference at T is exactly
+    # the accumulated pass-2 deficit (T has no direct neighbors, no pair below
+    # rho_c, and the far field is common to both runs)
+    base_sing = VortexParticles(copy(posr), copy(strr))
+    singcache = RadixFMMCache(base_sing; kwargs..., options=opts64())
+    fmm!(base_sing, singcache; scalar_potential=false, gradient=true, hessian=true)
+    dU = base_tp.gradient_stretching[1:3, 1] .- base_sing.gradient_stretching[1:3, 1]
+    dJ = base_tp.potential[5:13, 1] .- base_sing.potential[5:13, 1]
+    d = Float64.(posr[:, 1] .- posr[:, 2])
+    reg, sing = _ref_pair_uj(d, Float64.(strr[:, 2]), 0.05)
+    dU_ana = collect(reg[1:3] .- sing[1:3])
+    dJ_ana = collect(reg[4:12] .- sing[4:12])
+    @test norm(dU_ana) > 0 && norm(dJ_ana) > 0
+    @test norm(dU .- dU_ana) < 2e-3 * norm(dU_ana)
+    @test norm(dJ .- dJ_ana) < 2e-3 * norm(dJ_ana)
+
+    #--- (e) validation and error paths ---#
+
+    # trait conflicts with an explicit different kernel
+    thin = SmoothedVortex(generate_vortex(seed, 100), fill(0.01, 100))
+    @test_throws ArgumentError RadixFMMCache(thin; expansion_order=4, ell=2,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
+            direct_kernel=TwoPassVortex(; sigma_row=8)))
+    # scalar body type rejected
+    plain = generate_gravitational(seed, 100)
+    @test_throws ArgumentError RadixFMMCache(plain; expansion_order=4, ell=2,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
+            direct_kernel=TwoPassVortex(; sigma_row=8)))
+    # pass-1 adequacy gate binds at rho_c: sigma large enough that even the
+    # rho_c reach fails must throw
+    fat = TwoPassSmoothedVortex(SmoothedVortex(generate_vortex(seed, 400),
+        fill(0.2, 400)))
+    @test_throws ArgumentError RadixFMMCache(fat; expansion_order=4, ell=3,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    # host-only until stage C: the device path must refuse the kernel rather
+    # than silently skip pass 2
+    dev = TwoPassSmoothedVortex(SmoothedVortex(generate_vortex(seed, 100),
+        fill(0.01, 100)))
+    @test_throws ArgumentError RadixFMMCache(dev; expansion_order=4, ell=2,
+        device=true, options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    # constructor negatives
+    @test_throws ArgumentError TwoPassVortex(; sigma_row=4)
+    @test_throws ArgumentError TwoPassVortex(; sigma_row=8, rho_t=0.0)
+    @test_throws ArgumentError TwoPassVortex(; sigma_row=8, rho_c=0.0)
+    @test_throws ArgumentError TwoPassVortex(; sigma_row=8, rho_c=1.0)
+    @test_throws ArgumentError TwoPassVortex(; sigma_row=8, rho_t=2.0, rho_c=2.0)
+end
+
 @testset "stage 3 (task 032): recenter!, deprecated hooks" begin
 
     seed = 20260805

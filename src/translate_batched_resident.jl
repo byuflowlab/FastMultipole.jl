@@ -501,6 +501,152 @@ function _host_direct_pairs_functor_kernel!(kernel::AbstractDirectKernel,
     return output
 end
 
+#------- two-pass additive-correction deficit sweep (task 032a stage B) -------#
+#
+# Pass 2 of the TwoPassVortex hybrid: after the unmodified pass 1 (singular far
+# field + the rho_c-partitioned direct nearfield above), add the 031a §6.1
+# deficit for every pair with rho_c < ρ = r/σ_src ≤ rho_t, wherever pass 1
+# routed that pair (direct or M2L — the deficit is additive, so no exact-once
+# bookkeeping exists to get wrong).
+#
+# Traversal geometry: instead of a second stored direct route list, the sweep
+# enumerates the offset ball arithmetically — for each occupied leaf cell all
+# integer offsets with Chebyshev radius ≤ R = ⌊rho_t·σ_max/h_leaf⌋ + 1, pruned
+# per offset by the minimum-gap test gap(o)·h_leaf ≤ rho_t·σ_max (gap(o) is the
+# closest approach of two cells at lattice offset o), each resolved to an
+# occupied cell by binary search on the sorted leaf Morton keys. Because R is
+# recomputed from the live σ_max every evaluation, pass-2 reach covers
+# rho_t·σ_max by construction — offsets just beyond R have gap ≥ R·h_leaf >
+# rho_t·σ_max — so the reach requirement the Stage-A gate enforces for the
+# single-pass kernels holds here without a gate, and the primary near set only
+# needs the rho_c adequacy (_direct_kernel_geometry_gate! dispatch below).
+# Zero per-step allocation: loop bounds and binary searches only. The stage-C
+# CUDA mirror can materialize the same pruned ball as a compacted class list.
+_add_host_twopass_deficit!(state::DeviceResidentRadixState) =
+    _host_twopass_deficit_dispatch!(state, state.options.direct_kernel)
+
+_host_twopass_deficit_dispatch!(state::DeviceResidentRadixState, ::AbstractDirectKernel) = state
+
+function _host_twopass_deficit_dispatch!(state::DeviceResidentRadixState,
+        kernel::TwoPassVortex)
+    hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
+    _host_twopass_deficit_kernel!(kernel, state.output, state.source_bodies,
+        state.cell_ranges, state.grid.cell_keys, state.counts.n_cells,
+        state.counts.n_bodies, state.grid.ell, Float64(state.grid.h0), hsv)
+    return state
+end
+
+# Occupied-leaf lookup by Morton key over the sorted prefix cell_keys[1:n_cells]
+# (cells are emitted in key order by the radix sort); returns 0 when the coord
+# is outside the grid or the cell is empty.
+@inline function _twopass_cell_lookup(cell_keys, n_cells::Int, ell::Int,
+        x::Int, y::Int, z::Int)
+    G = 1 << ell
+    (0 <= x < G && 0 <= y < G && 0 <= z < G) || return 0
+    key = morton_key(SVector{3,Int}(x, y, z), ell)
+    lo, hi = 1, n_cells
+    @inbounds while lo <= hi
+        mid = (lo + hi) >>> 1
+        k = cell_keys[mid]
+        if k < key
+            lo = mid + 1
+        elseif k > key
+            hi = mid - 1
+        else
+            return mid
+        end
+    end
+    return 0
+end
+
+function _host_twopass_deficit_kernel!(kernel::TwoPassVortex,
+        output::AbstractMatrix{TF}, source_bodies, cell_ranges, cell_keys,
+        n_cells::Int, n_bodies::Int, ell::Int, h0::Float64,
+        ::Val{HS}) where {TF,HS}
+    sigma_row = kernel.sigma_row
+    # live sigma_max (allocation-free; mirrors the adequacy gate's reduction)
+    sigma_max = zero(TF)
+    @inbounds for j in 1:n_bodies
+        s = source_bodies[sigma_row, j]
+        s > sigma_max && (sigma_max = s)
+    end
+    sigma_max > zero(TF) || return output
+    h_leaf = 2 * h0 / (1 << ell)
+    reach = kernel.rho_t * Float64(sigma_max)
+    R = floor(Int, reach / h_leaf) + 1
+    reach2 = reach * reach
+    hl2 = h_leaf * h_leaf
+    rho_c = TF(kernel.rho_c)
+    rho_t = TF(kernel.rho_t)
+    @inbounds for target_cell in 1:n_cells
+        tfirst = cell_ranges[1, target_cell]
+        tcount = cell_ranges[2, target_cell]
+        tcount > 0 || continue
+        tcoord = morton_decode(cell_keys[target_cell], ell)
+        for oz in -R:R, oy in -R:R, ox in -R:R
+            # minimum-gap pruning: cells at offset o cannot hold a pair inside
+            # the reach when their closest approach already exceeds it
+            gx = max(abs(ox) - 1, 0)
+            gy = max(abs(oy) - 1, 0)
+            gz = max(abs(oz) - 1, 0)
+            (gx * gx + gy * gy + gz * gz) * hl2 > reach2 && continue
+            source_cell = _twopass_cell_lookup(cell_keys, n_cells, ell,
+                tcoord[1] + ox, tcoord[2] + oy, tcoord[3] + oz)
+            source_cell == 0 && continue
+            sfirst = cell_ranges[1, source_cell]
+            scount = cell_ranges[2, source_cell]
+            for i in tfirst:(tfirst + tcount - 1)
+                xi = source_bodies[1, i]
+                yi = source_bodies[2, i]
+                zi = source_bodies[3, i]
+                for j in sfirst:(sfirst + scount - 1)
+                    i == j && continue
+                    dx = xi - source_bodies[1, j]
+                    dy = yi - source_bodies[2, j]
+                    dz = zi - source_bodies[3, j]
+                    r2 = dx * dx + dy * dy + dz * dz
+                    r2 == zero(TF) && continue
+                    sigma = source_bodies[sigma_row, j]
+                    sigma > zero(TF) || continue
+                    invr = inv(sqrt(r2))
+                    rho = r2 * invr / sigma
+                    (rho_c < rho <= rho_t) || continue
+                    gbar, rhogp = _gaussianerf_gbar_rhogp(rho)
+                    ge = -gbar
+                    he = muladd(TF(3), gbar, rhogp)
+                    gsx = source_bodies[5, j]
+                    gsy = source_bodies[6, j]
+                    gsz = source_bodies[7, j]
+                    if HS
+                        _, ux, uy, uz, h1, h2, h3, h4, h5, h6, h7, h8, h9 =
+                            _vortex_pair_ugh(dx, dy, dz, r2, invr,
+                                gsx, gsy, gsz, ge, he)
+                        output[2, i] += ux
+                        output[3, i] += uy
+                        output[4, i] += uz
+                        output[5, i] += h1
+                        output[6, i] += h2
+                        output[7, i] += h3
+                        output[8, i] += h4
+                        output[9, i] += h5
+                        output[10, i] += h6
+                        output[11, i] += h7
+                        output[12, i] += h8
+                        output[13, i] += h9
+                    else
+                        _, ux, uy, uz = _vortex_pair_ug(dx, dy, dz, invr,
+                            gsx, gsy, gsz, ge)
+                        output[2, i] += ux
+                        output[3, i] += uy
+                        output[4, i] += uz
+                    end
+                end
+            end
+        end
+    end
+    return output
+end
+
 #------- gaussianerf g/h evaluation and direct-kernel pair functors (032 stage 2) -------#
 #
 # Erf-free evaluation of the gaussianerf regularization factor
@@ -536,6 +682,22 @@ const _GAUSSERF_S_COEFFS = (0.082593826443677007, 2.0801015208954681,
 @inline _gausserf_series_g(z::Float32) = evalpoly(z, _GAUSSERF_G_COEFFS32)
 @inline _gausserf_series_h(z::Float32) = evalpoly(z, _GAUSSERF_H_COEFFS32)
 
+# Outer-branch (ρ > 2) complement pair: ḡ = e^{−ρ²/2}(Aρ + s(1/ρ²)) with the
+# 031a §6.2 degree-3 fit of s, and ρg′ = Aρ³e^{−ρ²/2} reusing the same
+# exponential. Factored out of `_gaussianerf_g_h` so the two-pass deficit
+# (task 032a stage B) consumes ḡ directly to absolute tolerance instead of
+# reconstructing it as 1 − g.
+@inline function _gaussianerf_gbar_rhogp(rho::T) where T<:AbstractFloat
+    z = rho * rho
+    e = exp(-z / 2)
+    u = inv(z)
+    s = muladd(muladd(muladd(T(_GAUSSERF_S_COEFFS[4]), u, T(_GAUSSERF_S_COEFFS[3])),
+        u, T(_GAUSSERF_S_COEFFS[2])), u, T(_GAUSSERF_S_COEFFS[1]))
+    gbar = e * muladd(T(_GAUSSERF_A), rho, s)
+    rhogp = T(_GAUSSERF_A) * rho * z * e
+    return gbar, rhogp
+end
+
 @inline function _gaussianerf_g_h(rho::T) where T<:AbstractFloat
     z = rho * rho
     if rho <= T(2)
@@ -543,12 +705,9 @@ const _GAUSSERF_S_COEFFS = (0.082593826443677007, 2.0801015208954681,
         h = T(_GAUSSERF_A) * rho * z * z * _gausserf_series_h(z)
         return g, h
     end
-    e = exp(-z / 2)
-    u = inv(z)
-    s = muladd(muladd(muladd(T(_GAUSSERF_S_COEFFS[4]), u, T(_GAUSSERF_S_COEFFS[3])),
-        u, T(_GAUSSERF_S_COEFFS[2])), u, T(_GAUSSERF_S_COEFFS[1]))
-    g = one(T) - e * muladd(T(_GAUSSERF_A), rho, s)
-    h = muladd(T(_GAUSSERF_A) * rho * z, e, -3 * g)   # ρg′ = Aρ³e^{−ρ²/2}
+    gbar, rhogp = _gaussianerf_gbar_rhogp(rho)
+    g = one(T) - gbar
+    h = rhogp - 3 * g
     return g, h
 end
 
@@ -659,8 +818,16 @@ end
 # g/h inside the smoothing cutoff, exact singular limits beyond it — the branch
 # selects HOW a direct pair is evaluated, never WHICH pairs are direct (the
 # adequacy gate guarantees every cutoff pair is in the direct set).
-@inline function _direct_pair_ug(kernel::PartitionedVortex, dx, dy, dz, r2, invr,
-        source_bodies, j)
+#
+# The two-pass hybrid's pass 1 (task 032a stage B, candidate 3) is the same
+# math with the branch at rho_c instead of rho_t: stable regularized U/J for
+# ρ ≤ rho_c, exact singular beyond, with the pass-2 deficit sweep
+# (_add_host_twopass_deficit!) supplying the correction on (rho_c, rho_t].
+@inline _pass1_regularized_cutoff(kernel::PartitionedVortex) = kernel.rho_t
+@inline _pass1_regularized_cutoff(kernel::TwoPassVortex) = kernel.rho_c
+
+@inline function _direct_pair_ug(kernel::Union{PartitionedVortex,TwoPassVortex},
+        dx, dy, dz, r2, invr, source_bodies, j)
     T = typeof(r2)
     @inbounds gsx = source_bodies[5, j]
     @inbounds gsy = source_bodies[6, j]
@@ -669,15 +836,15 @@ end
     g = one(T)
     if sigma > zero(T)
         rho = r2 * invr / sigma
-        if rho <= T(kernel.rho_t)
+        if rho <= T(_pass1_regularized_cutoff(kernel))
             g, _ = _gaussianerf_g_h(rho)
         end
     end
     return _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
 end
 
-@inline function _direct_pair_ugh(kernel::PartitionedVortex, dx, dy, dz, r2, invr,
-        source_bodies, j)
+@inline function _direct_pair_ugh(kernel::Union{PartitionedVortex,TwoPassVortex},
+        dx, dy, dz, r2, invr, source_bodies, j)
     T = typeof(r2)
     @inbounds gsx = source_bodies[5, j]
     @inbounds gsy = source_bodies[6, j]
@@ -687,11 +854,24 @@ end
     h = -T(3)
     if sigma > zero(T)
         rho = r2 * invr / sigma
-        if rho <= T(kernel.rho_t)
+        if rho <= T(_pass1_regularized_cutoff(kernel))
             g, h = _gaussianerf_g_h(rho)
         end
     end
     return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
+end
+
+# Two-pass deficit coefficients (031a §6.1) as an effective (g, h) pair for the
+# shared vortex U/J assembly: with g_e = −ḡ and h_e = ρg′ + 3ḡ,
+# `_vortex_pair_ug(h)` yields exactly ΔU = −ḡC, Δa = h_e/r² = (ρg′+3ḡ)/r², and
+# Δb = −g_e/(4πr³) = ḡ/(4πr³), and (singular) + (deficit) = (regularized)
+# identically: (1 − ḡ, ρg′ + 3ḡ − 3) = (g, ρg′ − 3g). Pairs outside the shell
+# (rho_c, rho_t] contribute nothing (ρ ≤ rho_c is fully handled by pass 1's
+# regularized branch; beyond rho_t the tail is inside the §4 error budget).
+@inline function _twopass_deficit_gh(kernel::TwoPassVortex, rho::T) where T<:AbstractFloat
+    (T(kernel.rho_c) < rho <= T(kernel.rho_t)) || return zero(T), zero(T)
+    gbar, rhogp = _gaussianerf_gbar_rhogp(rho)
+    return -gbar, muladd(T(3), gbar, rhogp)
 end
 
 # Singular Biot-Savart direct kernel for Point{Vortex} sources (task 032 stage 1):
@@ -1061,6 +1241,7 @@ end
 function _launch_host_l2b!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
     fill!(state.output, zero(TF))
     _add_host_direct_pairs!(state)
+    _add_host_twopass_deficit!(state)
     P_phi = state.invariant_cache.basis_info.orders.P_phi
     P_active = state.invariant_cache.basis_info.orders.P_active
     if size(state.output, 1) >= 13
@@ -1382,6 +1563,14 @@ end
 _direct_kernel_geometry_gate!(cache::RadixFMMCache, ::AbstractDirectKernel,
     source_bodies, n::Int) = nothing
 
+# The reach the primary direct near set must cover, in units of sigma. The
+# single-pass regularized kernels evaluate every cutoff pair directly, so they
+# need the full rho_t; the two-pass hybrid's pass 1 only evaluates ρ ≤ rho_c
+# regularized (its self-sizing pass-2 sweep covers the (rho_c, rho_t] shell on
+# its own, see _host_twopass_deficit_kernel!), so its gate binds at rho_c.
+@inline _gate_reach_rho(kernel::AbstractRegularizedVortex) = (kernel.rho_t, "rho_t")
+@inline _gate_reach_rho(kernel::TwoPassVortex) = (kernel.rho_c, "rho_c (pass-1 hybrid switch)")
+
 function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
         kernel::AbstractRegularizedVortex, source_bodies, n::Int)
     n > 0 || return nothing
@@ -1390,7 +1579,8 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
     sigma_max > 0 || return nothing
     g_min = _leaf_stencil_min_gap(cache)
     h_leaf = 2 * Float64(cache.h0) / (1 << cache.ell)
-    cutoff = kernel.rho_t * sigma_max
+    rho_reach, rho_name = _gate_reach_rho(kernel)
+    cutoff = rho_reach * sigma_max
     g_min * h_leaf > cutoff && return nothing
     x = g_min * 2 * Float64(cache.h0) / cutoff   # admissible 2^ℓ bound
     ell_max = floor(Int, log2(x))
@@ -1400,7 +1590,7 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
     throw(ArgumentError(
         "regularized nearfield near-set adequacy failed: the direct stencil leaves " *
         "an M2L gap of g_min*h_leaf = $(round(g_min * h_leaf, sigdigits=4)) but the " *
-        "smoothing cutoff needs rho_t*sigma_max = $(round(cutoff, sigdigits=4)) " *
+        "smoothing cutoff needs $rho_name*sigma_max = $(round(cutoff, sigdigits=4)) " *
         "(ratio $(round(g_min * h_leaf / cutoff, sigdigits=4)), g_min = " *
         "$(round(g_min, sigdigits=4)), sigma_max = $(round(sigma_max, sigdigits=4)), " *
         "ell = $(cache.ell)); $depth_msg. Pairs inside the cutoff would be handled " *
@@ -1778,6 +1968,11 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
                 "row sigma_row"))
         end
     end
+    device && dk isa TwoPassVortex && throw(ArgumentError(
+        "TwoPassVortex is host-only until the 032a stage C CUDA mirror lands " *
+        "(the device path would run pass 1 but silently skip the pass-2 deficit " *
+        "sweep); build the cache with device=false or select another nearfield " *
+        "kernel"))
 
     if device
         cache = _radix_cache_device_build(sources, P, Int(ell), x_min, h0, maxn,
