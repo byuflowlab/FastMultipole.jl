@@ -559,14 +559,27 @@ const _HCU_STRATEGIES = (
             @test hctx.total_routes == cache.state.counts.n_routes
             @test sum(hctx.routes_per_level) == hctx.total_routes
             @test count(>(0), hctx.routes_per_level) > 1
-            hctx.profile_stages = true
-            fmm!(sys, cache; scalar_potential=true, gradient=true)
-            @test hctx.update_stage_ns[1] > 0
-            @test hctx.update_stage_ns[2] > 0
-            @test hctx.update_stage_ns[3] > 0
-            @test hctx.update_stage_ns[4] > 0
-            @test all(>(0), hctx.m2l_level_ns[3:(ell + 1)])
-            hctx.profile_stages = false
+            # per-step generation telemetry is only exercised with the 029
+            # occupancy-epoch caching disabled (with it on and occupancy
+            # static, stages 2-4 are legitimately zero; the cached-path
+            # telemetry is covered by test/cuda_radix_graph_test.jl)
+            saved_cached = HCU_FM.CUDA_CACHED_WINDOWS[]
+            saved_graph = HCU_FM.CUDA_GRAPH_LIFECYCLE[]
+            HCU_FM.CUDA_CACHED_WINDOWS[] = false
+            HCU_FM.CUDA_GRAPH_LIFECYCLE[] = false
+            try
+                hctx.profile_stages = true
+                fmm!(sys, cache; scalar_potential=true, gradient=true)
+                @test hctx.update_stage_ns[1] > 0
+                @test hctx.update_stage_ns[2] > 0
+                @test hctx.update_stage_ns[3] > 0
+                @test hctx.update_stage_ns[4] > 0
+                @test all(>(0), hctx.m2l_level_ns[3:(ell + 1)])
+                hctx.profile_stages = false
+            finally
+                HCU_FM.CUDA_CACHED_WINDOWS[] = saved_cached
+                HCU_FM.CUDA_GRAPH_LIFECYCLE[] = saved_graph
+            end
         end
 
         #--- the task-027 production default, on device, with no policy passed ---#

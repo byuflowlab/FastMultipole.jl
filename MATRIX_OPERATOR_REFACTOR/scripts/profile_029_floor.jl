@@ -113,6 +113,11 @@ end
 
 _issync(name) = occursin("Synchronize", name) || occursin("cuCtxSynchronize", name)
 _ismem(name) = occursin("Memcpy", name) || occursin("Memset", name)
+# 029 cycle 1: host-side launch APIs — the graph-captured chain replaces many
+# cuLaunchKernel calls with one cuGraphLaunch, which device-record counts
+# (`launches` above) cannot see because the same kernels still execute
+_islaunch(name) = occursin("Launch", name)
+_isgraphlaunch(name) = occursin("GraphLaunch", name)
 
 function _reduce_trace(prof, reps)
     dev = prof.device      # NamedTuple of vectors (CUDATools) or DataFrame
@@ -124,6 +129,8 @@ function _reduce_trace(prof, reps)
     hostnames = String.(host.name)
     syncmask = _issync.(hostnames)
     memmask = _ismem.(hostnames)
+    launchmask = _islaunch.(hostnames)
+    graphmask = _isgraphlaunch.(hostnames)
     sync_ms = sum((host.stop .- host.start)[syncmask]; init=0.0) * 1e3
     host_span = isempty(host.start) ? 0.0 :
         (maximum(host.stop) - minimum(host.start)) * 1e3
@@ -143,6 +150,8 @@ function _reduce_trace(prof, reps)
         sync_calls=count(syncmask) / reps,
         sync_ms=sync_ms / reps,
         mem_ops=count(memmask) / reps,
+        host_launches=count(launchmask) / reps,
+        graph_launches=count(graphmask) / reps,
         per_kernel=per,
     )
 end
@@ -195,13 +204,15 @@ function profile_config(n, rows, krows)
             end
         end
         r = _reduce_trace(prof, REPS)
-        @printf("%-10s wall %8.3f ms  busy %8.3f  idle %8.3f  launches %7.1f  syncs %5.1f (%.3f ms)  ctrl %8.3f ms\n",
+        @printf("%-10s wall %8.3f ms  busy %8.3f  idle %8.3f  launches %7.1f (host %7.1f, graph %5.1f)  syncs %5.1f (%.3f ms)  ctrl %8.3f ms\n",
             name, r.wall_ms, r.device_busy_ms, r.idle_ms, r.launches,
+            r.host_launches, r.graph_launches,
             r.sync_calls, r.sync_ms, median(ctrl))
         push!(rows, (n=n, stage=name, wall_ms=r.wall_ms,
             device_busy_ms=r.device_busy_ms, device_span_ms=r.device_span_ms,
             idle_ms=r.idle_ms, launches=r.launches, sync_calls=r.sync_calls,
-            sync_ms=r.sync_ms, mem_ops=r.mem_ops, control_wall_ms=median(ctrl)))
+            sync_ms=r.sync_ms, mem_ops=r.mem_ops, control_wall_ms=median(ctrl),
+            host_launches=r.host_launches, graph_launches=r.graph_launches))
         for (k, (c, t)) in sort(collect(r.per_kernel); by=x -> -x[2][2])
             push!(krows, (n=n, stage=name, kernel=k, count=c / REPS,
                 total_ms=t / REPS))
@@ -234,11 +245,12 @@ end
 
 open(OUT * ".csv", "w") do io
     println(io, "n,stage,wall_ms,device_busy_ms,device_span_ms,idle_ms," *
-        "launches,sync_calls,sync_ms,mem_ops,control_wall_ms")
+        "launches,sync_calls,sync_ms,mem_ops,control_wall_ms," *
+        "host_launches,graph_launches")
     for r in rows
         println(io, join([r.n, r.stage, r.wall_ms, r.device_busy_ms,
             r.device_span_ms, r.idle_ms, r.launches, r.sync_calls, r.sync_ms,
-            r.mem_ops, r.control_wall_ms], ','))
+            r.mem_ops, r.control_wall_ms, r.host_launches, r.graph_launches], ','))
     end
 end
 open(OUT * ".kernels.csv", "w") do io

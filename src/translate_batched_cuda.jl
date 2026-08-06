@@ -2906,6 +2906,65 @@ const DIRECT_CUDA_MAX_BLOCKS = Ref(16384)
 const CUDA_SYMMETRIC_NEARFIELD = Ref(false)
 const SYMMETRIC_CUDA_MAX_CELL_BODIES = Ref(128)
 
+#------- task 029 cycle 1: sync-free far-field chain -------#
+#
+# Two cooperating mechanisms behind runtime flags (current path preserved as
+# the fallback, mirroring CUDA_OVERLAP_NEARFIELD):
+#
+# 1. `CUDA_CACHED_WINDOWS`: the hierarchical M2L route windows, direct pairs,
+#    node metadata, and operator-group edges are pure functions of the occupied
+#    cell set (the cache's Morton box is fixed, so cell/node centers and
+#    parent/child topology depend only on which cells are occupied). The
+#    refresh detects occupancy change by comparing the sorted unique leaf keys
+#    against the previous step's snapshot and regenerates all of the above only
+#    on change ("occupancy epoch"). The M2L windows are additionally cached as
+#    a per-level concatenation in generation order, so the steady-state M2L
+#    stage launches only the per-level apply kernels — no flags/scan/compact
+#    work and no blocking route-count D2H (job 13059955: ~1.2 ms device-busy
+#    plus a 1.25 ms sync per step at the robust n=1e6 baseline).
+# 2. `CUDA_GRAPH_LIFECYCLE`: with the windows cached and the GEMM scalars
+#    device-staged, the complete far-field chain (side-stream fill+nearfield,
+#    B2M, M2M, per-level M2L applies, L2L, L2B) is sync-free and
+#    capacity-static within an epoch, so it is captured once per occupancy
+#    epoch into a CUDA graph and replayed with a single launch per step
+#    (job 13059955: 420 launches / 27 syncs / ~3 ms n-independent floor).
+#
+# Graph re-capture rule (counted at its real recurrence in any verdict): the
+# captured graph is valid exactly while the occupancy epoch is unchanged.
+# `update_cuda_radix_state!` increments `hctx.epoch_id` when the occupied cell
+# set changes (which covers node sets, window contents, direct-pair lists, and
+# every launch shape baked into the graph); the first lifecycle of a new epoch
+# runs uncaptured (JIT/handle warm-up), the second records and instantiates,
+# and subsequent steps replay. Geometry-changing operations (bodies crossing
+# cell boundaries, body-count changes) therefore cost one regeneration pass
+# plus one capture; a workload whose occupancy churns every step degrades to
+# the pre-029 launch pattern plus capture overhead, which the epoch check makes
+# visible rather than silent.
+const CUDA_CACHED_WINDOWS = Ref(true)
+const CUDA_GRAPH_LIFECYCLE = Ref(true)
+
+# Construction-staged device alpha=1/beta=0 for the resident-chain GEMMs, keyed
+# by (context handle, eltype) so device resets or multi-context test runs never
+# reuse stale device memory. In CUBLAS_POINTER_MODE_DEVICE a scalar-alpha
+# `mul!` stages a fresh `CuRef` per call: one pool allocation plus one pageable
+# H2D memcpy, measured as 101 pageable H2Ds per step across the M2M/L2L groups
+# (job 13059955) and incompatible with graph capture.
+const _CUDA_GEMM_SCALARS = Dict{Tuple{UInt,DataType},Any}()
+
+function _cuda_gemm_scalars(::Type{TF}) where TF
+    key = (objectid(CUDA.context()), TF)
+    return get!(_CUDA_GEMM_SCALARS, key) do
+        (CUDA.CuArray(TF[one(TF)]), CUDA.zeros(TF, 1))
+    end::Tuple{CUDA.CuVector{TF},CUDA.CuVector{TF}}
+end
+
+function _resident_mul!(C::CUDA.StridedCuMatrix{TF}, A::CUDA.StridedCuMatrix{TF},
+        B::CUDA.StridedCuMatrix{TF}) where {TF<:Union{Float32,Float64}}
+    alpha, beta = _cuda_gemm_scalars(TF)
+    CUDA.CUBLAS.gemm!('N', 'N', alpha, A, B, beta, C)
+    return C
+end
+
 # Gather the stacked degree-major [phi; chi] slab column j from the source column
 # `src_cols[j]`, mapping degree-major row i to flat storage through phi/chi_flat_idx.
 function _cuda_dense_gather_kernel!(slab, phi, chi, phi_flat_idx, chi_flat_idx,
@@ -3729,6 +3788,19 @@ function run_cuda_radix_lifecycle!(state::DeviceResidentRadixState)
     _assert_cuda_supported_operator!(state.options)
     state.counters.expansion_host_copies == 0 ||
         throw(AssertionError("resident CUDA radix lifecycle observed expansion host copies before execution"))
+    # task 029 cycle 1: replay the captured far-field graph when it is valid
+    # for the current occupancy epoch; otherwise run (and possibly record) the
+    # launch-sequence body
+    _cuda_graph_eligible(state) && return _run_cuda_radix_lifecycle_graph!(state)
+    return _cuda_lifecycle_body!(state)
+end
+
+# The complete lifecycle launch sequence (unchanged pre-029 semantics). All
+# host work in here is launch bookkeeping and residency assertions — no device
+# synchronization, no D2H, and (with the staged GEMM scalars and the cached
+# M2L windows) no device allocation — so the same body serves direct execution
+# and stream capture.
+function _cuda_lifecycle_body!(state::DeviceResidentRadixState)
     # cycle 3: launch fill+nearfield on the side stream before B2M so it runs
     # concurrently with the whole far-field chain; L2B joins on the event
     nearfield_done = CUDA_OVERLAP_NEARFIELD[] ?
@@ -3736,6 +3808,53 @@ function run_cuda_radix_lifecycle!(state::DeviceResidentRadixState)
     _launch_cuda_b2m!(state)
     _assert_cuda_resident_stage!(state, :b2m)
     _launch_cuda_resident_operator_pipeline!(state; nearfield_done)
+    return state
+end
+
+# Graph capture is restricted to configurations whose lifecycle body is
+# sync-free and capacity-static within the occupancy epoch: hierarchical dense
+# fused M2L with a valid window cache (per-level applies only), no per-step
+# symmetric-pair compaction (its pair count varies with per-cell body counts),
+# and no stage profiling (which synchronizes between levels).
+function _cuda_graph_eligible(state::DeviceResidentRadixState)
+    CUDA_GRAPH_LIFECYCLE[] && CUDA_CACHED_WINDOWS[] || return false
+    hctx = state.interaction_list
+    hctx isa DeviceHierarchicalM2LContext || return false
+    hctx.win_valid && _cuda_windows_cacheable(hctx) || return false
+    hctx.profile_stages && return false
+    isempty(hctx.symmetric_targets) || return false
+    DEBUG[] && return false
+    return true
+end
+
+function _run_cuda_radix_lifecycle_graph!(state::DeviceResidentRadixState)
+    hctx = state.interaction_list::DeviceHierarchicalM2LContext
+    exec = hctx.graph_exec
+    if exec !== nothing && hctx.graph_epoch == hctx.epoch_id
+        CUDA.launch(exec::CUDA.CuGraphExec)
+        return state
+    end
+    if hctx.graph_warm_epoch != hctx.epoch_id
+        # first lifecycle of a new epoch: run uncaptured so kernel JIT, CUBLAS
+        # handle/workspace setup, and the staged-scalar cache are warm before
+        # recording (capture tolerates none of them)
+        _cuda_lifecycle_body!(state)
+        hctx.graph_warm_epoch = hctx.epoch_id
+        return state
+    end
+    graph = CUDA.capture(; throw_error=false) do
+        _cuda_lifecycle_body!(state)
+    end
+    if graph === nothing
+        # capture failed (e.g. a residual allocation); execute normally and
+        # leave the warm marker so the next step retries the recording
+        _cuda_lifecycle_body!(state)
+        return state
+    end
+    hctx.graph_exec = CUDA.instantiate(graph)
+    hctx.graph_epoch = hctx.epoch_id
+    # stream capture records without executing, so this step still runs
+    CUDA.launch(hctx.graph_exec::CUDA.CuGraphExec)
     return state
 end
 
@@ -4109,6 +4228,15 @@ function _cuda_generate_radix_routes!(ctx, grid::DeviceRadixGrid, n_cells::Int,
     return n_routes, n_direct
 end
 
+# Occupancy-epoch change detection (task 029 cycle 1): benign-race flag store —
+# any lane observing a difference sets the flag, order irrelevant.
+function _cuda_keys_differ_kernel!(flag, keys, snapshot, n)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > n && return nothing
+    @inbounds keys[i] != snapshot[i] && (flag[1] = Int32(1))
+    return nothing
+end
+
 function _radix_offsets_matrix(offsets::Vector{SVector{3,Int}})
     out = Matrix{Int32}(undef, 3, length(offsets))
     for (k, offset) in enumerate(offsets)
@@ -4308,6 +4436,16 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         level_counts=CUDA.zeros(Int, ell + 1),
         d_level_offsets=CUDA.zeros(Int, ell + 2),
         oob_flag=CUDA.zeros(Int32, 1),
+        # occupancy-epoch snapshot (task 029 cycle 1): hierarchical caches
+        # compare the sorted unique leaf keys against the previous step to skip
+        # node-metadata/window/direct-pair regeneration; flat caches keep the
+        # per-step rebuild (zero-length snapshot disables the check)
+        epoch_cell_keys=CUDA.zeros(UInt64, hierarchical ? max_cells : 0),
+        epoch_flag=CUDA.zeros(Int32, 1),
+        host_epoch_flag=_pin_host_array(zeros(Int32, 1)),
+        epoch_prev_n=Ref(0),
+        epoch_prev_n_cells=Ref(0),
+        epoch_have=Ref(false),
         m2m_parent_routes=CUDA.zeros(Int, n_edges_capacity),
         m2m_child_routes=CUDA.zeros(Int, n_edges_capacity),
         l2l_parent_routes=CUDA.zeros(Int, n_edges_capacity),
@@ -4443,6 +4581,38 @@ function _cuda_update_radix_grid_in_place!(ctx, cache::RadixFMMCache{TF}, n::Int
     )
     blocks_cells = cld(n_cells, threads)
     ckv = view(grid.cell_keys, 1:n_cells)
+
+    # Occupancy-epoch check (task 029 cycle 1): every array below this point —
+    # cell centers, per-level unique node keys, node geometry/parent/child
+    # topology, leaf_to_node — is a pure function of the occupied leaf-cell SET
+    # inside the cache's fixed Morton box (cell_ranges/perm above are NOT and
+    # always refresh). When the sorted unique keys match the previous step's
+    # snapshot exactly, the whole node-metadata rebuild is skipped and the
+    # persistent arrays remain valid. The compare costs one kernel plus one
+    # pinned 4-byte D2H, replacing ~40 launches, several device scans, and two
+    # blocking downloads on the steady occupancy-static step.
+    track_epoch = length(ctx.epoch_cell_keys) > 0 && CUDA_CACHED_WINDOWS[]
+    occ_changed = true
+    if track_epoch && ctx.epoch_have[] && ctx.epoch_prev_n[] == n &&
+            ctx.epoch_prev_n_cells[] == n_cells
+        fill!(ctx.epoch_flag, Int32(0))
+        CUDA.@cuda threads=threads blocks=blocks_cells _cuda_keys_differ_kernel!(
+            ctx.epoch_flag, ckv, ctx.epoch_cell_keys, n_cells,
+        )
+        copyto!(ctx.host_epoch_flag, ctx.epoch_flag)
+        occ_changed = ctx.host_epoch_flag[1] != Int32(0)
+    end
+    if !occ_changed
+        grid.n_bodies = n
+        grid.n_cells = n_cells
+        return n_cells, false
+    end
+    if track_epoch
+        copyto!(ctx.epoch_cell_keys, 1, grid.cell_keys, 1, n_cells)
+        ctx.epoch_prev_n[] = n
+        ctx.epoch_prev_n_cells[] = n_cells
+        ctx.epoch_have[] = true
+    end
     CUDA.@cuda threads=threads blocks=blocks_cells _cuda_cell_centers_kernel!(
         grid.cell_centers, ctx.cell_coords, ckv, x_min, h0, ell,
     )
@@ -4500,7 +4670,7 @@ function _cuda_update_radix_grid_in_place!(ctx, cache::RadixFMMCache{TF}, n::Int
     )
     grid.n_bodies = n
     grid.n_cells = n_cells
-    return n_cells
+    return n_cells, true
 end
 
 """
@@ -4515,6 +4685,15 @@ storage is persistent and capacity-sized, so no array is reallocated across
 steps; `route_uploads`/`operator_uploads` stay constant after construction,
 `body_uploads` grows by one per host-resident system, and `metadata_downloads`
 grows by three (perm/system/index mirrors) per step with host-resident targets.
+
+Task 029 cycle 1: on hierarchical caches with `CUDA_CACHED_WINDOWS[]` (the
+default), the node metadata, occupancy lookup, direct pairs, operator-group
+edges, and the cached M2L route windows are regenerated only when the occupied
+leaf-cell set changed since the previous step (they are pure functions of that
+set inside the fixed box); the occupancy-static step replaces all of that work
+with one key-compare kernel and a pinned 4-byte flag download. Window-cache
+growth (and CUDA-graph re-recording downstream) therefore recurs exactly with
+occupancy change.
 """
 function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where {TF,LH}
     _require_cuda_radix_available()
@@ -4536,7 +4715,7 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
     t_stage = profiling ? (CUDA.synchronize(); time_ns()) : UInt64(0)
     source_buffers = _radix_cache_refresh_source_buffers!(ctx, systems, TF)
     _radix_cache_collect_positions!(ctx, source_buffers)
-    n_cells = _cuda_update_radix_grid_in_place!(ctx, cache, n)
+    n_cells, occ_changed = _cuda_update_radix_grid_in_place!(ctx, cache, n)
     n_nodes = cache.level_offsets[end]
     if profiling
         CUDA.synchronize()
@@ -4559,8 +4738,13 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
         counters.metadata_downloads += 3
     end
 
+    # Occupancy-epoch fold (task 029 cycle 1): tree routes, hierarchical
+    # occupancy, direct pairs, cached M2L windows, and the operator-group edges
+    # are all pure functions of the occupied cell set, so they are regenerated
+    # only when `occ_changed` (always, when window caching is disabled — the
+    # grid update then reports every step as changed).
     n_edges = max(n_nodes - 1, 0)
-    if n_edges > 0
+    if occ_changed && n_edges > 0
         blocks = cld(n_edges, 128)
         CUDA.@cuda threads=128 blocks=blocks _cuda_tree_routes_kernel!(
             ctx.m2m_parent_routes, ctx.m2m_child_routes,
@@ -4583,33 +4767,53 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
             _cuda_refresh_dense_m2l_routes!(plan, route_class, n_routes)
     else
         # Hierarchical: the update refreshes occupancy, direct pairs, and tree
-        # metadata only. Far-field route windows are generated and applied inside
-        # the M2L stage, after B2M/M2M have produced the source expansions —
-        # generating them here would either violate lifecycle ordering or require
-        # the forbidden whole-tree pair list.
-        t_stage = profiling ? (CUDA.synchronize(); time_ns()) : UInt64(0)
-        _cuda_hier_refresh_occupancy!(hctx, grid, cache.level_offsets)
-        if profiling
-            CUDA.synchronize()
-            hctx.update_stage_ns[2] = time_ns() - t_stage
-            t_stage = time_ns()
+        # metadata (on occupancy change), and — when the window cache is
+        # eligible — regenerates the per-level M2L route windows here from
+        # refresh-final node metadata (windows never read expansions, so this
+        # respects lifecycle ordering). With caching off or an incompatible
+        # plan, the windows are generated and applied inside the M2L stage as
+        # before.
+        if occ_changed
+            hctx.epoch_id += 1
+            hctx.win_valid = false
+            t_stage = profiling ? (CUDA.synchronize(); time_ns()) : UInt64(0)
+            _cuda_hier_refresh_occupancy!(hctx, grid, cache.level_offsets)
+            if profiling
+                CUDA.synchronize()
+                hctx.update_stage_ns[2] = time_ns() - t_stage
+                t_stage = time_ns()
+            end
+            n_direct = _cuda_hier_generate_direct_pairs!(ctx, hctx, grid, n_cells,
+                cache.level_offsets[cache.ell + 1], cache.ell)
+            hctx.epoch_n_direct = n_direct
+            if profiling
+                CUDA.synchronize()
+                hctx.update_stage_ns[3] = time_ns() - t_stage
+            end
+        else
+            n_direct = hctx.epoch_n_direct
+            profiling && (hctx.update_stage_ns[2] = 0; hctx.update_stage_ns[3] = 0)
         end
-        n_direct = _cuda_hier_generate_direct_pairs!(ctx, hctx, grid, n_cells,
-            cache.level_offsets[cache.ell + 1], cache.ell)
         if isempty(hctx.symmetric_targets)
             hctx.n_symmetric_pairs = 0
         else
+            # oversized-cell fallback selection reads per-cell body counts, so
+            # the symmetric compaction refreshes every step
             _cuda_compact_symmetric_pairs!(ctx, hctx, grid.cell_ranges, n_direct,
                 SYMMETRIC_CUDA_MAX_CELL_BODIES[])
         end
-        if profiling
-            CUDA.synchronize()
-            hctx.update_stage_ns[3] = time_ns() - t_stage
+        if CUDA_CACHED_WINDOWS[] && !hctx.win_valid && _cuda_windows_cacheable(hctx)
+            t_stage = profiling ? (CUDA.synchronize(); time_ns()) : UInt64(0)
+            _cuda_hier_cache_windows!(ctx, hctx, grid)
+            profiling && (CUDA.synchronize();
+                hctx.update_stage_ns[4] = time_ns() - t_stage)
         end
         n_routes = 0
     end
     t_stage = profiling ? (CUDA.synchronize(); time_ns()) : UInt64(0)
-    _cuda_refresh_resident_stage_groups!(ctx.workspace, grid, cache.level_offsets, cache.ell)
+    if occ_changed
+        _cuda_refresh_resident_stage_groups!(ctx.workspace, grid, cache.level_offsets, cache.ell)
+    end
     if profiling
         CUDA.synchronize()
         hctx.update_stage_ns[5] = time_ns() - t_stage
@@ -4679,6 +4883,15 @@ end
 # which replaces the flat path's `nclasses` histogram download — hierarchical
 # `nclasses` reaches `(ell - 1) * 1740`, so a whole-plan histogram per window would
 # be orders of magnitude more traffic than the flat contract allows.
+#
+# Task 029 cycle 1 tightens this further: with the occupancy-epoch window cache
+# (CUDA_CACHED_WINDOWS, default on, fused dense plans) the per-window prefix
+# download recurs only when the occupied cell set changes; the steady-state step's
+# entire host traffic for M2L is the 4-byte epoch flag read in the refresh. The
+# cached concatenation stores the compacted routes of the current epoch
+# (~3 x total_routes words) — bounded storage the 026/027 design deferred, now
+# accepted deliberately in exchange for removing the per-step scan/compact work
+# and its blocking synchronization (job 13059955 attribution).
 
 # Per-level occupied-node scatter: `node_at[level_base[L + 1] + linear + 1]` is the
 # flat node index of the occupied node at level `L` with coordinate `linear`, or 0.
@@ -4960,6 +5173,18 @@ end
 function _cuda_hier_generate_window!(state::DeviceResidentRadixState,
         hctx::DeviceHierarchicalM2LContext, route_class, L::Int, first_offset::Int,
         last_offset::Int, class_base::Int)
+    return _cuda_hier_generate_window_core!(state.route_levels, state.route_offsets,
+        state.route_targets, state.route_sources, state.grid, hctx, route_class,
+        L, first_offset, last_offset, class_base)
+end
+
+# State-free core (task 029 cycle 1): the occupancy-epoch window cache generates
+# windows during the refresh, before `cache.state` exists on the construction
+# step, so the generator takes the persistent route buffers and grid explicitly.
+function _cuda_hier_generate_window_core!(route_levels, route_offsets,
+        route_targets, route_sources, grid::DeviceRadixGrid,
+        hctx::DeviceHierarchicalM2LContext, route_class, L::Int, first_offset::Int,
+        last_offset::Int, class_base::Int)
     first_source = hctx.level_offsets[L + 1] + 1
     n_sources = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
     kn = last_offset - first_offset + 1
@@ -4972,7 +5197,7 @@ function _cuda_hier_generate_window!(state::DeviceResidentRadixState,
     blocks = cld(used, threads)
     level_base_L = hctx.level_base[L + 1]
     CUDA.@cuda threads=threads blocks=blocks _cuda_hier_route_flags_kernel!(
-        hctx.route_flags, hctx.node_at, state.grid.node_coords, hctx.d_push_offsets,
+        hctx.route_flags, hctx.node_at, grid.node_coords, hctx.d_push_offsets,
         hctx.d_class_of, level_base_L, first_source, n_sources, first_offset, kn, L,
     )
     fv = view(hctx.route_flags, 1:used)
@@ -4985,16 +5210,94 @@ function _cuda_hier_generate_window!(state::DeviceResidentRadixState,
     copyto!(hctx.host_window_cum, 1, hctx.window_cum, 1, kn)
     n_routes = Int(hctx.host_window_cum[kn])
     n_routes == 0 && return 0
-    n_routes <= length(state.route_targets) || throw(AssertionError(
+    n_routes <= length(route_targets) || throw(AssertionError(
         "device hierarchical route window exceeded capacity " *
-        "$(length(state.route_targets)); increase window storage or reduce window_classes"))
+        "$(length(route_targets)); increase window storage or reduce window_classes"))
     CUDA.@cuda threads=threads blocks=blocks _cuda_hier_route_compact_kernel!(
-        state.route_levels, state.route_offsets, state.route_targets,
-        state.route_sources, route_class, hctx.route_flags, hctx.route_prefix,
-        hctx.node_at, state.grid.node_coords, hctx.d_push_offsets, level_base_L,
+        route_levels, route_offsets, route_targets,
+        route_sources, route_class, hctx.route_flags, hctx.route_prefix,
+        hctx.node_at, grid.node_coords, hctx.d_push_offsets, level_base_L,
         first_source, n_sources, first_offset, kn, L, class_base,
     )
     return n_routes
+end
+
+# ---- task 029 cycle 1: occupancy-epoch M2L window cache ----------------------
+
+# The cache is eligible exactly when the per-level apply consumes only
+# (route_class, route_sources, route_targets, n_routes): the fused kernel family
+# of the dense CUDA plan (fused / tiled / tensor16). The GEMM reference drivers
+# additionally consume per-window class starts/counts and stay on the
+# generate-and-apply-per-window path.
+_cuda_windows_cacheable(hctx::DeviceHierarchicalM2LContext) =
+    hctx.apply_plan isa ResidentM2LDenseCUDAPlan && DENSE_CUDA_FUSED[]
+
+# Grow the cached-window arrays to `needed`, preserving the first `cursor`
+# entries. Growth happens only inside epoch regeneration (never on the
+# steady-state step), so this allocation recurs exactly with occupancy change.
+function _cuda_hier_win_ensure!(hctx::DeviceHierarchicalM2LContext, cursor::Int,
+        needed::Int)
+    old_class = hctx.win_class
+    cap = old_class === nothing ? 0 : length(old_class::CUDA.CuVector{Int32})
+    needed <= cap && return nothing
+    newcap = max(needed, cap + cld(cap, 2), 1024)
+    new_class = CUDA.CuVector{Int32}(undef, newcap)
+    new_sources = CUDA.CuVector{Int}(undef, newcap)
+    new_targets = CUDA.CuVector{Int}(undef, newcap)
+    if cursor > 0
+        copyto!(new_class, 1, old_class::CUDA.CuVector{Int32}, 1, cursor)
+        copyto!(new_sources, 1, hctx.win_sources::CUDA.CuVector{Int}, 1, cursor)
+        copyto!(new_targets, 1, hctx.win_targets::CUDA.CuVector{Int}, 1, cursor)
+    end
+    hctx.win_class = new_class
+    hctx.win_sources = new_sources
+    hctx.win_targets = new_targets
+    return nothing
+end
+
+# Regenerate the complete per-level window concatenation for the current
+# occupancy epoch. Runs inside the refresh (node metadata is final; windows
+# never read expansions) and reuses the single-window generator verbatim, so the
+# cached route stream is elementwise identical — same class-major order, same
+# per-window class contiguity — to the per-step generate-and-apply loop; with
+# `window_classes = noffsets` (the production K=full configs) each level is one
+# window and the concatenation is bit-identical to the uncached stream. The
+# per-window `kn`-entry prefix D2H still happens here, but once per epoch
+# instead of once per step.
+function _cuda_hier_cache_windows!(ctx, hctx::DeviceHierarchicalM2LContext,
+        grid::DeviceRadixGrid)
+    plan = hctx.apply_plan::ResidentM2LDenseCUDAPlan
+    route_class = plan.route_class
+    noffsets = hctx.noffsets
+    K = hctx.window_classes
+    ell = hctx.ell
+    cursor = 0
+    fill!(hctx.win_level_starts, 0)
+    fill!(hctx.win_level_counts, 0)
+    fill!(hctx.routes_per_level, 0)
+    for L in 2:ell
+        hctx.win_level_starts[L + 1] = cursor
+        level_total = 0
+        for first_offset in 1:K:noffsets
+            last_offset = min(first_offset + K - 1, noffsets)
+            n = _cuda_hier_generate_window_core!(ctx.route_levels,
+                ctx.route_offsets, ctx.route_targets, ctx.route_sources, grid,
+                hctx, route_class, L, first_offset, last_offset, 0)
+            n == 0 && continue
+            _cuda_hier_win_ensure!(hctx, cursor, cursor + n)
+            copyto!(hctx.win_class::CUDA.CuVector{Int32}, cursor + 1, route_class, 1, n)
+            copyto!(hctx.win_sources::CUDA.CuVector{Int}, cursor + 1, ctx.route_sources, 1, n)
+            copyto!(hctx.win_targets::CUDA.CuVector{Int}, cursor + 1, ctx.route_targets, 1, n)
+            cursor += n
+            level_total += n
+        end
+        hctx.win_level_counts[L + 1] = level_total
+        hctx.routes_per_level[L + 1] = level_total
+    end
+    hctx.total_routes = cursor
+    hctx.last_window_routes = 0
+    hctx.win_valid = true
+    return hctx
 end
 
 # Window-local class partition for the plans that consume per-class counts/starts.
@@ -5370,6 +5673,68 @@ function _cuda_hier_dense_scatter_add!(target::FlatCoefficientBuffer, slab,
 end
 
 # Apply one generated window through the hierarchical dense plan at level `L`.
+# Fused-family per-level apply on an explicit route slice (task 029 cycle 1):
+# consumes only (route_class, route_sources, route_targets, n_routes), so the
+# same body serves both the per-window path (state route buffers) and the
+# occupancy-epoch window cache (per-level views of the cached concatenation).
+function _cuda_hier_dense_apply_routes!(state::DeviceResidentRadixState{TF,B,LH},
+        ws::ResidentOperatorWorkspace{TF,B,LH}, plan::ResidentM2LDenseCUDAPlan,
+        hctx::DeviceHierarchicalM2LContext, L::Int, route_class, route_sources,
+        route_targets, n_routes::Int) where {TF,B,LH}
+    n_routes == 0 && return state
+    lcol = L - 1
+    D = plan.ndof
+    tensor_format = DENSE_CUDA_TENSOR_FORMAT[]
+    if tensor_format !== :off && TF === Float32 && !LH && D == 16
+        tensor_format in (:fp16, :bf16) || throw(ArgumentError(
+            "DENSE_CUDA_TENSOR_FORMAT must be :off, :fp16, or :bf16"))
+        ops_low = tensor_format === :fp16 ? plan.tensor_fp16_operators :
+            plan.tensor_bf16_operators
+        isempty(ops_low) && throw(ArgumentError(
+            "tensor M2L operator cache is unavailable for this configuration"))
+        blocks = min(cld(n_routes, 16), DENSE_CUDA_TILED_MAX_BLOCKS[])
+        shmem = 256 * sizeof(eltype(ops_low)) + 256 * sizeof(Float32)
+        CUDA.@cuda threads=32 blocks=blocks shmem=shmem _cuda_hier_dense_tensor16_kernel!(
+            state.locals.phi, plan.operators, ops_low, plan.tensor_input_scale,
+            route_class,
+            route_sources, route_targets, state.multipoles.phi,
+            ws.phi_flat_idx, hctx.source_scale, hctx.target_scale, lcol, n_routes)
+        return state
+    end
+    # tiled path (task 028 cycle 2/Stage 6): shared memory holds the folded
+    # D x D class tile plus one multipole column per warp.  Launch controls
+    # are internal Refs so complete-verdict A/Bs can be run without adding
+    # public cache/API surface.
+    tiled_threads = DENSE_CUDA_TILED_THREADS[]
+    32 <= tiled_threads <= 1024 && tiled_threads % 32 == 0 ||
+        throw(ArgumentError("DENSE_CUDA_TILED_THREADS must be a warp multiple in 32:1024"))
+    tiled_cap = DENSE_CUDA_TILED_MAX_BLOCKS[]
+    tiled_cap > 0 || throw(ArgumentError("DENSE_CUDA_TILED_MAX_BLOCKS must be positive"))
+    tiled_warps = tiled_threads ÷ 32
+    tiled_shmem = (D * D + tiled_warps * D) * sizeof(TF)
+    if DENSE_CUDA_TILED[] && n_routes >= DENSE_CUDA_TILED_MIN_ROUTES[] &&
+            tiled_shmem <= 48 * 1024
+        blocks = min(cld(n_routes, tiled_warps), tiled_cap)
+        CUDA.@cuda threads=tiled_threads blocks=blocks shmem=tiled_shmem _cuda_hier_dense_tiled_kernel!(
+            state.locals.phi, state.locals.chi, plan.operators, route_class,
+            route_sources, route_targets, state.multipoles.phi,
+            state.multipoles.chi, ws.phi_flat_idx, ws.chi_flat_idx, plan.ndof_phi,
+            hctx.source_scale, hctx.target_scale, lcol, n_routes, Val(LH),
+        )
+        return state
+    end
+    threads = min(256, cld(D, 32) * 32)
+    shmem = D * sizeof(TF)
+    blocks = min(n_routes, DENSE_CUDA_FUSED_MAX_BLOCKS[])
+    CUDA.@cuda threads=threads blocks=blocks shmem=shmem _cuda_hier_dense_fused_kernel!(
+        state.locals.phi, state.locals.chi, plan.operators, route_class,
+        route_sources, route_targets, state.multipoles.phi,
+        state.multipoles.chi, ws.phi_flat_idx, ws.chi_flat_idx, plan.ndof_phi,
+        hctx.source_scale, hctx.target_scale, lcol, n_routes, Val(LH),
+    )
+    return state
+end
+
 function _cuda_hier_dense_apply_window!(state::DeviceResidentRadixState{TF,B,LH},
         ws::ResidentOperatorWorkspace{TF,B,LH}, plan::ResidentM2LDenseCUDAPlan,
         hctx::DeviceHierarchicalM2LContext, L::Int) where {TF,B,LH}
@@ -5377,56 +5742,8 @@ function _cuda_hier_dense_apply_window!(state::DeviceResidentRadixState{TF,B,LH}
     n_routes == 0 && return state
     lcol = L - 1
     if DENSE_CUDA_FUSED[]
-        D = plan.ndof
-        tensor_format = DENSE_CUDA_TENSOR_FORMAT[]
-        if tensor_format !== :off && TF === Float32 && !LH && D == 16
-            tensor_format in (:fp16, :bf16) || throw(ArgumentError(
-                "DENSE_CUDA_TENSOR_FORMAT must be :off, :fp16, or :bf16"))
-            ops_low = tensor_format === :fp16 ? plan.tensor_fp16_operators :
-                plan.tensor_bf16_operators
-            isempty(ops_low) && throw(ArgumentError(
-                "tensor M2L operator cache is unavailable for this configuration"))
-            blocks = min(cld(n_routes, 16), DENSE_CUDA_TILED_MAX_BLOCKS[])
-            shmem = 256 * sizeof(eltype(ops_low)) + 256 * sizeof(Float32)
-            CUDA.@cuda threads=32 blocks=blocks shmem=shmem _cuda_hier_dense_tensor16_kernel!(
-                state.locals.phi, plan.operators, ops_low, plan.tensor_input_scale,
-                plan.route_class,
-                state.route_sources, state.route_targets, state.multipoles.phi,
-                ws.phi_flat_idx, hctx.source_scale, hctx.target_scale, lcol, n_routes)
-            return state
-        end
-        # tiled path (task 028 cycle 2/Stage 6): shared memory holds the folded
-        # D x D class tile plus one multipole column per warp.  Launch controls
-        # are internal Refs so complete-verdict A/Bs can be run without adding
-        # public cache/API surface.
-        tiled_threads = DENSE_CUDA_TILED_THREADS[]
-        32 <= tiled_threads <= 1024 && tiled_threads % 32 == 0 ||
-            throw(ArgumentError("DENSE_CUDA_TILED_THREADS must be a warp multiple in 32:1024"))
-        tiled_cap = DENSE_CUDA_TILED_MAX_BLOCKS[]
-        tiled_cap > 0 || throw(ArgumentError("DENSE_CUDA_TILED_MAX_BLOCKS must be positive"))
-        tiled_warps = tiled_threads ÷ 32
-        tiled_shmem = (D * D + tiled_warps * D) * sizeof(TF)
-        if DENSE_CUDA_TILED[] && n_routes >= DENSE_CUDA_TILED_MIN_ROUTES[] &&
-                tiled_shmem <= 48 * 1024
-            blocks = min(cld(n_routes, tiled_warps), tiled_cap)
-            CUDA.@cuda threads=tiled_threads blocks=blocks shmem=tiled_shmem _cuda_hier_dense_tiled_kernel!(
-                state.locals.phi, state.locals.chi, plan.operators, plan.route_class,
-                state.route_sources, state.route_targets, state.multipoles.phi,
-                state.multipoles.chi, ws.phi_flat_idx, ws.chi_flat_idx, plan.ndof_phi,
-                hctx.source_scale, hctx.target_scale, lcol, n_routes, Val(LH),
-            )
-            return state
-        end
-        threads = min(256, cld(D, 32) * 32)
-        shmem = D * sizeof(TF)
-        blocks = min(n_routes, DENSE_CUDA_FUSED_MAX_BLOCKS[])
-        CUDA.@cuda threads=threads blocks=blocks shmem=shmem _cuda_hier_dense_fused_kernel!(
-            state.locals.phi, state.locals.chi, plan.operators, plan.route_class,
-            state.route_sources, state.route_targets, state.multipoles.phi,
-            state.multipoles.chi, ws.phi_flat_idx, ws.chi_flat_idx, plan.ndof_phi,
-            hctx.source_scale, hctx.target_scale, lcol, n_routes, Val(LH),
-        )
-        return state
+        return _cuda_hier_dense_apply_routes!(state, ws, plan, hctx, L,
+            plan.route_class, state.route_sources, state.route_targets, n_routes)
     end
     wp = plan.whole_pass[]
     wp isa NamedTuple || throw(ArgumentError(
@@ -5480,6 +5797,13 @@ function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH}
     plan isa Union{ResidentM2LConcatPlan,ResidentM2LPrecomputedYPlan,
         ResidentM2LDenseCUDAPlan} || throw(ArgumentError(
         "hierarchical device M2L has no compatible construction-time plan; got $(typeof(plan))"))
+    # Task 029 cycle 1: production calls consume the occupancy-epoch window
+    # cache when it is valid — per-level applies only, no per-step generation.
+    # The benchmark-only replay controls always take the windowed path.
+    if replay_levels === nothing && replay_orbit === nothing &&
+            CUDA_CACHED_WINDOWS[] && hctx.win_valid && _cuda_windows_cacheable(hctx)
+        return _launch_cuda_hierarchical_m2l_cached!(state, hctx; clear_locals)
+    end
     clear_locals && fill!(state.locals.phi, zero(TF))
     clear_locals && LH && fill!(state.locals.chi, zero(TF))
     route_class = plan.route_class
@@ -5546,6 +5870,46 @@ function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH}
     return state
 end
 
+
+# Task 029 cycle 1: apply the cached per-level window concatenation. This is
+# the entire steady-state M2L stage — locals clear plus one fused-family launch
+# per nonempty level — with no route generation, no scan, and no host
+# synchronization, so it is graph-capturable. Telemetry (`routes_per_level`,
+# `total_routes`) was fixed at generation time and stays valid for the epoch.
+function _launch_cuda_hierarchical_m2l_cached!(
+        state::DeviceResidentRadixState{TF,B,LH},
+        hctx::DeviceHierarchicalM2LContext; clear_locals::Bool=true) where {TF,B,LH}
+    ws = state.scratch
+    ws isa ResidentOperatorWorkspace || throw(ArgumentError(
+        "hierarchical device M2L requires ResidentOperatorWorkspace scratch"))
+    plan = hctx.apply_plan::ResidentM2LDenseCUDAPlan
+    clear_locals && fill!(state.locals.phi, zero(TF))
+    clear_locals && LH && fill!(state.locals.chi, zero(TF))
+    wc = hctx.win_class::CUDA.CuVector{Int32}
+    wsrc = hctx.win_sources::CUDA.CuVector{Int}
+    wtgt = hctx.win_targets::CUDA.CuVector{Int}
+    profile = hctx.profile_stages
+    if profile
+        fill!(hctx.m2l_level_ns, 0)
+        # generation happens at epoch boundaries inside the refresh; the
+        # steady-state M2L stage has no flag/scan/compact cost to report
+        hctx.update_stage_ns[4] = 0
+    end
+    for L in 2:hctx.ell
+        n = hctx.win_level_counts[L + 1]
+        s = hctx.win_level_starts[L + 1]
+        t_level = profile ? (CUDA.synchronize(); time_ns()) : UInt64(0)
+        n > 0 && _cuda_hier_dense_apply_routes!(state, ws, plan, hctx, L,
+            view(wc, (s + 1):(s + n)), view(wsrc, (s + 1):(s + n)),
+            view(wtgt, (s + 1):(s + n)), n)
+        if profile
+            CUDA.synchronize()
+            hctx.m2l_level_ns[L + 1] = time_ns() - t_level
+        end
+    end
+    state.counts.n_routes = hctx.total_routes
+    return state
+end
 
 """
 Benchmark-only linear replay of complete hierarchical M2L groups. `levels`
@@ -5642,6 +6006,10 @@ function _build_cuda_hierarchical_context(::Type{TF}, basis_info::OperatorBasisI
         source_scale, target_scale,
         0, zeros(Int, ell + 1), zeros(Int, ell + 1), 0, 0, 1, 0,
         false, zeros(UInt64, 5), zeros(UInt64, ell + 1),
+        # 029 cycle 1: epoch/window-cache/graph state (windows and graph are
+        # generated lazily on the first refresh/lifecycle of each epoch)
+        0, 0, false, zeros(Int, ell + 2), zeros(Int, ell + 2),
+        nothing, nothing, nothing, nothing, -1, -1,
     )
 end
 

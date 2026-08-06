@@ -579,6 +579,29 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV,SM}
     profile_stages::Bool
     update_stage_ns::Vector{UInt64}
     m2l_level_ns::Vector{UInt64}
+    # Task 029 cycle 1: occupancy-epoch route-window cache + captured far-field
+    # graph. `epoch_id` increments whenever the occupied-cell set changes; the
+    # route windows, direct pairs, node metadata, and stage-group edges are all
+    # pure functions of that set given the cache's fixed Morton box, so they are
+    # regenerated only on epoch change. `win_class`/`win_sources`/`win_targets`
+    # (device vectors, lazily sized, `Any`-typed to keep this container free of
+    # CUDA types) hold the complete per-level route concatenation of the current
+    # epoch in exact generation order; `win_level_starts`/`win_level_counts`
+    # (index `L + 1`) bound each level's slice. `graph_exec` holds the
+    # instantiated CUDA graph of the far-field chain, valid while
+    # `graph_epoch == epoch_id`; `graph_warm_epoch` marks the epoch whose first
+    # lifecycle ran uncaptured to warm JIT/handles before recording.
+    epoch_id::Int
+    epoch_n_direct::Int
+    win_valid::Bool
+    win_level_starts::Vector{Int}
+    win_level_counts::Vector{Int}
+    win_class::Any
+    win_sources::Any
+    win_targets::Any
+    graph_exec::Any
+    graph_epoch::Int
+    graph_warm_epoch::Int
 end
 
 abstract type RadixTraversalStrategy end

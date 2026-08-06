@@ -2485,15 +2485,24 @@ end
 # `C`/`S` are the precomputed per-chunk cos/sin(νθ) tables (ndof×n); the paired
 # rotation acts on the contiguous [re; im] halves of the stacked scratch, so it is
 # allocation-free strided broadcasting on both Array and CuArray.
+# C = A * B for the resident operator chain. The generic method is plain
+# `mul!`; the CUDA extension overrides it (task 029 cycle 1) to call
+# `CUBLAS.gemm!` with construction-staged device alpha/beta scalars, because in
+# CUBLAS_POINTER_MODE_DEVICE a scalar-alpha/beta `mul!` stages a fresh `CuRef`
+# per call — one device allocation plus one pageable H2D memcpy, which is both
+# the dominant M2M/L2L host-overhead term (job 13059955: 101 pageable H2Ds per
+# step) and a CUDA-graph-capture blocker.
+_resident_mul!(C, A, B) = mul!(C, A, B)
+
 function _stacked_y_dense!(out_slab, in_slab, Ur, Vs, C, S, G, G2, ndof::Integer)
-    mul!(G, Vs, in_slab)
+    _resident_mul!(G, Vs, in_slab)
     Gt = @view G[1:ndof, :]
     Gb = @view G[(ndof + 1):(2 * ndof), :]
     G2t = @view G2[1:ndof, :]
     G2b = @view G2[(ndof + 1):(2 * ndof), :]
     G2t .= C .* Gt .- S .* Gb
     G2b .= S .* Gt .+ C .* Gb
-    mul!(out_slab, Ur, G2)
+    _resident_mul!(out_slab, Ur, G2)
     return out_slab
 end
 
@@ -2975,7 +2984,7 @@ function _resident_stage_group_apply!(dest::FlatCoefficientBuffer, src::FlatCoef
     _gather_rotate_z!(aphi, src.phi, ws.phi_flat_idx, source_idx,
         ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, group_phis, false)
     _stacked_y_dense!(yphi, aphi, Ur, Vs, C, S, G, G2, ndof_phi)
-    mul!(zphi, group.phi_dense, yphi)
+    _resident_mul!(zphi, group.phi_dense, yphi)
     ret_phi = zphi
     if LH
         ystk_c = ws.ystk_chi
@@ -2992,7 +3001,7 @@ function _resident_stage_group_apply!(dest::FlatCoefficientBuffer, src::FlatCoef
         _gather_rotate_z!(achi, src.chi, ws.chi_flat_idx, source_idx,
             ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, group_phis, false)
         _stacked_y_dense!(ychi, achi, Urc, Vsc, Cc, Sc, Gc, G2c, ndof_chi)
-        mul!(zchi, group.chi_dense, ychi)
+        _resident_mul!(zchi, group.chi_dense, ychi)
         # LH row mix (multipole rows pair with (n-1, m) via row_down; local rows with
         # (n+1, m) via row_up); yphi/ychi are free again and serve as gather scratch.
         chi_rows = mult ? ws.maps_chi.row_down : ws.maps_chi.row_up
@@ -3865,7 +3874,7 @@ function _launch_resident_m2l_concat!(state::DeviceResidentRadixState{TF,B,LH};
         _stacked_y_dense!(yphi, aphi, ops_phi.yU_mult, ops_phi.yV_mult,
             Cphi, Sphi, Gphi, G2phi, ndof_phi)
         yphi .*= sphi
-        mul!(zphi, ops_phi.zD, yphi)
+        _resident_mul!(zphi, ops_phi.zD, yphi)
         zphi .*= sphi
         ret_phi = zphi
         if LH
@@ -3892,7 +3901,7 @@ function _launch_resident_m2l_concat!(state::DeviceResidentRadixState{TF,B,LH};
             _stacked_y_dense!(ychi, achi, ops_chi.yU_mult, ops_chi.yV_mult,
                 Cchi, Schi, Gchi, G2chi, ndof_chi)
             ychi .*= schi
-            mul!(zchi, ops_chi.zD, ychi)
+            _resident_mul!(zchi, ops_chi.zD, ychi)
             zchi .*= schi
             # LH local rows are linear in r (lamb_helmholtz_local_coeffs!), so the
             # unit-radius rows scale per column.
