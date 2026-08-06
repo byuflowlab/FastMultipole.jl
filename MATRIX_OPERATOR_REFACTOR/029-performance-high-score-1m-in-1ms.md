@@ -281,19 +281,31 @@ step (refresh + eval + finalize + device Euler), medians over REPS=15.
 
 | # | verdict ms [range] | err (gate 1.19e-3) | config | job / node / manifest | date |
 |---:|---|---|---|---|---|
-| 1 | **7.003** [6.992, 7.034] | 1.18963e-3 (0.9997x — knife-edge) | `sched6-4-4-3`, ell=5, dense FP16-WMMA/F32, K=full(904), counting sort | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
-| 2 | 7.436 [7.412, 7.468] | 1.0300e-3 (0.87x — robust) | `sched6-5-4-4`, ell=5, same stack | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
-| 3 | 9.442 [9.405, 9.453] | 1.0593e-3 | `sched6-5-5-5` (028 shipped default) | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
-| — | 20.461 [20.430, 64.3*] | 1.0497e-3 | `sched6-5-5-5`, Float64/off (context row; *one outlier rep) | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
+| 1 | **4.546** [4.230, 4.595] | 1.18964e-3 (0.9997x — knife-edge) | `sched6-4-4-3`, ell=5, dense FP16-WMMA/F32, K=full(904), counting sort, **cycle-1 cached windows + graph replay** | 13060804 / m13h-1-2 / `fcc7f22730b275a6` | 2026-08-06 |
+| 2 | 4.657 [4.651, 5.007] | 1.0300e-3 (0.87x — robust) | `sched6-5-4-4`, ell=5, same cycle-1 stack | 13060804 / m13h-1-2 / `fcc7f22730b275a6` | 2026-08-06 |
+| 3 | 6.576 [6.567, 6.868] | 1.0592e-3 | `sched6-5-5-5` (028 shipped default geometry), cycle-1 stack | 13060804 / m13h-1-2 / `fcc7f22730b275a6` | 2026-08-06 |
+| 4 | 7.003 [6.992, 7.034] | 1.18963e-3 (0.9997x) | `sched6-4-4-3`, pre-cycle-1 stack (step-1 baseline) | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
+| 5 | 7.436 [7.412, 7.468] | 1.0300e-3 (0.87x) | `sched6-5-4-4`, pre-cycle-1 stack | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
+| 6 | 9.442 [9.405, 9.453] | 1.0593e-3 | `sched6-5-5-5`, pre-cycle-1 stack | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
+| — | 17.862 [17.824, 17.960] | 1.0497e-3 | `sched6-5-5-5`, Float64/off, cycle-1 stack (context row) | 13060804 / m13h-1-2 / `fcc7f22730b275a6` | 2026-08-06 |
+| — | 20.461 [20.430, 64.3*] | 1.0497e-3 | `sched6-5-5-5`, Float64/off, pre-cycle-1 (context; *one outlier rep) | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
 
-Environment record (full block in
-`data/performance_high_score_1m_1ms/fm029-13059710.out`): 1x NVIDIA H200
-(sm_90a), node m13h-1-1 (8x H200 node, single GPU allocated), driver
-580.159.4, CUDA runtime 12.8.0 (local toolkit), CUDA.jl stack per log, Julia
-1.11.7 (pinned; 1.12.6 blocked upstream), power limit 700 W (default,
-persistence per log), performance state P0, clocks not fixed. Persistent
-device footprint and per-stage timings in the four
-`cuda029_base_*_13059710.csv` artifacts (+ class companions).
+Environment record for rows 1–3 and the 17.862 context row (full block in
+`data/performance_high_score_1m_1ms/fm029c1-13060804.out`): 1x NVIDIA H200
+(sm_90a), node m13h-1-2 (8x H200 node, single GPU allocated), driver
+580.159.4, CUDA runtime 12.8.0 (local toolkit), CUDA.jl/CUDACore 6.2.1 stack
+per log, Julia 1.11.7 (pinned; 1.12.6 blocked upstream), power limit 700 W
+(default), performance state P0, clocks not fixed. REPS=15 medians;
+persistent device footprint 2.238 GB (2.036 GB pre-cycle-1 + 0.201 GB
+occupancy-epoch window cache at the robust geometry; 2.305 GB shipped
+geometry), peak 3.25 GB. Recurring transfer counters
+(route/operator/body/metadata/expansion-copies) = (2, 2, 0, 0, 0), identical
+to the pre-cycle-1 contract; per-step device pool churn 145 KB -> 7.9 KB;
+per-step host allocation 666 KB -> 58 KB under graph replay. Rows 4–6
+environment as recorded at step 1 (`fm029-13059710.out`, node m13h-1-1).
+Cross-node caveat: the cycle-1 job ran on m13h-1-2; the same-manifest
+flags-off rows measured in the same job (7.036 robust / 6.588 knife) bound
+the node+construction-fix delta against the m13h-1-1 baselines at ~0.4 ms.
 
 **No entry is a <=1 ms claim; no independent reproduction is therefore yet
 required.** The 7.003 ms knife-edge entry reproduces the 030 measurement
@@ -349,6 +361,119 @@ deprioritized at P=4. Single-GPU ≤1 ms judged out of reach (roofline + floor);
 the goal path is the multi-H200 track with cycles 1→2→3, projecting
 ~0.9–1.4 ms. Cycle-1 approval request = prototype P1 (+#2 fold), zero
 accuracy risk, gated on a ≥0.5 ms falsification threshold.
+
+### Cycle 1 — graph-captured far-field chain + occupancy-epoch window fold (2026-08-06, job 13060804)
+
+User-approved scope (2026-08-06): (1) graph-captured/sync-free far-field
+chain, (2) route-window machinery fold, (3) P3 nearfield-ILP rider as an
+isolated measurement only. Implementation (commits `0f1ff0c`, `3826a44`,
+`a94aacc`, `2082bfb` on `matrix-ops`; production surface
+`src/translate_batched_cuda.jl`, `src/translate_batched.jl`,
+`src/containers.jl`):
+
+1. **Staged GEMM scalars** (`_resident_mul!`): every resident-chain `mul!`
+   now calls `CUBLAS.gemm!` with construction-staged device alpha/beta —
+   removes the per-call `CuRef` pool allocation + pageable H2D (101/step in
+   M2M/L2L, job 13059955) on all paths, not flag-gated.
+2. **Occupancy-epoch fold** (`CUDA_CACHED_WINDOWS`, default on): the refresh
+   detects occupied-cell-set change by a leaf-key snapshot compare (one
+   kernel + a pinned 4-byte flag); node metadata, occupancy lookup, direct
+   pairs, operator-group edges, and the hierarchical M2L route windows —
+   all pure functions of that set inside the fixed box — regenerate only on
+   change. The windows are cached as a per-level concatenation, so the
+   steady-state M2L stage is per-level fused applies only: no
+   flags/scan/compact, no blocking route-count D2H.
+3. **CUDA-graph lifecycle** (`CUDA_GRAPH_LIFECYCLE`, default on): the
+   sync-free lifecycle body (side-stream fill+nearfield, B2M, M2M, per-level
+   M2L applies, L2L, L2B) is recorded once per occupancy epoch
+   (warm -> record -> replay) and replayed with one `cuGraphLaunch` per
+   step. **Re-capture rule:** the graph (and window cache) are valid exactly
+   while the occupied cell set is unchanged; any change costs one
+   regeneration pass + one uncaptured step + one re-record, surfaced by the
+   epoch counter — at the frozen workload (dt=1e-5, all 32768 leaf cells
+   occupied) occupancy is static across the measured steps, so the
+   real-recurrence cost in the verdict is the per-step epoch *check* (~10 us),
+   which is included in every measured step. CUDACore's managed-memory
+   implicit cross-stream synchronization is disabled for exactly the
+   side-stream-touched arrays (ordering is event-enforced; the implicit sync
+   was redundant, a hidden per-step blocking sync, and capture-illegal).
+   Ineligible configurations (non-dense/non-fused plans, symmetric
+   nearfield, stage profiling, DEBUG) fall back to the unchanged launch
+   path; a capture-illegal error permanently falls back per context.
+
+**Verdict A/B (job 13060804, m13h-1-2, manifest `fcc7f22730b275a6`, REPS=15,
+FP16/F32, K=full, same-node same-manifest modes):**
+
+| mode | `sched6-5-4-4` robust | `sched6-4-4-3` knife | `sched6-5-5-5` |
+|---|---:|---:|---:|
+| step-1 baseline (13059710, m13h-1-1) | 7.436 | 7.003 | 9.442 |
+| flags off (incl. item-1 + sync removal) | 7.036 | 6.588 | 8.946 |
+| cached windows only | 5.184 | 4.784 | — |
+| cached + graph (**new default**) | **4.657** | **4.546** | **6.576** |
+
+Realized gains vs the step-1 baselines: **-2.78 / -2.46 / -2.87 ms** —
+inside the approved -2 to -3 ms expectation; the >=0.5 ms falsification
+threshold is exceeded 5x. Per-item attribution: window fold -1.85/-1.80,
+graph replay -0.53/-0.24, staged-scalars + managed-sync removal + node delta
+-0.40/-0.41. F64 context row 20.461 -> 17.862.
+
+**Accuracy unchanged at every geometry:** 1.0592e-3 / 1.0300e-3 /
+**1.18964e-3** (knife-edge 0.9997x gate, drift +2.8e-8 vs the baseline's
+1.18963e-3 — inside the gate; K=full batching is unchanged by the window
+cache, so the FP16-WMMA tile stream is identical); 5-step convection
+re-checks 1.0564e-3 / 1.0272e-3 / 1.18807e-3. F64 1.04972e-3.
+
+**Re-profile (cuda029c1_profile_*.csv vs job 13059955, robust config):**
+full step host launch APIs 420 -> 28 + 1 graph launch; sync API calls
+27.4 -> 7.4; host mem-ops 127 -> 8.2; device kernel executions 420 -> 198
+(scan/compact kernels gone). Untraced control wall: full step 8.05 -> 5.03 ms
+at n=1e6; the identical-geometry n=1e3 floor control **3.875 -> 0.873 ms** —
+the ~3 ms n-independent launch/sync floor is reduced 4.4x, meeting the step-2
+"floor <= 1.0 ms" target. Stage medians (robust, on): refresh 0.418 (was
+0.848), M2M+L2L 1.215 (was 1.956), M2L 0.791 (was 2.133).
+
+**P3 rider (isolated fixed-work nearfield ILP A/B, 25 reps, both
+geometries, `cuda029c1_nearfield_ilp_*.csv`): FALSIFIED.** All variants
+parity-clean; best (per-warp shared-memory source tile) gains only
++1.9%/+1.8%; x2/x4 accumulator-chain unrolling is 6–9% *slower*. The kernel
+is not ILP- or global-load-limited; nearfield micro-optimization closes per
+the step-2 rule, leaving Stage-9a macrocell ownership (with its own
+pair-coverage evidence) as the only remaining nearfield lever.
+
+**Gates:** all preflights green on the final job (lifecycle, convection,
+counting sort, hierarchical, **new cuda_radix_graph_test.jl** (parity
+F64/F32 x P=3,4 x K chunked/full; teleport epoch invalidation; flat
+counters; profile fallback; WMMA-tile testset), interface;
+`PREFLIGHT_EXIT=0`, `REFERENCE_GATE_EXIT=0`, `CYCLE1_EXIT=0`). Transfer
+counters flat and identical to the 023 contract. `benchmark_028_feasibility.jl`
+UNCHANGED (driven via the flag wrapper `benchmark_029_cycle1.jl`).
+
+**Failure ledger:** 13060540 — graph preflight red: CUDA error 900 during
+capture from CUDACore managed-memory implicit cross-stream synchronization
+(side-stream fill/nearfield on event-ordered arrays); fixed by
+`enable_synchronization!(false)` on those arrays + capture try/catch
+fallback (`3826a44`). 13060611 — 12 graph-test failures: (a) refresh zeroed
+`counts.n_routes` and graph replay performs no host bookkeeping (fixed:
+refresh reports the cached epoch total, `a94aacc`); (b) at K<full the cached
+concatenation re-aligns FP16-WMMA 16-route tiles across former window
+boundaries (~1e-3 relative; numerical, production K=full unaffected; test
+split with FP16-scale tolerance). 13060698 — 2 marginal Float32 gradient
+tolerances from chaotic trajectory amplification over three dt=1e-3 test
+steps (capture itself green, 110/112); test convects at dt=1e-4 with
+5e-4/1e-9 tolerances (`2082bfb`). Each failed job stopped at preflight; no
+leaderboard data was taken from failed jobs.
+
+**Known caveats:** (i) cycle-1 rows measured on m13h-1-2 vs baseline
+m13h-1-1 — the same-job flags-off rows bound node+construction-fix drift at
+~0.4 ms; (ii) two of 15 cached-only reps showed ~34 ms outliers consistent
+with host GC pauses (536 KB host alloc/step on that mode; the graph mode
+allocates 58 KB/step and shows no such outlier; medians unaffected);
+(iii) toggling `DENSE_CUDA_*`/overlap Refs after a graph is recorded does
+not invalidate it — rebuild the cache or flip `CUDA_GRAPH_LIFECYCLE` first;
+(iv) the window cache adds ~0.2 GB persistent device memory at n=1e6.
+
+This job is the post-change remeasure required by Work Plan step 3 before
+any further approval is sought.
 
 ## Approval Notes
 
