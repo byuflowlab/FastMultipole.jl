@@ -23,7 +23,7 @@ ssh "$REMOTE" "cd $RDIR \
   && cp staging_032/Project.toml . \
   && mkdir -p MATRIX_OPERATOR_REFACTOR \
   && cp -r staging_032/scripts MATRIX_OPERATOR_REFACTOR/ \
-  && bash -lc 'module load julia \
+  && bash -lc 'module load julia/1.11.7-6bmogfl \
       && julia --project=\$HOME/fm023env -e \"using Pkg; Pkg.develop(path=\\\".\\\"); Pkg.instantiate()\" \
       && julia --project=test -e \"using Pkg; Pkg.develop(path=\\\".\\\"); Pkg.instantiate()\" \
       && sbatch MATRIX_OPERATOR_REFACTOR/scripts/cuda_032_run.sh'"

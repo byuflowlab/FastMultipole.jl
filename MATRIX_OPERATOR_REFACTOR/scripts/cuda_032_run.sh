@@ -17,7 +17,10 @@
 # no -u: /etc/profile.d scripts reference unset vars on the cluster
 set -eo pipefail
 source /etc/profile
-module load cuda julia
+# julia pinned to 1.11.7: the module default moved to 1.12.6 after the 030 runs
+# (2026-08-03) and 1.12.6 segfaults in host LLVM while JIT-compiling the device
+# step (job 13058191); 1.11.7 is the toolchain of record for every H200 result
+module load cuda julia/1.11.7-6bmogfl
 echo "=== node: $(hostname)"
 nvidia-smi -L
 echo "CUDA_HOME=${CUDA_HOME:-unset}"
