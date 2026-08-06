@@ -67,7 +67,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         # host Float64 references at both kernels (Stage A/B validated)
         host_p = PartitionedSmoothedVortex(SmoothedVortex(generate_vortex(seed, nv),
             copy(sigma)))
-        hp_cache = RadixFMMCache(host_p; expansion_order=8, ell=3, hessian=true,
+        hp_cache = RadixFMMCache(host_p; expansion_order=8, ell=3, near_radius2=16, hessian=true,
             options=CUDARadixLifecycleOptions(; precision=Float64,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         fmm!(host_p, hp_cache; scalar_potential=false, gradient=true, hessian=true)
@@ -75,7 +75,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         Jref_p = copy(_binning_inner(host_p).potential[5:13, :])
         host_t = TwoPassSmoothedVortex(SmoothedVortex(generate_vortex(seed, nv),
             copy(sigma)))
-        ht_cache = RadixFMMCache(host_t; expansion_order=8, ell=3, hessian=true,
+        ht_cache = RadixFMMCache(host_t; expansion_order=8, ell=3, near_radius2=16, hessian=true,
             options=CUDARadixLifecycleOptions(; precision=Float64,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         fmm!(host_t, ht_cache; scalar_potential=false, gradient=true, hessian=true)
@@ -91,7 +91,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         for P in (4, 8), TF in (Float64, Float32)
             hsys = PartitionedSmoothedVortex(SmoothedVortex(
                 generate_vortex(seed, nv), copy(sigma)))
-            hcache = RadixFMMCache(hsys; expansion_order=P, ell=3, hessian=true,
+            hcache = RadixFMMCache(hsys; expansion_order=P, ell=3, near_radius2=16, hessian=true,
                 options=CUDARadixLifecycleOptions(; precision=TF,
                     m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
             fmm!(hsys, hcache; scalar_potential=false, gradient=true, hessian=true)
@@ -103,7 +103,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
                     subsort in (false, true)
                 dsys = PartitionedSmoothedVortex(SmoothedVortex(
                     generate_vortex(seed, nv), copy(sigma)))
-                dcache = RadixFMMCache(dsys; expansion_order=P, ell=3,
+                dcache = RadixFMMCache(dsys; expansion_order=P, ell=3, near_radius2=16,
                     hessian=true, device=true,
                     options=CUDARadixLifecycleOptions(; precision=TF,
                         m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
@@ -122,7 +122,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         for P in (4, 8), TF in (Float64, Float32)
             hsys = TwoPassSmoothedVortex(SmoothedVortex(
                 generate_vortex(seed, nv), copy(sigma)))
-            hcache = RadixFMMCache(hsys; expansion_order=P, ell=3, hessian=true,
+            hcache = RadixFMMCache(hsys; expansion_order=P, ell=3, near_radius2=16, hessian=true,
                 options=CUDARadixLifecycleOptions(; precision=TF,
                     m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
             fmm!(hsys, hcache; scalar_potential=false, gradient=true, hessian=true)
@@ -133,7 +133,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
                     pass2_queued in (false, true)
                 dsys = TwoPassSmoothedVortex(SmoothedVortex(
                     generate_vortex(seed, nv), copy(sigma)))
-                dcache = RadixFMMCache(dsys; expansion_order=P, ell=3,
+                dcache = RadixFMMCache(dsys; expansion_order=P, ell=3, near_radius2=16,
                     hessian=true, device=true,
                     options=CUDARadixLifecycleOptions(; precision=TF,
                         m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
@@ -154,7 +154,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         for (ctor, Uref, Jref) in ((PartitionedSmoothedVortex, Uref_p, Jref_p),
                 (TwoPassSmoothedVortex, Uref_t, Jref_t))
             dsys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
-            dcache = RadixFMMCache(dsys; expansion_order=8, ell=3, hessian=true,
+            dcache = RadixFMMCache(dsys; expansion_order=8, ell=3, near_radius2=16, hessian=true,
                 device=true, options=CUDARadixLifecycleOptions(; precision=Float64,
                     m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
             _binning_device_run(dsys, dcache; mode=:classsplit, subsort=false)
@@ -172,7 +172,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
             for mode in (:classsplit, :ballot, :classsplit_ballot)
                 ctor === TwoPassSmoothedVortex && mode === :ballot && continue
                 dsys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
-                dcache = RadixFMMCache(dsys; expansion_order=4, ell=3,
+                dcache = RadixFMMCache(dsys; expansion_order=4, ell=3, near_radius2=16,
                     hessian=true, device=true,
                     options=CUDARadixLifecycleOptions(; precision=Float32,
                         m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
@@ -210,7 +210,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
 
         dsys = PartitionedSmoothedVortex(SmoothedVortex(
             generate_vortex(seed, nv), copy(sigma)))
-        dcache = RadixFMMCache(dsys; expansion_order=4, ell=3, hessian=true,
+        dcache = RadixFMMCache(dsys; expansion_order=4, ell=3, near_radius2=16, hessian=true,
             device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         _binning_device_run(dsys, dcache; mode=:unbinned, subsort=false)
@@ -232,7 +232,7 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
 
         tsys = TwoPassSmoothedVortex(SmoothedVortex(
             generate_vortex(seed, nv), copy(sigma)))
-        tcache = RadixFMMCache(tsys; expansion_order=4, ell=3, hessian=true,
+        tcache = RadixFMMCache(tsys; expansion_order=4, ell=3, near_radius2=16, hessian=true,
             device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         _binning_device_run(tsys, tcache; mode=:unbinned, subsort=false)
@@ -265,13 +265,13 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
                 (PartitionedSmoothedVortex, :ballot),
                 (TwoPassSmoothedVortex, :classsplit))
             ref_sys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
-            ref_cache = RadixFMMCache(ref_sys; expansion_order=4, ell=3,
+            ref_cache = RadixFMMCache(ref_sys; expansion_order=4, ell=3, near_radius2=16,
                 hessian=true, device=true,
                 options=CUDARadixLifecycleOptions(; precision=Float32,
                     m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
             _binning_device_run(ref_sys, ref_cache; mode, subsort=false)
             gsys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
-            gcache = RadixFMMCache(gsys; expansion_order=4, ell=3, hessian=true,
+            gcache = RadixFMMCache(gsys; expansion_order=4, ell=3, near_radius2=16, hessian=true,
                 device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
                     m2l_strategy=FastMultipole.DenseTranslationM2L(
                         apply_chunk=64, build_chunk=8)))
