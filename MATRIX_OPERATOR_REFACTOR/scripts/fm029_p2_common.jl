@@ -385,6 +385,32 @@ end
 
 p2_record_graphs!(G::Vector{P2Gpu}) = (foreach(p2_record_graph!, G); G)
 
+# The exchange's ordering contract: the D2D copy must be enqueued on the
+# copying task's stream for the SOURCE device, so ev_copy1 (recorded on that
+# stream) orders it for the peer. CUDACore only guarantees that on the direct
+# peer-access path; its no-P2P fallback stages through host memory with the
+# H2D enqueued on the DESTINATION context's stream, which ev_copy1 does not
+# cover. Require direct peer access up front (H200 pairs: NVLink).
+function p2_require_peer_access!(G::Vector{P2Gpu})
+    f = nothing
+    for mod in (CUDA, isdefined(CUDA, :CUDACore) ? CUDA.CUDACore : CUDA)
+        if isdefined(mod, :maybe_enable_peer_access)
+            f = getfield(mod, :maybe_enable_peer_access)
+            break
+        end
+    end
+    if f === nothing
+        @warn "cannot find maybe_enable_peer_access; exchange stream ordering unverified"
+        return G
+    end
+    for (a, b) in ((G[1].dev, G[2].dev), (G[2].dev, G[1].dev))
+        CUDA.device!(a)
+        f(CUDA.CuDevice(a), CUDA.CuDevice(b)) == 1 ||
+            error("P2 exchange requires direct peer access $(a)->$(b) (no-P2P fallback is mis-ordered)")
+    end
+    return G
+end
+
 # ---- the complete 2-GPU verdict step ----------------------------------------
 
 # Worker body for GPU g (1-based). seg rows, per GPU column:

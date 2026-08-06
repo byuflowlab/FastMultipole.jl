@@ -216,6 +216,7 @@ seg = zeros(7, 2)
 # graph recording is SOLO and serialized (GLOBAL capture mode outlaws
 # concurrent CUDA API use — see the P2GraphSlot contract); then two concurrent
 # replay steps verify the steady state and produce the union outputs at t=0
+p2_require_peer_access!(G)
 p2_record_graphs!(G)
 for i in 1:2
     p2_step_pair!(G, bar; dt=0.0, do_euler=false, seg=seg)

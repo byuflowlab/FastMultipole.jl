@@ -107,6 +107,8 @@ const FM = FastMultipole
             @test G[1].part.b0 == 1 && G[2].part.b1 == n &&
                   G[1].part.b1 + 1 == G[2].part.b0
 
+            p2_require_peer_access!(G)
+
             # solo serialized recording, then concurrent replay (no motion)
             println("[p2test] record graphs (solo)"); flush(stdout)
             p2_record_graphs!(G)
@@ -128,6 +130,38 @@ const FM = FastMultipole
                 mvs = fm028_accuracy_metrics(pot, grad, spot, sgrad)
                 @test mvs.gradient_rel_rms < tol_vs_single
             end
+
+            # diagnostic: localize any union error to compute (self half) vs
+            # exchange (peer half) in sorted coordinates against the single
+            # cache's raw output (identical sorts => identical columns)
+            CUDA.device!(0)
+            sout = Array(scache.state.output)
+            for g in 1:2
+                CUDA.device!(G[g].dev)
+                o = Array(G[g].cache.state.output)
+                for h in 1:2
+                    rng = G[h].part.b0:G[h].part.b1
+                    num = sqrt(mean(abs2, Float64.(o[2:4, rng]) .- Float64.(sout[2:4, rng])))
+                    den = sqrt(mean(abs2, Float64.(sout[2:4, rng])))
+                    tag = h == g ? "self" : "peer"
+                    println("[p2diag] dev g=$g half=$h ($tag) grad relrms vs single = ",
+                        num / den)
+                end
+            end
+            mepa = nothing
+            for mod in (CUDA, isdefined(CUDA, :CUDACore) ? CUDA.CUDACore : CUDA)
+                isdefined(mod, :maybe_enable_peer_access) &&
+                    (mepa = getfield(mod, :maybe_enable_peer_access); break)
+            end
+            if mepa !== nothing
+                CUDA.device!(0)
+                println("[p2diag] peer access 0->1: ",
+                    mepa(CUDA.CuDevice(0), CUDA.CuDevice(1)),
+                    "  1->0: ", mepa(CUDA.CuDevice(1), CUDA.CuDevice(0)))
+            else
+                println("[p2diag] maybe_enable_peer_access not found")
+            end
+            flush(stdout)
 
             # deterministic aggregation: bitwise lockstep across real steps
             println("[p2test] convection lockstep steps"); flush(stdout)
