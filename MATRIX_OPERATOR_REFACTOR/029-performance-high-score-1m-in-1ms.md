@@ -272,9 +272,60 @@ geometries. One environment note: the cluster's default julia module moved to
 13058336); all 029 runs pin `julia/1.11.7-6bmogfl`, the toolchain of every
 result of record.
 
+## Single-H200 Leaderboard
+
+Frozen workload: n=1,000,000, seeds 24025/24026, bounds `(-0.01, 1.02)`,
+literature P=4 (`expansion_order=3`), LH off, gate `err_gradient_rel_rms
+<= 1.19e-3` vs the checksummed 024b reference; verdict = complete resident
+step (refresh + eval + finalize + device Euler), medians over REPS=15.
+
+| # | verdict ms [range] | err (gate 1.19e-3) | config | job / node / manifest | date |
+|---:|---|---|---|---|---|
+| 1 | **7.003** [6.992, 7.034] | 1.18963e-3 (0.9997x — knife-edge) | `sched6-4-4-3`, ell=5, dense FP16-WMMA/F32, K=full(904), counting sort | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
+| 2 | 7.436 [7.412, 7.468] | 1.0300e-3 (0.87x — robust) | `sched6-5-4-4`, ell=5, same stack | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
+| 3 | 9.442 [9.405, 9.453] | 1.0593e-3 | `sched6-5-5-5` (028 shipped default) | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
+| — | 20.461 [20.430, 64.3*] | 1.0497e-3 | `sched6-5-5-5`, Float64/off (context row; *one outlier rep) | 13059710 / m13h-1-1 / `5a5d41312dc113d2` | 2026-08-06 |
+
+Environment record (full block in
+`data/performance_high_score_1m_1ms/fm029-13059710.out`): 1x NVIDIA H200
+(sm_90a), node m13h-1-1 (8x H200 node, single GPU allocated), driver
+580.159.4, CUDA runtime 12.8.0 (local toolkit), CUDA.jl stack per log, Julia
+1.11.7 (pinned; 1.12.6 blocked upstream), power limit 700 W (default,
+persistence per log), performance state P0, clocks not fixed. Persistent
+device footprint and per-stage timings in the four
+`cuda029_base_*_13059710.csv` artifacts (+ class companions).
+
+**No entry is a <=1 ms claim; no independent reproduction is therefore yet
+required.** The 7.003 ms knife-edge entry reproduces the 030 measurement
+(7.092 ms on m13h-1-2) within cross-node variance and its error
+(1.18963e-3) is inside the gate by 0.03% on both nodes — the robust
+`sched6-5-4-4` row is the recommended working baseline for optimization
+work, per the 030 approval's caveat.
+
+## Multi-H200 Leaderboard
+
+No entries yet. Topology probe (2026-08-06): partitions `m13h` (4 nodes x
+8x H200) and `eng` (1 node x 8x H200) — the multi-GPU track can run
+intra-node up to 8 GPUs; interconnect to be recorded from `nvidia-smi topo
+-m` in the first multi-GPU job.
+
 ## Verification Notes
 
-To be filled during task execution.
+### Step 1 — fresh single-H200 baseline (2026-08-06, job 13059710)
+
+`bash MATRIX_OPERATOR_REFACTOR/scripts/cuda_029_submit.sh` -> job 13059710
+(m13h-1-1). Preflights green: lifecycle 216/216 + 37/37, convection +
+optimized-kernel suites, counting sort; `REFERENCE_GATE_EXIT=0` (checksummed
+024b reference); `BASELINE_EXIT=0`, `failed_cases=0`. Harness
+`benchmark_028_feasibility.jl` UNCHANGED (one case per process, 030 pattern).
+The shipped-default row (9.442 ms) sits inside the record's run-to-run band
+(9.591 [9.434, 9.631] job 13029878; 9.448 job 13059638), so the baseline is
+re-established fresh rather than inherited, as the Work Plan step 1 requires.
+Source manifest `5a5d41312dc113d2` differs from 028's `42a6c254a11ac8a8`
+because src/ legitimately advanced through approved rows 032/032a (vortex
+interface, radius extension q<=20, PartitionedVortex) — the scalar verdict
+path itself is regression-checked by the 032 stage-4 no-regression gate
+(9.448 ms / errors identical on this manifest's parent).
 
 ## Approval Notes
 
