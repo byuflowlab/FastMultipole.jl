@@ -298,3 +298,33 @@ Expected walltime: well under the 3-day limit — wake-only is roughly half of
 single-thread wake row and its reference are the long tail). On completion:
 fetch, verify 14 wake rows, write `data/flowvpm_baseline/report.md`, then mark
 Done. Row NOT Done yet.
+
+## Work Record (2026-08-06): job 13058428 complete — verification, report, Done
+
+Job **13058428** completed 2026-08-06 ("task 033 complete" in
+`data/flowvpm_baseline/fm033cpu-13058428.out`); results fetched. Verification:
+
+- **Wake: 14/14 rows** (7 n x cpu1/cpu64) in `cpu_m12-2-18_13058428.csv`,
+  with `n_actual = n_target` exactly and sigma matching
+  `2*(V_cyl/n)^(1/3)` at every grid point (the amendment's first-run check).
+- **Cube: still 14/14 rows** across `cpu_m12-2-1_13051516.csv` +
+  `cpu_m12-1-29_13051713.csv`.
+- **References**: the regenerated sha256 manifest covers cube+wake (14
+  files); `shasum -a 256 -c direct_reference_checksums.sha256` — all OK.
+- Wake profiles at n=1e5 (`profile_wake_n100000_cpu{1,64}.txt`) present.
+- Ring rows in the 13051713 CSV and the 7 ring references + 2 ring profiles
+  remain in the repository as retained pre-amendment history (no 033 table or
+  later gate/speedup reads them).
+
+Deliverable report written: **`data/flowvpm_baseline/report.md`** —
+provenance (jobs 13051516/13051713/13058428, julia 1.11.7, commit e2bd487),
+full cube and wake timing/error tables, the n=1e5 per-stage profile breakdown
+(bottleneck: the `gaussianerf` direct nearfield is >99% of single-thread UJ
+time in both cases and dominates worker time at 64 threads; erf+exp alone
+~30% of the solve; far field <0.5%), 64-thread scaling efficiency (no
+speedup at n<=3162; 45-93% efficiency from n=1e4, wake ~92% at 1e6), the
+1e-3 velocity-gate audit (cube passes only n<=3162, wake only n=1000 —
+every FMM-active default-parameter row fails, so 035 speedup headlines need
+tuned gate-passing baselines), and threats to validity.
+
+Row marked **Done** in `START_HERE.md` (Approved left unticked).
