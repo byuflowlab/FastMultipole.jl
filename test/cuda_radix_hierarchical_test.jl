@@ -104,7 +104,10 @@ const _HCU_STRATEGIES = (
 
         #--- occupancy, route, and direct-pair parity vs the 026 host oracle ---#
 
-        for q in (3, 4, 5, 6, 8, 9, 10, 11, 12), ell in (3, 4, 5)
+        # 16 and 20 are the task-032 extended radii (regularized-nearfield
+        # adequacy at overlap beta=2); the rest of the 13..20 extension is
+        # covered by the generic host property tests.
+        for q in (3, 4, 5, 6, 8, 9, 10, 11, 12, 16, 20), ell in (3, 4, 5)
             n = ell == 5 ? 4000 : 600
             sys = generate_gravitational(27000 + ell, n)
             ref = generate_gravitational(27000 + ell, n)

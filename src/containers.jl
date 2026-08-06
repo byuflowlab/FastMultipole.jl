@@ -326,8 +326,18 @@ end
 
 abstract type RadixSeparationPolicy end
 
-const _SUPPORTED_RIGID_NEAR_RADII2 = (3, 4, 5, 6, 8, 9, 10, 11, 12)
-const _SUPPORTED_RIGID_NEAR_RADII2_TEXT = "3, 4, 5, 6, 8, 9, 10, 11, 12"
+# Every integer <= 20 with a nonempty lattice shell (7 and 15 are not sums of
+# three squares). The construction (`RigidHierarchicalTables`,
+# `rigid_stencil_epsilon`, `_verify_hierarchical_classifier!`) is fully generic
+# in the radius and self-verifies classifier exactness at construction; the
+# guard exists to reject radii with no lattice shell and typos. Radii above 12
+# were added by task 032: a regularized nearfield at overlap beta = 2 needs
+# g_min*h_leaf > rho_t*sigma_max, which forces a large leaf near set, while the
+# fixed 1e-3 velocity gate needs more accuracy than q = 12 delivers at P = 4
+# (measured 1.088e-3, job 13058532) — q = 16 raises g_min from sqrt(5) to
+# sqrt(6), q = 20 to 3.
+const _SUPPORTED_RIGID_NEAR_RADII2 = (3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20)
+const _SUPPORTED_RIGID_NEAR_RADII2_TEXT = "3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20"
 
 # Shipped rigid-stencil operating point, selected by measurement in task 028
 # Stage 7: `q = 5` at every M2L level except the coarsest, which uses `q = 6`.

@@ -89,7 +89,7 @@ _hier_step_allocated(sys, cache) =
     @allocated fmm!(sys, cache; scalar_potential=true, gradient=true)
 
 @testset "hierarchical rigid host M2L (task 026)" begin
-    supported_q = (3, 4, 5, 6, 8, 9, 10, 11, 12)
+    supported_q = (3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20)
     for q in supported_q
         tables = RigidHierarchicalTables(q)
         @test all(sum(abs2, o) <= q for o in tables.near_offsets)
@@ -406,7 +406,7 @@ _hier_step_allocated(sys, cache) =
     # Stencil constructor negatives and cache keyword conflicts must throw.
     conflict_sys = generate_gravitational(26035, 20)
     @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; near_radius2=7)
-    @test_throws ArgumentError RigidHierarchicalTables(13)
+    @test_throws ArgumentError RigidHierarchicalTables(21)
     @test_throws ArgumentError rigid_stencil_epsilon(4, 0.5, 3, 7)
     @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; window_classes=0)
     @test_throws ArgumentError HIER_FM._hierarchical_stencil_with_schedule(
