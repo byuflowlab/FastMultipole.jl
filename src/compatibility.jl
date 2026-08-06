@@ -23,6 +23,37 @@ Lamb-Helmholtz χ channel), which is checked at cache construction.
 """
 body_type(system) = Point{Source}
 
+"""
+    direct_kernel(system)
+
+Return the nearfield direct-interaction kernel functor used for `system` on the
+radix/resident path (task 032 stage 2). Defaults follow [`body_type`](@ref):
+`SingularSource()` for `Point{Source}` and `SingularVortex()` for
+`Point{Vortex}`. Overload to select [`RegularizedVortex`](@ref) (regularized
+Biot-Savart, `gaussianerf`) or a custom kernel. All source systems sharing one
+`RadixFMMCache` must return equal kernels; the functor must be `isbits` and, for
+`device=true` caches, GPU-compilable. It is stamped into the cache options at
+construction, so the pair kernels specialize on it at compile time (one kernel
+instantiation per functor type, no runtime branch in the pair loop).
+
+Custom kernels subtype `AbstractDirectKernel` and implement (with
+`kernel = direct_kernel(system)`):
+
+- `_direct_pair_ug(kernel, dx, dy, dz, r2, source_bodies, j)` returning
+  `(u, gx, gy, gz)`, and
+- `_direct_pair_ugh(kernel, dx, dy, dz, r2, source_bodies, j)` returning
+  `(u, gx, gy, gz, h1, ..., h9)` (hessian in column-major 3×3 order), and
+- `_emits_potential(kernel)::Bool` — whether `u` is meaningful (row 1 written).
+
+Here `dx, dy, dz = target - source`, `r2 = dx^2+dy^2+dz^2 > 0` (self/coincident
+pairs are skipped by the caller), and `source_bodies[:, j]` is the packed source
+column (`[x, y, z, radius, strength..., extras...]`), giving the kernel access
+to per-source extra states such as a smoothing radius. This flat-argument form
+deviates from the spec §5 column-view signature so the same code compiles as a
+CUDA device function without constructing a view per pair.
+"""
+direct_kernel(system) = _default_direct_kernel(body_type(system))
+
 #--- buffer functions ---#
 
 """

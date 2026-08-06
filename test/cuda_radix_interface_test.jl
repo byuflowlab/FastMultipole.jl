@@ -123,5 +123,32 @@ _cuda_interface_required() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0") =
             device=true)
         @test size(pc.state.output, 1) == 4
         @test_throws ArgumentError fmm!(plain, pc; hessian=true)
+
+        #--- (6) stage 2: RegularizedVortex device vs host parity ---#
+
+        for (TF, gtol, htol, P) in ((Float64, 1e-9, 1e-7, 8), (Float32, 2f-4, 2f-1, 4))
+            opts = CUDARadixLifecycleOptions(; precision=TF,
+                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+            sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), 1200)
+            host_sys = SmoothedVortex(generate_vortex(seed, 1200), copy(sigma))
+            dev_sys = SmoothedVortex(generate_vortex(seed, 1200), copy(sigma))
+            hc = RadixFMMCache(host_sys; expansion_order=P, ell=2, hessian=true,
+                options=opts)
+            dc = RadixFMMCache(dev_sys; expansion_order=P, ell=2, hessian=true,
+                options=opts, device=true)
+            @test dc.state.options.direct_kernel == RegularizedVortex(; sigma_row=8)
+            fmm!(host_sys, hc; scalar_potential=false, gradient=true, hessian=true)
+            fmm!(dev_sys, dc; scalar_potential=false, gradient=true, hessian=true)
+            @test maximum(abs.(dev_sys.inner.gradient_stretching[1:3, :] .-
+                host_sys.inner.gradient_stretching[1:3, :])) < gtol
+            @test maximum(abs.(dev_sys.inner.potential[5:13, :] .-
+                host_sys.inner.potential[5:13, :])) < htol
+        end
+
+        #--- (7) stage 2: near-set adequacy gate fires on device too ---#
+
+        bad = SmoothedVortex(generate_vortex(seed, 400), fill(0.2, 400))
+        @test_throws ArgumentError RadixFMMCache(bad; expansion_order=4, ell=3,
+            options=opts64, device=true)
     end
 end

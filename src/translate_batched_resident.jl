@@ -433,39 +433,234 @@ function _launch_host_l2l!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B
     return _launch_resident_l2l!(state)
 end
 
-_add_host_direct_pairs!(state::DeviceResidentRadixState) =
-    _add_host_direct_pairs!(state, state.options.body_type)
-
-function _add_host_direct_pairs!(state::DeviceResidentRadixState{TF},
-        ::Type{<:Point{Source}}) where TF
-    # Iterate the flat pair arrays (bounded by counts) rather than the one-shot
-    # interaction list so the recurring update path never rebuilds the list object;
-    # function barrier as in _launch_host_b2m!.
-    if size(state.output, 1) >= 13
-        _host_direct_pairs_hessian_kernel!(state.output, state.source_bodies,
-            state.cell_ranges, state.direct_targets, state.direct_sources,
-            state.counts.n_direct)
-    else
-        _host_direct_pairs_kernel!(state.output, state.source_bodies, state.cell_ranges,
-            state.direct_targets, state.direct_sources, state.counts.n_direct)
-    end
+# Iterate the flat pair arrays (bounded by counts) rather than the one-shot
+# interaction list so the recurring update path never rebuilds the list object;
+# function barrier as in _launch_host_b2m!. Since stage 2 the pair math comes
+# from the `direct_kernel` functor stamped into the options at construction
+# (compile-time specialization; the legacy hard-coded kernels below remain as
+# the functor-abstraction benchmark reference).
+function _add_host_direct_pairs!(state::DeviceResidentRadixState)
+    hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
+    _host_direct_pairs_functor_kernel!(state.options.direct_kernel, state.output,
+        state.source_bodies, state.cell_ranges, state.direct_targets,
+        state.direct_sources, state.counts.n_direct, hsv)
     return state
 end
 
-function _add_host_direct_pairs!(state::DeviceResidentRadixState{TF},
-        ::Type{<:Point{Vortex}}) where TF
-    hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
-    _host_direct_pairs_vortex_kernel!(state.output, state.source_bodies,
-        state.cell_ranges, state.direct_targets, state.direct_sources,
-        state.counts.n_direct, hsv)
-    return state
+function _host_direct_pairs_functor_kernel!(kernel::AbstractDirectKernel,
+        output::AbstractMatrix{TF}, source_bodies, cell_ranges, direct_targets,
+        direct_sources, n_direct::Int, ::Val{HS}) where {TF,HS}
+    ep = _emits_potential(kernel)
+    @inbounds for pair_i in 1:n_direct
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tcount = cell_ranges[2, target_cell]
+        sfirst = cell_ranges[1, source_cell]
+        scount = cell_ranges[2, source_cell]
+        for i in tfirst:(tfirst + tcount - 1)
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            for j in sfirst:(sfirst + scount - 1)
+                i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                r2 == zero(TF) && continue
+                invr = inv(sqrt(r2))
+                if HS
+                    u, gx, gy, gz, h1, h2, h3, h4, h5, h6, h7, h8, h9 =
+                        _direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
+                            source_bodies, j)
+                    ep && (output[1, i] += u)
+                    output[2, i] += gx
+                    output[3, i] += gy
+                    output[4, i] += gz
+                    output[5, i] += h1
+                    output[6, i] += h2
+                    output[7, i] += h3
+                    output[8, i] += h4
+                    output[9, i] += h5
+                    output[10, i] += h6
+                    output[11, i] += h7
+                    output[12, i] += h8
+                    output[13, i] += h9
+                else
+                    u, gx, gy, gz = _direct_pair_ug(kernel, dx, dy, dz, r2, invr,
+                        source_bodies, j)
+                    ep && (output[1, i] += u)
+                    output[2, i] += gx
+                    output[3, i] += gy
+                    output[4, i] += gz
+                end
+            end
+        end
+    end
+    return output
+end
+
+#------- gaussianerf g/h evaluation and direct-kernel pair functors (032 stage 2) -------#
+#
+# Erf-free evaluation of the gaussianerf regularization factor
+#   g(ρ) = erf(ρ/√2) − Aρe^{−ρ²/2},  A = √(2/π),
+# and the combined Jacobian numerator h(ρ) = ρg′(ρ) − 3g(ρ), used by the
+# `RegularizedVortex` nearfield (`theory/kernel-splitting-nearfield.md` §3, §6.2).
+#
+# Below ρ = 2: the cancellation-safe alternating Horner series
+#   g = Aρ³ Σ_k (−1)^k ρ^{2k}/((2k+3) 2^k k!),  h = Aρ⁵ Σ_k (−1)^{k+1} ρ^{2k}/((2k+5) 2^k k!),
+# with term counts measured against a 256-bit reference over the whole branch
+# (scripts/fit_032_nearfield_g.jl → data/kernel_splitting/nearfield_g_eval.csv):
+# 13 terms hold ≤ 6.8e-7 relative in Float32 and 19 terms ≤ 1.7e-12 in Float64
+# (the theory-§3 6/10-term counts are valid only to its ρ = 0.5 partitioning
+# switch; the erf-free design runs the series to ρ = 2, hence the re-measured
+# counts). Above ρ = 2: ḡ = e^{−ρ²/2}(Aρ + s), with s ≈ degree-3 polynomial in
+# u = 1/ρ² least-squares fitted on [2, 4.789]; g = 1 − ḡ holds ≤ 2.1e-4 absolute
+# against the 3.69e-4 budget (031a §6.2: absolute tolerance suffices where the
+# retained result is O(1)), decaying like e^{−ρ²/2} beyond ρ_t, with the correct
+# singular limit (g→1, h→−3). One hardware exp, no erf, both branches GPU-safe.
+const _GAUSSERF_A = 0.7978845608028654           # √(2/π)
+const _GAUSSERF_G_COEFFS = Tuple(Float64((isodd(k) ? -1 : 1) //
+    ((2k + 3) * BigInt(2)^k * factorial(BigInt(k)))) for k in 0:18)
+const _GAUSSERF_H_COEFFS = Tuple(Float64((iseven(k) ? -1 : 1) //
+    ((2k + 5) * BigInt(2)^k * factorial(BigInt(k)))) for k in 0:18)
+const _GAUSSERF_G_COEFFS32 = Tuple(Float32(c) for c in _GAUSSERF_G_COEFFS[1:13])
+const _GAUSSERF_H_COEFFS32 = Tuple(Float32(c) for c in _GAUSSERF_H_COEFFS[1:13])
+# degree-3 fit of s(u) on [ρ_c = 2, ρ_t = 4.789] (fit_032_nearfield_g.jl)
+const _GAUSSERF_S_COEFFS = (0.082593826443677007, 2.0801015208954681,
+    -6.8585923004500211, 10.482822830062796)
+
+@inline _gausserf_series_g(z::Float64) = evalpoly(z, _GAUSSERF_G_COEFFS)
+@inline _gausserf_series_h(z::Float64) = evalpoly(z, _GAUSSERF_H_COEFFS)
+@inline _gausserf_series_g(z::Float32) = evalpoly(z, _GAUSSERF_G_COEFFS32)
+@inline _gausserf_series_h(z::Float32) = evalpoly(z, _GAUSSERF_H_COEFFS32)
+
+@inline function _gaussianerf_g_h(rho::T) where T<:AbstractFloat
+    z = rho * rho
+    if rho <= T(2)
+        g = T(_GAUSSERF_A) * rho * z * _gausserf_series_g(z)
+        h = T(_GAUSSERF_A) * rho * z * z * _gausserf_series_h(z)
+        return g, h
+    end
+    e = exp(-z / 2)
+    u = inv(z)
+    s = muladd(muladd(muladd(T(_GAUSSERF_S_COEFFS[4]), u, T(_GAUSSERF_S_COEFFS[3])),
+        u, T(_GAUSSERF_S_COEFFS[2])), u, T(_GAUSSERF_S_COEFFS[1]))
+    g = one(T) - e * muladd(T(_GAUSSERF_A), rho, s)
+    h = muladd(T(_GAUSSERF_A) * rho * z, e, -3 * g)   # ρg′ = Aρ³e^{−ρ²/2}
+    return g, h
+end
+
+# Per-pair math behind the `direct_kernel` functor trait. Shared verbatim by the
+# host loops and the CUDA pair kernels (arithmetic + exp only); the caller
+# computes `invr` with its preferred reciprocal sqrt and skips r2 == 0 pairs.
+# Conventions (theory §1 / legacy direct!): dx,dy,dz = target − source;
+# crss_i = −(Δx×Γ)_i/(4πr³); U = g·crss; J[i,j] = ∂u_i/∂x_j column-major with
+# a = h/r², b = −g/(4πr³).
+
+@inline function _direct_pair_ug(::SingularSource, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    @inbounds q = source_bodies[5, j] * inv(T(4) * T(π))
+    u = q * invr
+    invr3 = invr * invr * invr
+    return u, -q * dx * invr3, -q * dy * invr3, -q * dz * invr3
+end
+
+@inline function _direct_pair_ugh(::SingularSource, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    @inbounds q = source_bodies[5, j] * inv(T(4) * T(π))
+    u = q * invr
+    invr2 = invr * invr
+    invr3 = invr * invr2
+    q3invr5 = 3 * q * invr3 * invr2
+    qinvr3 = q * invr3
+    return (u, -q * dx * invr3, -q * dy * invr3, -q * dz * invr3,
+        q3invr5 * dx * dx - qinvr3, q3invr5 * dx * dy, q3invr5 * dx * dz,
+        q3invr5 * dy * dx, q3invr5 * dy * dy - qinvr3, q3invr5 * dy * dz,
+        q3invr5 * dz * dx, q3invr5 * dz * dy, q3invr5 * dz * dz - qinvr3)
+end
+
+# Shared vortex U/J assembly for a given regularization pair (g, h); g = 1,
+# h = −3 reproduces the singular Biot-Savart kernel exactly.
+@inline function _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
+    T = typeof(dx)
+    cr3 = inv(T(4) * T(π)) * invr * invr * invr
+    ux = (dz * gsy - dy * gsz) * cr3
+    uy = (dx * gsz - dz * gsx) * cr3
+    uz = (dy * gsx - dx * gsy) * cr3
+    return zero(T), g * ux, g * uy, g * uz
+end
+
+@inline function _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
+    T = typeof(dx)
+    cr3 = inv(T(4) * T(π)) * invr * invr * invr
+    crss1 = (dz * gsy - dy * gsz) * cr3
+    crss2 = (dx * gsz - dz * gsx) * cr3
+    crss3 = (dy * gsx - dx * gsy) * cr3
+    a = h * invr * invr
+    b = -g * cr3
+    return (zero(T), g * crss1, g * crss2, g * crss3,
+        a * crss1 * dx, a * crss2 * dx - b * gsz, a * crss3 * dx + b * gsy,
+        a * crss1 * dy + b * gsz, a * crss2 * dy, a * crss3 * dy - b * gsx,
+        a * crss1 * dz - b * gsy, a * crss2 * dz + b * gsx, a * crss3 * dz)
+end
+
+@inline function _direct_pair_ug(::SingularVortex, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    return _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, one(T))
+end
+
+@inline function _direct_pair_ugh(::SingularVortex, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, one(T), -T(3))
+end
+
+@inline function _direct_pair_ug(kernel::RegularizedVortex, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    g = one(T)
+    if sigma > zero(T)
+        g, _ = _gaussianerf_g_h(r2 * invr / sigma)
+    end
+    return _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
+end
+
+@inline function _direct_pair_ugh(kernel::RegularizedVortex, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    g = one(T)
+    h = -T(3)
+    if sigma > zero(T)
+        g, h = _gaussianerf_g_h(r2 * invr / sigma)
+    end
+    return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
 end
 
 # Singular Biot-Savart direct kernel for Point{Vortex} sources (task 032 stage 1):
 # U = -Δx×Γ/(4πr³), J per theory §1 with g→1 (transcribed from the legacy
-# test-reference vortex direct!). No scalar potential is produced. The
-# regularized `RegularizedVortex` kernel and the `direct_kernel` functor trait
-# replace this fixed dispatch in stage 2.
+# test-reference vortex direct!). No scalar potential is produced. Retained
+# verbatim (with the scalar kernels below) as the hard-coded reference for the
+# stage-2 functor-abstraction benchmark; production dispatch now routes through
+# `_host_direct_pairs_functor_kernel!`.
 function _host_direct_pairs_vortex_kernel!(output::AbstractMatrix{TF}, source_bodies,
         cell_ranges, direct_targets, direct_sources, n_direct::Int,
         ::Val{HS}) where {TF,HS}
@@ -1100,6 +1295,80 @@ function _assert_radix_targets_are_sources(targets::Tuple, sources::Tuple)
     return nothing
 end
 
+#------- near-set adequacy gate for regularized nearfield kernels (032 stage 2) -------#
+#
+# The FMM far field is singular under every nearfield strategy, so the direct
+# geometry must contain every pair inside the smoothing cutoff r/σ_src ≤ ρ_t or
+# the accuracy gate is silently missed (spec §5, theory §5.1-§5.2). The binding
+# quantity is the smallest AABB gap the stencil leaves to M2L: adequacy is
+# g_min·h_leaf > ρ_t·σ_max, evaluated per step from the live geometry (σ may
+# grow, e.g. under core spreading). The box-filling n/8^ℓ form is design-time
+# sizing only and must NOT be asserted here — it mis-ranks clustered fields by
+# one to two levels. Per user decision (2026-08-05) an inadequate configuration
+# is REJECTED with the measured ratio and admissible depth; enlarging the
+# deepest-level near set is row 032a.
+
+@inline _offset_gap2(o) =
+    Float64(max(0, abs(o[1]) - 1)^2 + max(0, abs(o[2]) - 1)^2 + max(0, abs(o[3]) - 1)^2)
+
+# min over {o : |o|² > q} of the AABB gap in cell units (√5 for q = 12, 1 for
+# q = 3..5); brute force over the finite shell just outside the ball.
+function _ball_stencil_min_gap(q::Int)
+    reach = ceil(Int, sqrt(q)) + 2
+    best = Inf
+    for oz in -reach:reach, oy in -reach:reach, ox in -reach:reach
+        ox * ox + oy * oy + oz * oz <= q && continue
+        best = min(best, _offset_gap2((ox, oy, oz)))
+    end
+    return sqrt(best)
+end
+
+# Leaf-level minimum M2L gap in units of the leaf cell size. The constraint
+# binds only at the leaf level (theory §5.1: ρ_tσ/h halves with each level up
+# while the coarse-level gap in leaf units doubles), so coarser levels of the
+# hierarchical schedule need no separate check.
+function _leaf_stencil_min_gap(cache::RadixFMMCache)
+    policy = cache.policy
+    policy isa HierarchicalRigidStencil && return _ball_stencil_min_gap(
+        isempty(policy.level_radii2) ? policy.near_radius2 : policy.level_radii2[end])
+    # flat analytic stencil: the direct set is `rejected_offsets`, so the binding
+    # M2L pair is the closest accepted offset class
+    best = Inf
+    for o in cache.accepted_offsets
+        best = min(best, _offset_gap2(o))
+    end
+    return sqrt(best)
+end
+
+_direct_kernel_geometry_gate!(cache::RadixFMMCache, ::AbstractDirectKernel,
+    source_bodies, n::Int) = nothing
+
+function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
+        kernel::RegularizedVortex, source_bodies, n::Int)
+    n > 0 || return nothing
+    # works for Matrix and CuMatrix alike (device reduction + scalar download)
+    sigma_max = Float64(maximum(view(source_bodies, kernel.sigma_row, 1:n)))
+    sigma_max > 0 || return nothing
+    g_min = _leaf_stencil_min_gap(cache)
+    h_leaf = 2 * Float64(cache.h0) / (1 << cache.ell)
+    cutoff = kernel.rho_t * sigma_max
+    g_min * h_leaf > cutoff && return nothing
+    x = g_min * 2 * Float64(cache.h0) / cutoff   # admissible 2^ℓ bound
+    ell_max = floor(Int, log2(x))
+    2.0^ell_max < x || (ell_max -= 1)
+    depth_msg = ell_max >= 0 ? "the admissible depth at this geometry is ell <= $ell_max" :
+        "no tree depth is admissible at this geometry (the box itself is inside the cutoff)"
+    throw(ArgumentError(
+        "regularized nearfield near-set adequacy failed: the direct stencil leaves " *
+        "an M2L gap of g_min*h_leaf = $(round(g_min * h_leaf, sigdigits=4)) but the " *
+        "smoothing cutoff needs rho_t*sigma_max = $(round(cutoff, sigdigits=4)) " *
+        "(ratio $(round(g_min * h_leaf / cutoff, sigdigits=4)), g_min = " *
+        "$(round(g_min, sigdigits=4)), sigma_max = $(round(sigma_max, sigdigits=4)), " *
+        "ell = $(cache.ell)); $depth_msg. Pairs inside the cutoff would be handled " *
+        "by the singular far field and silently lose the regularization. Reduce ell, " *
+        "shrink sigma, or use a larger near set (row 032a)."))
+end
+
 function _assert_radix_positions_in_box(systems::Tuple, x_min::SVector{3,TF}, h0::TF) where TF
     x_max = x_min .+ 2 * h0
     for (isys, system) in enumerate(systems)
@@ -1351,6 +1620,15 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             "the cache with lamb_helmholtz=true (or leave it to be inferred from " *
             "has_vector_potential)"))
     end
+    # Nearfield kernel resolution (task 032 stage 2): one shared functor per
+    # cache, resolved from the trait like body_type above; validated after the
+    # options carry the final choice (below).
+    dk_trait = direct_kernel(first(sources))
+    for system in sources
+        direct_kernel(system) == dk_trait || throw(ArgumentError(
+            "all source systems sharing a RadixFMMCache must report the same " *
+            "direct_kernel; got $(direct_kernel(system)) and $dk_trait"))
+    end
     # Measured defaults (024/028). Precision depends only on the expansion order and
     # is needed for the bounds and stencil tolerance below; the strategy also depends
     # on the class count, so it is resolved once the policy is built.
@@ -1437,6 +1715,29 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             _dense_m2m_dof(basis_info, Val(LH)))
     end
     options = _options_with_body_type(options, BT)
+    if dk_trait != _default_direct_kernel(BT)
+        # explicit trait choice; a conflicting explicit options choice is an error
+        (options.direct_kernel == _default_direct_kernel(BT) ||
+            options.direct_kernel == dk_trait) || throw(ArgumentError(
+            "options.direct_kernel=$(options.direct_kernel) conflicts with the " *
+            "direct_kernel(system) trait $dk_trait"))
+        options = _options_with_direct_kernel(options, dk_trait)
+    end
+    dk = options.direct_kernel
+    isbits(dk) || throw(ArgumentError(
+        "direct_kernel must be an isbits functor (GPU-compilable, no references); " *
+        "got $(typeof(dk))"))
+    if dk isa RegularizedVortex
+        BT <: Point{Vortex} || throw(ArgumentError(
+            "RegularizedVortex requires body_type Point{Vortex}; got $BT"))
+        for system in sources
+            dk.sigma_row <= data_per_body(system) || throw(ArgumentError(
+                "RegularizedVortex sigma_row=$(dk.sigma_row) exceeds " *
+                "data_per_body=$(data_per_body(system)) for $(typeof(system)); " *
+                "every source system must carry the smoothing radius σ in packed " *
+                "row sigma_row"))
+        end
+    end
 
     if device
         cache = _radix_cache_device_build(sources, P, Int(ell), x_min, h0, maxn,
@@ -1698,6 +1999,8 @@ function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where 
     end
     _pack_radix_source_bodies!(state.source_bodies, grid.perm, grid.body_system,
         grid.body_index, cache.source_buffers, n)
+    _direct_kernel_geometry_gate!(cache, state.options.direct_kernel,
+        state.source_bodies, n)
 
     resize!(cache.coords, n_cells)
     _refresh_radix_coords!(cache.coords, grid.cell_keys, n_cells, grid.ell)

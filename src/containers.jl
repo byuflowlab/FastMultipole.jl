@@ -1603,6 +1603,68 @@ struct HostResident <: Residency end
 
 struct DeviceResident <: Residency end
 
+#------- nearfield direct-kernel functors (task 032 stage 2) -------#
+#
+# The resident nearfield pair kernels are generic over an isbits functor selected
+# by the `direct_kernel(system)` trait and stamped into `CUDARadixLifecycleOptions`
+# at cache construction, so each distinct kernel is one compile-time kernel
+# instantiation, never a runtime branch in the pair loop. Consumer-supplied
+# functors are allowed if isbits and GPU-compilable: implement
+# `_direct_pair_ug` / `_direct_pair_ugh` (translate_batched_resident.jl) and
+# `_emits_potential` for the new type.
+
+abstract type AbstractDirectKernel end
+
+"Singular scalar `1/r` kernel (shipped default for `Point{Source}`)."
+struct SingularSource <: AbstractDirectKernel end
+
+"Singular Biot-Savart kernel (shipped default for `Point{Vortex}`)."
+struct SingularVortex <: AbstractDirectKernel end
+
+"""
+    RegularizedVortex(; sigma_row, rho_t=4.789)
+
+Regularized-everywhere Biot-Savart nearfield for `Point{Vortex}` sources with the
+FLOWVPM default `gaussianerf` regularization (the only kernel supported in the
+Integration Phase). The smoothing radius `σ` is read from packed extra-state row
+`sigma_row` of each **source** body (never radius row 4, which carries the
+MAC/error radius, e.g. FLOWVPM's inflated `ρ_σ·σ`). Sources with `σ <= 0`
+(e.g. zero-padded columns of narrower systems) fall back to the singular kernel.
+
+`rho_t` is the conservative smoothing cutoff `r/σ` beyond which the regularized
+and singular kernels agree to the phase tolerance (`031a` §4; 4.789 at
+`ε = 1e-3`). It is used only by the near-set adequacy gate: every evaluation
+asserts `g_min·h_leaf > rho_t·σ_max` from the live geometry and **throws**
+naming the measured ratio and the admissible depth if the direct near set fails
+to cover the smoothing neighborhood — the FMM far field is singular, so running
+on an inadequate stencil would silently miss the accuracy gate (spec §5).
+
+The `g(ρ)`/`h(ρ) = ρg'−3g` evaluation is erf-free: the theory-§3 Horner series
+below `ρ = 2` and the `031a` §6.2 one-`exp` form above (constants measured by
+`MATRIX_OPERATOR_REFACTOR/scripts/fit_032_nearfield_g.jl`).
+"""
+struct RegularizedVortex <: AbstractDirectKernel
+    sigma_row::Int
+    rho_t::Float64
+    function RegularizedVortex(; sigma_row::Integer, rho_t::Real=4.789)
+        sigma_row >= 5 || throw(ArgumentError(
+            "RegularizedVortex sigma_row must point at a packed extra-state row " *
+            "(rows 1:4 are position and the MAC radius); got $sigma_row"))
+        rho_t > 0 || throw(ArgumentError("RegularizedVortex rho_t must be positive"))
+        return new(Int(sigma_row), Float64(rho_t))
+    end
+end
+
+_default_direct_kernel(::Type{<:Point{Source}}) = SingularSource()
+_default_direct_kernel(::Type{<:Point{Vortex}}) = SingularVortex()
+_default_direct_kernel(::Type) = SingularSource()
+
+# Only kernels that produce a scalar potential write output row 1 (the vortex
+# kernels' atomics/stores skip it) — compile-time via the functor type.
+_emits_potential(::SingularSource) = true
+_emits_potential(::SingularVortex) = false
+_emits_potential(::RegularizedVortex) = false
+
 mutable struct CUDARadixTransferCounters
     body_uploads::Int
     influence_downloads::Int
@@ -1620,7 +1682,7 @@ CUDARadixTransferCounters() = CUDARadixTransferCounters(0, 0, 0, 0, 0, 0)
 
 struct CUDARadixLifecycleOptions{TF,O<:AbstractM2LOperator,
         M2M<:AbstractResidentM2MStrategy,M2L<:AbstractResidentM2LStrategy,
-        BT<:AbstractElement}
+        BT<:AbstractElement,DK<:AbstractDirectKernel}
     precision::Type{TF}
     operator::O
     m2m_strategy::M2M
@@ -1630,23 +1692,29 @@ struct CUDARadixLifecycleOptions{TF,O<:AbstractM2LOperator,
     # construction. Part of the concrete options type so B2M launchers dispatch
     # at compile time.
     body_type::Type{BT}
+    # Nearfield direct-kernel functor (task 032 stage 2): resolved from the
+    # `direct_kernel` trait (defaulting per body type) at cache construction;
+    # part of the concrete options type so the pair kernels specialize on it.
+    direct_kernel::DK
 end
 
 # Preserve the historical partial form `CUDARadixLifecycleOptions{TF}(...)` while
 # making all dispatch choices part of the concrete options type.
 CUDARadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy,
-        body_type::Type=Point{Source}) where TF =
+        body_type::Type=Point{Source},
+        direct_kernel::AbstractDirectKernel=_default_direct_kernel(body_type)) where TF =
     CUDARadixLifecycleOptions{TF,typeof(operator),typeof(m2m_strategy),
-        typeof(m2l_strategy),body_type}(precision, operator, m2m_strategy,
-        m2l_strategy, body_type)
+        typeof(m2l_strategy),body_type,typeof(direct_kernel)}(precision, operator,
+        m2m_strategy, m2l_strategy, body_type, direct_kernel)
 
 CUDARadixLifecycleOptions{TF}(;
         operator=MaterializedYRotationM2L(),
         m2m_strategy=SharedRotationM2M(),
         m2l_strategy=SharedRotationM2L(),
-        body_type=Point{Source}) where TF =
+        body_type=Point{Source},
+        direct_kernel=_default_direct_kernel(body_type)) where TF =
     CUDARadixLifecycleOptions(; precision=TF, operator, m2m_strategy, m2l_strategy,
-        body_type)
+        body_type, direct_kernel)
 
 function CUDARadixLifecycleOptions(;
         precision::Type{TF}=Float64,
@@ -1654,6 +1722,7 @@ function CUDARadixLifecycleOptions(;
         m2m_strategy=SharedRotationM2M(),
         m2l_strategy=SharedRotationM2L(),
         body_type::Type=Point{Source},
+        direct_kernel::AbstractDirectKernel=_default_direct_kernel(body_type),
     ) where TF
     TF <: Union{Float32,Float64} ||
         throw(ArgumentError("CUDA radix lifecycle precision must be Float32 or Float64"))
@@ -1672,14 +1741,27 @@ function CUDARadixLifecycleOptions(;
         throw(ArgumentError("DenseTranslationM2L requires operator=MaterializedYRotationM2L()"))
     end
     return CUDARadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy,
-        body_type)
+        body_type, direct_kernel)
 end
 
 # Rebuild options with a different body type (used by RadixFMMCache construction,
-# which resolves the shared `body_type` trait of the actual source systems).
-_options_with_body_type(options::CUDARadixLifecycleOptions{TF}, ::Type{BT}) where {TF,BT} =
+# which resolves the shared `body_type` trait of the actual source systems). A
+# direct kernel that was defaulted follows the body type; an explicit non-default
+# choice is preserved.
+function _options_with_body_type(options::CUDARadixLifecycleOptions{TF},
+        ::Type{BT}) where {TF,BT}
+    dk = options.direct_kernel == _default_direct_kernel(options.body_type) ?
+        _default_direct_kernel(BT) : options.direct_kernel
+    return CUDARadixLifecycleOptions{TF}(options.precision, options.operator,
+        options.m2m_strategy, options.m2l_strategy, BT, dk)
+end
+
+# Rebuild options with an explicit direct kernel (RadixFMMCache construction,
+# resolving the `direct_kernel` trait of the actual source systems).
+_options_with_direct_kernel(options::CUDARadixLifecycleOptions{TF},
+        dk::AbstractDirectKernel) where TF =
     CUDARadixLifecycleOptions{TF}(options.precision, options.operator,
-        options.m2m_strategy, options.m2l_strategy, BT)
+        options.m2m_strategy, options.m2l_strategy, options.body_type, dk)
 
 # Step-varying prefix lengths for a capacity-sized DeviceResidentRadixState (task
 # 023): arrays stay allocated at construction capacity and each count bounds the

@@ -106,6 +106,7 @@ export RigidHierarchicalTables, RadixLevelOccupancy
 export RigidImplicitStencil, SparseOffsetIntersection, BlockedOccupancyBitsets, LazyMaterializedBatches
 export RadixM2LBatch, RadixInteractionList
 export Residency, HostResident, DeviceResident, residency
+export AbstractDirectKernel, SingularSource, SingularVortex, RegularizedVortex, direct_kernel
 export CUDARadixTransferCounters, CUDARadixLifecycleOptions, DeviceResidentRadixState
 export AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M
 export AbstractResidentM2LStrategy, DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L, PrecomputedFactoredYM2L

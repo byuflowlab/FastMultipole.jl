@@ -1749,6 +1749,85 @@ function _cuda_direct_pairs_vortex_kernel!(output, source_bodies, cell_ranges,
     return nothing
 end
 
+# Generic functor pair kernel (task 032 stage 2): identical warp-per-pair
+# structure to `_cuda_direct_pairs_output_kernel!`, but the per-pair math comes
+# from the `direct_kernel` functor stamped into the options at construction —
+# compile-time specialization, one kernel instantiation per functor type, no
+# runtime branch in the pair loop. The hard-coded kernels above remain as the
+# functor-abstraction benchmark reference (031 sign-off (b)).
+function _cuda_direct_pairs_functor_kernel!(kernel, output, source_bodies,
+        cell_ranges, direct_targets, direct_sources, npairs, ::Val{HS}) where HS
+    T = eltype(output)
+    ep = _emits_potential(kernel)
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    pair_i = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    warp_stride = gridDim().x * warps_per_block
+    @inbounds while pair_i <= npairs
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + lane
+        while i <= tlast
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            u = zero(T)
+            gx = zero(T); gy = zero(T); gz = zero(T)
+            h1 = zero(T); h2 = zero(T); h3 = zero(T)
+            h4 = zero(T); h5 = zero(T); h6 = zero(T)
+            h7 = zero(T); h8 = zero(T); h9 = zero(T)
+            for j in sfirst:slast
+                i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                if r2 > zero(r2)
+                    invr = _cuda_fast_rsqrt(r2)
+                    if HS
+                        du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                            _direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
+                                source_bodies, j)
+                        u += du
+                        gx += dgx; gy += dgy; gz += dgz
+                        h1 += dh1; h2 += dh2; h3 += dh3
+                        h4 += dh4; h5 += dh5; h6 += dh6
+                        h7 += dh7; h8 += dh8; h9 += dh9
+                    else
+                        du, dgx, dgy, dgz = _direct_pair_ug(kernel, dx, dy, dz,
+                            r2, invr, source_bodies, j)
+                        u += du
+                        gx += dgx; gy += dgy; gz += dgz
+                    end
+                end
+            end
+            ep && (CUDA.@atomic output[1, i] += u)
+            CUDA.@atomic output[2, i] += gx
+            CUDA.@atomic output[3, i] += gy
+            CUDA.@atomic output[4, i] += gz
+            if HS
+                CUDA.@atomic output[5, i] += h1
+                CUDA.@atomic output[6, i] += h2
+                CUDA.@atomic output[7, i] += h3
+                CUDA.@atomic output[8, i] += h4
+                CUDA.@atomic output[9, i] += h5
+                CUDA.@atomic output[10, i] += h6
+                CUDA.@atomic output[11, i] += h7
+                CUDA.@atomic output[12, i] += h8
+                CUDA.@atomic output[13, i] += h9
+            end
+            i += 32
+        end
+        pair_i += warp_stride
+    end
+    return nothing
+end
+
 # One warp per compact entry. Positive target ids denote an unordered cell pair;
 # negative ids retain an oversized directed fallback entry. Cross-cell and
 # triangular same-cell branches evaluate each ordinary body pair once and update
@@ -3400,8 +3479,10 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
     threads = 128
     hctx = state.interaction_list
     hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
-    vortex = state.options.body_type <: Point{Vortex}
-    symmetric = CUDA_SYMMETRIC_NEARFIELD[] && !LH && !vortex &&
+    dk = state.options.direct_kernel
+    # the symmetric Newton-pair trick assumes the same-source/target scalar
+    # singular kernel; every other functor takes the generic pair kernel
+    symmetric = CUDA_SYMMETRIC_NEARFIELD[] && !LH && dk isa SingularSource &&
         hctx isa DeviceHierarchicalM2LContext
     symmetric && isempty(hctx.symmetric_targets) && throw(ArgumentError(
         "symmetric nearfield must be selected before cache construction"))
@@ -3409,17 +3490,13 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
     # warp-per-pair (task 028 lever 1): 4 warps per 128-thread block
     direct_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
     if direct_blocks > 0
-        if vortex
-            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_vortex_kernel!(
-                state.output, state.source_bodies, state.cell_ranges,
-                state.direct_targets, state.direct_sources, npairs, hsv)
-        elseif symmetric
+        if symmetric
             CUDA.@cuda threads=threads blocks=direct_blocks _cuda_symmetric_pairs_output_kernel!(
                 state.output, state.source_bodies, state.cell_ranges,
                 hctx.symmetric_targets, hctx.symmetric_sources, npairs, hsv)
         else
-            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_output_kernel!(
-                state.output, state.source_bodies, state.cell_ranges,
+            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_functor_kernel!(
+                dk, state.output, state.source_bodies, state.cell_ranges,
                 state.direct_targets, state.direct_sources, npairs, hsv)
         end
     end
@@ -4486,6 +4563,11 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
 
     _pack_radix_body_matrix!(ctx.source_bodies, source_buffers, view(grid.perm, 1:n),
         grid.body_system, grid.body_index)
+    # near-set adequacy for regularized kernels (032 stage 2): a device
+    # max-reduction over the packed σ row (pool-served scratch, six-byte-scale
+    # download), no-op for singular kernels
+    _direct_kernel_geometry_gate!(cache, cache.options.direct_kernel,
+        ctx.source_bodies, n)
 
     # host mirrors serve host-resident target finalization only
     if _radix_any_host_resident(systems)
