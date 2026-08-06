@@ -327,6 +327,29 @@ interface, radius extension q<=20, PartitionedVortex) — the scalar verdict
 path itself is regression-checked by the 032 stage-4 no-regression gate
 (9.448 ms / errors identical on this manifest's parent).
 
+### Step 2 — mechanism assessment and ranking (2026-08-06, job 13059955)
+
+Full assessment in
+`data/performance_high_score_1m_1ms/step2_mechanism_ranking.md`. One
+evidence-only H200 profiling job (13059955, m13h-1-1, julia 1.11.7 pinned, no
+production `src/` changes; scripts `profile_029_floor.jl`,
+`cuda_029_profile_{submit,run}.sh`) attributed the robust baseline's floor:
+full step = 420 kernel launches / 27 syncs / 127 mem-ops with 6.39 ms
+device-busy of the 7.44 ms verdict; M2M+L2L is 0.47 ms busy vs 1.96 ms wall
+(253 launches + 101 pageable H2Ds); M2L's 2.13 ms is 0.78 ms math + ~1.2 ms
+per-step route-window scans + a blocking route-count D2H; the identical-
+geometry n=1e3 control runs the complete step at 3.87 ms wall / 0.82 ms busy —
+the ~3 ms n-independent launch/sync floor directly observed. Ranking: (1)
+launch/sync floor elimination via graph-captured far-field chain (reopens the
+Stage-10 CUDA-graphs closure under its own stated condition — the step is now
+launch-bound at the margin; expected 7.44 → ~4.5–5.5 ms), (2) route-window
+machinery fold, (3) multi-H200 decomposition (2-GPU feasibility slice first),
+(4) nearfield ILP round 2, (5) leaf-M2L batching; plane-wave and FFT M2L
+deprioritized at P=4. Single-GPU ≤1 ms judged out of reach (roofline + floor);
+the goal path is the multi-H200 track with cycles 1→2→3, projecting
+~0.9–1.4 ms. Cycle-1 approval request = prototype P1 (+#2 fold), zero
+accuracy risk, gated on a ≥0.5 ms falsification threshold.
+
 ## Approval Notes
 
 To be filled by a different agent after this task is complete.
