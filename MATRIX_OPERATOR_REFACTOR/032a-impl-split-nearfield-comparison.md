@@ -87,6 +87,25 @@ regularized-everywhere baseline.
 - `START_HERE.md`, `theory/kernel-splitting-nearfield.md`, the `031a`
   validation results, and `integration-api-spec.md` §5.
 
+## Work Record
+
+### Reading gate (2026-08-06)
+
+Completed by the executing agent (Claude Fable 5, same session that closed
+`032`): `START_HERE.md` (incl. the Integration Phase preamble and both 032a
+amendments), `031a-theory-kernel-splitting-nearfield.md` (status, work record,
+review-correction history), `theory/kernel-splitting-nearfield.md` in full
+(all of §§1–8 incl. the §6.1 two-pass operator/conditioning, §6.3 divergence
+model, §6.4 RMS radii, §7 validation results), the `031a` validation data
+summaries (`partitioned_replacement.csv`, `geometry_coverage.csv`,
+`two_pass_conditioning.csv` figures as quoted in theory §7), and
+`integration-api-spec.md` §5 including the three-candidate amendment.
+
+Execution plan: `032a-implementation-plan.md` (this directory) — four stages
+(host partitioned → host two-pass → CUDA + binned stream → H200 A/B ladder),
+each with a user checkpoint; §6.3 binned-stream mechanism selection is an
+explicit measured decision before any A/B number is recorded.
+
 ## Placement and Reporting
 
 - Follow the `_batched`/`*_cuda.jl` placement rules; types stay in
