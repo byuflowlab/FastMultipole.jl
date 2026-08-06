@@ -264,3 +264,13 @@ migration hazards for existing consumers; worth a note in the migration
 section of the docs, since any consumer following the published legacy-hook
 example (fixed `set_hessian!` rows + `@inbounds`) silently corrupts memory on
 `matrix-ops` when `scalar_potential=false`.
+
+### 2026-08-06 — deliverable-4 correctness sign-off (user)
+
+The user reviewed the H200 validation evidence (job 13061046: all groups pass,
+cube 8.83e-4 / wake 2.13e-4 device velocity RMS inside the 1e-3 gate, RK3
+dynamic parity, 023 counter contract flat, KB-scale steady allocations) and
+**signed off on the deliverable-4 correctness gate**. The user also approved
+wiring `runtests_gpu_fmm_device.jl` into FLOWVPM's default suite (auto-skip
+without CUDA). Remaining before Done: the 033-checksummed-reference accuracy
+comparison and the approved test wiring.
