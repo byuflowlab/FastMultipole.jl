@@ -335,3 +335,59 @@ Local verification: interface tests 930 + 22 + 21 pass; full `Pkg.test()`
 passes. CUDA mirrors (persistent-buffer identity, flat `body_uploads` across
 device-resident steps, device `recenter!` parity) are in
 `cuda_radix_interface_test.jl` awaiting the Stage-4 H200 job.
+
+### Stage 4 — H200 validation + no-regression gate (Done, 2026-08-06)
+
+Three H200 jobs; the first two exposed defects that were fixed and are part of
+the record:
+
+1. **Job 13058402** — 1243/1245 device tests; both failures were test defects,
+   not production behavior (CuArray contiguous views are derived wrappers, so
+   parent-identity was the wrong persistent-buffer assertion — replaced by
+   pointer+size aliasing; a 5e-4 device `recenter!` parity tolerance was too
+   tight for a changed box at P=3, measured 6.7e-4 — relaxed to the host test's
+   5e-3). Fixed in `ceed86d`.
+2. **Job 13058532** — all suites green (interface 1246/1246, lifecycle
+   216/216 + 37/37) but the n=1e5 validation missed the Float64 velocity gate:
+   `u_rel_rms = 1.088e-3 > 1e-3` at the auto geometry (`q² = 12`, ell = 3,
+   β = 2). Root cause was structural, not a bug: the adequacy inequality at
+   overlap β = 2 forces a large leaf near set, and `q² = 12` — the *largest
+   supported* rigid radius — delivers ~1.06–1.09e-3 at P = 4 (matches the 024b
+   measured family), so **no supported geometry could pass the phase gate for a
+   regularized vortex consumer at overlap 2.** The guard tuple was the cap;
+   every builder (`RigidHierarchicalTables`, `rigid_stencil_epsilon`,
+   transitions, classifier verification) is radius-generic and self-verifying.
+   Fixed by extending `_SUPPORTED_RIGID_NEAR_RADII2` to every representable
+   radius ≤ 20 (13, 14, 16, 17, 18, 19, 20; 7 and 15 have no lattice shell) in
+   `cc3381e`, with host property tests over all radii at P=4 (877/877) and
+   q=16/20 added to the device parity loop. The same job also recalibrated the
+   allocation warnings: the shipped scalar path of record allocates
+   **2.0–20.1 MB device / 0.47–0.71 MB host per step** (030 CSVs, counter
+   contract green), so the recorded 023 contract is the transfer counters, not
+   literal zero bytes; the warnings are informational.
+3. **Job 13059638 — green end to end** (node `m13h-1-1`, julia 1.11.7):
+   - preflights: interface 1246/1246 (first hardware pass of the fixed stage-3
+     assertions), lifecycle 216/216 + 37/37;
+   - validation n=1e5 (q=16, ell=3, margin 1.51): `u_rel_rms = 5.182e-4` (F64
+     and F32; truncation-dominated), J diagnostic 1.886e-3; steady step
+     68.4 ms F64 / 41.4 ms F32; dev alloc 9–11 KB, host ~2.5 MB per step;
+   - validation n=1e6 (q=16, ell=4, margin 1.63): `u_rel_rms = 9.487e-4`
+     (post-convection 9.488e-4), J 2.90e-3; steady step 693.8 ms F64 /
+     322.9 ms F32; counters flat (`body_uploads = 0`,
+     `expansion_host_copies = 0`, uploads/downloads frozen post-warmup, CSV
+     columns confirm through step 7);
+   - scalar no-regression (unchanged `benchmark_028_feasibility.jl`, 030
+     verdict config): FP16/F32 **9.448 ms** vs record 9.591 [9.434, 9.631] ms,
+     `grad_err 1.059e-3` identical; F64/off **20.495 ms** vs record 20.740 ms,
+     `1.050e-3` identical — **no regression** (both ~1.5% inside variance).
+
+Data: `data/feasibility_1m_10ms/cuda032v_m13h-1-1_20260806-{075857,080033}.csv`
+(+ the failed-gate `cuda032v_m13h-1-2_20260805-221219.csv` kept as the q=12
+measurement of record), `cuda032nr_sched6_5_5_5_{fp16,off}_n1000000_m13h-1-1_13059638.csv`
+(+ class companions), job logs `fm032-1305{8402,8532,9638}.out` (cluster;
+`fm032-13059638.out` fetched locally).
+
+All five deliverables are complete; task-local requirements hold (placement
+rules, counter contract on hardware, no FLOWVPM edits, H200 validation with
+before/after scalar cost check). Row marked Done in `START_HERE.md`;
+clear-context approval follows by a different agent.
