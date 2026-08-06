@@ -532,6 +532,47 @@ row.
 | [ ] | [ ] | `036-milestone-review-integration-phase.md` | Milestone Review for Integration rows `031`–`035` including `031a`/`032a`: interface generality, FLOWVPM correctness/performance verdicts, speedup-documentation completeness, and downstream compatibility (FLOWVPM CPU users, FLOWUnsteady, VortexLattice). | `031`, `031a`, `032`, `032a`, `033`, `034`, `035` |
 | [ ] | [ ] | `037-impl-rectangular-isotropic-radix-grid.md` | Add an optional rectangular radix-grid path with approximately cubic physical cells for elongated domains: generalized quantization/keying, occupied-cell metadata, routing, CUDA refresh, and lifecycle parity. Start with a fixed-resolution rectangular leaf grid; generalize the hierarchy only if measured results require it. Preserve the cubic path and zero-allocation/device-residency contracts. | `035`, `036` |
 
+## Adaptive Octree Phase
+
+This phase was staged by user direction on `2026-08-06`, following the
+sparsity-suitability review of that date. The review found the radix path is
+occupancy-compacted (compute scales with occupied cells) but rigidly uniform
+— one global leaf width, one cubic box, one depth `ell`, no leaf-population
+bound — so it serves uniformly sparse fields well but multi-scale density
+(dense clusters plus diffuse regions; wake rollup; `CoreSpreading`-grown σ)
+poorly: the global `σ_max` geometry gate forces a globally shallow tree, and
+an unbounded fat cell serializes `O(K²)` nearfield work in a single warp and
+B2M in a single thread. The remedy is a **2:1-balanced adaptive Morton
+octree** in the PVFMM/ExaFMM-T style: with 2:1 balance, same-level (V-list)
+M2L remains a finite translation-invariant offset-class set, so the `025`
+level-scaling law, the per-`(level, offset)` class batching, and the
+existing resident M2L strategies and operator tables carry over unchanged;
+the new pieces are the adaptive near-field lists (U direct, W/X via M2T/S2L)
+and device tree construction from the sort/scan/compact primitives already
+in the CUDA path.
+
+The whole phase is gated behind `035`, `036`, and `037`, and the `038`
+theory row carries an explicit evidence-or-waiver entry gate: multi-scale
+density must be measured as a binding cost (or the user must waive that
+requirement) before derivation begins. `038` is a scoped derivation row
+(`theory/`, `scripts/`, `data/` only) and does not reopen the Theory Phase
+hard gate or re-block any completed row. Row `041a` (user-directed
+`2026-08-06`) is the phase's reporting row: publishable figures comparing
+old (uniform grid) and new (adaptive) machinery on uniform and non-uniform
+fields in time and memory, at matched stated accuracy, following the
+standing TikZ/CSV figure conventions and extending the `024a` set.
+
+| Done | Approved | Task | Summary | Blocking |
+| --- | --- | --- | --- | --- |
+| [ ] | [ ] | `038-theory-adaptive-radix-octree.md` | Derive the 2:1-balanced adaptive Morton octree: construction as sort/scan/compact, U/V/W/X interaction lists with an exact-once coverage proof at both near radii, M2T/S2L operators with constant-`P`-consistent error bounds and Lamb-Helmholtz coverage, a per-cell σ geometry gate replacing the global `σ_max` form, cost/capacity model (incl. a synthetic multi-scale case), and the refresh/rebuild policy. V-list M2L must reuse the `025` level-scaled operator tables unchanged. Entry gate: `035`/`037` evidence that multi-scale density binds, or explicit user waiver. | `035`, `036`, `037` |
+| [ ] | [ ] | `039-impl-adaptive-octree-construction-host.md` | Implement host adaptive-tree construction (Morton-prefix split on `K_max`, depth cap, 2:1 balance) and U/V/W/X list generation, with V lists in the existing `(level, offset)` class format, per-cell geometry gate, capacity-sized buffers with zero per-step refresh allocation, exact-once brute-force verification on uniform/wake/clustered fields, and uniform-limit parity with the existing hierarchical routes. | `038` |
+| [ ] | [ ] | `040-impl-adaptive-octree-lifecycle-host.md` | Run the full host resident lifecycle on the adaptive tree: V-list M2L through the unchanged resident strategies and operator tables, M2M/L2L over adaptive ancestor levels, new M2T/S2L kernels (φ+χ, `008h` order rule) for W/X, U-list direct through the existing nearfield kernels. Accuracy gates (velocity RMS ≤ 1e-3, `P=4` and `P=8`, both precisions) on cube, wake, and multi-scale cases; uniform-limit lifecycle parity. | `038`, `039` |
+| [ ] | [ ] | `041-impl-adaptive-octree-cuda.md` | Mirror the adaptive octree on the CUDA device-resident lifecycle: device construction/refresh as flag/scan/compact kernels, sorted-Morton binary-search occupancy lookup replacing the dense `Σ8^L` table (record whether it also lifts the uniform path's `ell ≤ 8` cap), device M2T/S2L, occupancy-epoch caching over the adaptive leaf set, `023` counter and zero-allocation parity, and H200 before/after per-stage measurements vs the uniform-depth path on all three cases. | `038`, `039`, `040` |
+| [ ] | [ ] | `041a-benchmark-adaptive-vs-uniform-figures.md` | Publishable benchmark report and figures: old uniform grid vs new adaptive octree on uniform and non-uniform fields (cube, wake, multi-scale contrast sweep, σ-heterogeneous variant), time and memory, host and H200, every row at stated sampled-direct accuracy under the 1e-3 gate. Figures (TikZ/pgfplots + CSV, extending the `024a` set) must show the old approach's failure mechanism (fat-cell/forced-shallow costs, capacity memory) and the new approach's measured gains. Benchmark/analysis row: `scripts/`, `data/`, figures only. | `040`, `041` |
+| [ ] | [ ] | `042-milestone-review-adaptive-octree.md` | Milestone Review for the adaptive octree arc: exact-once and balance evidence, operator-table-reuse audit, M2T/S2L accuracy, performance verdict and default-selection recommendation audited against the `041a` figures, contract compliance (capacity, counters, refresh, `recenter!`), and consumer/API exposure decision. | `038`, `039`, `040`, `041`, `041a` |
+
+This phase does not reopen the Theory, Implementation, or Integration gates.
+
 ## Future Dispatch Cleanup Notes
 
 For new GPU/device-path work, prefer dispatch on source, destination, and policy
