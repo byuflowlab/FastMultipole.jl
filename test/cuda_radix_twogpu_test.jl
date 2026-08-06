@@ -109,9 +109,59 @@ const FM = FastMultipole
 
             p2_require_peer_access!(G)
 
+            # ---- solo isolation probes (device 0, owned half only) ----------
+            # A: filtered body, uncaptured        -> filter/body correctness
+            # C: filtered windows, FULL L2B range -> splits L2B restriction
+            # D: regenerated FULL windows + full L2B -> custom body vs stock
+            # B (after recording): solo graph replay -> capture/replay delta
+            CUDA.device!(0)
+            sout_probe = Array(scache.state.output)
+            let me = G[1], st1 = me.cache.state
+                rng = me.part.b0:me.part.b1
+                den = sqrt(mean(abs2, Float64.(sout_probe[2:4, rng])))
+                relrms(o) = sqrt(mean(abs2,
+                    Float64.(o[2:4, rng]) .- Float64.(sout_probe[2:4, rng]))) / den
+                CUDA.device!(me.dev)
+                solo(c0, c1) = begin
+                    FM.update_cuda_radix_state!(me.cache, (me.sys,))
+                    p2_lifecycle_body!(st1, c0, c1, me.side, me.ev_begin, me.ev_done)
+                    CUDA.synchronize()
+                    relrms(Array(st1.output))
+                end
+                ncell = st1.counts.n_cells
+                println("[p2diag2] A filtered body, owned L2B      = ",
+                    solo(me.part.c0, me.part.c1))
+                println("[p2diag2] C filtered windows, full L2B    = ", solo(1, ncell))
+                hctx1 = st1.interaction_list
+                nw_filtered = sum(hctx1.win_level_counts)
+                hctx1.win_valid = false            # force full regeneration
+                println("[p2diag2] D full windows, full L2B        = ", solo(1, ncell))
+                p2_filter_windows!(st1, me.part)   # restore the filtered state
+                p2_filter_direct!(st1, me.part)
+                println("[p2diag2] window counts filtered/full/refiltered = ",
+                    nw_filtered, "/", hctx1.total_routes, "/",
+                    sum(hctx1.win_level_counts))
+                flush(stdout)
+            end
+
             # solo serialized recording, then concurrent replay (no motion)
             println("[p2test] record graphs (solo)"); flush(stdout)
             p2_record_graphs!(G)
+            let me = G[1], st1 = me.cache.state
+                if me.slot.exec !== nothing
+                    CUDA.device!(me.dev)
+                    FM.update_cuda_radix_state!(me.cache, (me.sys,))
+                    CUDA.launch(me.slot.exec::CUDA.CuGraphExec)
+                    CUDA.synchronize()
+                    o = Array(st1.output)
+                    rng = me.part.b0:me.part.b1
+                    den = sqrt(mean(abs2, Float64.(sout_probe[2:4, rng])))
+                    println("[p2diag2] B solo graph replay, owned L2B  = ",
+                        sqrt(mean(abs2, Float64.(o[2:4, rng]) .-
+                            Float64.(sout_probe[2:4, rng]))) / den)
+                    flush(stdout)
+                end
+            end
             println("[p2test] concurrent replay steps"); flush(stdout)
             for _ in 1:2
                 p2_step_pair!(G, bar; dt=0.0, do_euler=false, seg=seg)
