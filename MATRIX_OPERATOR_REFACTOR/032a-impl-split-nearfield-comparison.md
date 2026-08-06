@@ -183,6 +183,107 @@ mirror lands (pass 2 would otherwise be silently skipped).
 Full local suite green (`--threads=4`). CUDA mirrors, the §6.3 binned pass-2
 stream, and H200 measurements are Stage C/D.
 
+### Stage C — CUDA mirrors + binned pair stream: implementation (2026-08-06)
+
+Implemented per `032a-implementation-plan.md` Stage C; H200 measurement pending
+(work record entry below will carry the numbers).
+
+**Mechanism menu (`CUDA_NEARFIELD_BINNING[]`,
+`translate_batched_cuda.jl`).** Split vortex kernels
+(`PartitionedVortex`, `TwoPassVortex` pass 1) on hierarchical device caches
+route through `_launch_cuda_split_nearfield!`:
+
+- `:unbinned` — the plain predicated functor kernel (§6.3 negative control;
+  also the automatic fallback on flat-policy caches, which carry no bin
+  context).
+- `:classsplit` — mechanism (c): per-step three-way device compaction of the
+  direct pair list (pure-singular / pure-regularized / mixed) by the shared
+  cell-AABB rule `_nearfield_pair_bucket` (host+device, `resident.jl`) against
+  per-cell σ extrema; pure buckets run branch-free kernels
+  (`SingularVortex` / `RegularizedVortex` math), mixed keeps the predicated
+  functor kernel. Compaction is atomic-claimed into construction-sized Int32
+  bucket thirds (`3 × direct_capacity`); bucket kernels read their counts from
+  device memory (graph-safe — counts vary within an occupancy epoch).
+- `:ballot` — mechanism (b), implemented as the warp-ballot **queue kernel**
+  (`_cuda_direct_pairs_queue_kernel!`): per-(warp, source) predicate votes
+  evaluate branch-homogeneous instants inline; mixed instants defer their
+  source index into per-lane shared-memory queues (depth 8, 8 KB/block)
+  drained side-at-a-time, so regularized and singular math are never
+  predicated against each other. **Deviation from the plan's global
+  bitmask/compacted-index buffer, recorded deliberately:** a body-pair mask
+  sized `n_direct × B_t × B_s` cannot be construction-bounded under the
+  RadixFMMCache capacity contract (a single fat cell overflows any capacity
+  short of n²), while the shared-memory queue achieves the same compacted
+  streaming with zero global scratch and no capacity to overflow.
+- `:classsplit_ballot` — (c) for the pure buckets + (b) for the mixed bucket.
+- Mechanism (a) (`CUDA_NEARFIELD_SUBSORT[]`, orthogonal to the above):
+  within-cell sub-Morton ordering (3 extra Morton levels) composed into
+  `grid.perm` between the device sort and body packing
+  (`_cuda_nearfield_subsort!`: key kernel + block-per-cell odd-even shared
+  sort ≤ 1024 bodies + invperm refill). Cell keys/ranges/node metadata are
+  unaffected; only within-cell body order (and hence warp-lane spatial
+  coherence) changes.
+
+**TwoPassVortex device mirror (Stage-B open risks resolved).** Pass 1 is the
+functor/binned path above (branch at `rho_c`). Pass 2
+(`_cuda_twopass_deficit_kernel!`) is a warp-per-(cell, offset-entry)
+grid-stride sweep over a **construction-built, gap-ascending compacted offset
+ball** — the Stage-B "construction-sized compacted class list". Its capacity
+bound needs no σ at construction: pass-1 adequacy asserts
+`rho_c·σ_max < g_min·h_leaf` per step, so the pass-2 reach `rho_t·σ_max` is
+strictly below `(rho_t/rho_c)·g_min` cells — the ball is built once to that
+reach (`_twopass_offset_ball`, gap-sorted so the live ball is always a
+per-entry prunable prefix against the device `(rho_t·σ_max)²` scalar, reduced
+per step from per-cell σ maxima; no per-step list rebuild, no transfer).
+Entries whose far corner is inside `rho_c·σ_min(source cell)` are skipped
+whole (pass-1-complete). Per-pair shell membership is predicated or
+ballot-queued (`CUDA_TWOPASS_PASS2_QUEUED[]`). The host gate gained a
+defensive `_twopass_device_reach_check` (can only fire on an internal
+inconsistency), and the flat-policy device refusal was retargeted:
+hierarchical device caches now construct (`_assert_device_kernel_policy`).
+
+**Contracts.** All recurring work is device kernels on the launch stream:
+zero per-step allocation, no transfers (the one offset-ball upload at
+construction is counted as a route upload), capture-safe (device-count launch
+bounds; epoch-constant host bounds only). Scratch lives in
+`CUDANearfieldBinContext` (`containers.jl`) on the hierarchical device
+context, built only for split kernels. Mechanism Refs read inside the
+lifecycle are baked into a captured graph at record time (documented; tests
+and benchmarks use fresh caches per mechanism).
+
+**Homogeneity telemetry (deliverable 3).** `cuda_nearfield_homogeneity(state;
+stream=:all|:mixed)` replays the traversal with ballots only and reports
+instants / homogeneous fraction / regularized lane fraction (+ queue
+push/drain counters from the queue kernels); `cuda_twopass_shell_homogeneity`
+does the same for the pass-2 shell predicate (telemetry-only launch, output
+untouched).
+
+**Tests.** Host (`binned nearfield pair stream stage C (task 032a)` in
+`device_system_interface_test.jl`, ~32 k assertions, green locally): bucket
+rule safety by brute-force body-pair sweep (both TF); class-split evaluation
+== unbinned partitioned evaluation on the production host pair list at P=4
+and P=8, F64/F32 (via the host functor kernel on classified sublists);
+offset-ball completeness/ordering/prefix pruning vs the host sweep rule;
+gate-derived reach-capacity inequality on a live cache; policy-refusal unit
+tests; sub-Morton key semantics + spatial-coherence check. Device
+(`cuda_radix_nearfield_binning_test.jl`, cluster): parity of every mechanism
+(and both pass-2 modes) against same-P host references at P=4/P=8 × F64/F32,
+P=8 F64 accuracy anchor, 023 counter flatness + allocation stability per
+mechanism, homogeneity-diagnostic sanity (mixed ≤ all), flat-policy refusal
+message, invalid-mode rejection on a fresh cache.
+
+**Measurement plan.** `scripts/cuda_032a_stagec_benchmark.jl` (+
+`cuda_032a_{submit,run,fetch}.sh`, data →
+`MATRIX_OPERATOR_REFACTOR/data/split_nearfield/`): preflight = interface +
+lifecycle + new binning tests; matrix = {regularized baseline; partitioned ×
+4 modes × subsort; two-pass × {unbinned, classsplit} × {predicated, queued
+pass 2}} × {F32, F64} at three adequate overlap-2 cube points — a: n=1e5
+ℓ=3 q=16 (Stage-D geometry), b: n=1e6 ℓ=4 q=12 (deepest adequate depth at
+supported radii — ℓ=5 needs |o|²≤22 > 20), c: n=2e5 ℓ=4 q=20 (largest
+constructible regularized fraction). Reports step time, isolated
+nearfield-stage time, achieved homogeneity (all/mixed/shell), bucket
+occupancies, and sampled-direct u/J RMS per configuration.
+
 ## Placement and Reporting
 
 - Follow the `_batched`/`*_cuda.jl` placement rules; types stay in

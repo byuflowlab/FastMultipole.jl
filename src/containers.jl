@@ -602,6 +602,61 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV,SM}
     graph_exec::Any
     graph_epoch::Int
     graph_warm_epoch::Int
+    # Task 032a Stage C: distance-binned nearfield pair-stream scratch
+    # (`CUDANearfieldBinContext`) for the split vortex kernels, or `nothing`
+    # when the cache's direct kernel is not a split kernel.
+    nearfield::Any
+end
+
+"""
+    CUDANearfieldBinContext
+
+Device scratch for the task-032a Stage C distance-binned nearfield pair stream
+(`031a` §6.3) and the `TwoPassVortex` pass-2 deficit sweep, owned by the
+hierarchical device context and built at cache construction only when the
+cache's direct kernel is a split kernel (`PartitionedVortex`/`TwoPassVortex`).
+
+All arrays are construction-sized (capacity contract, task 023): the three-way
+bucket compaction reuses the direct-pair capacity per bucket, the per-cell σ
+extrema are `max_cells`-sized, and the pass-2 offset ball is enumerated once at
+construction to the gate-derived reach capacity
+`(rho_t/rho_c)·g_min` **cells** — the pass-1 adequacy gate asserts
+`rho_c·σ_max < g_min·h_leaf` every step, so the live pass-2 reach
+`rho_t·σ_max` can never exceed that capacity while the gate passes. The
+recurring step refreshes everything with device kernels only (no transfer, no
+allocation), keeping the 023 counter contract and CUDA-graph capture intact.
+
+Array fields are `Any`-typed so this container stays free of CUDA types
+(mirroring `DeviceHierarchicalM2LContext`).
+"""
+mutable struct CUDANearfieldBinContext
+    # per-cell σ extrema over the packed source rows (device TF vectors,
+    # length max_cells), refreshed inside the nearfield launch each step
+    cell_sigma_max::Any
+    cell_sigma_min::Any
+    # derived global Float64 scalars [σ_max, (rho_t·σ_max)²] (device Float64[2]),
+    # reduced from the per-cell maxima by a single-block kernel each step
+    nf_scalars::Any
+    # three-way bucket compaction of the direct pair list: bucket-major thirds
+    # of stride `capacity` (1 = pure singular, 2 = pure regularized, 3 = mixed)
+    # plus the device Int32 bucket counts (length 3)
+    bin_targets::Any
+    bin_sources::Any
+    bin_counts::Any
+    capacity::Int
+    # step-invariant geometry references (shared with the update context)
+    cell_coords::Any                # Int 3×max_cells, epoch-refreshed
+    h_leaf::Float64
+    # pass-2 offset ball (TwoPassVortex only; empty otherwise): gap-ascending
+    # integer offsets and their squared lattice gaps, device Int32
+    twopass_offsets::Any            # Int32 3×K
+    twopass_gap2::Any               # Int32 K
+    twopass_K::Int
+    twopass_reach_cap_cells::Float64  # ball reach capacity in leaf-cell units
+    # mechanism (a) scratch: per-sorted-position sub-Morton keys (UInt32 maxn)
+    subsort_keys::Any
+    # homogeneity diagnostics (device UInt64 counters; diagnostic launches only)
+    diag::Any
 end
 
 abstract type RadixTraversalStrategy end
@@ -1754,8 +1809,10 @@ routing is left entirely unmodified:
 singular-plus-deficit cancellation amplifies rounding by up to `~ρ⁻³` (fatal in
 Float32); at `rho_c = 2` the amplification is 3.3 and the hybrid holds
 working precision at every `ρ` (`031a` §6.1 conditioning table). `sigma_row`
-and `rho_t` follow the [`RegularizedVortex`](@ref) contract. Host-only until
-the 032a Stage C CUDA mirror lands.
+and `rho_t` follow the [`RegularizedVortex`](@ref) contract. Supported on the
+host lifecycle and (since the 032a Stage C mirror) on device caches with the
+hierarchical stencil policy; flat-policy device caches are still refused at
+construction.
 """
 struct TwoPassVortex <: AbstractRegularizedVortex
     sigma_row::Int

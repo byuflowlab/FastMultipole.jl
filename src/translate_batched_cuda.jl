@@ -1821,6 +1821,761 @@ function _cuda_direct_pairs_functor_kernel!(kernel, output, source_bodies,
     return nothing
 end
 
+#------- distance-binned nearfield pair stream (task 032a stage C, 031a §6.3) -------#
+#
+# An unbinned split kernel pays both branch paths on essentially every warp at
+# the shipped operating points (`031a` §6.3: modeled 1.56x SLOWER than the
+# regularized-everywhere baseline at ell >= 4), so the split vortex kernels
+# (`PartitionedVortex`, `TwoPassVortex` pass 1) get a measured menu of stream
+# mechanisms selected by `CUDA_NEARFIELD_BINNING[]`:
+#
+#   :unbinned          — the plain predicated functor kernel (the §6.3 negative
+#                        control; also the fallback on flat-policy caches, which
+#                        carry no `CUDANearfieldBinContext`);
+#   :classsplit        — mechanism (c): a per-step three-way compaction of the
+#                        direct pair list into pure-singular / pure-regularized
+#                        / mixed buckets by the shared `_nearfield_pair_bucket`
+#                        cell-AABB rule; pure buckets run branch-free kernels,
+#                        the mixed bucket keeps the predicated functor kernel;
+#   :ballot            — mechanism (b): every pair through the warp-ballot
+#                        queue kernel — per-(warp, source) predicate votes
+#                        evaluate branch-homogeneous instants inline and defer
+#                        mixed instants into per-lane shared-memory index
+#                        queues drained side-at-a-time (compacted-index
+#                        streaming with zero global scratch: a global body-pair
+#                        bitmask cannot be construction-bounded under the
+#                        RadixFMMCache capacity contract, because a single fat
+#                        cell overflows any mask sized short of n²);
+#   :classsplit_ballot — (c) for the pure buckets plus (b) for the mixed one.
+#
+# Mechanism (a) — within-cell sub-Morton body ordering — is orthogonal and
+# toggled by `CUDA_NEARFIELD_SUBSORT[]`: the update composes a per-cell
+# sub-key sort into `grid.perm` before packing, so warp lanes (consecutive
+# target bodies) span a compact spatial sub-block and the ρ predicate becomes
+# lane-coherent when cells are much larger than a warp.
+#
+# All recurring work is device kernels on the launch stream (capture-safe, zero
+# per-step allocation, no transfers), preserving the 023 counter contract. The
+# scratch lives in the construction-built `CUDANearfieldBinContext` on the
+# hierarchical device context.
+# NOTE: CUDA_NEARFIELD_BINNING and CUDA_TWOPASS_PASS2_QUEUED are read inside
+# the lifecycle body, so — like every runtime flag there — the selection is
+# baked into a captured CUDA graph at record time: flip them only before cache
+# construction (or force a new occupancy epoch/cache), or the replayed graph
+# keeps the old mechanism silently. CUDA_NEARFIELD_SUBSORT is read in the
+# (uncaptured) host refresh and may be flipped per step.
+const CUDA_NEARFIELD_BINNING = Ref{Symbol}(:unbinned)
+const CUDA_NEARFIELD_SUBSORT = Ref(false)
+# TwoPassVortex pass-2 deficit sweep kernel mode: shell-queue (ballot-compacted)
+# versus plain predicated evaluation of the (rho_c, rho_t] shell.
+const CUDA_TWOPASS_PASS2_QUEUED = Ref(false)
+# per-lane shared-memory queue depth of the ballot kernels
+const _NF_QUEUE_CAP = 8
+
+@inline _nearfield_bin_ctx(state::DeviceResidentRadixState) =
+    state.interaction_list isa DeviceHierarchicalM2LContext ?
+        state.interaction_list.nearfield : nothing
+
+# Morton encode/decode without host-side argument checks (device-safe).
+@inline function _cuda_morton_key(x::Int, y::Int, z::Int, ell::Int)
+    key = UInt64(0)
+    bit = 0
+    while bit < ell
+        key |= (UInt64((x >> bit) & 0x1) << (3 * bit))
+        key |= (UInt64((y >> bit) & 0x1) << (3 * bit + 1))
+        key |= (UInt64((z >> bit) & 0x1) << (3 * bit + 2))
+        bit += 1
+    end
+    return key
+end
+
+# Occupied-cell lookup by Morton key over the sorted prefix cell_keys[1:n_cells];
+# 0 when unoccupied (device mirror of the host `_twopass_cell_lookup`).
+@inline function _cuda_cell_key_search(cell_keys, n_cells::Int, key::UInt64)
+    lo = 1
+    hi = n_cells
+    @inbounds while lo <= hi
+        mid = (lo + hi) >>> 1
+        k = cell_keys[mid]
+        if k < key
+            lo = mid + 1
+        elseif k > key
+            hi = mid - 1
+        else
+            return mid
+        end
+    end
+    return 0
+end
+
+# Per-cell σ extrema over the packed source rows (thread per cell; cells are a
+# few tens to hundreds of bodies, so a serial scan per cell is cheap).
+function _cuda_cell_sigma_kernel!(cell_sigma_max, cell_sigma_min, source_bodies,
+        cell_ranges, sigma_row, n_cells)
+    T = eltype(cell_sigma_max)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > n_cells && return nothing
+    @inbounds begin
+        first = cell_ranges[1, i]
+        cnt = cell_ranges[2, i]
+        smax = zero(T)
+        smin = typemax(T)
+        j = first
+        while j < first + cnt
+            s = source_bodies[sigma_row, j]
+            smax = max(smax, s)
+            smin = min(smin, s)
+            j += 1
+        end
+        cnt == 0 && (smin = zero(T))
+        cell_sigma_max[i] = smax
+        cell_sigma_min[i] = smin
+    end
+    return nothing
+end
+
+# Single-block reduction of the per-cell maxima into the Float64 scalars
+# [σ_max, (rho_t·σ_max)²] the pass-2 sweep prunes against. Device-resident so
+# the value may change every step inside a captured graph.
+function _cuda_nf_scalars_kernel!(nf_scalars, cell_sigma_max, n_cells, rho_t)
+    sh = CUDA.CuStaticSharedArray(Float64, 256)
+    t = threadIdx().x
+    m = 0.0
+    i = Int(t)
+    @inbounds while i <= n_cells
+        m = max(m, Float64(cell_sigma_max[i]))
+        i += Int(blockDim().x)
+    end
+    @inbounds sh[t] = m
+    CUDA.sync_threads()
+    s = Int32(128)
+    while s >= Int32(1)
+        if t <= s
+            @inbounds sh[t] = max(sh[t], sh[t + s])
+        end
+        CUDA.sync_threads()
+        s >>= Int32(1)
+    end
+    if t == Int32(1)
+        @inbounds begin
+            sm = sh[1]
+            nf_scalars[1] = sm
+            nf_scalars[2] = (rho_t * sm)^2
+        end
+    end
+    return nothing
+end
+
+# Three-way bucket compaction of the direct pair list (mechanism c). Bucket
+# order within each third is atomic-claimed (nondeterministic), which is
+# admissible because the consuming kernels accumulate with atomics already.
+function _cuda_nearfield_bin_kernel!(bin_targets, bin_sources, bin_counts,
+        direct_targets, direct_sources, npairs, cell_coords, cell_sigma_max,
+        cell_sigma_min, h_leaf, rho_cut, capacity)
+    T = typeof(h_leaf)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > npairs && return nothing
+    @inbounds begin
+        t = direct_targets[i]
+        s = direct_sources[i]
+        ox = cell_coords[1, t] - cell_coords[1, s]
+        oy = cell_coords[2, t] - cell_coords[2, s]
+        oz = cell_coords[3, t] - cell_coords[3, s]
+        b = _nearfield_pair_bucket(ox, oy, oz, h_leaf, rho_cut,
+            T(cell_sigma_max[s]), T(cell_sigma_min[s]))
+        old = CUDA.@atomic bin_counts[b] += Int32(1)
+        pos = (Int(b) - 1) * capacity + Int(old) + 1
+        bin_targets[pos] = Int32(t)
+        bin_sources[pos] = Int32(s)
+    end
+    return nothing
+end
+
+# Warp-per-pair functor kernel over one compacted bucket: identical structure to
+# `_cuda_direct_pairs_functor_kernel!`, but the pair count is read from the
+# device bucket counters (it varies per step inside a captured graph, so it can
+# never be a baked host launch argument).
+function _cuda_direct_pairs_bucket_kernel!(kernel, output, source_bodies,
+        cell_ranges, bin_targets, bin_sources, bin_counts, bucket::Int32,
+        base::Int, ::Val{HS}) where HS
+    T = eltype(output)
+    ep = _emits_potential(kernel)
+    npairs = Int(@inbounds bin_counts[bucket])
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    pair_i = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    warp_stride = gridDim().x * warps_per_block
+    @inbounds while pair_i <= npairs
+        target_cell = Int(bin_targets[base + pair_i])
+        source_cell = Int(bin_sources[base + pair_i])
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + lane
+        while i <= tlast
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            u = zero(T)
+            gx = zero(T); gy = zero(T); gz = zero(T)
+            h1 = zero(T); h2 = zero(T); h3 = zero(T)
+            h4 = zero(T); h5 = zero(T); h6 = zero(T)
+            h7 = zero(T); h8 = zero(T); h9 = zero(T)
+            for j in sfirst:slast
+                i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                if r2 > zero(r2)
+                    invr = _cuda_fast_rsqrt(r2)
+                    if HS
+                        du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                            _direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
+                                source_bodies, j)
+                        u += du
+                        gx += dgx; gy += dgy; gz += dgz
+                        h1 += dh1; h2 += dh2; h3 += dh3
+                        h4 += dh4; h5 += dh5; h6 += dh6
+                        h7 += dh7; h8 += dh8; h9 += dh9
+                    else
+                        du, dgx, dgy, dgz = _direct_pair_ug(kernel, dx, dy, dz,
+                            r2, invr, source_bodies, j)
+                        u += du
+                        gx += dgx; gy += dgy; gz += dgz
+                    end
+                end
+            end
+            ep && (CUDA.@atomic output[1, i] += u)
+            CUDA.@atomic output[2, i] += gx
+            CUDA.@atomic output[3, i] += gy
+            CUDA.@atomic output[4, i] += gz
+            if HS
+                CUDA.@atomic output[5, i] += h1
+                CUDA.@atomic output[6, i] += h2
+                CUDA.@atomic output[7, i] += h3
+                CUDA.@atomic output[8, i] += h4
+                CUDA.@atomic output[9, i] += h5
+                CUDA.@atomic output[10, i] += h6
+                CUDA.@atomic output[11, i] += h7
+                CUDA.@atomic output[12, i] += h8
+                CUDA.@atomic output[13, i] += h9
+            end
+            i += 32
+        end
+        pair_i += warp_stride
+    end
+    return nothing
+end
+
+# 13-slot accumulator update shared by the ballot kernels (u slot stays zero —
+# the vortex kernels emit no scalar potential).
+@inline function _nf_acc(::Val{HS}, acc::NTuple{13,T}, dx, dy, dz, r2, invr,
+        gsx, gsy, gsz, g, h) where {HS,T}
+    if HS
+        v = _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
+        return (acc[1], acc[2] + v[2], acc[3] + v[3], acc[4] + v[4],
+            acc[5] + v[5], acc[6] + v[6], acc[7] + v[7], acc[8] + v[8],
+            acc[9] + v[9], acc[10] + v[10], acc[11] + v[11], acc[12] + v[12],
+            acc[13] + v[13])
+    else
+        v = _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
+        return (acc[1], acc[2] + v[2], acc[3] + v[3], acc[4] + v[4],
+            acc[5], acc[6], acc[7], acc[8], acc[9], acc[10], acc[11], acc[12],
+            acc[13])
+    end
+end
+
+# Drain one side of the per-lane queues: every lane streams its own compacted
+# source indices, so the math path is warp-uniform (REG selects it); lanes past
+# their own count idle, which is the drain-efficiency cost the diagnostics
+# report. Warp-converged by construction (the vote bounds the loop).
+@inline function _nf_queue_drain(::Val{HS}, ::Val{REG}, qbuf, tid, side::Int32,
+        cnt::Int32, xi, yi, zi, source_bodies, sigma_row::Int,
+        acc::NTuple{13,T}) where {HS,REG,T}
+    k = Int32(1)
+    while CUDA.vote_any_sync(0xffffffff, k <= cnt)
+        if k <= cnt
+            j = Int(@inbounds qbuf[k, side, tid])
+            @inbounds begin
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                invr = _cuda_fast_rsqrt(r2)
+                gsx = source_bodies[5, j]
+                gsy = source_bodies[6, j]
+                gsz = source_bodies[7, j]
+                g = one(T)
+                h = -T(3)
+                if REG
+                    g, h = _gaussianerf_g_h(r2 * invr / source_bodies[sigma_row, j])
+                end
+                acc = _nf_acc(Val(HS), acc, dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
+            end
+        end
+        k += Int32(1)
+    end
+    return acc
+end
+
+# Mechanism (b): warp-ballot queue kernel. Per (warp, source-body) instant the
+# lanes vote on the ρ ≤ cutoff predicate; branch-homogeneous instants evaluate
+# inline (no overhead beyond the votes), mixed instants defer their source index
+# into per-lane per-side shared-memory queues drained side-at-a-time, so the
+# expensive-vs-singular math is never predicated against itself. `bucket == 0`
+# streams the full direct list with the host count; a positive bucket streams a
+# compacted bucket with its device count. `diag` (Nothing in production)
+# accumulates the §6.3 homogeneity telemetry.
+function _cuda_direct_pairs_queue_kernel!(kernel, output, source_bodies,
+        cell_ranges, tgts, srcs, bin_counts, bucket::Int32, base::Int,
+        npairs_static::Int, ::Val{HS}, diag) where HS
+    T = eltype(output)
+    npairs = bucket == Int32(0) ? npairs_static : Int(@inbounds bin_counts[bucket])
+    sigma_row = kernel.sigma_row
+    cutoff = T(_pass1_regularized_cutoff(kernel))
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    pair_i = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    warp_stride = gridDim().x * warps_per_block
+    tid = threadIdx().x
+    qbuf = CUDA.CuStaticSharedArray(Int32, (_NF_QUEUE_CAP, 2, 128))
+    d_inst = UInt64(0); d_uni = UInt64(0); d_mixed = UInt64(0)
+    d_push = UInt64(0); d_drain = UInt64(0)
+    @inbounds while pair_i <= npairs
+        target_cell = Int(tgts[base + pair_i])
+        source_cell = Int(srcs[base + pair_i])
+        tfirst = cell_ranges[1, target_cell]
+        tcount = cell_ranges[2, target_cell]
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        nblk = (tcount + 31) ÷ 32
+        blk = 0
+        while blk < nblk
+            i = tfirst + blk * 32 + Int(lane)
+            has_i = i < tfirst + tcount
+            xi = zero(T); yi = zero(T); zi = zero(T)
+            if has_i
+                xi = source_bodies[1, i]
+                yi = source_bodies[2, i]
+                zi = source_bodies[3, i]
+            end
+            acc = (zero(T), zero(T), zero(T), zero(T), zero(T), zero(T), zero(T),
+                zero(T), zero(T), zero(T), zero(T), zero(T), zero(T))
+            cntR = Int32(0)
+            cntS = Int32(0)
+            j = sfirst
+            while j <= slast
+                xj = source_bodies[1, j]
+                yj = source_bodies[2, j]
+                zj = source_bodies[3, j]
+                dx = xi - xj
+                dy = yi - yj
+                dz = zi - zj
+                r2 = dx * dx + dy * dy + dz * dz
+                valid = has_i && i != j && r2 > zero(T)
+                invr = zero(T)
+                rho = zero(T)
+                pred_in = false
+                if valid
+                    invr = _cuda_fast_rsqrt(r2)
+                    sigma = source_bodies[sigma_row, j]
+                    if sigma > zero(T)
+                        rho = r2 * invr / sigma
+                        pred_in = rho <= cutoff
+                    end
+                end
+                mask_in = CUDA.vote_ballot_sync(0xffffffff, valid && pred_in)
+                mask_out = CUDA.vote_ballot_sync(0xffffffff, valid && !pred_in)
+                if diag !== nothing && lane == Int32(0) && (mask_in | mask_out) != 0x00000000
+                    d_inst += UInt64(1)
+                    if mask_in == 0x00000000 || mask_out == 0x00000000
+                        d_uni += UInt64(1)
+                    else
+                        d_mixed += UInt64(1)
+                    end
+                end
+                if mask_in == 0x00000000
+                    # uniform singular instant
+                    if valid
+                        gsx = source_bodies[5, j]
+                        gsy = source_bodies[6, j]
+                        gsz = source_bodies[7, j]
+                        acc = _nf_acc(Val(HS), acc, dx, dy, dz, r2, invr,
+                            gsx, gsy, gsz, one(T), -T(3))
+                    end
+                elseif mask_out == 0x00000000
+                    # uniform regularized instant
+                    if valid
+                        gsx = source_bodies[5, j]
+                        gsy = source_bodies[6, j]
+                        gsz = source_bodies[7, j]
+                        g, h = _gaussianerf_g_h(rho)
+                        acc = _nf_acc(Val(HS), acc, dx, dy, dz, r2, invr,
+                            gsx, gsy, gsz, g, h)
+                    end
+                else
+                    # mixed instant: defer into the per-lane queues
+                    if valid
+                        if pred_in
+                            cntR += Int32(1)
+                            qbuf[cntR, 1, tid] = Int32(j)
+                        else
+                            cntS += Int32(1)
+                            qbuf[cntS, 2, tid] = Int32(j)
+                        end
+                        diag === nothing || (d_push += UInt64(1))
+                    end
+                    if CUDA.vote_any_sync(0xffffffff, cntR == Int32(_NF_QUEUE_CAP))
+                        diag === nothing || (d_drain += UInt64(cntR))
+                        acc = _nf_queue_drain(Val(HS), Val(true), qbuf, tid,
+                            Int32(1), cntR, xi, yi, zi, source_bodies, sigma_row, acc)
+                        cntR = Int32(0)
+                    end
+                    if CUDA.vote_any_sync(0xffffffff, cntS == Int32(_NF_QUEUE_CAP))
+                        diag === nothing || (d_drain += UInt64(cntS))
+                        acc = _nf_queue_drain(Val(HS), Val(false), qbuf, tid,
+                            Int32(2), cntS, xi, yi, zi, source_bodies, sigma_row, acc)
+                        cntS = Int32(0)
+                    end
+                end
+                j += 1
+            end
+            if CUDA.vote_any_sync(0xffffffff, cntR > Int32(0))
+                diag === nothing || (d_drain += UInt64(cntR))
+                acc = _nf_queue_drain(Val(HS), Val(true), qbuf, tid, Int32(1),
+                    cntR, xi, yi, zi, source_bodies, sigma_row, acc)
+            end
+            if CUDA.vote_any_sync(0xffffffff, cntS > Int32(0))
+                diag === nothing || (d_drain += UInt64(cntS))
+                acc = _nf_queue_drain(Val(HS), Val(false), qbuf, tid, Int32(2),
+                    cntS, xi, yi, zi, source_bodies, sigma_row, acc)
+            end
+            if has_i
+                CUDA.@atomic output[2, i] += acc[2]
+                CUDA.@atomic output[3, i] += acc[3]
+                CUDA.@atomic output[4, i] += acc[4]
+                if HS
+                    CUDA.@atomic output[5, i] += acc[5]
+                    CUDA.@atomic output[6, i] += acc[6]
+                    CUDA.@atomic output[7, i] += acc[7]
+                    CUDA.@atomic output[8, i] += acc[8]
+                    CUDA.@atomic output[9, i] += acc[9]
+                    CUDA.@atomic output[10, i] += acc[10]
+                    CUDA.@atomic output[11, i] += acc[11]
+                    CUDA.@atomic output[12, i] += acc[12]
+                    CUDA.@atomic output[13, i] += acc[13]
+                end
+            end
+            blk += 1
+        end
+        pair_i += warp_stride
+    end
+    if diag !== nothing
+        if lane == Int32(0) && (d_inst | d_uni | d_mixed) != UInt64(0)
+            CUDA.@atomic diag[1] += d_inst
+            CUDA.@atomic diag[2] += d_uni
+            CUDA.@atomic diag[4] += d_mixed
+        end
+        if (d_push | d_drain) != UInt64(0)
+            CUDA.@atomic diag[7] += d_push
+            CUDA.@atomic diag[8] += d_drain
+        end
+    end
+    return nothing
+end
+
+# §6.3 homogeneity telemetry for the predicated kernels: replays the warp-per-
+# pair traversal computing only the ρ predicate ballots. diag (UInt64[8]):
+#   1 instants (warp × source × lane-block with ≥ 1 valid lane)
+#   2 branch-homogeneous instants   3 unused   4 mixed instants
+#   5 valid lane-pairs              6 regularized lane-pairs
+function _cuda_nearfield_divergence_kernel!(diag, source_bodies, cell_ranges,
+        tgts, srcs, base::Int, npairs::Int, sigma_row::Int, cutoff)
+    T = typeof(cutoff)
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    pair_i = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    warp_stride = gridDim().x * warps_per_block
+    d_inst = UInt64(0); d_uni = UInt64(0); d_mixed = UInt64(0)
+    d_valid = UInt64(0); d_reg = UInt64(0)
+    @inbounds while pair_i <= npairs
+        target_cell = Int(tgts[base + pair_i])
+        source_cell = Int(srcs[base + pair_i])
+        tfirst = cell_ranges[1, target_cell]
+        tcount = cell_ranges[2, target_cell]
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        nblk = (tcount + 31) ÷ 32
+        blk = 0
+        while blk < nblk
+            i = tfirst + blk * 32 + Int(lane)
+            has_i = i < tfirst + tcount
+            xi = zero(T); yi = zero(T); zi = zero(T)
+            if has_i
+                xi = T(source_bodies[1, i])
+                yi = T(source_bodies[2, i])
+                zi = T(source_bodies[3, i])
+            end
+            j = sfirst
+            while j <= slast
+                dx = xi - T(source_bodies[1, j])
+                dy = yi - T(source_bodies[2, j])
+                dz = zi - T(source_bodies[3, j])
+                r2 = dx * dx + dy * dy + dz * dz
+                valid = has_i && i != j && r2 > zero(T)
+                pred_in = false
+                if valid
+                    sigma = T(source_bodies[sigma_row, j])
+                    if sigma > zero(T)
+                        rho = r2 * _cuda_fast_rsqrt(r2) / sigma
+                        pred_in = rho <= cutoff
+                    end
+                end
+                mask_in = CUDA.vote_ballot_sync(0xffffffff, valid && pred_in)
+                mask_out = CUDA.vote_ballot_sync(0xffffffff, valid && !pred_in)
+                if lane == Int32(0) && (mask_in | mask_out) != 0x00000000
+                    d_inst += UInt64(1)
+                    if mask_in == 0x00000000 || mask_out == 0x00000000
+                        d_uni += UInt64(1)
+                    else
+                        d_mixed += UInt64(1)
+                    end
+                    d_valid += UInt64(count_ones(mask_in | mask_out))
+                    d_reg += UInt64(count_ones(mask_in))
+                end
+                j += 1
+            end
+            blk += 1
+        end
+        pair_i += warp_stride
+    end
+    if lane == Int32(0) && d_inst != UInt64(0)
+        CUDA.@atomic diag[1] += d_inst
+        CUDA.@atomic diag[2] += d_uni
+        CUDA.@atomic diag[4] += d_mixed
+        CUDA.@atomic diag[5] += d_valid
+        CUDA.@atomic diag[6] += d_reg
+    end
+    return nothing
+end
+
+# TwoPassVortex pass-2 deficit sweep (031a §6.1), device mirror of
+# `_host_twopass_deficit_kernel!`. Work item = (occupied leaf cell, offset-ball
+# entry); warp per item, grid-stride. The construction-built gap-ascending ball
+# is pruned per entry against the live device (rho_t σ_max)² scalar, so reach
+# coverage holds every step with no per-step list rebuild; entries whose
+# far-corner lies inside rho_c·σ_min(source cell) are skipped whole (all their
+# pairs are pass-1-complete). QUEUED drains shell pairs through the per-lane
+# ballot queue; otherwise the shell membership is predicated. APPLY=false skips
+# the output atomics (homogeneity telemetry only, diag slots 1/2/4).
+function _cuda_twopass_deficit_kernel!(kernel::TwoPassVortex, output,
+        source_bodies, cell_ranges, cell_coords, cell_sigma_min, cell_keys,
+        n_cells::Int, tp_offsets, tp_gap2, K::Int, nf_scalars, ell::Int,
+        h_leaf, ::Val{HS}, ::Val{QUEUED}, ::Val{APPLY}, diag) where {HS,QUEUED,APPLY}
+    T = eltype(output)
+    # the ball prune runs in Float64 so Float32 rounding can never exclude a
+    # boundary offset class the host sweep would visit
+    reach2 = @inbounds nf_scalars[2]
+    hl2d = Float64(h_leaf) * Float64(h_leaf)
+    hl2 = h_leaf * h_leaf
+    rho_c = T(kernel.rho_c)
+    rho_t = T(kernel.rho_t)
+    sigma_row = kernel.sigma_row
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    w = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    warp_stride = gridDim().x * warps_per_block
+    tid = threadIdx().x
+    qbuf = CUDA.CuStaticSharedArray(Int32, (_NF_QUEUE_CAP, 2, 128))
+    d_inst = UInt64(0); d_uni = UInt64(0); d_mixed = UInt64(0)
+    total = n_cells * K
+    G = 1 << ell
+    @inbounds while w <= total
+        cell = (w - 1) ÷ K + 1
+        k = (w - 1) % K + 1
+        gap2h = Float64(tp_gap2[k]) * hl2d
+        if gap2h <= reach2
+            sx = cell_coords[1, cell] + Int(tp_offsets[1, k])
+            sy = cell_coords[2, cell] + Int(tp_offsets[2, k])
+            sz = cell_coords[3, cell] + Int(tp_offsets[3, k])
+            if 0 <= sx < G && 0 <= sy < G && 0 <= sz < G
+                src = _cuda_cell_key_search(cell_keys, n_cells,
+                    _cuda_morton_key(sx, sy, sz, ell))
+                if src != 0
+                    # inner-core prune: farthest corner inside rho_c·σ_min ⇒
+                    # every pair is below the shell and pass-1-complete
+                    smin = T(cell_sigma_min[src])
+                    ox = Int(tp_offsets[1, k]); oy = Int(tp_offsets[2, k])
+                    oz = Int(tp_offsets[3, k])
+                    mx = T(abs(ox) + 1); my = T(abs(oy) + 1); mz = T(abs(oz) + 1)
+                    dmax2 = (mx * mx + my * my + mz * mz) * hl2
+                    core = smin > zero(T) && dmax2 <= (rho_c * smin)^2
+                    if !core
+                        tfirst = cell_ranges[1, cell]
+                        tcount = cell_ranges[2, cell]
+                        sfirst = cell_ranges[1, src]
+                        slast = sfirst + cell_ranges[2, src] - 1
+                        nblk = (tcount + 31) ÷ 32
+                        blk = 0
+                        while blk < nblk
+                            i = tfirst + blk * 32 + Int(lane)
+                            has_i = i < tfirst + tcount
+                            xi = zero(T); yi = zero(T); zi = zero(T)
+                            if has_i
+                                xi = source_bodies[1, i]
+                                yi = source_bodies[2, i]
+                                zi = source_bodies[3, i]
+                            end
+                            acc = (zero(T), zero(T), zero(T), zero(T), zero(T),
+                                zero(T), zero(T), zero(T), zero(T), zero(T),
+                                zero(T), zero(T), zero(T))
+                            cntQ = Int32(0)
+                            j = sfirst
+                            while j <= slast
+                                dx = xi - source_bodies[1, j]
+                                dy = yi - source_bodies[2, j]
+                                dz = zi - source_bodies[3, j]
+                                r2 = dx * dx + dy * dy + dz * dz
+                                valid = has_i && i != j && r2 > zero(T)
+                                invr = zero(T)
+                                rho = zero(T)
+                                in_shell = false
+                                if valid
+                                    invr = _cuda_fast_rsqrt(r2)
+                                    sigma = source_bodies[sigma_row, j]
+                                    if sigma > zero(T)
+                                        rho = r2 * invr / sigma
+                                        in_shell = rho_c < rho <= rho_t
+                                    end
+                                end
+                                if QUEUED || diag !== nothing
+                                    mask_sh = CUDA.vote_ballot_sync(0xffffffff,
+                                        valid && in_shell)
+                                    mask_no = CUDA.vote_ballot_sync(0xffffffff,
+                                        valid && !in_shell)
+                                    if diag !== nothing && lane == Int32(0) &&
+                                            (mask_sh | mask_no) != 0x00000000
+                                        d_inst += UInt64(1)
+                                        if mask_sh == 0x00000000 || mask_no == 0x00000000
+                                            d_uni += UInt64(1)
+                                        else
+                                            d_mixed += UInt64(1)
+                                        end
+                                    end
+                                    if QUEUED
+                                        if mask_sh != 0x00000000
+                                            if mask_no == 0x00000000
+                                                # uniform shell instant: inline
+                                                if valid && in_shell
+                                                    acc = _nf_twopass_acc(Val(HS),
+                                                        acc, dx, dy, dz, r2, invr,
+                                                        rho, source_bodies, j)
+                                                end
+                                            else
+                                                if valid && in_shell
+                                                    cntQ += Int32(1)
+                                                    qbuf[cntQ, 1, tid] = Int32(j)
+                                                end
+                                                if CUDA.vote_any_sync(0xffffffff,
+                                                        cntQ == Int32(_NF_QUEUE_CAP))
+                                                    acc = _nf_twopass_drain(Val(HS),
+                                                        qbuf, tid, cntQ, xi, yi, zi,
+                                                        source_bodies, sigma_row,
+                                                        rho_c, rho_t, acc)
+                                                    cntQ = Int32(0)
+                                                end
+                                            end
+                                        end
+                                    end
+                                end
+                                if !QUEUED
+                                    if valid && in_shell
+                                        acc = _nf_twopass_acc(Val(HS), acc, dx, dy,
+                                            dz, r2, invr, rho, source_bodies, j)
+                                    end
+                                end
+                                j += 1
+                            end
+                            if QUEUED && CUDA.vote_any_sync(0xffffffff, cntQ > Int32(0))
+                                acc = _nf_twopass_drain(Val(HS), qbuf, tid, cntQ,
+                                    xi, yi, zi, source_bodies, sigma_row, rho_c,
+                                    rho_t, acc)
+                            end
+                            if APPLY && has_i
+                                CUDA.@atomic output[2, i] += acc[2]
+                                CUDA.@atomic output[3, i] += acc[3]
+                                CUDA.@atomic output[4, i] += acc[4]
+                                if HS
+                                    CUDA.@atomic output[5, i] += acc[5]
+                                    CUDA.@atomic output[6, i] += acc[6]
+                                    CUDA.@atomic output[7, i] += acc[7]
+                                    CUDA.@atomic output[8, i] += acc[8]
+                                    CUDA.@atomic output[9, i] += acc[9]
+                                    CUDA.@atomic output[10, i] += acc[10]
+                                    CUDA.@atomic output[11, i] += acc[11]
+                                    CUDA.@atomic output[12, i] += acc[12]
+                                    CUDA.@atomic output[13, i] += acc[13]
+                                end
+                            end
+                            blk += 1
+                        end
+                    end
+                end
+            end
+        end
+        w += warp_stride
+    end
+    if diag !== nothing && lane == Int32(0) && d_inst != UInt64(0)
+        CUDA.@atomic diag[1] += d_inst
+        CUDA.@atomic diag[2] += d_uni
+        CUDA.@atomic diag[4] += d_mixed
+    end
+    return nothing
+end
+
+# §6.1 deficit accumulation for one shell pair: effective (g, h) = (−ḡ, ρg′+3ḡ)
+# through the shared vortex assembly (see `_twopass_deficit_gh`).
+@inline function _nf_twopass_acc(::Val{HS}, acc::NTuple{13,T}, dx, dy, dz, r2,
+        invr, rho, source_bodies, j) where {HS,T}
+    gbar, rhogp = _gaussianerf_gbar_rhogp(rho)
+    @inbounds begin
+        gsx = source_bodies[5, j]
+        gsy = source_bodies[6, j]
+        gsz = source_bodies[7, j]
+    end
+    return _nf_acc(Val(HS), acc, dx, dy, dz, r2, invr, gsx, gsy, gsz,
+        -gbar, muladd(T(3), gbar, rhogp))
+end
+
+@inline function _nf_twopass_drain(::Val{HS}, qbuf, tid, cnt::Int32, xi, yi, zi,
+        source_bodies, sigma_row::Int, rho_c::T, rho_t::T,
+        acc::NTuple{13,T}) where {HS,T}
+    k = Int32(1)
+    while CUDA.vote_any_sync(0xffffffff, k <= cnt)
+        if k <= cnt
+            j = Int(@inbounds qbuf[k, 1, tid])
+            @inbounds begin
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                invr = _cuda_fast_rsqrt(r2)
+                rho = r2 * invr / source_bodies[sigma_row, j]
+            end
+            acc = _nf_twopass_acc(Val(HS), acc, dx, dy, dz, r2, invr, rho,
+                source_bodies, j)
+        end
+        k += Int32(1)
+    end
+    return acc
+end
+
 # One warp per compact entry. Positive target ids denote an unordered cell pair;
 # negative ids retain an oversized directed fallback entry. Cross-cell and
 # triangular same-cell branches evaluate each ordinary body pair once and update
@@ -3538,6 +4293,15 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
         hctx isa DeviceHierarchicalM2LContext
     symmetric && isempty(hctx.symmetric_targets) && throw(ArgumentError(
         "symmetric nearfield must be selected before cache construction"))
+    # task 032a stage C: split vortex kernels route through the binned pair
+    # stream when the cache carries the nearfield bin context (hierarchical
+    # policy); flat-policy caches fall back to the unbinned functor kernel
+    nfctx = _nearfield_bin_ctx(state)
+    if dk isa Union{PartitionedVortex,TwoPassVortex} && nfctx !== nothing
+        _launch_cuda_split_nearfield!(state, nfctx::CUDANearfieldBinContext, dk,
+            hsv, threads)
+        return state
+    end
     npairs = symmetric ? hctx.n_symmetric_pairs : state.counts.n_direct
     # warp-per-pair (task 028 lever 1): 4 warps per 128-thread block
     direct_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
@@ -3553,6 +4317,193 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
         end
     end
     return state
+end
+
+# Function barrier over the Any-typed bin-context arrays: every recurring
+# launch below is a device kernel on the current stream (capture-safe, zero
+# allocation, no transfers).
+function _launch_cuda_split_nearfield!(state::DeviceResidentRadixState,
+        nfctx::CUDANearfieldBinContext, dk::Union{PartitionedVortex,TwoPassVortex},
+        hsv, threads::Int)
+    return _launch_cuda_split_nearfield_typed!(state, dk, hsv, threads, nfctx,
+        nfctx.cell_sigma_max, nfctx.cell_sigma_min, nfctx.nf_scalars,
+        nfctx.bin_targets, nfctx.bin_sources, nfctx.bin_counts, nfctx.cell_coords,
+        nfctx.twopass_offsets, nfctx.twopass_gap2)
+end
+
+function _launch_cuda_split_nearfield_typed!(state::DeviceResidentRadixState{TF,B,LH},
+        dk::Union{PartitionedVortex,TwoPassVortex}, hsv::Val, threads::Int,
+        nfctx::CUDANearfieldBinContext, cell_sigma_max, cell_sigma_min, nf_scalars,
+        bin_targets, bin_sources, bin_counts, cell_coords, tp_offsets,
+        tp_gap2) where {TF,B,LH}
+    npairs = state.counts.n_direct
+    n_cells = state.counts.n_cells
+    mode = CUDA_NEARFIELD_BINNING[]
+    mode in (:unbinned, :classsplit, :ballot, :classsplit_ballot) ||
+        throw(ArgumentError(
+            "CUDA_NEARFIELD_BINNING must be :unbinned, :classsplit, :ballot, " *
+            "or :classsplit_ballot; got $mode"))
+    twopass = dk isa TwoPassVortex
+    classsplit = mode === :classsplit || mode === :classsplit_ballot
+    h_leaf = TF(nfctx.h_leaf)
+    cutoff = TF(_pass1_regularized_cutoff(dk))
+    if (classsplit || twopass) && n_cells > 0
+        CUDA.@cuda threads=256 blocks=cld(n_cells, 256) _cuda_cell_sigma_kernel!(
+            cell_sigma_max, cell_sigma_min, state.source_bodies, state.cell_ranges,
+            dk.sigma_row, n_cells)
+        CUDA.@cuda threads=256 blocks=1 _cuda_nf_scalars_kernel!(
+            nf_scalars, cell_sigma_max, n_cells, dk.rho_t)
+    end
+    direct_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+    if direct_blocks > 0
+        if classsplit
+            fill!(bin_counts, Int32(0))
+            CUDA.@cuda threads=256 blocks=cld(npairs, 256) _cuda_nearfield_bin_kernel!(
+                bin_targets, bin_sources, bin_counts, state.direct_targets,
+                state.direct_sources, npairs, cell_coords, cell_sigma_max,
+                cell_sigma_min, h_leaf, cutoff, nfctx.capacity)
+            cap = nfctx.capacity
+            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_bucket_kernel!(
+                SingularVortex(), state.output, state.source_bodies,
+                state.cell_ranges, bin_targets, bin_sources, bin_counts,
+                Int32(1), 0, hsv)
+            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_bucket_kernel!(
+                RegularizedVortex(; sigma_row=dk.sigma_row, rho_t=dk.rho_t),
+                state.output, state.source_bodies, state.cell_ranges,
+                bin_targets, bin_sources, bin_counts, Int32(2), cap, hsv)
+            if mode === :classsplit_ballot
+                CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_queue_kernel!(
+                    dk, state.output, state.source_bodies, state.cell_ranges,
+                    bin_targets, bin_sources, bin_counts, Int32(3), 2 * cap, 0,
+                    hsv, nothing)
+            else
+                CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_bucket_kernel!(
+                    dk, state.output, state.source_bodies, state.cell_ranges,
+                    bin_targets, bin_sources, bin_counts, Int32(3), 2 * cap, hsv)
+            end
+        elseif mode === :ballot
+            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_queue_kernel!(
+                dk, state.output, state.source_bodies, state.cell_ranges,
+                state.direct_targets, state.direct_sources, bin_counts, Int32(0),
+                0, npairs, hsv, nothing)
+        else # :unbinned — the §6.3 negative control
+            CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_functor_kernel!(
+                dk, state.output, state.source_bodies, state.cell_ranges,
+                state.direct_targets, state.direct_sources, npairs, hsv)
+        end
+    end
+    if twopass && n_cells > 0 && nfctx.twopass_K > 0
+        total = n_cells * nfctx.twopass_K
+        blocks2 = min(cld(total, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+        CUDA.@cuda threads=threads blocks=blocks2 _cuda_twopass_deficit_kernel!(
+            dk, state.output, state.source_bodies, state.cell_ranges, cell_coords,
+            cell_sigma_min, state.grid.cell_keys, n_cells, tp_offsets, tp_gap2,
+            nfctx.twopass_K, nf_scalars, state.grid.ell, h_leaf, hsv,
+            Val(CUDA_TWOPASS_PASS2_QUEUED[]), Val(true), nothing)
+    end
+    return state
+end
+
+"""
+    cuda_nearfield_homogeneity(state; stream=:all)
+
+Diagnostic (031a §6.3 deliverable): measure the achieved warp branch
+homogeneity of the split-kernel pair stream as currently ordered, by replaying
+the warp-per-pair traversal with predicate ballots only. `stream` selects
+`:all` (the full direct list against the pass-1 cutoff) or `:mixed` (the mixed
+bucket after a fresh classification — requires a classsplit-capable cache).
+Returns a NamedTuple of instant counts and fractions. Synchronizes; never part
+of the recurring step.
+"""
+function cuda_nearfield_homogeneity(state::DeviceResidentRadixState{TF};
+        stream::Symbol=:all) where TF
+    dk = state.options.direct_kernel
+    dk isa Union{PartitionedVortex,TwoPassVortex} || throw(ArgumentError(
+        "cuda_nearfield_homogeneity requires a split direct kernel; got $(typeof(dk))"))
+    nfctx = _nearfield_bin_ctx(state)
+    nfctx === nothing && throw(ArgumentError(
+        "cuda_nearfield_homogeneity requires the hierarchical nearfield bin context"))
+    diag = nfctx.diag
+    fill!(diag, UInt64(0))
+    npairs = state.counts.n_direct
+    n_cells = state.counts.n_cells
+    threads = 128
+    cutoff = TF(_pass1_regularized_cutoff(dk))
+    if stream === :all
+        tgts, srcs, base, n = state.direct_targets, state.direct_sources, 0, npairs
+    elseif stream === :mixed
+        n_cells > 0 || return _nf_homogeneity_result(diag)
+        CUDA.@cuda threads=256 blocks=cld(n_cells, 256) _cuda_cell_sigma_kernel!(
+            nfctx.cell_sigma_max, nfctx.cell_sigma_min, state.source_bodies,
+            state.cell_ranges, dk.sigma_row, n_cells)
+        fill!(nfctx.bin_counts, Int32(0))
+        npairs > 0 && CUDA.@cuda threads=256 blocks=cld(npairs, 256) _cuda_nearfield_bin_kernel!(
+            nfctx.bin_targets, nfctx.bin_sources, nfctx.bin_counts,
+            state.direct_targets, state.direct_sources, npairs, nfctx.cell_coords,
+            nfctx.cell_sigma_max, nfctx.cell_sigma_min, TF(nfctx.h_leaf), cutoff,
+            nfctx.capacity)
+        counts = Array(nfctx.bin_counts)
+        tgts, srcs, base, n = nfctx.bin_targets, nfctx.bin_sources,
+            2 * nfctx.capacity, Int(counts[3])
+    else
+        throw(ArgumentError("stream must be :all or :mixed; got $stream"))
+    end
+    if n > 0
+        blocks = min(cld(n, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+        CUDA.@cuda threads=threads blocks=blocks _cuda_nearfield_divergence_kernel!(
+            diag, state.source_bodies, state.cell_ranges, tgts, srcs, base, n,
+            dk.sigma_row, cutoff)
+    end
+    CUDA.synchronize()
+    return _nf_homogeneity_result(diag)
+end
+
+function _nf_homogeneity_result(diag)
+    d = Array(diag)
+    instants = Int(d[1]); uniform = Int(d[2]); mixed = Int(d[4])
+    lanes_valid = Int(d[5]); lanes_reg = Int(d[6])
+    return (; instants, uniform, mixed,
+        homogeneous_fraction=instants == 0 ? 1.0 : uniform / instants,
+        lanes_valid, lanes_reg,
+        regularized_fraction=lanes_valid == 0 ? 0.0 : lanes_reg / lanes_valid,
+        queue_pushes=Int(d[7]), queue_drained=Int(d[8]))
+end
+
+"""
+    cuda_twopass_shell_homogeneity(state)
+
+Diagnostic: warp homogeneity of the `TwoPassVortex` pass-2 shell predicate over
+the deficit sweep traversal (telemetry-only launch; output untouched).
+"""
+function cuda_twopass_shell_homogeneity(state::DeviceResidentRadixState{TF}) where TF
+    dk = state.options.direct_kernel
+    dk isa TwoPassVortex || throw(ArgumentError(
+        "cuda_twopass_shell_homogeneity requires TwoPassVortex; got $(typeof(dk))"))
+    nfctx = _nearfield_bin_ctx(state)
+    nfctx === nothing && throw(ArgumentError(
+        "cuda_twopass_shell_homogeneity requires the hierarchical nearfield bin context"))
+    n_cells = state.counts.n_cells
+    diag = nfctx.diag
+    fill!(diag, UInt64(0))
+    threads = 128
+    hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
+    if n_cells > 0 && nfctx.twopass_K > 0
+        CUDA.@cuda threads=256 blocks=cld(n_cells, 256) _cuda_cell_sigma_kernel!(
+            nfctx.cell_sigma_max, nfctx.cell_sigma_min, state.source_bodies,
+            state.cell_ranges, dk.sigma_row, n_cells)
+        CUDA.@cuda threads=256 blocks=1 _cuda_nf_scalars_kernel!(
+            nfctx.nf_scalars, nfctx.cell_sigma_max, n_cells, dk.rho_t)
+        total = n_cells * nfctx.twopass_K
+        blocks2 = min(cld(total, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+        CUDA.@cuda threads=threads blocks=blocks2 _cuda_twopass_deficit_kernel!(
+            dk, state.output, state.source_bodies, state.cell_ranges,
+            nfctx.cell_coords, nfctx.cell_sigma_min, state.grid.cell_keys,
+            n_cells, nfctx.twopass_offsets, nfctx.twopass_gap2, nfctx.twopass_K,
+            nfctx.nf_scalars, state.grid.ell, TF(nfctx.h_leaf), hsv,
+            Val(false), Val(false), diag)
+    end
+    CUDA.synchronize()
+    return _nf_homogeneity_result(diag)
 end
 
 # fill + nearfield on the side stream; returns the event L2B must wait on
@@ -4443,6 +5394,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
             _cuda_counting_sort_enabled(ell) ? 1 << (3ell) : 1),
         body_flags=CUDA.zeros(Int, maxn),
         body_prefix=CUDA.zeros(Int, maxn),
+        # 032a stage C mechanism (a): per-sorted-position sub-Morton keys
+        subsort_keys=CUDA.zeros(UInt32, maxn),
         cell_coords=CUDA.zeros(Int, 3, max_cells),
         level_keys=CUDA.zeros(UInt64, max_cells, ell + 1),
         level_flags=CUDA.zeros(Int, max_cells, ell + 1),
@@ -4495,6 +5448,15 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
     if hierarchical_ctx !== nothing && !isempty(hierarchical_ctx.symmetric_targets)
         CUDA.enable_synchronization!(hierarchical_ctx.symmetric_targets, false)
         CUDA.enable_synchronization!(hierarchical_ctx.symmetric_sources, false)
+    end
+    # 032a stage C: split vortex kernels get the binned-pair-stream scratch on
+    # the hierarchical context (flat-policy caches fall back to unbinned; a
+    # flat-policy TwoPassVortex cache was already refused at construction)
+    if hierarchical_ctx !== nothing &&
+            options.direct_kernel isa Union{PartitionedVortex,TwoPassVortex}
+        hierarchical_ctx.nearfield = _build_cuda_nearfield_bin_context(TF,
+            options.direct_kernel, stencil_policy, accepted, ell, h0, max_cells,
+            direct_capacity, ctx, counters)
     end
     cache = RadixFMMCache{TF,LH}(
         P, ell, x_min, h0, maxn, true, hessian, options, stencil_policy,
@@ -4751,6 +5713,14 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
     if profiling
         CUDA.synchronize()
         hctx.update_stage_ns[1] = time_ns() - t_stage
+    end
+
+    # 032a stage C mechanism (a): optional within-cell sub-Morton ordering,
+    # composed into the perm before packing (device kernels only; the sorted
+    # cell keys, cell ranges, and node metadata are unaffected)
+    if CUDA_NEARFIELD_SUBSORT[] &&
+            cache.options.direct_kernel isa Union{PartitionedVortex,TwoPassVortex}
+        _cuda_nearfield_subsort!(ctx, cache, n, n_cells)
     end
 
     _pack_radix_body_matrix!(ctx.source_bodies, source_buffers, view(grid.perm, 1:n),
@@ -6044,7 +7014,167 @@ function _build_cuda_hierarchical_context(::Type{TF}, basis_info::OperatorBasisI
         # generated lazily on the first refresh/lifecycle of each epoch)
         0, 0, false, zeros(Int, ell + 2), zeros(Int, ell + 2),
         nothing, nothing, nothing, nothing, -1, -1,
+        # 032a stage C nearfield bin context: attached after the update context
+        # exists (it shares the update context's cell_coords/subsort scratch)
+        nothing,
     )
+end
+
+# Build the task-032a Stage C nearfield bin context for a split direct kernel on
+# a hierarchical device cache. All storage is construction-sized: three bucket
+# thirds at the direct-pair capacity (Int32 cell ids), max_cells σ extrema, and
+# the TwoPassVortex pass-2 offset ball at its gate-derived reach capacity
+# (rho_t/rho_c)·g_min cells (see `_twopass_offset_ball`). The one construction
+# upload (the offset ball) is counted as a route upload; the recurring step
+# performs no transfer. Implicit per-array cross-stream synchronization is
+# disabled for everything the side-stream nearfield touches (see the
+# CUDA_OVERLAP_NEARFIELD comment block — orderings are event-based, and
+# implicit sync is illegal inside stream capture).
+function _build_cuda_nearfield_bin_context(::Type{TF},
+        dk::Union{PartitionedVortex,TwoPassVortex}, policy, accepted,
+        ell::Int, h0, max_cells::Int, direct_capacity::Int, ctx,
+        counters::CUDARadixTransferCounters) where TF
+    h_leaf = 2 * Float64(h0) / (1 << ell)
+    cap = direct_capacity
+    if dk isa TwoPassVortex
+        g_min = _leaf_stencil_min_gap(policy, accepted)
+        reach_cap = (dk.rho_t / dk.rho_c) * g_min
+        host_offsets, host_gap2 = _twopass_offset_ball(reach_cap)
+        tp_offsets = CUDA.CuArray{Int32}(host_offsets)
+        tp_gap2 = CUDA.CuArray{Int32}(host_gap2)
+        counters.route_uploads += 1
+        K = length(host_gap2)
+    else
+        tp_offsets = CUDA.zeros(Int32, 3, 0)
+        tp_gap2 = CUDA.zeros(Int32, 0)
+        K = 0
+        reach_cap = 0.0
+    end
+    nf = CUDANearfieldBinContext(
+        CUDA.zeros(TF, max_cells), CUDA.zeros(TF, max_cells),
+        CUDA.zeros(Float64, 2),
+        CUDA.zeros(Int32, 3 * cap), CUDA.zeros(Int32, 3 * cap),
+        CUDA.zeros(Int32, 3), cap,
+        ctx.cell_coords, h_leaf,
+        tp_offsets, tp_gap2, K, reach_cap,
+        ctx.subsort_keys, CUDA.zeros(UInt64, 8))
+    for arr in (nf.cell_sigma_max, nf.cell_sigma_min, nf.nf_scalars,
+            nf.bin_targets, nf.bin_sources, nf.bin_counts, nf.diag,
+            ctx.cell_coords, ctx.grid.cell_keys)
+        CUDA.enable_synchronization!(arr, false)
+    end
+    if K > 0
+        CUDA.enable_synchronization!(nf.twopass_offsets, false)
+        CUDA.enable_synchronization!(nf.twopass_gap2, false)
+    end
+    return nf
+end
+
+# Mechanism (a): compose a within-cell sub-Morton ordering into `grid.perm`
+# after the sort and before body packing, so consecutive sorted bodies (= warp
+# lanes) span a compact spatial sub-block of their cell. Cells larger than the
+# shared-memory sort capacity (1024) keep their unspecified order — the
+# mechanism is an approximate-coherence lever, not a correctness requirement.
+function _cuda_nearfield_subsort!(ctx, cache::RadixFMMCache, n::Int, n_cells::Int)
+    sub = min(3, RADIX_GRID_MAX_ELL - cache.ell)
+    (sub > 0 && n > 0 && n_cells > 0) || return nothing
+    grid = ctx.grid
+    threads = 128
+    blocks = cld(n, threads)
+    CUDA.@cuda threads=threads blocks=blocks _cuda_subsort_keys_kernel!(
+        ctx.subsort_keys, ctx.positions, grid.perm, cache.x_min, cache.h0,
+        cache.ell, sub, n)
+    CUDA.@cuda threads=256 blocks=min(n_cells, 8192) _cuda_subsort_cell_sort_kernel!(
+        grid.perm, ctx.subsort_keys, grid.cell_ranges, n_cells)
+    pv = view(grid.perm, 1:n)
+    CUDA.@cuda threads=threads blocks=blocks _cuda_fill_invperm_kernel!(
+        grid.invperm, pv)
+    return nothing
+end
+
+# Per-sorted-position sub-Morton key: the body's Morton bits below the leaf
+# level, at `sub` extra levels of resolution (positions are inside the fixed
+# box by the oob gate that already ran this step).
+function _cuda_subsort_keys_kernel!(subsort_keys, positions, perm, x_min, h0,
+        ell, sub, n)
+    p = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    p > n && return nothing
+    @inbounds begin
+        b = perm[p]
+        Gs = 1 << (ell + sub)
+        m = (1 << sub) - 1
+        T = eltype(positions)
+        delta = (2 * h0) / T(Gs)
+        cx = min(max(unsafe_trunc(Int32, (positions[1, b] - x_min[1]) / delta),
+            Int32(0)), Int32(Gs - 1)) & Int32(m)
+        cy = min(max(unsafe_trunc(Int32, (positions[2, b] - x_min[2]) / delta),
+            Int32(0)), Int32(Gs - 1)) & Int32(m)
+        cz = min(max(unsafe_trunc(Int32, (positions[3, b] - x_min[3]) / delta),
+            Int32(0)), Int32(Gs - 1)) & Int32(m)
+        key = UInt32(0)
+        bit = 0
+        while bit < sub
+            key |= (UInt32((cx >> bit) & Int32(1)) << (3 * bit))
+            key |= (UInt32((cy >> bit) & Int32(1)) << (3 * bit + 1))
+            key |= (UInt32((cz >> bit) & Int32(1)) << (3 * bit + 2))
+            bit += 1
+        end
+        subsort_keys[p] = key
+    end
+    return nothing
+end
+
+# Block-per-cell odd-even transposition sort of the perm segment by sub-key in
+# shared memory (capacity 1024 bodies; larger cells are skipped). The condition
+# is uniform per block, so the barriers are safe.
+function _cuda_subsort_cell_sort_kernel!(perm, subsort_keys, cell_ranges, n_cells)
+    keys_sh = CUDA.CuStaticSharedArray(UInt32, 1024)
+    perm_sh = CUDA.CuStaticSharedArray(Int64, 1024)
+    cell = Int(blockIdx().x)
+    stride = Int(gridDim().x)
+    nt = Int(blockDim().x)
+    t = Int(threadIdx().x)
+    @inbounds while cell <= n_cells
+        first = cell_ranges[1, cell]
+        cnt = cell_ranges[2, cell]
+        if 1 < cnt <= 1024
+            idx = t
+            while idx <= cnt
+                keys_sh[idx] = subsort_keys[first + idx - 1]
+                perm_sh[idx] = perm[first + idx - 1]
+                idx += nt
+            end
+            CUDA.sync_threads()
+            phase = 0
+            while phase < cnt
+                base = 1 + (phase & 1)
+                idx = base + 2 * (t - 1)
+                while idx <= cnt - 1
+                    ka = keys_sh[idx]
+                    kb = keys_sh[idx + 1]
+                    if kb < ka
+                        keys_sh[idx] = kb
+                        keys_sh[idx + 1] = ka
+                        pa = perm_sh[idx]
+                        perm_sh[idx] = perm_sh[idx + 1]
+                        perm_sh[idx + 1] = pa
+                    end
+                    idx += 2 * nt
+                end
+                CUDA.sync_threads()
+                phase += 1
+            end
+            idx = t
+            while idx <= cnt
+                subsort_keys[first + idx - 1] = keys_sh[idx]
+                perm[first + idx - 1] = perm_sh[idx]
+                idx += nt
+            end
+            CUDA.sync_threads()
+        end
+        cell += stride
+    end
+    return nothing
 end
 
 # Int32 entry count of the dense per-level `node_at` lookup, or 0 when the

@@ -1547,17 +1547,89 @@ end
 # binds only at the leaf level (theory §5.1: ρ_tσ/h halves with each level up
 # while the coarse-level gap in leaf units doubles), so coarser levels of the
 # hierarchical schedule need no separate check.
-function _leaf_stencil_min_gap(cache::RadixFMMCache)
-    policy = cache.policy
+function _leaf_stencil_min_gap(policy, accepted_offsets)
     policy isa HierarchicalRigidStencil && return _ball_stencil_min_gap(
         isempty(policy.level_radii2) ? policy.near_radius2 : policy.level_radii2[end])
     # flat analytic stencil: the direct set is `rejected_offsets`, so the binding
     # M2L pair is the closest accepted offset class
     best = Inf
-    for o in cache.accepted_offsets
+    for o in accepted_offsets
         best = min(best, _offset_gap2(o))
     end
     return sqrt(best)
+end
+
+_leaf_stencil_min_gap(cache::RadixFMMCache) =
+    _leaf_stencil_min_gap(cache.policy, cache.accepted_offsets)
+
+#------- distance-binned nearfield pair stream (task 032a stage C) -------#
+#
+# Shared bucket rule for the §6.3 class-level pre-split (mechanism c): a direct
+# cell pair at integer offset (ox, oy, oz) is classified from its AABB distance
+# extrema against the source cell's σ extrema. The pure buckets are exactly the
+# pairs whose *every* body pair falls on one side of the ρ = r/σ_src cutoff, so
+# the branch-free kernels applied to them are bitwise the split kernel's own
+# branch outcome; the mixed bucket keeps the predicated (or queued) kernel.
+# Pure Julia arithmetic — shared verbatim by the host reference/tests and the
+# CUDA classification kernel.
+#
+#   1 = pure singular:    d_min > rho_cut · σ_max(source cell)   (or σ_max ≤ 0)
+#   2 = pure regularized: d_max ≤ rho_cut · σ_min(source cell) and σ_min > 0
+#   3 = mixed
+#
+# d_min/d_max are the exact axis-aligned cell-AABB distance extrema at lattice
+# offset o with cube cell size h: per axis max(|o_q|−1, 0)·h and (|o_q|+1)·h.
+@inline function _nearfield_pair_bucket(ox::Integer, oy::Integer, oz::Integer,
+        h_leaf::T, rho_cut::T, sigma_max_s::T, sigma_min_s::T) where T<:AbstractFloat
+    gx = T(max(abs(ox) - 1, 0)); mx = T(abs(ox) + 1)
+    gy = T(max(abs(oy) - 1, 0)); my = T(abs(oy) + 1)
+    gz = T(max(abs(oz) - 1, 0)); mz = T(abs(oz) + 1)
+    h2 = h_leaf * h_leaf
+    dmin2 = (gx * gx + gy * gy + gz * gz) * h2
+    dmax2 = (mx * mx + my * my + mz * mz) * h2
+    if !(sigma_max_s > zero(T))
+        return Int32(1)
+    end
+    cmax = rho_cut * sigma_max_s
+    dmin2 > cmax * cmax && return Int32(1)
+    if sigma_min_s > zero(T)
+        cmin = rho_cut * sigma_min_s
+        dmax2 <= cmin * cmin && return Int32(2)
+    end
+    return Int32(3)
+end
+
+# Construction-sized compacted offset ball for the device TwoPassVortex pass-2
+# sweep (Stage-B open risk): every integer offset with lattice gap
+# gap(o) = √Σ max(|o_q|−1, 0)² ≤ reach_cap_cells, sorted gap-ascending so the
+# live ball {o : gap(o)·h_leaf ≤ rho_t·σ_max} is always a prefix-selectable
+# subset (the deficit kernel tests gap²·h² ≤ (rho_t·σ_max)² per entry from the
+# device σ_max scalar — no per-step list rebuild). The capacity reach is
+# gate-derived: pass-1 adequacy asserts rho_c·σ_max < g_min·h_leaf per step,
+# so rho_t·σ_max < (rho_t/rho_c)·g_min·h_leaf ≡ reach_cap_cells·h_leaf always.
+function _twopass_offset_ball(reach_cap_cells::Float64)
+    reach_cap_cells >= 0 || throw(ArgumentError("reach_cap_cells must be nonnegative"))
+    R = floor(Int, reach_cap_cells) + 1
+    offs = NTuple{3,Int}[]
+    gap2s = Int[]
+    cap2 = reach_cap_cells * reach_cap_cells
+    for oz in -R:R, oy in -R:R, ox in -R:R
+        g2 = max(abs(ox) - 1, 0)^2 + max(abs(oy) - 1, 0)^2 + max(abs(oz) - 1, 0)^2
+        g2 <= cap2 || continue
+        push!(offs, (ox, oy, oz))
+        push!(gap2s, g2)
+    end
+    p = sortperm(gap2s)
+    K = length(p)
+    offsets = Matrix{Int32}(undef, 3, K)
+    gap2 = Vector{Int32}(undef, K)
+    for (k, idx) in enumerate(p)
+        offsets[1, k] = Int32(offs[idx][1])
+        offsets[2, k] = Int32(offs[idx][2])
+        offsets[3, k] = Int32(offs[idx][3])
+        gap2[k] = Int32(gap2s[idx])
+    end
+    return offsets, gap2
 end
 
 _direct_kernel_geometry_gate!(cache::RadixFMMCache, ::AbstractDirectKernel,
@@ -1581,7 +1653,10 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
     h_leaf = 2 * Float64(cache.h0) / (1 << cache.ell)
     rho_reach, rho_name = _gate_reach_rho(kernel)
     cutoff = rho_reach * sigma_max
-    g_min * h_leaf > cutoff && return nothing
+    if g_min * h_leaf > cutoff
+        _twopass_device_reach_check(cache, kernel, sigma_max, h_leaf)
+        return nothing
+    end
     x = g_min * 2 * Float64(cache.h0) / cutoff   # admissible 2^ℓ bound
     ell_max = floor(Int, log2(x))
     2.0^ell_max < x || (ell_max -= 1)
@@ -1596,6 +1671,51 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
         "ell = $(cache.ell)); $depth_msg. Pairs inside the cutoff would be handled " *
         "by the singular far field and silently lose the regularization. Reduce ell, " *
         "shrink sigma, or use a larger near set (row 032a)."))
+end
+
+# Defensive pass-2 capacity assertion for device TwoPassVortex caches (task 032a
+# stage C): the construction-sized offset ball covers (rho_t/rho_c)·g_min cells,
+# and the pass-1 gate just passed rho_c·σ_max < g_min·h_leaf, so this can only
+# fire on an internal-consistency bug — never on user geometry.
+_twopass_device_reach_check(cache::RadixFMMCache, ::AbstractDirectKernel,
+    sigma_max, h_leaf) = nothing
+
+function _twopass_device_reach_check(cache::RadixFMMCache, kernel::TwoPassVortex,
+        sigma_max::Float64, h_leaf::Float64)
+    cache.device || return nothing
+    nfctx = _cache_nearfield_bin_ctx(cache)
+    nfctx === nothing && return nothing
+    reach_cells = kernel.rho_t * sigma_max / h_leaf
+    reach_cells <= nfctx.twopass_reach_cap_cells * (1 + 1e-12) ||
+        throw(AssertionError(
+            "TwoPassVortex device pass-2 offset ball capacity exceeded: live " *
+            "reach $(reach_cells) cells > capacity $(nfctx.twopass_reach_cap_cells) " *
+            "cells despite a passing pass-1 gate (internal inconsistency)"))
+    return nothing
+end
+
+# 032a stage C: the device pass-2 deficit sweep (and the §6.3 binned pair
+# stream) live on the hierarchical device context; a flat-policy device cache
+# would run pass 1 but silently skip the pass-2 deficit sweep, so it is refused
+# at construction.
+function _assert_device_kernel_policy(device::Bool, dk, hierarchical::Bool)
+    device && dk isa TwoPassVortex && !hierarchical && throw(ArgumentError(
+        "TwoPassVortex on a device cache requires the hierarchical stencil " *
+        "policy (the flat-policy device path has no pass-2 deficit sweep); " *
+        "use the default HierarchicalRigidStencil, build the cache with " *
+        "device=false, or select another nearfield kernel"))
+    return nothing
+end
+
+# The stage-C nearfield bin context lives on the hierarchical device context;
+# flat-policy or host caches have none.
+function _cache_nearfield_bin_ctx(cache::RadixFMMCache)
+    cache.device || return nothing
+    ctx = cache.device_ctx
+    ctx === nothing && return nothing
+    hctx = ctx.hierarchical_ctx
+    hctx === nothing && return nothing
+    return hctx.nearfield
 end
 
 function _assert_radix_positions_in_box(systems::Tuple, x_min::SVector{3,TF}, h0::TF) where TF
@@ -1968,11 +2088,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
                 "row sigma_row"))
         end
     end
-    device && dk isa TwoPassVortex && throw(ArgumentError(
-        "TwoPassVortex is host-only until the 032a stage C CUDA mirror lands " *
-        "(the device path would run pass 1 but silently skip the pass-2 deficit " *
-        "sweep); build the cache with device=false or select another nearfield " *
-        "kernel"))
+    _assert_device_kernel_policy(device, dk, hierarchical)
 
     if device
         cache = _radix_cache_device_build(sources, P, Int(ell), x_min, h0, maxn,

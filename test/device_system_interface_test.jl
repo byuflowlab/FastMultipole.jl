@@ -687,3 +687,234 @@ end
     fmm!(sys, cache; gradient=true)
     @test cache.step == step0 + 1
 end
+
+@testset "binned nearfield pair stream stage C (task 032a)" begin
+
+    seed = 20260807
+    rho_t = 4.789
+
+    #--- (a) three-way bucket rule is safe: a brute-force body-pair sweep over
+    #    random cell pairs shows bucket 1 contains only beyond-cutoff pairs and
+    #    bucket 2 only inside-cutoff pairs, for both precisions ---#
+
+    for TF in (Float64, Float32)
+        rng = MersenneTwister(seed)
+        h = TF(0.05)
+        cut = TF(rho_t)
+        n_checked = zeros(Int, 3)
+        for trial in 1:600
+            # bias a third of the trials to adjacent offsets and fat uniform σ
+            # so the pure-regularized bucket is genuinely sampled
+            near = trial % 3 == 0
+            span = near ? (-1:1) : (-6:6)
+            o = (rand(rng, span), rand(rng, span), rand(rng, span))
+            nb = 6
+            # random σ per source body (occasionally nonpositive padding)
+            sigmas = near ? fill(TF(0.03 + 0.05 * rand(rng)), nb) :
+                TF[rand(rng) < 0.1 ? zero(TF) : TF(0.005 + 0.05 * rand(rng))
+                    for _ in 1:nb]
+            smax = maximum(sigmas)
+            smin = minimum(sigmas)
+            b = FastMultipole._nearfield_pair_bucket(o..., h, cut, smax, smin)
+            n_checked[Int(b)] += 1
+            # bodies anywhere inside their cells
+            tpos = [h .* (rand(rng, TF, 3)) for _ in 1:nb]
+            spos = [h .* (TF.(o) .+ rand(rng, TF, 3)) for _ in 1:nb]
+            # boundary rounding: the classifier compares squared TF quantities,
+            # so allow a few ulps of slack on the exact-cutoff comparison (a
+            # misrouted boundary pair changes the result by <= the §4 tail)
+            slack = 8 * eps(TF)
+            for i in 1:nb, j in 1:nb
+                d = Float64.(tpos[i]) .- Float64.(spos[j])
+                r = sqrt(sum(abs2, d))
+                sig = Float64(sigmas[j])
+                if b == Int32(1)
+                    @test !(sig > 0 && r <= Float64(cut) * sig * (1 - slack))
+                elseif b == Int32(2)
+                    @test sig > 0 && r <= Float64(cut) * sig * (1 + slack)
+                end
+            end
+        end
+        # the sweep genuinely exercised all three buckets
+        @test all(n_checked .> 0)
+    end
+
+    #--- (b) class-split evaluation == unbinned partitioned evaluation on the
+    #    production host pair list: classify with the shared bucket rule, run
+    #    the three branch-free/mixed kernels, compare (P = 4 and P = 8) ---#
+
+    nv = 400
+    for P in (4, 8), TF in (Float64, Float32)
+        base = generate_vortex(seed, nv)
+        sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
+        psys = PartitionedSmoothedVortex(SmoothedVortex(base, sigma))
+        cache = RadixFMMCache(psys; expansion_order=P, ell=2, hessian=true,
+            options=CUDARadixLifecycleOptions(; precision=TF,
+                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+        fmm!(psys, cache; scalar_potential=false, gradient=true, hessian=true)
+        st = cache.state
+        n_direct = st.counts.n_direct
+        @test n_direct > 0
+        grid = st.grid
+        h_leaf = TF(2 * cache.h0 / (1 << cache.ell))
+        dk = st.options.direct_kernel
+        cut = TF(FastMultipole._pass1_regularized_cutoff(dk))
+        # per-cell σ extrema (host mirror of _cuda_cell_sigma_kernel!)
+        ncell = st.counts.n_cells
+        smax = zeros(TF, ncell)
+        smin = zeros(TF, ncell)
+        for c in 1:ncell
+            f = st.cell_ranges[1, c]
+            cnt = st.cell_ranges[2, c]
+            vals = st.source_bodies[8, f:(f + cnt - 1)]
+            smax[c] = cnt == 0 ? zero(TF) : maximum(vals)
+            smin[c] = cnt == 0 ? zero(TF) : minimum(vals)
+        end
+        buckets = [Int[] for _ in 1:3]
+        for p in 1:n_direct
+            t = st.direct_targets[p]
+            s = st.direct_sources[p]
+            ct = FastMultipole.morton_decode(grid.cell_keys[t], cache.ell)
+            cs = FastMultipole.morton_decode(grid.cell_keys[s], cache.ell)
+            o = ct .- cs
+            b = FastMultipole._nearfield_pair_bucket(o[1], o[2], o[3], h_leaf,
+                cut, smax[s], smin[s])
+            push!(buckets[Int(b)], p)
+        end
+        @test sum(length, buckets) == n_direct
+        # mixed-bucket fraction sanity: with overlap-2 σ at ell=2 the near set
+        # over-covers, so pure-singular pairs must exist
+        @test !isempty(buckets[1])
+        ref = zeros(TF, 13, size(st.output, 2))
+        FastMultipole._host_direct_pairs_functor_kernel!(dk, ref,
+            st.source_bodies, st.cell_ranges, st.direct_targets,
+            st.direct_sources, n_direct, Val(true))
+        got = zeros(TF, 13, size(st.output, 2))
+        kernels = (SingularVortex(),
+            RegularizedVortex(; sigma_row=8, rho_t=Float64(cut)),
+            dk)
+        for b in 1:3
+            isempty(buckets[b]) && continue
+            FastMultipole._host_direct_pairs_functor_kernel!(kernels[b], got,
+                st.source_bodies, st.cell_ranges, st.direct_targets[buckets[b]],
+                st.direct_sources[buckets[b]], length(buckets[b]), Val(true))
+        end
+        scale = maximum(abs.(ref))
+        tol = TF == Float64 ? 1e-13 : 2e-5   # summation order differs
+        @test maximum(abs.(got .- ref)) < tol * scale
+    end
+
+    #--- (c) two-pass offset ball: gap-ascending, complete, prefix-prunable ---#
+
+    offsets, gap2 = FastMultipole._twopass_offset_ball(5.35)
+    @test issorted(gap2)
+    @test size(offsets, 2) == length(gap2)
+    # completeness against a brute-force enumeration at several live reaches
+    for reach in (0.9, 2.6, 4.0, 5.35)
+        want = Set{NTuple{3,Int}}()
+        R = floor(Int, reach) + 1
+        for oz in -R:R, oy in -R:R, ox in -R:R
+            g2 = max(abs(ox) - 1, 0)^2 + max(abs(oy) - 1, 0)^2 +
+                max(abs(oz) - 1, 0)^2
+            g2 <= reach^2 && push!(want, (ox, oy, oz))
+        end
+        live = Set{NTuple{3,Int}}()
+        for k in 1:length(gap2)
+            Float64(gap2[k]) <= reach^2 &&
+                push!(live, (Int(offsets[1, k]), Int(offsets[2, k]),
+                    Int(offsets[3, k])))
+        end
+        @test live == want
+    end
+    # includes the self offset first
+    @test gap2[1] == 0
+    @test any(k -> offsets[:, k] == Int32[0, 0, 0], 1:length(gap2))
+    @test_throws ArgumentError FastMultipole._twopass_offset_ball(-1.0)
+
+    #--- (d) gate-derived reach capacity dominates every admissible geometry:
+    #    while the pass-1 gate passes, rho_t·σ_max/h_leaf < (rho_t/rho_c)·g_min ---#
+
+    tk = TwoPassVortex(; sigma_row=8)
+    base = generate_vortex(seed, 300)
+    sigma = fill(0.03, 300)
+    tsys = TwoPassSmoothedVortex(SmoothedVortex(base, sigma))
+    tcache = RadixFMMCache(tsys; expansion_order=4, ell=2, hessian=true,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    fmm!(tsys, tcache; scalar_potential=false, gradient=true, hessian=true)
+    g_min = FastMultipole._leaf_stencil_min_gap(tcache)
+    h_leaf = 2 * Float64(tcache.h0) / (1 << tcache.ell)
+    sigma_max = maximum(tcache.state.source_bodies[8, 1:tcache.state.counts.n_bodies])
+    # the gate passed at construction, so the pass-1 reach inequality holds ...
+    @test tk.rho_c * sigma_max < g_min * h_leaf
+    # ... and the pass-2 reach is inside the construction ball capacity
+    reach_cap = (tk.rho_t / tk.rho_c) * g_min
+    @test tk.rho_t * sigma_max / h_leaf < reach_cap
+    # host caches carry no bin context and the reach check no-ops
+    @test FastMultipole._cache_nearfield_bin_ctx(tcache) === nothing
+    @test FastMultipole._twopass_device_reach_check(tcache, tk,
+        Float64(sigma_max), h_leaf) === nothing
+
+    #--- (e) flat-policy device TwoPassVortex is refused (the constructor calls
+    #    _assert_device_kernel_policy; end-to-end coverage with CUDA present is
+    #    in test/cuda_radix_nearfield_binning_test.jl) ---#
+
+    err = try
+        FastMultipole._assert_device_kernel_policy(true, tk, false)
+        nothing
+    catch e
+        e
+    end
+    @test err isa ArgumentError
+    @test occursin("hierarchical stencil", sprint(showerror, err))
+    # every other combination is admissible
+    @test FastMultipole._assert_device_kernel_policy(true, tk, true) === nothing
+    @test FastMultipole._assert_device_kernel_policy(false, tk, false) === nothing
+    @test FastMultipole._assert_device_kernel_policy(true,
+        PartitionedVortex(; sigma_row=8), false) === nothing
+    # a device construction attempt still fails on this CUDA-less host, before
+    # reaching the policy check
+    @test_throws ArgumentError RadixFMMCache(tsys; expansion_order=4, ell=2,
+        device=true, options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+
+    #--- (f) sub-Morton key semantics (mechanism a, host mirror of the device
+    #    key kernel): keys land in [0, 8^sub), and sorting a cell's bodies by
+    #    key groups them by sub-octant ---#
+
+    let rng = MersenneTwister(seed), ell = 3, sub = 3
+        x_min = SVector{3,Float64}(0, 0, 0)
+        h0 = 0.5   # box [0,1]^3
+        Gs = 1 << (ell + sub)
+        m = (1 << sub) - 1
+        delta = 2 * h0 / Gs
+        subkey(x) = begin
+            c = ntuple(q -> clamp(Int(floor((x[q] - x_min[q]) / delta)), 0,
+                Gs - 1) & m, 3)
+            key = 0
+            for bit in 0:(sub - 1)
+                key |= ((c[1] >> bit) & 1) << (3 * bit)
+                key |= ((c[2] >> bit) & 1) << (3 * bit + 1)
+                key |= ((c[3] >> bit) & 1) << (3 * bit + 2)
+            end
+            key
+        end
+        cell_lo = SVector{3,Float64}(0.25, 0.5, 0.125)   # one ell=3 cell
+        w = 2 * h0 / (1 << ell)
+        pts = [cell_lo .+ w .* rand(rng, 3) for _ in 1:200]
+        keys = subkey.(pts)
+        @test all(0 .<= keys .< 8^sub)
+        # bodies sharing a sub-octant share a key; distinct sub-octants of the
+        # same parent octant stay adjacent under the Morton order
+        order = sortperm(keys)
+        sorted = pts[order]
+        # spatial coherence: mean nearest-neighbor index distance in sorted
+        # order is far below the random-order expectation
+        d(i) = norm(sorted[i] .- sorted[i + 1])
+        mean_sorted = sum(d, 1:199) / 199
+        shuffled = pts[randperm(rng, 200)]
+        ds(i) = norm(shuffled[i] .- shuffled[i + 1])
+        mean_rand = sum(ds, 1:199) / 199
+        @test mean_sorted < 0.7 * mean_rand
+    end
+end
