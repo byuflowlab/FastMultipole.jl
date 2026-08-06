@@ -26,7 +26,7 @@ ssh "$REMOTE" "cd $RDIR \
   && mkdir -p MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references FLOWVPM_baseline \
   && rsync -a --delete $STAGE/flowvpm/ FLOWVPM_baseline/ \
   && rsync -a --delete $STAGE/scripts/ MATRIX_OPERATOR_REFACTOR/scripts/ \
-  && bash -lc 'module load julia \
+  && bash -lc 'module load julia/1.11.7-6bmogfl \
     && julia --project=\$HOME/fm033env -e \"using Pkg; \
          Pkg.develop(path=\\\"./FLOWVPM_baseline\\\"); \
          Pkg.add([\\\"FastMultipole\\\"]); \

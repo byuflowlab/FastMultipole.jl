@@ -30,7 +30,11 @@ julia --project="$ENVDIR" -e 'using FastMultipole;
   @assert v < v"2.1" "baseline requires FastMultipole 2.0.x (shrink_recenter kwarg)"'
 
 # Phase 1: sampled-direct references (skips per-file if already present).
-if ! (cd "$REFDIR" && shasum -a 256 -c direct_reference_checksums.sha256 2>/dev/null); then
+# The manifest must cover the current case set (wake replaced ring on
+# 2026-08-05): a stale pre-amendment manifest that verifies but lacks wake
+# entries must not short-circuit reference generation.
+if ! (cd "$REFDIR" && grep -q "direct_reference_wake_" direct_reference_checksums.sha256 2>/dev/null \
+      && shasum -a 256 -c direct_reference_checksums.sha256 2>/dev/null); then
   echo "=== generating 033 direct references"
   # -t 1: FastMultipole 2.0.4 direct_multithread! on the (target, source)
   # path is broken (UndefVarError: n_source_bodies, direct.jl:111); the

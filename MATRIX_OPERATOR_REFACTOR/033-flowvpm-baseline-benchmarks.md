@@ -254,3 +254,47 @@ tip-weighted mean of `r/R` over a uniform disc), mean axial direction cosine
 untested against FLOWVPM because the package does not load on the local
 machine; **first cluster run must confirm `n_actual = n_target` and a sane
 `σ`** before the sweep proceeds.
+
+## Work Record (2026-08-05): job 13051713 reconciled; wake-only job 13058428
+
+Job **13051713** COMPLETED (15h54m, exit 0), but it ran the pre-amendment
+script (cube+ring). Results fetched with `cpu_033_fetch.sh 13051713` and
+committed at `data/flowvpm_baseline/`: **cube is complete, 14/14 (case, mode,
+n) rows** across `cpu_m12-1-29_13051713.csv` + `cpu_m12-2-1_13051516.csv`,
+with cube references and cube profiles at n=1e5. The **ring rows are
+pre-amendment history, retained with their measured errors** per the 1e-3
+gating policy (historical rows stay in the record; only tolerance-passing
+configurations feed speedup headlines). The **wake case had not run at all**
+— the job predates the wake amendment.
+
+Wake-only resubmission: job **13058428** (`fm033cpu`) submitted 2026-08-05
+via `cpu_033_submit.sh`, started immediately on `m12-2-18`. The resume logic
+(grep over remote `cpu_*.csv`) skips all 14 completed cube rows, so the job
+runs only the 14 wake rows plus wake reference generation. Two harness fixes
+were needed and made in the same pass:
+
+- `cpu_033_run.sh`: the Phase-1 reference skip verified the sha256 manifest,
+  but the remote manifest was the stale pre-amendment one (cube+ring) and
+  ring reference files still existed, so it verified clean and would have
+  skipped wake reference generation (first wake row would then die on a
+  missing reference). The guard now also requires `direct_reference_wake_`
+  entries in the manifest before short-circuiting. `prepare_033_references.jl`
+  regenerates the manifest as cube+wake once the wake references exist.
+- `cpu_033_submit.sh`: login-node env build pinned to
+  `module load julia/1.11.7-6bmogfl` (module default moved to 1.12.6 on
+  2026-08-05, which segfaults the host LLVM JIT; the run script was already
+  pinned repo-wide).
+
+Cluster-side ring artifacts (7 `direct_reference_ring_n*.csv`, 2
+`profile_ring_n100000_cpu*.txt` under `~/FastMultipole-033/.../
+flowvpm_baseline/`) are discarded per the amendment but could not be deleted
+from this session (remote rm blocked by local tool policy); they are orphaned
+— absent from the regenerated manifest and never read — and can be removed in
+any manual cluster session. Ring rows inside the two remote CSVs do not
+collide with the cube/wake resume greps.
+
+Expected walltime: well under the 3-day limit — wake-only is roughly half of
+13051713's 15h54m case work plus wake reference generation (the n=1e6
+single-thread wake row and its reference are the long tail). On completion:
+fetch, verify 14 wake rows, write `data/flowvpm_baseline/report.md`, then mark
+Done. Row NOT Done yet.
