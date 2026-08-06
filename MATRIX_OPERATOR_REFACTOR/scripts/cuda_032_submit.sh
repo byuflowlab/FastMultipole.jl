@@ -9,11 +9,17 @@ set -euo pipefail
 REMOTE=orc
 RDIR=FastMultipole-023
 
-ssh "$REMOTE" "mkdir -p $RDIR/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms"
+ssh "$REMOTE" "mkdir -p $RDIR/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms \
+  $RDIR/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling"
 
 rsync -az --delete --exclude .git \
     src test Project.toml MATRIX_OPERATOR_REFACTOR/scripts \
     "$REMOTE:$RDIR/staging_032/"
+
+# the stage-4 scalar no-regression cases hard-gate on the checksummed 024b
+# direct references (030 pattern)
+rsync -az MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/references \
+    "$REMOTE:$RDIR/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/"
 
 # refresh the tree, run the login-node instantiate (compute nodes have no
 # internet), then submit
