@@ -24,6 +24,7 @@ makedocs(;
         "Tuning Parameters" => "tuning.md",
         "Multiple Systems" => "advanced_usage.md",
         "Automated Tuning" => "advanced_usage_2.md",
+        "Device Interface" => "device_interface.md",
         "Reference" => "reference.md",
         # "Theory" => "theory.md"
     ],
