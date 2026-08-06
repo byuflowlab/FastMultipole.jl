@@ -2,10 +2,12 @@
 
 ## Status and Entry Gate
 
-**Added by user request on `2026-08-04`.** In progress: coupling implemented
-and locally verified `2026-08-06` (user authorized starting ahead of the 033
-gate); H200 device validation and 033-gated comparisons pending. Work Record
-below.
+**Added by user request on `2026-08-04`.** **Done `2026-08-06`** (approval
+pending): coupling implemented and locally verified; H200 device validation
+passed (job 13061046) with user sign-off on deliverable-4 correctness; the
+approved test wiring is verified in the default suite; and the closing
+033-checksummed-reference accuracy gate passed on H200 (job 13061128, all
+Float64 velocity RMS within 1e-3). Work Record below.
 
 Entry gate: `032` (the generalized device interface) and `033` (the CPU
 baselines and accuracy reference) must both be Done and clear-context
@@ -274,3 +276,57 @@ dynamic parity, 023 counter contract flat, KB-scale steady allocations) and
 wiring `runtests_gpu_fmm_device.jl` into FLOWVPM's default suite (auto-skip
 without CUDA). Remaining before Done: the 033-checksummed-reference accuracy
 comparison and the approved test wiring.
+
+### 2026-08-06 — closing gate: 033-checksummed-reference comparison + test wiring verified (session 3)
+
+**Test wiring (approved 2026-08-06):** `test/runtests.jl` already includes
+`runtests_gpu_fmm.jl` (committed in `e86fa38`), which runs Part A on CPU and
+runtime-includes `runtests_gpu_fmm_device.jl` only under functional CUDA
+(hard-required under `FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1`). Verified locally
+this session by running the full FLOWVPM CPU suite (6 threads) in a scratch
+env with FLOWVPM (`gpu-full`) + FastMultipole (`matrix-ops`) dev'ed: vortex
+ring + leapfrog pass, Part A passes (12+2+4), Part B auto-skips with an
+`@info`. NOTE: plain `Pkg.test()` on FLOWVPM's own manifest fails in the
+PRE-EXISTING single-vortex-ring FMM test before ever reaching the new
+include — the manifest pins registry FastMultipole 2.0.x while `gpu-full`'s
+legacy `UJ_fmm` passes `shrink`/`recenter` kwargs (the known dev-FastMultipole
+pin, see FLOWVPM `CLAUDE.md`). Not a 034 regression; verification of record
+uses the dev'ed env, same as the cluster.
+
+**033-reference gate (new, FLOWVPM commit `4e82849`):**
+`scripts/cuda_034_refcheck.jl` rebuilds the EXACT 033 case constructions by
+including `MATRIX_OPERATOR_REFACTOR/scripts/benchmark_033_common.jl` (seeds
+33025/+7919, overlap-2 sigma conventions, p=4/ncrit=50/theta=0.4, autotuning
+off), uploads each field to a CuArray-backed `ParticleField`, runs the coupled
+U/J solve via `UJ_fmm` (device-resident radix lifecycle), and compares sampled
+U/J at the deterministic 033 sample indices against the checksummed sampled-
+direct references. Integrity is enforced twice: `sha256sum -c` of the full 14-
+file manifest on the remote copy (stage 4 of `cuda_034_run.sh`) plus
+`fm033_read_reference`'s schema/seed/index validation and per-file sha256.
+Gate: Float64 `u_rel_rms <= 1e-3` per case x n; Float32 reported alongside.
+`FM034_REFCHECK_HOST=1` runs the identical harness through the transfer-based
+host path — used locally as a harness self-check (numbers reproduced the H200
+Float64 results at n=1e4 to ~12 significant digits). The 023 counter contract
+(`body_uploads == 0`, `expansion_host_copies == 0`) is asserted per device
+solve inside the script.
+
+**H200 results (job 13061128, m13h-1-1, COMPLETED; stages 1–3 re-passed:
+1246 + 48/84 + 12/2/4/36/4):** all 14 reference checksums OK; gate PASSED.
+
+| case | n | precision | u_rel_rms | u_max_err | j_rel_rms (diag) | warm solve (s) |
+| --- | --- | --- | --- | --- | --- | --- |
+| cube | 10000 | Float64 | 1.246e-4 | 6.92e-6 | 3.45e-4 | 0.067 |
+| cube | 10000 | Float32 | 1.246e-4 | 6.92e-6 | 3.45e-4 | 0.034 |
+| cube | 100000 | Float64 | 5.651e-4 | 6.25e-6 | 1.68e-3 | 0.094 |
+| cube | 100000 | Float32 | 5.651e-4 | 6.25e-6 | 1.68e-3 | 0.052 |
+| wake | 10000 | Float64 | 2.266e-4 | 3.15e-5 | 1.31e-3 | 0.024 |
+| wake | 10000 | Float32 | 2.266e-4 | 3.15e-5 | 1.31e-3 | 0.017 |
+| wake | 100000 | Float64 | 4.794e-4 | 7.48e-5 | 4.36e-3 | 0.057 |
+| wake | 100000 | Float32 | 4.794e-4 | 7.48e-5 | 4.36e-3 | 0.035 |
+
+Float32 matches Float64 to ~4 significant digits everywhere (the FMM
+truncation error dominates precision loss at these sizes). Warm solve times
+are coarse single samples on unoptimized derived settings — 035 owns all
+performance claims. All remaining pre-Done items are closed: (a) deliverable-4
+sign-off recorded above; (b) this 033-checksummed comparison; (c) test wiring
+verified. **034 is Done; clear-context approval pending.**
