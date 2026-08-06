@@ -38,7 +38,10 @@
 #   FM032V_P            expansion order (P_literature - 1)  [3]
 #   FM032V_ELL          radix depth; "auto" = deepest ell
 #                       passing the adequacy margin         [auto]
-#   FM032V_Q            near_radius2 (ball stencil)         [12]
+#   FM032V_Q            near_radius2 (ball stencil)         [16]
+#                       (q=12 measured 1.088e-3 at P=4 on this workload —
+#                       job 13058532 — just above the 1e-3 phase gate; q=16
+#                       raises g_min from sqrt(5) to sqrt(6), modeled ~6.5e-4)
 #   FM032V_K            window_classes                      [256]
 #   FM032V_TF           comma list of Float64,Float32       [Float64,Float32]
 #   FM032V_STEPS        convection steps                    [5]
@@ -71,7 +74,7 @@ const N = parse(Int, get(ENV, "FM032V_N", "100000"))
 const BETA = parse(Float64, get(ENV, "FM032V_BETA", "2.0"))
 const P = parse(Int, get(ENV, "FM032V_P", "3"))
 const ELL_SPEC = get(ENV, "FM032V_ELL", "auto")
-const Q = parse(Int, get(ENV, "FM032V_Q", "12"))
+const Q = parse(Int, get(ENV, "FM032V_Q", "16"))
 const K = parse(Int, get(ENV, "FM032V_K", "256"))
 const TFS = [t == "Float32" ? Float32 : Float64
              for t in split(get(ENV, "FM032V_TF", "Float64,Float32"), ',')]
@@ -388,7 +391,11 @@ function measure(::Type{TF}) where TF
         @printf("%s step %d: %.3f ms\n", TF, s, t)
     end
 
-    # steady-state allocation probe (two extra steps outside the timed loop)
+    # steady-state allocation probe (two extra steps outside the timed loop).
+    # Calibration: the shipped scalar path of record allocates 2.0 MB device /
+    # 473 KB host per step at n=1e5 and 20.1 MB / 708 KB at n=1e6 (030 sweep
+    # CSVs, counter contract green) — the recorded 023 contract is the transfer
+    # counters, not literal zero bytes. These warnings are informational.
     dev_alloc = CUDA.@allocated step!()
     host_alloc = @allocated step!()
     dev_alloc > 0 && @printf("WARNING: %s steady-state device allocation %d B > 0\n",

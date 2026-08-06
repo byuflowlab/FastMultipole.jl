@@ -48,12 +48,25 @@ julia --project="$ENVDIR" test/cuda_radix_interface_test.jl
 echo "=== preflight: shipped lifecycle regression test ==="
 julia --project="$ENVDIR" test/cuda_radix_lifecycle_test.jl
 
-echo "=== stage 4: device-resident vortex validation (n=1e5, auto ell) ==="
-FM032V_OUTDIR="$OUTDIR" julia --project="$ENVDIR" \
-    MATRIX_OPERATOR_REFACTOR/scripts/cuda_032_validation.jl
-echo "=== stage 4: device-resident vortex validation (n=1e6) ==="
-FM032V_OUTDIR="$OUTDIR" FM032V_N=1000000 julia --project="$ENVDIR" \
-    MATRIX_OPERATOR_REFACTOR/scripts/cuda_032_validation.jl
+# q ladder: q=12 measured 1.088e-3 > the 1e-3 gate (job 13058532, truncation-
+# dominated at P=4); q=16 is the modeled fix (~6.5e-4), q=20 the measured-safe
+# fallback (~1.9e-4 modeled, 389-offset near set). Try 16, fall back to 20.
+run_validation () {
+    local n="$1"
+    for q in 16 20; do
+        echo "=== stage 4: device-resident vortex validation (n=$n, q=$q) ==="
+        if FM032V_OUTDIR="$OUTDIR" FM032V_N="$n" FM032V_Q="$q" \
+            julia --project="$ENVDIR" \
+            MATRIX_OPERATOR_REFACTOR/scripts/cuda_032_validation.jl; then
+            return 0
+        fi
+        echo "=== validation failed at n=$n q=$q"
+    done
+    echo "=== validation failed at n=$n for every q in the ladder"
+    return 1
+}
+run_validation 100000
+run_validation 1000000
 
 echo "=== stage 4: scalar no-regression (028/030 verdict config, unchanged harness) ==="
 REFDIR="$WORKDIR/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/references"
