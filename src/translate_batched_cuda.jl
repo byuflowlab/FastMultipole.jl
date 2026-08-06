@@ -4839,7 +4839,10 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
             profiling && (CUDA.synchronize();
                 hctx.update_stage_ns[4] = time_ns() - t_stage)
         end
-        n_routes = 0
+        # with a valid window cache the step total is already known here; a
+        # replayed (graph-captured) lifecycle performs no host bookkeeping, so
+        # the refresh is the place that keeps `counts.n_routes` truthful
+        n_routes = hctx.win_valid ? hctx.total_routes : 0
     end
     t_stage = profiling ? (CUDA.synchronize(); time_ns()) : UInt64(0)
     if occ_changed

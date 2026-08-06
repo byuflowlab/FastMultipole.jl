@@ -87,38 +87,81 @@ if _GRAPH_LOADED
 
     @testset "cached-window + graph lifecycle parity (task 029 cycle 1)" begin
         n = 2000
-        for TF in (Float64, Float32), P in (3, 4), K in (8, 10_000)
+        # Pin the FP32 fused kernel for exact route-set parity (the default
+        # fp16 tensor kernel batches 16 routes per WMMA tile, and the cached
+        # per-level concatenation legitimately re-aligns tile boundaries when
+        # K < full — covered with its own tolerance below).
+        saved_format = FM.DENSE_CUDA_TENSOR_FORMAT[]
+        FM.DENSE_CUDA_TENSOR_FORMAT[] = :off
+        try
+            for TF in (Float64, Float32), P in (3, 4), K in (8, 10_000)
+                bodies = fm028_body_matrix(24025, n)
+                configs = ((false, false), (true, false), (true, true))
+                results = map(configs) do (cached, graph)
+                    _with_flags(cached, graph) do
+                        pot, grad, _, cache = _graph_run(copy(bodies), TF, P, K)
+                        (pot, grad, cache)
+                    end
+                end
+                ref_pot, ref_grad, _ = results[1]
+                for (i, (pot, grad, cache)) in enumerate(results[2:end])
+                    tol = _ptol(TF)
+                    @test maximum(abs.(pot .- ref_pot)) <=
+                        tol * max(1, maximum(abs.(ref_pot)))
+                    @test maximum(abs.(grad .- ref_grad)) <=
+                        tol * max(1, maximum(abs.(ref_grad)))
+                    hctx = cache.state.interaction_list
+                    @test hctx isa FM.DeviceHierarchicalM2LContext
+                    @test hctx.win_valid
+                    # the cached concatenation carries the whole-step route total
+                    @test hctx.total_routes == sum(hctx.win_level_counts)
+                    @test cache.state.counts.n_routes == hctx.total_routes
+                    if i == 2   # graphed run: the graph must have been recorded
+                        @test hctx.graph_exec !== nothing
+                        @test hctx.graph_epoch == hctx.epoch_id
+                    end
+                end
+            end
+        finally
+            FM.DENSE_CUDA_TENSOR_FORMAT[] = saved_format
+        end
+    end
+
+    # FP16-WMMA tensor kernel under cached windows. At K = full (one window
+    # per level — every production geometry) the cached concatenation is
+    # bit-identical batching, so the ordinary atomic-reassociation tolerance
+    # applies. At K < full the concatenation re-aligns the 16-route WMMA tiles
+    # across former window boundaries, so tiles can migrate between FP16-WMMA
+    # and FP32-tail arithmetic — numerically FP16-equivalent, not bitwise
+    # (job 13060611 measured ~1e-3 relative on the gradient); asserted at an
+    # FP16-scale tolerance to pin the behavior.
+    @testset "tensor16 parity under cached windows (task 029 cycle 1)" begin
+        n = 2000
+        TF = Float32
+        P = 3
+        for (K, tol) in ((10_000, 1e-4), (8, 5e-3))
             bodies = fm028_body_matrix(24025, n)
-            configs = ((false, false), (true, false), (true, true))
-            results = map(configs) do (cached, graph)
+            results = map(((false, false), (true, true))) do (cached, graph)
                 _with_flags(cached, graph) do
-                    pot, grad, _, cache = _graph_run(copy(bodies), TF, P, K)
-                    (pot, grad, cache)
+                    pot, grad, _, _ = _graph_run(copy(bodies), TF, P, K)
+                    (pot, grad)
                 end
             end
-            ref_pot, ref_grad, _ = results[1]
-            for (i, (pot, grad, cache)) in enumerate(results[2:end])
-                tol = _ptol(TF)
-                @test maximum(abs.(pot .- ref_pot)) <=
-                    tol * max(1, maximum(abs.(ref_pot)))
-                @test maximum(abs.(grad .- ref_grad)) <=
-                    tol * max(1, maximum(abs.(ref_grad)))
-                hctx = cache.state.interaction_list
-                @test hctx isa FM.DeviceHierarchicalM2LContext
-                @test hctx.win_valid
-                # the cached concatenation carries the whole-step route total
-                @test hctx.total_routes == sum(hctx.win_level_counts)
-                @test cache.state.counts.n_routes == hctx.total_routes
-                if i == 2   # graphed run: the graph must have been recorded
-                    @test hctx.graph_exec !== nothing
-                    @test hctx.graph_epoch == hctx.epoch_id
-                end
-            end
+            (ref_pot, ref_grad), (pot, grad) = results
+            @test maximum(abs.(pot .- ref_pot)) <=
+                tol * max(1, maximum(abs.(ref_pot)))
+            @test maximum(abs.(grad .- ref_grad)) <=
+                tol * max(1, maximum(abs.(ref_grad)))
         end
     end
 
     @testset "occupancy-epoch invalidation (task 029 cycle 1)" begin
         n = 2000
+        # FP32 fused kernel: the cached-vs-fresh comparison must not mix WMMA
+        # tile alignments (see the tensor16 testset above)
+        saved_format = FM.DENSE_CUDA_TENSOR_FORMAT[]
+        FM.DENSE_CUDA_TENSOR_FORMAT[] = :off
+        try
         for TF in (Float64, Float32)
             bodies = fm028_body_matrix(24025, n)
             pot_g, grad_g, sys_g, cache_g = _with_flags(true, true) do
@@ -140,6 +183,9 @@ if _GRAPH_LOADED
                 tol * max(1, maximum(abs.(pot_r)))
             @test maximum(abs.(grad_g .- grad_r)) <=
                 tol * max(1, maximum(abs.(grad_r)))
+        end
+        finally
+            FM.DENSE_CUDA_TENSOR_FORMAT[] = saved_format
         end
     end
 
