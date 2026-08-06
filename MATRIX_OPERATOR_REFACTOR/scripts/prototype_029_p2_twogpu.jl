@@ -213,8 +213,11 @@ ok || error("partition exactness gate failed")
 
 bar = P2Barrier(2)
 seg = zeros(7, 2)
-# warm (uncaptured), record, replay-verify — no Euler so positions stay at t=0
-for i in 1:3
+# graph recording is SOLO and serialized (GLOBAL capture mode outlaws
+# concurrent CUDA API use — see the P2GraphSlot contract); then two concurrent
+# replay steps verify the steady state and produce the union outputs at t=0
+p2_record_graphs!(G)
+for i in 1:2
     p2_step_pair!(G, bar; dt=0.0, do_euler=false, seg=seg)
 end
 graph_captured = [G[g].slot.exec !== nothing for g in 1:2]

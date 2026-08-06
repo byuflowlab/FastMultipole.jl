@@ -43,16 +43,27 @@ mutable struct P2Barrier
     const n::Int
     count::Threads.Atomic{Int}
     gen::Threads.Atomic{Int}
+    abort::Threads.Atomic{Int}   # a failed worker flips this so its partner
+                                 # errors out instead of spinning forever
 end
-P2Barrier(n::Int) = P2Barrier(n, Threads.Atomic{Int}(0), Threads.Atomic{Int}(0))
+P2Barrier(n::Int) = P2Barrier(n, Threads.Atomic{Int}(0), Threads.Atomic{Int}(0),
+    Threads.Atomic{Int}(0))
 
-function p2_barrier_wait!(b::P2Barrier)
+function p2_barrier_wait!(b::P2Barrier; timeout_s::Float64=120.0)
+    b.abort[] == 0 || error("P2 barrier: peer worker aborted")
     g = b.gen[]
     if Threads.atomic_add!(b.count, 1) == b.n - 1
         b.count[] = 0
         Threads.atomic_add!(b.gen, 1)
     else
+        t0 = time()
         while b.gen[] == g
+            if b.abort[] != 0
+                error("P2 barrier: peer worker aborted")
+            elseif time() - t0 > timeout_s
+                b.abort[] = 1
+                error("P2 barrier: timed out after $(timeout_s)s waiting for peer")
+            end
             GC.safepoint()
             yield()          # keeps few-thread runs live; ~us-scale cost
         end
@@ -231,44 +242,36 @@ function p2_lifecycle_body!(state, c0::Int, c1::Int, side, ev_begin, ev_done)
     return state
 end
 
-# Script-owned per-GPU graph slot (mirrors the production warm -> record ->
-# replay state machine keyed on the occupancy epoch).
+# Script-owned per-GPU graph slot. IMPORTANT concurrency contract: stream
+# capture runs in CUDA's GLOBAL capture mode, which makes most CUDA API use on
+# OTHER threads capture-illegal for its duration (this wedged job 13061054:
+# both workers captured concurrently, one died, its partner spun in the
+# barrier). Recording therefore happens ONLY inside p2_record_graph!/
+# p2_record_graphs! — serially, one device at a time, with the peer quiescent.
+# The concurrent step path only replays a valid exec or runs the body
+# uncaptured; it never captures.
 mutable struct P2GraphSlot
     exec::Any
     epoch::Int
-    warm_epoch::Int
     filter_epoch::Int
     refilters::Int
+    poisoned::Bool
 end
-P2GraphSlot() = P2GraphSlot(nothing, typemin(Int), typemin(Int), typemin(Int), 0)
+P2GraphSlot() = P2GraphSlot(nothing, typemin(Int), typemin(Int), 0, false)
 
 function p2_run_lifecycle!(slot::P2GraphSlot, state, c0, c1, side, ev_b, ev_d;
         use_graph::Bool=true)
     hctx = state.interaction_list
-    use_graph || return p2_lifecycle_body!(state, c0, c1, side, ev_b, ev_d)
-    if slot.exec !== nothing && slot.epoch == hctx.epoch_id
+    if use_graph && !slot.poisoned && slot.exec !== nothing &&
+            slot.epoch == hctx.epoch_id
         CUDA.launch(slot.exec::CUDA.CuGraphExec)
         return state
     end
-    if slot.warm_epoch != hctx.epoch_id
-        p2_lifecycle_body!(state, c0, c1, side, ev_b, ev_d)
-        slot.warm_epoch = hctx.epoch_id
-        return state
-    end
-    graph = CUDA.capture(; throw_error=false) do
-        p2_lifecycle_body!(state, c0, c1, side, ev_b, ev_d)
-    end
-    if graph === nothing
-        p2_lifecycle_body!(state, c0, c1, side, ev_b, ev_d)
-        return state
-    end
-    slot.exec = CUDA.instantiate(graph)
-    slot.epoch = hctx.epoch_id
-    CUDA.launch(slot.exec::CUDA.CuGraphExec)   # capture records without executing
-    return state
+    return p2_lifecycle_body!(state, c0, c1, side, ev_b, ev_d)
 end
 
 # ---- per-GPU bundle ----------------------------------------------------------
+# (definitions below; p2_record_graph! needs the struct, see after it)
 
 mutable struct P2Gpu
     dev::Int
@@ -338,11 +341,49 @@ function p2_check_epoch!(me::P2Gpu)
         me.slot.filter_epoch = hctx.epoch_id
         me.slot.exec = nothing
         me.slot.epoch = typemin(Int)
-        me.slot.warm_epoch = typemin(Int)
         me.slot.refilters += 1
+        # NOTE: the step path never re-captures (see the P2GraphSlot contract);
+        # after an epoch change, steps run uncaptured until the driver calls
+        # p2_record_graphs! again. At the frozen workload this never triggers;
+        # its cost would land inside the measured step either way.
     end
     return me
 end
+
+# Solo, serialized graph recording (the ONLY place capture runs). The caller
+# guarantees no concurrent CUDA activity on any other thread. Runs the body
+# once uncaptured (JIT/CUBLAS/staged-scalar warmth), then captures, then
+# launches the instantiated graph once so the device state reflects a
+# completed lifecycle.
+function p2_record_graph!(me::P2Gpu)
+    me.use_graph || return me
+    CUDA.device!(me.dev)
+    state = me.cache.state
+    FastMultipole.update_cuda_radix_state!(me.cache, (me.sys,))
+    p2_check_epoch!(me)
+    p2_lifecycle_body!(state, me.part.c0, me.part.c1, me.side, me.ev_begin, me.ev_done)
+    CUDA.synchronize()
+    graph = try
+        CUDA.capture(; throw_error=false) do
+            p2_lifecycle_body!(state, me.part.c0, me.part.c1, me.side,
+                me.ev_begin, me.ev_done)
+        end
+    catch err
+        err isa CUDA.CuError || rethrow()
+        @warn "P2 graph capture failed on device $(me.dev); running uncaptured" err
+        me.slot.poisoned = true
+        nothing
+    end
+    if graph !== nothing
+        me.slot.exec = CUDA.instantiate(graph)
+        me.slot.epoch = state.interaction_list.epoch_id
+        CUDA.launch(me.slot.exec::CUDA.CuGraphExec)   # capture recorded without executing
+        CUDA.synchronize()
+    end
+    return me
+end
+
+p2_record_graphs!(G::Vector{P2Gpu}) = (foreach(p2_record_graph!, G); G)
 
 # ---- the complete 2-GPU verdict step ----------------------------------------
 
@@ -352,6 +393,16 @@ end
 #   3 exchange copy device ms      7 finalize+euler host wall ms incl. any
 #   4 finalize+euler device ms       residual wait on the peer's copy + sync
 function p2_worker_step!(G::Vector{P2Gpu}, g::Int, bar::P2Barrier;
+        dt, clamp_lo, clamp_hi, do_euler::Bool=true, seg=nothing)
+    try
+        _p2_worker_step_inner!(G, g, bar; dt, clamp_lo, clamp_hi, do_euler, seg)
+    catch
+        bar.abort[] = 1     # release a partner parked at a barrier
+        rethrow()
+    end
+end
+
+function _p2_worker_step_inner!(G::Vector{P2Gpu}, g::Int, bar::P2Barrier;
         dt, clamp_lo, clamp_hi, do_euler::Bool=true, seg=nothing)
     me = G[g]
     peer = G[3 - g]

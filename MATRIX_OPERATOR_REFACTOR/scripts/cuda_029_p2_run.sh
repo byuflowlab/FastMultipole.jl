@@ -53,7 +53,7 @@ s=$?; echo "GRAPH_TEST_EXIT=$s"; (( s )) && preflight_fail=1
 
 echo "=== test/cuda_radix_twogpu_test.jl (P2 distributed gates)"
 FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 FASTMULTIPOLE_REQUIRE_TWOGPU_TESTS=1 \
-  julia -t 6 --project="$ENVDIR" test/cuda_radix_twogpu_test.jl
+  timeout 2400 julia -t 6 --project="$ENVDIR" test/cuda_radix_twogpu_test.jl
 s=$?; echo "TWOGPU_TEST_EXIT=$s"; (( s )) && preflight_fail=1
 
 if (( preflight_fail )); then
@@ -77,7 +77,7 @@ FM029P2_N=1000000 FM029P2_REPS="${FM029P2_REPS:-25}" FM029P2_STEPS=5 \
 FM029P2_DT=1e-5 FM029P2_ELL=5 FM029P2_P=3 FM029P2_POLICY=sched6-5-4-4 \
 FM029P2_TF=Float32 FM029P2_TENSOR=fp16 FM029P2_REFDIR="$REFDIR" \
 FM029P2_OUT="$OUTDIR/cuda029p2_sched6_5_4_4_fp16_n1000000_$(hostname)_${SLURM_JOB_ID:-manual}.csv" \
-  julia -t 6 --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/prototype_029_p2_twogpu.jl
+  timeout 3600 julia -t 6 --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/prototype_029_p2_twogpu.jl
 s=$?
 echo "P2_BENCH_EXIT=$s"
 if (( s )); then

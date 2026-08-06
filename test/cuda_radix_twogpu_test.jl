@@ -66,6 +66,7 @@ const FM = FastMultipole
 
     for (TF, fmt, P) in ((Float64, :off, 3), (Float64, :off, 4), (Float32, :fp16, 3))
         @testset "TF=$TF fmt=$fmt P_exp=$P" begin
+            println("[p2test] case TF=$TF fmt=$fmt P=$P: single reference"); flush(stdout)
             FM.DENSE_CUDA_TENSOR_FORMAT[] = fmt
             bodies = fm028_body_matrix(24025, n)
             opts = CUDARadixLifecycleOptions(; precision=TF,
@@ -87,6 +88,7 @@ const FM = FastMultipole
             @test ms.gradient_rel_rms < 5e-3
 
             # dual setup: mirrored caches, one target half each
+            println("[p2test] dual setup"); flush(stdout)
             G = Vector{P2Gpu}(undef, 2)
             info = Vector{Any}(undef, 2)
             for g in 1:2
@@ -105,8 +107,11 @@ const FM = FastMultipole
             @test G[1].part.b0 == 1 && G[2].part.b1 == n &&
                   G[1].part.b1 + 1 == G[2].part.b0
 
-            # warm, record, replay (no motion)
-            for _ in 1:3
+            # solo serialized recording, then concurrent replay (no motion)
+            println("[p2test] record graphs (solo)"); flush(stdout)
+            p2_record_graphs!(G)
+            println("[p2test] concurrent replay steps"); flush(stdout)
+            for _ in 1:2
                 p2_step_pair!(G, bar; dt=0.0, do_euler=false, seg=seg)
             end
             @test G[1].slot.exec !== nothing
@@ -125,6 +130,7 @@ const FM = FastMultipole
             end
 
             # deterministic aggregation: bitwise lockstep across real steps
+            println("[p2test] convection lockstep steps"); flush(stdout)
             base = [let c = G[g].cache.state.counters
                 (c.route_uploads, c.operator_uploads, c.body_uploads,
                     c.influence_downloads, c.metadata_downloads,
