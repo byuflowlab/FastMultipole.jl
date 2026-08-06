@@ -176,6 +176,86 @@ reallocation of the framework's per-(rows, n) device scatter buffer
 (framework-side, task-023 dict cache) is metadata-scale; GPU SFS and
 `rbf`/`zeta` remain unsupported-loud.
 
+### 2026-08-06 — H200 validation (session 2): all device tests pass (job 13061046)
+
+**Remote layout (task-034-owned, separate from the 023-agent's trees):**
+`~/FLOWVPM-034` (gpu-full working tree), `~/FastMultipole-034` (matrix-ops
+working tree: src + test + MATRIX_OPERATOR_REFACTOR/scripts), env
+`~/fm034env` (both repos `Pkg.develop`'ed at those paths, CUDA v6.2.1 with
+`local="true"` preferences for the three CUDA JLLs written directly to
+`LocalPreferences.toml` — `Preferences.set_preferences!` by name refuses
+unloaded indirect deps — login-node instantiate with
+`JULIA_PKG_PRECOMPILE_AUTO=0`, precompile deferred to the GPU node).
+`julia/1.11.7-6bmogfl` pinned throughout. Driver:
+`../FLOWVPM.jl/scripts/cuda_034_submit.sh` / `cuda_034_run.sh`.
+
+**Jobs:** 13060973 (fail: world-age, below), 13061005 (fail: RK3 scalar
+indexing, below), **13061046 = job of record, COMPLETED, 6m21s wall.**
+
+**Results (job 13061046, H200 on m13h-1-1, all PASS):**
+
+| group | outcome |
+| --- | --- |
+| preflight: FastMultipole `test/cuda_radix_interface_test.jl` (032 surface, REQUIRE_CUDA=1) | pass |
+| preflight: FLOWVPM direct-sum GPU regression (`runtests_gpu.jl`) | 48 + 84 pass |
+| Part A host-resident coupling (cube/wake vs `UJ_direct`, semantics, recenter, loud errors) | 12 + 2 + 4 pass |
+| Part B device-resident static U/J, cube+wake × Float64+Float32, n=2e4 | 36 pass |
+| Part B 5-step RK3 dynamic run (wake n=2000) vs CPU `UJ_direct` | 4 pass |
+
+Static accuracy vs the validated direct-sum GPU kernels (gate u ≤ 1e-3; J is
+diagnostic): cube u_rel_rms 8.83e-4 (F64 and F32; J 4.3e-3), wake u_rel_rms
+2.13e-4 (J 1.2e-3). Dynamic run: max position drift 2.7e-8, u_rel_rms 7.1e-5,
+J 3.0e-4. **023 counter contract held everywhere**: `body_uploads == 0`,
+`expansion_host_copies == 0`, and route/operator/influence counters flat
+across repeated evaluations and across the whole dynamic run (construction-only
+uploads); varying-np capacity reuse kept `body_uploads == 0`. Steady-state
+`CUDA.@allocated` per warm solve: 2.4–5.9 KB (metadata-scale, the known
+framework-side per-(rows,n) scatter-buffer dict noted 2026-08-06, not body
+transfers).
+
+**Timing sanity number (NOT a benchmark — unoptimized derived settings,
+single warm sample, for 035 order-of-magnitude context only):** warm
+device-resident U/J solve at n=20,000: cube 19.7 ms / wake 38.4 ms (Float64);
+cube 14.8 ms / wake 26.1 ms (Float32).
+
+**Two FLOWVPM defects found on hardware and fixed (`gpu-full`):**
+
+1. **World-age failure of the lazy lifecycle load** (job 13060973):
+   `_build_radix_fmm_cache` called `fmm.load_cuda_radix_lifecycle!()`
+   successfully, but the runtime `include` defines the CUDA methods in a
+   newer world than the already-running evaluation frame, so
+   `RadixFMMCache(device=true)`'s `cuda_radix_available()` check still hit
+   the old-world `false` fallback and threw. Fix (commit `61988b1`): load the
+   lifecycle from `FLOWVPMCUDAExt.__init__` (guarded by `CUDA.functional()`),
+   i.e. at top level before any user statement; the lazy in-chain call stays
+   as the loud-error path. Not a FastMultipole defect — consumers must load
+   the lifecycle from top level, which the 032 docs' examples do — but worth
+   a consumer-facing note.
+2. **RK3 M-storage reset scalar-indexed CuArrays** (job 13061005): both
+   `rungekutta3` methods reset per-particle M rows with an unforked scalar
+   loop (pre-existing `gpu-full` gap; first-ever `nextstep` on a GPU field).
+   Fix (commit `a5589dd`): factored `_reset_M_storage!` — CPU keeps the
+   original loop, GPU uses the 0/1 static-mask broadcast
+   (`_reset_particles_broadcast!` pattern). CPU smoke test unchanged.
+
+FLOWVPM commits this session (`gpu-full`): `657b794` (job scripts adapted to
+the 034-owned remote tree/env + warm-solve timing probe in the device test),
+`61988b1`, `a5589dd`. No FastMultipole source edits; no FastMultipole-side
+defects found on hardware.
+
+**Deliverable status after this session:** 1 (device coupling), 2 (cache
+lifecycle / zero body transfer), 3 (nearfield hazard), 5 (CPU preservation)
+verified on hardware or previously; deliverable 4 is now measured on
+hardware against the validated direct-sum GPU kernels on both cases, both
+precisions, static + dynamic — all within the 1e-3 gate. **Still open before
+034 can be marked Done:** (a) user sign-off on deliverable-4 correctness;
+(b) the 033-reference-gated accuracy claims (checksummed 033 wake/cube
+reference comparison, now unlocked since 033 is Done — the device tests used
+live `UJ_direct`/GPU-direct references instead); (c) fold
+`runtests_gpu_fmm.jl` into the conditional `runtests.jl` wiring alongside
+`runtests_gpu.jl` if the user wants it in the default suite (it currently
+runs standalone).
+
 **FastMultipole interface gaps found (documented, not edited):** none in the
 032 device surface itself — the shipped traits/hooks/cache/recenter contract
 was sufficient as documented. The two items above (removed
