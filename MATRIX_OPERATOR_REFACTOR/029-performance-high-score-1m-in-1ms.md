@@ -217,8 +217,60 @@ leave no modeled value presented as a measured score.
 
 ## Reading Gate Record
 
-Not yet completed. Record the reader, date, every required file/artifact, and a
-statement that the full 028 verification history and failure ledger were read.
+**Completed `2026-08-05` (late evening MDT)** by the executing agent (Claude
+Fable 5, session resuming this row per the user's `2026-08-05` direction).
+Files read in full:
+
+1. `START_HERE.md` (all sections, both phase tables, Integration Phase
+   preamble, protocol rules) and `../MATRIX_OPERATOR_REFACTOR.md` (all 326
+   lines, including the single-level radix finding and the 028/029/030 row
+   histories).
+2. `028-performance-feasibility-1m-in-10ms.md` (all 866 lines), including
+   every Verification Notes entry (Phase A; Phase B levers 1–3, cycles 2–4;
+   Stages 5–8), the **complete failure ledger** (jobs 13016917; 13027048,
+   13027092, 13027167, 13027174, 13027188, cancelled 13027374; 13028465;
+   failed re-gate 13031187), the Staged Continuation Roadmap (Stages 5–10),
+   and all three Approval Notes sections.
+3. `data/feasibility_1m_10ms/report.md` (all 889 lines): the superseded Phase
+   A record §1–§5, §6b–§6.8 cycle-by-cycle progression
+   (91.4 → 69.6 → 64.6 → 38.0 → 30.7 → 15.4 → 12.5 → 9.591 ms), the closed
+   negative results, the §6.8 default-selection rules, and §7 threats to
+   validity (~8% hierarchical run-to-run variance; sub-10-ms lever gains are
+   within noise).
+4. The final reproduction log `data/feasibility_1m_10ms/fm028-13029878.out`
+   (76 lines: full toolchain record, all green gates incl. hierarchy
+   33,367/33,367, `STAGE8_REPRO_EXIT=0`) and the reproduced-result CSVs
+   `cuda_m13h-1-1_20260803-131016.csv` (FP16: verdict 9.591 [9.434, 9.631] ms,
+   err 1.0593e-3, counters 2/2/0/0/0, 2.0 GB persistent, host alloc
+   708 KB/step) and `..._131129.csv` (BF16: 9.638 ms, 1.0632e-3), with both
+   `.classes.csv` companions (per-level route histograms: L2 1,896 / L3
+   119,784 / L4 1,145,544 / L5 11,037,576 routes).
+5. Source manifest `42a6c254a11ac8a8` (winner + reproduction) and
+   `c0afa01083322fb8` (post-review shipped defaults, job 13031482). Production
+   surface supporting the retained winner, confirmed present in the current
+   tree this session: `src/translate_batched_cuda.jl` (tiled/grid-stride dense
+   M2L, FP16-WMMA path, warp-per-pair nearfield, `_cuda_fast_rsqrt`, counting
+   sort, allocation-free scratch validation), `src/containers.jl`
+   (`HierarchicalRigidStencil`, shipped `sched6-5-5-5` defaults, tensor-format
+   knob), `src/interaction_list_batched.jl` (rigid tables + derived epsilon
+   separator), `src/translate_batched_resident.jl` (policy resolution);
+   tests `cuda_radix_lifecycle_test.jl`, `cuda_radix_convection_test.jl` (+ six
+   028 testsets), `cuda_radix_hierarchical_test.jl`, `cuda_radix_counting_sort_test.jl`,
+   `hierarchical_m2l_host_test.jl`.
+
+Confirmed: the full 028 verification history and failure ledger were read.
+Key facts carried into this row's design: the verdict boundary and 1.19e-3
+gate are frozen; run-to-run variance on the hierarchical path is ~8%, so any
+claimed gain below ~10% needs repeated/independent measurement; the closed
+negative results list (§Work Plan 4) is binding absent a new mechanism-specific
+hypothesis; the 030 campaign (approved after 028) already measured retuned
+geometry at **7.092 ms** (`sched6-4-4-3`, err 1.18960e-3, knife-edge) and
+**7.556 ms** (`sched6-5-4-4`, 0.87x gate) on this same frozen workload — the
+029 step-1 baseline must freshly profile the shipped default *and* these
+geometries. One environment note: the cluster's default julia module moved to
+1.12.6, which segfaults host LLVM JIT on the device step (clean-env repro, job
+13058336); all 029 runs pin `julia/1.11.7-6bmogfl`, the toolchain of every
+result of record.
 
 ## Verification Notes
 
