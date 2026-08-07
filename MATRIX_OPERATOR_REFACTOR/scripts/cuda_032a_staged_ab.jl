@@ -96,13 +96,17 @@ end
 # primary cases + optional sentinels; (ell, q) start points are the adequate
 # geometries (q=16 everywhere per the Stage-C accuracy note), escalated by the
 # ladder below only if the baseline misses the gate
+# wc: window_classes override — at ell=6 the default whole-level windows size
+# the route-capacity arrays at min(K·max_level_nodes, ·) ≈ 22 GB per cache
+# (job 13065443's free-memory rejection); K = 64 keeps every wake1e6 cache a
+# few GB with identical steady-state math (windows only batch generation)
 const CASE_DEFS = Dict(
-    "cube1e5" => (case="cube", n=100_000, ell=3, q=16),
-    "wake1e5" => (case="wake", n=100_000, ell=5, q=16),
-    "cube1e3" => (case="cube", n=1_000, ell=1, q=16),
-    "cube1e6" => (case="cube", n=1_000_000, ell=4, q=16),
-    "wake1e3" => (case="wake", n=1_000, ell=3, q=16),
-    "wake1e6" => (case="wake", n=1_000_000, ell=6, q=16),
+    "cube1e5" => (case="cube", n=100_000, ell=3, q=16, wc=nothing),
+    "wake1e5" => (case="wake", n=100_000, ell=5, q=16, wc=nothing),
+    "cube1e3" => (case="cube", n=1_000, ell=1, q=16, wc=nothing),
+    "cube1e6" => (case="cube", n=1_000_000, ell=4, q=16, wc=nothing),
+    "wake1e3" => (case="wake", n=1_000, ell=3, q=16, wc=nothing),
+    "wake1e6" => (case="wake", n=1_000_000, ell=6, q=16, wc=64),
 )
 const PRIMARY = ("cube1e5", "wake1e5")
 const SENTINEL = ("cube1e3", "cube1e6", "wake1e3", "wake1e6")
@@ -225,7 +229,7 @@ function run_strategy!(io, label, def, ell, q, TF, sd::StratDef, sample, Uref, J
     opts = CUDARadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.DenseTranslationM2L(apply_chunk=64, build_chunk=8))
     cache = RadixFMMCache(sys; expansion_order=3, ell=ell, near_radius2=q,
-        hessian=true, device=true, options=opts)
+        window_classes=def.wc, hessian=true, device=true, options=opts)
     step!() = fmm!(sys, cache; scalar_potential=false, gradient=true, hessian=true)
     step!(); step!(); step!()
     CUDA.synchronize()
@@ -314,8 +318,10 @@ end
 
 host = gethostname()
 job = get(ENV, "SLURM_JOB_ID", "manual")
+# case-list separator is ":" — sbatch --export treats "," as its own list
+# separator and silently drops trailing cases (job 13065443)
 labels = let sel = get(ENV, "FM032A_CASES", "")
-    isempty(sel) ? (SENTINELS ? SENTINEL : PRIMARY) : Tuple(split(sel, ","))
+    isempty(sel) ? (SENTINELS ? SENTINEL : PRIMARY) : Tuple(split(sel, r"[:,]"))
 end
 for label in labels
     try
@@ -338,7 +344,14 @@ for label in labels
             println(io, "label,case,n,ell,q,tf,strategy,mode,subsort,rho_t,step_ms," *
                 "nearfield_ms,u_rel_rms,j_rel_rms,hom_all,hom_mixed,n_direct")
             for TF in (Float32, Float64), sd in strategy_matrix(def.case)
-                run_strategy!(io, label, def, ell, q, TF, sd, sample, Uref, Jref)
+                try
+                    run_strategy!(io, label, def, ell, q, TF, sd, sample, Uref, Jref)
+                catch err
+                    # e.g. TwoPassVortex refused on a flat-fallback (ell=1)
+                    # cache — keep the remaining rows
+                    println("  CONFIG $(sd.name)/$TF FAILED: ",
+                        sprint(showerror, err)[1:min(end, 300)])
+                end
             end
         end
         println("  wrote $out")
