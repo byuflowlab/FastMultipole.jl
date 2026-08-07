@@ -48,6 +48,7 @@ fi
 
 echo "=== stage D A/B ladder (cube + wake, three strategies, rho_t lever) ==="
 FM032A_OUTDIR="$OUTDIR" FM032A_SENTINELS="${FM032A_SENTINELS:-0}" \
+    FM032A_CASES="${FM032A_CASES:-}" \
     julia --project="$ENVDIR" \
     MATRIX_OPERATOR_REFACTOR/scripts/cuda_032a_staged_ab.jl
 

@@ -29,7 +29,7 @@ ssh "$REMOTE" "cd $RDIR \
   && cp -r staging_032a/scripts MATRIX_OPERATOR_REFACTOR/ \
   && bash -lc 'module load julia/1.11.7-6bmogfl \
       && julia --project=\$HOME/fm023env -e \"using Pkg; Pkg.develop(path=\\\".\\\"); Pkg.instantiate()\" \
-      && sbatch --export=ALL,FM032A_SENTINELS=${FM032A_SENTINELS:-0},FM032A_RUN_STAGEC=${FM032A_RUN_STAGEC:-0} \
+      && sbatch --export=ALL,FM032A_SENTINELS=${FM032A_SENTINELS:-0},FM032A_RUN_STAGEC=${FM032A_RUN_STAGEC:-0},FM032A_CASES=${FM032A_CASES:-} \
           MATRIX_OPERATOR_REFACTOR/scripts/cuda_032a_run.sh'"
 
 echo "Submitted. Poll with:  ssh orc 'bash -lc \"squeue -u \\\$USER\"'"

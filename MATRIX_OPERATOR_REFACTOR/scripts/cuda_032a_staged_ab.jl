@@ -265,7 +265,10 @@ function run_strategy!(io, label, def, ell, q, TF, sd::StratDef, sample, Uref, J
     u_rms = rel_rms(Float64.(inner.gradient_stretching[1:3, sample]), Uref)
     j_rms = rel_rms(Float64.(inner.potential[5:13, sample]), Jref)
     hom_all = hom_mixed = NaN
-    if sd.name != "regularized"
+    # flat-policy fallback caches (e.g. the degenerate ell=1 sentinel) carry no
+    # bin context: the split kernels run unbinned there and homogeneity
+    # telemetry is unavailable
+    if sd.name != "regularized" && FM._cache_nearfield_bin_ctx(cache) !== nothing
         h = FM.cuda_nearfield_homogeneity(st; stream=:all)
         hom_all = h.homogeneous_fraction
         hm = FM.cuda_nearfield_homogeneity(st; stream=:mixed)
@@ -278,6 +281,8 @@ function run_strategy!(io, label, def, ell, q, TF, sd::StratDef, sample, Uref, J
     flush(io)
     @printf("  %-22s %s: step %8.3f ms  nearfield %8.3f ms  u_rms %.3e  j_rms %.3e\n",
         sd.name, TF === Float64 ? "F64" : "F32", step_ms, nearfield_ms, u_rms, j_rms)
+    cache = nothing; sys = nothing
+    GC.gc()
     CUDA.reclaim()
     return (; step_ms, nearfield_ms, u_rms, j_rms)
 end
@@ -309,9 +314,16 @@ end
 
 host = gethostname()
 job = get(ENV, "SLURM_JOB_ID", "manual")
-labels = SENTINELS ? SENTINEL : PRIMARY
+labels = let sel = get(ENV, "FM032A_CASES", "")
+    isempty(sel) ? (SENTINELS ? SENTINEL : PRIMARY) : Tuple(split(sel, ","))
+end
 for label in labels
     try
+        # previous cases' device caches are function-local garbage but not yet
+        # collected; without this the dense free-memory preflight sees a
+        # starved pool (wake1e6 rejection, job 13065376)
+        GC.gc()
+        CUDA.reclaim()
         def = CASE_DEFS[label]
         println("=== case $label: $(def.case) n=$(def.n) (start ell=$(def.ell) q=$(def.q))")
         ref_sys = build_case(def.case, def.n)
