@@ -105,6 +105,15 @@ const FM = FastMultipole
             # the partition's per-level node ranges? (job 13064752: the filter
             # was a no-op — g=1 kept all 80472 routes, g=2 kept zero, and the
             # count+xor gate is blind to that degenerate split)
+            # frame check: do the three caches even share a body permutation?
+            # (GPU counting-sort nondeterminism would break the sorted-frame
+            # diagnostics AND the b0:b1 exchange-block body alignment)
+            let hp1 = G[1].cache.state.host_body_perm,
+                    hp2 = G[2].cache.state.host_body_perm,
+                    hps = scache.state.host_body_perm
+                println("[p2diag3] perm mismatches g1-vs-g2 = ", count(hp1 .!= hp2),
+                    "  g1-vs-single = ", count(hp1 .!= hps), " of ", length(hp1))
+            end
             println("[p2diag3] post-setup filtered route counts g=1,g=2 = ",
                 sum(G[1].cache.state.interaction_list.win_level_counts), ", ",
                 sum(G[2].cache.state.interaction_list.win_level_counts))
