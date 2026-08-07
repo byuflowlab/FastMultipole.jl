@@ -40,8 +40,33 @@ julia --project="$ENVDIR" test/cuda_radix_lifecycle_test.jl
 echo "=== preflight: stage C binned-nearfield test (NEW) ==="
 julia --project="$ENVDIR" test/cuda_radix_nearfield_binning_test.jl
 
-echo "=== stage C mechanism-selection benchmark ==="
-FM032A_OUTDIR="$OUTDIR" julia --project="$ENVDIR" \
-    MATRIX_OPERATOR_REFACTOR/scripts/cuda_032a_stagec_benchmark.jl
+if [ "${FM032A_RUN_STAGEC:-0}" = "1" ]; then
+    echo "=== stage C mechanism-selection benchmark ==="
+    FM032A_OUTDIR="$OUTDIR" julia --project="$ENVDIR" \
+        MATRIX_OPERATOR_REFACTOR/scripts/cuda_032a_stagec_benchmark.jl
+fi
+
+echo "=== stage D A/B ladder (cube + wake, three strategies, rho_t lever) ==="
+FM032A_OUTDIR="$OUTDIR" FM032A_SENTINELS="${FM032A_SENTINELS:-0}" \
+    julia --project="$ENVDIR" \
+    MATRIX_OPERATOR_REFACTOR/scripts/cuda_032a_staged_ab.jl
+
+echo "=== stage D: scalar no-regression (028/030 verdict config, unchanged harness) ==="
+REFDIR="$WORKDIR/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/references"
+COMMON=(FM028_P=3 FM028_STRAT=dense FM028_LH=0 FM028_K=full
+        FM028_REPS=9 FM028_STEPS=0 FM028_STALE=0
+        FM028_BOUND=ab FM028_SYMMETRIC=0
+        FM028_M2L_THREADS=64 FM028_M2L_BLOCK_CAP=65536 FM028_COUNTING_SORT=1
+        FM028_REFDIR="$REFDIR")
+for cfg in "Float32 fp16" "Float64 off"; do
+    read -r tf fmt <<< "$cfg"
+    out="$OUTDIR/cuda032a_nr_sched6_5_5_5_${fmt}_n1000000_$(hostname)_${SLURM_JOB_ID:-manual}.csv"
+    echo "=== no-regression case tf=$tf fmt=$fmt"
+    env "${COMMON[@]}" \
+        FM028_N=1000000 FM028_ELL=5 FM028_POLICY=sched6-5-5-5 \
+        FM028_TF="$tf" FM028_TENSOR_FORMAT="$fmt" FM028_OUT="$out" \
+        julia --project="$ENVDIR" \
+        MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+done
 
 echo "fm032a job complete"

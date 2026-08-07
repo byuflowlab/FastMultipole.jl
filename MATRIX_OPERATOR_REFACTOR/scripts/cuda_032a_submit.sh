@@ -9,11 +9,17 @@ set -euo pipefail
 REMOTE=orc
 RDIR=FastMultipole-023
 
-ssh "$REMOTE" "mkdir -p $RDIR/MATRIX_OPERATOR_REFACTOR/data/split_nearfield"
+ssh "$REMOTE" "mkdir -p $RDIR/MATRIX_OPERATOR_REFACTOR/data/split_nearfield \
+  $RDIR/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling"
 
 rsync -az --delete --exclude .git \
     src test Project.toml MATRIX_OPERATOR_REFACTOR/scripts \
     "$REMOTE:$RDIR/staging_032a/"
+
+# the stage-D scalar no-regression cases hard-gate on the checksummed 024b
+# direct references (030 pattern)
+rsync -az MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/references \
+    "$REMOTE:$RDIR/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/"
 
 ssh "$REMOTE" "cd $RDIR \
   && rm -rf src test MATRIX_OPERATOR_REFACTOR/scripts \
