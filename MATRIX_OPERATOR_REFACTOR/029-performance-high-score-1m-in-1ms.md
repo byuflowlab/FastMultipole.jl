@@ -316,10 +316,65 @@ work, per the 030 approval's caveat.
 
 ## Multi-H200 Leaderboard
 
-No entries yet. Topology probe (2026-08-06): partitions `m13h` (4 nodes x
-8x H200) and `eng` (1 node x 8x H200) — the multi-GPU track can run
-intra-node up to 8 GPUs; interconnect to be recorded from `nvidia-smi topo
--m` in the first multi-GPU job.
+| date | job | scheme | GPUs | wall (ms) | comm+orch (ms) | eff. vs 4.657 | gates |
+|---|---|---|---|---|---|---|---|
+| 2026-08-07 | 13066058 | P2 work-list slice + bitwise allreduce, pool P2P | 2 | 3.993 [3.807, 4.249] | 0.190 | 58.3% | comm PASS, eff FAIL |
+| 2026-08-07 | 13066057 | same, staging-bandwidth exchange (pre pool grant) | 2 | 4.791 | 1.003 | 48.6% | both FAIL |
+
+Interconnect (m13h nodes): GPU0<->GPU1 = NV18 (`nvidia-smi topo -m`, jobs
+13066057/13066058). Achieved cross-device copy after the pool-access grant:
+234-236 GB/s (vs ~32 GB/s staging before it).
+
+### P2 verdict (2026-08-07, jobs 13061054/13061265/13061495/13064752/13065445/13066053/13066057/13066058)
+
+**Correctness: PASS.** The shipped decomposition is MIRRORED SOURCES +
+WORK-LIST SLICING + two bitwise allreduces (scripts/fm029_p2_common.jl,
+test/cuda_radix_twogpu_test.jl): the cached M2L windows and the nearfield
+pair list are split positionally (any split of an atomically-accumulated work
+list is exact), L2B by leaf-cell half, B2M/M2M/L2L + refresh + finalize
+replicated; partial `locals.phi` are allreduced after the M2L slice (node
+frame is deterministic) and partial `output` after L2B through a PERM-AWARE
+scatter-add (the device counting sort is not deterministic across caches —
+within-cell order comes from atomics). IEEE `a+b == b+a` makes both exchanges
+bitwise-symmetric, so the mirrored body states advance in bitwise lockstep
+with no position exchange — verified `==` across convection steps at
+Float64 P=3/P=4 and Float32+fp16 (n=2e4 gates) and at the n=1e6 boundary
+(gradient rel-RMS 1.03e-3, identical to single-GPU; accuracy gate <=1.19e-3
+PASS).
+
+**Gate 1, comm+orch <= 0.4 ms: PASS at 0.190 ms** (exchange copies 0.095,
+spawn/join 0.016, imbalance 0.012). Required fixing two infrastructure traps:
+(a) concurrent CUDA stream captures run in GLOBAL mode and kill the peer
+worker's API use — capture must be solo/serialized (job 13061054 wedge; the
+step path only replays); (b) `cuCtxEnablePeerAccess` maps only `cuMemAlloc`
+memory — stream-ordered POOL memory needs `cuMemPoolSetAccess`, which
+CUDACore leaves disabled, so pool-backed cross-device copies staged at
+~32 GB/s despite NV18 until the script grants pool access manually
+(`p2_enable_pool_peer_access!`).
+
+**Gate 2, efficiency >= 75% of 2x the 4.657 ms record: FAIL at 58.3%**
+(3.993 ms; in-job single 4.673 ms). The shortfall is STRUCTURAL, not comm:
+per-GPU step = refresh 0.51 (replicated) + far-field 2.90 (sliced M2L/
+nearfield/L2B at ~half cost PLUS the replicated dependent chains B2M/M2M/L2L)
++ exchange 0.09 + finalize 0.24 (+0.74 host tail). With comm fully removed
+the wall floor is ~3.8 ms => ~61%. Reaching 75% (wall <= 3.11 ms) requires
+splitting the refresh/upward/downward chains themselves; those are
+level-DEPENDENT (not flat work lists), so slicing them needs per-level
+allreduces or source-partitioned trees with halo exchange — out of scope for
+the mirrored-tree P2 prototype. This is falsification-grade evidence for the
+>=75% 2-GPU gate under mirrored trees at n=1e6; the exchange mechanism itself
+(0.19 ms round trip incl. 40+ MB of payload) is validated for any successor
+scheme.
+
+Dead end recorded on the way (5 jobs): the first P2 design filtered the
+cached M2L windows by per-level target-node ranges. Its failures were NOT
+route-semantics bugs alone — every sorted-frame diagnostic was scrambled at
+~0.4-0.5 rel-RMS because the counting sorts differ across caches, and the
+window stream itself holds exactly HALF the naive directed enumeration
+(752/160192 at ell=3 levels 2/3 full occupancy) with targets confined to
+Morton-first-half node ranges, so "filter by target range" kept everything on
+one GPU and nothing on the other while the count+xor partition gate passed
+vacuously. Work-list slicing needs none of those assumptions.
 
 ## Verification Notes
 
