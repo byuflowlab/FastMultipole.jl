@@ -311,23 +311,29 @@ host = gethostname()
 job = get(ENV, "SLURM_JOB_ID", "manual")
 labels = SENTINELS ? SENTINEL : PRIMARY
 for label in labels
-    def = CASE_DEFS[label]
-    println("=== case $label: $(def.case) n=$(def.n) (start ell=$(def.ell) q=$(def.q))")
-    ref_sys = build_case(def.case, def.n)
-    sample = unique(round.(Int, range(1, def.n; length=min(NSAMPLE, def.n))))
-    print("  sampled-direct reference ($(length(sample)) targets)... ")
-    tref = @elapsed Uref, Jref = sampled_reference(ref_sys, sample)
-    @printf("%.1f s\n", tref)
-    ell, q = resolve_geometry(label, def, sample, Uref, Jref)
-    println("  selected geometry: ell=$ell q=$q")
-    out = joinpath(OUTDIR, "cuda032a_staged_$(label)_$(host)_$(job).csv")
-    open(out, "w") do io
-        println(io, "label,case,n,ell,q,tf,strategy,mode,subsort,rho_t,step_ms," *
-            "nearfield_ms,u_rel_rms,j_rel_rms,hom_all,hom_mixed,n_direct")
-        for TF in (Float32, Float64), sd in strategy_matrix(def.case)
-            run_strategy!(io, label, def, ell, q, TF, sd, sample, Uref, Jref)
+    try
+        def = CASE_DEFS[label]
+        println("=== case $label: $(def.case) n=$(def.n) (start ell=$(def.ell) q=$(def.q))")
+        ref_sys = build_case(def.case, def.n)
+        sample = unique(round.(Int, range(1, def.n; length=min(NSAMPLE, def.n))))
+        print("  sampled-direct reference ($(length(sample)) targets)... ")
+        tref = @elapsed Uref, Jref = sampled_reference(ref_sys, sample)
+        @printf("%.1f s\n", tref)
+        ell, q = resolve_geometry(label, def, sample, Uref, Jref)
+        println("  selected geometry: ell=$ell q=$q")
+        out = joinpath(OUTDIR, "cuda032a_staged_$(label)_$(host)_$(job).csv")
+        open(out, "w") do io
+            println(io, "label,case,n,ell,q,tf,strategy,mode,subsort,rho_t,step_ms," *
+                "nearfield_ms,u_rel_rms,j_rel_rms,hom_all,hom_mixed,n_direct")
+            for TF in (Float32, Float64), sd in strategy_matrix(def.case)
+                run_strategy!(io, label, def, ell, q, TF, sd, sample, Uref, Jref)
+            end
         end
+        println("  wrote $out")
+    catch err
+        # a degenerate sentinel geometry (e.g. n=1e3 forcing ell<=1) must not
+        # abort the remaining cases; record and continue
+        println("  CASE $label FAILED: ", sprint(showerror, err)[1:min(end, 400)])
     end
-    println("  wrote $out")
 end
 println("cuda_032a_staged_ab complete")
