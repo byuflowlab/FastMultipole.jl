@@ -425,6 +425,33 @@ function p2_require_peer_access!(G::Vector{P2Gpu})
     return G
 end
 
+# cuCtxEnablePeerAccess maps only cuMemAlloc memory; stream-ordered POOL
+# memory needs an explicit cuMemPoolSetAccess, which CUDACore leaves disabled
+# (old NVIDIA bug workaround, memory.jl "XXX: disabled"). Without it the
+# driver silently stages cross-device copies of pool-backed CuArrays at
+# ~32 GB/s even on NV18 pairs (job 13066057: exchange 0.905 ms of a 1.003 ms
+# comm+orch total). Granting each device's pool to the peer restores direct
+# NVLink-rate P2P.
+function p2_enable_pool_peer_access!(d0::Int, d1::Int)
+    core = isdefined(CUDA, :CUDACore) ? CUDA.CUDACore : CUDA
+    if !(isdefined(core, :pool_create) && isdefined(core, :access!))
+        @warn "pool access API unavailable; exchange may run at staging bandwidth"
+        return false
+    end
+    flags = core.CU_MEM_ACCESS_FLAGS_PROT_READWRITE
+    try
+        for (owner, accessor) in ((d0, d1), (d1, d0))
+            CUDA.device!(owner)
+            pool = core.pool_create(CUDA.CuDevice(owner))
+            core.access!(pool, [CUDA.CuDevice(accessor)], flags)
+        end
+        return true
+    catch err
+        @warn "pool peer-access grant failed; exchange may run at staging bandwidth" err
+        return false
+    end
+end
+
 # ---- the complete 2-GPU verdict step ----------------------------------------
 
 # Worker body for GPU g (1-based). seg rows, per GPU column:

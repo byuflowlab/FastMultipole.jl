@@ -103,6 +103,7 @@ const FM = FastMultipole
             @test cover_ok
             @test info[1].routes == info[2].routes && info[1].routes > 0
             p2_require_peer_access!(G)
+            p2_enable_pool_peer_access!(0, 1)
 
             # solo serialized recording, then concurrent replay (no motion)
             println("[p2test] record graphs (solo)"); flush(stdout)

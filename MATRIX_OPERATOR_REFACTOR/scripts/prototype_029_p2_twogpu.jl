@@ -133,6 +133,11 @@ ref_potential = r024.potential
 ref_gradient = reshape(reduce(vcat, [collect(g) for g in r024.gradient]), 3, :)
 println("reference: 024b_csv checksum=", r024.checksum, " samples=", length(indices))
 
+# map each device's memory pool for the peer BEFORE measuring: without this the
+# driver stages pool-backed cross-device copies at ~32 GB/s despite NV18
+pool_p2p = p2_enable_pool_peer_access!(0, 1)
+println("pool peer access granted: ", pool_p2p)
+
 # raw cross-device copy microbenchmark at the exchange size (rows x n/2)
 p2p_gbps = zeros(2)
 let nb = 4 * (N ÷ 2) * sizeof(TF)
