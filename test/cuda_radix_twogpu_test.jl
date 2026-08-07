@@ -101,6 +101,47 @@ const FM = FastMultipole
             @test info[1].full_windows.xors == sw.xors
             @test info[1].full_direct.count == sd.count &&
                   info[1].full_direct.xor == sd.xor
+            # forensics: where do the window targets actually live relative to
+            # the partition's per-level node ranges? (job 13064752: the filter
+            # was a no-op — g=1 kept all 80472 routes, g=2 kept zero, and the
+            # count+xor gate is blind to that degenerate split)
+            println("[p2diag3] post-setup filtered route counts g=1,g=2 = ",
+                sum(G[1].cache.state.interaction_list.win_level_counts), ", ",
+                sum(G[2].cache.state.interaction_list.win_level_counts))
+            CUDA.device!(0)
+            FM.update_cuda_radix_state!(G[1].cache, (G[1].sys,))
+            println("[p2diag3] post-update route count g=1 = ",
+                sum(G[1].cache.state.interaction_list.win_level_counts),
+                " (regenerated if it snapped back to the full count)")
+            flush(stdout)
+            let st1 = G[1].cache.state, hctx = st1.interaction_list
+                println("[p2diag3] window-target forensics (g=1 cache, post-filter):")
+                for L in 2:hctx.ell
+                    s = hctx.win_level_starts[L + 1]
+                    n = hctx.win_level_counts[L + 1]
+                    n == 0 && (println("  L=$L n=0"); continue)
+                    wtv = Array(view(hctx.win_targets, (s + 1):(s + n)))
+                    lo1, hi1 = G[1].part.lo[L + 1], G[1].part.hi[L + 1]
+                    lo2, hi2 = G[2].part.lo[L + 1], G[2].part.hi[L + 1]
+                    c1 = count(t -> lo1 <= t <= hi1, wtv)
+                    c2 = count(t -> lo2 <= t <= hi2, wtv)
+                    println("  L=$L n=$n tgt_extrema=", extrema(wtv),
+                        " own1=[$lo1,$hi1] in1=$c1 own2=[$lo2,$hi2] in2=$c2",
+                        " neither=", n - c1 - c2)
+                end
+                println("[p2diag3] level_offsets=", collect(G[1].cache.level_offsets))
+                flush(stdout)
+            end
+            # setup-time stock accuracy on the mirrored caches (fmm! ran inside
+            # p2_setup_gpu! before any filtering; sys still holds its results)
+            for g in 1:2
+                CUDA.device!(G[g].dev)
+                pot0, grad0 = fm028_sampled_output(G[g].sys, indices)
+                m0 = fm028_accuracy_metrics(pot0, grad0, dref[1, :], dref[2:4, :])
+                println("[p2diag3] setup fmm! g=$g grad relrms vs direct = ",
+                    m0.gradient_rel_rms)
+            end
+            flush(stdout)
             ok, _ = p2_partition_exact(G, info[1].full_windows, info[1].full_direct,
                 info[2].full_windows, info[2].full_direct)
             @test ok
@@ -129,6 +170,29 @@ const FM = FastMultipole
                     relrms(Array(st1.output))
                 end
                 ncell = st1.counts.n_cells
+                # R: stock fmm! on this mirrored cache — validates the sorted-
+                # frame comparison itself (expect ~0 vs the single cache)
+                fmm!(me.sys, me.cache; scalar_potential=true, gradient=true)
+                CUDA.synchronize()
+                println("[p2diag3] R stock fmm! on mirrored cache  = ",
+                    relrms(Array(st1.output)))
+                # E: production lifecycle body on the same cache/window state
+                FM.update_cuda_radix_state!(me.cache, (me.sys,))
+                FM.run_cuda_radix_lifecycle!(st1)
+                CUDA.synchronize()
+                println("[p2diag3] E production body, same windows = ",
+                    relrms(Array(st1.output)))
+                # F: my launcher sequence, inline nearfield, full L2B
+                FM.update_cuda_radix_state!(me.cache, (me.sys,))
+                FM._launch_cuda_nearfield_kernel!(st1)
+                FM._launch_cuda_b2m!(st1)
+                FM._launch_cuda_resident_m2m!(st1)
+                FM._launch_cuda_resident_m2l!(st1)
+                FM._launch_cuda_resident_l2l!(st1)
+                p2_l2b_owned!(st1, 1, ncell)
+                CUDA.synchronize()
+                println("[p2diag3] F my sequence, inline NF        = ",
+                    relrms(Array(st1.output)))
                 println("[p2diag2] A filtered body, owned L2B      = ",
                     solo(me.part.c0, me.part.c1))
                 println("[p2diag2] C filtered windows, full L2B    = ", solo(1, ncell))
