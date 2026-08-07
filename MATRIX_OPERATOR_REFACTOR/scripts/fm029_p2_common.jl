@@ -1,4 +1,4 @@
-# Task 029 prototype P2: shared 2-GPU octant-decomposition machinery.
+# Task 029 prototype P2: shared 2-GPU decomposition machinery.
 #
 # Included AFTER `using FastMultipole`, `using CUDA`, and
 # fm028_device_system.jl, by prototype_029_p2_twogpu.jl and
@@ -6,34 +6,42 @@
 # surface is modified; everything here drives the UNCHANGED cycle-1 resident
 # pipeline through its public/internal launchers.
 #
-# Decomposition (documented in the 029 task file, P2 section):
-#   * MIRRORED SOURCES, PARTITIONED TARGETS. Both GPUs hold the full body set
-#     and construct byte-identical full-domain RadixFMMCaches (same bounds,
-#     ell, policy; identical counting sorts => identical trees, node indexing,
-#     and cached route windows). Precondition, asserted: full occupancy
-#     (8^L nodes at every level), which makes the "first half of the nodes at
-#     each level" an ancestor-closed set of 4 complete level-1 subtrees.
-#   * GPU g owns target half g: its cached M2L route windows are filtered
-#     in place to routes whose TARGET node lies in the owned half (every
-#     level), its direct pairs to pairs whose TARGET leaf cell is owned, and
-#     L2B is restricted to the owned (contiguous) leaf-cell range. B2M/M2M/
-#     L2L and the refresh run on the full mirrored set (replicated work —
-#     measured and reported as such; an 8-GPU production design would
-#     partition sources too, see the task-file P2 notes).
-#   * The far-field chain + side-stream nearfield is captured per GPU into a
-#     script-owned CUDA graph (the production graph machinery's global
-#     nearfield stream/event singletons are single-device; here each GPU gets
-#     its own side stream + events, so production flags CUDA_GRAPH_LIFECYCLE
-#     and CUDA_OVERLAP_NEARFIELD must be OFF while CUDA_CACHED_WINDOWS stays
-#     ON). Filtered window counts and n_direct are baked at capture; any
-#     occupancy-epoch change re-filters and re-records (counted, and its cost
-#     lands in the measured step — the same recurrence rule as cycle 1).
-#   * The ONLY recurring exchange: after the graphs complete, each GPU
-#     P2P-pushes its owned contiguous sorted output block (rows 1:4 x owned
-#     bodies) into the peer's output buffer, ordered by cross-device events
-#     (no host sync inside the exchange). Both GPUs then run finalize + Euler
-#     over the full body set on identical data, so the mirrored body states
-#     advance in bitwise lockstep and positions never need exchanging.
+# Decomposition: WORK-LIST SLICING + ALLREDUCE (documented in the 029 task
+# file, P2 section; replaces the earlier target-filtered design, which rested
+# on unfounded assumptions about the hierarchical route-window semantics —
+# jobs 13061265/13061495/13064752/13065445/13066053).
+#   * MIRRORED SOURCES. Both GPUs hold the full body set and construct
+#     full-domain RadixFMMCaches (same bounds, ell, policy). No assumption of
+#     identical sorts or route streams is needed anywhere.
+#   * SLICED WORK LISTS. The cached M2L route windows and the nearfield pair
+#     list are pure work lists whose entries accumulate atomically into
+#     locals/output — ANY positional split of them is exact. GPU g applies
+#     the g-th half of every per-level window slice and of the pair list, and
+#     runs L2B over the g-th contiguous leaf-cell half. B2M/M2M/L2L and the
+#     refresh are replicated (measured and reported as such).
+#   * TWO ALLREDUCE EXCHANGES per step, both bitwise-exact by IEEE add
+#     commutativity (a+b == b+a), which makes the mirrored body states advance
+#     in bitwise lockstep with NO position exchange:
+#       1. after B2M/M2M/M2L-slice: each GPU pushes its partial `locals.phi`
+#          into the peer's staging; both sides add — both now hold the SAME
+#          two partial arrays summed (node numbering is key-sorted and thus
+#          deterministic, so the locals frames agree across devices).
+#       2. after L2L + nearfield-slice + L2B-half: same for `output`, but
+#          PERM-AWARE: the device counting sort is not deterministic across
+#          caches (within-cell body order comes from atomics — this scrambled
+#          every sorted-frame diagnostic of the previous design at ~0.4-0.5
+#          relrms), so each GPU pushes its output TOGETHER WITH its
+#          `body_perm` slice, and the receiver scatter-adds through
+#          inv(own perm) ∘ peer perm. Per USER body the sum is the same two
+#          floats on both devices — still bitwise-symmetric.
+#   * GRAPHS. The far-field is captured per GPU as TWO script-owned graphs
+#     (A: fill+nearfield-slice on a side stream joined at the end, B2M, M2M,
+#     M2L-slice; B: L2L + owned-half L2B), recorded solo and serialized
+#     (GLOBAL capture mode outlaws concurrent CUDA API use on other threads —
+#     job 13061054). Steps replay or run uncaptured; they never capture.
+#     Production flags CUDA_GRAPH_LIFECYCLE / CUDA_OVERLAP_NEARFIELD must be
+#     OFF while CUDA_CACHED_WINDOWS stays ON (the M2L slice consumes the
+#     cached window stream).
 
 using Printf
 
@@ -71,30 +79,12 @@ function p2_barrier_wait!(b::P2Barrier; timeout_s::Float64=120.0)
     return nothing
 end
 
-# ---- partition ---------------------------------------------------------------
+# ---- partition (leaf cells only; no route semantics) -------------------------
 
-# Owned ranges for half `half` in (1, 2): per-level absolute node index range
-# (levels 1:ell; level 0 owns nothing — no routes exist there), owned leaf-cell
-# range c0:c1, and the owned sorted-body range b0:b1. Requires full occupancy.
+# Contiguous leaf-cell half for L2B plus the corresponding sorted-body range
+# (reporting only). Work-list slicing needs nothing else.
 function p2_partition(cache, half::Int)
     state = cache.state
-    hctx = state.interaction_list
-    ell = hctx.ell
-    offs = cache.level_offsets
-    lo = zeros(Int, ell + 1)
-    hi = zeros(Int, ell + 1)
-    for L in 0:ell
-        nL = offs[L + 2] - offs[L + 1]
-        nL == 8^L || error("P2 precondition violated: level $L has $nL of $(8^L) nodes")
-        if L == 0
-            lo[L + 1] = 1
-            hi[L + 1] = 0
-        else
-            h = nL ÷ 2
-            lo[L + 1] = offs[L + 1] + (half == 1 ? 1 : h + 1)
-            hi[L + 1] = offs[L + 1] + (half == 1 ? h : nL)
-        end
-    end
     ncell = state.counts.n_cells
     h = ncell ÷ 2
     c0 = half == 1 ? 1 : h + 1
@@ -102,110 +92,87 @@ function p2_partition(cache, half::Int)
     first_c0 = Int(Array(view(state.cell_ranges, 1:1, c0:c0))[1])
     first_c1 = Int(Array(view(state.cell_ranges, 1:1, c1:c1))[1])
     count_c1 = Int(Array(view(state.cell_ranges, 2:2, c1:c1))[1])
-    b0 = first_c0
-    b1 = first_c1 + count_c1 - 1
-    return (; half, ell, lo, hi, c0, c1, b0, b1)
+    return (; half, c0, c1, b0=first_c0, b1=first_c1 + count_c1 - 1)
 end
 
-# ---- route / direct-pair filtering (occupancy-epoch recurrence only) --------
+_p2_slice(n::Int, half::Int) = half == 1 ? (1, n ÷ 2) : (n ÷ 2 + 1, n)
 
-_p2_xor(class, src, tgt) = hash((class, src, tgt))
+# ---- sliced work-list launches -----------------------------------------------
 
-# Per-level (count, xor-checksum) of the CURRENT window cache — order- and
-# partition-independent identity used by the exactness gate.
-function p2_window_signature(state)
+# The g-th half of every per-level cached M2L window slice. The fused-family
+# kernels carry the operator class per route, so any positional split is exact;
+# locals accumulate atomically.
+function p2_m2l_sliced!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        half::Int) where {TF,B,LH}
     hctx = state.interaction_list
-    counts = Int[]
-    xors = UInt64[]
+    hctx isa FastMultipole.DeviceHierarchicalM2LContext || throw(ArgumentError(
+        "P2 M2L slicing requires the hierarchical device context"))
+    (FastMultipole.CUDA_CACHED_WINDOWS[] && hctx.win_valid &&
+        FastMultipole._cuda_windows_cacheable(hctx)) || throw(ArgumentError(
+        "P2 M2L slicing requires a valid cacheable window stream"))
+    ws = state.scratch
+    plan = hctx.apply_plan
+    fill!(state.locals.phi, zero(TF))
+    LH && fill!(state.locals.chi, zero(TF))
+    wc = hctx.win_class::CUDA.CuVector{Int32}
+    wsrc = hctx.win_sources::CUDA.CuVector{Int}
+    wtgt = hctx.win_targets::CUDA.CuVector{Int}
     for L in 2:hctx.ell
-        s = hctx.win_level_starts[L + 1]
         n = hctx.win_level_counts[L + 1]
-        x = UInt64(0)
-        if n > 0
-            rng = (s + 1):(s + n)
-            wc = Array(view(hctx.win_class, rng))
-            wsv = Array(view(hctx.win_sources, rng))
-            wtv = Array(view(hctx.win_targets, rng))
-            for i in 1:n
-                x ⊻= _p2_xor(wc[i], wsv[i], wtv[i])
-            end
-        end
-        push!(counts, n)
-        push!(xors, x)
-    end
-    return (; counts, xors)
-end
-
-function p2_direct_signature(state)
-    nd = state.counts.n_direct
-    x = UInt64(0)
-    if nd > 0
-        dt = Array(view(state.direct_targets, 1:nd))
-        ds = Array(view(state.direct_sources, 1:nd))
-        for i in 1:nd
-            x ⊻= hash((dt[i], ds[i]))
-        end
-    end
-    return (; count=nd, xor=x)
-end
-
-# In-place filter of the cached per-level route windows to owned-target routes.
-# Level starts stay fixed; only the per-level counts shrink (exactly what the
-# cached M2L launcher and the graph capture read). Host round-trip is fine: it
-# recurs only on occupancy-epoch change, like the window generation itself.
-function p2_filter_windows!(state, part)
-    hctx = state.interaction_list
-    for L in 2:hctx.ell
         s = hctx.win_level_starts[L + 1]
-        n = hctx.win_level_counts[L + 1]
-        n == 0 && continue
-        rng = (s + 1):(s + n)
-        wc = Array(view(hctx.win_class, rng))
-        wsv = Array(view(hctx.win_sources, rng))
-        wtv = Array(view(hctx.win_targets, rng))
-        lo = part.lo[L + 1]
-        hi = part.hi[L + 1]
-        keep = (wtv .>= lo) .& (wtv .<= hi)
-        k = count(keep)
-        if k > 0
-            copyto!(view(hctx.win_class, (s + 1):(s + k)), wc[keep])
-            copyto!(view(hctx.win_sources, (s + 1):(s + k)), wsv[keep])
-            copyto!(view(hctx.win_targets, (s + 1):(s + k)), wtv[keep])
-        end
-        hctx.win_level_counts[L + 1] = k
-        hctx.routes_per_level[L + 1] = k
+        lo, hi = _p2_slice(n, half)
+        len = hi - lo + 1
+        len > 0 && FastMultipole._cuda_hier_dense_apply_routes!(state, ws, plan,
+            hctx, L, view(wc, (s + lo):(s + hi)), view(wsrc, (s + lo):(s + hi)),
+            view(wtgt, (s + lo):(s + hi)), len)
     end
-    hctx.total_routes = sum(hctx.win_level_counts)
-    state.counts.n_routes = hctx.total_routes
+    state.counts.n_routes = hctx.total_routes   # telemetry parity with production
     return state
 end
 
-# In-place filter of the direct pair list to owned-target-cell pairs. Both
-# counts.n_direct (this step's launches) and hctx.epoch_n_direct (what the
-# refresh restores while occupancy is unchanged) are set to the kept count.
-function p2_filter_direct!(state, part)
+# fill! + the g-th half of the nearfield pair list (symmetric Newton pairs or
+# plain functor pairs — whichever production would select). Output accumulates
+# atomically, so the positional split is exact under the later allreduce.
+function p2_nearfield_sliced!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        half::Int) where {TF,B,LH}
+    fill!(state.output, zero(TF))
+    size(state.output, 1) == 4 || throw(ArgumentError("P2 expects the 4-row output"))
     hctx = state.interaction_list
-    nd = state.counts.n_direct
-    nd == 0 && return state
-    dt = Array(view(state.direct_targets, 1:nd))
-    ds = Array(view(state.direct_sources, 1:nd))
-    keep = (dt .>= part.c0) .& (dt .<= part.c1)
-    k = count(keep)
-    if k > 0
-        copyto!(view(state.direct_targets, 1:k), dt[keep])
-        copyto!(view(state.direct_sources, 1:k), ds[keep])
+    dk = state.options.direct_kernel
+    dk isa Union{FastMultipole.PartitionedVortex,FastMultipole.TwoPassVortex} &&
+        throw(ArgumentError("split vortex nearfield is unsupported in the P2 slice"))
+    hsv = Val(false)
+    threads = 128
+    symmetric = FastMultipole.CUDA_SYMMETRIC_NEARFIELD[] && !LH &&
+        dk isa FastMultipole.SingularSource &&
+        hctx isa FastMultipole.DeviceHierarchicalM2LContext &&
+        !isempty(hctx.symmetric_targets)
+    if symmetric
+        np = hctx.n_symmetric_pairs
+        lo, hi = _p2_slice(np, half)
+        len = hi - lo + 1
+        blocks = min(cld(len, threads ÷ 32), FastMultipole.DIRECT_CUDA_MAX_BLOCKS[])
+        len > 0 && CUDA.@cuda threads=threads blocks=blocks FastMultipole._cuda_symmetric_pairs_output_kernel!(
+            state.output, state.source_bodies, state.cell_ranges,
+            view(hctx.symmetric_targets, lo:hi), view(hctx.symmetric_sources, lo:hi),
+            len, hsv)
+    else
+        np = state.counts.n_direct
+        lo, hi = _p2_slice(np, half)
+        len = hi - lo + 1
+        blocks = min(cld(len, threads ÷ 32), FastMultipole.DIRECT_CUDA_MAX_BLOCKS[])
+        len > 0 && CUDA.@cuda threads=threads blocks=blocks FastMultipole._cuda_direct_pairs_functor_kernel!(
+            dk, state.output, state.source_bodies, state.cell_ranges,
+            view(state.direct_targets, lo:hi), view(state.direct_sources, lo:hi),
+            len, hsv)
     end
-    state.counts.n_direct = k
-    hctx.epoch_n_direct = k
     return state
 end
-
-# ---- restricted L2B + custom captured lifecycle body ------------------------
 
 # Warp-per-cell L2B over the owned contiguous leaf-cell range only. Same
 # production kernel; the views re-base cell indexing while body indices
 # (cell_ranges values), node indices (leaf_to_node values), and the output
-# stay absolute. 4-row output (hessian off) asserted at setup.
+# stay absolute.
 function p2_l2b_owned!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
         c0::Int, c1::Int) where {TF,B,LH}
     threads = 128
@@ -222,56 +189,75 @@ function p2_l2b_owned!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
     return state
 end
 
-# Mirror of the production _cuda_lifecycle_body! with (a) per-device side
-# stream/events instead of the process-global singletons and (b) the L2B
-# restricted to the owned leaf range. Sync-free and capacity-static within an
-# occupancy epoch => capturable.
-function p2_lifecycle_body!(state, c0::Int, c1::Int, side, ev_begin, ev_done)
+# ---- perm-aware output allreduce kernels -------------------------------------
+
+# inv[perm[j]] = j over the sorted prefix: user index -> my sorted column.
+function _p2_inv_kernel!(inv, perm, n)
+    j = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    j > n && return nothing
+    @inbounds inv[Int(perm[j])] = Int32(j)
+    return nothing
+end
+
+# out[:, inv[idx[j]]] += blk[:, j]: fold the peer's partial output (in the
+# peer's sorted frame, idx = peer's body_perm) into my sorted frame. idx is a
+# permutation, so columns are written exactly once — no atomics needed.
+function _p2_scatter_add_kernel!(out, inv, idx, blk, n)
+    j = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    j > n && return nothing
+    @inbounds begin
+        s = Int(inv[Int(idx[j])])
+        for r in 1:4
+            out[r, s] += blk[r, j]
+        end
+    end
+    return nothing
+end
+
+# ---- the two captured lifecycle bodies ---------------------------------------
+
+# Phase A: side-stream fill+nearfield-slice forked and JOINED inside the body
+# (so both A and B stay single-graph capturable with no cross-graph events),
+# plus the replicated upward pass and the M2L slice into partial locals.
+function p2_body_a!(state, half::Int, side, ev_begin, ev_done)
     CUDA.record(ev_begin)                 # current (main) stream
     CUDA.wait(ev_begin, side)
     CUDA.stream!(side) do
-        FastMultipole._launch_cuda_nearfield_kernel!(state)   # fill! + filtered pairs
+        p2_nearfield_sliced!(state, half)
     end
     CUDA.record(ev_done, side)
     FastMultipole._launch_cuda_b2m!(state)
     FastMultipole._launch_cuda_resident_m2m!(state)
-    FastMultipole._launch_cuda_resident_m2l!(state)           # cached, filtered windows
+    p2_m2l_sliced!(state, half)
+    CUDA.wait(ev_done)                    # join: A's completion covers the nearfield
+    return state
+end
+
+# Phase B: L2L over the summed locals + owned-half L2B. No event operations —
+# runs entirely on the main stream after the locals allreduce.
+function p2_body_b!(state, c0::Int, c1::Int)
     FastMultipole._launch_cuda_resident_l2l!(state)
-    CUDA.wait(ev_done)
     p2_l2b_owned!(state, c0, c1)
     return state
 end
 
-# Script-owned per-GPU graph slot. IMPORTANT concurrency contract: stream
-# capture runs in CUDA's GLOBAL capture mode, which makes most CUDA API use on
-# OTHER threads capture-illegal for its duration (this wedged job 13061054:
-# both workers captured concurrently, one died, its partner spun in the
-# barrier). Recording therefore happens ONLY inside p2_record_graph!/
-# p2_record_graphs! — serially, one device at a time, with the peer quiescent.
-# The concurrent step path only replays a valid exec or runs the body
-# uncaptured; it never captures.
+# ---- per-GPU graph slots ------------------------------------------------------
+
+# Stream capture runs in CUDA's GLOBAL capture mode, which makes most CUDA API
+# use on OTHER threads capture-illegal for its duration (job 13061054 wedge).
+# Recording happens ONLY inside p2_record_graph!/p2_record_graphs! — serially,
+# one device at a time, with the peer quiescent. The concurrent step path only
+# replays valid execs or runs the bodies uncaptured; it never captures.
 mutable struct P2GraphSlot
-    exec::Any
+    exec_a::Any
+    exec_b::Any
     epoch::Int
-    filter_epoch::Int
-    refilters::Int
+    refilters::Int      # occupancy-epoch graph invalidations observed in-step
     poisoned::Bool
 end
-P2GraphSlot() = P2GraphSlot(nothing, typemin(Int), typemin(Int), 0, false)
-
-function p2_run_lifecycle!(slot::P2GraphSlot, state, c0, c1, side, ev_b, ev_d;
-        use_graph::Bool=true)
-    hctx = state.interaction_list
-    if use_graph && !slot.poisoned && slot.exec !== nothing &&
-            slot.epoch == hctx.epoch_id
-        CUDA.launch(slot.exec::CUDA.CuGraphExec)
-        return state
-    end
-    return p2_lifecycle_body!(state, c0, c1, side, ev_b, ev_d)
-end
+P2GraphSlot() = P2GraphSlot(nothing, nothing, typemin(Int), 0, false)
 
 # ---- per-GPU bundle ----------------------------------------------------------
-# (definitions below; p2_record_graph! needs the struct, see after it)
 
 mutable struct P2Gpu
     dev::Int
@@ -280,23 +266,26 @@ mutable struct P2Gpu
     part::Any
     slot::P2GraphSlot
     side::Any
-    ev_begin::Any
+    ev_begin::Any       # body-A internal side-stream fork/join pair
     ev_done::Any
-    ev_seg0::Any
-    ev_graph_done::Any
-    ev_copy0::Any
-    ev_copy1::Any
-    ev_fin0::Any
-    ev_fin1::Any
+    ev_seg0::Any        # step start (timing)
+    ev_a::Any           # body A complete (timing)
+    ev_cl::Any          # locals push complete (peer waits this)
+    ev_lb::Any          # body B complete (timing)
+    ev_co::Any          # output push complete (peer waits this)
+    ev_f0::Any          # finalize+euler bracket (timing)
+    ev_f1::Any
+    stage_lphi::Any     # peer-writable staging: partial locals.phi
+    stage_out::Any      # peer-writable staging: partial output (peer's frame)
+    stage_idx::Any      # peer-writable staging: peer's body_perm slice
+    inv::Any            # my user-index -> sorted-column map (rebuilt per step)
     switches::Any
     target_buffers::Any
     use_graph::Bool
 end
 
-# Construct system + cache on device `dev` for half `half`; run one stock
-# (graph-off, overlap-off) step to build state/windows; filter to the owned
-# half. Returns the bundle plus construction telemetry and the pre-filter
-# window/direct signatures (for the exactness gate).
+# Construct system + cache on device `dev` for half `half`; one stock
+# (graph-off, overlap-off) fmm! builds state + the cached window stream.
 function p2_setup_gpu!(dev::Int, half::Int, bodies::Matrix{Float64}, ::Type{TF},
         P::Int, ell::Int, cache_kwargs, opts; max_n_bodies, bounds,
         use_graph::Bool=true) where TF
@@ -312,72 +301,97 @@ function p2_setup_gpu!(dev::Int, half::Int, bodies::Matrix{Float64}, ::Type{TF},
     persistent_bytes = (CUDA.total_memory() - CUDA.free_memory()) - used0
     state = cache.state
     size(state.output, 1) == 4 || error("P2 prototype expects the 4-row output (hessian off)")
-    full_windows = p2_window_signature(state)
-    full_direct = p2_direct_signature(state)
     part = p2_partition(cache, half)
-    p2_filter_windows!(state, part)
-    p2_filter_direct!(state, part)
     slot = P2GraphSlot()
-    slot.filter_epoch = state.interaction_list.epoch_id
     side = CUDA.CuStream(; flags=CUDA.STREAM_NON_BLOCKING)
     switches = (FastMultipole.DerivativesSwitch(true, true, false, sys),)
     target_buffers = FastMultipole._radix_cache_target_buffers!(cache, switches)
+    stage_lphi = CUDA.zeros(TF, size(state.locals.phi))
+    stage_out = CUDA.zeros(TF, size(state.output))
+    stage_idx = CUDA.zeros(eltype(state.body_perm), size(state.output, 2))
+    inv = CUDA.zeros(Int32, size(state.output, 2))
+    ev() = CUDA.CuEvent()
+    evd() = CUDA.CuEvent(CUDA.EVENT_DISABLE_TIMING)
     g = P2Gpu(dev, sys, cache, part, slot, side,
-        CUDA.CuEvent(CUDA.EVENT_DISABLE_TIMING), CUDA.CuEvent(CUDA.EVENT_DISABLE_TIMING),
-        CUDA.CuEvent(), CUDA.CuEvent(), CUDA.CuEvent(), CUDA.CuEvent(),
-        CUDA.CuEvent(), CUDA.CuEvent(),
+        evd(), evd(),                       # ev_begin, ev_done
+        ev(), ev(), ev(), ev(), ev(), ev(), ev(),   # seg0, a, cl, lb, co, f0, f1
+        stage_lphi, stage_out, stage_idx, inv,
         switches, target_buffers, use_graph)
-    return g, (; construction_ms, persistent_bytes, full_windows, full_direct)
+    hctx = state.interaction_list
+    return g, (; construction_ms, persistent_bytes,
+        routes=hctx.total_routes, n_direct=state.counts.n_direct)
 end
 
-# Re-filter + graph invalidation on occupancy-epoch change (real-recurrence
-# rule: this cost lands inside the measured step whenever occupancy moves).
+# Slice coverage report: the per-level window slices and the pair-list slices
+# must tile the production work lists exactly (a pure host check).
+function p2_slice_coverage(G::Vector{P2Gpu})
+    ok = true
+    detail = Int[]
+    for st in (G[1].cache.state,)
+        hctx = st.interaction_list
+        for L in 2:hctx.ell
+            n = hctx.win_level_counts[L + 1]
+            lo1, hi1 = _p2_slice(n, 1)
+            lo2, hi2 = _p2_slice(n, 2)
+            (lo1 == 1 && hi1 + 1 == lo2 && hi2 == n) || (ok = false)
+            push!(detail, n)
+        end
+        nd = hctx isa FastMultipole.DeviceHierarchicalM2LContext &&
+            FastMultipole.CUDA_SYMMETRIC_NEARFIELD[] &&
+            !isempty(hctx.symmetric_targets) ?
+            hctx.n_symmetric_pairs : st.counts.n_direct
+        lo1, hi1 = _p2_slice(nd, 1)
+        lo2, hi2 = _p2_slice(nd, 2)
+        (lo1 == 1 && hi1 + 1 == lo2 && hi2 == nd) || (ok = false)
+        push!(detail, nd)
+    end
+    return ok, detail
+end
+
+# Graph invalidation on occupancy-epoch change (real-recurrence rule: steps
+# after a change run uncaptured until the driver re-records; at the frozen
+# workload this never triggers).
 function p2_check_epoch!(me::P2Gpu)
-    state = me.cache.state
-    hctx = state.interaction_list
-    if me.slot.filter_epoch != hctx.epoch_id
-        p2_filter_windows!(state, me.part)
-        p2_filter_direct!(state, me.part)
-        me.slot.filter_epoch = hctx.epoch_id
-        me.slot.exec = nothing
-        me.slot.epoch = typemin(Int)
+    hctx = me.cache.state.interaction_list
+    if me.slot.epoch != hctx.epoch_id &&
+            (me.slot.exec_a !== nothing || me.slot.exec_b !== nothing)
+        me.slot.exec_a = nothing
+        me.slot.exec_b = nothing
         me.slot.refilters += 1
-        # NOTE: the step path never re-captures (see the P2GraphSlot contract);
-        # after an epoch change, steps run uncaptured until the driver calls
-        # p2_record_graphs! again. At the frozen workload this never triggers;
-        # its cost would land inside the measured step either way.
     end
     return me
 end
 
-# Solo, serialized graph recording (the ONLY place capture runs). The caller
-# guarantees no concurrent CUDA activity on any other thread. Runs the body
-# once uncaptured (JIT/CUBLAS/staged-scalar warmth), then captures, then
-# launches the instantiated graph once so the device state reflects a
-# completed lifecycle.
+# Solo, serialized graph recording (the ONLY place capture runs). Runs both
+# bodies once uncaptured (JIT/CUBLAS warmth), then captures each, then launches
+# both once so the device state reflects a completed far-field.
 function p2_record_graph!(me::P2Gpu)
     me.use_graph || return me
     CUDA.device!(me.dev)
-    state = me.cache.state
+    st = me.cache.state
     FastMultipole.update_cuda_radix_state!(me.cache, (me.sys,))
     p2_check_epoch!(me)
-    p2_lifecycle_body!(state, me.part.c0, me.part.c1, me.side, me.ev_begin, me.ev_done)
+    half = me.part.half
+    p2_body_a!(st, half, me.side, me.ev_begin, me.ev_done)
+    p2_body_b!(st, me.part.c0, me.part.c1)
     CUDA.synchronize()
-    graph = try
-        CUDA.capture(; throw_error=false) do
-            p2_lifecycle_body!(state, me.part.c0, me.part.c1, me.side,
-                me.ev_begin, me.ev_done)
-        end
+    cap(f) = try
+        CUDA.capture(f; throw_error=false)
     catch err
         err isa CUDA.CuError || rethrow()
         @warn "P2 graph capture failed on device $(me.dev); running uncaptured" err
         me.slot.poisoned = true
         nothing
     end
-    if graph !== nothing
-        me.slot.exec = CUDA.instantiate(graph)
-        me.slot.epoch = state.interaction_list.epoch_id
-        CUDA.launch(me.slot.exec::CUDA.CuGraphExec)   # capture recorded without executing
+    ga = cap(() -> p2_body_a!(st, half, me.side, me.ev_begin, me.ev_done))
+    gb = me.slot.poisoned ? nothing :
+        cap(() -> p2_body_b!(st, me.part.c0, me.part.c1))
+    if ga !== nothing && gb !== nothing
+        me.slot.exec_a = CUDA.instantiate(ga)
+        me.slot.exec_b = CUDA.instantiate(gb)
+        me.slot.epoch = st.interaction_list.epoch_id
+        CUDA.launch(me.slot.exec_a::CUDA.CuGraphExec)   # capture records without executing
+        CUDA.launch(me.slot.exec_b::CUDA.CuGraphExec)
         CUDA.synchronize()
     end
     return me
@@ -385,11 +399,11 @@ end
 
 p2_record_graphs!(G::Vector{P2Gpu}) = (foreach(p2_record_graph!, G); G)
 
-# The exchange's ordering contract: the D2D copy must be enqueued on the
-# copying task's stream for the SOURCE device, so ev_copy1 (recorded on that
-# stream) orders it for the peer. CUDACore only guarantees that on the direct
+# The exchange's ordering contract: the D2D pushes must be enqueued on the
+# pushing task's stream for the SOURCE device, so ev_cl/ev_co (recorded on that
+# stream) order them for the peer. CUDACore only guarantees that on the direct
 # peer-access path; its no-P2P fallback stages through host memory with the
-# H2D enqueued on the DESTINATION context's stream, which ev_copy1 does not
+# H2D enqueued on the DESTINATION context's stream, which the events do not
 # cover. Require direct peer access up front (H200 pairs: NVLink).
 function p2_require_peer_access!(G::Vector{P2Gpu})
     f = nothing
@@ -414,10 +428,13 @@ end
 # ---- the complete 2-GPU verdict step ----------------------------------------
 
 # Worker body for GPU g (1-based). seg rows, per GPU column:
-#   1 refresh host-wall ms         5 GPU total wall ms
-#   2 graph device ms (events)     6 pre-exchange barrier wait ms (imbalance)
-#   3 exchange copy device ms      7 finalize+euler host wall ms incl. any
-#   4 finalize+euler device ms       residual wait on the peer's copy + sync
+#   1 refresh host-wall ms
+#   2 far-field device ms (A + add/L2L/L2B, includes any peer-wait stall)
+#   3 exchange push device ms (locals + output copies)
+#   4 finalize+euler device ms
+#   5 GPU total wall ms
+#   6 pre-exchange barrier wait ms (imbalance)
+#   7 finalize+euler host wall ms incl. residual peer waits + sync
 function p2_worker_step!(G::Vector{P2Gpu}, g::Int, bar::P2Barrier;
         dt, clamp_lo, clamp_hi, do_euler::Bool=true, seg=nothing)
     try
@@ -433,41 +450,65 @@ function _p2_worker_step_inner!(G::Vector{P2Gpu}, g::Int, bar::P2Barrier;
     me = G[g]
     peer = G[3 - g]
     CUDA.device!(me.dev)
-    state = me.cache.state
+    st = me.cache.state
     t0 = time_ns()
     FastMultipole.update_cuda_radix_state!(me.cache, (me.sys,))
     p2_check_epoch!(me)
+    nb = st.counts.n_bodies
+    CUDA.@cuda threads=256 blocks=cld(nb, 256) _p2_inv_kernel!(
+        me.inv, st.body_perm, nb)
     t1 = time_ns()
     CUDA.record(me.ev_seg0)
-    p2_run_lifecycle!(me.slot, state, me.part.c0, me.part.c1, me.side,
-        me.ev_begin, me.ev_done; use_graph=me.use_graph)
-    CUDA.record(me.ev_graph_done)
+    replay = me.use_graph && !me.slot.poisoned &&
+        me.slot.epoch == st.interaction_list.epoch_id
+    if replay && me.slot.exec_a !== nothing
+        CUDA.launch(me.slot.exec_a::CUDA.CuGraphExec)
+    else
+        p2_body_a!(st, me.part.half, me.side, me.ev_begin, me.ev_done)
+    end
+    CUDA.record(me.ev_a)
+    # allreduce 1: push my partial locals into the peer's staging
+    copyto!(peer.stage_lphi, st.locals.phi)
+    CUDA.record(me.ev_cl)
     t2 = time_ns()
-    p2_barrier_wait!(bar)              # peer's graph + event record are issued
+    p2_barrier_wait!(bar)              # peer's push + record are issued
     t3 = time_ns()
-    CUDA.wait(peer.ev_graph_done)      # cross-device: peer's output is complete
-    CUDA.record(me.ev_copy0)
-    copyto!(view(peer.cache.state.output, :, me.part.b0:me.part.b1),
-        view(state.output, :, me.part.b0:me.part.b1))
-    CUDA.record(me.ev_copy1)
-    p2_barrier_wait!(bar)              # peer's copy + record are issued
-    CUDA.wait(peer.ev_copy1)           # incoming block visible before finalize
+    CUDA.wait(peer.ev_cl)              # incoming partial visible
+    st.locals.phi .+= me.stage_lphi    # bitwise-symmetric: a+b == b+a
+    if replay && me.slot.exec_b !== nothing
+        CUDA.launch(me.slot.exec_b::CUDA.CuGraphExec)
+    else
+        p2_body_b!(st, me.part.c0, me.part.c1)
+    end
+    CUDA.record(me.ev_lb)
+    # allreduce 2: push my partial output (nearfield slice + owned-half L2B)
+    # together with my body_perm slice — the peer folds it through its own
+    # inverse map (the sorts are not deterministic across caches)
+    copyto!(view(peer.stage_out, :, 1:nb), view(st.output, :, 1:nb))
+    copyto!(view(peer.stage_idx, 1:nb), view(st.body_perm, 1:nb))
+    CUDA.record(me.ev_co)
+    p2_barrier_wait!(bar)              # peer's push + record are issued
+    CUDA.wait(peer.ev_co)
     t4 = time_ns()
-    CUDA.record(me.ev_fin0)            # completes only after the peer copy wait
-    FastMultipole.finalize_cuda_radix_output!(state, (me.sys,);
+    CUDA.record(me.ev_f0)
+    CUDA.@cuda threads=256 blocks=cld(nb, 256) _p2_scatter_add_kernel!(
+        st.output, me.inv, me.stage_idx, me.stage_out, nb)
+    FastMultipole.finalize_cuda_radix_output!(st, (me.sys,);
         derivatives_switches=me.switches,
         host_output_staging=me.cache.device_ctx.host_output,
         target_buffers=me.target_buffers,
         device_target_buffers=me.cache.device_ctx.device_target_buffers)
     do_euler && fm028_euler!(me.sys, dt, clamp_lo, clamp_hi)
-    CUDA.record(me.ev_fin1)
+    CUDA.record(me.ev_f1)
     CUDA.synchronize()
     t5 = time_ns()
     if seg !== nothing
         seg[1, g] = (t1 - t0) / 1e6
-        seg[2, g] = Float64(CUDA.elapsed(me.ev_seg0, me.ev_graph_done)) * 1e3
-        seg[3, g] = Float64(CUDA.elapsed(me.ev_copy0, me.ev_copy1)) * 1e3
-        seg[4, g] = Float64(CUDA.elapsed(me.ev_fin0, me.ev_fin1)) * 1e3
+        seg[2, g] = (Float64(CUDA.elapsed(me.ev_seg0, me.ev_a)) +
+                     Float64(CUDA.elapsed(me.ev_cl, me.ev_lb))) * 1e3
+        seg[3, g] = (Float64(CUDA.elapsed(me.ev_a, me.ev_cl)) +
+                     Float64(CUDA.elapsed(me.ev_lb, me.ev_co))) * 1e3
+        seg[4, g] = Float64(CUDA.elapsed(me.ev_f0, me.ev_f1)) * 1e3
         seg[5, g] = (t5 - t0) / 1e6
         seg[6, g] = (t3 - t2) / 1e6
         seg[7, g] = (t5 - t4) / 1e6
@@ -485,26 +526,4 @@ function p2_step_pair!(G::Vector{P2Gpu}, bar::P2Barrier;
             do_euler, seg)
     end
     return (time_ns() - t) / 1e6, seg
-end
-
-# ---- exactness gate ----------------------------------------------------------
-
-# The two filtered route/pair sets must exactly partition the full sets: counts
-# add up and xor checksums recombine, per level. `fw`/`fd` are the pre-filter
-# signatures (identical caches => must agree between GPUs too).
-function p2_partition_exact(G::Vector{P2Gpu}, fw1, fd1, fw2, fd2)
-    ok = true
-    fw1.counts == fw2.counts && fw1.xors == fw2.xors || (ok = false)
-    fd1.count == fd2.count && fd1.xor == fd2.xor || (ok = false)
-    s1 = p2_window_signature(G[1].cache.state)
-    s2 = p2_window_signature(G[2].cache.state)
-    for (i, (n, x)) in enumerate(zip(fw1.counts, fw1.xors))
-        s1.counts[i] + s2.counts[i] == n || (ok = false)
-        (s1.xors[i] ⊻ s2.xors[i]) == x || (ok = false)
-    end
-    d1 = p2_direct_signature(G[1].cache.state)
-    d2 = p2_direct_signature(G[2].cache.state)
-    d1.count + d2.count == fd1.count || (ok = false)
-    (d1.xor ⊻ d2.xor) == fd1.xor || (ok = false)
-    return ok, (; routes=(s1.counts, s2.counts), direct=(d1.count, d2.count))
 end

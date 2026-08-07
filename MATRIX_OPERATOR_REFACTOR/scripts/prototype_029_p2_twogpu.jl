@@ -205,11 +205,10 @@ end
 G[1].part.b0 == 1 && G[2].part.b1 == N && G[1].part.b1 + 1 == G[2].part.b0 ||
     error("owned body ranges do not partition 1:$N")
 
-ok, pdetail = p2_partition_exact(G, setup_info[1].full_windows,
-    setup_info[1].full_direct, setup_info[2].full_windows, setup_info[2].full_direct)
-println("partition exactness gate (routes+direct counts & xor recombination): ",
-    ok ? "PASS" : "FAIL", "  ", pdetail)
-ok || error("partition exactness gate failed")
+ok, pdetail = p2_slice_coverage(G)
+println("slice coverage gate (per-level window + pair slices tile the work lists): ",
+    ok ? "PASS" : "FAIL", "  list sizes=", pdetail)
+ok || error("slice coverage gate failed")
 
 bar = P2Barrier(2)
 seg = zeros(7, 2)
@@ -221,7 +220,8 @@ p2_record_graphs!(G)
 for i in 1:2
     p2_step_pair!(G, bar; dt=0.0, do_euler=false, seg=seg)
 end
-graph_captured = [G[g].slot.exec !== nothing for g in 1:2]
+graph_captured = [G[g].slot.exec_a !== nothing && G[g].slot.exec_b !== nothing
+    for g in 1:2]
 println("graph captured per GPU: ", graph_captured,
     USE_GRAPH ? "" : " (graph disabled by FM029P2_GRAPH=0)")
 
@@ -263,7 +263,8 @@ commorch = [walls[r] - maximum(compute[:, r]) for r in 1:REPS]
 imbalance = [abs(compute[1, r] - compute[2, r]) for r in 1:REPS]
 orch_only = [walls[r] - max(segs[5, 1, r], segs[5, 2, r]) for r in 1:REPS]
 exch = [max(segs[3, 1, r], segs[3, 2, r]) for r in 1:REPS]
-exchange_bytes = 2 * 4 * sizeof(TF) * N   # both directions, 4 rows x N total
+exchange_bytes = 2 * sizeof(TF) * (length(G[1].cache.state.locals.phi) + 4 * N)
+    # both directions: partial locals.phi + partial 4-row output
 eff_injob = single.med / (2 * wall_med)
 eff_record = RECORD_1GPU_MS / (2 * wall_med)
 
@@ -362,7 +363,7 @@ row = (;
     err_gradient_max_g1=errs[1].gradient_max,
     conv_steps=STEPS, conv_dt=DT, conv_err_gradient_rel_rms=conv.gradient_rel_rms,
     lockstep_step0=lockstep0, lockstep_conv=lockstep5,
-    partition_exact=ok, counters_flat=counters_flat,
+    slice_cover=ok, counters_flat=counters_flat,
     routes_g1=G[1].cache.state.interaction_list.total_routes,
     routes_g2=G[2].cache.state.interaction_list.total_routes,
     n_direct_g1=G[1].cache.state.counts.n_direct,
