@@ -350,6 +350,84 @@ n=1e6/ℓ=4** (032 measured 9.49e-4 there).
    with the far-field chain. Ordering is identical by either metric; Stage D's
    A/B is step-level and will resolve the attribution.
 
+### Stage D — H200 A/B ladder + recommendation (2026-08-06/07, jobs 13065299/13065376/13065443/13065537)
+
+Checkpoint C was user-approved (mechanism `:classsplit`+sub-Morton accepted as
+the split-kernel default); Stage D ran per the plan with the user-endorsed
+wake mechanism rider. Harness: `scripts/cuda_032a_staged_ab.jl` — fixed
+adequate geometry per case with a baseline-gated escalation ladder, inline
+023-counter and allocation-stability gates on every row, per-strategy sampled
+erf-based F64 references, and the 028/030 scalar no-regression stage in every
+job. All preflights green in every job.
+
+**Primary cases** (step / nearfield-stage ms; all rows pass the 1e-3 velocity
+gate; J diagnostic in the CSVs):
+
+| case (n, ℓ, q) | TF | regularized | partitioned | twopass | part ρ_t=4.252 | u gate (part) |
+|---|---|---:|---:|---:|---:|---:|
+| cube1e5 (1e5, 3, 16) | F32 | 39.2 / 16.0 | **28.6 / 13.0** | 29.6 / 18.3 | 28.3 / 12.5 | 5.41e-4 |
+| cube1e5 | F64 | 69.8 / 35.6 | **39.5 / 26.4** | 49.2 / 38.3 | 39.5 / 25.0 | 5.41e-4 |
+| wake1e5 (1e5, 5, 16) | F32 | 27.2 / 9.8 | **20.4 / 8.4** | 22.0 / 11.9 | 20.5 / 8.2 | 4.66e-4 |
+| wake1e5 | F64 | 46.4 / 21.6 | **29.1 / 17.1** | 36.8 / 24.8 | 28.7 / 16.7 | 4.66e-4 |
+
+**Sentinels** (triggered by the ≤10% F32 partitioned-vs-twopass step margin at
+n=1e5; run per the ladder rule):
+
+| case (n, ℓ, q) | TF | regularized | partitioned | twopass | verdict |
+|---|---|---:|---:|---:|---|
+| cube1e6 (1e6, 4, 16) | F32 | 383 / 287 | **302 / 213** | 367 / 275 | no reversal (21% ahead) |
+| cube1e6 | F64 | 824 / 673 | **614 / 485** | 799 / 671 | no reversal (30%) |
+| wake1e6 (1e6, 6, 16) | F32 | 332 / 176 | **276 / 132** | 319 / 164 | no reversal (16%) |
+| wake1e6 | F64 | 617 / 413 | **499 / 300** | 621 / 403 | no reversal (24%; twopass ≈ baseline) |
+| wake1e3 (1e3, 3, 16) | both | 3.03-4.59 | 3.05-4.60 | 3.06-4.61 | tie (nearfield ≤ 0.2 ms) |
+| cube1e3 (1e3, 1, 16) | both | 8.96-14.5 | 8.95-14.5 | n/a (flat fallback refuses TwoPass) | degenerate tie |
+
+Accuracy: cube1e6 9.30e-4, wake1e6 4.80e-4, wake1e3 1.16e-4, cube1e3 4.1e-5 —
+every recorded row passes the gate (the ladder never needed to escalate;
+q=16 everywhere per the Stage-C note). **The winner never reverses: the full
+024b grid is not required.** Deeper trees widen partitioned's lead — the
+§6.1 two-pass deep-tree advantage assumed near sets tight to the cutoff ball,
+but the supported rigid radii cap the near set at |o|² ≤ 20, so pass 2's
+sweep re-traverses volume the pass-1 near set already covers.
+
+**ρ_t RMS lever (deliverable 4): confirmed on BOTH cases.** ρ_t = 4.252
+changes sampled u error by ≤ +0.6% relative (5.43e-4 cube1e5, 4.66e-4
+wake1e5, 9.35e-4 cube1e6, 4.80e-4 wake1e6 — all under gate) and buys 1-6%
+nearfield time. Eligible for adoption; left un-shipped pending the user
+default decision.
+
+**Wake mechanism rider: no reversal.** wake1e5 F32 step: unbinned 26.2 vs
+classsplit+sub 20.4 (F64 44.1 vs 29.1); wake1e6 F32 317 vs 276 (F64 569 vs
+499). The cube-measured mechanism ordering holds on the wake; homogeneity
+0.757→0.887 (wake1e5), 0.807→0.864 (wake1e6) with sub-sort.
+
+**Contract gates:** 023 counters flat and allocation-stable on every recorded
+row (inline gates — a violation aborts the row); scalar 028/030
+no-regression: verdict 6.58 ms F32-fp16 / 17.83 ms F64 vs the 13059638 rows
+of record 9.45 / 20.50 ms, grad_err identical to 7 digits — no regression.
+
+**Recommendation to the user (deliverable 7; not shipped):**
+
+1. Make `PartitionedVortex` (with the approved classsplit+sub-Morton stream)
+   the resident vortex-nearfield default: it wins every case, precision, and
+   n measured, by 1.16-1.77x step-level over the shipped
+   regularized-everywhere baseline, with identical gate accuracy. No
+   per-regime split is justified — the win is uniform (degenerate n=1e3
+   cases are ties, not reversals).
+2. Adopt the §6.4 RMS radius `rho_t = 4.252` as the split-kernel default
+   (confirmed on both cases; worst gate margin 9.35e-4 at cube1e6).
+3. Retain `TwoPassVortex` as a supported alternative (its niche —
+   near sets tight to the cutoff ball at depth — needs |o|² > 20 radii that
+   don't exist yet); retain `RegularizedVortex` as the divergence-proof
+   fallback and default for consumers who skip the split kernels.
+
+Benchmark-harness postmortems recorded for reproducibility: sentinel jobs hit
+(a) a GC/pool-residue false rejection of the dense free-memory preflight,
+(b) sbatch `--export` consuming commas in `FM032A_CASES`, and (c) whole-level
+windows sizing ~22 GB route capacity at ℓ=6 (bounded with
+`window_classes=64`); all fixed in the harness (commits `dd404ab`,
+`7161c1a`, `a5a0872`).
+
 ## Placement and Reporting
 
 - Follow the `_batched`/`*_cuda.jl` placement rules; types stay in

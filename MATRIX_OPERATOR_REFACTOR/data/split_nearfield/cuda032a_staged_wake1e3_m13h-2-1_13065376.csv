@@ -1,0 +1,15 @@
+label,case,n,ell,q,tf,strategy,mode,subsort,rho_t,step_ms,nearfield_ms,u_rel_rms,j_rel_rms,hom_all,hom_mixed,n_direct
+wake1e3,wake,1000,3,16,F32,regularized,classsplit,1,4.7890,3.031602,0.051253,1.1583e-04,6.4550e-04,NaN,NaN,736
+wake1e3,wake,1000,3,16,F32,partitioned,classsplit,1,4.7890,3.052737,0.118635,1.1583e-04,6.4552e-04,0.8132,0.7951,736
+wake1e3,wake,1000,3,16,F32,twopass,classsplit,1,4.7890,3.064845,0.125331,1.1583e-04,6.4552e-04,0.7318,0.4477,736
+wake1e3,wake,1000,3,16,F32,partitioned_rms,classsplit,1,4.2520,3.053192,0.117689,1.1604e-04,6.4610e-04,0.7990,0.7796,736
+wake1e3,wake,1000,3,16,F32,twopass_rms,classsplit,1,4.2520,3.062181,0.123345,1.1604e-04,6.4610e-04,0.7318,0.4477,736
+wake1e3,wake,1000,3,16,F32,partitioned_unbinned,unbinned,0,4.7890,3.032504,0.048431,1.1583e-04,6.4552e-04,0.7910,0.7708,736
+wake1e3,wake,1000,3,16,F32,partitioned_cs_nosub,classsplit,0,4.7890,3.042341,0.121222,1.1583e-04,6.4552e-04,0.7900,0.7697,736
+wake1e3,wake,1000,3,16,F64,regularized,classsplit,1,4.7890,4.591714,0.077054,1.1583e-04,6.4550e-04,NaN,NaN,736
+wake1e3,wake,1000,3,16,F64,partitioned,classsplit,1,4.7890,4.603037,0.183208,1.1584e-04,6.4552e-04,0.8132,0.7951,736
+wake1e3,wake,1000,3,16,F64,twopass,classsplit,1,4.7890,4.611027,0.198369,1.1584e-04,6.4552e-04,0.7318,0.4477,736
+wake1e3,wake,1000,3,16,F64,partitioned_rms,classsplit,1,4.2520,4.601202,0.182223,1.1605e-04,6.4611e-04,0.7990,0.7796,736
+wake1e3,wake,1000,3,16,F64,twopass_rms,classsplit,1,4.2520,4.610411,0.193859,1.1605e-04,6.4611e-04,0.7318,0.4477,736
+wake1e3,wake,1000,3,16,F64,partitioned_unbinned,unbinned,0,4.7890,4.591419,0.076001,1.1584e-04,6.4552e-04,0.7940,0.7741,736
+wake1e3,wake,1000,3,16,F64,partitioned_cs_nosub,classsplit,0,4.7890,4.589466,0.187058,1.1584e-04,6.4552e-04,0.7968,0.7772,736

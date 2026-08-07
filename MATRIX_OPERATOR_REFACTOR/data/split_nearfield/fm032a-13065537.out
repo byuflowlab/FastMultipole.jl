@@ -1,0 +1,62 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-a92ec0ee-a588-ec50-5c0e-61536751caf1)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== preflight: CUDA interface tests (032 stages 1-3) ===
+Test Summary:                           | Pass  Total     Time
+CUDA device-system interface (task 032) | 1246   1246  1m53.8s
+=== preflight: shipped lifecycle regression test ===
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  216    216  1m38.1s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.6s
+=== preflight: stage C binned-nearfield test (NEW) ===
+Test Summary:                                         | Pass  Total     Time
+CUDA binned nearfield pair stream (task 032a stage C) |  301    301  3m28.3s
+=== stage D A/B ladder (cube + wake, three strategies, rho_t lever) ===
+=== case wake1e6: wake n=1000000 (start ell=6 q=16)
+  sampled-direct reference (200 targets)... 7.6 s
+  geometry probe: ell=6 q=16
+  regularized            F64: step  619.230 ms  nearfield  412.139 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  selected geometry: ell=6 q=16
+  regularized            F32: step  332.092 ms  nearfield  175.941 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  partitioned            F32: step  276.097 ms  nearfield  132.215 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  twopass                F32: step  319.489 ms  nearfield  164.411 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  partitioned_rms        F32: step  272.554 ms  nearfield  128.347 ms  u_rms 4.803e-04  j_rms 5.155e-03
+  twopass_rms            F32: step  308.217 ms  nearfield  157.465 ms  u_rms 4.803e-04  j_rms 5.155e-03
+  partitioned_unbinned   F32: step  317.150 ms  nearfield  165.566 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  partitioned_cs_nosub   F32: step  280.132 ms  nearfield  134.968 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  regularized            F64: step  616.570 ms  nearfield  412.683 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  partitioned            F64: step  499.449 ms  nearfield  300.470 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  twopass                F64: step  621.405 ms  nearfield  403.392 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  partitioned_rms        F64: step  490.144 ms  nearfield  292.237 ms  u_rms 4.803e-04  j_rms 5.155e-03
+  twopass_rms            F64: step  606.246 ms  nearfield  389.446 ms  u_rms 4.803e-04  j_rms 5.155e-03
+  partitioned_unbinned   F64: step  568.608 ms  nearfield  364.928 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  partitioned_cs_nosub   F64: step  505.939 ms  nearfield  306.702 ms  u_rms 4.803e-04  j_rms 5.156e-03
+  wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_staged_wake1e6_m13h-1-1_13065537.csv
+=== case cube1e3: cube n=1000 (start ell=1 q=16)
+  sampled-direct reference (200 targets)... 0.0 s
+  geometry probe: ell=1 q=16
+  regularized            F64: step   14.445 ms  nearfield    0.583 ms  u_rms 4.061e-05  j_rms 4.393e-05
+  selected geometry: ell=1 q=16
+  regularized            F32: step    8.963 ms  nearfield    0.386 ms  u_rms 4.063e-05  j_rms 4.394e-05
+  partitioned            F32: step    8.950 ms  nearfield    0.351 ms  u_rms 4.088e-05  j_rms 4.548e-05
+  CONFIG twopass/Float32 FAILED: ArgumentError: TwoPassVortex on a device cache requires the hierarchical stencil policy (the flat-policy device path has no pass-2 deficit sweep); use the default HierarchicalRigidStencil, build the cache with device=false, or select another nearfield kernel
+  partitioned_rms        F32: step    8.952 ms  nearfield    0.351 ms  u_rms 5.594e-05  j_rms 1.699e-04
+  CONFIG twopass_rms/Float32 FAILED: ArgumentError: TwoPassVortex on a device cache requires the hierarchical stencil policy (the flat-policy device path has no pass-2 deficit sweep); use the default HierarchicalRigidStencil, build the cache with device=false, or select another nearfield kernel
+  regularized            F64: step   14.499 ms  nearfield    0.582 ms  u_rms 4.061e-05  j_rms 4.393e-05
+  partitioned            F64: step   14.450 ms  nearfield    0.569 ms  u_rms 4.087e-05  j_rms 4.547e-05
+  CONFIG twopass/Float64 FAILED: ArgumentError: TwoPassVortex on a device cache requires the hierarchical stencil policy (the flat-policy device path has no pass-2 deficit sweep); use the default HierarchicalRigidStencil, build the cache with device=false, or select another nearfield kernel
+  partitioned_rms        F64: step   14.485 ms  nearfield    0.570 ms  u_rms 5.593e-05  j_rms 1.699e-04
+  CONFIG twopass_rms/Float64 FAILED: ArgumentError: TwoPassVortex on a device cache requires the hierarchical stencil policy (the flat-policy device path has no pass-2 deficit sweep); use the default HierarchicalRigidStencil, build the cache with device=false, or select another nearfield kernel
+  wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_staged_cube1e3_m13h-1-1_13065537.csv
+cuda_032a_staged_ab complete
+=== stage D: scalar no-regression (028/030 verdict config, unchanged harness) ===
+=== no-regression case tf=Float32 fmt=fp16
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval     6.206  verdict     6.816  host       NaN ms  grad_err 1.059e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_nr_sched6_5_5_5_fp16_n1000000_m13h-1-1_13065537.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_nr_sched6_5_5_5_fp16_n1000000_m13h-1-1_13065537.csv.classes.csv
+=== no-regression case tf=Float64 fmt=off
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval    17.081  verdict    17.906  host       NaN ms  grad_err 1.050e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_nr_sched6_5_5_5_off_n1000000_m13h-1-1_13065537.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_nr_sched6_5_5_5_off_n1000000_m13h-1-1_13065537.csv.classes.csv
+fm032a job complete

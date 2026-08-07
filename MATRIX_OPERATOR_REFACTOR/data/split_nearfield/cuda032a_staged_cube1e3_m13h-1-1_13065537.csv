@@ -1,0 +1,7 @@
+label,case,n,ell,q,tf,strategy,mode,subsort,rho_t,step_ms,nearfield_ms,u_rel_rms,j_rel_rms,hom_all,hom_mixed,n_direct
+cube1e3,cube,1000,1,16,F32,regularized,classsplit,1,4.7890,8.963250,0.385916,4.0627e-05,4.3939e-05,NaN,NaN,64
+cube1e3,cube,1000,1,16,F32,partitioned,classsplit,1,4.7890,8.949703,0.351054,4.0881e-05,4.5484e-05,NaN,NaN,64
+cube1e3,cube,1000,1,16,F32,partitioned_rms,classsplit,1,4.2520,8.951660,0.351180,5.5938e-05,1.6991e-04,NaN,NaN,64
+cube1e3,cube,1000,1,16,F64,regularized,classsplit,1,4.7890,14.499094,0.581937,4.0608e-05,4.3931e-05,NaN,NaN,64
+cube1e3,cube,1000,1,16,F64,partitioned,classsplit,1,4.7890,14.450450,0.569061,4.0865e-05,4.5471e-05,NaN,NaN,64
+cube1e3,cube,1000,1,16,F64,partitioned_rms,classsplit,1,4.2520,14.485301,0.569944,5.5934e-05,1.6992e-04,NaN,NaN,64

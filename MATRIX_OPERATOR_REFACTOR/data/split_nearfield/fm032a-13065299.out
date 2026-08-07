@@ -1,0 +1,62 @@
+=== node: m13h-2-2
+GPU 0: NVIDIA H200 (UUID: GPU-5a0e34ff-f4a7-016f-04d0-9b2ede4de7cd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== preflight: CUDA interface tests (032 stages 1-3) ===
+Test Summary:                           | Pass  Total     Time
+CUDA device-system interface (task 032) | 1246   1246  1m50.7s
+=== preflight: shipped lifecycle regression test ===
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  216    216  1m33.8s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.2s
+=== preflight: stage C binned-nearfield test (NEW) ===
+Test Summary:                                         | Pass  Total     Time
+CUDA binned nearfield pair stream (task 032a stage C) |  301    301  3m21.8s
+=== stage D A/B ladder (cube + wake, three strategies, rho_t lever) ===
+=== case cube1e5: cube n=100000 (start ell=3 q=16)
+  sampled-direct reference (200 targets)... 0.8 s
+  geometry probe: ell=3 q=16
+  regularized            F64: step   69.755 ms  nearfield   35.587 ms  u_rms 5.412e-04  j_rms 1.878e-03
+  selected geometry: ell=3 q=16
+  regularized            F32: step   39.209 ms  nearfield   15.978 ms  u_rms 5.412e-04  j_rms 1.878e-03
+  partitioned            F32: step   28.560 ms  nearfield   13.017 ms  u_rms 5.411e-04  j_rms 1.877e-03
+  twopass                F32: step   29.553 ms  nearfield   18.312 ms  u_rms 5.410e-04  j_rms 1.877e-03
+  partitioned_rms        F32: step   28.317 ms  nearfield   12.496 ms  u_rms 5.431e-04  j_rms 1.901e-03
+  twopass_rms            F32: step   31.584 ms  nearfield   16.592 ms  u_rms 5.430e-04  j_rms 1.901e-03
+  regularized            F64: step   69.807 ms  nearfield   35.553 ms  u_rms 5.412e-04  j_rms 1.878e-03
+  partitioned            F64: step   39.518 ms  nearfield   26.389 ms  u_rms 5.410e-04  j_rms 1.878e-03
+  twopass                F64: step   49.201 ms  nearfield   38.323 ms  u_rms 5.410e-04  j_rms 1.878e-03
+  partitioned_rms        F64: step   39.456 ms  nearfield   25.011 ms  u_rms 5.430e-04  j_rms 1.901e-03
+  twopass_rms            F64: step   45.133 ms  nearfield   34.124 ms  u_rms 5.430e-04  j_rms 1.901e-03
+  wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_staged_cube1e5_m13h-2-2_13065299.csv
+=== case wake1e5: wake n=100000 (start ell=5 q=16)
+  sampled-direct reference (200 targets)... 0.7 s
+  geometry probe: ell=5 q=16
+  regularized            F64: step   46.210 ms  nearfield   21.637 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  selected geometry: ell=5 q=16
+  regularized            F32: step   27.232 ms  nearfield    9.754 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  partitioned            F32: step   20.449 ms  nearfield    8.373 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  twopass                F32: step   21.975 ms  nearfield   11.901 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  partitioned_rms        F32: step   20.482 ms  nearfield    8.249 ms  u_rms 4.664e-04  j_rms 4.572e-03
+  twopass_rms            F32: step   21.600 ms  nearfield   11.491 ms  u_rms 4.664e-04  j_rms 4.572e-03
+  partitioned_unbinned   F32: step   26.168 ms  nearfield    8.898 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  partitioned_cs_nosub   F32: step   20.536 ms  nearfield    8.573 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  regularized            F64: step   46.384 ms  nearfield   21.629 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  partitioned            F64: step   29.078 ms  nearfield   17.130 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  twopass                F64: step   36.847 ms  nearfield   24.840 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  partitioned_rms        F64: step   28.708 ms  nearfield   16.748 ms  u_rms 4.665e-04  j_rms 4.572e-03
+  twopass_rms            F64: step   36.003 ms  nearfield   24.008 ms  u_rms 4.665e-04  j_rms 4.572e-03
+  partitioned_unbinned   F64: step   44.116 ms  nearfield   18.373 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  partitioned_cs_nosub   F64: step   30.428 ms  nearfield   17.591 ms  u_rms 4.657e-04  j_rms 4.568e-03
+  wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_staged_wake1e5_m13h-2-2_13065299.csv
+cuda_032a_staged_ab complete
+=== stage D: scalar no-regression (028/030 verdict config, unchanged harness) ===
+=== no-regression case tf=Float32 fmt=fp16
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval     6.212  verdict     6.575  host       NaN ms  grad_err 1.059e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_nr_sched6_5_5_5_fp16_n1000000_m13h-2-2_13065299.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_nr_sched6_5_5_5_fp16_n1000000_m13h-2-2_13065299.csv.classes.csv
+=== no-regression case tf=Float64 fmt=off
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval    17.074  verdict    17.832  host       NaN ms  grad_err 1.050e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_nr_sched6_5_5_5_off_n1000000_m13h-2-2_13065299.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_nr_sched6_5_5_5_off_n1000000_m13h-2-2_13065299.csv.classes.csv
+fm032a job complete
