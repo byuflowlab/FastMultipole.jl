@@ -159,6 +159,67 @@ const FM = FastMultipole
 
             p2_require_peer_access!(G)
 
+            # ---- [p2diag4] frame + user-order step-path bisection -----------
+            # 13065445 paradox: stock fmm! is user-order perfect (2.9e-4) with
+            # identical perms across all three caches, yet EVERY sorted-frame
+            # comparison of state.output sits at ~0.4-0.5 — so the assumed
+            # sorted<->user frame map must be verified empirically before any
+            # sorted-frame number is trusted (the exchange block math depends
+            # on the same map).
+            let me = G[1], st1 = me.cache.state
+                CUDA.device!(me.dev)
+                r2(a, b) = sqrt(mean(abs2, Float64.(a) .- Float64.(b))) /
+                    sqrt(mean(abs2, Float64.(b)))
+                fmm!(me.sys, me.cache; scalar_potential=true, gradient=true)
+                CUDA.synchronize()
+                o1 = Array(st1.output)
+                sg = Array(me.sys.gradient)
+                nb = size(sg, 2)
+                hidx = Array(st1.host_body_indices)[1:nb]
+                d1 = r2(o1[2:4, 1:nb], sg[:, hidx])          # sorted j -> user hidx[j]
+                inv = zeros(Int, nb); for j in 1:nb; inv[hidx[j]] = j; end
+                d2 = r2(o1[2:4, inv], sg)                    # user u -> sorted inv[u]
+                println("[p2diag4] frame d1 (out col j ~ user hidx[j]) = ", d1)
+                println("[p2diag4] frame d2 (out col inv[u] ~ user u)  = ", d2)
+                # user-order accuracy of MY step path (no exchange, no euler),
+                # split into owned-user and complement samples
+                sorted_ok = min(d1, d2) < 1e-3
+                owned = sorted_ok ? Set(hidx[me.part.b0:me.part.b1]) : Set{Int}()
+                selo = [k for (k, i) in enumerate(indices) if i in owned]
+                selc = [k for (k, i) in enumerate(indices) if !(i in owned)]
+                step_metrics(tag) = begin
+                    CUDA.synchronize()
+                    pot, grad = fm028_sampled_output(me.sys, indices)
+                    mo = isempty(selo) ? NaN : fm028_accuracy_metrics(pot[selo],
+                        grad[:, selo], dref[1, selo], dref[2:4, selo]).gradient_rel_rms
+                    mcpl = isempty(selc) ? NaN : fm028_accuracy_metrics(pot[selc],
+                        grad[:, selc], dref[1, selc], dref[2:4, selc]).gradient_rel_rms
+                    println("[p2diag4] ", tag, " owned(", length(selo), ")=", mo,
+                        " complement(", length(selc), ")=", mcpl)
+                    flush(stdout)
+                end
+                my_finalize!() = FM.finalize_cuda_radix_output!(st1, (me.sys,);
+                    derivatives_switches=me.switches,
+                    host_output_staging=me.cache.device_ctx.host_output,
+                    target_buffers=me.target_buffers,
+                    device_target_buffers=me.cache.device_ctx.device_target_buffers)
+                # (a) my worker path minus exchange/euler
+                FM.update_cuda_radix_state!(me.cache, (me.sys,))
+                p2_check_epoch!(me)
+                p2_run_lifecycle!(me.slot, st1, me.part.c0, me.part.c1, me.side,
+                    me.ev_begin, me.ev_done; use_graph=false)
+                my_finalize!()
+                step_metrics("a) my body + my finalize   ")
+                # (b) production body + my finalize
+                FM.update_cuda_radix_state!(me.cache, (me.sys,))
+                FM.run_cuda_radix_lifecycle!(st1)
+                my_finalize!()
+                step_metrics("b) prod body + my finalize ")
+                # (c) stock fmm! recovery sanity
+                fmm!(me.sys, me.cache; scalar_potential=true, gradient=true)
+                step_metrics("c) stock fmm! recovery     ")
+            end
+
             # ---- solo isolation probes (device 0, owned half only) ----------
             # A: filtered body, uncaptured        -> filter/body correctness
             # C: filtered windows, FULL L2B range -> splits L2B restriction
