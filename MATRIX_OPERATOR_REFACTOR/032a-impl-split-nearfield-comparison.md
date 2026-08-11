@@ -492,6 +492,45 @@ shell/tail bounds hold unchanged). Full local suite green (`--threads=4`).
 
 Task 032a is complete pending clear-context approval by a different agent.
 
+## Approval Notes (clear-context, 2026-08-11)
+
+Approved. Reviewed `START_HERE.md`, this task file, `032a-implementation-plan.md`,
+the shipped surfaces (`src/containers.jl` kernel constructors/docstrings,
+`src/translate_batched_cuda.jl` mechanism Refs + comments,
+`docs/src/device_interface.md`), the test surfaces
+(`test/device_system_interface_test.jl`, `test/cuda_radix_nearfield_binning_test.jl`),
+the Stage C/D data in `data/split_nearfield/`, and commits `7efbb55`…`f829e9b`.
+
+- **Objectives/consistency:** all eight deliverables done and traceable to the
+  plan; every deviation from the plan (arithmetic pass-2 offset ball on host,
+  shared-memory ballot queue instead of an unboundable global bitmask,
+  hybrid-only `TwoPassVortex`) is recorded with sound rationale.
+- **Correctness:** shipped defaults verified in source
+  (`PartitionedVortex`/`TwoPassVortex` `rho_t = 4.252`, `RegularizedVortex`
+  4.789, `CUDA_NEARFIELD_BINNING = :classsplit`, `SUBSORT = true`,
+  `PASS2_QUEUED = false`; plain-vortex trait default unchanged). Local re-run
+  of `device_system_interface_test.jl` (4 threads): all 35,424 assertions
+  green, including the `shipped nearfield defaults` testset. H200 evidence
+  (jobs 13064834, 13065299/13065376/13065443/13065537) is on record with every
+  row passing the 1e-3 velocity gate, 023 counters flat, allocation stability,
+  and the scalar 028/030 no-regression stage.
+- **Performance:** partitioned + classsplit/sub-Morton wins every measured
+  case/precision/n (1.16–1.77x step-level); the §6.3 prediction was refuted at
+  constructible geometries and the record explains why; sentinels show no
+  reversal, so skipping the full 024b grid follows the ladder rule.
+- **Robustness/invasiveness/readability:** refusal paths and constructor
+  negatives tested; CUDA optional; non-opt-in consumers unaffected; docstrings
+  and the captured-graph Ref caveat are clearly documented.
+
+Two minor documentation notes, non-blocking: (1) Stage A has no dedicated
+work-record subsection here (its content lives in commit `17a8129`, the
+Checkpoint A report, and the Stage B/close-out references); (2) the close-out
+records that no hardware re-run is needed (shipped combination bitwise equal to
+the measured `partitioned_rms`/`twopass_rms` rows) but only implicitly that the
+H200 test-suite preflights ran with the pre-closeout `rho_t = 4.789`
+constructor defaults — the new default-assertion tests get their first
+on-hardware run in the next scheduled cluster job.
+
 ## Placement and Reporting
 
 - Follow the `_batched`/`*_cuda.jl` placement rules; types stay in
