@@ -200,6 +200,162 @@ on-hardware run of the 032a `shipped nearfield defaults` assertions, per the
 Ref defaults), and the FLOWVPM coupling suite (Part A + Part B). Data lands
 in `data/flowvpm_gpu_campaign/`.
 
+### 2026-08-11 — initial sweep complete (job 13134906): tuned configs, profile, lever ranking (session 1 cont.)
+
+**Job 13134906** (H200, m13h-1-1, 3h58m, exit 0): all preflights green —
+032 CUDA interface tests, host `device_system_interface_test.jl` (35k
+assertions incl. the 032a `shipped nearfield defaults` testset — **first
+on-hardware run of the shipped-default assertions**, closing the 032a
+approval note), `cuda_radix_nearfield_binning_test.jl` **304/304** (CUDA
+mechanism Ref defaults on hardware), FLOWVPM coupling suite Part A+B. All
+14 reference checksums OK. **75/75 pre-registered configs measured, zero
+failures**; `counters_flat=true` on every row; steady-state allocation ≤
+251 KB (the known framework scatter-dict metadata; 023 counters prove zero
+body traffic). Data: `data/flowvpm_gpu_campaign/fm035_sweep.csv` + job log.
+
+**Root cause found (reading gate, confirmed by measurement): the 034
+coupling's explicit `ConcatenatedFixedZM2L` override discards
+FastMultipole's measured auto default.** `_default_radix_m2l_strategy`
+selects `DenseTranslationM2L` at `P ≤ 4` (the 024/028 measured rule); the
+coupling pinned concat. Measured penalty at matched geometry: cube (ℓ=4,
+q=17, F32) 33.8 → 12.2 ms (2.8x), wake (ℓ=5, q=12, F32) 26.3 → 16.2 ms
+(1.6x). Similarly the 032a winner `PartitionedVortex` was unreachable
+pre-035: regularized→partitioned at matched geometry is 1.22x (cube F32),
+1.88x (cube F64), 1.19x (wake F32).
+
+**Deliverable 1 — per-case tuned GPU configurations (n=1e5, all
+gate-passing, U-gate 1e-3, J logged as diagnostic):**
+
+| case | TF | config (kernel/ℓ/q/strategy/K) | U/J solve (ms) | u_rel_rms | j_rel_rms | vs 034 status quo |
+|---|---|---|---:|---|---|---|
+| cube | F32 | part / 4 / 17 / dense / 256 | **12.23** | 9.35e-4 | 5.2e-3 | 51.4 → 4.2x |
+| cube | F32 robust-margin alt | part / 3 / 16 / dense | 29.13 | 5.66e-4 | 1.7e-3 | 1.77x |
+| cube | F64 | part / 3 / 16 / dense | **42.81** | 5.66e-4 | 1.7e-3 | 94.6 → 2.2x |
+| wake | F32 | part / 5 / 12 / dense / 256 | **16.24** | 6.94e-4 | 6.0e-3 | 36.6 → 2.25x |
+| wake | F32 margin alt | part / 5 / 16 / dense | 16.72 | 4.79e-4 | 4.4e-3 | 2.19x |
+| wake | F64 | part / 5 / 16 / dense | **23.82** | 4.79e-4 | 4.4e-3 | 57.1 → 2.4x |
+
+Status quo = the shipped 034 coupling (auto-derived geometry, regularized,
+concat): cube 51.4/94.6 ms (F32/F64), wake 36.6/57.1 ms. The cube F32
+winner's error is 0.93x the gate (passes the 030-style 0.95x robust rule,
+barely; the ℓ=3 alternative has 1.8x margin at 2.4x the cost). Full RK3
+step ≈ 3 × U/J + ~0 integrator overhead (measured at the concat
+geometry rows: cube (3,16) 126.3/150.8 ms F32/F64 vs 3×42.2/49.9; wake
+(5,16) 90.2/105.5 vs 3×30.0/35.1). Depth ceilings at n=1e5 are
+σ-adequacy-bound: cube ℓ≤4, wake ℓ≤5 (ℓ+1 needs g_min > 3, unsupported).
+FP16-WMMA is structurally unavailable (LH on), so F32 is the fast lane.
+
+n=1e6 spot grid (concat only — dense at 1e6 is a cycle-1 measurement gap):
+cube best gate-passing (ℓ=4, q=16, F32) 299.4 ms u=7.2e-4 (ℓ=5 FAILS the
+gate at 1.27e-3 — depth at 1e6 cube is accuracy-limited, not
+adequacy-limited); wake best (ℓ=6, q=12, F32) 168.1 ms u=7.0e-4.
+Status-quo baselines: cube 427.1, wake 282.8 ms (F32).
+
+**Deliverable 2 — wake at cube-optimal parameters** (ℓ=4, q=17, part,
+F32; concat form): **101.0 ms vs 16.2 ms wake-optimal (6.2x slower)**;
+u=1.39e-4 (5.0x lower error than needed), J=6.8e-4. The cube-optimal
+depth leaves the wake with 168 occupied cells (~600 bodies/leaf) — the
+solve degenerates toward all-direct with the one-thread-per-cell B2M
+serialization on top. Cube-optimal parameters do not transfer; per-case
+depth selection is mandatory.
+
+**Deliverable 3 — matched-n 030 ratio (n=1e5).** 030 best admissible
+verdict-boundary: 3.097 ms (FP16-WMMA/F32) / 3.389 ms (F64). One tuned
+FLOWVPM U/J solve: 12.23 ms F32 → **3.9x the 030 FP16 row, 3.6x the 030
+F64 row** (F64: 42.8/3.389 = 12.6x). Itemized workload differences:
+Lamb-Helmholtz χ carried end-to-end (double expansion channel; disables
+the FP16-WMMA tensor path entirely); vector strength (3 B2M source
+channels); 13-row output incl. the 9-component hessian (vs 4-row);
+σ-carrying regularized nearfield whose ρ_t·σ coverage forces q=16-17 near
+sets at shallow σ-bound depths (030 runs q²=4-6 at ℓ=4-5); plus
+FLOWVPM-side reset/dispatch (~0.1 ms). Boundary composition is comparable
+(030 verdict = refresh+eval+finalize+Euler; ours = reset+refresh+eval+
+finalize). Full RK3 step is reported separately above, not in the ratio.
+
+**Deliverable 4 — per-stage profile.** The U/J solve is FastMultipole
+eval-bound everywhere: FLOWVPM-side overhead (reset 0.05 + finalize 0.06 +
+dispatch ~0) ≤ 0.5 ms ≈ 1-3%; refresh 0.33-1.3 ms. Stage medians
+(CUDA-event, ms; l2b is fused with the nearfield):
+
+| row | b2m | m2m | m2l | l2l | l2b+nearfield | eval |
+|---|---:|---:|---:|---:|---:|---:|
+| cube (3,16) F32 concat | **21.8** | 0.9 | 7.5 | 0.9 | 19.1 | 41.8 |
+| cube (4,17) F32 concat | 3.6 | 1.2 | 23.8 | 1.1 | 7.7 | 33.7 (dense: 11.8) |
+| wake (5,12) F32 concat | **11.4** | 1.4 | 8.5 | 1.4 | 8.3 | 25.9 (dense: 15.8) |
+| cube 1e6 (4,16) F32 | 27.5 | 1.2 | 21.9 | 1.2 | **277.7** | 297.6 |
+| wake 1e6 (6,16) F32 | 14.7 | 1.6 | 42.6 | 1.6 | **166.5** | 211.5 |
+
+Key attribution: **B2M is one-thread-per-cell** (`_launch_cuda_b2m!`:
+`threads=128, blocks=cld(ncells,128)`, serial over the cell's bodies) —
+at the σ-forced shallow depths this leaves the H200 nearly idle (cube ℓ=3:
+512 threads total, 195 bodies each → 21.8 ms = 52% of eval; wake winner
+(5,12) dense: b2m 11.4 of 15.8 ms eval ≈ 72%). At 1e6 the fused
+nearfield dominates (86% cube, 79% wake) because σ-coverage plus the
+gate-driven depth cap (cube ℓ=5 fails accuracy) pin bodies/leaf high.
+
+**Deliverable 5 — ranked lever list (≥5% end-to-end U/J bar):**
+
+1. **Dense M2L + PartitionedVortex + per-case geometry as the coupling
+   defaults** (FLOWVPM `gpu-full`; measured, not modeled): 4.2x/2.2x
+   (cube F32/F64), 2.25x/2.4x (wake) vs the shipped coupling. Risk: low —
+   every ingredient is a production FastMultipole surface already measured
+   passing all gates in this sweep. This is proposed cycle 1 (below).
+2. **B2M within-cell parallelization** (FastMultipole `src/`,
+   `translate_batched_cuda.jl`): block-per-cell with parallel bodies +
+   coefficient reduction. Expected (modeled from occupancy): wake winner
+   11.4 → ~1-2 ms ⇒ up to ~1.6x end-to-end wake, ~10-15% cube (4,17);
+   larger wherever depth is σ/accuracy-capped. Risk: medium (new kernel,
+   φ+χ parity tests at P=4/P=8 both precisions). Candidate cycle 2.
+3. **n=1e6 fixed-error geometry** (measurement + possibly richer coarse
+   schedules): cube ℓ=5 fails the gate at 1.27e-3 while ℓ=4 pays 277 ms of
+   nearfield; a schedule/radius combination that passes at ℓ=5 (plus dense
+   M2L, unmeasured at 1e6) is modeled ≥ 1.5-2x at 1e6. Risk: low
+   (measurement-first). Folded into cycle 1's measurement rider.
+4. **window_classes for concat** (K=4096: cube (3,16) 42.2→36.2, wake
+   (5,16) 30.0→21.1) — superseded by dense as default; dense×K sensitivity
+   is a cycle-1 measurement rider. K=64 is a measured loss (1.4-1.9x).
+5. Below the bar / rejected by measurement: `rho_t` 4.252 vs 4.789 (≤0.3%
+   here — nearfield is compute-bound at these fractions, keep the shipped
+   4.252); boosted-coarse schedules (measured 4-14% *worse*: extra
+   transition offsets outweigh accuracy headroom at fixed leaf q);
+   `precomputed_y` (loses to dense everywhere measured, cube (4,17) by
+   2.3x); FLOWVPM-side overhead (≤1-3%, nothing to win).
+
+**Deliverable 5a — the 037 rectangular-grid verdict (measured estimate):
+does NOT clear the 5% bar at the tuned operating points; defer.** The
+occupancy-compacted radix path already absorbs the wake's 96.9%-empty
+bounding cube: occupied node counts per level are tiny (1/8/16/32/168/896
+at ℓ=5), B2M and nearfield scale with occupied cells only, and ℓ=6
+constructs fine (the 024b-era ℓ-cap no longer binds). What elongation
+actually costs at fixed n is the extra sparse coarse levels: ~2 extra
+M2M+L2L levels ≈ 0.9-1.8 ms of launch floor plus a small route-gen term —
+≈5.5% of the 16.2 ms wake winner (borderline), <2% at 1e6 (168 ms). The
+wake is *faster* than the cube at 1e6 (168 vs 299 ms) despite the box
+penalty. Caveat recorded: if cycle 1 + a B2M fix shrink the wake solve to
+~8 ms, the same ~0.9-1.8 ms becomes 11-22% and 037 would clear the bar —
+re-evaluate on the post-cycle profile before starting 037.
+
+**Deliverable 6 — proposed optimization cycle 1 (awaiting user
+approval):** flip the FLOWVPM coupling defaults (`gpu-full`,
+`src/FLOWVPM_fmm_radix.jl` only) to the measured winners:
+`m2l_strategy=:dense` (restores FastMultipole's own measured auto rule),
+`direct_kernel=:partitioned` (the user-approved 032a default for
+σ-carrying vortex systems), and a joint deepest-admissible (ℓ, q)
+auto-geometry rule using the kernel's ρ_t with an accuracy-margin guard
+(cube-1e6-style depth overreach must be rejected; exact rule to be
+validated against this sweep's error data before shipping). Expected
+realized gain vs the shipped coupling: ≥4x cube F32 / ≥2.2x elsewhere at
+n=1e5 (measured). Risk: low. Verification plan: Part A/B suites + the
+sha256-gated 033 refcheck (both cases × both precisions) + a small H200
+confirmation grid that also fills the measurement gaps in the same job —
+dense at (4,17) F64 cube, dense at n=1e6 (both cases, incl. an ℓ=5 cube
+schedule probe), dense×K sensitivity, RK3 at the dense winners. No
+FastMultipole `src/` change in cycle 1 (B2M is cycle 2, separately
+approved).
+
+STOPPED here per the run contract: no optimization cycle is implemented
+without user approval.
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;
