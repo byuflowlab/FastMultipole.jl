@@ -390,7 +390,7 @@ depend on the deferred `029` and does not resume it.
 | [x] | [x] | `026-impl-hierarchical-m2l-host.md` | Implement the `025` stencil on the host resident lifecycle: per-level node occupancy, source-major windowed route generation (full pair list never compiled), `(level, offset)` classes, and level-scaled operator tables across all four resident strategies. Both near radii selectable. Retains the flat `ConstantPAnalyticStencil` as oracle and default. Entry gate: prove `M2M`/`L2L` correct before they become load-bearing. | `025`, `021`, `023`, `023a`, `023c`, `023e` |
 | [x] | [x] | `027-impl-hierarchical-m2l-cuda.md` | Mirror `026` on the CUDA device-resident lifecycle: device per-level occupancy scatter, source-major phase-masked flag/scan/compact per window, window-local class-partition assertions, per-offset dense operator tables via the `025` scaling law, and `023` counter/zero-allocation parity. H200 microbenchmarks including whether the `ell=6/7` grids `024b` could not construct now fit; selects the production default policy from measurement. No `024b` end-to-end re-run in this row. | `026`, `020a`, `022`, `023`, `023b`, `023d`, `023f` |
 | [x] | [x] | `028-performance-feasibility-1m-in-10ms.md` | Measure, optimize, and retest toward an accurate 1,000,000-particle solve in `<= 0.01 s` at `P=4` on a single H200 (Float32 admissible within the `P=4` truncation error; verdict boundary = per-time-step resident cost including device convection and tree refresh, no per-step body transfers): consolidate existing evidence and fill material gaps; report end-to-end and per-stage timings at all three boundaries, compute/memory/transfer/latency bounds, GPU transfer and persistent-residency costs (including convection/time stepping), the per-level M2L strategy-mix lever, and bottleneck concentration; then, with user sign-off gating each optimize cycle, implement the highest-value justified production optimizations, verify correctness/accuracy, quantify realized gains, and iterate until the target is reached or the remaining feasibility gap and next steps are rigorously established. | `025`, `026`, `027`, `024b`, `024a`, `024`, `019`, `022`, `023` |
-| [ ] | [ ] | `029-performance-high-score-1m-in-1ms.md` | **Resumed by user direction `2026-08-05`** (deferred `2026-08-03`–`2026-08-05`; still does not block `019a` — results land there as an addendum note). Pursue the lowest reproducible complete resident-step latency for the fixed 1M-body, literature-P=4 workload beyond task 028's 9.591 ms result, with separate single-H200 and multi-H200 leaderboards and a high-score goal of `<= 1 ms`; retain the unchanged accuracy and recurring-cost gates, require independent reproduction, and stop at the goal or when evidence closes every credible material lever. If completed after `019a`, its results are recorded as an addendum review note in `019a`, not a reopened review. | `028` (no longer blocks `019a`) |
+| [x] | [ ] | `029-performance-high-score-1m-in-1ms.md` | **Closed by user direction `2026-08-11`** (stop rule: evidence closed every credible in-scope lever; single-H200 record 4.546/4.657 ms; mirrored-tree multi-GPU falsified structurally at 58.3% efficiency with comm+orch 0.190 ms passing; successor partitioned-tree path staged as rows `043`–`045`). **Resumed by user direction `2026-08-05`** (deferred `2026-08-03`–`2026-08-05`; still does not block `019a` — results land there as an addendum note). Pursue the lowest reproducible complete resident-step latency for the fixed 1M-body, literature-P=4 workload beyond task 028's 9.591 ms result, with separate single-H200 and multi-H200 leaderboards and a high-score goal of `<= 1 ms`; retain the unchanged accuracy and recurring-cost gates, require independent reproduction, and stop at the goal or when evidence closes every credible material lever. If completed after `019a`, its results are recorded as an addendum review note in `019a`, not a reopened review. | `028` (no longer blocks `019a`) |
 | [x] | [x] | `019a-milestone-review-final-roadmap.md` | Final roadmap Milestone Review after Implementation tasks `017` through `028` (`029` deferred by user direction `2026-08-03`), including the dynamic-`P` porting go/no-go, the platform/regime-specific resident M2L strategy recommendations from `024`, the hierarchical-vs-flat and `theta=0.5`-vs-classic stencil verdicts from `025`–`027`, the 1M-particle/10-ms feasibility conclusions from `028`, and a deferral note for the `029` high-score campaign. | `008b`, `008c`, `017`, `018`, `019`, `019b`, `022`, `023`, `024`, `024a`, `024b`, `025`, `026`, `027`, `028` |
 | [x] | [x] | `030-benchmark-cost-vs-n-fixed-ell.md` | Measure per-time-step verdict-boundary cost vs `n` (`1e3`–`1e6`) at the `028` shipped defaults as three fixed-`ell` series (`3/4/5`) in FP16-WMMA/Float32 and Float64, using the `024b` checksummed references; plot as fig10 in the `024a` set; then recommend per-`n` optimizations (including fixed-error geometry retuning) with modeled savings validated by H200 spot-checks at 2–3 representative `n`. Benchmark/analysis row: `scripts/`, `data/`, figures only; no production `src/` changes. | `028`, `019a` |
 
@@ -572,6 +572,43 @@ standing TikZ/CSV figure conventions and extending the `024a` set.
 | [ ] | [ ] | `042-milestone-review-adaptive-octree.md` | Milestone Review for the adaptive octree arc: exact-once and balance evidence, operator-table-reuse audit, M2T/S2L accuracy, performance verdict and default-selection recommendation audited against the `041a` figures, contract compliance (capacity, counters, refresh, `recenter!`), and consumer/API exposure decision. | `038`, `039`, `040`, `041`, `041a` |
 
 This phase does not reopen the Theory, Implementation, or Integration gates.
+
+## Multi-GPU Scaling Phase
+
+Staged by user direction on `2026-08-11` at the closure of `029`. The `029`
+P2 prototype falsified mirrored-tree multi-GPU scaling structurally
+(replicated refresh/upward/finalize bound the 2-GPU wall at ~3.8 ms ≈ 61%
+efficiency even with zero communication) while validating the communication
+mechanism itself (bitwise-lockstep work-list slicing + allreduce, 0.190 ms
+comm+orch at n=1e6; `cuMemPoolSetAccess` pool P2P grant for 234 GB/s
+NVLink). This phase pursues the successor: a **partitioned-tree
+decomposition** — costed Morton-range ownership, local subtrees below a
+split level with replicated+allreduced coarse levels, per-level multipole
+halo exchange inside captured graphs, body halos for the boundary
+nearfield, and ownership migration on occupancy epochs.
+
+**Targets (user direction `2026-08-11`): `<= 1 ms` per resident step for the
+fixed 1M-body literature-`P=4` workload on up to 8 H200s is the goal;
+`<= 2 ms` still counts as a win.** The recorded feasibility bound: perfect
+8-way compute splitting (~0.58 ms) plus the measured ~0.87 ms n-independent
+per-GPU control floor plus ~0.2 ms comm lands at ~1.0–1.2 ms, so the 1 ms
+goal additionally requires shaving the per-GPU launch floor. `029`'s
+accuracy, recurring-cost, and independent-reproduction rules carry over
+unchanged.
+
+The phase is gated behind the Adaptive Octree Phase (`042`) by user
+direction ("after the adaptive tree and other improvements"): the adaptive
+octree changes tree construction, occupancy lookup, and list generation —
+the very surfaces a partitioned tree must split — so partitioning is derived
+once against the final tree machinery rather than twice.
+
+| Done | Approved | Task | Summary | Blocking |
+| --- | --- | --- | --- | --- |
+| [ ] | [ ] | `043-theory-partitioned-multigpu-decomposition.md` | Derive the partitioned-tree decomposition: costed ownership, split-level scheme, per-level halo sets with exact-once coverage proof, migration policy, graph-capture/comm plan reusing the validated `029` P2 exchange, and a measured-floor-calibrated cost model. Kill-switch acceptance gate: modeled 8-GPU step `<= 2 ms` with an identified path to `<= 1 ms`, else recommend not proceeding. Derivation row: `theory/`, `scripts/`, `data/` only. | `042` |
+| [ ] | [ ] | `044-impl-partitioned-multigpu-lifecycle.md` | Implement the `043` design at 2 GPUs on the device-resident lifecycle: partitioned refresh/upward/downward with graph-captured per-level halo exchange, body halos, epoch-based ownership migration, distributed correctness gates extending `test/cuda_radix_twogpu_test.jl`. Gate: 2-GPU efficiency `>= 75%` vs the then-current single-GPU record at unchanged accuracy. | `043` |
+| [ ] | [ ] | `045-benchmark-multigpu-highscore.md` | Scale to 4/8 GPUs: scaling ladder, per-GPU launch-floor reduction as a measured lever if the `<= 1 ms` goal demands it, independent reproduction, final leaderboard and verdict (`<= 1 ms` goal / `<= 2 ms` win), results recorded as `019a`/`029` addendum notes. | `044` |
+
+This phase does not reopen any earlier gate.
 
 ## Future Dispatch Cleanup Notes
 

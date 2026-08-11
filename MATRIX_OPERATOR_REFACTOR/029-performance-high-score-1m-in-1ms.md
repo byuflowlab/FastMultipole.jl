@@ -530,6 +530,49 @@ not invalidate it — rebuild the cache or flip `CUDA_GRAPH_LIFECYCLE` first;
 This job is the post-change remeasure required by Work Plan step 3 before
 any further approval is sought.
 
+## Closure (2026-08-11, user direction)
+
+The user closed this row under the Completion Rule's second arm: evidence
+closes every credible material lever within this row's scope.
+
+**Final standing:** goal (`<= 1 ms`) not reached. Single-H200 leaderboard of
+record: **4.546 ms** knife-edge / **4.657 ms** robust / 6.576 ms
+`sched6-5-5-5` (job 13060804), accuracy unchanged, independently structured
+A/B in-job. Multi-H200 leaderboard of record: 3.993 ms at 2 GPUs (job
+13066058), correctness gates all pass, accuracy identical to single-GPU.
+
+**Levers closed by evidence:** (1) P3 nearfield ILP — falsified (cycle 1);
+(2) mirrored-tree multi-GPU scaling — falsified structurally: comm+orch
+0.190 ms PASSES the 0.4 ms gate, but efficiency 58.3% fails the 75% gate,
+and with communication fully zeroed the replicated stages (refresh 0.51 ms,
+level-dependent B2M/M2M/L2L chains, finalize 0.24 ms + host tail) bound the
+wall at ~3.8 ms ≈ 61% — no mirrored-tree variant can pass. (3) Further
+single-GPU micro-cycles (route-window residuals, M2M/L2L batching) are
+sub-ms-scale and cannot bridge 4.5 -> 1 ms; not pursued per the stop rule.
+
+**Validated assets carried forward:** the bitwise-lockstep work-list-slicing
++ allreduce exchange (0.190 ms at n=1e6; perm-aware scatter-add; IEEE
+commutativity argument), the `cuMemPoolSetAccess` pool P2P grant restoring
+234 GB/s NVLink (CUDACore leaves pool memory P2P-unmapped; 0.905 -> 0.092 ms
+exchange), the two-GPU distributed test surface
+(`test/cuda_radix_twogpu_test.jl`), and two hard-won facts: the device
+counting sort is non-deterministic across caches (atomics) so sorted-frame
+cross-cache comparisons are invalid, and the cached window stream is a
+half-enumeration with Morton-first-half target ranges, so target-range
+filtering of cached windows is semantically void.
+
+**Successor staged, not opened:** the remaining credible path — a
+partitioned-tree decomposition with per-level halo exchange — is staged as
+the Multi-GPU Scaling Phase rows `043`–`045` in `START_HERE.md` (user
+direction `2026-08-11`), gated behind the Adaptive Octree Phase. Its revised
+targets: `<= 1 ms` goal, `<= 2 ms` counts as a win, up to 8 GPUs. The
+feasibility bound recorded for it: perfect 8-way compute splitting
+(~4.6/8 ≈ 0.58 ms) stacks on the measured ~0.87 ms n-independent per-GPU
+control floor (cycle-1 n=1e3 control) plus ~0.2 ms comm, i.e. ~1.0–1.2 ms —
+the 1 ms goal additionally requires shaving the per-GPU launch floor.
+
+Results are recorded as a `019a` addendum note per this row's convention.
+
 ## Approval Notes
 
 To be filled by a different agent after this task is complete.

@@ -453,3 +453,21 @@ conclusions, all measured at the unchanged `1.19e-3` gradient gate:
 The full per-`n` winner table (all 194 measured cases) is in
 `data/cost_vs_n/report.md`; fig10 in the `024a` set plots both panels with the
 per-`n` retuned series. No production `src/` change was made by `030`.
+
+## Addendum (2026-08-11): task `029` closure
+
+Recorded per the `029` completion convention (results land here as an
+addendum note, not a reopened review). `029` — Done, closed by user
+direction `2026-08-11` under its stop rule. Single-H200 leaderboard of
+record: **4.546 ms** knife-edge / **4.657 ms** robust / 6.576 ms
+`sched6-5-5-5` at the frozen 1M-body `P=4` workload (job 13060804; occupancy-
+epoch window cache + CUDA-graph replay; accuracy unchanged; launches
+420 → 28 + 1 graph). Multi-H200: mirrored-tree scaling falsified
+structurally at 2 GPUs (3.993 ms, 58.3% efficiency; replicated stages bound
+the zero-comm wall at ~3.8 ms), while the communication mechanism validated
+at **0.190 ms** comm+orch (work-list slicing + bitwise allreduce;
+`cuMemPoolSetAccess` pool P2P grant for 234 GB/s NVLink). The `<= 1 ms`
+goal was not reached; the successor partitioned-tree path is staged as the
+Multi-GPU Scaling Phase (rows `043`–`045`, gated behind `042`) with revised
+targets `<= 1 ms` goal / `<= 2 ms` win on up to 8 GPUs. Full evidence: the
+`029` task file P2-verdict and Closure sections.
