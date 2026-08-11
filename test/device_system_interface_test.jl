@@ -265,7 +265,7 @@ end
 @testset "partitioned nearfield stage A (task 032a)" begin
 
     seed = 20260806
-    rho_t = 4.789
+    rho_t = 4.252   # shipped split-kernel default since Checkpoint D (2026-08-07)
 
     #--- (a) pair-level three-way parity: the partitioned kernel is bitwise the
     #    regularized kernel inside the cutoff and bitwise the singular kernel
@@ -281,7 +281,7 @@ end
             sigma = TF(0.01 + 0.09 * rand(rng))
             # stay clear of the threshold so recomputed rho cannot straddle it
             inside = isodd(trial)
-            rho = inside ? TF(0.05 + 4.4 * rand(rng)) : TF(5.0 + 15.0 * rand(rng))
+            rho = inside ? TF(0.05 + 4.1 * rand(rng)) : TF(5.0 + 15.0 * rand(rng))
             u = normalize(randn(rng, 3))
             dx, dy, dz = TF.(u .* Float64(rho * sigma))
             r2 = dx * dx + dy * dy + dz * dz
@@ -391,7 +391,7 @@ end
 @testset "two-pass nearfield stage B (task 032a)" begin
 
     seed = 20260807
-    rho_t = 4.789
+    rho_t = 4.252   # shipped split-kernel default since Checkpoint D (2026-08-07)
     rho_c = 2.0
     tk = TwoPassVortex(; sigma_row=8)
     rk = RegularizedVortex(; sigma_row=8)
@@ -408,7 +408,7 @@ end
             sigma = TF(0.01 + 0.09 * rand(rng))
             zone = mod1(trial, 3)   # 1: inside rho_c, 2: shell, 3: beyond rho_t
             rho = zone == 1 ? TF(0.05 + 1.85 * rand(rng)) :
-                  zone == 2 ? TF(2.05 + 2.6 * rand(rng)) :
+                  zone == 2 ? TF(2.05 + 2.1 * rand(rng)) :
                               TF(5.0 + 15.0 * rand(rng))
             u = normalize(randn(rng, 3))
             dx, dy, dz = TF.(u .* Float64(rho * sigma))
@@ -916,5 +916,31 @@ end
         ds(i) = norm(shuffled[i] .- shuffled[i + 1])
         mean_rand = sum(ds, 1:199) / 199
         @test mean_sorted < 0.7 * mean_rand
+    end
+end
+
+@testset "shipped nearfield defaults (task 032a Checkpoint D, 2026-08-07)" begin
+    # user-approved defaults: PartitionedVortex is the recommended σ-carrying
+    # vortex nearfield; the split kernels default to the §6.4 RMS radius
+    # rho_t = 4.252 (confirmed on both Integration Phase cases in Stage D);
+    # RegularizedVortex keeps the §4 per-pair radius as the fallback
+    @test PartitionedVortex(; sigma_row=8).rho_t == 4.252
+    @test TwoPassVortex(; sigma_row=8).rho_t == 4.252
+    @test TwoPassVortex(; sigma_row=8).rho_c == 2.0
+    @test RegularizedVortex(; sigma_row=8).rho_t == 4.789
+    # the plain-vortex default is unchanged (no σ row exists to regularize on)
+    @test FastMultipole._default_direct_kernel(Point{Vortex}) === SingularVortex()
+    # trait-driven caches pick up the new default end-to-end (P = 4 and P = 8)
+    for P in (4, 8)
+        base = generate_vortex(20260807, 200)
+        psys = PartitionedSmoothedVortex(SmoothedVortex(base, fill(0.02, 200)))
+        cache = RadixFMMCache(psys; expansion_order=P, ell=2, hessian=true,
+            options=CUDARadixLifecycleOptions(; precision=Float64,
+                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+        dk = cache.state.options.direct_kernel
+        @test dk isa PartitionedVortex && dk.rho_t == 4.252
+        step0 = cache.step
+        fmm!(psys, cache; scalar_potential=false, gradient=true, hessian=true)
+        @test cache.step == step0 + 1
     end
 end

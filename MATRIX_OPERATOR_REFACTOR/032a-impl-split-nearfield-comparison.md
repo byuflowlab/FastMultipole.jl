@@ -428,6 +428,70 @@ windows sizing ~22 GB route capacity at ℓ=6 (bounded with
 `window_classes=64`); all fixed in the harness (commits `dd404ab`,
 `7161c1a`, `a5a0872`).
 
+### Close-out — Checkpoint D approved, defaults shipped (2026-08-07)
+
+**Checkpoint D user approval (2026-08-07, via coordinator):** all three
+recommendations accepted — (1) `PartitionedVortex` with the classsplit +
+sub-Morton stream is the resident vortex-nearfield default, (2)
+`rho_t = 4.252` is the split-kernel default radius, (3) `RegularizedVortex`
+remains the fallback/default for non-split consumers and `TwoPassVortex`
+stays a supported alternative.
+
+**Shipped surfaces** (default/constructor values only):
+
+- `PartitionedVortex`/`TwoPassVortex` constructor default `rho_t = 4.252`
+  (`RegularizedVortex` keeps the §4 per-pair 4.789 — its math is
+  `rho_t`-independent; the field only feeds the adequacy gate).
+- Docstrings + `docs/src/device_interface.md`: `PartitionedVortex` documented
+  as the recommended default for σ-carrying vortex systems, with the measured
+  1.16-1.77x step-level margin; `RegularizedVortex` as the divergence-proof
+  fallback; `TwoPassVortex` as the supported alternative. The
+  `_default_direct_kernel(Point{Vortex})` trait default stays
+  `SingularVortex` (a parameter-free default cannot know `sigma_row`;
+  σ-carrying consumers opt in via the `direct_kernel(system)` trait, exactly
+  as the 031/032 interface spec defines).
+- The stream-mechanism defaults (`CUDA_NEARFIELD_BINNING = :classsplit`,
+  `CUDA_NEARFIELD_SUBSORT = true`) shipped at Stage C under the Checkpoint C
+  approval.
+
+**No hardware re-run needed:** the shipped default combination
+(partitioned/two-pass at `rho_t = 4.252` under classsplit + sub-Morton) is
+bitwise the `partitioned_rms`/`twopass_rms` Stage D configurations measured
+on H200 in jobs 13065299/13065376/13065537 (every case passes the 1e-3 gate;
+worst margin 9.35e-4). No default combination exists that was not exercised
+on hardware.
+
+**Tests:** default assertions added (`shipped nearfield defaults` testset:
+constructor values, unchanged plain-vortex trait default, trait-driven
+end-to-end pickup at P=4 and P=8; CUDA Ref defaults asserted at the top of
+`cuda_radix_nearfield_binning_test.jl` before any mutation); the Stage A/B
+pair tests' ρ draw ranges adapted to the 4.252 branch point (their
+shell/tail bounds hold unchanged). Full local suite green (`--threads=4`).
+
+**Deliverable checklist (task file §Deliverables):**
+
+1. Partitioned nearfield — **done** (Stage A host + Stage C device, shipped
+   default).
+2. Two-pass additive correction — **done** (Stage B host + Stage C device
+   mirror; supported alternative).
+3. §6.3 binned/sorted pair stream before any A/B — **done** (Stage C:
+   mechanisms built and measured; classsplit + sub-Morton selected; achieved
+   homogeneity reported in every benchmark row).
+4. `rho_t` lever — **done** (measured on both cases; RMS radius adopted as
+   the split-kernel default per user approval).
+5. Geometry correctness — **done** (adequacy gate + exact-once host tests in
+   Stage A; construction-time refusals; gate-derived pass-2 reach capacity).
+6. Profile-triggered A/B on H200 — **done** (primary cases + all four
+   sentinels; winner never reverses, so the full 024b grid was not
+   required; divergence/homogeneity, pair counts, and step/stage timings
+   recorded).
+7. Default selection — **done** (recommended at Checkpoint D, user-approved
+   2026-08-07, shipped in this close-out).
+8. Contract gates — **done** (P=4 in every new testset, 023 counters flat,
+   allocation stability, scalar 028/030 no-regression in every job).
+
+Task 032a is complete pending clear-context approval by a different agent.
+
 ## Placement and Reporting
 
 - Follow the `_batched`/`*_cuda.jl` placement rules; types stay in

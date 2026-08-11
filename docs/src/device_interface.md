@@ -225,10 +225,20 @@ Shipped kernels:
   `Point{Source}`.
 - `SingularVortex()` — singular Biot–Savart kernel; the default for
   `Point{Vortex}`.
+- `PartitionedVortex(; sigma_row, rho_t=4.252)` — **the recommended default
+  for σ-carrying vortex systems** (task 032a Checkpoint D, 2026-08-07):
+  cancellation-safe regularized `gaussianerf` U/J inside the smoothing cutoff
+  `r/σ_src ≤ rho_t`, exact singular Biot–Savart beyond it. Measured
+  1.16–1.77x faster step-level than `RegularizedVortex` on H200 at identical
+  1e-3-gate accuracy; on device it runs through the distance-binned pair
+  stream (class-split compaction + within-cell sub-Morton ordering).
 - `RegularizedVortex(; sigma_row, rho_t=4.789)` — regularized-everywhere
   Biot–Savart with the FLOWVPM default `gaussianerf` regularization (the only
   regularization supported in the Integration Phase; the evaluation is
-  erf-free on device).
+  erf-free on device). The divergence-proof fallback.
+- `TwoPassVortex(; sigma_row, rho_t=4.252, rho_c=2.0)` — supported
+  alternative: unmodified singular FMM plus an additive deficit sweep over
+  the `(rho_c, rho_t]` shell (hierarchical-policy device caches or host).
 
 ### The `sigma_row` convention
 

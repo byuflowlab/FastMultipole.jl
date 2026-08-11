@@ -1730,6 +1730,11 @@ on an inadequate stencil would silently miss the accuracy gate (spec §5).
 The `g(ρ)`/`h(ρ) = ρg'−3g` evaluation is erf-free: the theory-§3 Horner series
 below `ρ = 2` and the `031a` §6.2 one-`exp` form above (constants measured by
 `MATRIX_OPERATOR_REFACTOR/scripts/fit_032_nearfield_g.jl`).
+
+Since the 032a Stage D measurement (Checkpoint D approval, 2026-08-07) this
+kernel is the **divergence-proof fallback**: [`PartitionedVortex`](@ref) is
+the recommended default for σ-carrying vortex systems (1.16-1.77x faster
+step-level at identical gate accuracy on both Integration Phase test cases).
 """
 # Regularized vortex nearfields share the sigma_row/rho_t contract and the
 # near-set adequacy gate; they differ only in how pairs beyond the smoothing
@@ -1754,38 +1759,44 @@ struct RegularizedVortex <: AbstractRegularizedVortex
 end
 
 """
-    PartitionedVortex(; sigma_row, rho_t=4.789)
+    PartitionedVortex(; sigma_row, rho_t=4.252)
 
 Partitioned-replacement Biot-Savart nearfield for `Point{Vortex}` sources
-(task 032a, candidate 2 of `031a` §6): pairs inside the smoothing cutoff
-`r/σ_src ≤ rho_t` are evaluated with the cancellation-safe regularized U/J
-formulas (the same erf-free `g`/`h` evaluation as [`RegularizedVortex`](@ref));
-the remaining direct pairs use the exact singular kernel (`g → 1`, `h → −3`),
-skipping the regularization transcendentals entirely. The FMM far field is
-singular under every nearfield strategy, so the near-set adequacy gate applies
-identically (`g_min·h_leaf > rho_t·σ_max`, asserted per evaluation): the
-geometry that makes this kernel exact-once is the same geometry
-`RegularizedVortex` already requires, and the `rho_t` branch never changes
-which pairs are direct — only how they are evaluated.
+(task 032a, candidate 2 of `031a` §6), and **the recommended default for
+σ-carrying vortex systems** (Checkpoint D user approval, 2026-08-07): pairs
+inside the smoothing cutoff `r/σ_src ≤ rho_t` are evaluated with the
+cancellation-safe regularized U/J formulas (the same erf-free `g`/`h`
+evaluation as [`RegularizedVortex`](@ref)); the remaining direct pairs use
+the exact singular kernel (`g → 1`, `h → −3`), skipping the regularization
+transcendentals entirely. The FMM far field is singular under every nearfield
+strategy, so the near-set adequacy gate applies identically
+(`g_min·h_leaf > rho_t·σ_max`, asserted per evaluation): the geometry that
+makes this kernel exact-once is the same geometry `RegularizedVortex` already
+requires, and the `rho_t` branch never changes which pairs are direct — only
+how they are evaluated.
 
-`sigma_row` and `rho_t` follow the [`RegularizedVortex`](@ref) contract
-(`rho_t = 4.789` is the `031a` §4 per-pair J radius at `ε = 1e-3`; the §6.4
-RMS radius 4.252 is a measured opt-in). On GPU warps a naive `ρ ≤ rho_t`
-branch pays both paths on nearly every warp (`031a` §6.3); the CUDA path
-must present a distance-binned or sorted pair stream before this kernel's
-timings are meaningful.
+The 032a Stage D H200 A/B measured this kernel (with the Stage-C
+classsplit + sub-Morton pair stream) 1.16-1.77x faster step-level than the
+regularized-everywhere baseline on both Integration Phase test cases at every
+measured `n` and precision, with identical 1e-3-gate accuracy.
+
+`sigma_row` and `rho_t` follow the [`RegularizedVortex`](@ref) contract. The
+default `rho_t = 4.252` is the `031a` §6.4 RMS J radius at `ε = 1e-3`,
+confirmed on both test cases by the Stage D sampled-direct measurement (worst
+gate margin 9.35e-4 at cube n=1e6); the §4 per-pair worst-case radius 4.789
+remains available for consumers needing the conservative per-pair bound.
 """
 struct PartitionedVortex <: AbstractRegularizedVortex
     sigma_row::Int
     rho_t::Float64
-    function PartitionedVortex(; sigma_row::Integer, rho_t::Real=4.789)
+    function PartitionedVortex(; sigma_row::Integer, rho_t::Real=4.252)
         _validate_regularized_vortex_args("PartitionedVortex", sigma_row, rho_t)
         return new(Int(sigma_row), Float64(rho_t))
     end
 end
 
 """
-    TwoPassVortex(; sigma_row, rho_t=4.789, rho_c=2.0)
+    TwoPassVortex(; sigma_row, rho_t=4.252, rho_c=2.0)
 
 Two-pass additive-correction Biot-Savart nearfield for `Point{Vortex}` sources
 (task 032a, candidate 3 of `031a` §6.1), in the `rho_c` hybrid form. The FMM
@@ -1818,7 +1829,7 @@ struct TwoPassVortex <: AbstractRegularizedVortex
     sigma_row::Int
     rho_t::Float64
     rho_c::Float64
-    function TwoPassVortex(; sigma_row::Integer, rho_t::Real=4.789, rho_c::Real=2.0)
+    function TwoPassVortex(; sigma_row::Integer, rho_t::Real=4.252, rho_c::Real=2.0)
         _validate_regularized_vortex_args("TwoPassVortex", sigma_row, rho_t)
         rho_c > 0 || throw(ArgumentError("TwoPassVortex rho_c must be positive"))
         rho_c < rho_t || throw(ArgumentError(

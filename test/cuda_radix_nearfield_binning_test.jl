@@ -60,6 +60,12 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         end
         @test true
     else
+        # shipped stage-C defaults (Checkpoint C/D approvals): asserted before
+        # any test mutates the Refs
+        @test FastMultipole.CUDA_NEARFIELD_BINNING[] === :classsplit
+        @test FastMultipole.CUDA_NEARFIELD_SUBSORT[]
+        @test !FastMultipole.CUDA_TWOPASS_PASS2_QUEUED[]
+
         seed = 20260807
         nv = 1500
         sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
