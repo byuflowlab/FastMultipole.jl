@@ -575,4 +575,39 @@ Results are recorded as a `019a` addendum note per this row's convention.
 
 ## Approval Notes
 
-To be filled by a different agent after this task is complete.
+**Approved `2026-08-11`** by a clear-context agent (Claude Fable 5) under the
+standing authorization, following the user-directed closure of the same date
+(Completion Rule arm 2: evidence closes every credible in-scope lever; the
+`<= 1 ms` goal itself was not reached, which is expected and consistent with
+the stop rule). Reviewed: this file in full (Work Plan/Completion Rule vs
+Verification Notes steps 1–2 and Cycle 1, both leaderboards, the P2 verdict,
+the Closure section), the `019a` addendum note, the successor rows `043`–`045`,
+the cycle-1 production surface (`src/translate_batched_cuda.jl`
+`CUDA_CACHED_WINDOWS`/`CUDA_GRAPH_LIFECYCLE` + `_cuda_graph_eligible` fallback,
+`src/containers.jl` epoch/window/graph fields, commits `0f1ff0c`/`3826a44`/
+`a94aacc`/`2082bfb`/`2ee7351`), tests `cuda_radix_graph_test.jl` and
+`cuda_radix_twogpu_test.jl`, and the data of record in
+`data/performance_high_score_1m_1ms/`.
+
+Spot-checks against the CSVs of record all match: single-H200 rows 1–3
+(job 13060804: 4.546149 [4.230, 4.595] ms err 1.18964e-3; 4.656634 ms err
+1.0300e-3; 6.576021 ms err 1.0592e-3; counters 2/2/0/0/0; host alloc
+58,256 B/step; persistent 2.238 GB); the P2 row (job 13066058: dual wall
+3.9925 [3.807, 4.249] ms, comm+orch 0.18996 ms `gate_comm_orch=true`,
+`eff_vs_record=0.5832` `gate_efficiency=false`, exchange 38.0 MB at 234/236
+GB/s, err 1.030e-3 identical to the in-job single-GPU reference, lockstep/
+coverage/counter gates all true). The structural-floor argument is arithmetic-
+consistent (wall minus comm ~3.8 ms => ~61% ceiling < 75% gate) and the
+closure's three closed-lever findings match the recorded evidence. Rows
+`043`–`045` accurately carry the recorded numbers, floors, and the two
+hard-won constraints (cross-cache sort non-determinism; half-enumeration
+window stream). Accuracy gates, frozen workload, and the no-`<=1 ms`-claim /
+no-reproduction-required logic are all honored; tests cover P=4 per the
+standing rule.
+
+Non-blocking archival note: the P2 jobs' raw `.out` logs (13061054–13066058,
+e.g. `fm029p2-13066058.out`) were not fetched into the repo — the fetch
+script's `|| true` swallows the miss — and remain cluster-side
+(`orc:FastMultipole-023`); the machine-readable CSV + `.walls.csv` artifacts
+of record fully substantiate the leaderboard entry. Retrieve via
+`scripts/cuda_029_p2_fetch.sh 13066058` if the cluster copy is at risk.
