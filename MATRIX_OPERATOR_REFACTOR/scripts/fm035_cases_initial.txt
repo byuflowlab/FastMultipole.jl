@@ -1,0 +1,101 @@
+# Task 035 pre-registered initial tuning grid (2026-08-11).
+# Representative n = 1e5 (033 rule); n = 1e6 spot grid at the end.
+# Defaults per line: kernel=regularized tf=Float64 q=16 strategy=concat K=256,
+# ell omitted = 034 auto derivation. Admissibility pre-computed from
+# g_min(q)*h_leaf > rho_t*sigma_max with derived L (cube 1.2, wake 6.0);
+# framework adequacy gate is the arbiter — a rejected config is a recorded
+# failure row, not an error.
+#
+# ---- cube n=1e5: status-quo baselines (034 derived settings) ----
+label=c5_reg_auto_f64 case=cube n=100000 kernel=regularized tf=Float64 profile=1
+label=c5_reg_auto_f32 case=cube n=100000 kernel=regularized tf=Float32 profile=1
+label=c5_part_auto_f32 case=cube n=100000 kernel=partitioned tf=Float32
+# ---- cube n=1e5: geometry scan (partitioned, concat, K=256, F32) ----
+label=c5_p_e2q8_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=2 q=8
+label=c5_p_e2q16_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=2 q=16
+label=c5_p_e3q6_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=6
+label=c5_p_e3q8_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=8
+label=c5_p_e3q12_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=12
+label=c5_p_e3q16_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=16 profile=1 rk3=1
+label=c5_p_e3q20_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=20
+label=c5_p_e4q14_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=4 q=14
+label=c5_p_e4q16_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=4 q=16
+label=c5_p_e4q17_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=4 q=17 profile=1
+label=c5_p_e4q20_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=4 q=20
+# ---- cube n=1e5: Float64 subset ----
+label=c5_p_e3q8_f64 case=cube n=100000 kernel=partitioned tf=Float64 ell=3 q=8
+label=c5_p_e3q16_f64 case=cube n=100000 kernel=partitioned tf=Float64 ell=3 q=16 profile=1 rk3=1
+label=c5_p_e4q16_f64 case=cube n=100000 kernel=partitioned tf=Float64 ell=4 q=16
+label=c5_p_e4q17_f64 case=cube n=100000 kernel=partitioned tf=Float64 ell=4 q=17
+# ---- cube n=1e5: kernel attribution (regularized at scan geometries) ----
+label=c5_r_e3q16_f32 case=cube n=100000 kernel=regularized tf=Float32 ell=3 q=16
+label=c5_r_e4q17_f32 case=cube n=100000 kernel=regularized tf=Float32 ell=4 q=17
+label=c5_r_e3q16_f64 case=cube n=100000 kernel=regularized tf=Float64 ell=3 q=16
+# ---- cube n=1e5: M2L strategy at candidate winner geometries ----
+label=c5_p_e3q16_dense_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=16 strategy=dense
+label=c5_p_e3q16_py_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=16 strategy=precomputed_y
+label=c5_p_e4q17_dense_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=4 q=17 strategy=dense
+label=c5_p_e4q17_py_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=4 q=17 strategy=precomputed_y
+label=c5_p_e3q16_dense_f64 case=cube n=100000 kernel=partitioned tf=Float64 ell=3 q=16 strategy=dense
+# ---- cube n=1e5: window classes / rho_t / coarse schedule ----
+label=c5_p_e3q16_K64_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=16 K=64
+label=c5_p_e3q16_K4096_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=16 K=4096
+label=c5_p_e3q16_rho479_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=16 rho_t=4.789
+label=c5_p_e3q16_s2016_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=3 q=16 sched=20,16
+label=c5_p_e4q16_s202016_f32 case=cube n=100000 kernel=partitioned tf=Float32 ell=4 q=16 sched=20,20,16
+#
+# ---- wake n=1e5: status-quo baselines ----
+label=w5_reg_auto_f64 case=wake n=100000 kernel=regularized tf=Float64 profile=1
+label=w5_reg_auto_f32 case=wake n=100000 kernel=regularized tf=Float32 profile=1
+label=w5_part_auto_f32 case=wake n=100000 kernel=partitioned tf=Float32
+# ---- wake n=1e5: geometry scan (partitioned, concat, K=256, F32) ----
+label=w5_p_e3q4_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=3 q=4
+label=w5_p_e3q8_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=3 q=8
+label=w5_p_e3q16_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=3 q=16
+label=w5_p_e4q4_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=4 q=4
+label=w5_p_e4q8_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=4 q=8
+label=w5_p_e4q12_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=4 q=12
+label=w5_p_e4q16_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=4 q=16
+label=w5_p_e5q9_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=9
+label=w5_p_e5q12_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=12 profile=1
+label=w5_p_e5q16_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=16 profile=1 rk3=1
+label=w5_p_e5q20_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=20
+# ---- wake n=1e5: Float64 subset ----
+label=w5_p_e4q8_f64 case=wake n=100000 kernel=partitioned tf=Float64 ell=4 q=8
+label=w5_p_e5q12_f64 case=wake n=100000 kernel=partitioned tf=Float64 ell=5 q=12
+label=w5_p_e5q16_f64 case=wake n=100000 kernel=partitioned tf=Float64 ell=5 q=16 profile=1 rk3=1
+# ---- wake n=1e5: kernel attribution ----
+label=w5_r_e5q12_f32 case=wake n=100000 kernel=regularized tf=Float32 ell=5 q=12
+label=w5_r_e5q16_f32 case=wake n=100000 kernel=regularized tf=Float32 ell=5 q=16
+label=w5_r_e5q16_f64 case=wake n=100000 kernel=regularized tf=Float64 ell=5 q=16
+# ---- wake n=1e5: M2L strategy ----
+label=w5_p_e5q12_dense_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=12 strategy=dense
+label=w5_p_e5q12_py_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=12 strategy=precomputed_y
+label=w5_p_e5q16_dense_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=16 strategy=dense
+label=w5_p_e5q16_py_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=16 strategy=precomputed_y
+label=w5_p_e5q16_dense_f64 case=wake n=100000 kernel=partitioned tf=Float64 ell=5 q=16 strategy=dense
+# ---- wake n=1e5: window classes / rho_t / coarse schedule ----
+label=w5_p_e5q16_K64_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=16 K=64
+label=w5_p_e5q16_K4096_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=16 K=4096
+label=w5_p_e5q16_rho479_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=16 rho_t=4.789
+label=w5_p_e5q16_s20_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=16 sched=20,20,16,16
+#
+# ---- wake at cube-optimal parameters (candidate cube winners; the analysis
+#      reports the row matching the measured cube winner) ----
+label=wAtC_e3q16_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=3 q=16
+label=wAtC_e4q17_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=4 q=17
+#
+# ---- n=1e6 spot grid (long tail last) ----
+label=c6_reg_auto_f32 case=cube n=1000000 kernel=regularized tf=Float32
+label=c6_p_e4q8_f32 case=cube n=1000000 kernel=partitioned tf=Float32 ell=4 q=8
+label=c6_p_e4q16_f32 case=cube n=1000000 kernel=partitioned tf=Float32 ell=4 q=16 profile=1
+label=c6_p_e5q14_f32 case=cube n=1000000 kernel=partitioned tf=Float32 ell=5 q=14 profile=1
+label=c6_p_e5q16_f32 case=cube n=1000000 kernel=partitioned tf=Float32 ell=5 q=16
+label=c6_p_e5q16_f64 case=cube n=1000000 kernel=partitioned tf=Float64 ell=5 q=16
+label=w6_reg_auto_f32 case=wake n=1000000 kernel=regularized tf=Float32
+label=w6_p_e5q8_f32 case=wake n=1000000 kernel=partitioned tf=Float32 ell=5 q=8
+label=w6_p_e5q12_f32 case=wake n=1000000 kernel=partitioned tf=Float32 ell=5 q=12 profile=1
+label=w6_p_e5q16_f32 case=wake n=1000000 kernel=partitioned tf=Float32 ell=5 q=16
+label=w6_p_e6q12_f32 case=wake n=1000000 kernel=partitioned tf=Float32 ell=6 q=12
+label=w6_p_e6q16_f32 case=wake n=1000000 kernel=partitioned tf=Float32 ell=6 q=16 profile=1
+label=w6_p_e6q16_f64 case=wake n=1000000 kernel=partitioned tf=Float64 ell=6 q=16
