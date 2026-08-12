@@ -21,6 +21,8 @@
 #   case    cube | wake            n  body count (033 grid point)
 #   kernel  regularized | partitioned | twopass    (default regularized)
 #   tf      Float64 | Float32      (lifecycle precision; default Float64)
+#   expansion_order  FastMultipole code order (default 3); literature P is
+#                    expansion_order + 1, so literature P=4/5/6 maps to 3/4/5
 #   ell     tree depth (omit for the 034 auto derivation)
 #   q       leaf near_radius2 (default 16)
 #   sched   comma list level_radii2 (levels 2:ell, coarse->fine; optional)
@@ -84,6 +86,7 @@ function parse_config(line::AbstractString)
         kernel = Symbol(get(kv, :kernel, "regularized")),
         tf = tfs == "Float64" ? Float64 : tfs == "Float32" ? Float32 :
             error("tf must be Float64 or Float32"),
+        expansion_order = parse(Int, get(kv, :expansion_order, "3")),
         ell = haskey(kv, :ell) ? parse(Int, kv[:ell]) : nothing,
         q = parse(Int, get(kv, :q, "16")),
         sched = haskey(kv, :sched) ?
@@ -103,7 +106,10 @@ length(unique(labels)) == length(labels) || error("duplicate config labels")
 
 if FM035_DRYRUN
     for cfg in configs
-        s = vpm.RadixFMMSettings(; ell=cfg.ell, near_radius2=cfg.q,
+        cfg.expansion_order >= 0 || error(
+            "expansion_order must be nonnegative; got $(cfg.expansion_order)")
+        s = vpm.RadixFMMSettings(; expansion_order=cfg.expansion_order,
+            ell=cfg.ell, near_radius2=cfg.q,
             level_radii2=cfg.sched, window_classes=cfg.K, precision=cfg.tf,
             direct_kernel=cfg.kernel, rho_t=cfg.rho_t,
             m2l_strategy=cfg.strategy)
@@ -111,6 +117,8 @@ if FM035_DRYRUN
         strat, op = vpm._radix_m2l_strategy(s)
         println("[dryrun ok] $(cfg.label): $(cfg.case) n=$(cfg.n) " *
             "$(typeof(k)) rho_t=$(k.rho_t) $(typeof(strat)) tf=$(cfg.tf) " *
+            "literature_P=$(cfg.expansion_order + 1) " *
+            "expansion_order=$(cfg.expansion_order) " *
             "ell=$(cfg.ell) q=$(cfg.q) sched=$(cfg.sched) K=$(cfg.K) " *
             "profile=$(cfg.profile) rk3=$(cfg.rk3)")
     end
@@ -179,6 +187,7 @@ const CSV_COLUMNS = [
     "n_cells", "n_nodes", "n_routes", "n_direct", "total_cells",
     "nodes_per_level", "routes_per_level",
     "construct_s", "alloc_bytes_step", "device_mem_gb", "counters_flat",
+    "literature_P", "expansion_order",
 ]
 
 function write_row!(io, row::Dict{String,Any})
@@ -188,6 +197,14 @@ end
 
 completed_labels() = !isfile(FM035_OUT) ? Set{String}() :
     Set(first.(split.(readlines(FM035_OUT)[2:end], ',')))
+
+if isfile(FM035_OUT)
+    existing_header = first(readlines(FM035_OUT))
+    expected_header = join(CSV_COLUMNS, ',')
+    existing_header == expected_header || error(
+        "FM035_OUT schema mismatch: refusing to append rows with the current " *
+        "schema to $(FM035_OUT)")
+end
 
 # ------------------------------------------------------------------- sweep ----
 
@@ -212,6 +229,8 @@ for cfg in configs
         "label" => cfg.label, "job" => get(ENV, "SLURM_JOB_ID", ""),
         "host" => gethostname(), "case" => cfg.case, "n" => cfg.n,
         "kernel" => cfg.kernel, "tf" => cfg.tf,
+        "literature_P" => cfg.expansion_order + 1,
+        "expansion_order" => cfg.expansion_order,
         "ell" => cfg.ell === nothing ? "auto" : cfg.ell, "q" => cfg.q,
         "sched" => cfg.sched === nothing ? "uniform" : join(cfg.sched, ' '),
         "strategy" => cfg.strategy, "K" => cfg.K,
@@ -234,6 +253,7 @@ for cfg in configs
 
         gpu = fm035_to_gpu(cpu)
         vpm.radix_fmm_settings!(gpu;
+            expansion_order=cfg.expansion_order,
             ell=cfg.ell, near_radius2=cfg.q, level_radii2=cfg.sched,
             window_classes=cfg.K, precision=cfg.tf,
             direct_kernel=cfg.kernel, rho_t=cfg.rho_t,

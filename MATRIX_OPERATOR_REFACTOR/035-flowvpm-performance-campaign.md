@@ -537,6 +537,44 @@ definitive 035 report (§3 of this file: final tables, per-stage profiles,
 the 1e-3 gate, so headline speedups vs CPU are restricted to n ≤ 3162 —
 the 030 ratio, figures per the 024a conventions, and the cycle ledger).
 
+### 2026-08-12 — cycle 3A approved: measurement-first P/cutoff/stencil co-design
+
+**User direction:** do not conclude before measuring one remaining coupled
+lever. Literature `P=4` means FastMultipole `expansion_order=3`; cycle 3A
+therefore records both conventions explicitly and tests literature `P=4/5/6`
+as `expansion_order=3/4/5`. This is a measurement-only cycle: no production
+kernel or default changes are authorized by this approval.
+
+The missed interaction is expansion order × smoothing cutoff × direct-stencil
+radius. The fixed-order campaign used the shipped `rho_t=4.252`, derived in
+`031a` from the Jacobian RMS target, while this task's winner gate is sampled
+velocity RMS ≤1e-3 and Jacobian RMS is diagnostic. The theory's corresponding
+velocity-RMS cutoff is `rho_t=3.668`. Reducing the cutoff also relaxes the
+exact-coverage gate; increasing `P` may recover FMM truncation accuracy at a
+smaller direct shell. At the post-cycle-2 profile this clears the 5% expected
+gain bar: cube `q=17 -> 14/12` and wake `q=12 -> 9/8/6` remove material direct
+work from a stage carrying 66–95% of the solve, while the wake's current M2L is
+only 0.7/4.6 ms at n=1e5/1e6.
+
+**Pre-registered first-pass grid:**
+`scripts/fm035_cases_cycle3a.txt`, 33 Float32 rows across cube/wake × n=1e5/1e6.
+It repeats four cycle-2 anchors in the same job; tests
+`expansion_order=3/4/5`, `rho_t=4.252/3.668`, the geometry-admissible shells
+above, and dense/concat/precomputed-y spot comparisons at higher order. Every
+row profiles the U/J solve. Float64 and full RK3 are intentionally deferred to
+a small confirmation grid around any velocity-gate-passing winner. The harness
+now accepts and records `expansion_order` plus `literature_P`; old case files
+retain `expansion_order=3` by default, and an output-header check prevents
+accidental mixed-schema append.
+
+Local dry-run against the actual sibling FLOWVPM checkout and this
+FastMultipole checkout: **33/33 configurations parse and resolve** with the
+intended kernel, M2L strategy, cutoff, and order mapping. Geometry arithmetic
+was checked before submission: the tight candidates remain strictly above the
+production coverage gate (`g_min*h_leaf > rho_t*sigma_max`), notably wake
+`q=6, rho_t=3.668` and cube `q=12, rho_t=3.668`. Accuracy is deliberately not
+predicted; the checksummed 033 references decide eligibility on H200.
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;

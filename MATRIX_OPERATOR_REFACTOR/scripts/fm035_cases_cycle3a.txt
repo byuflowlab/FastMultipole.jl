@@ -1,0 +1,52 @@
+# Task 035 cycle 3A pre-registered measurement grid (2026-08-12).
+# User-approved measurement-first P/cutoff/stencil co-design. FastMultipole
+# syntax is explicit here: literature P=4/5/6 => expansion_order=3/4/5.
+#
+# All rows are Float32 and profile the complete U/J solve. The four cycle-2
+# winners are repeated as same-job anchors. No production default is changed.
+# A later confirmation grid may add Float64 and RK3 only around a gate-passing
+# winner. rho_t=3.668 is the 031a velocity-RMS cutoff at epsilon=1e-3;
+# rho_t=4.252 is the shipped Jacobian-RMS cutoff. Winner eligibility remains
+# sampled velocity RMS <=1e-3; Jacobian RMS is diagnostic.
+
+# cube n=1e5, ell=4: shipped anchor and lower-direct-work candidates
+label=cy3a_c5_p4_q17_r4252_dense case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=4 q=17 rho_t=4.252 strategy=dense profile=1
+label=cy3a_c5_p4_q14_r3668_dense case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=4 q=14 rho_t=3.668 strategy=dense profile=1
+label=cy3a_c5_p4_q12_r3668_dense case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=4 q=12 rho_t=3.668 strategy=dense profile=1
+label=cy3a_c5_p5_q14_r4252_dense case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=14 rho_t=4.252 strategy=dense profile=1
+label=cy3a_c5_p5_q14_r3668_dense case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=14 rho_t=3.668 strategy=dense profile=1
+label=cy3a_c5_p5_q12_r3668_dense case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1
+label=cy3a_c5_p5_q12_r3668_concat case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=concat profile=1
+label=cy3a_c5_p5_q12_r3668_precomp case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=precomputed_y profile=1
+label=cy3a_c5_p6_q12_r3668_dense case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=5 ell=4 q=12 rho_t=3.668 strategy=dense profile=1
+
+# cube n=1e6, ell=5: same stencil/order comparison at the scale where nearfield is 77%
+label=cy3a_c6_p4_q17_r4252_dense case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=3 ell=5 q=17 rho_t=4.252 strategy=dense profile=1
+label=cy3a_c6_p4_q14_r3668_dense case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=3 ell=5 q=14 rho_t=3.668 strategy=dense profile=1
+label=cy3a_c6_p4_q12_r3668_dense case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=3 ell=5 q=12 rho_t=3.668 strategy=dense profile=1
+label=cy3a_c6_p5_q14_r3668_dense case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=14 rho_t=3.668 strategy=dense profile=1
+label=cy3a_c6_p5_q12_r3668_dense case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1
+label=cy3a_c6_p5_q12_r3668_concat case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=concat profile=1
+label=cy3a_c6_p6_q12_r3668_dense case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=5 ell=5 q=12 rho_t=3.668 strategy=dense profile=1
+
+# wake n=1e5, ell=5: q=6 is the smallest geometry-admissible supported shell
+# at rho_t=3.668; higher order is intended to recover the lost FMM accuracy.
+label=cy3a_w5_p4_q12_r4252_dense case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=5 q=12 rho_t=4.252 strategy=dense profile=1
+label=cy3a_w5_p4_q9_r4252_dense case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=5 q=9 rho_t=4.252 strategy=dense profile=1
+label=cy3a_w5_p4_q6_r3668_dense case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=5 q=6 rho_t=3.668 strategy=dense profile=1
+label=cy3a_w5_p5_q9_r4252_dense case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=9 rho_t=4.252 strategy=dense profile=1
+label=cy3a_w5_p5_q8_r3668_dense case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=8 rho_t=3.668 strategy=dense profile=1
+label=cy3a_w5_p5_q6_r3668_dense case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1
+label=cy3a_w5_p5_q6_r3668_concat case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=concat profile=1
+label=cy3a_w5_p5_q6_r3668_precomp case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=precomputed_y profile=1
+label=cy3a_w5_p6_q6_r3668_dense case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=5 ell=5 q=6 rho_t=3.668 strategy=dense profile=1
+
+# wake n=1e6, ell=6: same comparison where nearfield is 95% of the solve
+label=cy3a_w6_p4_q12_r4252_dense case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=3 ell=6 q=12 rho_t=4.252 strategy=dense profile=1
+label=cy3a_w6_p4_q9_r4252_dense case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=3 ell=6 q=9 rho_t=4.252 strategy=dense profile=1
+label=cy3a_w6_p4_q6_r3668_dense case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=3 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=cy3a_w6_p5_q9_r4252_dense case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=9 rho_t=4.252 strategy=dense profile=1
+label=cy3a_w6_p5_q8_r3668_dense case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=8 rho_t=3.668 strategy=dense profile=1
+label=cy3a_w6_p5_q6_r3668_dense case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=cy3a_w6_p5_q6_r3668_concat case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=concat profile=1
+label=cy3a_w6_p6_q6_r3668_dense case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=5 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
