@@ -56,6 +56,15 @@ echo "=== 033 reference integrity ==="
 cd "$FMDIR/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references"
 sha256sum -c direct_reference_checksums.sha256
 
+if [ "${FM035_REFCHECK:-1}" == "1" ]; then
+    # 033-checksummed-reference gate at the SHIPPED coupling defaults
+    # (cuda_034_refcheck.jl: cube+wake x n=1e4+1e5, Float64 gated at 1e-3,
+    # Float32 reported, 023 counters asserted per solve)
+    echo "=== 033 refcheck at shipped coupling defaults ==="
+    cd "$WORKDIR"
+    julia --project="$ENVDIR" scripts/cuda_034_refcheck.jl "$FMDIR" 10000 100000
+fi
+
 echo "=== 035 tuning sweep ==="
 cd "$WORKDIR"
 export FM035_FMDIR="$FMDIR"
