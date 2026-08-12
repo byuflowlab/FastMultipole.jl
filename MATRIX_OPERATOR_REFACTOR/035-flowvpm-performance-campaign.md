@@ -356,6 +356,86 @@ approved).
 STOPPED here per the run contract: no optimization cycle is implemented
 without user approval.
 
+### 2026-08-12 — cycle 1 approved, implemented, confirmed (job 13148807)
+
+**User approval (2026-08-12, via coordinator):** cycle 1 as proposed.
+Implemented on FLOWVPM `gpu-full` commit `bc7df09` (no FastMultipole `src/`
+change, per scope): `RadixFMMSettings` defaults flipped to
+`m2l_strategy=:dense` + `direct_kernel=:partitioned`, and `_radix_auto_ell`
+replaced by the joint `_radix_auto_geometry(L, σ_max, np, q_floor, ρ_t,
+margin)` rule — deepest `ell` (occupancy-capped as before) admitting a
+supported leaf `q ≥ near_radius2` under `g_min(q)·h_leaf ≥
+accuracy_margin·ρ_t·σ_max`, smallest such `q`; `accuracy_margin=1.15` from
+the sweep's error data (x=4.26 fails the 1e-3 gate, x=4.92 passes). Tests
+assert the new defaults and that the rule reproduces the measured n=1e5
+winners (cube (4,17), wake (5,16)); Part A green locally. Harness commits
+`58cbfb6`/`4b6…` added the 22-config confirmation grid, a `leaf_q` column,
+and the 033-refcheck stage (job 13148748 was cancelled pre-start to add the
+refcheck; 13148807 is the job of record).
+
+**Job 13148807** (H200 m13h-1-1, exit 0): all preflights green (Part A
+asserts the new defaults; Part B device suite; 032/032a FastMultipole
+preflights), **033 refcheck at the shipped defaults PASSED** (cube/wake ×
+1e4/1e5 × F64/F32; worst Float64 u_rel_rms 9.35e-4 at cube 1e5 — the
+tuned geometry trades accuracy margin for 4x speed, still inside the
+gate), 22/22 sweep rows ok, counters flat, alloc ≤ 10 KB.
+Data: `data/flowvpm_gpu_campaign/fm035_cycle1.csv`.
+
+**Realized vs expected (U/J solve, shipped coupling before → after cycle 1,
+all rows gate-passing):**
+
+| case | TF | before (034 defaults) | after (auto = shipped rule) | realized | expected |
+|---|---|---:|---:|---|---|
+| cube 1e5 | F32 | 51.4 | **12.09** (ℓ4 q17) | **4.25x** | ≥4x ✓ |
+| cube 1e5 | F64 | 94.6 | **20.57** (ℓ4 q17) | **4.60x** | ~2.2x (beaten: the (4,17) F64 dense gap fill wins over ℓ3) |
+| wake 1e5 | F32 | 36.6 | **16.64** (ℓ5 q16) | **2.20x** | 2.25x ✓ |
+| wake 1e5 | F64 | 57.1 | **23.76** (ℓ5 q16) | **2.40x** | 2.4x ✓ |
+| cube 1e6 | F32 | 427.1 | **149.3** (ℓ5 q17) | **2.86x** | modeled ≥1.5-2x ✓ |
+| wake 1e6 | F32 | 282.8 | **177.1** (ℓ6 q16) | 1.60x (2.03x at (6,12)=139.5) | — |
+
+**Margin-boundary probes (auto-rule validation at 1e6):** auto picks cube
+(5,17), which measures u=9.83e-4 — PASSES the gate (0.98x; fails the 0.95x
+robust convention; the q18 neighbour is 8.8e-4 at +6% cost, a documented
+robust alternative). The guard did its job: bare adequacy would have
+accepted (5,16), which the initial sweep measured FAILING at 1.27e-3.
+Auto's q-floor conservatism costs the wake at 1e6: (6,12) passes at
+7.0e-4 and is 21% faster than auto's (6,16) — recorded as a per-case
+tuning note (q floor 12 is cube-inadmissible at P=4, so the default floor
+stays 16).
+
+**Gap fills:** dense F64 cube (4,17) = 20.55 ms; dense at 1e6 (table
+above; cube (4,16) F64 656.2, wake (6,16) F64 403.5); dense × K — flat to
+<1% (K ∈ {256, 1024, 4096}), K=256 stands; RK3 full steps at winners:
+cube 37.2/62.3 ms (F32/F64), wake 50.8/71.8 ms (≈ 3×U/J + ~1 ms).
+Updated matched-n 030 ratio (n=1e5): F32 12.09/3.097 = **3.9x**, F64
+20.57/3.389 = 6.1x.
+
+**Post-cycle-1 profile (stage medians, ms):** cube (4,17) F32: b2m 3.6 /
+m2m 1.05 / m2l 3.3 / l2l 1.04 / l2b+nearfield 7.7 (eval 11.7). wake
+(5,16) F32: **b2m 11.4 (70% of eval 16.2)** / m2l 0.69 / l2b+nf 9.8;
+wake F64: b2m 18.7 (80%). At 1e6 the fused nearfield dominates (cube 77%,
+wake 95%); b2m is 3-8%. Dense-M2L stage vs concat: wake 11.1 → 0.69 ms
+(16x), cube (4,17) 23.8 → 3.3 ms (7x).
+
+**Proposed cycle 2 (awaiting user approval): B2M within-cell
+parallelization** (FastMultipole `src/translate_batched_cuda.jl`).
+Mechanism: `_launch_cuda_b2m!` currently assigns one thread per occupied
+cell, serial over that cell's bodies — at σ-adequacy-forced shallow depths
+(112-195 bodies/cell) the H200 runs a few hundred threads. Replace with a
+block-per-cell scheme (bodies parallel across the block, per-coefficient
+shared-memory reduction, φ+χ), or a warp-per-body-chunk variant, for both
+`Point{Source}` and `Point{Vortex}` kernels. Expected gain (modeled):
+wake 1e5 b2m 11.4 → ~1-2 ms ⇒ **~1.6-1.9x end-to-end wake U/J** (F64
+~2.2x); cube 1e5 ~10-25%; 1e6 cases 3-8%. Risk: medium — new reduction
+kernel; verified by existing B2M/device parity tests (P=4 and P=8, both
+precisions, φ+χ) plus lifecycle accuracy gates and the scalar 028/030
+no-regression harness (B2M is shared with the scalar path). Verification:
+local + H200 before/after stage timings at the four winner configs, full
+preflight suites, 033 refcheck.
+
+STOPPED again per the cycle contract: cycle 2 requires explicit user
+approval before any implementation.
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;
