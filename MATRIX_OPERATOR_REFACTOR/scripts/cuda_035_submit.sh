@@ -43,6 +43,6 @@ ssh "$REMOTE" "bash -lc 'module load julia/1.11.7-6bmogfl \
   && export JULIA_PKG_PRECOMPILE_AUTO=0 \
   && julia --project=$ENVDIR -e \"using Pkg; Pkg.instantiate()\" \
   && cd $FMDIR \
-  && sbatch --export=ALL,FM035_PREFLIGHT=${FM035_PREFLIGHT:-1},FM035_CASEFILE=${FM035_CASEFILE:-fm035_cases_initial.txt} MATRIX_OPERATOR_REFACTOR/scripts/cuda_035_run.sh'"
+  && sbatch --export=ALL,FM035_PREFLIGHT=${FM035_PREFLIGHT:-1},FM035_CASEFILE=${FM035_CASEFILE:-fm035_cases_initial.txt},FM035_OUTNAME=${FM035_OUTNAME:-fm035_sweep.csv} MATRIX_OPERATOR_REFACTOR/scripts/cuda_035_run.sh'"
 
 echo "Submitted. Poll with:  ssh orc 'bash -lc \"squeue -u \\\$USER\"'"

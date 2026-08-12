@@ -61,8 +61,8 @@ cd "$WORKDIR"
 export FM035_FMDIR="$FMDIR"
 export FM035_CASES="$FMDIR/MATRIX_OPERATOR_REFACTOR/scripts/${FM035_CASEFILE:-fm035_cases_initial.txt}"
 # fixed filename so completed-label resume works across jobs (job/host are
-# provenance columns inside the CSV)
-export FM035_OUT="$DATADIR/fm035_sweep.csv"
+# provenance columns inside the CSV); FM035_OUTNAME switches campaign files
+export FM035_OUT="$DATADIR/${FM035_OUTNAME:-fm035_sweep.csv}"
 julia --project="$ENVDIR" "$FMDIR/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_035_gpu.jl"
 
 echo "fm035 job complete"

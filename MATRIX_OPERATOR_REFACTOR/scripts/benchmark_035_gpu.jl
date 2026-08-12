@@ -170,6 +170,7 @@ _wall_ms(f) = (CUDA.synchronize(); t = @elapsed (f(); CUDA.synchronize()); t * 1
 const CSV_COLUMNS = [
     "label", "job", "host", "case", "n", "kernel", "tf", "ell", "q", "sched",
     "strategy", "K", "rho_t", "status", "message",
+    "leaf_q",
     "uj_ms_median", "uj_ms_min", "reset_ms", "refresh_ms", "eval_ms",
     "finalize_ms", "overhead_ms", "rk3_step_ms",
     "b2m_ms", "m2m_ms", "m2l_ms", "l2l_ms", "l2b_ms",
@@ -245,6 +246,9 @@ for cfg in configs
         state = cache.state
         row["ell"] = cache.ell
         row["total_cells"] = 8^cache.ell
+        pol = cache.policy
+        row["leaf_q"] = pol isa FM.HierarchicalRigidStencil ?
+            (isempty(pol.level_radii2) ? pol.near_radius2 : last(pol.level_radii2)) : -1
 
         for _ in 1:FM035_WARMUP
             vpm.UJ_fmm(gpu)

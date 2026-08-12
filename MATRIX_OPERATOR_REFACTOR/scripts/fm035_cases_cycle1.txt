@@ -1,0 +1,33 @@
+# Task 035 cycle-1 confirmation grid (2026-08-12, user-approved cycle).
+# Validates the shipped FLOWVPM coupling defaults (dense M2L + partitioned +
+# margin-guarded joint auto geometry) end-to-end and fills the initial
+# sweep's measurement gaps. Driver defaults per line: q=16 (auto floor),
+# K=256; "auto" rows omit ell so the NEW shipped rule selects (ell, q).
+#
+# ---- shipped-default auto rows (new coupling defaults end-to-end) ----
+label=cy1_c5_auto_f32 case=cube n=100000 kernel=partitioned strategy=dense tf=Float32 profile=1 rk3=1
+label=cy1_c5_auto_f64 case=cube n=100000 kernel=partitioned strategy=dense tf=Float64 profile=1 rk3=1
+label=cy1_w5_auto_f32 case=wake n=100000 kernel=partitioned strategy=dense tf=Float32 profile=1 rk3=1
+label=cy1_w5_auto_f64 case=wake n=100000 kernel=partitioned strategy=dense tf=Float64 profile=1 rk3=1
+label=cy1_c6_auto_f32 case=cube n=1000000 kernel=partitioned strategy=dense tf=Float32 profile=1
+label=cy1_w6_auto_f32 case=wake n=1000000 kernel=partitioned strategy=dense tf=Float32 profile=1
+# ---- gap: dense F64 at the cube winner geometry ----
+label=cy1_c5_e4q17_dense_f64 case=cube n=100000 kernel=partitioned tf=Float64 ell=4 q=17 strategy=dense rk3=1
+# ---- gap: dense winners at n=1e6 (incl. the margin-boundary probes) ----
+label=cy1_c6_e4q16_dense_f32 case=cube n=1000000 kernel=partitioned tf=Float32 ell=4 q=16 strategy=dense profile=1
+label=cy1_c6_e5q17_dense_f32 case=cube n=1000000 kernel=partitioned tf=Float32 ell=5 q=17 strategy=dense
+label=cy1_c6_e5q18_dense_f32 case=cube n=1000000 kernel=partitioned tf=Float32 ell=5 q=18 strategy=dense
+label=cy1_c6_e5q20_dense_f32 case=cube n=1000000 kernel=partitioned tf=Float32 ell=5 q=20 strategy=dense
+label=cy1_c6_e4q16_dense_f64 case=cube n=1000000 kernel=partitioned tf=Float64 ell=4 q=16 strategy=dense
+label=cy1_w6_e6q12_dense_f32 case=wake n=1000000 kernel=partitioned tf=Float32 ell=6 q=12 strategy=dense profile=1
+label=cy1_w6_e6q16_dense_f32 case=wake n=1000000 kernel=partitioned tf=Float32 ell=6 q=16 strategy=dense
+label=cy1_w6_e6q16_dense_f64 case=wake n=1000000 kernel=partitioned tf=Float64 ell=6 q=16 strategy=dense
+# ---- gap: dense x window-classes sensitivity ----
+label=cy1_c5_e4q17_dense_K1024 case=cube n=100000 kernel=partitioned tf=Float32 ell=4 q=17 strategy=dense K=1024
+label=cy1_c5_e4q17_dense_K4096 case=cube n=100000 kernel=partitioned tf=Float32 ell=4 q=17 strategy=dense K=4096
+label=cy1_w5_e5q16_dense_K1024 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=16 strategy=dense K=1024
+label=cy1_w5_e5q16_dense_K4096 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=16 strategy=dense K=4096
+# ---- gap: RK3 at the remaining dense winners ----
+label=cy1_w5_e5q12_dense_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=12 strategy=dense rk3=1
+label=cy1_w5_e5q16_dense_f64 case=wake n=100000 kernel=partitioned tf=Float64 ell=5 q=16 strategy=dense rk3=1
+label=cy1_c5_e3q16_dense_f64 case=cube n=100000 kernel=partitioned tf=Float64 ell=3 q=16 strategy=dense rk3=1
