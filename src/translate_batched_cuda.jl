@@ -1066,14 +1066,48 @@ function _cuda_b2m_kernel!(phi, source_bodies, cell_centers, cell_ranges, P, nce
     return nothing
 end
 
-# Task 028 note: a warp-per-cell variant (lanes striding the (n, m) list) was
+# Task 028 note: a warp-per-cell variant with lanes striding the (n, m) list was
 # measured SLOWER on H200 (1.02 -> 2.03 ms F64 at n=1e6/ell=5, job 13015315:
-# 113 registers and only 15 of 32 active lanes at P=4), so the original
-# thread-per-cell form is retained.
+# 113 registers and only 15 of 32 active lanes at P=4), so thread-per-cell was
+# retained through task 030. Task 035 cycle 2 (user-approved 2026-08-12)
+# replaces it with a block-per-cell, BODY-parallel form: the FLOWVPM vortex
+# workload's sigma-adequacy gate forces shallow trees (~100-600 bodies per
+# occupied leaf, a few hundred cells), where one thread per cell left the GPU
+# nearly idle (measured 52-80% of the whole evaluation). Threads stride the
+# cell's bodies inside the (n, m) loop — per-thread state stays tiny, unlike
+# the failed (n, m)-striding variant — and a shared-memory tree reduction
+# collapses the block partials. Launch config is epoch-constant host data
+# (n_cells), so graph-capture eligibility is unchanged.
+const CUDA_B2M_BLOCK = 128
+
+# Tree-reduce (acc_re, acc_im) across the block; the returned pair is valid on
+# thread 1 only. blockDim must be CUDA_B2M_BLOCK (a power of two). All threads
+# of the block must call this (uniform control flow around it).
+@inline function _cuda_b2m_block_reduce(shre, shim, tid, acc_re, acc_im)
+    @inbounds shre[tid] = acc_re
+    @inbounds shim[tid] = acc_im
+    CUDA.sync_threads()
+    s = CUDA_B2M_BLOCK >> 1
+    while s >= 1
+        if tid <= s
+            @inbounds shre[tid] += shre[tid + s]
+            @inbounds shim[tid] += shim[tid + s]
+        end
+        CUDA.sync_threads()
+        s >>= 1
+    end
+    return (@inbounds shre[1]), (@inbounds shim[1])
+end
+
 function _cuda_b2m_leaf_nodes_kernel!(phi, source_bodies, cell_centers, cell_ranges,
         leaf_to_node, P, ncell)
-    i_cell = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i_cell = blockIdx().x
     i_cell > ncell && return nothing
+    tid = threadIdx().x
+    nt = blockDim().x
+    TF = eltype(phi)
+    shre = CUDA.CuStaticSharedArray(TF, CUDA_B2M_BLOCK)
+    shim = CUDA.CuStaticSharedArray(TF, CUDA_B2M_BLOCK)
     first = cell_ranges[1, i_cell]
     count = cell_ranges[2, i_cell]
     cx = cell_centers[1, i_cell]
@@ -1082,10 +1116,11 @@ function _cuda_b2m_leaf_nodes_kernel!(phi, source_bodies, cell_centers, cell_ran
     node = leaf_to_node[i_cell]
     @inbounds for n in 0:P
         for m in 0:n
-            acc_re = zero(eltype(phi))
-            acc_im = zero(eltype(phi))
-            sgn = isodd(n + m) ? -one(eltype(phi)) : one(eltype(phi))
-            for k in first:(first + count - 1)
+            acc_re = zero(TF)
+            acc_im = zero(TF)
+            sgn = isodd(n + m) ? -one(TF) : one(TF)
+            k = first + tid - 1
+            while k <= first + count - 1
                 dx = source_bodies[1, k] - cx
                 dy = source_bodies[2, k] - cy
                 dz = source_bodies[3, k] - cz
@@ -1094,10 +1129,14 @@ function _cuda_b2m_leaf_nodes_kernel!(phi, source_bodies, cell_centers, cell_ran
                 scale = sgn * q
                 acc_re += rre * scale
                 acc_im -= rim * scale
+                k += nt
             end
-            row = _cuda_flat_basis_index(n, m, 1)
-            phi[row, node] = acc_re
-            phi[row + 1, node] = acc_im
+            re, im = _cuda_b2m_block_reduce(shre, shim, tid, acc_re, acc_im)
+            if tid == 1
+                row = _cuda_flat_basis_index(n, m, 1)
+                phi[row, node] = re
+                phi[row + 1, node] = im
+            end
         end
     end
     return nothing
@@ -1187,12 +1226,18 @@ function _copy_radix_output_to_device_target_buffer!(target_buffer, output,
 end
 
 # Vortex B2M (task 032): device mirror of `_host_b2m_vortex_kernel!`, sharing
-# the `_resident_vortex_{phi,chi}_contrib` per-(n, m) math. One thread per leaf
-# cell, matching the retained scalar B2M form (see the task 028 note above).
+# the `_resident_vortex_{phi,chi}_contrib` per-(n, m) math. Block per leaf
+# cell with body-parallel threads and a shared-memory reduction, matching the
+# task 035 cycle-2 scalar form (see the note above `CUDA_B2M_BLOCK`).
 function _cuda_b2m_vortex_leaf_nodes_kernel!(phi, chi, source_bodies, cell_centers,
         cell_ranges, leaf_to_node, P_phi, P_chi, ncell)
-    i_cell = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i_cell = blockIdx().x
     i_cell > ncell && return nothing
+    tid = threadIdx().x
+    nt = blockDim().x
+    TF = eltype(phi)
+    shre = CUDA.CuStaticSharedArray(TF, CUDA_B2M_BLOCK)
+    shim = CUDA.CuStaticSharedArray(TF, CUDA_B2M_BLOCK)
     first = cell_ranges[1, i_cell]
     count = cell_ranges[2, i_cell]
     cx = cell_centers[1, i_cell]
@@ -1201,9 +1246,10 @@ function _cuda_b2m_vortex_leaf_nodes_kernel!(phi, chi, source_bodies, cell_cente
     node = leaf_to_node[i_cell]
     @inbounds for n in 0:P_phi
         for m in 0:n
-            acc_re = zero(eltype(phi))
-            acc_im = zero(eltype(phi))
-            for k in first:(first + count - 1)
+            acc_re = zero(TF)
+            acc_im = zero(TF)
+            k = first + tid - 1
+            while k <= first + count - 1
                 mdx = cx - source_bodies[1, k]
                 mdy = cy - source_bodies[2, k]
                 mdz = cz - source_bodies[3, k]
@@ -1213,17 +1259,22 @@ function _cuda_b2m_vortex_leaf_nodes_kernel!(phi, chi, source_bodies, cell_cente
                 re, im = _resident_vortex_phi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
                 acc_re += re
                 acc_im += im
+                k += nt
             end
-            row = _cuda_flat_basis_index(n, m, 1)
-            phi[row, node] = acc_re
-            phi[row + 1, node] = acc_im
+            re, im = _cuda_b2m_block_reduce(shre, shim, tid, acc_re, acc_im)
+            if tid == 1
+                row = _cuda_flat_basis_index(n, m, 1)
+                phi[row, node] = re
+                phi[row + 1, node] = im
+            end
         end
     end
     @inbounds for n in 1:P_chi
         for m in 0:n
-            acc_re = zero(eltype(chi))
-            acc_im = zero(eltype(chi))
-            for k in first:(first + count - 1)
+            acc_re = zero(TF)
+            acc_im = zero(TF)
+            k = first + tid - 1
+            while k <= first + count - 1
                 mdx = cx - source_bodies[1, k]
                 mdy = cy - source_bodies[2, k]
                 mdz = cz - source_bodies[3, k]
@@ -1233,10 +1284,14 @@ function _cuda_b2m_vortex_leaf_nodes_kernel!(phi, chi, source_bodies, cell_cente
                 re, im = _resident_vortex_chi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
                 acc_re += re
                 acc_im += im
+                k += nt
             end
-            row = _cuda_flat_basis_index(n, m, 1)
-            chi[row, node] = acc_re
-            chi[row + 1, node] = acc_im
+            re, im = _cuda_b2m_block_reduce(shre, shim, tid, acc_re, acc_im)
+            if tid == 1
+                row = _cuda_flat_basis_index(n, m, 1)
+                chi[row, node] = re
+                chi[row + 1, node] = im
+            end
         end
     end
     return nothing
@@ -1249,18 +1304,18 @@ function _launch_cuda_b2m!(state::DeviceResidentRadixState{TF},
         ::Type{<:Point{Source}}) where TF
     fill!(state.multipoles.phi, zero(TF))
     fill!(state.multipoles.chi, zero(TF))
-    threads = 128
     ncell = state.counts.n_cells
-    blocks = cld(ncell, threads)
-    blocks == 0 && return state
+    ncell == 0 && return state
     if state.grid isa DeviceRadixGrid
-        CUDA.@cuda threads=threads blocks=blocks _cuda_b2m_leaf_nodes_kernel!(
+        # task 035 cycle 2: block per cell, body-parallel reduction
+        CUDA.@cuda threads=CUDA_B2M_BLOCK blocks=ncell _cuda_b2m_leaf_nodes_kernel!(
             state.multipoles.phi, state.source_bodies, state.cell_centers,
             state.cell_ranges, state.grid.leaf_to_node,
             state.invariant_cache.basis_info.orders.P_phi, ncell,
         )
     else
-        CUDA.@cuda threads=threads blocks=blocks _cuda_b2m_kernel!(
+        threads = 128
+        CUDA.@cuda threads=threads blocks=cld(ncell, threads) _cuda_b2m_kernel!(
             state.multipoles.phi, state.source_bodies, state.cell_centers,
             state.cell_ranges, state.invariant_cache.basis_info.orders.P_phi, ncell,
         )
@@ -1278,12 +1333,11 @@ function _launch_cuda_b2m!(state::DeviceResidentRadixState{TF,B,LH},
         "(DeviceRadixGrid) lifecycle only"))
     fill!(state.multipoles.phi, zero(TF))
     fill!(state.multipoles.chi, zero(TF))
-    threads = 128
     ncell = state.counts.n_cells
-    blocks = cld(ncell, threads)
-    blocks == 0 && return state
+    ncell == 0 && return state
     orders = state.invariant_cache.basis_info.orders
-    CUDA.@cuda threads=threads blocks=blocks _cuda_b2m_vortex_leaf_nodes_kernel!(
+    # task 035 cycle 2: block per cell, body-parallel reduction
+    CUDA.@cuda threads=CUDA_B2M_BLOCK blocks=ncell _cuda_b2m_vortex_leaf_nodes_kernel!(
         state.multipoles.phi, state.multipoles.chi, state.source_bodies,
         state.cell_centers, state.cell_ranges, state.grid.leaf_to_node,
         orders.P_phi, orders.P_active, ncell,

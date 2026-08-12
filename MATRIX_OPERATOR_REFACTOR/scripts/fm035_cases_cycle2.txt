@@ -1,0 +1,12 @@
+# Task 035 cycle-2 after-measurement grid (2026-08-12, user-approved cycle:
+# block-per-cell body-parallel B2M). Before-numbers = fm035_cycle1.csv rows
+# at identical configs (jobs 13148807). Shipped-default auto rows at the
+# winners, both precisions, full profiles + RK3; 1e6 autos for scale.
+label=cy2_c5_auto_f32 case=cube n=100000 kernel=partitioned strategy=dense tf=Float32 profile=1 rk3=1
+label=cy2_c5_auto_f64 case=cube n=100000 kernel=partitioned strategy=dense tf=Float64 profile=1 rk3=1
+label=cy2_w5_auto_f32 case=wake n=100000 kernel=partitioned strategy=dense tf=Float32 profile=1 rk3=1
+label=cy2_w5_auto_f64 case=wake n=100000 kernel=partitioned strategy=dense tf=Float64 profile=1 rk3=1
+label=cy2_w5_e5q12_dense_f32 case=wake n=100000 kernel=partitioned tf=Float32 ell=5 q=12 strategy=dense profile=1
+label=cy2_c6_auto_f32 case=cube n=1000000 kernel=partitioned strategy=dense tf=Float32 profile=1
+label=cy2_w6_auto_f32 case=wake n=1000000 kernel=partitioned strategy=dense tf=Float32 profile=1
+label=cy2_w6_e6q12_dense_f32 case=wake n=1000000 kernel=partitioned tf=Float32 ell=6 q=12 strategy=dense profile=1

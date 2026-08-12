@@ -42,6 +42,8 @@ if [ "${FM035_PREFLIGHT:-1}" == "1" ]; then
     cd "$FMDIR"
     echo "=== preflight 1: FastMultipole CUDA interface tests (032 surface) ==="
     julia --project="$ENVDIR" test/cuda_radix_interface_test.jl
+    echo "=== preflight 1b: FastMultipole CUDA lifecycle tests (scalar B2M parity) ==="
+    julia --project="$ENVDIR" test/cuda_radix_lifecycle_test.jl
     echo "=== preflight 2: host device-system interface tests (032a shipped defaults) ==="
     julia --project="$ENVDIR" test/device_system_interface_test.jl
     echo "=== preflight 3: CUDA nearfield-binning tests (032a mechanism defaults) ==="
@@ -63,6 +65,29 @@ if [ "${FM035_REFCHECK:-1}" == "1" ]; then
     echo "=== 033 refcheck at shipped coupling defaults ==="
     cd "$WORKDIR"
     julia --project="$ENVDIR" scripts/cuda_034_refcheck.jl "$FMDIR" 10000 100000
+fi
+
+if [ "${FM035_NOREG:-0}" == "1" ]; then
+    # scalar 028/030 no-regression (B2M is shared with the scalar path):
+    # the unchanged 028 harness at the verdict config, both precisions
+    echo "=== scalar no-regression (028/030 verdict config) ==="
+    cd "$FMDIR"
+    REFDIR="$FMDIR/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/references"
+    COMMON=(FM028_P=3 FM028_STRAT=dense FM028_LH=0 FM028_K=full
+            FM028_REPS=9 FM028_STEPS=0 FM028_STALE=0
+            FM028_BOUND=ab FM028_SYMMETRIC=0
+            FM028_M2L_THREADS=64 FM028_M2L_BLOCK_CAP=65536 FM028_COUNTING_SORT=1
+            FM028_REFDIR="$REFDIR")
+    for cfg in "Float32 fp16" "Float64 off"; do
+        read -r tf fmt <<< "$cfg"
+        out="$DATADIR/fm035_nr_sched6_5_5_5_${fmt}_n1000000_${SLURM_JOB_ID:-manual}.csv"
+        echo "=== no-regression case tf=$tf fmt=$fmt"
+        env "${COMMON[@]}" \
+            FM028_N=1000000 FM028_ELL=5 FM028_POLICY=sched6-5-5-5 \
+            FM028_TF="$tf" FM028_TENSOR_FORMAT="$fmt" FM028_OUT="$out" \
+            julia --project="$ENVDIR" \
+            MATRIX_OPERATOR_REFACTOR/scripts/benchmark_028_feasibility.jl
+    done
 fi
 
 echo "=== 035 tuning sweep ==="
