@@ -436,6 +436,107 @@ preflight suites, 033 refcheck.
 STOPPED again per the cycle contract: cycle 2 requires explicit user
 approval before any implementation.
 
+### 2026-08-12 — cycle 2 approved, implemented, confirmed (job 13150961)
+
+**User approval (2026-08-12, via coordinator):** cycle 2 as proposed, with
+the graph-capture and 023-contract preservation requirements and the
+mandatory scalar 028/030 no-regression gate. Implemented in FastMultipole
+`src/translate_batched_cuda.jl` (commit `2938192`-series on `matrix-ops`):
+`_cuda_b2m_leaf_nodes_kernel!` and `_cuda_b2m_vortex_leaf_nodes_kernel!`
+rewritten block-per-cell — threads stride the cell's bodies inside the
+(n, m) loop, a `CUDA_B2M_BLOCK = 128` shared-memory tree reduction
+(`_cuda_b2m_block_reduce`) collapses the partials, thread 1 writes the
+coefficient. Per-thread state stays tiny (unlike the task-028 rejected
+(n, m)-striding variant, whose note is updated in place). Launch config
+remains epoch-constant host data (`n_cells`), so graph-capture eligibility
+and the 023 zero-allocation/counter contracts are unchanged; the one-shot
+non-grid `_cuda_b2m_kernel!` path is untouched. Local: parse/load clean,
+host suites unaffected (host B2M untouched), FLOWVPM Part A green.
+
+**Job 13150961** (H200, exit 0): preflights green including the newly
+added `cuda_radix_lifecycle_test.jl` (scalar device B2M parity) and the
+032 interface tests (vortex device B2M parity, P=4/P=8, both precisions);
+**033 refcheck PASSED at shipped defaults**; 8/8 after-rows ok, counters
+flat, alloc unchanged. Data: `fm035_cycle2.csv`, `fm035_nr_*.csv`.
+
+**Scalar 028/030 no-regression (mandatory gate) — PASSED:**
+
+| config (n=1e6, ℓ=5, sched6-5-5-5) | verdict before → after | b2m stage | err_gradient_rel_rms |
+|---|---|---|---|
+| F32 + fp16 | 9.591 (030 rec.) / 6.58 (032a) → **6.898 ms** | 0.586 → 0.611 (+4%) | 1.05924e-3 → 1.05924e-3 (identical to 6 digits) |
+| F64 | 20.740 (030) / 17.83 (032a) → **18.135 ms** | 1.020 → 1.184 (+0.16 ms) | 1.04972e-3 → 1.04972e-3 (identical) |
+
+Verdicts are inside the established cross-job spread and better than the
+rows of record; the small b2m stage cost at the deep scalar config (30
+bodies/cell — reduction overhead ≈ serial work) is documented and far
+below any end-to-end significance. Errors unchanged despite the reduction
+reordering.
+
+**Realized vs expected (U/J solve, cycle-1 → cycle-2 rows at identical
+configs, all gate-passing, counters flat):**
+
+| config | B2M stage | end-to-end | expected | realized |
+|---|---|---|---|---|
+| wake 1e5 (5,16) F32 auto | 11.39 → **0.27 ms (42x)** | 16.64 → **11.28 ms** | 1.6-1.9x | **1.48x** |
+| wake 1e5 (5,12) F32 tuned | 11.4 → 0.27 | 16.19 → **9.77 ms** | — | **1.66x** ✓ |
+| wake 1e5 F64 auto | 18.75 → 0.51 (37x) | 23.76 → 21.56 | ~2.2x | 1.10x |
+| cube 1e5 (4,17) F32 auto | 3.63 → 0.40 (9x) | 12.09 → 12.15 | 1.1-1.25x | ~1.00x |
+| cube 1e5 F64 auto | 6.21 → 0.70 | 20.57 → 20.63 | — | ~1.00x |
+| cube 1e6 auto F32 | 4.94 → 3.03 | 149.3 → 151.2 | 1.03x | ~1.00x |
+| wake 1e6 (6,12) F32 | 14.76 → 1.84 (8x) | 139.5 → 139.6 | 1.08x | ~1.00x |
+
+**Why the shortfall where it fell short (root cause, recorded for the
+method):** the per-stage medians are *isolated* launches, while the
+production lifecycle overlaps the fused nearfield with the far-field chain
+(the known `eval < Σ stages` gain). B2M was therefore on the critical path
+only where its isolated time exceeded the concurrent nearfield chain —
+the wake F32 rows. On the cube and at 1e6 the nearfield chain already
+covered B2M entirely, and on the wake F64 the 19.8 ms nearfield became
+the new wall the moment B2M dropped. The stage collapse is real
+(9-42x) and future-proofs the σ-forced shallow-tree regime; the
+end-to-end model over-credited it by ignoring overlap.
+
+**RK3 full steps after cycle 2:** wake F32 50.8 → **34.4 ms**; wake F64
+71.8 → 66.9; cube F32 37.3, F64 62.4 (unchanged, as expected).
+
+**Post-cycle-2 winners (n=1e5):** cube 12.15/20.63 ms (F32/F64, auto);
+wake **9.77 ms** (5,12) tuned / 11.28 auto F32, 21.56 F64. vs the shipped
+034 coupling: cube **4.2x/4.6x**, wake **3.7x tuned (3.2x auto) / 2.6x**.
+030 matched-n ratio (n=1e5 F32): 12.15/3.097 = 3.9x cube, 9.77/3.097 =
+3.2x wake. n=1e6: cube 151.2, wake 139.6/177.2 (tuned/auto) — unchanged.
+
+**Post-cycle-2 profile and remaining levers:** the fused nearfield now
+dominates every configuration (wake 1e5 F32: 8.2 of 9.3 ms eval = 88%;
+cube 66%; 1e6 77-95%), and it was itself just optimized by 032a
+(classsplit + sub-Morton shipped; the alternatives measured as losses).
+Direct-work reduction through depth is σ-adequacy- and accuracy-capped
+(measured, not modeled: cube 1e6 ℓ5 q16 fails the gate; ℓ+1 at 1e5 needs
+unsupported q > 20). Remaining candidates against the 5% bar:
+
+- **wake auto q-floor** (q12 vs 16): 13-21% on the wake, 0% on the cube,
+  and q≤14 *fails* the gate on the cube — field-dependent accuracy, so
+  not shippable as a geometry-only default; recorded as per-case tuning
+  guidance (available via `radix_fmm_settings!`).
+- **037 rectangular grid — verdict UPDATE:** with the wake winner at
+  9.77 ms, the ~2 spare transverse coarse levels (~0.9-1.8 ms of
+  M2M/L2L/launch floor) are now **9-18% of the wake U/J solve at n=1e5**
+  — the caveat recorded at the initial verdict has materialized, and 037
+  now *clears* the 5% bar at the 1e5 scale (still <2% at 1e6, where the
+  nearfield dwarfs it). The go/no-go recommendation passes to `036`/`037`
+  with this estimate.
+- Everything else measured under 5% (K, rho_t, schedules, precomputed_y,
+  FLOWVPM overhead, B2M residual).
+
+**Campaign recommendation: conclude the optimization cycles.** No
+credible untried lever within 035's scope (coupling defaults, tuning,
+low-risk kernels) retains a defensible ≥5% expected end-to-end gain; the
+one structural lever above the bar (rectangular radix grid) is explicitly
+owned by follow-on row `037`. Next step on user go-ahead: write the
+definitive 035 report (§3 of this file: final tables, per-stage profiles,
+033-baseline speedup policy — noting every FMM-active 033 CPU row fails
+the 1e-3 gate, so headline speedups vs CPU are restricted to n ≤ 3162 —
+the 030 ratio, figures per the 024a conventions, and the cycle ledger).
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;
