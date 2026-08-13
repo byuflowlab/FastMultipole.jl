@@ -144,6 +144,13 @@ in the 11-23% band, wake 1e6 <2%, cube neutral. Job 13160439 (full
 preflights incl. FLOWVPM Part A rectangular testsets + Part B, 033 refcheck
 at shipped cubic defaults).
 
+**Default-flip pre-authorization (user, 2026-08-13, given before the job's
+results were known):** if the rectangular grid performs within 10% of the
+legacy cubic grid in ALL measured cases, AND outperforms legacy by MORE
+than 10% on the higher-aspect-ratio (wake) cases, the shipped FLOWVPM
+coupling default flips to `rectangular=true`. After 037 is Done and
+clear-context approved, STOP (no further roadmap rows this session).
+
 ## Objective
 
 Add an optional rectangular radix-grid path for elongated domains while
