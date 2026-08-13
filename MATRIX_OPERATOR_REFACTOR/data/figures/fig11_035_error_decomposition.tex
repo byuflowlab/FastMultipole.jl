@@ -1,0 +1,35 @@
+\documentclass[border=8pt,varwidth=190mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 11 --- Task 035 cycle 3C: velocity-error decomposition $F{-}R = (P{-}R) + (F{-}P)$ against the conservative sum gate (Float32 shown; Float64 agrees to the last digits)}
+
+\begin{tikzpicture}
+\begin{axis}[
+  fmbase,
+  width=150mm, height=58mm,
+  ymode=log,
+  fmbaraxis,
+  xtick={1,2,3,4,5,6,7,8},
+  xticklabels={cube $10^5$ P4, cube $10^5$ P5, cube $10^6$ P4, cube $10^6$ P5,
+               wake $10^5$ P4, wake $10^5$ P5, wake $10^6$ P4, wake $10^6$ P5},
+  xticklabel style={font=\tiny, rotate=30, anchor=north east},
+  ylabel={sampled velocity RMS error (rel.)},
+  ymin=1e-6, ymax=4e-3,
+  legend pos=north east, legend columns=2,
+]
+\addplot[fmbars, fill=fmSone] table[x=config_index, y=cutoff, col sep=comma] {tables/fig11_error_decomposition.csv};
+\addlegendentry{cutoff $\lVert P{-}R\rVert/\lVert R\rVert$}
+\addplot[fmbars, fill=fmStwo] table[x=config_index, y=fmm, col sep=comma] {tables/fig11_error_decomposition.csv};
+\addlegendentry{FMM $\lVert F{-}P\rVert/\lVert R\rVert$}
+\addplot[fmbars, fill=fmSthree] table[x=config_index, y=total, col sep=comma] {tables/fig11_error_decomposition.csv};
+\addlegendentry{observed total}
+\addplot[fmbars, fill=fmSfour] table[x=config_index, y=bound, col sep=comma] {tables/fig11_error_decomposition.csv};
+\addlegendentry{sum bound (gate)}
+\draw[fmruleline] (axis cs:0.4,1e-3) -- (axis cs:8.6,1e-3);
+\node[anchor=south west, font=\tiny, color=fmCritical] at (rel axis cs:0.01,0.87)
+  {$10^{-3}$ gate: the P4 cube $10^6$ sum bound fails; every P5 bound passes};
+\end{axis}
+\end{tikzpicture}
+
+\end{document}
