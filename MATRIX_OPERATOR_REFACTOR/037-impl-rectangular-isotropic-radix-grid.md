@@ -198,6 +198,61 @@ nothing binds); anisotropic >32:1 hierarchy (new theory).
 decision recorded here and as a 035 addendum). Awaiting clear-context
 approval.
 
+## Clear-Context Approval
+
+**Date:** 2026-08-13. **Reviewing agent:** clear-context approval subagent
+(Claude Fable 5), per the `START_HERE.md` clear-context protocol.
+
+**Checked:** `START_HERE.md`, this task file in full, the design record
+`037-implementation-plan.md`, the Stage 1-3 diffs (`7b9c69d`, `d73da44` +
+the three test-scaffolding fixes, `c874818`), the Stage-5 prereg/verdict
+commits (`dde3aa3`, `1b19c10`, `5bd5dca`), FLOWVPM `gpu-full` `98d4c45`
+(`rectangular=false` default confirmed in `src/FLOWVPM_fmm_radix.jl`), the
+Stage-5 artifacts in `data/flowvpm_gpu_campaign/`, and the 035 addendum.
+
+**Verified:**
+
+- *Correctness/tests.* `test/radix_trimming_test.jl` does what the work
+  record claims: exhaustive exact-once audit (ordered occupied-leaf-pair
+  hit matrix built from direct pairs plus production
+  `build_hierarchical_routes_window!` routes expanded to leaf descendants,
+  every entry asserted == 1) on {(4,2,2),(3,3,1),(4,4,2),(3,3,3)} at
+  literature P=4, under default and uniform-q schedules, plus flat-oracle,
+  cross-strategy parity, cap-guard, schedule-anchoring, and multi-root
+  sections. The bitwise cube-regression gate exists in
+  `test/radix_fmm_integration_test.jl` (vector `(L,L,L)` vs scalar `L`:
+  geometry/capacity/route-count/direct-buffer equality and bitwise `fmm!`
+  outputs at P=4 and order 8). Both host suites re-run green locally
+  (trimming 122/122; integration 89/89 + rectangular bounds 63/63,
+  4 threads). Stage 3 source (`_radix_root_level`, `_radix_flat_top_count`,
+  `_rigid_flat_top_tables`, re-anchored class metadata) matches the design
+  record §1/§3; the flat-top table reuses the existing `level_class_of`
+  mask mechanism with window kernels unchanged, as designed.
+- *H200 evidence.* `fm035-13160439.out` (exit clean, archived): device
+  interface 1333/1333, lifecycle 227/227, FLOWVPM rectangular Part A
+  testsets + Part B device suites on hardware, 033 refcheck all OK — this
+  also substitutes for the unarchived intermediate job logs
+  (`fm037t-13160006`/`13160427`, cluster-only; the counts recorded in the
+  work record match the suites re-run here). Minor note, non-blocking.
+- *Stage-5 verdict.* `fm037_stage5.csv` sha256 matches
+  (`6c40437e…`); `gate_pass=true` and `counters_flat=true` on all 10 rows;
+  every number in the verdict table recomputed and confirmed, including
+  `ell_axes` (3,3,5)/(4,4,6)/(4,4,4). Verdict arithmetic is mechanical per
+  the pre-authorization: (a) within 10% everywhere PASS (worst +3.4%);
+  (b) >10% on high-aspect FAIL (best −2.0%) → default stays cubic,
+  rectangular ships opt-in. Root-cause story is supported by the CSV:
+  isolated stage sums exceed the eval wall (9.26 ms vs 7.37 ms at wake 1e5
+  F32), confirming coarse-level overlap; M2M+L2L 2.14→1.62 / 2.67→2.17 ms;
+  n_routes 168200→186472 with m2l +0.16 ms; transverse `ell_a = ell−2`
+  consistent with the nodes_per_level columns. Honest reporting of the
+  missed 035 expectation is plain and quantified.
+- *035 addendum.* Purely additive (no removed lines in `5bd5dca`'s diff of
+  the 035 file) and consistent with this record.
+
+**Verdict: APPROVED.** No significant issues; consistency, correctness,
+performance evidence, robustness, minimal invasiveness, and readability
+all satisfied.
+
 ## Objective
 
 Add an optional rectangular radix-grid path for elongated domains while
