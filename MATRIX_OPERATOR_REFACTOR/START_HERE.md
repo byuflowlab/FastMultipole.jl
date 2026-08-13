@@ -551,7 +551,14 @@ the new pieces are the adaptive near-field lists (U direct, W/X via M2T/S2L)
 and device tree construction from the sort/scan/compact primitives already
 in the CUDA path.
 
-The whole phase is gated behind `035`, `036`, and `037`, and the `038`
+The whole phase is gated behind `035`, `036`, and `037`. By user direction
+(`2026-08-13`) the two nearfield-reduction rows `037a`/`037b` are staged
+BEFORE the adaptive-octree derivation: they appear first in the table below,
+so the first-unblocked-row rule activates them ahead of `038`. `037b` is
+conditional — it opens only if `037a`'s recorded verdict recommends it (and
+the user agrees); otherwise it is closed by pointer and `038` follows
+`037a` directly. `037a`'s rotor-wake case also supplies (or refutes) the
+multi-scale-density evidence `038`'s entry gate asks for. The `038`
 theory row carries an explicit evidence-or-waiver entry gate: multi-scale
 density must be measured as a binding cost (or the user must waive that
 requirement) before derivation begins. `038` is a scoped derivation row
@@ -564,6 +571,8 @@ standing TikZ/CSV figure conventions and extending the `024a` set.
 
 | Done | Approved | Task | Summary | Blocking |
 | --- | --- | --- | --- | --- |
+| [ ] | [ ] | `037a-explore-twopass-deficit-geometry.md` | Measurement-first exploration of two-pass deficit splitting (singular math at expansion-validity geometry + pairwise `(g-1)` correction within `rho_c·sigma ≈ 2σ`) at its OWN co-designed (ell, q, rho_c, P) — superseding the matched-geometry `032a` comparison. Builds the checksummed realistic rotor-wake case (e.g. DJI 9443 via `~/…/FLOWPanel.jl`), extends the 3C error-decomposition oracle to the two-pass field, and produces an exact per-approach speedup report (same-job anchors, critical-path pricing). Renders the go/no-go verdict for `037b` and the multi-scale-density evidence for `038`. Default changes need explicit user approval. | `037` |
+| [ ] | [ ] | `037b-impl-mesh-deficit-fourier-nearfield.md` | **Conditional on the `037a` verdict + user go.** PME-style mesh evaluation of the smooth Gaussian deficit: theory-first spectral/interpolation error model, then device-resident spread/convolve/interpolate (rectangular mesh; FFT vs local stencil by measurement) under the capacity/zero-allocation/counter contracts, benchmarked against BOTH the shipped baseline and the `037a` winner so each approach's exact speedup is reported separately. Off-by-default; default changes need explicit user approval. | `037a` |
 | [ ] | [ ] | `038-theory-adaptive-radix-octree.md` | Derive the 2:1-balanced adaptive Morton octree: construction as sort/scan/compact, U/V/W/X interaction lists with an exact-once coverage proof at both near radii, M2T/S2L operators with constant-`P`-consistent error bounds and Lamb-Helmholtz coverage, a per-cell σ geometry gate replacing the global `σ_max` form, cost/capacity model (incl. a synthetic multi-scale case), and the refresh/rebuild policy. V-list M2L must reuse the `025` level-scaled operator tables unchanged. Entry gate: `035`/`037` evidence that multi-scale density binds, or explicit user waiver. | `035`, `036`, `037` |
 | [ ] | [ ] | `039-impl-adaptive-octree-construction-host.md` | Implement host adaptive-tree construction (Morton-prefix split on `K_max`, depth cap, 2:1 balance) and U/V/W/X list generation, with V lists in the existing `(level, offset)` class format, per-cell geometry gate, capacity-sized buffers with zero per-step refresh allocation, exact-once brute-force verification on uniform/wake/clustered fields, and uniform-limit parity with the existing hierarchical routes. | `038` |
 | [ ] | [ ] | `040-impl-adaptive-octree-lifecycle-host.md` | Run the full host resident lifecycle on the adaptive tree: V-list M2L through the unchanged resident strategies and operator tables, M2M/L2L over adaptive ancestor levels, new M2T/S2L kernels (φ+χ, `008h` order rule) for W/X, U-list direct through the existing nearfield kernels. Accuracy gates (velocity RMS ≤ 1e-3, `P=4` and `P=8`, both precisions) on cube, wake, and multi-scale cases; uniform-limit lifecycle parity. | `038`, `039` |
