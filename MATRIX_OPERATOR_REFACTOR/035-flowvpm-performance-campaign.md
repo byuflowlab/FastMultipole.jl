@@ -697,6 +697,45 @@ no memory-/compute-bound verdict is inferred from timing alone. The committed
 driver is ready to rerun unchanged when Orc enables counter access; the four
 job logs preserve the blocker and exact requested configurations.
 
+### 2026-08-12 — cycle 3D: ship the P5/rho_t=3.668 defaults (session 2)
+
+**User approval (2026-08-12, plan-mode approval in session 2):** adopt the
+cycle-3A/3B/3C-validated literature-P5 winner as the shipped FLOWVPM coupling
+default; profiling continues by counter-free means only (nsys timeline +
+analytic roofline from pair counts — `@time`-style additions add nothing over
+the existing CUDA-event stage medians and cannot classify bound-ness; NCU
+remains recorded as blocked-external).
+
+**Implemented** (FLOWVPM `gpu-full` commit `5dd0d85`, coupling settings only,
+no FastMultipole `src/` change): `RadixFMMSettings` defaults
+`expansion_order=4` (literature P5; `nothing` still derives `pfield.fmm.p-1`),
+partitioned-kernel coupling default `rho_t=3.668` (031a velocity-RMS cutoff;
+the constructor default 4.252 and the :regularized/:twopass kernel defaults
+are untouched), `near_radius2` floor `6`, `accuracy_margin=1.03`. The margin
+was derived numerically: the joint auto rule reproduces all four cycle-3A P5
+winners — cube `(4,12)`/`(5,12)`, wake `(5,6)`/`(6,6)` at n=1e5/1e6 — for any
+margin in `[0.886, 1.061]`; margins below 1.0 are excluded (FastMultipole
+enforces bare adequacy), so 1.03 is the center of the admissible `[1.0,
+1.061]`. Justification is accuracy as well as speed: under the revised
+conservative sum gate the old P4/4.252 default *fails* at cube n=1e6
+(1.03e-3); the accepted cost is cube 1e5 F64 at 0.98x (3B). Part A extended:
+new-default assertions, all four winner reproductions, plus the cycle-1 rule
+regression at the old explicit settings; suite green locally (41 assertions,
+4 threads, host path).
+
+**Pre-registered confirmation** (`scripts/fm035_cases_cycle3d.txt`, 16 rows,
+committed before the cluster run): shipped-auto rows (ell omitted, rho_t
+omitted → 3.668, q=6 floor) vs same-job P4 anchors at the previous shipped
+geometry, all four case/scale points × Float32/Float64, RK3 at n=1e5,
+profile on every row; local dryrun 16/16 with the intended kernel/cutoff/
+order resolution. The job's 033 refcheck stage now gates the *new* defaults,
+including the previously unmeasured 1e4-scale auto selections (cube `(3,14)`,
+wake `(4,9)` — derived locally). Profiling rider (`FM035_NSYS=1`):
+`profile_035_nsys.jl` records a production-timeline (graph capture + overlap
+ON) five-solve nsys trace per case at n=1e6 in both precisions, plus the
+exact nearfield body-pair total (Σ |tgt|·|src| over direct routes) for the
+counter-free analytic roofline against H200 peaks.
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;

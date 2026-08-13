@@ -1,0 +1,32 @@
+# Task 035 cycle 3D pre-registered confirmation grid (2026-08-12).
+# Confirms the SHIPPED literature-P5 / rho_t=3.668 coupling defaults
+# (FLOWVPM gpu-full commit 5dd0d85) against same-job P4 anchors at the
+# previous shipped geometry, all four case/scale points, both precisions.
+#
+# Auto rows omit ell so the shipped joint auto-geometry rule (floor q=6,
+# margin 1.03) selects the geometry; they omit rho_t so the new partitioned
+# coupling default (3.668) is exercised. Expected auto selections (derived
+# locally, asserted in Part A): cube (4,12)/(5,12), wake (5,6)/(6,6).
+# The 1e4-scale behavior of the new defaults (cube (3,14), wake (4,9)) is
+# previously unmeasured and is gated by the job's 033 refcheck stage.
+# RK3 is recorded at the n=1e5 rows, matching cycle 3B.
+
+# ---- Float32 ----
+label=cy3d_c5_p4_anchor_f32 case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=4 q=17 rho_t=4.252 strategy=dense profile=1 rk3=1
+label=cy3d_c5_p5_auto_f32 case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense profile=1 rk3=1
+label=cy3d_c6_p4_anchor_f32 case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=3 ell=5 q=17 rho_t=4.252 strategy=dense profile=1
+label=cy3d_c6_p5_auto_f32 case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense profile=1
+label=cy3d_w5_p4_anchor_f32 case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=5 q=16 rho_t=4.252 strategy=dense profile=1 rk3=1
+label=cy3d_w5_p5_auto_f32 case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense profile=1 rk3=1
+label=cy3d_w6_p4_anchor_f32 case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=3 ell=6 q=16 rho_t=4.252 strategy=dense profile=1
+label=cy3d_w6_p5_auto_f32 case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense profile=1
+
+# ---- Float64 ----
+label=cy3d_c5_p4_anchor_f64 case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=3 ell=4 q=17 rho_t=4.252 strategy=dense profile=1 rk3=1
+label=cy3d_c5_p5_auto_f64 case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 q=6 strategy=dense profile=1 rk3=1
+label=cy3d_c6_p4_anchor_f64 case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=3 ell=5 q=17 rho_t=4.252 strategy=dense profile=1
+label=cy3d_c6_p5_auto_f64 case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=4 q=6 strategy=dense profile=1
+label=cy3d_w5_p4_anchor_f64 case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=3 ell=5 q=16 rho_t=4.252 strategy=dense profile=1 rk3=1
+label=cy3d_w5_p5_auto_f64 case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 q=6 strategy=dense profile=1 rk3=1
+label=cy3d_w6_p4_anchor_f64 case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=3 ell=6 q=16 rho_t=4.252 strategy=dense profile=1
+label=cy3d_w6_p5_auto_f64 case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 q=6 strategy=dense profile=1

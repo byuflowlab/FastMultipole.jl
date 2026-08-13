@@ -90,6 +90,34 @@ if [ "${FM035_NOREG:-0}" == "1" ]; then
     done
 fi
 
+if [ "${FM035_NSYS:-0}" == "1" ]; then
+    # Cycle 3D profiling rider (counter-free): Nsight Systems timeline of five
+    # production U/J solves per case at n=1e6 (graph capture + overlap ON),
+    # plus exact nearfield body-pair counts for the analytic roofline. nsys
+    # needs no GPU performance-counter privilege (NCU remains blocked by
+    # ERR_NVGPUCTRPERM, jobs 13157746). Skips gracefully if nsys is absent.
+    echo "=== 035 nsys production-timeline rider ==="
+    cd "$WORKDIR"
+    export FM035_FMDIR="$FMDIR"
+    if command -v nsys >/dev/null 2>&1; then
+        for cfg in "cube Float32" "wake Float32" "cube Float64" "wake Float64"; do
+            read -r ncase ntf <<< "$cfg"
+            rep="$DATADIR/fm035_nsys_${ncase}_${ntf}_${SLURM_JOB_ID:-manual}"
+            echo "=== nsys case=$ncase tf=$ntf"
+            nsys profile -o "$rep" --force-overwrite=true \
+                --trace=cuda --sample=none --cpuctxsw=none \
+                --capture-range=cudaProfilerApi --capture-range-end=stop \
+                julia --project="$ENVDIR" \
+                "$FMDIR/MATRIX_OPERATOR_REFACTOR/scripts/profile_035_nsys.jl" \
+                "$ncase" "$ntf"
+            nsys stats --report cuda_gpu_kern_sum,cuda_gpu_trace \
+                --format csv -o "$rep" "$rep.nsys-rep" || true
+        done
+    else
+        echo "nsys not found on PATH; rider skipped (record in the work log)"
+    fi
+fi
+
 echo "=== 035 tuning sweep ==="
 cd "$WORKDIR"
 export FM035_FMDIR="$FMDIR"
