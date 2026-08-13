@@ -2,7 +2,11 @@
 
 ## Status and Entry Gate
 
-**In progress `2026-08-13`** (entry gate satisfied `2026-08-12`: 035 GO
+**DONE `2026-08-13`** (all five stages implemented, H200-validated, and
+benchmarked; the 035-handoff expectation did not materialize — the
+rectangular path ships as a validated opt-in, default stays cubic, verdict
+in the Stage-5 work record). Clear-context approval pending.
+Originally in progress `2026-08-13` (entry gate satisfied `2026-08-12`: 035 GO
 handoff below + 036 Done and clear-context approved). Design record complete:
 `037-implementation-plan.md` — virtual-cube embedding with per-axis leaf
 depths + construction-time active-level trimming with a flat-top root level;
@@ -150,6 +154,49 @@ legacy cubic grid in ALL measured cases, AND outperforms legacy by MORE
 than 10% on the higher-aspect-ratio (wake) cases, the shipped FLOWVPM
 coupling default flips to `rectangular=true`. After 037 is Done and
 clear-context approved, STOP (no further roadmap rows this session).
+
+**Stage 5 result (job 13160439, H200, exit 0) — expectation NOT met;
+default stays cubic.** All preflights green (incl. the FLOWVPM rectangular
+Part A testsets on hardware), 033 refcheck PASSED, 10/10 rows gate-passing
+with flat counters. U/J medians (cubic → rectangular):
+
+| case | n | TF | cubic (ms) | rect (ms) | delta | rect ell_axes |
+|---|---:|---|---:|---:|---|---|
+| wake | 1e5 | F32 | 7.764 | 7.936 | +2.2% (slower) | (3,3,5) |
+| wake | 1e5 | F64 | 14.411 | 14.896 | +3.4% (slower) | (3,3,5) |
+| wake | 1e6 | F32 | 83.560 | 82.154 | −1.7% | (4,4,6) |
+| wake | 1e6 | F64 | 178.975 | 175.316 | −2.0% | (4,4,6) |
+| cube | 1e5 | F32 | 11.384 | 11.373 | neutral ✓ | (4,4,4) |
+
+Errors comparable (wake 1e5 rect u=3.69e-4 vs 3.30e-4; 1e6 rect slightly
+better); RK3 mirrors U/J. **Mechanism verification:** trimming worked as
+designed — M2M+L2L isolated stages drop 2.14→1.62 ms (1e5) and 2.67→2.17
+(1e6), n_nodes and (at 1e6) n_routes shrink — but the saving does not
+reach the wall clock because the production pipeline already overlaps the
+coarse far-field levels under the dominant nearfield (the same
+overlap-over-crediting the 035 campaign documented for its cycle-2 B2M
+model), and at 1e5 the flat-top root adds ~0.2 ms of M2L (n_routes
+168200→186472). Root cause of the missed 11-23% band: (i) the AR=5 wake's
+padded transverse extent needs ell_a = ell−2 (6.4 cells → 8), so only 1-2
+coarse levels trim — and Stage 3 already gave the cubic path the level-0
+trim for free; (ii) the 035 estimate priced the coarse-level launch floor
+as critical-path time, which the overlap hides.
+
+**Verdict per the pre-authorization (mechanical):** criterion (a) within
+10% everywhere — PASS (worst +3.4%); criterion (b) >10% gain on
+high-aspect — FAIL (best −2.0%). **The shipped default remains cubic
+(`rectangular=false`); the rectangular path ships as a validated opt-in.**
+Margins are far outside measurement noise (medians of 15 warmed reps;
+criterion (b) misses by 5x). Where it should pay: aspect ratios well
+beyond 5 (real rotor wakes), where more transverse levels trim; the
+launch-floor share also grows as the nearfield shrinks (e.g. future
+smaller-n or post-nearfield-optimization regimes). Recorded as guidance,
+not a claim. Deferred: Stage 3b per-axis occupancy shrink (memory-only,
+nothing binds); anisotropic >32:1 hierarchy (new theory).
+
+**Task 037 status: DONE** (all five stages; production evidence recorded;
+decision recorded here and as a 035 addendum). Awaiting clear-context
+approval.
 
 ## Objective
 

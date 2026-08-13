@@ -1,0 +1,162 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-a92ec0ee-a588-ec50-5c0e-61536751caf1)
+=== preflight 1: FastMultipole CUDA interface tests (032 surface) ===
+Test Summary:                           | Pass  Total     Time
+CUDA device-system interface (task 032) | 1333   1333  2m17.8s
+=== preflight 1b: FastMultipole CUDA lifecycle tests (scalar B2M parity) ===
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  227    227  1m54.9s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.2s
+=== preflight 2: host device-system interface tests (032a shipped defaults) ===
+Test Summary:                              | Pass  Total   Time
+device-system interface stage 1 (task 032) |  930    930  33.1s
+Test Summary:                                  | Pass  Total  Time
+direct-kernel functor trait stage 2 (task 032) |   22     22  6.3s
+Test Summary:                             | Pass  Total  Time
+partitioned nearfield stage A (task 032a) |  827    827  5.1s
+Test Summary:                          | Pass  Total  Time
+two-pass nearfield stage B (task 032a) | 1248   1248  7.0s
+Test Summary:                                   | Pass  Total  Time
+stage 3 (task 032): recenter!, deprecated hooks |   21     21  1.4s
+Test Summary:                                    |  Pass  Total  Time
+binned nearfield pair stream stage C (task 032a) | 32367  32367  3.5s
+Test Summary:                                                   | Pass  Total  Time
+shipped nearfield defaults (task 032a Checkpoint D, 2026-08-07) |    9      9  0.2s
+=== preflight 3: CUDA nearfield-binning tests (032a mechanism defaults) ===
+Test Summary:                                         | Pass  Total     Time
+CUDA binned nearfield pair stream (task 032a stage C) |  304    304  3m27.5s
+=== preflight 4: FLOWVPM radix coupling tests (Part A + Part B) ===
+Precompiling FLOWVPM...
+   5845.3 ms  ✓ FLOWVPM
+  1 dependency successfully precompiled in 12 seconds. 120 already precompiled.
+┌ Info: host radix coupling [cube n=4000]
+│   err.u_rel_rms = 0.0007084272629770571
+└   err.j_rel_rms = 0.0031163609314753993
+┌ Info: host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00018513708554535114
+└   err.j_rel_rms = 0.0007817860811119106
+┌ Info: 035 settings [partitioned + concat]
+│   err.u_rel_rms = 0.000185137085545352
+└   err.j_rel_rms = 0.0007817860811119087
+┌ Info: 035 settings [partitioned + precomputed_y]
+│   err.u_rel_rms = 0.0001851370855453525
+└   err.j_rel_rms = 0.0007817860811119097
+┌ Info: 035 settings [regularized + dense]
+│   err.u_rel_rms = 1.6997073097411177e-5
+└   err.j_rel_rms = 9.026834805259258e-5
+┌ Info: rectangular host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00018712347627851574
+└   err.j_rel_rms = 0.000790999572957852
+Precompiling FLOWVPMCUDAExt...
+   6864.0 ms  ✓ FLOWVPM → FLOWVPMCUDAExt
+  1 dependency successfully precompiled in 12 seconds. 189 already precompiled.
+┌ Info: device radix FMM [cube n=20000 Float64]
+│   err.u_rel_rms = 0.0006882809084157083
+└   err.j_rel_rms = 0.0037934501500993824
+┌ Info: device radix FMM [cube n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 384
+┌ Info: device radix FMM [cube n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.005894461
+┌ Info: device radix FMM [wake n=20000 Float64]
+│   err.u_rel_rms = 0.0003704834101013035
+└   err.j_rel_rms = 0.002077618727800626
+┌ Info: device radix FMM [wake n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 400
+┌ Info: device radix FMM [wake n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.005306707
+┌ Info: device radix FMM [cube n=20000 Float32]
+│   err.u_rel_rms = 0.0006882703597263692
+└   err.j_rel_rms = 0.00379341979897802
+┌ Info: device radix FMM [cube n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 272
+┌ Info: device radix FMM [cube n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003378683
+┌ Info: device radix FMM [wake n=20000 Float32]
+│   err.u_rel_rms = 0.00037049076119363846
+└   err.j_rel_rms = 0.0020776052565513207
+┌ Info: device radix FMM [wake n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 288
+┌ Info: device radix FMM [wake n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003189302
+┌ Info: device radix FMM dynamic run (wake n=2000, 5 RK3 steps)
+│   pos_err = 5.411300066197888e-8
+│   err.u_rel_rms = 0.00020515435910281742
+└   err.j_rel_rms = 0.000865484504489591
+Test Summary:                               | Pass  Total   Time
+radix FMM coupling (host path) vs UJ_direct |   12     12  25.1s
+Test Summary:                                            | Pass  Total  Time
+radix FMM coupling: task-035 tuning settings (host path) |   23     23  9.0s
+Test Summary:                          | Pass  Total  Time
+radix FMM coupling: automatic recenter |    2      2  1.6s
+Test Summary:                                                | Pass  Total  Time
+radix FMM coupling: rectangular bounds (task 037, host path) |   22     22  1.9s
+Test Summary:                                        | Pass  Total  Time
+radix FMM coupling: automatic recenter (rectangular) |    5      5  0.7s
+Test Summary:                                       | Pass  Total  Time
+radix FMM coupling: loud unsupported configurations |    4      4  0.8s
+Test Summary:                                   | Pass  Total     Time
+device-resident radix FMM: static U/J vs direct |   36     36  1m23.6s
+Test Summary:                                         | Pass  Total  Time
+device-resident radix FMM: multi-step RK3 dynamic run |    4      4  5.7s
+=== 033 reference integrity ===
+direct_reference_cube_n1000.csv: OK
+direct_reference_cube_n3162.csv: OK
+direct_reference_cube_n10000.csv: OK
+direct_reference_cube_n31623.csv: OK
+direct_reference_cube_n100000.csv: OK
+direct_reference_cube_n316228.csv: OK
+direct_reference_cube_n1000000.csv: OK
+direct_reference_wake_n1000.csv: OK
+direct_reference_wake_n3162.csv: OK
+direct_reference_wake_n10000.csv: OK
+direct_reference_wake_n31623.csv: OK
+direct_reference_wake_n100000.csv: OK
+direct_reference_wake_n316228.csv: OK
+direct_reference_wake_n1000000.csv: OK
+=== 033 refcheck at shipped coupling defaults ===
+=== 034 reference comparison: device-resident radix FMM vs 033 checksummed sampled-direct references
+mode: DEVICE (CuArray-resident)
+cases: cube, wake  n: 10000, 100000  gate: Float64 u_rel_rms <= 0.001
+[cube n=10000] built (n_actual=10000, 0.2s); reference direct_reference_cube_n10000.csv samples=10000 sha256=6f94bc0b3e7507e39bca95eec46667fe8cdb1fa24edf2f83057b6169460b9f78
+[cube n=10000 Float64] u_rel_rms=0.0005541713643458635 u_abs_rms=2.176168172002758e-6 u_max_err=7.648723968640502e-6 j_rel_rms=0.0028202334812779694 warm_solve_s=0.019626112
+[cube n=10000 Float32] u_rel_rms=0.0005541575706799675 u_abs_rms=2.176114005839312e-6 u_max_err=7.647882314926471e-6 j_rel_rms=0.0028202244693644745 warm_solve_s=0.057789076
+[cube n=100000] built (n_actual=100000, 0.0s); reference direct_reference_cube_n100000.csv samples=512 sha256=82fe79cd3e2ae3078da9ab28ec386973ecd67d5f0fa353b245c1c6ba68bb4cbb
+[cube n=100000 Float64] u_rel_rms=0.0006805945242299195 u_abs_rms=1.4352734270968916e-6 u_max_err=4.054048338942682e-6 j_rel_rms=0.0038824019153054067 warm_solve_s=0.023776317
+[cube n=100000 Float32] u_rel_rms=0.000680602154623843 u_abs_rms=1.4352895184717803e-6 u_max_err=4.054377756560925e-6 j_rel_rms=0.0038824040494778228 warm_solve_s=0.014021165
+[wake n=10000] built (n_actual=10000, 0.0s); reference direct_reference_wake_n10000.csv samples=10000 sha256=d1923057915d19c8c7f4cd0a1b33a0a53b484a551253e3eacaf12439b4011ed0
+[wake n=10000 Float64] u_rel_rms=0.0003448406858154173 u_abs_rms=9.382519766339919e-6 u_max_err=4.0032203197791986e-5 j_rel_rms=0.001790725939538906 warm_solve_s=0.004511502
+[wake n=10000 Float32] u_rel_rms=0.0003447962136666205 u_abs_rms=9.38130975594294e-6 u_max_err=4.003300065290726e-5 j_rel_rms=0.0017907018018233736 warm_solve_s=0.004380502
+[wake n=100000] built (n_actual=100000, 0.0s); reference direct_reference_wake_n100000.csv samples=512 sha256=3dd3f918317fa51fe684b1d6439baa27369a491638098a52c8086451ac8a2951
+[wake n=100000 Float64] u_rel_rms=0.0003299206509042656 u_abs_rms=1.0276671844313155e-5 u_max_err=5.359230471330257e-5 j_rel_rms=0.0024547827773391297 warm_solve_s=0.017778333
+[wake n=100000 Float32] u_rel_rms=0.00032988458499590416 u_abs_rms=1.0275548430231674e-5 u_max_err=5.359243792897942e-5 j_rel_rms=0.0024547732835694855 warm_solve_s=0.011380722
+
+case,n,precision,u_rel_rms,u_abs_rms,u_max_err,j_rel_rms,warm_solve_s
+cube,10000,Float64,0.0005541713643458635,2.176168172002758e-6,7.648723968640502e-6,0.0028202334812779694,0.019626112
+cube,10000,Float32,0.0005541575706799675,2.176114005839312e-6,7.647882314926471e-6,0.0028202244693644745,0.057789076
+cube,100000,Float64,0.0006805945242299195,1.4352734270968916e-6,4.054048338942682e-6,0.0038824019153054067,0.023776317
+cube,100000,Float32,0.000680602154623843,1.4352895184717803e-6,4.054377756560925e-6,0.0038824040494778228,0.014021165
+wake,10000,Float64,0.0003448406858154173,9.382519766339919e-6,4.0032203197791986e-5,0.001790725939538906,0.004511502
+wake,10000,Float32,0.0003447962136666205,9.38130975594294e-6,4.003300065290726e-5,0.0017907018018233736,0.004380502
+wake,100000,Float64,0.0003299206509042656,1.0276671844313155e-5,5.359230471330257e-5,0.0024547827773391297,0.017778333
+wake,100000,Float32,0.00032988458499590416,1.0275548430231674e-5,5.359243792897942e-5,0.0024547732835694855,0.011380722
+
+034 reference-comparison gate PASSED (all Float64 u_rel_rms <= 0.001)
+=== 035 tuning sweep ===
+=== 035 GPU tuning sweep: 10 configs (0 already done), reps=15, out=/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm037_stage5.csv
+node=m13h-1-1 gpu=NVIDIA H200 julia=1.11.7 cuda=12.8.0
+[build] wake n=100000 (1.1s), reference direct_reference_wake_n100000.csv ok
+[ok] st5_w5_cubic_f32: uj=7.764 ms (refresh=0.325 eval=7.366 finalize=0.055) u=3.2988e-04 gate=true J=2.4548e-03
+[ok] st5_w5_rect_f32: uj=7.936 ms (refresh=0.318 eval=7.424 finalize=0.054) u=3.6890e-04 gate=true J=2.5861e-03
+[ok] st5_w5_cubic_f64: uj=14.411 ms (refresh=0.341 eval=13.96 finalize=0.062) u=3.2992e-04 gate=true J=2.4548e-03
+[ok] st5_w5_rect_f64: uj=14.896 ms (refresh=0.336 eval=14.442 finalize=0.063) u=3.6893e-04 gate=true J=2.5862e-03
+[build] wake n=1000000 (0.3s), reference direct_reference_wake_n1000000.csv ok
+[ok] st5_w6_cubic_f32: uj=83.56 ms (refresh=0.997 eval=81.693 finalize=0.562) u=2.9893e-04 gate=true J=2.8695e-03
+[ok] st5_w6_rect_f32: uj=82.154 ms (refresh=0.987 eval=80.285 finalize=0.563) u=2.8652e-04 gate=true J=2.7707e-03
+[ok] st5_w6_cubic_f64: uj=178.975 ms (refresh=1.168 eval=176.679 finalize=0.843) u=2.9898e-04 gate=true J=2.8695e-03
+[ok] st5_w6_rect_f64: uj=175.316 ms (refresh=1.133 eval=172.949 finalize=0.848) u=2.8657e-04 gate=true J=2.7707e-03
+[build] cube n=100000 (0.0s), reference direct_reference_cube_n100000.csv ok
+[ok] st5_c5_cubic_f32: uj=11.384 ms (refresh=0.31 eval=10.957 finalize=0.061) u=6.8061e-04 gate=true J=3.8824e-03
+[ok] st5_c5_rect_f32: uj=11.373 ms (refresh=0.31 eval=10.959 finalize=0.055) u=6.8060e-04 gate=true J=3.8824e-03
+035 sweep complete
+fm035 job complete

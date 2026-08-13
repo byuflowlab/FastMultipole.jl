@@ -945,6 +945,27 @@ Figures: `data/figures/fig09_035_cycle_ladder`, `fig10_035_stage_movement`,
 **Task 035 status: DONE.** Optimization cycles concluded; this section is
 the phase's sole definitive speedup report. Awaiting clear-context approval.
 
+## Addendum — 037 rectangular-grid verdict (2026-08-13, post-approval)
+
+Recorded here per 037's contract ("the final decision and comparison belong
+in 035"); this addendum does not reopen the approved campaign. The
+rectangular radix grid (implemented and validated in `037`, five stages)
+was benchmarked cubic-vs-rectangular at the shipped defaults with identical
+(ℓ, q, leaf width) per arm (job 13160439): wake 1e5 +2.2/+3.4% (slower,
+F32/F64), wake 1e6 −1.7/−2.0%, cube neutral — the Deliverable-5a/
+post-cycle-2 estimate of 11-23% at wake 1e5 did **not** materialize. The
+trimmed coarse-level cost was real in isolated stage timings (M2M+L2L
+−0.5 ms) but sat under the production nearfield overlap rather than on the
+critical path — the same overlap over-crediting this campaign documented
+for its cycle-2 B2M model; additionally the AR=5 wake trims only 1-2
+levels (transverse extent needs ℓ−2), and the flat-top root adds ~0.2 ms
+of M2L at 1e5. Per the user's pre-authorized criteria (within 10%
+everywhere: PASS; >10% on high-aspect: FAIL), the shipped default remains
+cubic; rectangular is a validated opt-in
+(`radix_fmm_settings!(pfield; rectangular=true)`) expected to pay at
+aspect ratios well beyond 5. Data: `fm037_stage5.csv`, full record in
+`037-impl-rectangular-isotropic-radix-grid.md`.
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;
