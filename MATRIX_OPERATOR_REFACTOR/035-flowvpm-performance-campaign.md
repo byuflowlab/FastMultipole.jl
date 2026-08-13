@@ -610,6 +610,51 @@ P4 anchors in Float64 at all four points, repeat F32 anchor/winner at n=1e5,
 and record full RK3 there. No production default change is included; that
 decision follows only if 3B confirms the gain and all gates.
 
+**Cycle 3B result (job 13157488, H200 m13h-1-2, 17m03s, exit 0):** all
+preflights and reference checks passed; 12/12 rows completed with flat counters.
+The P5 error improvement reproduced in both precisions. P5 retained strong
+speedups on the wake and at n=1e6, while cube n=1e5 Float64 was a small
+performance loss and is not presented as a winner:
+
+| case | n | TF | P4 anchor (ms) | P5 (ms) | P5/P4 speedup | P5 U RMS | P5 J diagnostic |
+|---|---:|---|---:|---:|---:|---:|---:|
+| cube | 1e5 | F32 | 12.175 | 11.503 | 1.06x | 6.8061e-4 | 3.8824e-3 |
+| cube | 1e5 | F64 | 20.683 | 21.148 | 0.98x | 6.8059e-4 | 3.8824e-3 |
+| cube | 1e6 | F64 | 310.203 | 207.779 | 1.49x | 7.0780e-4 | 3.8518e-3 |
+| wake | 1e5 | F32 | 9.780 | 7.972 | 1.23x | 3.2988e-4 | 2.4548e-3 |
+| wake | 1e5 | F64 | 19.013 | 14.548 | 1.31x | 3.2992e-4 | 2.4548e-3 |
+| wake | 1e6 | F64 | 303.131 | 179.081 | 1.69x | 2.9898e-4 | 2.8695e-3 |
+
+At n=1e5, full RK3 was 37.216 -> 35.170 ms (cube F32), 62.841 ->
+64.587 ms (cube F64), 29.940 -> 24.542 ms (wake F32), and 60.143 ->
+44.202 ms (wake F64). Data: `fm035_cycle3b.csv`, sha256
+`a401639e4cc93740afcd600f9faf5a0e1131d99aeadeb3c82395c4c16d2d873b`.
+
+### 2026-08-12 — cycle 3C preregistration: cutoff/FMM decomposition and NCU
+
+The user identified that a higher expansion order cannot restore accuracy lost
+by replacing a regularized interaction with singular `1/r` math. Cycle 3C
+therefore separates the errors before considering any P5 default. The exact
+field to which `PartitionedVortex` converges is the partitioned field `P`, not
+the globally singular field: close direct pairs remain regularized and only
+pairs beyond `rho_t` use singular math. On the checksummed 033 sample targets,
+measure the identity `F-R = (P-R) + (F-P)` using an independent host Float64
+erf oracle. Gate `||P-R||/||R|| <= 5e-4` and `||F-P||/||R|| <= 5e-4`
+separately; their sum is the worst-case `1e-3` triangle bound. Report J by the
+same decomposition as a diagnostic only. Do not form the globally singular
+field. Compare all P4 anchors (`expansion_order=3`, `rho_t=4.252`) with all P5
+winners (`expansion_order=4`, `rho_t=3.668`) for cube/wake, n=1e5/1e6, and
+Float32/Float64.
+
+After the decomposition job passes, profile the isolated warmed P5 nearfield
+launch with Nsight Compute 2025.1.1 on H200 for cube/wake at n=1e6 in both
+precisions. Graph capture and stream overlap are disabled only in the profiling
+driver. Collect the detailed set for cell-sigma/scalar setup, class binning,
+and each singular/regularized/mixed bucket kernel, retaining `.ncu-rep` and raw
+CSV exports. Diagnose compute, memory, or latency/occupancy limitation from
+SOL/roofline, occupancy, cache/DRAM, instruction, branch, and warp-stall
+counters. No production code/default change is part of cycle 3C.
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;
