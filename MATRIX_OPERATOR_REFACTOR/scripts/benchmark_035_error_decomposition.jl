@@ -26,7 +26,7 @@ const FM035D_OUT = abspath(get(ENV, "FM035D_OUT", joinpath(FM035D_FMDIR,
     "fm035_error_decomposition.csv")))
 const FM035D_REFDIR = joinpath(FM035D_FMDIR, "MATRIX_OPERATOR_REFACTOR",
     "data", "flowvpm_baseline", "references")
-const FM035D_COMPONENT_GATE = 5e-4
+const FM035D_TOTAL_GATE = 1e-3
 const FM035D_CASES = Tuple(split(get(ENV, "FM035D_CASES", "cube,wake"), ','))
 const FM035D_NS = Tuple(parse.(Int, split(get(ENV, "FM035D_NS",
     "100000,1000000"), ',')))
@@ -179,7 +179,7 @@ const HEADER = ("label","job","host","case","n","tf","literature_P",
     "expansion_order","ell","q","rho_t","reference_checksum",
     "reference_u_rel","reference_j_rel","u_cutoff_rel","u_fmm_rel",
     "u_total_rel","u_triangle_rel","u_correlation","u_cancellation_ratio",
-    "u_identity_rel","u_cutoff_pass","u_fmm_pass","j_cutoff_rel",
+    "u_identity_rel","u_triangle_pass","j_cutoff_rel",
     "j_fmm_rel","j_total_rel","j_triangle_rel","j_correlation",
     "j_cancellation_ratio","j_identity_rel")
 
@@ -219,8 +219,8 @@ open(FM035D_OUT, "w") do io
                     n, TF, order+1, order, ell, q, rho, ref.checksum,
                     urefrel, jrefrel, um.cutoff_rel, um.fmm_rel, um.total_rel,
                     um.triangle_rel, um.correlation, um.cancellation_ratio,
-                    um.identity_rel, um.cutoff_rel <= FM035D_COMPONENT_GATE,
-                    um.fmm_rel <= FM035D_COMPONENT_GATE, jm.cutoff_rel,
+                    um.identity_rel, um.triangle_rel < FM035D_TOTAL_GATE,
+                    jm.cutoff_rel,
                     jm.fmm_rel, jm.total_rel, jm.triangle_rel, jm.correlation,
                     jm.cancellation_ratio, jm.identity_rel)
                 println(io, join(row, ',')); flush(io)

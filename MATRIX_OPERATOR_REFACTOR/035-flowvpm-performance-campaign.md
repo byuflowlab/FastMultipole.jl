@@ -639,8 +639,9 @@ field to which `PartitionedVortex` converges is the partitioned field `P`, not
 the globally singular field: close direct pairs remain regularized and only
 pairs beyond `rho_t` use singular math. On the checksummed 033 sample targets,
 measure the identity `F-R = (P-R) + (F-P)` using an independent host Float64
-erf oracle. Gate `||P-R||/||R|| <= 5e-4` and `||F-P||/||R|| <= 5e-4`
-separately; their sum is the worst-case `1e-3` triangle bound. Report J by the
+erf oracle. The initially preregistered gate assigned `5e-4` separately to
+`||P-R||/||R||` and `||F-P||/||R||`; their sum is the worst-case `1e-3`
+triangle bound. Report J by the
 same decomposition as a diagnostic only. Do not form the globally singular
 field. Compare all P4 anchors (`expansion_order=3`, `rho_t=4.252`) with all P5
 winners (`expansion_order=4`, `rho_t=3.668`) for cube/wake, n=1e5/1e6, and
@@ -662,23 +663,26 @@ three-field identity residual was zero at reported precision. Velocity results
 below are precision-insensitive (Float32 shown; Float64 differs in the last
 digits):
 
-| config | case | n | cutoff `||P-R||/||R||` | FMM `||F-P||/||R||` | observed total | triangle bound | split gate |
+| config | case | n | cutoff `||P-R||/||R||` | FMM `||F-P||/||R||` | observed total | triangle bound | governing gate |
 |---|---|---:|---:|---:|---:|---:|---|
-| P4/rho=4.252 | cube | 1e5 | 4.91e-5 | 9.35e-4 | 9.35e-4 | 9.84e-4 | cutoff pass, FMM fail |
-| P5/rho=3.668 | cube | 1e5 | **5.56e-4** | 4.05e-4 | 6.81e-4 | 9.61e-4 | **cutoff fail**, FMM pass |
-| P4/rho=4.252 | cube | 1e6 | 4.98e-5 | 9.79e-4 | 9.83e-4 | 1.03e-3 | cutoff pass, FMM fail |
-| P5/rho=3.668 | cube | 1e6 | **5.14e-4** | 4.73e-4 | 7.08e-4 | 9.88e-4 | **cutoff fail**, FMM pass |
-| P4/rho=4.252 | wake | 1e5 | 1.05e-5 | 6.95e-4 | 6.94e-4 | 7.05e-4 | cutoff pass, FMM fail |
-| P5/rho=3.668 | wake | 1e5 | 1.05e-4 | 2.89e-4 | 3.30e-4 | 3.94e-4 | **both pass** |
-| P4/rho=4.252 | wake | 1e6 | 3.69e-6 | 7.02e-4 | 7.02e-4 | 7.06e-4 | cutoff pass, FMM fail |
-| P5/rho=3.668 | wake | 1e6 | 3.61e-5 | 2.89e-4 | 2.99e-4 | 3.25e-4 | **both pass** |
+| P4/rho=4.252 | cube | 1e5 | 4.91e-5 | 9.35e-4 | 9.35e-4 | 9.84e-4 | **pass** |
+| P5/rho=3.668 | cube | 1e5 | 5.56e-4 | 4.05e-4 | 6.81e-4 | 9.61e-4 | **pass** |
+| P4/rho=4.252 | cube | 1e6 | 4.98e-5 | 9.79e-4 | 9.83e-4 | 1.03e-3 | **fail** |
+| P5/rho=3.668 | cube | 1e6 | 5.14e-4 | 4.73e-4 | 7.08e-4 | 9.88e-4 | **pass** |
+| P4/rho=4.252 | wake | 1e5 | 1.05e-5 | 6.95e-4 | 6.94e-4 | 7.05e-4 | **pass** |
+| P5/rho=3.668 | wake | 1e5 | 1.05e-4 | 2.89e-4 | 3.30e-4 | 3.94e-4 | **pass** |
+| P4/rho=4.252 | wake | 1e6 | 3.69e-6 | 7.02e-4 | 7.02e-4 | 7.06e-4 | **pass** |
+| P5/rho=3.668 | wake | 1e6 | 3.61e-5 | 2.89e-4 | 2.99e-4 | 3.25e-4 | **pass** |
 
 This confirms the user's concern. Higher P reduces `F-P`; it does not repair
-`P-R`. The P5 wake configuration passes the separately budgeted 5e-4 + 5e-4
-velocity criterion with ample margin. The P5 cube's observed and triangle-bound
-totals remain below 1e-3, but its cutoff component exceeds the agreed 5e-4 cap
-by 11.2% at n=1e5 and 2.9% at n=1e6. It is therefore **not validated as a
-cube default at rho_t=3.668** under the no-cancellation split policy. Jacobian
+`P-R`. **Post-result policy revision by user direction:** the governing gate is
+the conservative sum
+`(||P-R|| + ||F-P||)/||R|| < 1e-3`, not a fixed 50/50 allocation between
+components. This policy still makes no use of cancellation. Under it, P5 at
+`rho_t=3.668` is validated for both cases and scales: the cube bounds are
+9.61e-4 at n=1e5 and 9.88e-4 at n=1e6 (the latter has 1.2% margin), while the
+wake bounds are 3.94e-4 and 3.25e-4. The P4 cube n=1e6 anchor fails this
+stronger bound at 1.03e-3 despite its observed sampled error passing. Jacobian
 remains diagnostic: P5 cutoff/FMM/total are 2.74e-3/2.69e-3/3.88e-3 (cube
 1e5), 2.73e-3/2.71e-3/3.85e-3 (cube 1e6), 1.24e-3/2.16e-3/2.45e-3 (wake
 1e5), and 1.56e-3/2.39e-3/2.87e-3 (wake 1e6). Data:
