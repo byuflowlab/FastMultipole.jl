@@ -278,7 +278,7 @@ tuned defaults (`5dd0d85`), which is the natural next staleness. Recorded as
 follow-on proposal 1 rather than a failure; nothing currently written is
 wrong.
 
-### Overall verdict
+### Overall verdict (reviewing agent)
 
 **All seven scope items and both accumulated review items PASS** (items 3,
 6, and the CLAUDE.md item with non-blocking notes). The Integration Phase
@@ -291,3 +291,47 @@ lever list with the one surviving lever handed to `037`; and an unchanged
 CPU/public surface for FLOWVPM's downstream consumers. Row marked Done;
 clear-context approval by a different agent is pending per protocol.
 
+## Clear-Context Approval
+
+**Date:** 2026-08-12. **Reviewer:** clear-context approval subagent (Claude
+Fable 5), fresh context, judging per the `START_HERE.md` clear-context
+protocol (objectives, correctness, performance, robustness, invasiveness,
+readability).
+
+**What was checked:**
+
+1. **Coverage:** the Review Notes address all seven scope items and both
+   Accumulated Review Items, each with an explicit verdict and cited
+   evidence; the phase-consistency duties (START_HERE items 3–4) are
+   recorded.
+2. **Accuracy spot-check against the underlying data** (independent,
+   read-only): recomputed `sha256(fm035_cycle3d.csv)` = `69e5790b…` matching
+   the review; re-audited all campaign CSVs — gate-pass counts 22/22
+   (cycle1), 8/8 (cycle2), 25/33 (cycle3a), 12/12 (cycle3b), 16/16
+   (cycle3d), 55/75 (sweep); `counters_flat=true` on every row;
+   `j_rel_rms` present on every row of every file (0 missing across all 166
+   rows). All match the review's claims. One numeric-labeling quibble: the
+   phrase "150 rows of the five cycle CSVs" corresponds to
+   sweep+cycle1/2/3a/3b (75+22+8+33+12=150), not the five files named
+   `cycle*`; the substantive claim (J logged everywhere) holds for every
+   file regardless. Not significant.
+3. **Downstream compatibility spot-check** (sibling `../FLOWVPM.jl`,
+   `gpu-full`, head `5dd0d85`, clean tree): `git diff e2bd487 gpu-full --
+   src/FLOWVPM.jl` contains zero export-line changes;
+   `RadixFMMSettings`/`radix_fmm_settings!` appear nowhere in
+   `src/FLOWVPM.jl`; CPU test files `runtests_singlevortexring.jl` and
+   `runtests_leapfrog.jl` are bit-identical to the branch point; the
+   post-034-approval delta `80eaf8d..5dd0d85` touches only
+   `src/FLOWVPM_fmm_radix.jl` and `test/runtests_gpu_fmm.jl`. The
+   switch-aware shim fork (`src/FLOWVPM_fmm.jl`, `isdefined(fmm,
+   :gradient_range)` gate and guarded `get_previous_influence`) and the
+   `advanced_usage.md` migration section (line 169) were verified to exist
+   as described.
+4. **Improvement-hunt containment:** five follow-on proposals are recorded
+   as proposals only; the 036 commit `128dce1` touches only the task file
+   and the START_HERE Done cell — no production code, no phase expansion.
+
+**Verdict:** the review verified what it claims to have verified, its
+verdicts are supported by the cited evidence, and its non-blocking notes
+(item 3 placement, item 6 untracked scratch, CLAUDE.md defaults silence)
+are proportionate. No significant issue. **Approved.**
