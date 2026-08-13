@@ -252,28 +252,165 @@ function _rigid_transition_tables(q_parent::Integer, q_child::Integer)
         Tuple(starts), phase_index, class_of)
 end
 
+# Per-axis cell counts of the root grid at `level` on the virtual-cube embedding
+# (task 037): an axis stops halving once it saturates, so the count is
+# 2^max(ell_a - ell + level, 0). Cubic axes give the usual 2^level per axis.
+@inline _radix_root_counts(ell_axes::SVector{3,Int}, ell::Int, level::Int) =
+    SVector{3,Int}(
+        1 << max(ell_axes[1] - ell + level, 0),
+        1 << max(ell_axes[2] - ell + level, 0),
+        1 << max(ell_axes[3] - ell + level, 0),
+    )
+
+# Count of the flat-top M2L offset classes at `level`: offsets between root-grid
+# cells (|o_a| <= N_a - 1) whose squared norm exceeds `q`.
+function _radix_flat_top_count(ell_axes::SVector{3,Int}, ell::Int, level::Int,
+        q::Int)
+    N = _radix_root_counts(ell_axes, ell, level)
+    count = 0
+    for z in -(N[3] - 1):(N[3] - 1), y in -(N[2] - 1):(N[2] - 1),
+            x in -(N[1] - 1):(N[1] - 1)
+        x * x + y * y + z * z > q && (count += 1)
+    end
+    return count
+end
+
+# Flat-top class-count cap (task 037 stage 3): matches the device window default,
+# so a single flat-top level is never wider than one device route window.
+const RADIX_FLAT_TOP_CLASS_CAP = 4096
+
+"""
+    _radix_root_level(ell_axes, ell, q) -> (R, L_allnear)
+
+Construction-time active-level trimming (task 037 stage 3): `R` is the flat-top
+root level of the hierarchy — node build and stage groups retain levels `R:ell`
+only. `L_allnear` is the largest level at which every root-grid offset lies in
+the rigid near ball `{o : |o|^2 <= q}`; passing the *leaf* near radius (the
+schedule minimum) keeps the trim conservative and schedule-independent, so the
+task-025 exact-once base case holds for any non-increasing level schedule.
+`R = max(ell - minimum(ell_axes), L_allnear)`, lowered while the flat-top class
+count at `R` exceeds `RADIX_FLAT_TOP_CLASS_CAP`; at `R == L_allnear` the
+flat-top table is empty and the hierarchy degenerates to the legacy schedule
+over levels `R+1:ell` (cubic grids: `R = L_allnear = 1`, i.e. exactly the
+production `2:ell` hierarchy).
+"""
+function _radix_root_level(ell_axes::SVector{3,Int}, ell::Int, q::Integer)
+    qi = Int(q)
+    L_allnear = 0
+    for L in 1:ell
+        N = _radix_root_counts(ell_axes, ell, L)
+        s = (N[1] - 1)^2 + (N[2] - 1)^2 + (N[3] - 1)^2
+        s <= qi ? (L_allnear = L) : break
+    end
+    R = max(ell - min(ell_axes[1], ell_axes[2], ell_axes[3]), L_allnear)
+    while R > L_allnear &&
+            _radix_flat_top_count(ell_axes, ell, R, qi) > RADIX_FLAT_TOP_CLASS_CAP
+        R -= 1
+    end
+    return R, L_allnear
+end
+
+# Flat-top table at the root level (task 037 stage 3): the degenerate transition
+# table with `q_parent = Inf` bounded by the root grid box — every offset between
+# root-grid cells outside the near ball is emitted, all 8 phases admitted. Shaped
+# like `_rigid_transition_tables` output so the scheduled-tables union and the
+# `level_class_of` mask mechanism consume it unchanged.
+function _rigid_flat_top_tables(q_top::Integer, root_counts::SVector{3,Int})
+    q = _validate_rigid_near_radius2(q_top, "rigid flat-top")
+    near_extent = isqrt(q)
+    near_offsets = SVector{3,Int}[]
+    for z in -near_extent:near_extent, y in -near_extent:near_extent,
+            x in -near_extent:near_extent
+        o = SVector{3,Int}(x, y, z)
+        _rigid_near(o, q) && push!(near_offsets, o)
+    end
+    sort!(near_offsets; by=_rigid_offset_order)
+    push_offsets = SVector{3,Int}[]
+    for z in -(root_counts[3] - 1):(root_counts[3] - 1),
+            y in -(root_counts[2] - 1):(root_counts[2] - 1),
+            x in -(root_counts[1] - 1):(root_counts[1] - 1)
+        o = SVector{3,Int}(x, y, z)
+        _rigid_near(o, q) && continue
+        push!(push_offsets, o)
+    end
+    sort!(push_offsets; by=_rigid_offset_order)
+    phase_index = Int32[]
+    starts = Vector{Int}(undef, 9)
+    class_of = zeros(Int32, 8, length(push_offsets))
+    for phase in 1:8
+        starts[phase] = length(phase_index) + 1
+        for (k, _) in enumerate(push_offsets)
+            push!(phase_index, Int32(k))
+            class_of[phase, k] = Int32(k)
+        end
+    end
+    starts[9] = length(phase_index) + 1
+    return RigidHierarchicalTables(near_offsets, push_offsets, Tuple(starts),
+        phase_index, class_of)
+end
+
 """
 Build the shared offset union and per-level phase masks for an internal radius
 schedule. The leaf table supplies the direct list; every M2L level selects a
 complete rigid (and therefore complete cubic-symmetry-orbit) table. Uniform
 policies take this same path, which keeps scheduled and production geometry
 directly comparable.
+
+Task 037 stage 3: the active M2L levels are `first_m2l_level:ell`, where
+`first_m2l_level = R` when the flat-top table at the root level `R` is nonempty
+and `R + 1` otherwise (`R == L_allnear`, every root offset near). Cubic grids
+give `R = 1` with an empty flat-top, i.e. bitwise the legacy `2:ell` schedule.
+`policy.level_radii2` is accepted at either anchoring: the legacy length
+`ell - 1` (levels `2:ell`; entries above the active range are sliced off, which
+is the identity when `first_m2l_level == 2`) or the active length
+`ell - first_m2l_level + 1` (levels `first_m2l_level:ell`, coarse to fine).
+Returns `(tables, level_class_of, qs, root_level, first_m2l_level)`.
 """
-function _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::Int)
+_hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::Int) =
+    _hierarchical_scheduled_tables(policy, ell, SVector(ell, ell, ell))
+
+function _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::Int,
+        ell_axes::SVector{3,Int})
     ell >= 2 || throw(ArgumentError(
         "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
-    nlevels = max(ell - 1, 0)
-    qs = isempty(policy.level_radii2) ? fill(policy.near_radius2, nlevels) :
-        collect(policy.level_radii2)
-    length(qs) == nlevels || throw(ArgumentError(
-        "hierarchical level schedule has $(length(qs)) entries, but ell=$ell " *
-        "requires $nlevels entries for levels 2:$ell"))
+    R, L_allnear = _radix_root_level(ell_axes, ell, policy.near_radius2)
+    first_m2l = R == L_allnear ? R + 1 : R
+    first_m2l <= ell || throw(ArgumentError(
+        "HierarchicalRigidStencil has no M2L level on this grid: every leaf " *
+        "offset is inside near_radius2=$(policy.near_radius2) at ell=$ell, " *
+        "ell_axes=$(Tuple(ell_axes)); use the flat ConstantPAnalyticStencil " *
+        "policy or a deeper grid"))
+    nlevels = ell - first_m2l + 1
+    raw = policy.level_radii2
+    qs = if isempty(raw)
+        fill(policy.near_radius2, nlevels)
+    elseif length(raw) == nlevels
+        collect(raw)
+    elseif length(raw) == ell - 1
+        # legacy 2:ell anchoring: keep each level's own entry, slice the trimmed
+        # coarse head (identity when first_m2l == 2)
+        collect(raw)[(first_m2l - 1):(ell - 1)]
+    else
+        throw(ArgumentError(
+            "hierarchical level schedule has $(length(raw)) entries, but ell=$ell " *
+            "with active M2L levels $first_m2l:$ell requires $nlevels entries " *
+            "(or the legacy $(ell - 1) entries anchored to levels 2:$ell)"))
+    end
     all(qs[i + 1] <= qs[i] for i in 1:length(qs)-1) || throw(ArgumentError(
         "hierarchical level schedule must be non-increasing with depth; got $(Tuple(qs))"))
     isempty(qs) || last(qs) == policy.near_radius2 || throw(ArgumentError(
         "hierarchical schedule leaf radius must equal near_radius2"))
+    if first_m2l == R + 1
+        # exact-once base case: every offset at the level above the first M2L
+        # level must lie inside the parent radius the topmost transition uses
+        N = _radix_root_counts(ell_axes, ell, R)
+        (N[1] - 1)^2 + (N[2] - 1)^2 + (N[3] - 1)^2 <= qs[1] || throw(AssertionError(
+            "trimmed hierarchy base case violated at root level $R"))
+    end
 
-    level_tables = [_rigid_transition_tables(j == 1 ? qs[j] : qs[j - 1], qs[j])
+    level_tables = [first_m2l + j - 1 == R ?
+                        _rigid_flat_top_tables(qs[j], _radix_root_counts(ell_axes, ell, R)) :
+                        _rigid_transition_tables(j == 1 ? qs[j] : qs[j - 1], qs[j])
                     for j in eachindex(qs)]
     leaf = RigidHierarchicalTables(last(qs))
     push_offsets = sort!(collect(union((Set(t.push_offsets) for t in level_tables)...));
@@ -281,7 +418,7 @@ function _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::I
     offset_id = Dict(o => k for (k, o) in enumerate(push_offsets))
     level_class_of = zeros(Int32, 8, length(push_offsets), ell + 1)
     for (j, table) in enumerate(level_tables)
-        L = j + 1
+        L = first_m2l + j - 1
         for (oldk, o) in enumerate(table.push_offsets)
             k = offset_id[o]
             # Only membership is load-bearing; carrying the shared-union id
@@ -301,13 +438,43 @@ function _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::I
     end
     tables = RigidHierarchicalTables(leaf.near_offsets, push_offsets,
         leaf.phase_starts, leaf.phase_index, leaf_class)
-    return tables, level_class_of, qs
+    return tables, level_class_of, qs, R, first_m2l
 end
 
+_verify_hierarchical_classifier!(h0, ell::Int, policy::HierarchicalRigidStencil,
+        tables::RigidHierarchicalTables) =
+    _verify_hierarchical_classifier!(h0, ell, policy, tables,
+        SVector(ell, ell, ell), 1, 2, Int[])
+
 function _verify_hierarchical_classifier!(h0, ell::Int,
-        policy::HierarchicalRigidStencil, tables::RigidHierarchicalTables)
+        policy::HierarchicalRigidStencil, tables::RigidHierarchicalTables,
+        ell_axes::SVector{3,Int}, root_level::Int, first_m2l_level::Int,
+        level_radii2::AbstractVector{<:Integer})
     ell >= 2 || throw(ArgumentError(
         "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
+    # Task 037 stage 3: root-level accuracy gate. Every flat-top offset `o`
+    # runs M2L at the root level `R`, whose cells are the leaf cells of the
+    # same box at depth `R` — so the exact level-true task-025 bound is the
+    # analytic classifier evaluated at `(h0, R)` (this is the `2^(ell-L)`
+    # rescaling of the leaf bound, with the Lamb-Helmholtz displacement scaled
+    # consistently). The gate: every emitted flat-top offset satisfies the
+    # accuracy contract `bound_R(o) <= epsilon`.
+    if first_m2l_level == root_level
+        N = _radix_root_counts(ell_axes, ell, root_level)
+        q_top = isempty(level_radii2) ? policy.near_radius2 : Int(level_radii2[1])
+        for z in -(N[3] - 1):(N[3] - 1), y in -(N[2] - 1):(N[2] - 1),
+                x in -(N[1] - 1):(N[1] - 1)
+            o = SVector{3,Int}(x, y, z)
+            _rigid_near(o, q_top) && continue
+            bound = constant_p_stencil_bound(h0, root_level, policy.config, o)
+            bound <= policy.config.epsilon || throw(ArgumentError(
+                "HierarchicalRigidStencil accuracy gate failed at the flat-top " *
+                "root level $root_level (ell=$ell): offset $(Tuple(o)) has " *
+                "level-true bound $bound > epsilon=" *
+                "$(policy.config.epsilon); choose a tolerance compatible with " *
+                "rigid_stencil_epsilon at this box"))
+        end
+    end
     # The task-025 accepted/rejected boundary lies strictly inside the rigid
     # push-union cube.  Evaluate the production analytic
     # classifier on that complete cube without materializing the full
@@ -337,14 +504,18 @@ function _verify_hierarchical_classifier!(h0, ell::Int,
         "policy=ConstantPAnalyticStencil(...) for the flat path."))
 end
 
-function _hierarchical_class_metadata(tables::RigidHierarchicalTables, ell::Int)
+_hierarchical_class_metadata(tables::RigidHierarchicalTables, ell::Int) =
+    _hierarchical_class_metadata(tables, ell, 2)
+
+function _hierarchical_class_metadata(tables::RigidHierarchicalTables, ell::Int,
+        first_m2l_level::Int)
     noffsets = length(tables.push_offsets)
-    nclasses = max(ell - 1, 0) * noffsets
+    nclasses = max(ell - first_m2l_level + 1, 0) * noffsets
     class_level = Vector{Int32}(undef, nclasses)
     class_offset = Matrix{Int32}(undef, 3, nclasses)
     effective_offsets = Vector{SVector{3,Int}}(undef, nclasses)
     c = 0
-    @inbounds for level in 2:ell
+    @inbounds for level in first_m2l_level:ell
         scale = 1 << (ell - level)
         for o in tables.push_offsets
             c += 1
@@ -397,7 +568,7 @@ source-major inside each class and endpoints are flat node indices.
     n_routes = 0
     @inbounds for k in Int(first_offset):Int(last_offset)
         o = ctx.tables.push_offsets[k]
-        global_class = (L - 2) * noffsets + k
+        global_class = (L - ctx.first_m2l_level) * noffsets + k
         for source in first_source:last_source
             phase = _rigid_phase_index(grid.node_coords[1, source],
                 grid.node_coords[2, source], grid.node_coords[3, source])

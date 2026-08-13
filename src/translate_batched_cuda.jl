@@ -343,8 +343,8 @@ function _cuda_fill_unique_keys_kernel!(dest, sorted_keys, flags, prefix, offset
 end
 
 function _cuda_fill_node_geometry_kernel!(node_levels, node_coords, node_centers,
-        node_keys, level_offsets, x_min, h0, max_level)
-    level = (blockIdx().y - 1)
+        node_keys, level_offsets, x_min, h0, max_level, min_level)
+    level = min_level + (blockIdx().y - 1)
     local_i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     level > max_level && return nothing
     first = level_offsets[level + 1] + 1
@@ -395,8 +395,9 @@ end
     return lo
 end
 
-function _cuda_parent_index_kernel!(parent_index, node_keys, level_offsets, max_level)
-    level = (blockIdx().y - 1)
+function _cuda_parent_index_kernel!(parent_index, node_keys, level_offsets, max_level,
+        min_level)
+    level = min_level + (blockIdx().y - 1)
     local_i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     level > max_level && return nothing
     first = level_offsets[level + 1] + 1
@@ -404,7 +405,7 @@ function _cuda_parent_index_kernel!(parent_index, node_keys, level_offsets, max_
     node = first + local_i - 1
     node > stop && return nothing
     @inbounds begin
-        if level == 0
+        if level == min_level
             parent_index[node] = 0
         else
             parent_key = node_keys[node] >> 3
@@ -417,8 +418,9 @@ function _cuda_parent_index_kernel!(parent_index, node_keys, level_offsets, max_
     return nothing
 end
 
-function _cuda_child_ranges_kernel!(child_ranges, node_keys, level_offsets, max_level)
-    level = (blockIdx().y - 1)
+function _cuda_child_ranges_kernel!(child_ranges, node_keys, level_offsets, max_level,
+        min_level)
+    level = min_level + (blockIdx().y - 1)
     local_i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     level > max_level && return nothing
     first = level_offsets[level + 1] + 1
@@ -452,9 +454,11 @@ function _cuda_fill_leaf_to_node_kernel!(leaf_to_node, leaf_offset)
 end
 
 function _cuda_tree_routes_kernel!(m2m_parent, m2m_child, l2l_parent, l2l_child,
-        parent_index)
+        parent_index, n_root_nodes)
+    # edges are the children of the retained levels (task 037 stage 3): the
+    # first n_root_nodes nodes are roots with parent_index 0 (legacy: 1)
     edge = (blockIdx().x - 1) * blockDim().x + threadIdx().x
-    node = edge + 1
+    node = edge + n_root_nodes
     node > length(parent_index) && return nothing
     @inbounds begin
         parent = parent_index[node]
@@ -589,13 +593,13 @@ function _cuda_radix_node_metadata(cell_keys, x_min::SVector{3,TF}, h0::TF,
     if max_count > 0
         blocks_x = cld(max_count, threads)
         CUDA.@cuda threads=threads blocks=(blocks_x, ell + 1) _cuda_fill_node_geometry_kernel!(
-            node_levels, node_coords, node_centers, node_keys, level_offsets, x_min, h0, ell,
+            node_levels, node_coords, node_centers, node_keys, level_offsets, x_min, h0, ell, 0,
         )
         CUDA.@cuda threads=threads blocks=(blocks_x, ell + 1) _cuda_parent_index_kernel!(
-            parent_index, node_keys, level_offsets, ell,
+            parent_index, node_keys, level_offsets, ell, 0,
         )
         CUDA.@cuda threads=threads blocks=(blocks_x, ell + 1) _cuda_child_ranges_kernel!(
-            child_ranges, node_keys, level_offsets, ell,
+            child_ranges, node_keys, level_offsets, ell, 0,
         )
     end
 
@@ -830,7 +834,7 @@ function _cuda_radix_tree_routes(grid::DeviceRadixGrid)
     blocks = cld(n_edges, threads)
     if blocks > 0
         CUDA.@cuda threads=threads blocks=blocks _cuda_tree_routes_kernel!(
-            m2m_parent, m2m_child, l2l_parent, l2l_child, grid.parent_index,
+            m2m_parent, m2m_child, l2l_parent, l2l_child, grid.parent_index, 1,
         )
     end
     return m2m_parent, m2m_child, l2l_parent, l2l_child
@@ -5145,9 +5149,12 @@ function _cuda_refresh_group_edges_kernel!(source_idx, target_idx, phis, thetas,
 end
 
 function _cuda_refresh_resident_stage_groups!(ws::ResidentOperatorWorkspace,
-        grid::DeviceRadixGrid, level_offsets::Vector{Int}, ell::Int)
+        grid::DeviceRadixGrid, level_offsets::Vector{Int}, ell::Int,
+        first_level::Int=0)
     threads = 128
-    for (gi, parent_level) in enumerate((ell - 1):-1:0)
+    length(ws.m2m_groups) == ell - first_level ||
+        throw(ArgumentError("resident cache workspace does not match the trimmed level range"))
+    for (gi, parent_level) in enumerate((ell - 1):-1:first_level)
         child_level = parent_level + 1
         first_child = level_offsets[child_level + 1] + 1
         n_edges = level_offsets[child_level + 2] - level_offsets[child_level + 1]
@@ -5161,7 +5168,7 @@ function _cuda_refresh_resident_stage_groups!(ws::ResidentOperatorWorkspace,
             grid.parent_index, grid.node_centers, first_child, n_edges, true,
         )
     end
-    for (gi, child_level) in enumerate(1:ell)
+    for (gi, child_level) in enumerate((first_level + 1):ell)
         first_child = level_offsets[child_level + 1] + 1
         n_edges = level_offsets[child_level + 2] - level_offsets[child_level + 1]
         group = ws.l2l_groups[gi]
@@ -5314,7 +5321,10 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         # rectangular geometry contract (task 037 stage 2): per-axis leaf depths
         # and physical extents; cubic callers keep the virtual-cube defaults
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
-        box_extent::SVector{3,TF}=SVector{3,TF}(2 * h0, 2 * h0, 2 * h0)) where {TF,B,LH}
+        box_extent::SVector{3,TF}=SVector{3,TF}(2 * h0, 2 * h0, 2 * h0),
+        # active-level trimming (task 037 stage 3): node levels root_level:ell,
+        # M2L levels first_m2l_level:ell; flat-policy callers keep 0/2
+        root_level::Int=0, first_m2l_level::Int=2) where {TF,B,LH}
     _require_cuda_radix_available()
     _assert_cuda_supported_operator!(options)
     hierarchical = stencil_policy isa HierarchicalRigidStencil
@@ -5351,7 +5361,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
             hierarchical_window_words=hierarchical ?
                 2 * max(min(stencil_policy.window_classes,
                     length(hierarchical_tables.push_offsets)) * max_level_nodes, 1) : 0,
-            hierarchical_levels=hierarchical ? max(ell - 1, 0) : 0)
+            hierarchical_levels=hierarchical ? max(ell - first_m2l_level + 1, 0) : 0)
         free_bytes = Int(CUDA.free_memory())
         dense_cuda_footprint.estimated_peak_bytes <=
             free_bytes - options.m2l_strategy.cuda_headroom_bytes ||
@@ -5371,7 +5381,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         workspace_strategy, workspace_operator; compact_cuda_factored=true,
         dense_cuda_estimated_peak_bytes=dense_cuda_footprint === nothing ? 0 :
             dense_cuda_footprint.estimated_peak_bytes,
-        ell_axes)
+        ell_axes, first_level=root_level)
     if workspace.m2l_concat isa ResidentM2LFactoredPlan
         _pin_host_array(workspace.m2l_concat.host_class_counts)
         _cuda_factored_whole_pass_setup!(workspace.m2l_concat, TF, basis_info)
@@ -5428,7 +5438,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         _build_cuda_hierarchical_context(TF, basis_info, stencil_policy,
             hierarchical_tables, class_level, class_offset, accepted,
             hierarchical_level_class_of, hierarchical_level_radii2,
-            workspace.m2l_concat, ell, max_level_nodes, direct_capacity, counters) :
+            workspace.m2l_concat, ell, first_m2l_level, max_level_nodes,
+            direct_capacity, counters) :
         nothing
     # canonical all-rows packed layout + construction-chosen output rows (032)
     dpb = maximum(data_per_body(system) for system in sources)
@@ -5529,8 +5540,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
             direct_capacity, ctx, counters)
     end
     cache = RadixFMMCache{TF,LH}(
-        P, ell, x_min, h0, ell_axes, box_extent, maxn, true, hessian, options,
-        stencil_policy,
+        P, ell, x_min, h0, ell_axes, box_extent, root_level, maxn, true, hessian,
+        options, stencil_policy,
         accepted, rejected, max_cells, max_nodes, route_capacity, direct_capacity,
         nothing, zeros(Int32, 0, 0, 0), SVector{3,Int}[], zeros(Int, ell + 2),
         UInt64[], Int[], Int[], Int[], nothing, nothing, ctx,
@@ -5683,8 +5694,10 @@ function _cuda_update_radix_grid_in_place!(ctx, cache::RadixFMMCache{TF}, n::Int
     )
 
     # per-level unique ancestors: cell_keys is ascending and a right shift is
-    # monotone, so each level's ancestor keys are already sorted
-    for level in 0:ell
+    # monotone, so each level's ancestor keys are already sorted. Levels below
+    # the cache root are trimmed (task 037 stage 3): never keyed, never built.
+    first_level = cache.root_level
+    for level in first_level:ell
         col = level + 1
         lk = view(ctx.level_keys, 1:n_cells, col)
         lf = view(ctx.level_flags, 1:n_cells, col)
@@ -5701,13 +5714,18 @@ function _cuda_update_radix_grid_in_place!(ctx, cache::RadixFMMCache{TF}, n::Int
     copyto!(ctx.host_level_counts, ctx.level_counts)
     level_offsets = cache.level_offsets
     level_offsets[1] = 0
-    for level in 0:ell
+    for level in 0:(first_level - 1)
+        # trimmed levels: the gathered counts read unfilled prefix columns
+        ctx.host_level_counts[level + 1] = 0
+        level_offsets[level + 2] = 0
+    end
+    for level in first_level:ell
         level_offsets[level + 2] = level_offsets[level + 1] + ctx.host_level_counts[level + 1]
     end
     n_nodes = level_offsets[end]
     n_nodes <= cache.max_nodes ||
         throw(AssertionError("device radix grid exceeded the cache node capacity"))
-    for level in 0:ell
+    for level in first_level:ell
         col = level + 1
         CUDA.@cuda threads=threads blocks=blocks_cells _cuda_fill_unique_keys_kernel!(
             grid.node_keys, view(ctx.level_keys, 1:n_cells, col),
@@ -5719,15 +5737,16 @@ function _cuda_update_radix_grid_in_place!(ctx, cache::RadixFMMCache{TF}, n::Int
     max_count = maximum(ctx.host_level_counts; init=0)
     if max_count > 0
         blocks_x = cld(max_count, threads)
-        CUDA.@cuda threads=threads blocks=(blocks_x, ell + 1) _cuda_fill_node_geometry_kernel!(
+        n_levels = ell - first_level + 1
+        CUDA.@cuda threads=threads blocks=(blocks_x, n_levels) _cuda_fill_node_geometry_kernel!(
             grid.node_levels, grid.node_coords, grid.node_centers, grid.node_keys,
-            ctx.d_level_offsets, x_min, h0, ell,
+            ctx.d_level_offsets, x_min, h0, ell, first_level,
         )
-        CUDA.@cuda threads=threads blocks=(blocks_x, ell + 1) _cuda_parent_index_kernel!(
-            grid.parent_index, grid.node_keys, ctx.d_level_offsets, ell,
+        CUDA.@cuda threads=threads blocks=(blocks_x, n_levels) _cuda_parent_index_kernel!(
+            grid.parent_index, grid.node_keys, ctx.d_level_offsets, ell, first_level,
         )
-        CUDA.@cuda threads=threads blocks=(blocks_x, ell + 1) _cuda_child_ranges_kernel!(
-            grid.child_ranges, grid.node_keys, ctx.d_level_offsets, ell,
+        CUDA.@cuda threads=threads blocks=(blocks_x, n_levels) _cuda_child_ranges_kernel!(
+            grid.child_ranges, grid.node_keys, ctx.d_level_offsets, ell, first_level,
         )
     end
     CUDA.@cuda threads=threads blocks=blocks_cells _cuda_fill_leaf_to_node_kernel!(
@@ -5816,13 +5835,16 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
     # are all pure functions of the occupied cell set, so they are regenerated
     # only when `occ_changed` (always, when window caching is disabled — the
     # grid update then reports every step as changed).
-    n_edges = max(n_nodes - 1, 0)
+    # multi-root tree edges (task 037 stage 3): every node at root_level is a
+    # root, so the edge count is n_nodes - n_root_nodes (legacy: n_nodes - 1)
+    n_root_nodes = cache.level_offsets[cache.root_level + 2]
+    n_edges = max(n_nodes - n_root_nodes, 0)
     if occ_changed && n_edges > 0
         blocks = cld(n_edges, 128)
         CUDA.@cuda threads=128 blocks=blocks _cuda_tree_routes_kernel!(
             ctx.m2m_parent_routes, ctx.m2m_child_routes,
             ctx.l2l_parent_routes, ctx.l2l_child_routes,
-            view(grid.parent_index, 1:n_nodes),
+            view(grid.parent_index, 1:n_nodes), n_root_nodes,
         )
     end
 
@@ -5888,7 +5910,8 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
     end
     t_stage = profiling ? (CUDA.synchronize(); time_ns()) : UInt64(0)
     if occ_changed
-        _cuda_refresh_resident_stage_groups!(ctx.workspace, grid, cache.level_offsets, cache.ell)
+        _cuda_refresh_resident_stage_groups!(ctx.workspace, grid, cache.level_offsets,
+            cache.ell, cache.root_level)
     end
     if profiling
         CUDA.synchronize()
@@ -6351,7 +6374,7 @@ function _cuda_hier_cache_windows!(ctx, hctx::DeviceHierarchicalM2LContext,
     fill!(hctx.win_level_starts, 0)
     fill!(hctx.win_level_counts, 0)
     fill!(hctx.routes_per_level, 0)
-    for L in 2:ell
+    for L in hctx.first_m2l_level:ell
         hctx.win_level_starts[L + 1] = cursor
         level_total = 0
         for first_offset in 1:K:noffsets
@@ -6758,7 +6781,7 @@ function _cuda_hier_dense_apply_routes!(state::DeviceResidentRadixState{TF,B,LH}
         hctx::DeviceHierarchicalM2LContext, L::Int, route_class, route_sources,
         route_targets, n_routes::Int) where {TF,B,LH}
     n_routes == 0 && return state
-    lcol = L - 1
+    lcol = L - hctx.first_m2l_level + 1
     D = plan.ndof
     tensor_format = DENSE_CUDA_TENSOR_FORMAT[]
     if tensor_format !== :off && TF === Float32 && !LH && D == 16
@@ -6816,7 +6839,7 @@ function _cuda_hier_dense_apply_window!(state::DeviceResidentRadixState{TF,B,LH}
         hctx::DeviceHierarchicalM2LContext, L::Int) where {TF,B,LH}
     n_routes = state.counts.n_routes
     n_routes == 0 && return state
-    lcol = L - 1
+    lcol = L - hctx.first_m2l_level + 1
     if DENSE_CUDA_FUSED[]
         return _cuda_hier_dense_apply_routes!(state, ws, plan, hctx, L,
             plan.route_class, state.route_sources, state.route_targets, n_routes)
@@ -6895,7 +6918,7 @@ function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH}
         # it can be separated from the per-level apply cost in m2l_level_ns
         hctx.update_stage_ns[4] = 0
     end
-    for L in 2:ell
+    for L in hctx.first_m2l_level:ell
         replay_levels === nothing || L in replay_levels || continue
         if hctx.profile_stages
             CUDA.synchronize()
@@ -6904,7 +6927,7 @@ function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH}
             t_level = UInt64(0)
         end
         level_total = 0
-        class_base = dense ? 0 : (L - 2) * noffsets
+        class_base = dense ? 0 : (L - hctx.first_m2l_level) * noffsets
         replay_K = replay_orbit === nothing ? K : 1
         for first_offset in 1:replay_K:noffsets
             last_offset = min(first_offset + replay_K - 1, noffsets)
@@ -6971,7 +6994,7 @@ function _launch_cuda_hierarchical_m2l_cached!(
         # steady-state M2L stage has no flag/scan/compact cost to report
         hctx.update_stage_ns[4] = 0
     end
-    for L in 2:hctx.ell
+    for L in hctx.first_m2l_level:hctx.ell
         n = hctx.win_level_counts[L + 1]
         s = hctx.win_level_starts[L + 1]
         t_level = profile ? (CUDA.synchronize(); time_ns()) : UInt64(0)
@@ -7010,13 +7033,15 @@ end
 # built); the phi rows scale as s^-n / s^-(n+1) and the Lamb-Helmholtz chi rows as
 # s^-(n-1) / s^-(n+2) — the asymmetric pair the host plan encodes per class.
 function _cuda_hier_dense_scales(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
-        ell::Int, D::Int) where {TF,B,LH}
-    nlevels = max(ell - 1, 0)
+        ell::Int, D::Int, first_m2l_level::Int=2) where {TF,B,LH}
+    # columns are sized by the active level count (task 037 stage 3); column
+    # L - first_m2l_level + 1 carries level L
+    nlevels = max(ell - first_m2l_level + 1, 0)
     source_scale = ones(TF, D, nlevels)
     target_scale = ones(TF, D, nlevels)
     Dphi = degree_major_dof(basis_info.orders.P_phi)
-    @inbounds for L in 2:ell
-        col = L - 1
+    @inbounds for L in first_m2l_level:ell
+        col = L - first_m2l_level + 1
         s = TF(1 << (ell - L))
         for n in 0:basis_info.orders.P_phi, row in degree_row_range(n)
             source_scale[row, col] = s^(-n)
@@ -7041,7 +7066,7 @@ function _build_cuda_hierarchical_context(::Type{TF}, basis_info::OperatorBasisI
         policy::HierarchicalRigidStencil, tables::RigidHierarchicalTables,
         class_level::Vector{Int32}, class_offset::Matrix{Int32},
         effective_offsets::Vector{SVector{3,Int}}, level_class_of::Array{Int32,3},
-        level_radii2::Vector{Int}, plan, ell::Int,
+        level_radii2::Vector{Int}, plan, ell::Int, first_m2l_level::Int,
         max_level_nodes::Int, direct_capacity::Int,
         counters::CUDARadixTransferCounters) where {TF,B,LH}
     occupancy = RadixLevelOccupancy(ell; max_bytes=policy.dense_occupancy_max_bytes,
@@ -7066,14 +7091,14 @@ function _build_cuda_hierarchical_context(::Type{TF}, basis_info::OperatorBasisI
     counters.operator_uploads += 1
     dense = plan isa ResidentM2LDenseCUDAPlan
     host_source_scale, host_target_scale = dense ?
-        _cuda_hier_dense_scales(TF, basis_info, ell, plan.ndof) :
+        _cuda_hier_dense_scales(TF, basis_info, ell, plan.ndof, first_m2l_level) :
         (Matrix{TF}(undef, 0, 0), Matrix{TF}(undef, 0, 0))
     source_scale = CUDA.CuArray{TF}(host_source_scale)
     target_scale = CUDA.CuArray{TF}(host_target_scale)
     symmetric_capacity = CUDA_SYMMETRIC_NEARFIELD[] && !LH ? direct_capacity : 0
     return DeviceHierarchicalM2LContext(
         tables, level_radii2, class_level, class_offset, effective_offsets, plan,
-        K, ell, noffsets,
+        K, ell, first_m2l_level, noffsets,
         copy(occupancy.level_base), zeros(Int, ell + 2),
         node_at, d_level_base, d_push_offsets, d_class_of, d_near_offsets,
         CUDA.zeros(Int, symmetric_capacity), CUDA.zeros(Int, symmetric_capacity),
@@ -7272,7 +7297,7 @@ function cuda_hierarchical_route_window!(state::DeviceResidentRadixState,
         "cuda_hierarchical_route_window! requires a hierarchical device state"))
     plan = hctx.apply_plan
     class_base = plan isa ResidentM2LDenseCUDAPlan ? 0 :
-        (Int(level) - 2) * hctx.noffsets
+        (Int(level) - hctx.first_m2l_level) * hctx.noffsets
     n = _cuda_hier_generate_window!(state, hctx, plan.route_class, Int(level),
         Int(first_offset), Int(last_offset), class_base)
     hctx.last_window_routes = n

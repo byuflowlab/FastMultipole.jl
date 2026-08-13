@@ -368,13 +368,21 @@ end
 # are contiguous in the next level. Returns n_nodes; fills level_offsets
 # (level_offsets[L + 2] - level_offsets[L + 1] nodes at level L).
 function _refresh_radix_nodes!(grid::DeviceRadixGrid{TF}, level_offsets::Vector{Int},
-        n_cells::Integer) where TF
+        n_cells::Integer, first_level::Integer=0) where TF
     ell = grid.ell
     length(level_offsets) == ell + 2 ||
         throw(ArgumentError("level_offsets must have length ell + 2"))
+    0 <= first_level <= ell ||
+        throw(ArgumentError("node-build first_level must lie in 0:ell"))
+    # active-level trimming (task 037 stage 3): levels below first_level are
+    # never built — their level_offsets prefix stays 0 and nodes at first_level
+    # are roots (parent_index 0)
+    first_lvl = Int(first_level)
     # count distinct shifted keys per level
-    level_offsets[1] = 0
-    @inbounds for level in 0:ell
+    @inbounds for i in 1:(first_lvl + 1)
+        level_offsets[i] = 0
+    end
+    @inbounds for level in first_lvl:ell
         shift = 3 * (ell - level)
         count = 0
         prev = ~UInt64(0)
@@ -399,12 +407,12 @@ function _refresh_radix_nodes!(grid::DeviceRadixGrid{TF}, level_offsets::Vector{
         grid.child_ranges[2, node] = 0
     end
     # fill node entries level by level; resolve parents by sorted merge
-    @inbounds for level in 0:ell
+    @inbounds for level in first_lvl:ell
         shift = 3 * (ell - level)
         width = (2 * grid.h0) / (1 << level)
         node = level_offsets[level + 1]
-        # sorted-merge walker into the (level - 1) node block (unused at level 0)
-        parent_node = level == 0 ? 1 : level_offsets[level] + 1
+        # sorted-merge walker into the (level - 1) node block (unused at roots)
+        parent_node = level == first_lvl ? 1 : level_offsets[level] + 1
         prev = ~UInt64(0)
         first = true
         for cell in 1:n_cells
@@ -422,7 +430,7 @@ function _refresh_radix_nodes!(grid::DeviceRadixGrid{TF}, level_offsets::Vector{
             grid.node_centers[1, node] = grid.x_min[1] + width * (TF(coord[1]) + TF(0.5))
             grid.node_centers[2, node] = grid.x_min[2] + width * (TF(coord[2]) + TF(0.5))
             grid.node_centers[3, node] = grid.x_min[3] + width * (TF(coord[3]) + TF(0.5))
-            if level == 0
+            if level == first_lvl
                 grid.parent_index[node] = 0
             else
                 parent_key = key >> 3
@@ -455,7 +463,8 @@ field keeps its identity; `n_bodies`/`n_cells` are refreshed. Returns the grid.
 """
 function update_radix_grid!(grid::DeviceRadixGrid{TF}, systems::Tuple,
         body_keys::Vector{UInt64}, sort_scratch::Vector{Int}, sort_counts::Vector{Int},
-        sort_offsets::Vector{Int}, level_offsets::Vector{Int}) where TF
+        sort_offsets::Vector{Int}, level_offsets::Vector{Int},
+        first_level::Integer=0) where TF
     n = get_n_bodies(systems)
     n > 0 || throw(ArgumentError("update_radix_grid! requires at least one body"))
     resize!(body_keys, n)
@@ -479,7 +488,7 @@ function update_radix_grid!(grid::DeviceRadixGrid{TF}, systems::Tuple,
         grid.cell_centers[2, cell] = grid.x_min[2] + Δ * (TF(coord[2]) + TF(0.5))
         grid.cell_centers[3, cell] = grid.x_min[3] + Δ * (TF(coord[3]) + TF(0.5))
     end
-    _refresh_radix_nodes!(grid, level_offsets, n_cells)
+    _refresh_radix_nodes!(grid, level_offsets, n_cells, first_level)
     grid.n_bodies = n
     grid.n_cells = n_cells
     return grid

@@ -1930,8 +1930,12 @@ is reallocated over the cache's lifetime.
   hierarchical policy (default `$(RADIX_DEFAULT_NEAR_RADIUS2)`; `12` is the `024b`
   `theta=0.5` stencil and `3` the classic FMM one). Passing it explicitly also
   selects the *uniform* geometry, i.e. it drops the default level schedule below.
-- `level_radii2`: per-M2L-level near radii for levels `2:ell`, coarse to fine;
-  must be non-increasing and end at `near_radius2` (task 028 Stage 7)
+- `level_radii2`: per-M2L-level near radii, coarse to fine; must be
+  non-increasing and end at `near_radius2` (task 028 Stage 7). Anchored to
+  levels `2:ell` (legacy length `ell - 1`) or — task 037, rectangular caches
+  with trimmed coarse levels — to the active M2L levels
+  `first_m2l_level:ell`; the legacy anchoring is sliced to the active range,
+  which is the identity on cubic caches
 - `window_classes`: route-window width; defaults to the measured
   `$(RADIX_DEVICE_WINDOW_CLASSES)` on device and `$(RADIX_HOST_WINDOW_CLASSES)` on host
 - `stencil_epsilon::Real`: **selects the deprecated flat `ConstantPAnalyticStencil`**
@@ -2078,24 +2082,39 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     stencil_policy = _default_radix_policy(policy, P, TF, LH, h0, Int(ell), device,
         stencil_epsilon, near_radius2, window_classes, level_radii2)
     hierarchical = stencil_policy isa HierarchicalRigidStencil
-    hierarchical_tables, hierarchical_level_class_of, hierarchical_level_radii2 = hierarchical ?
-        _hierarchical_scheduled_tables(stencil_policy, Int(ell)) :
-        (nothing, Array{Int32}(undef, 0, 0, 0), Int[])
-    hierarchical && _verify_hierarchical_classifier!(h0, Int(ell),
-        stencil_policy, hierarchical_tables)
-    class_level, class_offset, effective_offsets = hierarchical ?
-        _hierarchical_class_metadata(hierarchical_tables, Int(ell)) :
-        (Int32[], Matrix{Int32}(undef, 3, 0), SVector{3,Int}[])
-    accepted, rejected = hierarchical ?
-        (effective_offsets, hierarchical_tables.near_offsets) :
-        classify_radix_stencil_offsets(h0, Int(ell), stencil_policy.config)
+    # Active-level trimming (task 037 stage 3): hierarchical caches retain node
+    # levels root_level:ell and run M2L on levels first_m2l_level:ell (the
+    # flat-top root level plus the task-025 transition levels). Cubic caches
+    # degenerate to root_level = 1 with an empty flat-top (first_m2l_level = 2,
+    # the legacy schedule); flat-policy caches stay untrimmed (root_level = 0).
+    if hierarchical
+        hierarchical_tables, hierarchical_level_class_of, hierarchical_level_radii2,
+            root_level, first_m2l_level =
+            _hierarchical_scheduled_tables(stencil_policy, Int(ell), ell_axes)
+        _verify_hierarchical_classifier!(h0, Int(ell), stencil_policy,
+            hierarchical_tables, ell_axes, root_level, first_m2l_level,
+            hierarchical_level_radii2)
+        class_level, class_offset, effective_offsets =
+            _hierarchical_class_metadata(hierarchical_tables, Int(ell),
+                first_m2l_level)
+        accepted, rejected = effective_offsets, hierarchical_tables.near_offsets
+    else
+        hierarchical_tables = nothing
+        hierarchical_level_class_of = Array{Int32}(undef, 0, 0, 0)
+        hierarchical_level_radii2 = Int[]
+        root_level, first_m2l_level = 0, 2
+        class_level, class_offset, effective_offsets =
+            Int32[], Matrix{Int32}(undef, 3, 0), SVector{3,Int}[]
+        accepted, rejected =
+            classify_radix_stencil_offsets(h0, Int(ell), stencil_policy.config)
+    end
 
     max_cells = _radix_level_node_capacity(Int(ell), ell_axes, Int(ell), maxn)
     max_nodes = sum(_radix_level_node_capacity(L, ell_axes, Int(ell), max_cells)
-        for L in 0:Int(ell))
+        for L in root_level:Int(ell))
     max_level_nodes = Int(ell) >= 2 ? maximum(
         _radix_level_node_capacity(L, ell_axes, Int(ell), max_cells)
-        for L in 2:Int(ell)) : 0
+        for L in (hierarchical ? first_m2l_level : 2):Int(ell)) : 0
     route_capacity = hierarchical ?
         min(min(stencil_policy.window_classes,
                 length(hierarchical_tables.push_offsets)) * max_level_nodes,
@@ -2142,7 +2161,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             route_capacity, direct_capacity, basis_info, Val(LH);
             hierarchical_tables, class_level, class_offset,
             hierarchical_level_class_of, hierarchical_level_radii2,
-            max_level_nodes, hessian, ell_axes, box_extent)
+            max_level_nodes, hessian, ell_axes, box_extent,
+            root_level, first_m2l_level)
         cache.built = true
         return cache
     end
@@ -2189,7 +2209,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         max_cells, max_nodes, route_capacity, accepted, invariant,
         workspace_strategy, workspace_operator;
         hierarchical_noffsets=hierarchical ? length(hierarchical_tables.push_offsets) : 0,
-        ell_axes)
+        ell_axes, first_level=root_level)
     counters = CUDARadixTransferCounters()
     occupancy = hierarchical ? RadixLevelOccupancy(Int(ell);
         max_bytes=stencil_policy.dense_occupancy_max_bytes,
@@ -2199,6 +2219,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         hierarchical_tables, hierarchical_level_class_of, occupancy,
         class_level, class_offset,
         effective_offsets, hierarchical_apply_plan, stencil_policy.window_classes,
+        first_m2l_level,
         zeros(Int, Int(ell) + 2), 0, zeros(Int, Int(ell) + 1), 0,
         false, zeros(UInt64, 5), zeros(UInt64, Int(ell) + 1)) : nothing
     state = DeviceResidentRadixState{TF,CompressedComplexBasis,LH}(
@@ -2219,8 +2240,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     G = 1 << Int(ell)
     source_buffers = Tuple(Matrix{TF}(undef, data_per_body(system), maxn) for system in sources)
     cache = RadixFMMCache{TF,LH}(
-        P, Int(ell), x_min, h0, ell_axes, box_extent, maxn, device, hessian,
-        options, stencil_policy,
+        P, Int(ell), x_min, h0, ell_axes, box_extent, root_level, maxn, device,
+        hessian, options, stencil_policy,
         accepted, rejected, max_cells, max_nodes, route_capacity, direct_capacity,
         state, hierarchical ? zeros(Int32, 0, 0, 0) : zeros(Int32, G, G, G),
         Vector{SVector{3,Int}}(undef, max_cells),
@@ -2239,12 +2260,15 @@ end
 function _refresh_resident_stage_groups!(ws::ResidentOperatorWorkspace{TF},
         grid::DeviceRadixGrid, level_offsets::Vector{Int}) where TF
     ell = grid.ell
-    length(ws.m2m_groups) == max(ell, 0) && length(ws.l2l_groups) == max(ell, 0) ||
+    # the workspace group count encodes the trimmed level range (task 037
+    # stage 3): groups cover levels first_level:ell only
+    first_level = ell - length(ws.m2m_groups)
+    0 <= first_level <= ell && length(ws.l2l_groups) == length(ws.m2m_groups) ||
         throw(ArgumentError("resident cache workspace does not match grid depth ell=$ell"))
-    for (gi, parent_level) in enumerate((ell - 1):-1:0)
+    for (gi, parent_level) in enumerate((ell - 1):-1:first_level)
         _refresh_group_edges!(ws.m2m_groups[gi], grid, level_offsets, parent_level + 1, :m2m)
     end
-    for (gi, child_level) in enumerate(1:ell)
+    for (gi, child_level) in enumerate((first_level + 1):ell)
         _refresh_group_edges!(ws.l2l_groups[gi], grid, level_offsets, child_level, :l2l)
     end
     n_nonleaf = level_offsets[ell + 1]
@@ -2306,9 +2330,12 @@ function _refresh_radix_coords!(coords::Vector{SVector{3,Int}}, cell_keys,
 end
 
 function _refresh_radix_tree_routes!(m2m_parent::Vector{Int}, m2m_child::Vector{Int},
-        l2l_parent::Vector{Int}, l2l_child::Vector{Int}, parent_index, n_edges::Int)
+        l2l_parent::Vector{Int}, l2l_child::Vector{Int}, parent_index, n_edges::Int,
+        n_root_nodes::Int=1)
+    # edges are the children of the retained levels (task 037 stage 3): the
+    # first n_root_nodes nodes are roots with parent_index 0 and carry no edge
     @inbounds for edge in 1:n_edges
-        node = edge + 1
+        node = edge + n_root_nodes
         parent = parent_index[node]
         m2m_parent[edge] = parent
         m2m_child[edge] = node
@@ -2345,7 +2372,7 @@ function _refresh_hierarchical_route_telemetry!(state,
     total = 0
     fill!(ctx.routes_per_level, 0)
     last_count = 0
-    for level in 2:state.grid.ell
+    for level in ctx.first_m2l_level:state.grid.ell
         level_total = 0
         for first_offset in 1:ctx.window_classes:noffsets
             last_offset = min(first_offset + ctx.window_classes - 1, noffsets)
@@ -2551,7 +2578,8 @@ function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where 
 
     t_stage = profiling ? time_ns() : UInt64(0)
     update_radix_grid!(grid, systems, cache.body_keys, cache.sort_scratch,
-        cache.sort_counts, cache.sort_offsets, cache.level_offsets)
+        cache.sort_counts, cache.sort_offsets, cache.level_offsets,
+        cache.root_level)
     profiling && (ctx.update_stage_ns[1] = time_ns() - t_stage)
     n_cells = grid.n_cells
     n_nodes = cache.level_offsets[end]
@@ -2602,13 +2630,18 @@ function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where 
         state.route_sources::Vector{Int}, state.route_targets::Vector{Int}, n_routes)
 
     t_stage = profiling ? time_ns() : UInt64(0)
-    n_edges = max(n_nodes - 1, 0)
+    # multi-root tree edges (task 037 stage 3): every node at root_level is a
+    # root, so the edge count is n_nodes - n_root_nodes (legacy: one level-0
+    # root, n_nodes - 1)
+    n_root_nodes = cache.level_offsets[cache.root_level + 2]
+    n_edges = max(n_nodes - n_root_nodes, 0)
     resize!(state.m2m_parent_routes, n_edges)
     resize!(state.m2m_child_routes, n_edges)
     resize!(state.l2l_parent_routes, n_edges)
     resize!(state.l2l_child_routes, n_edges)
     _refresh_radix_tree_routes!(state.m2m_parent_routes, state.m2m_child_routes,
-        state.l2l_parent_routes, state.l2l_child_routes, grid.parent_index, n_edges)
+        state.l2l_parent_routes, state.l2l_child_routes, grid.parent_index, n_edges,
+        n_root_nodes)
 
     _refresh_resident_stage_groups!(state.scratch, grid, cache.level_offsets)
     profiling && (ctx.update_stage_ns[5] = time_ns() - t_stage)

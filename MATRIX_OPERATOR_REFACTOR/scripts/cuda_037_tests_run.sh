@@ -20,7 +20,8 @@ export FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1
 export JULIA_NUM_THREADS=8
 
 cd "$FMDIR"
-echo "=== 037 stage 1-2 device suites ==="
+echo "=== 037 stage 1-3 device suites ==="
+julia --project="$ENVDIR" test/radix_trimming_test.jl
 julia --project="$ENVDIR" test/cuda_radix_interface_test.jl
 julia --project="$ENVDIR" test/cuda_radix_lifecycle_test.jl
 julia --project="$ENVDIR" test/cuda_radix_graph_test.jl

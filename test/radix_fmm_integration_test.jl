@@ -320,9 +320,11 @@ end
         @test rcache.ell_axes == SVector(4, 2, 2)
         @test rcache.box_extent == SVector(4.0, 1.0, 1.0)
         @test rcache.h0 == 2.0
-        # capacity accounting: per-axis products, not the cubic 8^L bounds
+        # capacity accounting: per-axis products, not the cubic 8^L bounds;
+        # levels below the flat-top root R=2 are trimmed (task 037 stage 3)
+        @test rcache.root_level == 2
         @test rcache.max_cells == 256          # 2^(4+2+2)
-        @test rcache.max_nodes == 1 + 2 + 4 + 32 + 256
+        @test rcache.max_nodes == 4 + 32 + 256 # levels 2:4 only
         fmm!(rect, rcache; scalar_potential=true, gradient=true)
         @test _radix_potential_error(rect, rect_ref) < p_tol
         @test _radix_gradient_error(rect, rect_ref) < g_tol

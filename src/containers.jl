@@ -517,6 +517,10 @@ mutable struct HostHierarchicalM2LContext{O<:RadixLevelOccupancy,A}
     effective_offsets::Vector{SVector{3,Int}}
     apply_plan::A
     window_classes::Int
+    # coarsest active M2L level (task 037 stage 3): construction-fixed; levels
+    # first_m2l_level:ell carry classes, class numbering is
+    # (L - first_m2l_level) * noffsets + k. Cubic caches: 2 (legacy).
+    first_m2l_level::Int
     level_offsets::Vector{Int}
     total_routes::Int
     routes_per_level::Vector{Int}
@@ -550,6 +554,10 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV,SM}
     apply_plan::PL
     window_classes::Int
     ell::Int
+    # coarsest active M2L level (task 037 stage 3): construction-fixed — the
+    # 029 window cache and CUDA-graph capture rely on the level structure never
+    # changing across steps. Cubic caches: 2 (legacy).
+    first_m2l_level::Int
     noffsets::Int
     # host geometry mirrors (small, step-varying prefixes)
     level_base::Vector{Int}
@@ -2051,6 +2059,12 @@ mutable struct RadixFMMCache{TF,LH}
     # cell width. Cubic caches carry `(ell, ell, ell)` and `(2h0, 2h0, 2h0)`.
     ell_axes::SVector{3,Int}
     box_extent::SVector{3,TF}
+    # active-level trimming (task 037 stage 3): hierarchical caches build node
+    # metadata and stage groups for levels root_level:ell only
+    # (level_offsets[1:root_level+1] stay 0; nodes at root_level have parent 0).
+    # Cubic hierarchical caches carry 1 (level 0 trimmed — its multipole/local
+    # were never consumed); flat-policy caches carry 0 (untrimmed).
+    root_level::Int
     max_n_bodies::Int
     device::Bool
     # 13-row (potential + gradient + 9-component hessian) vs 4-row output,

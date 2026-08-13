@@ -268,6 +268,15 @@ end
             @test dc.state.counts.n_nodes == hc.state.counts.n_nodes
             @test dc.state.counts.n_routes == hc.state.counts.n_routes
             @test dc.state.counts.n_direct == hc.state.counts.n_direct
+            # task 037 stage 3: both residencies carry the same trimmed level
+            # structure ((4,2,2) roots at R=2 with the {(+-3,0,0)} flat-top)
+            # and elementwise per-level route telemetry
+            @test dc.root_level == hc.root_level == 2
+            hctx_h = hc.state.interaction_list
+            hctx_d = dc.state.interaction_list
+            @test hctx_d.first_m2l_level == hctx_h.first_m2l_level == 2
+            @test hctx_d.routes_per_level == hctx_h.routes_per_level
+            @test hctx_h.routes_per_level[3] > 0     # flat-top level 2 active
             @test maximum(abs.(dev_sys.potential[1, :] .-
                 host_sys.potential[1, :])) < ptol
             @test maximum(abs.(dev_sys.potential[5:7, :] .-

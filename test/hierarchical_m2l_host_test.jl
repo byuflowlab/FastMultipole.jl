@@ -494,12 +494,22 @@ _hier_step_allocated(sys, cache) =
         policy=ConstantPAnalyticStencil(ConstantPStencilConfig(4, oeps;
             lamb_helmholtz=true)))
     _hier_random_physical!(ohier.state.multipoles, MersenneTwister(0x26c))
-    oflat.state.multipoles.phi .= ohier.state.multipoles.phi
-    oflat.state.multipoles.chi .= ohier.state.multipoles.chi
+    # Task 037 stage 3: the hierarchical cache trims level 0, so its node
+    # indexing is shifted against the untrimmed flat cache — align by the leaf
+    # blocks (the only columns either engine touches at ell = 2, q = 12).
+    onc = ohier.state.counts.n_cells
+    oh_leaf = ohier.level_offsets[ohier.ell + 1]
+    of_leaf = oflat.level_offsets[oflat.ell + 1]
+    oflat.state.multipoles.phi[:, of_leaf .+ (1:onc)] .=
+        ohier.state.multipoles.phi[:, oh_leaf .+ (1:onc)]
+    oflat.state.multipoles.chi[:, of_leaf .+ (1:onc)] .=
+        ohier.state.multipoles.chi[:, oh_leaf .+ (1:onc)]
     HIER_FM._launch_resident_m2l!(ohier.state)
     HIER_FM._launch_resident_m2l!(oflat.state)
-    @test ohier.state.locals.phi ≈ oflat.state.locals.phi rtol=1e-11
-    @test ohier.state.locals.chi ≈ oflat.state.locals.chi rtol=1e-11
+    @test ohier.state.locals.phi[:, oh_leaf .+ (1:onc)] ≈
+        oflat.state.locals.phi[:, of_leaf .+ (1:onc)] rtol=1e-11
+    @test ohier.state.locals.chi[:, oh_leaf .+ (1:onc)] ≈
+        oflat.state.locals.chi[:, of_leaf .+ (1:onc)] rtol=1e-11
 
     # Hierarchical-vs-flat end-to-end parity at matched epsilon: the same-P
     # engines differ only through the coarse-level expansion centers, so the

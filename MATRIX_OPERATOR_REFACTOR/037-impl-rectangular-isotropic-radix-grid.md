@@ -87,6 +87,32 @@ equality was dropped; the scalar lifecycle test system needed explicit
 `lamb_helmholtz=false` and a `has_vector_potential` overload. Stage 3
 unblocked.
 
+### 2026-08-13 — Stage 3: active-level trimming with flat-top root (implemented)
+
+Per plan §3 Stage 3. `_radix_root_level` (cap-guarded, `RADIX_FLAT_TOP_CLASS_CAP
+= 4096`), `_rigid_flat_top_tables` emitting through the existing class-mask
+mechanism (window builder + CUDA window kernels unchanged), scheduled
+tables/metadata/classifier re-anchored to active levels `first:ell`
+(legacy `2:ell` schedules accepted everywhere via identity-on-cubic
+slicing), node build + stage groups + the four CUDA M2L loops trimmed to
+`R:ell`, multi-root tree edges (`n_edges = n_nodes - n_root_nodes`; the
+exhaustive `n_nodes - 1` audit found 6 sites: 2 fixed, 2 benign capacity
+bounds, 2 untrimmed one-shot oracle paths by design). `first_m2l_level` is
+construction-fixed on both hierarchical contexts (graph capture + 029
+window cache safe). **Bitwise cube-regression gate PASSED** (old-vs-new
+probe: routes, direct pairs, telemetry, outputs identical; only `n_nodes`
+drops by 1 — the never-consumed virtual level-0 root is trimmed on cubic
+caches too). New `test/radix_trimming_test.jl` (122 asserts, in runtests):
+exhaustive exact-once coverage on {(4,2,2),(3,3,1),(4,4,2),(3,3,3)},
+flat-vs-hierarchical oracle, cross-strategy parity, multi-root invariants,
+cap guard, schedule anchoring — all literature P=4. All host suites green
+locally. Documented deviations: leaf-radius `L_allnear` (conservative);
+legacy-anchored schedules accepted on all caches; one-sided root classifier
+gate; two test-expectation updates (max_nodes 295→292; cubic node-index
+shift in the ell=2 oracle alignment). Open H200 risks recorded in the
+Stage-3 report (device flat-top path, trimmed graph capture, counter
+contract) — gated by the device job before Stage 4 lands.
+
 ## Objective
 
 Add an optional rectangular radix-grid path for elongated domains while

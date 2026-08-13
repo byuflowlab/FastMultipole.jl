@@ -3181,7 +3181,7 @@ function _launch_hierarchical_resident_m2l!(
     total = 0
     fill!(ctx.routes_per_level, 0)
     ctx.profile_stages && fill!(ctx.m2l_level_ns, 0)
-    for level in 2:state.grid.ell
+    for level in ctx.first_m2l_level:state.grid.ell
         t_level = ctx.profile_stages ? time_ns() : UInt64(0)
         level_total = 0
         for first_offset in 1:ctx.window_classes:noffsets
@@ -4502,7 +4502,8 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         compact_cuda_factored::Bool=false,
         dense_cuda_estimated_peak_bytes::Int=0,
         hierarchical_noffsets::Int=0,
-        ell_axes::SVector{3,Int}=SVector(ell, ell, ell)) where {TF,B,LH}
+        ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
+        first_level::Int=0) where {TF,B,LH}
     m2l_strategy isa Union{ConcatenatedFixedZM2L,PrecomputedFactoredYM2L,DenseTranslationM2L} ||
         throw(ArgumentError("RadixFMMCache supports ConcatenatedFixedZM2L, " *
             "PrecomputedFactoredYM2L, or DenseTranslationM2L; the SharedRotationM2L " *
@@ -4526,17 +4527,20 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     nonleaf_idx = collect(1:max_nodes)      # capacity; resize!d by the step refresh
 
     child_radius(Lc) = sqrt(TF(3)) * h0 / (1 << Lc)
+    # active-level trimming (task 037 stage 3): stage groups exist only for the
+    # retained levels first_level:ell — M2M parent levels (ell-1):-1:first_level,
+    # L2L child levels (first_level+1):ell. Untrimmed callers pass 0 (legacy).
     m2m_groups = [
         _resident_capacity_group(exemplar.phi, TF, basis_info, :m2m, level,
             child_radius(level + 1),
             _radix_level_node_capacity(level + 1, ell_axes, ell, max_cells))
-        for level in (ell - 1):-1:0
+        for level in (ell - 1):-1:first_level
     ]
     l2l_groups = [
         _resident_capacity_group(exemplar.phi, TF, basis_info, :l2l, level,
             child_radius(level),
             _radix_level_node_capacity(level, ell_axes, ell, max_cells))
-        for level in 1:ell
+        for level in (first_level + 1):ell
     ]
     max_batch = max(_radix_level_node_capacity(ell, ell_axes, ell, max_cells), 1)
 
