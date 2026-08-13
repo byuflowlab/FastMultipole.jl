@@ -958,3 +958,54 @@ the phase's sole definitive speedup report. Awaiting clear-context approval.
   configuration and reject a statistically meaningful regression.
 - GPU measurements run on H200. CPU comparison values come from `033` and are
   not rerun except to establish environment parity.
+
+## Clear-Context Approval
+
+**Date:** 2026-08-12. **Reviewing agent:** clear-context review subagent
+(Claude Fable 5), per the `START_HERE.md` clear-context protocol.
+
+**Checked:** `START_HERE.md`, this task file in full, the campaign CSVs and
+job logs in `data/flowvpm_gpu_campaign/`, FLOWVPM `gpu-full` commits
+`4d188fa`/`bc7df09`/`5dd0d85` (shipped `RadixFMMSettings` defaults and
+`_radix_auto_geometry` in `src/FLOWVPM_fmm_radix.jl`, plus the
+`test/runtests_gpu_fmm.jl` default/winner assertions), the FastMultipole
+cycle-2 B2M rewrite in `src/translate_batched_cuda.jl`, and the three 035
+figures with their tables.
+
+**Verified quantitatively:** `fm035_cycle3d.csv` sha256 matches the record
+(`69e5790b…`), as does `fm035_cycle3b.csv` (`a401639e…`); every Final-Report
+§1 timing/error/RK3/speedup number matches the cycle-3D CSV, with
+`gate_pass=true` and `counters_flat=true` on all 16 rows and per-step
+allocation ≤ 11 KB; the job-13157887 log shows all preflights green and the
+033 refcheck PASSED at the new shipped defaults (checksummed references,
+worst F64 u_rel_rms 6.81e-4 at the reviewed scales); the cycle-3C error
+decomposition table matches `fm035_error_decomposition.csv` on all 8 rows
+(P4 cube 1e6 triangle bound 1.03e-3 fail confirmed); the auto-geometry
+margin claim was reproduced independently (winner-reproducing interval
+exactly [0.886, 1.061]; shipped 1.03 valid, tests assert all four winners
+plus the cycle-1 rule regression); shipped defaults in code match the
+claims (`expansion_order=4`, `rho_t=3.668` partitioned coupling default
+with constructor 4.252 untouched, `near_radius2=6`, `accuracy_margin=1.03`,
+`:dense`, `:partitioned`); the cycle-2 kernel diff is scope-clean (leaf
+scalar+vortex kernels only, `threads=CUDA_B2M_BLOCK`/`blocks=ncell`
+epoch-constant, one-shot path and defaults untouched, uniform control flow
+around the shared-memory reduction) and its scalar no-regression verdicts
+(6.898/18.135 ms, errors bit-identical) appear in the 13150961 log;
+`figures_035_prepare.jl` regenerates all committed tables with zero diff
+and all three `.tex` compile under pdflatex; nsys body-pair counts
+(8.059e9 cube / 13.416e9 wake) match the logs. 035 commits touch only the
+radix coupling file and GPU tests on the FLOWVPM side; default changes had
+recorded user approvals (cycles 1, 2, 3A, 3D).
+
+**Minor non-blocking notes:** (1) the cycle-2 record cites FastMultipole
+commit "`2938192`-series" — the actual commit is `9412600` (closeout
+`d871a19`); (2) the cycle-3A phrase "concat 1.31–2.49x, precomputed-y
+1.36x slower" understates the measured ranges (concat 1.25–2.74x,
+precomputed-y 1.36–1.95x across the six sampled rows) — dense remains
+decisively best everywhere, so no conclusion changes; (3) figure build
+artifacts (`.pdf`/`.aux`/`.log`) in `data/figures/` are untracked but not
+gitignored.
+
+**Verdict: APPROVED.** Work is consistent with the stated objectives,
+correct on every spot-checked artifact, and minimally invasive; all
+verification gates were run and passed on hardware.
