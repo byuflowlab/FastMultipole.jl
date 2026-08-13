@@ -491,8 +491,8 @@ function refresh_cell_at!(cell_at::AbstractArray{Int32,3}, cell_keys, n_cells::I
 end
 
 @inline function _radix_cell_at(cell_at::AbstractArray{Int32,3}, coord::SVector{3,<:Integer})
-    G = size(cell_at, 1)
-    (0 <= coord[1] < G && 0 <= coord[2] < G && 0 <= coord[3] < G) || return 0
+    (0 <= coord[1] < size(cell_at, 1) && 0 <= coord[2] < size(cell_at, 2) &&
+        0 <= coord[3] < size(cell_at, 3)) || return 0
     return Int(@inbounds cell_at[coord[1] + 1, coord[2] + 1, coord[3] + 1])
 end
 

@@ -142,3 +142,59 @@ using Test
     @test [FastMultipole.radix_body_ref(tuple_grid, i) for i in FastMultipole.radix_body_indices(tuple_grid, mixed_cell)] ==
         [SVector(1, 1), SVector(1, 2), SVector(2, 1), SVector(2, 2)]
 end
+
+@testset "rectangular radix geometry (task 037 stage 1)" begin
+    resolve = FastMultipole._resolve_radix_ell_axes
+    cap = FastMultipole._radix_level_node_capacity
+
+    # scalar bounds and their cubic-vector equivalent resolve bit-identically
+    ax_s, h0_s, ext_s = resolve(1.0, 3, Float64)
+    ax_v, h0_v, ext_v = resolve((1.0, 1.0, 1.0), 3, Float64)
+    @test ax_s == ax_v == SVector(3, 3, 3)
+    @test h0_s === h0_v === 0.5
+    @test ext_s === ext_v
+
+    # power-of-two aspect resolves exactly
+    ax, h0, ext = resolve(SVector(4.0, 1.0, 1.0), 4, Float64)
+    @test ax == SVector(4, 2, 2)
+    @test h0 === 2.0
+    @test ext == SVector(4.0, 1.0, 1.0)
+
+    # non-power-of-two aspect snaps up to whole leaf cells, never shrinks
+    ax, h0, ext = resolve((4.0, 1.3, 1.0), 4, Float64)
+    @test ax == SVector(4, 3, 2)
+    @test ext == SVector(4.0, 2.0, 1.0)
+    @test all(ext .>= SVector(4.0, 1.3, 1.0))
+
+    # razor-thin axes clamp at one leaf cell
+    ax, _, ext = resolve((4.0, 0.01, 1.0), 4, Float64)
+    @test ax[2] == 0
+    @test ext[2] == 0.25
+
+    # precision follows the requested TF
+    ax, h0, ext = resolve((4.0f0, 1.0f0, 1.0f0), 4, Float32)
+    @test ext isa SVector{3,Float32}
+    @test ext == SVector(4.0f0, 1.0f0, 1.0f0)
+
+    @test_throws ArgumentError resolve(0.0, 3, Float64)
+    @test_throws ArgumentError resolve((1.0, 0.0, 1.0), 3, Float64)
+
+    # cubic capacity delegation is unchanged
+    for L in 0:4
+        @test cap(L, SVector(4, 4, 4), 4, 10^9) == cap(L, 10^9)
+    end
+    # rectangular capacities are per-axis products (axes saturate coarsening)
+    axes422 = SVector(4, 2, 2)
+    @test [cap(L, axes422, 4, 10^9) for L in 0:4] == [1, 2, 4, 32, 256]
+    @test cap(4, axes422, 4, 100) == 100
+    # overflow guard at large depth sums
+    @test cap(21, SVector(21, 21, 21), 21, 12345) == 12345
+
+    # occupancy lookup bounds are per-dimension on a rectangular cell_at
+    cell_at = zeros(Int32, 4, 2, 1)
+    cell_at[4, 2, 1] = Int32(7)
+    @test FastMultipole._radix_cell_at(cell_at, SVector(3, 1, 0)) == 7
+    @test FastMultipole._radix_cell_at(cell_at, SVector(3, 2, 0)) == 0
+    @test FastMultipole._radix_cell_at(cell_at, SVector(0, 0, 1)) == 0
+    @test FastMultipole._radix_cell_at(cell_at, SVector(-1, 0, 0)) == 0
+end

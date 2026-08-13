@@ -5521,8 +5521,12 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
             options.direct_kernel, stencil_policy, accepted, ell, h0, max_cells,
             direct_capacity, ctx, counters)
     end
+    # device caches are cubic until task 037 stage 2 (the host constructor
+    # refuses vector bounds with device=true)
     cache = RadixFMMCache{TF,LH}(
-        P, ell, x_min, h0, maxn, true, hessian, options, stencil_policy,
+        P, ell, x_min, h0, SVector(ell, ell, ell),
+        SVector{3,TF}(2 * h0, 2 * h0, 2 * h0), maxn, true, hessian, options,
+        stencil_policy,
         accepted, rejected, max_cells, max_nodes, route_capacity, direct_capacity,
         nothing, zeros(Int32, 0, 0, 0), SVector{3,Int}[], zeros(Int, ell + 2),
         UInt64[], Int[], Int[], Int[], nothing, nothing, ctx,

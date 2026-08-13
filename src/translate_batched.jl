@@ -3948,12 +3948,23 @@ function _resident_capacity_group(exemplar, ::Type{TF}, basis_info, kind::Symbol
     return group
 end
 
-# Nodes at level L are bounded by both the full octree width and the occupied
-# leaf count (each occupied leaf contributes at most one ancestor per level).
-function _radix_level_node_capacity(level::Integer, max_cells::Integer)
-    3 * level >= 62 && return max_cells
-    return min(1 << (3 * level), max_cells)
+# Nodes at level L are bounded by both the grid width at that level and the
+# occupied leaf count (each occupied leaf contributes at most one ancestor per
+# level). On a rectangular grid (task 037) an axis stops halving once it
+# saturates, so the per-axis cell count at level L is 2^max(ell_a - ell + L, 0).
+function _radix_level_node_capacity(level::Integer, ell_axes::SVector{3,Int},
+        ell::Integer, max_cells::Integer)
+    s = max(Int(ell_axes[1]) - Int(ell) + Int(level), 0) +
+        max(Int(ell_axes[2]) - Int(ell) + Int(level), 0) +
+        max(Int(ell_axes[3]) - Int(ell) + Int(level), 0)
+    s >= 62 && return max_cells
+    return min(1 << s, max_cells)
 end
+
+# Legacy cubic arity: every axis at full depth.
+_radix_level_node_capacity(level::Integer, max_cells::Integer) =
+    _radix_level_node_capacity(level, SVector(Int(level), Int(level), Int(level)),
+        Int(level), max_cells)
 
 # Capacity ResidentM2LConcatPlan from the fixed accepted-offset classes (task 023).
 function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, exemplar,
@@ -4490,7 +4501,8 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         operator::AbstractM2LOperator=MaterializedYRotationM2L();
         compact_cuda_factored::Bool=false,
         dense_cuda_estimated_peak_bytes::Int=0,
-        hierarchical_noffsets::Int=0) where {TF,B,LH}
+        hierarchical_noffsets::Int=0,
+        ell_axes::SVector{3,Int}=SVector(ell, ell, ell)) where {TF,B,LH}
     m2l_strategy isa Union{ConcatenatedFixedZM2L,PrecomputedFactoredYM2L,DenseTranslationM2L} ||
         throw(ArgumentError("RadixFMMCache supports ConcatenatedFixedZM2L, " *
             "PrecomputedFactoredYM2L, or DenseTranslationM2L; the SharedRotationM2L " *
@@ -4516,15 +4528,17 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     child_radius(Lc) = sqrt(TF(3)) * h0 / (1 << Lc)
     m2m_groups = [
         _resident_capacity_group(exemplar.phi, TF, basis_info, :m2m, level,
-            child_radius(level + 1), _radix_level_node_capacity(level + 1, max_cells))
+            child_radius(level + 1),
+            _radix_level_node_capacity(level + 1, ell_axes, ell, max_cells))
         for level in (ell - 1):-1:0
     ]
     l2l_groups = [
         _resident_capacity_group(exemplar.phi, TF, basis_info, :l2l, level,
-            child_radius(level), _radix_level_node_capacity(level, max_cells))
+            child_radius(level),
+            _radix_level_node_capacity(level, ell_axes, ell, max_cells))
         for level in 1:ell
     ]
-    max_batch = max(_radix_level_node_capacity(ell, max_cells), 1)
+    max_batch = max(_radix_level_node_capacity(ell, ell_axes, ell, max_cells), 1)
 
     cell_width = (2 * h0) / (1 << ell)
     m2l_concat = m2l_strategy isa DenseTranslationM2L ?

@@ -270,3 +270,89 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     e64 = _radix_gradient_error(f64, ref32)
     @test e32 <= 1.05 * e64
 end
+
+@testset "radix rectangular bounds (task 037 stage 1)" begin
+
+    seed = 20260813
+    origin = SVector(0.0, 0.0, 0.0)
+    # stretch the unit cloud to x in [0, 4]: aspect 4:1:1
+    stretch(bodies) = (bodies[1, :] .*= 4.0; bodies)
+
+    #--- (a) cube-regression gate: vector (L, L, L) bounds == scalar L bounds ---#
+
+    for P in (3, 8)   # literature P = 4 (standing rule) plus one higher order
+        a = generate_gravitational(seed, 800)
+        b = generate_gravitational(seed, 800)
+        ca = RadixFMMCache(a; expansion_order=P, ell=3, bounds=(origin, 1.0))
+        cb = RadixFMMCache(b; expansion_order=P, ell=3,
+            bounds=(origin, (1.0, 1.0, 1.0)))
+        @test ca.ell_axes == cb.ell_axes == SVector(3, 3, 3)
+        @test ca.box_extent === cb.box_extent
+        @test ca.h0 === cb.h0
+        @test ca.x_min === cb.x_min
+        @test ca.max_cells == cb.max_cells
+        @test ca.max_nodes == cb.max_nodes
+        @test ca.route_capacity == cb.route_capacity
+        @test ca.direct_capacity == cb.direct_capacity
+        sa, sb = ca.state, cb.state
+        # n_routes on the hierarchical path is cumulative window telemetry and
+        # the route buffers hold only the last generated window (with no valid-
+        # prefix marker), so route parity is gated by the counts here and the
+        # bitwise output equality below
+        @test sa.counts.n_routes == sb.counts.n_routes
+        @test sa.counts.n_direct == sb.counts.n_direct
+        nd = sa.counts.n_direct
+        @test sa.direct_targets[1:nd] == sb.direct_targets[1:nd]
+        @test sa.direct_sources[1:nd] == sb.direct_sources[1:nd]
+        fmm!(a, ca; scalar_potential=true, gradient=true)
+        fmm!(b, cb; scalar_potential=true, gradient=true)
+        @test a.potential == b.potential   # bitwise
+    end
+
+    #--- (b) rectangular host cache on an elongated cloud ---#
+
+    nrect = 1200
+    rect_bounds = (origin, (4.0, 1.0, 1.0))
+    rect_ref = _radix_direct_reference(seed + 1, nrect; bodies_fun=stretch)
+    for (P, p_tol, g_tol) in ((3, 2e-3, 2e-1), (8, 1e-6, 1e-4))
+        rect = generate_gravitational(seed + 1, nrect; bodies_fun=stretch)
+        rcache = RadixFMMCache(rect; expansion_order=P, ell=4, bounds=rect_bounds)
+        @test rcache.ell_axes == SVector(4, 2, 2)
+        @test rcache.box_extent == SVector(4.0, 1.0, 1.0)
+        @test rcache.h0 == 2.0
+        # capacity accounting: per-axis products, not the cubic 8^L bounds
+        @test rcache.max_cells == 256          # 2^(4+2+2)
+        @test rcache.max_nodes == 1 + 2 + 4 + 32 + 256
+        fmm!(rect, rcache; scalar_potential=true, gradient=true)
+        @test _radix_potential_error(rect, rect_ref) < p_tol
+        @test _radix_gradient_error(rect, rect_ref) < g_tol
+    end
+
+    #--- (c) snap-up of a non-power-of-two aspect ---#
+
+    snap = generate_gravitational(seed + 2, 300; bodies_fun=stretch)
+    scache = RadixFMMCache(snap; expansion_order=3, ell=4,
+        bounds=(origin, (4.0, 1.3, 1.0)))
+    @test scache.ell_axes == SVector(4, 3, 2)
+    @test scache.box_extent == SVector(4.0, 2.0, 1.0)
+
+    #--- (d) per-axis out-of-box contract ---#
+
+    oob = generate_gravitational(seed + 3, 100; bodies_fun=stretch)
+    ocache = RadixFMMCache(oob; expansion_order=3, ell=4, bounds=rect_bounds)
+    # inside the virtual cube [0, 4]^3 but outside the rectangular box in y
+    oob.bodies[1] = Body(SVector(0.5, 2.5, 0.5), oob.bodies[1].radius,
+        oob.bodies[1].strength)
+    @test_throws ArgumentError fmm!(oob, ocache)
+
+    #--- (e) stage-1 restrictions fail loudly ---#
+
+    dev_sys = generate_gravitational(seed + 4, 100)
+    @test_throws ArgumentError RadixFMMCache(dev_sys; device=true,
+        bounds=(origin, (1.0, 1.0, 1.0)))
+    rec = generate_gravitational(seed + 5, 200; bodies_fun=stretch)
+    rec_cache = RadixFMMCache(rec; expansion_order=3, ell=4, bounds=rect_bounds)
+    @test_throws ArgumentError FastMultipole.recenter!(rec_cache, rec)
+    @test_throws ArgumentError RadixFMMCache(dev_sys;
+        bounds=(origin, (1.0, -1.0, 1.0)))
+end

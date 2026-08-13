@@ -27,7 +27,33 @@ count, not occupancy — size the acceptance case accordingly. Full profile
 evidence: 035 Final Report §3 and the cycle-3D stage tables
 (`fm035_cycle3d.csv`).
 
-## Objective
+## Work Record
+
+### 2026-08-13 — Stage 1: host rectangular geometry contract (implemented)
+
+Per `037-implementation-plan.md` §3 Stage 1. `RadixFMMCache` gains
+`ell_axes::SVector{3,Int}` + `box_extent::SVector{3,TF}` (cubic caches carry
+`(ell,ell,ell)`; `ell`/`h0` keep their virtual-cube meaning);
+`_resolve_radix_ell_axes` resolves scalar (legacy, bit-identical) or
+3-vector `box_size` (`Δ = 2h0/2^ell`, per-axis `ell_a = clamp(⌈log2(L_a/Δ)⌉,
+0, ell)` with an fp snap-up guard that never shrinks the extent);
+`_radix_level_node_capacity` generalized to per-axis products
+(overflow-guarded, 2-arg form delegates); `_assert_radix_positions_in_box`
+takes per-axis bounds; `_radix_cell_at` per-dimension sizes. Guards: device +
+vector bounds and rectangular `recenter!` both throw loudly until Stage 2
+lifts them. Only non-plan touch: the device build's cache-construction call
+passes the cubic values for the two new fields (struct arity).
+
+Tests: new "rectangular radix geometry" (27 asserts) + "radix rectangular
+bounds" (46) testsets — cube-regression gate is **bitwise** (vector
+`(L,L,L)` ≡ scalar `L` in geometry, capacities, route/direct counts, and
+`fmm!` outputs) at literature P=4 and P=9(order 8); elongated 4:1:1 cloud
+resolves `(4,2,2)`, capacity 256/295, passes the sampled-direct accuracy
+gates at both orders; snap-up, out-of-box throw, and refusal paths covered.
+Full host suites green (radix integration 89, timestepping 51k,
+hierarchical host M2L 877, dense/precomputed-y M2L, device_system_interface
+35.4k). Note for Stage 2: host route-buffer prefixes are windowed scratch —
+route parity must compare telemetry counts, not buffers.
 
 Add an optional rectangular radix-grid path for elongated domains while
 retaining approximately cubic *physical* cells. The wake should use unequal

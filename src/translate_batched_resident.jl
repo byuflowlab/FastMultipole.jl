@@ -1718,8 +1718,14 @@ function _cache_nearfield_bin_ctx(cache::RadixFMMCache)
     return hctx.nearfield
 end
 
-function _assert_radix_positions_in_box(systems::Tuple, x_min::SVector{3,TF}, h0::TF) where TF
-    x_max = x_min .+ 2 * h0
+# Legacy cubic arity; the per-axis method below is the contractual check
+# (task 037: cubic caches pass box_extent = (2h0, 2h0, 2h0), same values).
+_assert_radix_positions_in_box(systems::Tuple, x_min::SVector{3,TF}, h0::TF) where TF =
+    _assert_radix_positions_in_box(systems, x_min, SVector{3,TF}(2 * h0, 2 * h0, 2 * h0))
+
+function _assert_radix_positions_in_box(systems::Tuple, x_min::SVector{3,TF},
+        box_extent::SVector{3,TF}) where TF
+    x_max = x_min .+ box_extent
     for (isys, system) in enumerate(systems)
         for i_body in 1:get_n_bodies(system)
             x = get_position(system, i_body)
@@ -1734,6 +1740,38 @@ function _assert_radix_positions_in_box(systems::Tuple, x_min::SVector{3,TF}, h0
         end
     end
     return nothing
+end
+
+# Resolve the rectangular geometry contract (task 037) from the bounds box size.
+# Scalar sizes reproduce the legacy cubic contract bit-for-bit. Vector sizes
+# embed the box in a virtual cube of half-width h0 = maximum(box_size)/2 whose
+# leaf width Δ = 2h0/2^ell tiles every axis: axis a spans 2^ell_axes[a] leaf
+# cells with its extent snapped up to Δ * 2^ell_axes[a] (never below the
+# requested extent).
+function _resolve_radix_ell_axes(box_size::Real, ell::Int, ::Type{TF}) where TF
+    h0 = TF(box_size) / 2
+    h0 > zero(TF) || throw(ArgumentError("bounds box_size must be positive"))
+    return SVector(ell, ell, ell), h0, SVector{3,TF}(2 * h0, 2 * h0, 2 * h0)
+end
+
+function _resolve_radix_ell_axes(box_size, ell::Int, ::Type{TF}) where TF
+    L = SVector{3,TF}(box_size)
+    (L[1] > zero(TF) && L[2] > zero(TF) && L[3] > zero(TF)) || throw(ArgumentError(
+        "bounds box_size must be positive on every axis; got $(Tuple(L))"))
+    h0 = max(L[1], L[2], L[3]) / 2
+    delta = (2 * h0) / (1 << ell)
+    function resolve_axis(a)
+        la = clamp(ceil(Int, log2(Float64(L[a]) / Float64(delta))), 0, ell)
+        # fp guard: log2/ceil may land one level short of covering the extent
+        while la < ell && delta * (1 << la) < L[a]
+            la += 1
+        end
+        return la
+    end
+    ell_axes = SVector(resolve_axis(1), resolve_axis(2), resolve_axis(3))
+    box_extent = SVector{3,TF}(delta * (1 << ell_axes[1]),
+        delta * (1 << ell_axes[2]), delta * (1 << ell_axes[3]))
+    return ell_axes, h0, box_extent
 end
 
 # Measured window widths (task 027). The host default of 4 comes from the 026 host
@@ -1872,7 +1910,12 @@ is reallocated over the cache's lifetime.
 - `ell::Int=4`: radix grid depth (leaf grid is `2^ell` cells per axis)
 - `max_n_bodies::Int=n`: capacity bound; steps may use any `1 <= n <= max_n_bodies`
 - `bounds=nothing`: `(x_min::SVector{3}, box_size)` fixed domain box; default derives
-  a cube from the current positions inflated by `bounds_margin`
+  a cube from the current positions inflated by `bounds_margin`. `box_size` may be a
+  scalar (cubic, legacy) or a 3-vector/`NTuple{3}` of per-axis extents (task 037):
+  the rectangular box is embedded in a virtual cube of half-width
+  `h0 = maximum(box_size)/2`, per-axis extents snap up to whole leaf cells
+  (readable as `cache.ell_axes` / `cache.box_extent`), and the per-axis in-box
+  contract is enforced each step. Vector bounds are host-only until stage 2.
 - `bounds_margin::Real=0.05`: relative margin applied to derived bounds
 - `lamb_helmholtz=nothing`: override the `has_vector_potential` inference
 - `hessian::Bool=false`: allocate the 13-row output (potential + gradient +
@@ -1989,6 +2032,11 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     end
     TF = options.precision
     if device
+        # rectangular device parity is task 037 stage 2; refuse vector bounds
+        # here (before availability) so the restriction fails loudly everywhere
+        bounds !== nothing && !(bounds[2] isa Real) && throw(ArgumentError(
+            "rectangular (vector box_size) bounds are host-only until task 037 " *
+            "stage 2 lands device parity; pass a scalar box_size"))
         cuda_radix_available() ||
             throw(ArgumentError("RadixFMMCache(device=true) requires a functional CUDA " *
                 "radix lifecycle; call load_cuda_radix_lifecycle!() first ($(cuda_radix_status()))"))
@@ -2014,10 +2062,11 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         h0 > zero(TF) ||
             throw(ArgumentError("bodies are degenerate (zero extent); pass explicit bounds=(x_min, box_size)"))
         x_min = center - SVector{3,TF}(h0, h0, h0)
+        ell_axes = SVector(Int(ell), Int(ell), Int(ell))
+        box_extent = SVector{3,TF}(2 * h0, 2 * h0, 2 * h0)
     else
         x_min = SVector{3,TF}(bounds[1])
-        h0 = TF(bounds[2]) / 2
-        h0 > zero(TF) || throw(ArgumentError("bounds box_size must be positive"))
+        ell_axes, h0, box_extent = _resolve_radix_ell_axes(bounds[2], Int(ell), TF)
     end
 
     # Validate the requested strategy before any policy-dependent substitution.
@@ -2046,10 +2095,12 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         (effective_offsets, hierarchical_tables.near_offsets) :
         classify_radix_stencil_offsets(h0, Int(ell), stencil_policy.config)
 
-    max_cells = _radix_level_node_capacity(Int(ell), maxn)
-    max_nodes = sum(_radix_level_node_capacity(L, max_cells) for L in 0:Int(ell))
+    max_cells = _radix_level_node_capacity(Int(ell), ell_axes, Int(ell), maxn)
+    max_nodes = sum(_radix_level_node_capacity(L, ell_axes, Int(ell), max_cells)
+        for L in 0:Int(ell))
     max_level_nodes = Int(ell) >= 2 ? maximum(
-        _radix_level_node_capacity(L, max_cells) for L in 2:Int(ell)) : 0
+        _radix_level_node_capacity(L, ell_axes, Int(ell), max_cells)
+        for L in 2:Int(ell)) : 0
     route_capacity = hierarchical ?
         min(min(stencil_policy.window_classes,
                 length(hierarchical_tables.push_offsets)) * max_level_nodes,
@@ -2142,7 +2193,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     scratch = _radix_cache_workspace(TF, basis_info, multipoles, Int(ell), h0,
         max_cells, max_nodes, route_capacity, accepted, invariant,
         workspace_strategy, workspace_operator;
-        hierarchical_noffsets=hierarchical ? length(hierarchical_tables.push_offsets) : 0)
+        hierarchical_noffsets=hierarchical ? length(hierarchical_tables.push_offsets) : 0,
+        ell_axes)
     counters = CUDARadixTransferCounters()
     occupancy = hierarchical ? RadixLevelOccupancy(Int(ell);
         max_bytes=stencil_policy.dense_occupancy_max_bytes,
@@ -2172,7 +2224,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     G = 1 << Int(ell)
     source_buffers = Tuple(Matrix{TF}(undef, data_per_body(system), maxn) for system in sources)
     cache = RadixFMMCache{TF,LH}(
-        P, Int(ell), x_min, h0, maxn, device, hessian, options, stencil_policy,
+        P, Int(ell), x_min, h0, ell_axes, box_extent, maxn, device, hessian,
+        options, stencil_policy,
         accepted, rejected, max_cells, max_nodes, route_capacity, direct_capacity,
         state, hierarchical ? zeros(Int32, 0, 0, 0) : zeros(Int32, G, G, G),
         Vector{SVector{3,Int}}(undef, max_cells),
@@ -2366,6 +2419,11 @@ function recenter!(cache::RadixFMMCache{TF,LH}, systems;
         "recenter! got $(length(systems_tuple)) systems for a cache built with " *
         "$(cache.n_systems); the system set is part of the cache contract"))
     padding >= 0 || throw(ArgumentError("recenter! padding must be nonnegative"))
+    # rebuilding at cubic bounds would silently drop a rectangular cache's
+    # per-axis extents; rectangular recenter! is task 037 stage 2
+    cache.ell_axes == SVector(cache.ell, cache.ell, cache.ell) || throw(ArgumentError(
+        "recenter! on a rectangular cache (ell_axes=$(Tuple(cache.ell_axes))) is " *
+        "not yet supported; construct a new cache with vector bounds"))
     n = get_n_bodies(systems_tuple)
     n <= cache.max_n_bodies || throw(ArgumentError(
         "recenter! live body count n=$n exceeds the cache capacity " *
@@ -2476,7 +2534,7 @@ function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where 
     n > 0 || throw(ArgumentError("update_radix_state! requires at least one body"))
     n <= cache.max_n_bodies ||
         throw(ArgumentError("n=$n exceeds the cache capacity max_n_bodies=$(cache.max_n_bodies)"))
-    _assert_radix_positions_in_box(systems, cache.x_min, cache.h0)
+    _assert_radix_positions_in_box(systems, cache.x_min, cache.box_extent)
 
     t_stage = profiling ? time_ns() : UInt64(0)
     update_radix_grid!(grid, systems, cache.body_keys, cache.sort_scratch,

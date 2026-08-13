@@ -2028,7 +2028,8 @@ data, so every `fmm!` call is the fast path and no persistent host or device arr
 is reallocated across steps. Bounded Morton depths use persistent counting-sort
 scratch; larger depths retain CUDA's pool-served device sort scratch.
 
-The invariant contract: the domain box (`x_min`, `h0`), depth `ell`, expansion
+The invariant contract: the domain box (`x_min`, `h0`, and — task 037 — the
+readable rectangular extents `ell_axes`/`box_extent`), depth `ell`, expansion
 order, and `max_n_bodies` are fixed at construction. Each step may move bodies and
 change their number (up to `max_n_bodies`), but positions must stay inside the
 fixed box; violations throw `ArgumentError` rather than silently rebuilding the
@@ -2044,6 +2045,12 @@ mutable struct RadixFMMCache{TF,LH}
     ell::Int
     x_min::SVector{3,TF}
     h0::TF
+    # rectangular geometry contract (task 037): per-axis leaf depths with
+    # `ell = maximum(ell_axes)` the virtual-cube depth, and the physical box
+    # extents `Δ .* 2 .^ ell_axes` where `Δ = 2h0 / 2^ell` is the shared cubic
+    # cell width. Cubic caches carry `(ell, ell, ell)` and `(2h0, 2h0, 2h0)`.
+    ell_axes::SVector{3,Int}
+    box_extent::SVector{3,TF}
     max_n_bodies::Int
     device::Bool
     # 13-row (potential + gradient + 9-component hessian) vs 4-row output,
