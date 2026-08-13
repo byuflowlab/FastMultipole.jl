@@ -799,10 +799,13 @@ _cuda_required_tests() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0") == "1
         rect_bounds = (SVector(0.0, 0.0, 0.0), (4.0, 1.0, 1.0))
         rect_opts = CUDARadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+        # lamb_helmholtz passed explicitly: CUDARadixCPUScalarSystem does not
+        # overload has_vector_potential, so the constructor cannot derive it
         rect_hc = RadixFMMCache(rect_host_sys; expansion_order=3, ell=4,
-            bounds=rect_bounds, options=rect_opts)
+            bounds=rect_bounds, options=rect_opts, lamb_helmholtz=false)
         rect_dc = RadixFMMCache(rect_dev_sys; expansion_order=3, ell=4,
-            bounds=rect_bounds, options=rect_opts, device=true)
+            bounds=rect_bounds, options=rect_opts, device=true,
+            lamb_helmholtz=false)
         @test rect_dc.ell_axes == rect_hc.ell_axes == SVector(4, 2, 2)
         @test rect_dc.box_extent == rect_hc.box_extent
         @test rect_dc.max_cells == rect_hc.max_cells
