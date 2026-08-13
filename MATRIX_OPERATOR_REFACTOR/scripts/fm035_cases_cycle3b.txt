@@ -1,0 +1,21 @@
+# Task 035 cycle 3B pre-registered confirmation grid (2026-08-12).
+# Cycle 3A measured the winner in every case at literature P=5
+# (FastMultipole expansion_order=4), rho_t=3.668, with q=12 cube / q=6 wake.
+# Confirm both precisions against same-job P=4 anchors; at representative
+# n=1e5 also measure full RK3 for anchor and winner.
+
+label=cy3b_c5_p4_f32_anchor case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=4 q=17 rho_t=4.252 strategy=dense profile=1 rk3=1
+label=cy3b_c5_p5_f32_winner case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=cy3b_c5_p4_f64_anchor case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=3 ell=4 q=17 rho_t=4.252 strategy=dense profile=1 rk3=1
+label=cy3b_c5_p5_f64_winner case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 rk3=1
+
+label=cy3b_c6_p4_f64_anchor case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=3 ell=5 q=17 rho_t=4.252 strategy=dense profile=1
+label=cy3b_c6_p5_f64_winner case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1
+
+label=cy3b_w5_p4_f32_anchor case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=3 ell=5 q=12 rho_t=4.252 strategy=dense profile=1 rk3=1
+label=cy3b_w5_p5_f32_winner case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=cy3b_w5_p4_f64_anchor case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=3 ell=5 q=12 rho_t=4.252 strategy=dense profile=1 rk3=1
+label=cy3b_w5_p5_f64_winner case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 rk3=1
+
+label=cy3b_w6_p4_f64_anchor case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=3 ell=6 q=12 rho_t=4.252 strategy=dense profile=1
+label=cy3b_w6_p5_f64_winner case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1

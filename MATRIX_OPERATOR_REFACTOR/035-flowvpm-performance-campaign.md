@@ -575,6 +575,41 @@ production coverage gate (`g_min*h_leaf > rho_t*sigma_max`), notably wake
 `q=6, rho_t=3.668` and cube `q=12, rho_t=3.668`. Accuracy is deliberately not
 predicted; the checksummed 033 references decide eligibility on H200.
 
+**Cycle 3A result — positive (job 13154216, H200 m13h-1-2, 18m57s,
+exit 0):** all preflights green (032 interface 1246/1246, scalar lifecycle
+216/216 + concat 37/37, host interface/032a suites including 32367 binned-pair
+assertions, CUDA binning 304/304, FLOWVPM Part A+B), reference checksums and
+the shipped-default 033 refcheck passed. All **33/33** rows completed, 25 pass
+the velocity gate, every row has flat 023 counters and unchanged small
+framework allocation. Data: `data/flowvpm_gpu_campaign/fm035_cycle3a.csv` and
+`fm035-13154216.out`.
+
+The winner in all four case/scale groups is literature **P=5**
+(`expansion_order=4`), `rho_t=3.668`, dense M2L, with `q=12` cube / `q=6`
+wake. Same-job anchor → winner:
+
+| case | n | P4 anchor → P5 winner (ms) | speedup | u_rel_rms | J diagnostic |
+|---|---:|---:|---:|---:|---:|
+| cube | 1e5 | 12.180 → **11.520** | 1.06x (5.4%) | 6.81e-4 | 3.88e-3 |
+| cube | 1e6 | 151.097 → **102.414** | 1.48x | 7.08e-4 | 3.85e-3 |
+| wake | 1e5 | 9.782 → **7.989** | 1.22x | 3.30e-4 | 2.45e-3 |
+| wake | 1e6 | 139.780 → **83.702** | 1.67x | 2.99e-4 | 2.87e-3 |
+
+The mechanism matches the hypothesis: direct pairs fall 37–41%; isolated
+nearfield falls from 7.74→5.45, 115.13→65.70, 8.22→5.41, and
+132.63→73.83 ms respectively. The added P5 far-field cost is small enough to
+retain the gain (cube 1e5 M2L 3.28→4.43 ms; wake 1e5 0.66→1.27 ms), and at
+1e6 the smaller route set offsets the higher order. P4 at the smaller shells
+fails the velocity gate; P5 recovers it with wide margin. P6 passes but is
+slower. Dense remains decisively best at P5: concat is 1.31–2.49x and
+precomputed-y 1.36x slower where sampled.
+
+**Pre-registered confirmation (cycle 3B):**
+`scripts/fm035_cases_cycle3b.txt`, 12 rows. Confirm P5 winners against same-job
+P4 anchors in Float64 at all four points, repeat F32 anchor/winner at n=1e5,
+and record full RK3 there. No production default change is included; that
+decision follows only if 3B confirms the gain and all gates.
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;
