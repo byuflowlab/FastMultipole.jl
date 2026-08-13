@@ -9,6 +9,17 @@ implementation, with an expected end-to-end U/J-solve gain of at least 5% (or
 an explicitly documented reason to proceed below that threshold). The
 Integration Phase milestone review `036` must also be complete.
 
+**035 handoff (2026-08-12, campaign concluded): GO.** The final wake n=1e5
+solve is 7.98 ms (F32, shipped P5 defaults, ℓ=5 with only ~32 transverse-
+plane occupied nodes above the leaf level); the ~2 spare transverse coarse
+levels cost ~0.9-1.8 ms of M2M/L2L/launch floor = **11-23% expected
+end-to-end U/J gain at n=1e5** (F64 similar; <2% at n=1e6 where the
+nearfield dominates). Occupancy compaction already absorbs the empty-cell
+cost (B2M/nearfield scale with occupied cells), so the win is coarse-level
+count, not occupancy — size the acceptance case accordingly. Full profile
+evidence: 035 Final Report §3 and the cycle-3D stage tables
+(`fm035_cycle3d.csv`).
+
 ## Objective
 
 Add an optional rectangular radix-grid path for elongated domains while
