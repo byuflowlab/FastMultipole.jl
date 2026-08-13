@@ -25,6 +25,7 @@ Base.eltype(::CUDARadixCPUScalarSystem{TF}) where TF = TF
 FastMultipole.get_n_bodies(system::CUDARadixCPUScalarSystem) = size(system.positions, 2)
 FastMultipole.data_per_body(::CUDARadixCPUScalarSystem) = 5
 FastMultipole.strength_dims(::CUDARadixCPUScalarSystem) = 1
+FastMultipole.has_vector_potential(::CUDARadixCPUScalarSystem) = false
 FastMultipole.get_position(system::CUDARadixCPUScalarSystem{TF}, i) where TF =
     SVector{3,TF}(system.positions[1, i], system.positions[2, i], system.positions[3, i])
 
