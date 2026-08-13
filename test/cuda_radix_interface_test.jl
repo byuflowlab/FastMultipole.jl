@@ -258,7 +258,9 @@ end
             @test dc.box_extent == hc.box_extent
             @test dc.max_cells == hc.max_cells
             @test dc.max_nodes == hc.max_nodes
-            @test dc.route_capacity == hc.route_capacity
+            # route_capacity is residency-specific by design (it scales with
+            # the stencil window width: host K=4 vs device K=256, task 027),
+            # so only the window-independent capacities must match.
             @test dc.direct_capacity == hc.direct_capacity
             fmm!(host_sys, hc; scalar_potential=true, gradient=true)
             fmm!(dev_sys, dc; scalar_potential=true, gradient=true)
