@@ -2,7 +2,14 @@
 
 ## Status and Entry Gate
 
-**Proposed follow-on item; not started.**
+**In progress `2026-08-13`** (entry gate satisfied `2026-08-12`: 035 GO
+handoff below + 036 Done and clear-context approved). Design record complete:
+`037-implementation-plan.md` — virtual-cube embedding with per-axis leaf
+depths + construction-time active-level trimming with a flat-top root level;
+theory verdict: no new exact-once/error-bound theory required (boundary case
+of the 025 proof; verdict argument recorded in the design record §1), with
+the anisotropic->32:1-aspect generalization explicitly flagged as future
+theory if ever needed. Five implementation stages; work record below.
 
 Entry gate: `035` must complete the wake-versus-cube profile and recommend
 implementation, with an expected end-to-end U/J-solve gain of at least 5% (or
