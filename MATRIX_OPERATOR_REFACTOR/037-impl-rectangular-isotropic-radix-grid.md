@@ -74,9 +74,18 @@ section 10 (parity F64/F32 × P∈(3,8) with telemetry-count comparison, 023
 counter contract + stable warmed allocation over 3 steps, per-axis device
 oob, rectangular device recenter), lifecycle rectangular case, and a
 vector-bounds graph-capture testset. Local: all host suites green; CUDA
-files parse and skip cleanly. **Device tests not yet run on hardware — one
-FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 H200 run (interface, lifecycle, graph,
-integration) gates Stage 3.**
+files parse and skip cleanly.
+
+**H200 device validation PASSED (job 13160006, 2026-08-13, exit 0):**
+interface 1317/1317, lifecycle 227/227 (incl. the rectangular device case),
+rectangular vector-bounds graph capture 32/32, cached-window/graph parity
+112/112, integration + clustering suites green. Three test-scaffolding
+fixes were needed en route (jobs 13159955/13159996/13160001 — all in the
+new CUDA-gated tests, no production change): route_capacity is
+residency-specific (host K=4 vs device K=256) so the cross-residency
+equality was dropped; the scalar lifecycle test system needed explicit
+`lamb_helmholtz=false` and a `has_vector_potential` overload. Stage 3
+unblocked.
 
 ## Objective
 
