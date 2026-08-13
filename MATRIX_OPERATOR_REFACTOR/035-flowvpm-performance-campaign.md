@@ -3,7 +3,9 @@
 ## Status and Entry Gate
 
 **Added by user request on `2026-08-04`; consolidated by roadmap review on
-`2026-08-05`.** Not started.
+`2026-08-05`.** **DONE `2026-08-12`** (optimization cycles 1, 2, 3A-3D
+complete and confirmed; definitive Final Report in this file). Clear-context
+approval pending.
 
 Entry gate: `034` (working GPU coupling), `032a` (measured nearfield default),
 and `030` (matched-`n` reference measurements) must all be Done and
@@ -777,6 +779,171 @@ First capture (13157887) hid graph-internal kernels (nsys default
 graph-level trace ⇒ only ~8 ms of non-graph kernels visible); rerun with
 `--cuda-graph-trace=node` submitted as job 13157931 (preflights off, sweep
 resume no-ops).
+
+### 2026-08-12 — counter-free bound-ness analysis (jobs 13157887/13157931)
+
+Job 13157931 (H200 m13h-1-1, exit 0) repeated the four nsys captures with
+`--cuda-graph-trace=node` after the first capture's default graph-level trace
+hid every graph-internal kernel. Method: exact per-pair operation counts from
+a kernel-source audit (warp-per-cell-pair scheme, no shared-memory tiling,
+erf-free Horner-series g/h, 12 atomics per target-instant; singular ≈63/72
+ops/pair F32/F64, regularized ≈100/122, div/rsqrt counted 4, FMA counted 1),
+exact body-pair totals from the direct route list (cube 1e6: 8.059e9 pairs;
+wake 1e6: 13.416e9), and node-level kernel times from the production traces.
+
+**Findings (n=1e6, five production solves per case):**
+
+1. **The GPU is saturated — not launch- or latency-bound.** Total kernel time
+   per solve ≈ solve wall time in every case (cube F32 105.1 vs 102.3 ms;
+   wake F32 88.6 vs 83.7; cube F64 213.0 vs 207.9; wake F64 187.8 vs 179.0).
+   The ~50 us/window launch story of 027 does not reappear at these scales.
+2. **The mixed (PartitionedVortex) bucket is the nearfield.** Of nearfield
+   kernel time: cube F32 50.3 (mixed) + 10.3 (singular) + 0.7 (regularized)
+   ms; wake F32 72.3 ms is 82% mixed with singular/regularized not in the
+   top six kernels (at q=6 nearly every route straddles rho_t). The dense
+   tiled M2L is the only other material kernel (cube 29.0/53.9 ms F32/F64;
+   wake 4.9/8.9 ms).
+3. **Compute-bound at 39-60% of the vector-op ceiling.** Pair rate ÷ peak
+   op rate (H200 ≈33.5 Top/s F32, ≈17 F64, FMA=1 counting): cube F32
+   131 Gpair/s ≈ 39% of ceiling at the regularized op count; wake F32
+   186 Gpair/s ≈ 55%; cube F64 ≈ 38%; wake F64 83 Gpair/s ≈ 60%. DRAM
+   traffic is 2-12% of the 4.8 TB/s peak (the naive no-reuse estimate would
+   exceed peak — warp-broadcast reuse is operative), so bandwidth is not the
+   limit. The residual gap to the ceiling is structural to the scheme:
+   predicated dual-path retirement inside mixed warp instants, ragged
+   n_t mod 32 tails (wake mean occupied cell 3.8, max 261), and the 12-atomic
+   flush. NCU counter confirmation remains blocked (ERR_NVGPUCTRPERM);
+   this classification rests on the op-count model, not hardware counters.
+
+**Lever consequence: no credible ≥5% end-to-end lever remains in 035 scope.**
+Raising nearfield utilization further means a kernel redesign (pair-parallel
+with segmented reduction, class-sorted warp instants) — medium-high risk with
+uncertain gain against a kernel already at 39-60% of ceiling, in the space
+where 029's nearfield-ILP lever was falsified at +1.9%. The M2L strategy
+space is measured-exhausted at P5 (dense beats concat 1.31-2.49x and
+precomputed-y 1.36x; the FP16-WMMA tensor path is structurally unavailable
+under Lamb-Helmholtz). The one structural lever above the bar — the
+rectangular radix grid, now 11-23% of the 7.98 ms wake 1e5 solve — is owned
+by row `037`. Optimization cycles are concluded.
+
+## Final Report (§3, definitive — 2026-08-12)
+
+Measurement policy: H200 (m13h-1-x), julia 1.11.7, CUDA 12.8; every timing is
+the **median of 15 warmed repetitions after 2 warmup solves** (minima also
+recorded in the CSVs); stage times are isolated CUDA-event medians (the
+production solve overlaps the nearfield with the far-field chain, so eval <
+Σ stages); every reported configuration passes sampled velocity RMS ≤ 1e-3
+against the sha256-checksummed 033 direct references, with flat 023 counters
+and zero recurring body traffic. Jacobian RMS is diagnostic throughout.
+
+### 1. Final shipped configurations and timings
+
+Shipped FLOWVPM coupling defaults (gpu-full `5dd0d85`): literature P5
+(`expansion_order=4`), `PartitionedVortex` at `rho_t=3.668`, dense M2L,
+K=256, joint auto-geometry (floor q=6, margin 1.03). Auto-selected
+geometries: cube (ℓ4,q12)/(ℓ5,q12), wake (ℓ5,q6)/(ℓ6,q6) at n=1e5/1e6.
+
+| case | n | TF | U/J solve (ms) | RK3 step (ms) | u_rel_rms | J diag |
+|---|---:|---|---:|---:|---:|---:|
+| cube | 1e5 | F32 | **11.52** | 35.20 | 6.81e-4 | 3.88e-3 |
+| cube | 1e5 | F64 | **21.13** | 64.47 | 6.81e-4 | 3.88e-3 |
+| cube | 1e6 | F32 | **102.35** | — | 7.08e-4 | 3.85e-3 |
+| cube | 1e6 | F64 | **207.94** | — | 7.08e-4 | 3.85e-3 |
+| wake | 1e5 | F32 | **7.98** | 24.54 | 3.30e-4 | 2.45e-3 |
+| wake | 1e5 | F64 | **14.56** | 44.30 | 3.30e-4 | 2.45e-3 |
+| wake | 1e6 | F32 | **83.69** | — | 2.99e-4 | 2.87e-3 |
+| wake | 1e6 | F64 | **179.00** | — | 2.99e-4 | 2.87e-3 |
+
+RK3 ≈ 3 × U/J + ≤1 ms integrator overhead throughout. Versus the shipped 034
+coupling (figure `fig09_035_cycle_ladder`): cube 1e5 51.4→11.52 (**4.5x**),
+wake 1e5 36.6→7.98 (**4.6x**), cube 1e6 427.1→102.35 (**4.2x**), wake 1e6
+282.8→83.69 (**3.4x**), all F32; F64 1e5: cube 94.6→21.13 (**4.5x**), wake
+57.1→14.56 (**3.9x**).
+
+### 2. Speedups vs 033 CPU baselines (eligibility policy)
+
+Every FMM-active default-parameter 033 CPU row **fails** the 1e-3 velocity
+gate (cube u=1.07e-2 at n=1e4 rising to 6.75e-2 at 1e6; wake 8.3e-3 at 1e4
+to 6.39e-2 at 1e6); the gate-passing CPU rows exist only at cube n ≤ 3162
+and wake n = 1e3, all below the campaign's measured GPU range (n ≥ 1e4).
+**No eligible matched-n CPU/GPU speedup pairing exists, so no CPU-baseline
+speedup is headlined.** The failing historical timings are preserved for
+context only (single-thread / 64-thread U/J seconds, with their errors):
+cube 1e5 113.7 / 2.51 s (u=4.6e-2), cube 1e6 1776.6 / 56.0 s (6.8e-2), wake
+1e5 102.1 / 2.34 s (3.2e-2), wake 1e6 1851.7 / 31.6 s (6.4e-2). The
+gate-passing small-n rows (cube 1e3 0.057 s, cube 3162 0.554 s, wake 1e3
+0.052 s; identical cpu1/cpu64) are all-direct-regime solves without a
+matched GPU measurement; running one would measure launch floor, not the
+FMM. Per the campaign contract no replacement tuned CPU campaign was run.
+
+### 3. Per-stage profiles and bottleneck movement
+
+Figure `fig10_035_stage_movement` (isolated CUDA-event medians, F32) and the
+node-level traces (13157931) tell one story: the shipped-034 coupling was
+B2M- and M2L-bound at 1e5 (cube ℓ3: B2M 21.8 of 41.8 ms eval; wake: B2M
+11.4 of 25.9); cycles 1-2 removed both (dense M2L 7-16x stage gain;
+block-per-cell B2M 9-42x), leaving the fused nearfield dominant everywhere
+(66-95% of eval); cycle 3D shrank that nearfield 29-56% by trading direct
+work for far-field work at P5 (cube 1e6 NF+L2B 115.2→65.7 ms, wake 1e6
+166.8→74.0 ms, isolated). Post-3D the nearfield remains 47-88% of solve
+kernel time; its bound-ness classification (compute-bound at 39-60% of the
+op ceiling, GPU saturated, DRAM 2-12%) is in the bound-ness analysis above.
+The eligible CPU baselines (033 profiles) are ~99.5% nearfield-bound
+(custom_erf alone 36.7%), so the bottleneck on both sides is the
+regularized nearfield; the GPU's answer is the classsplit mixed-bucket
+kernel plus the P5/3.668 shell reduction.
+
+### 4. Matched-n 030 ratio (n=1e5)
+
+030 best admissible verdict-boundary (scalar workload, per-n retuned):
+3.097 ms (FP16-WMMA/F32) / 3.389 ms (F64). Final FLOWVPM U/J solves are
+**3.7x / 2.6x** those (cube/wake F32: 11.52/7.98 over 3.097) and **6.2x /
+4.3x** (F64: 21.13/14.56 over 3.389). Itemized workload differences (not a
+pass/fail target): Lamb-Helmholtz χ carried end-to-end (double expansion
+channel; structurally disables the FP16-WMMA tensor path), vector strength
+(3 B2M source channels), 13-row output incl. the 9-component hessian (vs
+4-row), σ-carrying regularized nearfield (mixed-bucket kernel ≈1.6x the
+singular per-pair cost, plus σ coverage forcing larger near sets), and
+~0.1 ms FLOWVPM-side reset/dispatch. RK3 full steps are reported in §1 and
+deliberately excluded from this ratio.
+
+### 5. Cycle ledger and closing lever list
+
+Implemented (all user-approved, all confirmed on H200 with realized-vs-
+expected recorded in this file): **cycle 1** dense M2L + PartitionedVortex +
+joint auto-geometry as coupling defaults (4.25x/2.2-2.9x); **cycle 2**
+block-per-cell CUDA B2M (stage 9-42x; wake 1.48-1.66x e2e; scalar
+no-regression PASSED); **cycle 3A/3B** measurement-only P/cutoff/stencil
+co-design (P5 winner found); **cycle 3C** cutoff/FMM error decomposition
+(erf-oracle; conservative sum gate adopted; P4 default shown out-of-gate at
+cube 1e6); **cycle 3D** P5/3.668 shipped as defaults (1.06-2.23x further;
+errors improve everywhere; cube 1e5 F64 0.98x accepted).
+
+Rejected by measurement (sub-5% or losses): window_classes K∈{64,1024,4096}
+(dense is K-flat to <1%; K=64 a 1.4-1.9x loss under concat), rho_t=4.789
+(≤0.3%), boosted-coarse level schedules (4-14% worse), precomputed_y M2L
+(loses to dense at P4 and P5), FLOWVPM-side overhead (≤1-3% total), B2M
+residual (≤0.5 ms), nearfield micro-optimization (bound-ness analysis;
+029-P3 precedent falsified at +1.9%), wake q-floor 12→6 special-casing
+(superseded by cycle 3D, which ships q=6 with P5 accuracy).
+
+Remaining above the bar, explicitly handed off: **037 rectangular radix
+grid** — the wake's ~2 spare transverse coarse levels cost ~0.9-1.8 ms of
+M2M/L2L/launch floor = **11-23% of the final 7.98 ms wake 1e5 solve** (<2%
+at 1e6, where the nearfield dwarfs it); the go recommendation transfers to
+`036`/`037` with this estimate. Deferred-external: NCU counter profiling
+(ERR_NVGPUCTRPERM on unprivileged H200 jobs; `profile_035_nearfield_ncu.jl`
+and the four job logs 13157746_0-3 stand ready unchanged).
+
+Figures: `data/figures/fig09_035_cycle_ladder`, `fig10_035_stage_movement`,
+`fig11_035_error_decomposition` (024a conventions; tables regenerated by
+`scripts/figures_035_prepare.jl`, compiled with pdflatex). Data of record:
+`fm035_sweep.csv`, `fm035_cycle{1,2,3a,3b,3d}.csv`,
+`fm035_error_decomposition.csv` (sha256 in the work record), nsys artifacts
+`fm035_nsys_*_13157931.*`.
+
+**Task 035 status: DONE.** Optimization cycles concluded; this section is
+the phase's sole definitive speedup report. Awaiting clear-context approval.
 
 ## Verification Gates
 
