@@ -736,6 +736,48 @@ ON) five-solve nsys trace per case at n=1e6 in both precisions, plus the
 exact nearfield body-pair total (Σ |tgt|·|src| over direct routes) for the
 counter-free analytic roofline against H200 peaks.
 
+**Cycle 3D result — CONFIRMED (job 13157887, H200 m13h-1-2, 24m13s, exit
+0):** all preflights green on hardware (032 interface, scalar lifecycle, host
+032a suites, CUDA binning, FLOWVPM Part A with the new-default assertions +
+Part B), **033 refcheck PASSED at the new shipped defaults** (cube/wake ×
+1e4/1e5 × F64/F32 — this gates the previously unmeasured 1e4 auto
+selections), 16/16 rows ok, counters flat on every row, steady-state
+allocation ≤ 11 KB. Every auto row selected exactly the locally derived
+geometry (cube (4,12)/(5,12), wake (5,6)/(6,6)) and reproduced the 3A/3B
+errors to 4-5 digits. Data: `fm035_cycle3d.csv`, sha256
+`69e5790beea06a96ad80ea14635ac2eab93f91abe84808853cafb99a8cb52c1b`.
+
+**Shipped-default U/J solve, same-job P4 anchor (previous shipped geometry) →
+P5 auto (all gate-passing):**
+
+| case | n | TF | anchor (ms) | auto (ms) | speedup | auto u_rel_rms |
+|---|---:|---|---:|---:|---:|---:|
+| cube | 1e5 | F32 | 12.187 | **11.524** | 1.06x | 6.81e-4 |
+| cube | 1e5 | F64 | 20.654 | 21.132 | 0.98x (accepted cost) | 6.81e-4 |
+| cube | 1e6 | F32 | 151.063 | **102.348** | 1.48x | 7.08e-4 |
+| cube | 1e6 | F64 | 309.954 | **207.937** | 1.49x | 7.08e-4 |
+| wake | 1e5 | F32 | 11.312 | **7.976** | 1.42x | 3.30e-4 |
+| wake | 1e5 | F64 | 21.645 | **14.562** | 1.49x | 3.30e-4 |
+| wake | 1e6 | F32 | 177.233 | **83.686** | 2.12x | 2.99e-4 |
+| wake | 1e6 | F64 | 398.735 | **178.999** | 2.23x | 2.99e-4 |
+
+RK3 full steps at n=1e5: cube 37.48→35.20 (F32) / 62.73→64.47 (F64); wake
+34.54→24.54 (F32) / 67.07→44.30 (F64) ms. The wake speedups exceed the 3B
+row-vs-row numbers because the shipped-default anchor is the auto (5,16)/(6,16)
+geometry, not the hand-tuned (5,12)/(6,12) rows. Errors improve in every
+case/scale. Cumulative vs the shipped 034 coupling at n=1e5 F32: cube
+51.4→11.52 (**4.5x**), wake 36.6→7.98 (**4.6x**).
+
+**Profiling rider:** nsys production timelines captured for cube/wake ×
+F32/F64 at n=1e6 (5 solves each, graph capture + overlap ON) plus exact
+nearfield body-pair totals: cube 3,414,506 direct routes / **8.059e9 body
+pairs** (mean occupied cell 30.5); wake 401,888 routes / **13.416e9 body
+pairs** (mean cell 3.81, max 261 — pairs concentrate in the large cells).
+First capture (13157887) hid graph-internal kernels (nsys default
+graph-level trace ⇒ only ~8 ms of non-graph kernels visible); rerun with
+`--cuda-graph-trace=node` submitted as job 13157931 (preflights off, sweep
+resume no-ops).
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;

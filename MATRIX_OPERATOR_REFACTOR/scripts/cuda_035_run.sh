@@ -104,8 +104,12 @@ if [ "${FM035_NSYS:-0}" == "1" ]; then
             read -r ncase ntf <<< "$cfg"
             rep="$DATADIR/fm035_nsys_${ncase}_${ntf}_${SLURM_JOB_ID:-manual}"
             echo "=== nsys case=$ncase tf=$ntf"
+            # --cuda-graph-trace=node: without it the graph-captured far/near
+            # chains are invisible (job 13157887 recorded only ~8 ms of
+            # non-graph kernels across five ~100 ms solves)
             nsys profile -o "$rep" --force-overwrite=true \
                 --trace=cuda --sample=none --cpuctxsw=none \
+                --cuda-graph-trace=node \
                 --capture-range=cudaProfilerApi --capture-range-end=stop \
                 julia --project="$ENVDIR" \
                 "$FMDIR/MATRIX_OPERATOR_REFACTOR/scripts/profile_035_nsys.jl" \
