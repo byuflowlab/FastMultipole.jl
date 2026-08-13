@@ -655,6 +655,44 @@ CSV exports. Diagnose compute, memory, or latency/occupancy limitation from
 SOL/roofline, occupancy, cache/DRAM, instruction, branch, and warp-stall
 counters. No production code/default change is part of cycle 3C.
 
+**Cycle 3C result (decomposition job 13157744, H200 m13h-1-1, 3m47s,
+exit 0):** the independent host Float64 oracle reproduced every checksummed
+033 regularized reference at 1.6e-16--3.0e-15 relative error. The exact
+three-field identity residual was zero at reported precision. Velocity results
+below are precision-insensitive (Float32 shown; Float64 differs in the last
+digits):
+
+| config | case | n | cutoff `||P-R||/||R||` | FMM `||F-P||/||R||` | observed total | triangle bound | split gate |
+|---|---|---:|---:|---:|---:|---:|---|
+| P4/rho=4.252 | cube | 1e5 | 4.91e-5 | 9.35e-4 | 9.35e-4 | 9.84e-4 | cutoff pass, FMM fail |
+| P5/rho=3.668 | cube | 1e5 | **5.56e-4** | 4.05e-4 | 6.81e-4 | 9.61e-4 | **cutoff fail**, FMM pass |
+| P4/rho=4.252 | cube | 1e6 | 4.98e-5 | 9.79e-4 | 9.83e-4 | 1.03e-3 | cutoff pass, FMM fail |
+| P5/rho=3.668 | cube | 1e6 | **5.14e-4** | 4.73e-4 | 7.08e-4 | 9.88e-4 | **cutoff fail**, FMM pass |
+| P4/rho=4.252 | wake | 1e5 | 1.05e-5 | 6.95e-4 | 6.94e-4 | 7.05e-4 | cutoff pass, FMM fail |
+| P5/rho=3.668 | wake | 1e5 | 1.05e-4 | 2.89e-4 | 3.30e-4 | 3.94e-4 | **both pass** |
+| P4/rho=4.252 | wake | 1e6 | 3.69e-6 | 7.02e-4 | 7.02e-4 | 7.06e-4 | cutoff pass, FMM fail |
+| P5/rho=3.668 | wake | 1e6 | 3.61e-5 | 2.89e-4 | 2.99e-4 | 3.25e-4 | **both pass** |
+
+This confirms the user's concern. Higher P reduces `F-P`; it does not repair
+`P-R`. The P5 wake configuration passes the separately budgeted 5e-4 + 5e-4
+velocity criterion with ample margin. The P5 cube's observed and triangle-bound
+totals remain below 1e-3, but its cutoff component exceeds the agreed 5e-4 cap
+by 11.2% at n=1e5 and 2.9% at n=1e6. It is therefore **not validated as a
+cube default at rho_t=3.668** under the no-cancellation split policy. Jacobian
+remains diagnostic: P5 cutoff/FMM/total are 2.74e-3/2.69e-3/3.88e-3 (cube
+1e5), 2.73e-3/2.71e-3/3.85e-3 (cube 1e6), 1.24e-3/2.16e-3/2.45e-3 (wake
+1e5), and 1.56e-3/2.39e-3/2.87e-3 (wake 1e6). Data:
+`fm035_error_decomposition.csv`.
+
+**Nsight Compute attempt (array 13157746, four P5 n=1e6 cases):** all four
+drivers built and reached the intended isolated nearfield launch (cube direct
+list 3,414,506; wake 401,888), but Nsight Compute rejected metric collection
+with `ERR_NVGPUCTRPERM`: unprivileged jobs on this H200 partition cannot access
+NVIDIA performance counters. No `.ncu-rep` was produced. Per preregistration,
+no memory-/compute-bound verdict is inferred from timing alone. The committed
+driver is ready to rerun unchanged when Orc enables counter access; the four
+job logs preserve the blocker and exact requested configurations.
+
 ## Verification Gates
 
 - Every timed configuration records sampled velocity and Jacobian RMS errors;
