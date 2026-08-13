@@ -113,6 +113,37 @@ shift in the ell=2 oracle alignment). Open H200 risks recorded in the
 Stage-3 report (device flat-top path, trimmed graph capture, counter
 contract) — gated by the device job before Stage 4 lands.
 
+**Stage 3 H200 device validation PASSED (job 13160427, 2026-08-13, exit 0):**
+trimming 122/122 on hardware, interface 1333/1333 (incl. the device flat-top
+path, multi-root tree-route kernel, and trimmed graph capture/replay),
+lifecycle 227/227, all remaining suites green. Committed `c874818`.
+
+### 2026-08-13 — Stage 4: FLOWVPM rectangular coupling mode (implemented)
+
+FLOWVPM `gpu-full` commit `98d4c45`, coupling file + Part A tests only.
+`RadixFMMSettings.rectangular::Bool=false`; rectangular `_radix_derive_bounds`
+keeps per-axis tight extents (same per-face padding and `4σ_max` degenerate
+floor, applied per axis); vector `box_size` passes through explicit bounds
+(user-owned, no recenter); automatic recenter preserves rectangularity.
+**Auto-geometry provably unchanged** (long axis equals the cubic derived
+side ⇒ identical `ell`, `q`, leaf width between modes — asserted by test).
+Part A green locally: +27 asserts (rectangular bounds 22, rectangular
+recenter 5), existing testsets unchanged; wake u_rel_rms 1.87e-4
+(cubic 1.85e-4). Part B device mirror deferred to the Stage-5 job.
+
+### 2026-08-13 — Stage 5: pre-registered comparison (submitted)
+
+Harness: `benchmark_035_gpu.jl` gains a `rectangular` case token and
+`rectangular`/`ell_axes` CSV columns (new output file `fm037_stage5.csv`).
+Pre-registered grid `scripts/fm037_cases_stage5.txt` (10 rows, committed
+`dde3aa3` before the run): wake 1e5/1e6 × F32/F64 cubic-vs-rectangular at
+the shipped 035 defaults (identical (ℓ,q,leaf width) between arms —
+attribution is trimming + per-axis capacity only), RK3 at 1e5, cube 1e5
+neutrality control. Pre-registered expectation (035 handoff): wake 1e5 gain
+in the 11-23% band, wake 1e6 <2%, cube neutral. Job 13160439 (full
+preflights incl. FLOWVPM Part A rectangular testsets + Part B, 033 refcheck
+at shipped cubic defaults).
+
 ## Objective
 
 Add an optional rectangular radix-grid path for elongated domains while
