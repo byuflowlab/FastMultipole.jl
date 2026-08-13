@@ -53,7 +53,32 @@ gates at both orders; snap-up, out-of-box throw, and refusal paths covered.
 Full host suites green (radix integration 89, timestepping 51k,
 hierarchical host M2L 877, dense/precomputed-y M2L, device_system_interface
 35.4k). Note for Stage 2: host route-buffer prefixes are windowed scratch —
-route parity must compare telemetry counts, not buffers.
+route parity must compare telemetry counts, not buffers. Committed
+`7b9c69d`.
+
+### 2026-08-13 — Stage 2: device parity of the rectangular contract (implemented)
+
+Per plan §3 Stage 2, committed `d73da44`. `_cuda_radix_keys_checked_kernel!`
+checks per-axis `box_extent` (quantization unchanged);
+`_radix_cache_device_build` carries `ell_axes`/`box_extent` and sizes device
+stage groups with the per-axis capacities; the Stage-1 device+vector-bounds
+guard is removed; preflight needed no change (capacities arrive generalized;
+cubic `cell_at`/occupancy terms intentionally stay cubic supersets).
+`recenter!` now preserves rectangularity for derived bounds (per-axis tight
+extents, same margin convention; cubic path verbatim; explicit bounds are
+caller-final — scalar rebuilds cubic by design).
+
+Tests: host rectangular `recenter!` section (61 asserts, integration suite);
+device additions gated behind `FASTMULTIPOLE_REQUIRE_CUDA_TESTS` — interface
+section 10 (parity F64/F32 × P∈(3,8) with telemetry-count comparison, 023
+counter contract + stable warmed allocation over 3 steps, per-axis device
+oob, rectangular device recenter), lifecycle rectangular case, and a
+vector-bounds graph-capture testset. Local: all host suites green; CUDA
+files parse and skip cleanly. **Device tests not yet run on hardware — one
+FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 H200 run (interface, lifecycle, graph,
+integration) gates Stage 3.**
+
+## Objective
 
 Add an optional rectangular radix-grid path for elongated domains while
 retaining approximately cubic *physical* cells. The wake should use unequal
