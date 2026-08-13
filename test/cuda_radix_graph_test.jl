@@ -47,14 +47,15 @@ if _GRAPH_LOADED
     # (bodies still cross cells, exercising epoch regeneration) with bounded
     # divergence.
     function _graph_run(bodies, ::Type{TF}, P, K; steps=3, dt=1e-4,
-            teleport::Bool=false) where TF
+            teleport::Bool=false,
+            bounds=(SVector(-0.01, -0.01, -0.01), 1.02)) where TF
         n = size(bodies, 2)
         sys = FM028DeviceSystem{TF}(bodies)
         opts = CUDARadixLifecycleOptions(; precision=TF,
             operator=MaterializedYRotationM2L(),
             m2l_strategy=DenseTranslationM2L())
         cache = RadixFMMCache(sys; expansion_order=P, ell=3, max_n_bodies=n,
-            bounds=(SVector(-0.01, -0.01, -0.01), 1.02), device=true,
+            bounds=bounds, device=true,
             options=opts, near_radius2=12, window_classes=K)
         for _ in 1:steps
             fmm!(sys, cache; scalar_potential=true, gradient=true)
@@ -131,6 +132,47 @@ if _GRAPH_LOADED
                         @test hctx.graph_epoch == hctx.epoch_id
                     end
                 end
+            end
+        finally
+            FM.DENSE_CUDA_TENSOR_FORMAT[] = saved_format
+        end
+    end
+
+    # Task 037 stage 2: graph capture with rectangular (vector) bounds. The
+    # x-stretched cloud resolves ell_axes = (3, 2, 2); motionless evaluations
+    # (steps = 0) keep the epoch stable so the graph reaches warm -> record ->
+    # replay, and the graphed path must agree with the ungated per-step path.
+    @testset "rectangular vector-bounds graph capture (task 037 stage 2)" begin
+        n = 2000
+        rect_bounds = (SVector(-0.01, -0.01, -0.01), (4.06, 1.02, 1.02))
+        saved_format = FM.DENSE_CUDA_TENSOR_FORMAT[]
+        FM.DENSE_CUDA_TENSOR_FORMAT[] = :off
+        try
+            for TF in (Float64, Float32), P in (3, 4)
+                bodies = fm028_body_matrix(24025, n)
+                bodies[1, :] .*= 4.0    # positions to [0, 4) x [0, 1)^2
+                results = map(((false, false), (true, true))) do (cached, graph)
+                    _with_flags(cached, graph) do
+                        pot, grad, _, cache = _graph_run(copy(bodies), TF, P, 8;
+                            steps=0, bounds=rect_bounds)
+                        (pot, grad, cache)
+                    end
+                end
+                ref_pot, ref_grad, ref_cache = results[1]
+                pot, grad, cache = results[2]
+                @test ref_cache.ell_axes == cache.ell_axes == SVector(3, 2, 2)
+                tol = _ptol(TF)
+                @test maximum(abs.(pot .- ref_pot)) <=
+                    tol * max(1, maximum(abs.(ref_pot)))
+                @test maximum(abs.(grad .- ref_grad)) <=
+                    tol * max(1, maximum(abs.(ref_grad)))
+                hctx = cache.state.interaction_list
+                @test hctx isa FM.DeviceHierarchicalM2LContext
+                @test hctx.win_valid
+                @test cache.state.counts.n_routes == hctx.total_routes
+                # the graph must actually have been recorded with vector bounds
+                @test hctx.graph_exec !== nothing
+                @test hctx.graph_epoch == hctx.epoch_id
             end
         finally
             FM.DENSE_CUDA_TENSOR_FORMAT[] = saved_format

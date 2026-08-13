@@ -781,6 +781,47 @@ _cuda_required_tests() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0") == "1
         @test prepacked_state.counters.route_uploads == route_uploads_after_state
         @test device_target.host.potential ≈ expected_potential
         @test device_target.host.gradient ≈ host_target.gradient
+
+        #--- rectangular device cache (task 037 stage 2) ---#
+
+        # elongated cloud in [0, 4] x [0, 0.8]^2; vector bounds (4, 1, 1)
+        # resolve ell_axes = (4, 2, 2) on host and device alike
+        rect_rng = MersenneTwister(37)
+        rect_n = 600
+        rect_positions = rand(rect_rng, 3, rect_n)
+        rect_positions[1, :] .*= 4.0
+        rect_positions[2:3, :] .*= 0.8
+        rect_radii = fill(0.01, rect_n)
+        rect_strengths = Float64.(1:rect_n) ./ rect_n
+        rect_host_sys = CUDARadixCPUScalarSystem(rect_positions, rect_radii, rect_strengths)
+        rect_dev_sys = CUDARadixCPUScalarSystem(copy(rect_positions), copy(rect_radii),
+            copy(rect_strengths))
+        rect_bounds = (SVector(0.0, 0.0, 0.0), (4.0, 1.0, 1.0))
+        rect_opts = CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+        rect_hc = RadixFMMCache(rect_host_sys; expansion_order=3, ell=4,
+            bounds=rect_bounds, options=rect_opts)
+        rect_dc = RadixFMMCache(rect_dev_sys; expansion_order=3, ell=4,
+            bounds=rect_bounds, options=rect_opts, device=true)
+        @test rect_dc.ell_axes == rect_hc.ell_axes == SVector(4, 2, 2)
+        @test rect_dc.box_extent == rect_hc.box_extent
+        @test rect_dc.max_cells == rect_hc.max_cells
+        @test rect_dc.max_nodes == rect_hc.max_nodes
+        fmm!(rect_host_sys, rect_hc; scalar_potential=true, gradient=true)
+        fmm!(rect_dev_sys, rect_dc; scalar_potential=true, gradient=true)
+        # host route buffers are windowed scratch (037 stage 1 note): route and
+        # direct parity is the telemetry counts plus the output parity below
+        @test rect_dc.state.counts.n_cells == rect_hc.state.counts.n_cells
+        @test rect_dc.state.counts.n_nodes == rect_hc.state.counts.n_nodes
+        @test rect_dc.state.counts.n_routes == rect_hc.state.counts.n_routes
+        @test rect_dc.state.counts.n_direct == rect_hc.state.counts.n_direct
+        @test maximum(abs.(rect_dev_sys.potential .- rect_host_sys.potential)) < 1e-10
+        @test maximum(abs.(rect_dev_sys.gradient .- rect_host_sys.gradient)) < 1e-9
+        # per-axis out-of-box contract on device: inside the virtual cube but
+        # outside the rectangular box in z
+        rect_dev_sys.positions[3, 1] = 2.5
+        @test_throws ArgumentError fmm!(rect_dev_sys, rect_dc;
+            scalar_potential=true, gradient=true)
     end
 end
 

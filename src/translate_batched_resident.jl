@@ -1915,7 +1915,7 @@ is reallocated over the cache's lifetime.
   the rectangular box is embedded in a virtual cube of half-width
   `h0 = maximum(box_size)/2`, per-axis extents snap up to whole leaf cells
   (readable as `cache.ell_axes` / `cache.box_extent`), and the per-axis in-box
-  contract is enforced each step. Vector bounds are host-only until stage 2.
+  contract is enforced each step, on host and device caches alike.
 - `bounds_margin::Real=0.05`: relative margin applied to derived bounds
 - `lamb_helmholtz=nothing`: override the `has_vector_potential` inference
 - `hessian::Bool=false`: allocate the 13-row output (potential + gradient +
@@ -2032,11 +2032,6 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     end
     TF = options.precision
     if device
-        # rectangular device parity is task 037 stage 2; refuse vector bounds
-        # here (before availability) so the restriction fails loudly everywhere
-        bounds !== nothing && !(bounds[2] isa Real) && throw(ArgumentError(
-            "rectangular (vector box_size) bounds are host-only until task 037 " *
-            "stage 2 lands device parity; pass a scalar box_size"))
         cuda_radix_available() ||
             throw(ArgumentError("RadixFMMCache(device=true) requires a functional CUDA " *
                 "radix lifecycle; call load_cuda_radix_lifecycle!() first ($(cuda_radix_status()))"))
@@ -2147,7 +2142,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             route_capacity, direct_capacity, basis_info, Val(LH);
             hierarchical_tables, class_level, class_offset,
             hierarchical_level_class_of, hierarchical_level_radii2,
-            max_level_nodes, hessian)
+            max_level_nodes, hessian, ell_axes, box_extent)
         cache.built = true
         return cache
     end
@@ -2379,13 +2374,19 @@ the next `fmm!`.
 
 - `bounds = (x_min, box_size)` is the deterministic fast path (recommended for
   consumers that already track their domain); caller-supplied bounds are final
-  and are **not** padded.
+  and are **not** padded. `box_size` may be a scalar (cubic rebuild) or a
+  3-vector (rectangular rebuild, task 037), regardless of the cache's current
+  shape.
 - With `bounds = nothing`, the union bounds of all live bodies are derived:
   host-resident systems through `get_position`, device-resident systems by a
   device min/max reduction over their persistent packed source buffers
   (refilled via `source_to_buffer!` first; only six extrema scalars reach the
   host). `padding` is a nonnegative fraction of the tight cube's side added on
   each face: `x_min = lo - padding*L_tight`, `L = (1 + 2*padding)*L_tight`.
+  A rectangular cache (non-uniform `ell_axes`) applies the same convention per
+  axis — `x_min_a = lo_a - padding*ext_a`, `L_a = (1 + 2*padding)*ext_a` — and
+  rebuilds with vector bounds, so rectangularity (and, for a similar-shaped
+  cloud, the resolved `ell_axes`) is preserved.
 
 Validation errors (`ArgumentError`) — an empty system, non-finite or
 nonpositive bounds, negative padding, a changed system count, or a live count
@@ -2419,11 +2420,7 @@ function recenter!(cache::RadixFMMCache{TF,LH}, systems;
         "recenter! got $(length(systems_tuple)) systems for a cache built with " *
         "$(cache.n_systems); the system set is part of the cache contract"))
     padding >= 0 || throw(ArgumentError("recenter! padding must be nonnegative"))
-    # rebuilding at cubic bounds would silently drop a rectangular cache's
-    # per-axis extents; rectangular recenter! is task 037 stage 2
-    cache.ell_axes == SVector(cache.ell, cache.ell, cache.ell) || throw(ArgumentError(
-        "recenter! on a rectangular cache (ell_axes=$(Tuple(cache.ell_axes))) is " *
-        "not yet supported; construct a new cache with vector bounds"))
+    rectangular = cache.ell_axes != SVector(cache.ell, cache.ell, cache.ell)
     n = get_n_bodies(systems_tuple)
     n <= cache.max_n_bodies || throw(ArgumentError(
         "recenter! live body count n=$n exceeds the cache capacity " *
@@ -2432,18 +2429,34 @@ function recenter!(cache::RadixFMMCache{TF,LH}, systems;
         lo, hi = _recenter_union_bounds(cache, systems_tuple)
         (all(isfinite, lo) && all(isfinite, hi)) || throw(ArgumentError(
             "recenter! derived non-finite body bounds; check body positions"))
-        L_tight = max(hi[1] - lo[1], hi[2] - lo[2], hi[3] - lo[3])
-        L_tight > zero(TF) || throw(ArgumentError(
-            "recenter! derived a degenerate (zero-extent) body cloud; pass " *
-            "explicit bounds=(x_min, box_size)"))
-        x_min_new = lo .- TF(padding) * L_tight
-        L_new = (1 + 2 * TF(padding)) * L_tight
+        if rectangular
+            # task 037 stage 2: a rectangular cache keeps per-axis tight extents
+            # (same margin convention as the cube, applied per axis), so the
+            # rebuild resolves vector bounds and rectangularity is preserved
+            ext_tight = hi .- lo
+            (ext_tight[1] > zero(TF) && ext_tight[2] > zero(TF) &&
+                ext_tight[3] > zero(TF)) || throw(ArgumentError(
+                "recenter! on a rectangular cache derived a degenerate " *
+                "(zero-extent) axis; pass explicit bounds=(x_min, box_size)"))
+            x_min_new = lo .- TF(padding) .* ext_tight
+            L_new = (1 + 2 * TF(padding)) .* ext_tight
+        else
+            L_tight = max(hi[1] - lo[1], hi[2] - lo[2], hi[3] - lo[3])
+            L_tight > zero(TF) || throw(ArgumentError(
+                "recenter! derived a degenerate (zero-extent) body cloud; pass " *
+                "explicit bounds=(x_min, box_size)"))
+            x_min_new = lo .- TF(padding) * L_tight
+            L_new = (1 + 2 * TF(padding)) * L_tight
+        end
     else
         x_min_new = SVector{3,TF}(bounds[1])
-        L_new = TF(bounds[2])
-        all(isfinite, x_min_new) && isfinite(L_new) || throw(ArgumentError(
+        # caller-supplied bounds are final: a scalar box_size rebuilds cubic, a
+        # 3-vector rebuilds rectangular, regardless of the cache's current shape
+        L_new = bounds[2] isa Real ? TF(bounds[2]) : SVector{3,TF}(bounds[2])
+        all(isfinite, x_min_new) && all(isfinite, L_new) || throw(ArgumentError(
             "recenter! bounds must be finite"))
-        L_new > zero(TF) || throw(ArgumentError("recenter! box_size must be positive"))
+        all(>(zero(TF)), L_new) ||
+            throw(ArgumentError("recenter! box_size must be positive"))
     end
     # Build the replacement first: any failure (empty system, body outside the
     # requested bounds, capacity) leaves the original cache untouched.
@@ -2453,7 +2466,7 @@ function recenter!(cache::RadixFMMCache{TF,LH}, systems;
         lamb_helmholtz=LH, hessian=cache.hessian, device=cache.device,
         options=cache.options,
         policy=_recentered_policy(cache.policy, cache.expansion_order,
-            L_new / 2, cache.ell, TF, LH))
+            maximum(L_new) / 2, cache.ell, TF, LH))
     for f in fieldnames(RadixFMMCache)
         setfield!(cache, f, getfield(fresh, f))
     end
@@ -2728,7 +2741,7 @@ end
 
 # Device-resident construction/step; redefined by translate_batched_cuda.jl (task
 # 023 step 7) once load_cuda_radix_lifecycle!() has run.
-function _radix_cache_device_build(args...)
+function _radix_cache_device_build(args...; kwargs...)
     throw(CUDARadixUnavailable(cuda_radix_status()))
 end
 

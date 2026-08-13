@@ -271,7 +271,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     @test e32 <= 1.05 * e64
 end
 
-@testset "radix rectangular bounds (task 037 stage 1)" begin
+@testset "radix rectangular bounds (task 037 stages 1-2)" begin
 
     seed = 20260813
     origin = SVector(0.0, 0.0, 0.0)
@@ -345,14 +345,67 @@ end
         oob.bodies[1].strength)
     @test_throws ArgumentError fmm!(oob, ocache)
 
-    #--- (e) stage-1 restrictions fail loudly ---#
+    #--- (e) rectangular host recenter! (task 037 stage 2) ---#
+
+    # aspect ~ 4 : 0.8 : 0.8 so the tight-extent ratio sits comfortably inside
+    # the (1/8, 1/4] band that resolves ell_axes = (4, 2, 2) at ell = 4 — the
+    # derived-bounds recenter! below must reproduce it deterministically
+    stretch2(bodies) = (bodies[1, :] .*= 4.0; bodies[2, :] .*= 0.8;
+        bodies[3, :] .*= 0.8; bodies)
+    nrec = 600
+    rec = generate_gravitational(seed + 5, nrec; bodies_fun=stretch2)
+    rec_direct = _radix_direct_reference(seed + 5, nrec; bodies_fun=stretch2)
+    rec_cache = RadixFMMCache(rec; expansion_order=3, ell=4,
+        bounds=(origin, (4.0, 0.8, 0.8)))
+    @test rec_cache.ell_axes == SVector(4, 2, 2)
+    @test rec_cache.box_extent == SVector(4.0, 1.0, 1.0)
+    fmm!(rec, rec_cache; scalar_potential=true, gradient=true)
+    @test _radix_potential_error(rec, rec_direct) < 2e-3
+    @test _radix_gradient_error(rec, rec_direct) < 2e-1
+
+    # derived per-axis bounds: same margin convention per axis, rectangularity
+    # (and here the resolved ell_axes) preserved, step counts restart
+    FastMultipole.recenter!(rec_cache, rec; padding=0.05)
+    @test rec_cache.ell_axes == SVector(4, 2, 2)
+    @test rec_cache.box_extent[2] == rec_cache.box_extent[3] <
+        rec_cache.box_extent[1] / 2
+    @test rec_cache.step == 1
+    rec.potential .= 0
+    fmm!(rec, rec_cache; scalar_potential=true, gradient=true)
+    @test _radix_potential_error(rec, rec_direct) < 2e-3
+    @test _radix_gradient_error(rec, rec_direct) < 2e-1
+    # bitwise parity vs a fresh cache at the recentered (already snapped) bounds
+    rec_fresh_sys = generate_gravitational(seed + 5, nrec; bodies_fun=stretch2)
+    rec_fresh = RadixFMMCache(rec_fresh_sys; expansion_order=3, ell=4,
+        bounds=(rec_cache.x_min, rec_cache.box_extent))
+    fmm!(rec_fresh_sys, rec_fresh; scalar_potential=true, gradient=true)
+    @test rec.potential == rec_fresh_sys.potential
+
+    # explicit vector bounds after a drift out of the box: the fixed-box
+    # contract throws, then recenter! restores service at the shifted box
+    # components exactly representable in Float32 (the default precision at
+    # this expansion order), so the x_min equality below is exact
+    shift = SVector(0.5, 0.25, -0.25)
+    for i in eachindex(rec.bodies)
+        b = rec.bodies[i]
+        rec.bodies[i] = Body(b.position + shift, b.radius, b.strength)
+    end
+    @test_throws ArgumentError fmm!(rec, rec_cache; scalar_potential=true,
+        gradient=true)
+    FastMultipole.recenter!(rec_cache, rec; bounds=(origin + shift, (4.0, 0.8, 0.8)))
+    @test rec_cache.ell_axes == SVector(4, 2, 2)
+    @test rec_cache.box_extent == SVector(4.0, 1.0, 1.0)
+    @test rec_cache.x_min == origin + shift
+    @test rec_cache.step == 1
+    rec.potential .= 0
+    fmm!(rec, rec_cache; scalar_potential=true, gradient=true)
+    # a rigid shift of bodies and box leaves the direct sums unchanged
+    @test _radix_potential_error(rec, rec_direct) < 2e-3
+    @test _radix_gradient_error(rec, rec_direct) < 2e-1
+
+    #--- (f) invalid vector bounds still fail loudly ---#
 
     dev_sys = generate_gravitational(seed + 4, 100)
-    @test_throws ArgumentError RadixFMMCache(dev_sys; device=true,
-        bounds=(origin, (1.0, 1.0, 1.0)))
-    rec = generate_gravitational(seed + 5, 200; bodies_fun=stretch)
-    rec_cache = RadixFMMCache(rec; expansion_order=3, ell=4, bounds=rect_bounds)
-    @test_throws ArgumentError FastMultipole.recenter!(rec_cache, rec)
     @test_throws ArgumentError RadixFMMCache(dev_sys;
         bounds=(origin, (1.0, -1.0, 1.0)))
 end

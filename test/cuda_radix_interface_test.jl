@@ -230,5 +230,127 @@ end
             # 5e-3 matches the host derived-bounds test (measured 6.7e-4).
             @test maximum(abs.(Array(dsys.gradient) .- g0)) < 5e-3
         end
+
+        #--- (10) task 037 stage 2: rectangular device cache ---#
+
+        # elongated cloud with tight-extent ratio ~0.2, comfortably inside the
+        # (1/8, 1/4] band that resolves ell_axes = (4, 2, 2) at ell = 4 — the
+        # derived-bounds recenter! in (10d) must reproduce it deterministically
+        stretch4(bodies) = (bodies[1, :] .*= 4.0; bodies[2, :] .*= 0.8;
+            bodies[3, :] .*= 0.8; bodies)
+        rect_origin = SVector(0.0, 0.0, 0.0)
+        rect_bounds = (rect_origin, (4.0, 1.0, 1.0))
+
+        # (10a) host/device parity: geometry, capacities, route/direct telemetry
+        # counts (host route buffers are windowed scratch — 037 stage 1 note),
+        # and outputs, at P=4 (expansion_order 3, standing rule) and 8, F64/F32
+        for (TF, ptol, gtol) in ((Float64, 1e-10, 1e-9), (Float32, 2f-4, 2f-3)),
+                P in (3, 8)
+            opts = CUDARadixLifecycleOptions(; precision=TF,
+                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+            host_sys = generate_gravitational(seed, 1500; bodies_fun=stretch4)
+            dev_sys = generate_gravitational(seed, 1500; bodies_fun=stretch4)
+            hc = RadixFMMCache(host_sys; expansion_order=P, ell=4,
+                bounds=rect_bounds, options=opts)
+            dc = RadixFMMCache(dev_sys; expansion_order=P, ell=4,
+                bounds=rect_bounds, options=opts, device=true)
+            @test dc.ell_axes == hc.ell_axes == SVector(4, 2, 2)
+            @test dc.box_extent == hc.box_extent
+            @test dc.max_cells == hc.max_cells
+            @test dc.max_nodes == hc.max_nodes
+            @test dc.route_capacity == hc.route_capacity
+            @test dc.direct_capacity == hc.direct_capacity
+            fmm!(host_sys, hc; scalar_potential=true, gradient=true)
+            fmm!(dev_sys, dc; scalar_potential=true, gradient=true)
+            @test dc.state.counts.n_cells == hc.state.counts.n_cells
+            @test dc.state.counts.n_nodes == hc.state.counts.n_nodes
+            @test dc.state.counts.n_routes == hc.state.counts.n_routes
+            @test dc.state.counts.n_direct == hc.state.counts.n_direct
+            @test maximum(abs.(dev_sys.potential[1, :] .-
+                host_sys.potential[1, :])) < ptol
+            @test maximum(abs.(dev_sys.potential[5:7, :] .-
+                host_sys.potential[5:7, :])) < gtol
+        end
+
+        # (10b) recurring refresh on a rectangular device cache: 023 counter
+        # contract, persistent-array identity, and stable warmed device
+        # allocation (same contract as the hierarchical suite: the per-window
+        # scan scratch is pool-served; nothing may grow between warmed steps)
+        let TF = Float64
+            opts = CUDARadixLifecycleOptions(; precision=TF,
+                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+            sys = generate_gravitational(seed + 37, 1500; bodies_fun=stretch4)
+            dc = RadixFMMCache(sys; expansion_order=3, ell=4, bounds=rect_bounds,
+                options=opts, device=true)
+            counters = dc.state.counters
+            base_route = counters.route_uploads
+            base_operator = counters.operator_uploads
+            base_body = counters.body_uploads
+            base_metadata = counters.metadata_downloads
+            captured_state = dc.state
+            ids = (objectid(captured_state.route_targets),
+                objectid(captured_state.direct_targets),
+                objectid(captured_state.multipoles.phi),
+                objectid(captured_state.output))
+            rng = MersenneTwister(seed + 37)
+            for step in 1:3
+                for i in eachindex(sys.bodies)
+                    b = sys.bodies[i]
+                    pos = clamp.(b.position .+
+                        0.02 .* (rand(rng, SVector{3,Float64}) .- 0.5),
+                        SVector(0.01, 0.01, 0.01), SVector(3.99, 0.99, 0.99))
+                    sys.bodies[i] = Body(pos, b.radius, b.strength)
+                end
+                fmm!(sys, dc; scalar_potential=true, gradient=true)
+                @test dc.state === captured_state
+                @test counters.route_uploads == base_route
+                @test counters.operator_uploads == base_operator
+                @test counters.body_uploads == base_body + step
+                @test counters.metadata_downloads == base_metadata + 3 * step
+                @test counters.expansion_host_copies == 0
+            end
+            @test ids == (objectid(captured_state.route_targets),
+                objectid(captured_state.direct_targets),
+                objectid(captured_state.multipoles.phi),
+                objectid(captured_state.output))
+            @eval CUDA.@allocated fmm!($sys, $dc; scalar_potential=true,
+                gradient=true)
+            step_a = @eval CUDA.@allocated fmm!($sys, $dc;
+                scalar_potential=true, gradient=true)
+            step_b = @eval CUDA.@allocated fmm!($sys, $dc;
+                scalar_potential=true, gradient=true)
+            @test step_b == step_a
+
+            # (10c) device per-axis out-of-box flag: inside the virtual cube
+            # [0, 4]^3 but outside the rectangular box in y must throw, and the
+            # cache stays usable afterwards
+            good = sys.bodies[1]
+            sys.bodies[1] = Body(SVector(0.5, 2.5, 0.5), good.radius,
+                good.strength)
+            @test_throws ArgumentError fmm!(sys, dc; scalar_potential=true,
+                gradient=true)
+            sys.bodies[1] = good
+            fmm!(sys, dc; scalar_potential=true, gradient=true)
+
+            # (10d) rectangular device recenter!: derived per-axis bounds keep
+            # ell_axes, step counts restart, and the recentered cache matches a
+            # fresh device cache at the recentered (already snapped) bounds
+            recenter!(dc, sys; padding=0.05)
+            @test dc.ell_axes == SVector(4, 2, 2)
+            @test dc.box_extent[2] == dc.box_extent[3] < dc.box_extent[1] / 2
+            @test dc.step == 1
+            sys.potential .= 0
+            fmm!(sys, dc; scalar_potential=true, gradient=true)
+            ref_sys = Gravitational(copy(sys.bodies),
+                zeros(16, length(sys.bodies)))
+            fresh = RadixFMMCache(ref_sys; expansion_order=3, ell=4,
+                bounds=(dc.x_min, dc.box_extent), options=opts, device=true)
+            @test fresh.ell_axes == dc.ell_axes
+            fmm!(ref_sys, fresh; scalar_potential=true, gradient=true)
+            @test maximum(abs.(sys.potential[1, :] .-
+                ref_sys.potential[1, :])) < 1e-10
+            @test maximum(abs.(sys.potential[5:7, :] .-
+                ref_sys.potential[5:7, :])) < 1e-9
+        end
     end
 end

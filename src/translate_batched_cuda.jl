@@ -129,20 +129,22 @@ end
 # Fixed-box variant for the RadixFMMCache recurring step (task 023): the domain
 # is part of the cache's invariant contract, so a body outside it must raise the
 # out-of-box flag (checked host-side once per step) instead of being silently
-# clamped into an edge cell.
-function _cuda_radix_keys_checked_kernel!(keys, oob_flag, positions, x_min, h0, ell)
+# clamped into an edge cell. The in-box check is per-axis (task 037 stage 2):
+# rectangular caches pass box_extent < 2h0 on their short axes; cubic caches
+# pass (2h0, 2h0, 2h0). Key quantization stays on the virtual cube (h0, ell).
+function _cuda_radix_keys_checked_kernel!(keys, oob_flag, positions, x_min,
+        box_extent, h0, ell)
     i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     i > length(keys) && return nothing
     G = 1 << ell
     delta = (2 * h0) / G
-    two_h0 = 2 * h0
     @inbounds begin
         px = positions[1, i]
         py = positions[2, i]
         pz = positions[3, i]
-        if !(x_min[1] <= px <= x_min[1] + two_h0 &&
-             x_min[2] <= py <= x_min[2] + two_h0 &&
-             x_min[3] <= pz <= x_min[3] + two_h0)
+        if !(x_min[1] <= px <= x_min[1] + box_extent[1] &&
+             x_min[2] <= py <= x_min[2] + box_extent[2] &&
+             x_min[3] <= pz <= x_min[3] + box_extent[3])
             oob_flag[1] = Int32(1)
         end
         ix = clamp(floor(Int, (px - x_min[1]) / delta), 0, G - 1)
@@ -5308,7 +5310,11 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         class_offset::Matrix{Int32}=Matrix{Int32}(undef, 3, 0),
         hierarchical_level_class_of::Array{Int32,3}=Array{Int32}(undef, 0, 0, 0),
         hierarchical_level_radii2::Vector{Int}=Int[],
-        max_level_nodes::Int=0, hessian::Bool=false) where {TF,B,LH}
+        max_level_nodes::Int=0, hessian::Bool=false,
+        # rectangular geometry contract (task 037 stage 2): per-axis leaf depths
+        # and physical extents; cubic callers keep the virtual-cube defaults
+        ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
+        box_extent::SVector{3,TF}=SVector{3,TF}(2 * h0, 2 * h0, 2 * h0)) where {TF,B,LH}
     _require_cuda_radix_available()
     _assert_cuda_supported_operator!(options)
     hierarchical = stencil_policy isa HierarchicalRigidStencil
@@ -5364,7 +5370,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         max_cells, max_nodes, route_capacity, plan_offsets, invariant,
         workspace_strategy, workspace_operator; compact_cuda_factored=true,
         dense_cuda_estimated_peak_bytes=dense_cuda_footprint === nothing ? 0 :
-            dense_cuda_footprint.estimated_peak_bytes)
+            dense_cuda_footprint.estimated_peak_bytes,
+        ell_axes)
     if workspace.m2l_concat isa ResidentM2LFactoredPlan
         _pin_host_array(workspace.m2l_concat.host_class_counts)
         _cuda_factored_whole_pass_setup!(workspace.m2l_concat, TF, basis_info)
@@ -5521,11 +5528,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
             options.direct_kernel, stencil_policy, accepted, ell, h0, max_cells,
             direct_capacity, ctx, counters)
     end
-    # device caches are cubic until task 037 stage 2 (the host constructor
-    # refuses vector bounds with device=true)
     cache = RadixFMMCache{TF,LH}(
-        P, ell, x_min, h0, SVector(ell, ell, ell),
-        SVector{3,TF}(2 * h0, 2 * h0, 2 * h0), maxn, true, hessian, options,
+        P, ell, x_min, h0, ell_axes, box_extent, maxn, true, hessian, options,
         stencil_policy,
         accepted, rejected, max_cells, max_nodes, route_capacity, direct_capacity,
         nothing, zeros(Int32, 0, 0, 0), SVector{3,Int}[], zeros(Int, ell + 2),
@@ -5594,11 +5598,12 @@ function _cuda_update_radix_grid_in_place!(ctx, cache::RadixFMMCache{TF}, n::Int
     # leaves the persistent grid at its previous consistent step
     fill!(ctx.oob_flag, Int32(0))
     CUDA.@cuda threads=threads blocks=blocks _cuda_radix_keys_checked_kernel!(
-        view(ctx.keys, 1:n), ctx.oob_flag, ctx.positions, x_min, h0, ell,
+        view(ctx.keys, 1:n), ctx.oob_flag, ctx.positions, x_min, cache.box_extent,
+        h0, ell,
     )
     copyto!(ctx.host_oob, ctx.oob_flag)
     if ctx.host_oob[1] != 0
-        x_max = x_min .+ 2 * h0
+        x_max = x_min .+ cache.box_extent
         throw(ArgumentError(
             "at least one body lies outside the fixed RadixFMMCache box " *
             "[$(Tuple(x_min)), $(Tuple(x_max))]; the box is part of the cache's " *
