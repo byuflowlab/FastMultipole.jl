@@ -94,6 +94,7 @@ function parse_config(line::AbstractString)
         strategy = Symbol(get(kv, :strategy, "concat")),
         K = parse(Int, get(kv, :K, "256")),
         rho_t = haskey(kv, :rho_t) ? parse(Float64, kv[:rho_t]) : nothing,
+        rectangular = get(kv, :rectangular, "0") == "1",   # task 037 stage 5
         profile = get(kv, :profile, "0") == "1",
         rk3 = get(kv, :rk3, "0") == "1",
     )
@@ -112,7 +113,7 @@ if FM035_DRYRUN
             ell=cfg.ell, near_radius2=cfg.q,
             level_radii2=cfg.sched, window_classes=cfg.K, precision=cfg.tf,
             direct_kernel=cfg.kernel, rho_t=cfg.rho_t,
-            m2l_strategy=cfg.strategy)
+            m2l_strategy=cfg.strategy, rectangular=cfg.rectangular)
         k = vpm._radix_direct_kernel(s)
         strat, op = vpm._radix_m2l_strategy(s)
         println("[dryrun ok] $(cfg.label): $(cfg.case) n=$(cfg.n) " *
@@ -120,6 +121,7 @@ if FM035_DRYRUN
             "literature_P=$(cfg.expansion_order + 1) " *
             "expansion_order=$(cfg.expansion_order) " *
             "ell=$(cfg.ell) q=$(cfg.q) sched=$(cfg.sched) K=$(cfg.K) " *
+            "rectangular=$(cfg.rectangular) " *
             "profile=$(cfg.profile) rk3=$(cfg.rk3)")
     end
     println("dryrun: $(length(configs)) configs valid")
@@ -178,7 +180,7 @@ _wall_ms(f) = (CUDA.synchronize(); t = @elapsed (f(); CUDA.synchronize()); t * 1
 const CSV_COLUMNS = [
     "label", "job", "host", "case", "n", "kernel", "tf", "ell", "q", "sched",
     "strategy", "K", "rho_t", "status", "message",
-    "leaf_q",
+    "leaf_q", "rectangular", "ell_axes",
     "uj_ms_median", "uj_ms_min", "reset_ms", "refresh_ms", "eval_ms",
     "finalize_ms", "overhead_ms", "rk3_step_ms",
     "b2m_ms", "m2m_ms", "m2l_ms", "l2l_ms", "l2b_ms",
@@ -235,6 +237,7 @@ for cfg in configs
         "sched" => cfg.sched === nothing ? "uniform" : join(cfg.sched, ' '),
         "strategy" => cfg.strategy, "K" => cfg.K,
         "rho_t" => cfg.rho_t === nothing ? "default" : cfg.rho_t,
+        "rectangular" => cfg.rectangular,
         "status" => "failed", "message" => "")
     gpu = nothing
     try
@@ -257,7 +260,7 @@ for cfg in configs
             ell=cfg.ell, near_radius2=cfg.q, level_radii2=cfg.sched,
             window_classes=cfg.K, precision=cfg.tf,
             direct_kernel=cfg.kernel, rho_t=cfg.rho_t,
-            m2l_strategy=cfg.strategy)
+            m2l_strategy=cfg.strategy, rectangular=cfg.rectangular)
 
         construct_s = @elapsed (vpm.UJ_fmm(gpu); CUDA.synchronize())
         row["construct_s"] = round(construct_s, digits=2)
@@ -265,6 +268,7 @@ for cfg in configs
         cache = st.cache
         state = cache.state
         row["ell"] = cache.ell
+        row["ell_axes"] = join(Tuple(cache.ell_axes), ' ')
         row["total_cells"] = 8^cache.ell
         pol = cache.policy
         row["leaf_q"] = pol isa FM.HierarchicalRigidStencil ?
