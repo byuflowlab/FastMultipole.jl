@@ -1,0 +1,45 @@
+# 037f error-decomposition oracle configs: exact delivered error of each g/h
+# mode against the exact partitioned/regularized fields (F - R decomposition,
+# benchmark_035_error_decomposition.jl with the 037f gh_mode key).  Each
+# config emits Float32 AND Float64 rows; gh_mode=fp32/reduced_fp32 are
+# documented no-ops on the Float32 row of their config (identical code path
+# to shipped/reduced) — read only their Float64 rows.
+# Validates the fm037f_error_budget.jl mapping at scale: each mode's
+# u_total must stay within the budgeted allowance of its same-geometry
+# shipped anchor (theory/nearfield-kernel-cheapening-budget.md).
+
+# ---- cube ----
+label=f37fd_cu5_shipped expansion_order=4 rho_t=3.668 case=cube n=100000 ell=4 q=12 kernel=partitioned gh_mode=shipped
+label=f37fd_cu5_reduced expansion_order=4 rho_t=3.668 case=cube n=100000 ell=4 q=12 kernel=partitioned gh_mode=reduced
+label=f37fd_cu5_fp32 expansion_order=4 rho_t=3.668 case=cube n=100000 ell=4 q=12 kernel=partitioned gh_mode=fp32
+label=f37fd_cu5_rfp32 expansion_order=4 rho_t=3.668 case=cube n=100000 ell=4 q=12 kernel=partitioned gh_mode=reduced_fp32
+label=f37fd_cu5_lut expansion_order=4 rho_t=3.668 case=cube n=100000 ell=4 q=12 kernel=partitioned gh_mode=lut
+label=f37fd_cu6_shipped expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=5 q=12 kernel=partitioned gh_mode=shipped
+label=f37fd_cu6_reduced expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=5 q=12 kernel=partitioned gh_mode=reduced
+label=f37fd_cu6_fp32 expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=5 q=12 kernel=partitioned gh_mode=fp32
+label=f37fd_cu6_rfp32 expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=5 q=12 kernel=partitioned gh_mode=reduced_fp32
+label=f37fd_cu6_lut expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=5 q=12 kernel=partitioned gh_mode=lut
+
+# ---- wake ----
+label=f37fd_wa5_shipped expansion_order=4 rho_t=3.668 case=wake n=100000 ell=5 q=6 kernel=partitioned gh_mode=shipped
+label=f37fd_wa5_reduced expansion_order=4 rho_t=3.668 case=wake n=100000 ell=5 q=6 kernel=partitioned gh_mode=reduced
+label=f37fd_wa5_fp32 expansion_order=4 rho_t=3.668 case=wake n=100000 ell=5 q=6 kernel=partitioned gh_mode=fp32
+label=f37fd_wa5_rfp32 expansion_order=4 rho_t=3.668 case=wake n=100000 ell=5 q=6 kernel=partitioned gh_mode=reduced_fp32
+label=f37fd_wa5_lut expansion_order=4 rho_t=3.668 case=wake n=100000 ell=5 q=6 kernel=partitioned gh_mode=lut
+label=f37fd_wa6_shipped expansion_order=4 rho_t=3.668 case=wake n=1000000 ell=6 q=6 kernel=partitioned gh_mode=shipped
+label=f37fd_wa6_reduced expansion_order=4 rho_t=3.668 case=wake n=1000000 ell=6 q=6 kernel=partitioned gh_mode=reduced
+label=f37fd_wa6_fp32 expansion_order=4 rho_t=3.668 case=wake n=1000000 ell=6 q=6 kernel=partitioned gh_mode=fp32
+label=f37fd_wa6_rfp32 expansion_order=4 rho_t=3.668 case=wake n=1000000 ell=6 q=6 kernel=partitioned gh_mode=reduced_fp32
+label=f37fd_wa6_lut expansion_order=4 rho_t=3.668 case=wake n=1000000 ell=6 q=6 kernel=partitioned gh_mode=lut
+
+# ---- rotor ----
+label=f37fd_ro5_shipped expansion_order=4 rho_t=3.668 case=rotor n=100000 ell=5 q=6 kernel=partitioned gh_mode=shipped
+label=f37fd_ro5_reduced expansion_order=4 rho_t=3.668 case=rotor n=100000 ell=5 q=6 kernel=partitioned gh_mode=reduced
+label=f37fd_ro5_fp32 expansion_order=4 rho_t=3.668 case=rotor n=100000 ell=5 q=6 kernel=partitioned gh_mode=fp32
+label=f37fd_ro5_rfp32 expansion_order=4 rho_t=3.668 case=rotor n=100000 ell=5 q=6 kernel=partitioned gh_mode=reduced_fp32
+label=f37fd_ro5_lut expansion_order=4 rho_t=3.668 case=rotor n=100000 ell=5 q=6 kernel=partitioned gh_mode=lut
+label=f37fd_ro6_shipped expansion_order=4 rho_t=3.668 case=rotor n=1000000 ell=6 q=6 kernel=partitioned gh_mode=shipped
+label=f37fd_ro6_reduced expansion_order=4 rho_t=3.668 case=rotor n=1000000 ell=6 q=6 kernel=partitioned gh_mode=reduced
+label=f37fd_ro6_fp32 expansion_order=4 rho_t=3.668 case=rotor n=1000000 ell=6 q=6 kernel=partitioned gh_mode=fp32
+label=f37fd_ro6_rfp32 expansion_order=4 rho_t=3.668 case=rotor n=1000000 ell=6 q=6 kernel=partitioned gh_mode=reduced_fp32
+label=f37fd_ro6_lut expansion_order=4 rho_t=3.668 case=rotor n=1000000 ell=6 q=6 kernel=partitioned gh_mode=lut

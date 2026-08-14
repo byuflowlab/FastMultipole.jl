@@ -30,7 +30,12 @@
 #   K       window_classes (default 256, the 034 coupling default)
 #   rho_t   kernel cutoff override (optional)
 #   rho_c   TwoPassVortex primary/direct cutoff override (optional)
+#   gh_mode shipped | reduced | fp32 | reduced_fp32 | lut   (task 037f
+#           cheapened nearfield g/h; default shipped; set before cache
+#           construction because a captured graph bakes the mode)
 #   twopass_aabb 1 = target-point/source-cell pass-2 AABB prune (default 0)
+#   pair_aabb 1 = 037e mixed-bucket pair-AABB fast path (default 0; the flag
+#                 is set before cache construction, per the graph-bake contract)
 #   profile 1 = per-stage profile (default 0)
 #   rk3     1 = also time one full RK3 step (default 0)
 # Lines starting with # and blank lines are ignored.
@@ -98,7 +103,9 @@ function parse_config(line::AbstractString)
         rho_t = haskey(kv, :rho_t) ? parse(Float64, kv[:rho_t]) : nothing,
         rho_c = haskey(kv, :rho_c) ? parse(Float64, kv[:rho_c]) : nothing,
         rectangular = get(kv, :rectangular, "0") == "1",   # task 037 stage 5
+        gh_mode = Symbol(get(kv, :gh_mode, "shipped")),    # task 037f
         twopass_aabb = get(kv, :twopass_aabb, "0") == "1",
+        pair_aabb = get(kv, :pair_aabb, "0") == "1",
         profile = get(kv, :profile, "0") == "1",
         rk3 = get(kv, :rk3, "0") == "1",
     )
@@ -113,6 +120,8 @@ if FM035_DRYRUN
     for cfg in configs
         cfg.expansion_order >= 0 || error(
             "expansion_order must be nonnegative; got $(cfg.expansion_order)")
+        cfg.gh_mode in FM.NEARFIELD_GH_MODES || error(
+            "gh_mode must be one of $(FM.NEARFIELD_GH_MODES); got $(cfg.gh_mode)")
         s = vpm.RadixFMMSettings(; expansion_order=cfg.expansion_order,
             ell=cfg.ell, near_radius2=cfg.q,
             level_radii2=cfg.sched, window_classes=cfg.K, precision=cfg.tf,
@@ -128,8 +137,9 @@ if FM035_DRYRUN
             "literature_P=$(cfg.expansion_order + 1) " *
             "expansion_order=$(cfg.expansion_order) " *
             "ell=$(cfg.ell) q=$(cfg.q) sched=$(cfg.sched) K=$(cfg.K) " *
-            "rectangular=$(cfg.rectangular) " *
+            "rectangular=$(cfg.rectangular) gh_mode=$(cfg.gh_mode) " *
             "twopass_aabb=$(cfg.twopass_aabb) " *
+            "pair_aabb=$(cfg.pair_aabb) " *
             "profile=$(cfg.profile) rk3=$(cfg.rk3)")
     end
     println("dryrun: $(length(configs)) configs valid")
@@ -199,15 +209,16 @@ end
 
 const CSV_COLUMNS = [
     "label", "job", "host", "case", "n", "kernel", "tf", "ell", "q", "sched",
-    "strategy", "K", "rho_t", "rho_c", "status", "message",
-    "leaf_q", "rectangular", "twopass_aabb", "ell_axes",
+    "strategy", "K", "rho_t", "rho_c", "gh_mode", "status", "message",
+    "leaf_q", "rectangular", "twopass_aabb", "pair_aabb", "ell_axes",
     "uj_ms_median", "uj_ms_min", "reset_ms", "refresh_ms", "eval_ms",
     "finalize_ms", "overhead_ms", "rk3_step_ms",
     "b2m_ms", "m2m_ms", "m2l_ms", "l2l_ms", "l2b_ms",
     "grid_ms", "occupancy_ms", "direct_gen_ms", "route_gen_ms", "groups_ms",
     "u_rel_rms", "u_max_err", "j_rel_rms", "gate_pass",
     "n_cells", "n_nodes", "n_routes", "n_direct", "direct_body_pairs",
-    "twopass_candidate_pairs", "twopass_shell_pairs", "total_cells",
+    "twopass_candidate_pairs", "twopass_shell_pairs",
+    "nf_mixed_pairs", "pair_aabb_tested", "pair_aabb_skipped", "total_cells",
     "nodes_per_level", "routes_per_level",
     "construct_s", "alloc_bytes_step", "device_mem_gb", "counters_flat",
     "literature_P", "expansion_order",
@@ -259,12 +270,20 @@ for cfg in configs
         "strategy" => cfg.strategy, "K" => cfg.K,
         "rho_t" => cfg.rho_t === nothing ? "default" : cfg.rho_t,
         "rho_c" => cfg.rho_c === nothing ? "default" : cfg.rho_c,
+        "gh_mode" => cfg.gh_mode,
         "rectangular" => cfg.rectangular,
         "twopass_aabb" => cfg.twopass_aabb,
+        "pair_aabb" => cfg.pair_aabb,
         "status" => "failed", "message" => "")
     gpu = nothing
     try
+        # both Refs are read in the lifecycle body and baked into the captured
+        # graph at record time — set BEFORE cache construction (first UJ_fmm)
         FM.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = cfg.twopass_aabb
+        FM.CUDA_NEARFIELD_PAIR_AABB[] = cfg.pair_aabb
+        # task 037f: the g/h mode is likewise read inside the lifecycle
+        # (graph-baked at record time) — set BEFORE cache construction
+        FM.CUDA_NEARFIELD_GH_MODE[] = cfg.gh_mode
         key = (cfg.case, cfg.n)
         if !haskey(cpu_fields, key)
             t = @elapsed cpu_fields[key] = fm033_build(cfg.case, cfg.n)
@@ -357,6 +376,17 @@ for cfg in configs
             shell = FM.cuda_twopass_shell_homogeneity(state)
             row["twopass_candidate_pairs"] = shell.candidate_pairs
             row["twopass_shell_pairs"] = shell.shell_pairs
+        end
+        # 037e mixed-bucket pair-AABB telemetry (replay launch, output
+        # untouched): recorded for every split-kernel row so the anchor rows
+        # carry the skip ceiling too
+        if state.options.direct_kernel isa
+                Union{FM.PartitionedVortex,FM.TwoPassVortex} &&
+                FM._nearfield_bin_ctx(state) !== nothing
+            pstats = FM.cuda_nearfield_pair_aabb_stats(state)
+            row["nf_mixed_pairs"] = pstats.mixed_pairs
+            row["pair_aabb_tested"] = pstats.tested
+            row["pair_aabb_skipped"] = pstats.skipped
         end
         row["device_mem_gb"] = round(
             (CUDA.total_memory() - CUDA.free_memory()) / 2^30, digits=2)

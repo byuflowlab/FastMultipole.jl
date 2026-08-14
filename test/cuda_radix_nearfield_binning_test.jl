@@ -29,15 +29,19 @@ end
 # run one device fmm! for `sys_ctor(seed, n)` under the given binning
 # mechanism, returning (U 3×n, J 9×n) from the wrapped VortexParticles
 function _binning_device_run(sys, cache; mode, subsort, pass2_queued=false,
-        pass2_aabb=false)
+        pass2_aabb=false, pair_aabb=false, gh_mode=:shipped)
     old_mode = FastMultipole.CUDA_NEARFIELD_BINNING[]
     old_sub = FastMultipole.CUDA_NEARFIELD_SUBSORT[]
     old_q = FastMultipole.CUDA_TWOPASS_PASS2_QUEUED[]
     old_aabb = FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[]
+    old_paabb = FastMultipole.CUDA_NEARFIELD_PAIR_AABB[]
+    old_gh = FastMultipole.CUDA_NEARFIELD_GH_MODE[]
     FastMultipole.CUDA_NEARFIELD_BINNING[] = mode
     FastMultipole.CUDA_NEARFIELD_SUBSORT[] = subsort
     FastMultipole.CUDA_TWOPASS_PASS2_QUEUED[] = pass2_queued
     FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = pass2_aabb
+    FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = pair_aabb
+    FastMultipole.CUDA_NEARFIELD_GH_MODE[] = gh_mode
     try
         fmm!(sys, cache; scalar_potential=false, gradient=true, hessian=true)
     finally
@@ -45,8 +49,54 @@ function _binning_device_run(sys, cache; mode, subsort, pass2_queued=false,
         FastMultipole.CUDA_NEARFIELD_SUBSORT[] = old_sub
         FastMultipole.CUDA_TWOPASS_PASS2_QUEUED[] = old_q
         FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = old_aabb
+        FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = old_paabb
+        FastMultipole.CUDA_NEARFIELD_GH_MODE[] = old_gh
     end
     return nothing
+end
+
+#--- 037e host unit tests: pair-AABB reachability predicate (no CUDA needed;
+#    the device kernels share this exact scalar function) ---#
+
+@testset "037e pair-AABB predicate (host)" begin
+    rng = MersenneTwister(20260814)
+    for T in (Float64, Float32)
+        h = T(0.125)
+        rho = T(3.668)
+        # exact point-to-AABB gap agreement with an independent clamp form
+        for _ in 1:300
+            slo = SVector{3,T}(rand(rng, T, 3) .- T(0.5))
+            p = SVector{3,T}(T(4) .* rand(rng, T, 3) .- T(2))
+            smax = T(0.05) * rand(rng, T)
+            qv = clamp.(p, slo, slo .+ h)
+            d2 = (p[1] - qv[1])^2 + (p[2] - qv[2])^2 + (p[3] - qv[3])^2
+            expect = smax > zero(T) && d2 <= (rho * smax)^2
+            @test FastMultipole._nearfield_point_aabb_reach(p[1], p[2], p[3],
+                slo[1], slo[2], slo[3], h, rho, smax) == expect
+        end
+        # nonpositive sigma is never reachable, even inside the box
+        @test !FastMultipole._nearfield_point_aabb_reach(T(0.5) * h, T(0.5) * h,
+            T(0.5) * h, zero(T), zero(T), zero(T), h, rho, zero(T))
+        # consistency with the cell-level classification: a bucket-1 (pure
+        # singular) pair means NO point of the target cell can reach the
+        # source-cell AABB within rho*sigma_max — the E1 fast path may only
+        # ever skip what the bucket predicate already proves singular
+        for _ in 1:300
+            o = SVector{3,Int}(rand(rng, -3:3), rand(rng, -3:3), rand(rng, -3:3))
+            smax_s = T(0.1) * rand(rng, T)
+            smin_s = smax_s * rand(rng, T)
+            b = FastMultipole._nearfield_pair_bucket(o[1], o[2], o[3], h, rho,
+                smax_s, smin_s)
+            b == Int32(1) || continue
+            for _ in 1:20
+                p = SVector{3,T}((T(o[1]) + rand(rng, T)) * h,
+                    (T(o[2]) + rand(rng, T)) * h,
+                    (T(o[3]) + rand(rng, T)) * h)
+                @test !FastMultipole._nearfield_point_aabb_reach(p[1], p[2],
+                    p[3], zero(T), zero(T), zero(T), h, rho, smax_s)
+            end
+        end
+    end
 end
 
 _binning_inner(sys::PartitionedSmoothedVortex) = sys.smoothed.inner
@@ -69,6 +119,9 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         @test FastMultipole.CUDA_NEARFIELD_BINNING[] === :classsplit
         @test FastMultipole.CUDA_NEARFIELD_SUBSORT[]
         @test !FastMultipole.CUDA_TWOPASS_PASS2_QUEUED[]
+        # 037e: the mixed-bucket pair-AABB fast path ships OFF (control =
+        # shipped classsplit stream until the H200 measurement)
+        @test !FastMultipole.CUDA_NEARFIELD_PAIR_AABB[]
 
         seed = 20260807
         nv = 1500
@@ -312,6 +365,134 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
                 _binning_inner(ref_sys).gradient_stretching[1:3, :])) / u_scale < 2e-3
         end
 
+        #--- (7) 037e mixed-bucket pair-AABB fast path: flag-on output must be
+        #    the flag-off result — bitwise when the configuration is atomically
+        #    deterministic (probed by twin flag-off runs; the pair stream is
+        #    compacted by atomic claim, so cross-run atomic accumulation order
+        #    is not guaranteed), else at accumulation-order tolerance — plus
+        #    telemetry monotonicity on both traversal mechanisms ---#
+
+        _mk_psys() = PartitionedSmoothedVortex(SmoothedVortex(
+            generate_vortex(seed, nv), copy(sigma)))
+        function _mk_pcache(sys, P, TF; hess=true,
+                strategy=FastMultipole.ConcatenatedFixedZM2L(), pair_aabb=false)
+            # the Ref is read in the lifecycle body (graph-bake contract):
+            # a flag-on cache must be CONSTRUCTED under the flag
+            old = FastMultipole.CUDA_NEARFIELD_PAIR_AABB[]
+            FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = pair_aabb
+            try
+                return RadixFMMCache(sys; expansion_order=P, ell=3,
+                    near_radius2=16, hessian=hess, device=true,
+                    options=CUDARadixLifecycleOptions(; precision=TF,
+                        m2l_strategy=strategy))
+            finally
+                FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = old
+            end
+        end
+        for P in (4, 8), TF in (Float64, Float32),
+                mode in (:classsplit, :classsplit_ballot)
+            UJs = map(1:2) do _
+                s = _mk_psys()
+                c = _mk_pcache(s, P, TF)
+                _binning_device_run(s, c; mode, subsort=false)
+                (copy(_binning_inner(s).gradient_stretching[1:3, :]),
+                 copy(_binning_inner(s).potential[5:13, :]))
+            end
+            deterministic = UJs[1] == UJs[2]
+            s_on = _mk_psys()
+            c_on = _mk_pcache(s_on, P, TF; pair_aabb=true)
+            _binning_device_run(s_on, c_on; mode, subsort=false, pair_aabb=true)
+            Uon = _binning_inner(s_on).gradient_stretching[1:3, :]
+            Jon = _binning_inner(s_on).potential[5:13, :]
+            if deterministic
+                @test Uon == UJs[1][1]
+                @test Jon == UJs[1][2]
+            else
+                tol = TF == Float64 ? 1e-13 : 2e-6
+                @test maximum(abs.(Uon .- UJs[1][1])) / u_scale < tol
+                @test maximum(abs.(Jon .- UJs[1][2])) / j_scale < tol
+            end
+            # telemetry replay: every mixed pair tested exactly once, skips
+            # are a subset (skipped <= tested == mixed bucket count)
+            st = FastMultipole.cuda_nearfield_pair_aabb_stats(c_on.state)
+            @test 0 <= st.skipped <= st.tested
+            @test st.tested == st.mixed_pairs
+            @test 0.0 <= st.skipped_fraction <= 1.0
+        end
+
+        #--- (7b) gradient-only (HS=false) branch of the fast path ---#
+
+        s_off = _mk_psys()
+        c_off = _mk_pcache(s_off, 4, Float32; hess=false)
+        FastMultipole.fmm!(s_off, c_off; scalar_potential=false, gradient=true,
+            hessian=false)
+        s_on = _mk_psys()
+        c_on = _mk_pcache(s_on, 4, Float32; hess=false, pair_aabb=true)
+        old_paabb = FastMultipole.CUDA_NEARFIELD_PAIR_AABB[]
+        FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = true
+        try
+            FastMultipole.fmm!(s_on, c_on; scalar_potential=false,
+                gradient=true, hessian=false)
+        finally
+            FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = old_paabb
+        end
+        @test maximum(abs.(_binning_inner(s_on).gradient_stretching[1:3, :] .-
+            _binning_inner(s_off).gradient_stretching[1:3, :])) / u_scale < 2e-6
+
+        #--- (7c) 023 contracts + graph replay with the flag ON: fresh cache
+        #    constructed under the flag, dense fused M2L so the captured graph
+        #    carries the AABB traversal; counters flat, steady-state device
+        #    allocation stable, parity against the flag-off dense result ---#
+
+        ds_ref = _mk_psys()
+        dc_ref = _mk_pcache(ds_ref, 4, Float32;
+            strategy=FastMultipole.DenseTranslationM2L(apply_chunk=64,
+                build_chunk=8))
+        for _ in 1:3
+            _binning_device_run(ds_ref, dc_ref; mode=:classsplit, subsort=false)
+        end
+        Uref_dense = copy(_binning_inner(ds_ref).gradient_stretching[1:3, :])
+
+        ds = _mk_psys()
+        dc = _mk_pcache(ds, 4, Float32; pair_aabb=true,
+            strategy=FastMultipole.DenseTranslationM2L(apply_chunk=64,
+                build_chunk=8))
+        FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = true
+        try
+            # step 1 warms, step 2 records, step 3 replays the captured graph
+            for _ in 1:3
+                _binning_device_run(ds, dc; mode=:classsplit, subsort=false,
+                    pair_aabb=true)
+            end
+            hctx7 = dc.state.interaction_list
+            if FastMultipole.CUDA_GRAPH_LIFECYCLE[] && FastMultipole.CUDA_CACHED_WINDOWS[]
+                @test hctx7.graph_exec !== nothing
+                @test hctx7.graph_epoch == hctx7.epoch_id
+            end
+            counters7 = dc.state.counters
+            @test counters7.expansion_host_copies == 0
+            route0 = counters7.route_uploads
+            op0 = counters7.operator_uploads
+            body0 = counters7.body_uploads
+            _binning_device_run(ds, dc; mode=:classsplit, subsort=false,
+                pair_aabb=true)
+            @test counters7.route_uploads == route0
+            @test counters7.operator_uploads == op0
+            @test counters7.body_uploads == body0 + 1
+            @test counters7.expansion_host_copies == 0
+            @eval CUDA.@allocated fmm!($ds, $dc;
+                scalar_potential=false, gradient=true, hessian=true)
+            step_a = @eval CUDA.@allocated fmm!($ds, $dc;
+                scalar_potential=false, gradient=true, hessian=true)
+            step_b = @eval CUDA.@allocated fmm!($ds, $dc;
+                scalar_potential=false, gradient=true, hessian=true)
+            @test step_b == step_a
+        finally
+            FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = false
+        end
+        @test maximum(abs.(_binning_inner(ds).gradient_stretching[1:3, :] .-
+            Uref_dense)) / u_scale < 1e-5
+
         # invalid mode must be rejected at launch. NOTE: the mechanism Refs are
         # baked into a captured lifecycle graph at record time, so this check
         # uses a FRESH cache (first lifecycle of an epoch runs uncaptured).
@@ -326,6 +507,183 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
                 gradient=true, hessian=true)
         finally
             FastMultipole.CUDA_NEARFIELD_BINNING[] = :classsplit
+        end
+    end
+end
+
+@testset "CUDA cheapened g/h modes (task 037f)" begin
+    if !_BINNING_LOADED
+        if _cuda_binning_required()
+            error(
+                "FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1 but CUDA radix lifecycle did not load: " *
+                FastMultipole.cuda_radix_status(),
+            )
+        end
+        @test true
+    else
+        # shipped default asserted before any test mutates the Ref
+        @test FastMultipole.CUDA_NEARFIELD_GH_MODE[] === :shipped
+
+        seed = 20260814
+        nv = 1500
+        sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
+        fresh_psys() = PartitionedSmoothedVortex(SmoothedVortex(
+            generate_vortex(seed, nv), copy(sigma)))
+        fresh_tsys() = TwoPassSmoothedVortex(SmoothedVortex(
+            generate_vortex(seed, nv), copy(sigma)))
+        fresh_cache(sys, P, TF) = RadixFMMCache(sys; expansion_order=P, ell=3,
+            near_radius2=16, hessian=true, device=true,
+            options=CUDARadixLifecycleOptions(; precision=TF,
+                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+
+        #--- (1) per-mode device parity vs the device :shipped result at the
+        #    budgeted per-mode tolerances, P = 4/8, F64/F32, both binning
+        #    mechanisms (bucket + ballot kernels); the fp32 modes are skipped
+        #    on Float32 configurations (documented no-ops) ---#
+
+        for P in (4, 8), TF in (Float64, Float32)
+            ref_sys = fresh_psys()
+            ref_cache = fresh_cache(ref_sys, P, TF)
+            _binning_device_run(ref_sys, ref_cache; mode=:classsplit,
+                subsort=false, gh_mode=:shipped)
+            U0 = copy(_binning_inner(ref_sys).gradient_stretching[1:3, :])
+            J0 = copy(_binning_inner(ref_sys).potential[5:13, :])
+            u_scale = maximum(abs.(U0))
+            j_scale = maximum(abs.(J0))
+            # mode tolerances: pointwise deltas vs shipped (fm037f_budget.csv)
+            # times a generous local-sum amplification, floored at the F32
+            # run-to-run reassociation scale for F32 configurations
+            base_tol = TF == Float64 ? 1e-8 : 4e-4
+            gh_modes = TF == Float64 ?
+                ((:reduced, 1e-4), (:fp32, 1e-5), (:reduced_fp32, 1e-4),
+                    (:lut, 1e-4)) :
+                ((:reduced, 5e-4), (:lut, 5e-4))
+            for (gh_mode, mode_tol) in gh_modes, bmode in (:classsplit, :ballot)
+                dsys = fresh_psys()
+                dcache = fresh_cache(dsys, P, TF)
+                nfctx = FastMultipole._cache_nearfield_bin_ctx(dcache)
+                @test nfctx !== nothing
+                @test size(nfctx.gh_lut) == (2, FastMultipole._NF_GH_LUT_N)
+                _binning_device_run(dsys, dcache; mode=bmode, subsort=false,
+                    gh_mode)
+                Ud = _binning_inner(dsys).gradient_stretching[1:3, :]
+                Jd = _binning_inner(dsys).potential[5:13, :]
+                tol = max(mode_tol, base_tol)
+                @test maximum(abs.(Ud .- U0)) / u_scale < tol
+                @test maximum(abs.(Jd .- J0)) / j_scale < tol
+            end
+        end
+
+        #--- (2) TwoPassVortex pass 1 inherits the mode; the pass-2 deficit
+        #    stays shipped (scope decision, budget note SS5) ---#
+
+        for TF in (Float64, Float32)
+            ref_sys = fresh_tsys()
+            ref_cache = fresh_cache(ref_sys, 4, TF)
+            _binning_device_run(ref_sys, ref_cache; mode=:classsplit,
+                subsort=false, gh_mode=:shipped)
+            U0 = copy(_binning_inner(ref_sys).gradient_stretching[1:3, :])
+            u_scale = maximum(abs.(U0))
+            dsys = fresh_tsys()
+            dcache = fresh_cache(dsys, 4, TF)
+            _binning_device_run(dsys, dcache; mode=:classsplit, subsort=false,
+                gh_mode=:reduced)
+            Ud = _binning_inner(dsys).gradient_stretching[1:3, :]
+            @test maximum(abs.(Ud .- U0)) / u_scale <
+                max(1e-4, TF == Float64 ? 1e-8 : 4e-4)
+        end
+
+        #--- (3) 023 contracts under non-default modes: flat route/operator
+        #    counters and stable steady-state allocation (:lut exercises the
+        #    construction-only table upload) ---#
+
+        for gh_mode in (:reduced, :lut)
+            dsys = fresh_psys()
+            dcache = fresh_cache(dsys, 4, Float32)
+            for _ in 1:2
+                _binning_device_run(dsys, dcache; mode=:classsplit,
+                    subsort=false, gh_mode)
+            end
+            counters = dcache.state.counters
+            @test counters.expansion_host_copies == 0
+            route0 = counters.route_uploads
+            op0 = counters.operator_uploads
+            body0 = counters.body_uploads
+            _binning_device_run(dsys, dcache; mode=:classsplit, subsort=false,
+                gh_mode)
+            @test counters.route_uploads == route0
+            @test counters.operator_uploads == op0
+            @test counters.body_uploads == body0 + 1
+            old_gh = FastMultipole.CUDA_NEARFIELD_GH_MODE[]
+            FastMultipole.CUDA_NEARFIELD_GH_MODE[] = gh_mode
+            try
+                @eval CUDA.@allocated fmm!($dsys, $dcache;
+                    scalar_potential=false, gradient=true, hessian=true)
+                step_a = @eval CUDA.@allocated fmm!($dsys, $dcache;
+                    scalar_potential=false, gradient=true, hessian=true)
+                step_b = @eval CUDA.@allocated fmm!($dsys, $dcache;
+                    scalar_potential=false, gradient=true, hessian=true)
+                @test step_b == step_a
+            finally
+                FastMultipole.CUDA_NEARFIELD_GH_MODE[] = old_gh
+            end
+        end
+
+        #--- (4) graph-captured lifecycle with a non-default mode inside the
+        #    replayed graph (mirrors the stage-C (5b) pattern; the Ref is
+        #    baked at record time, so the mode is set for all three runs) ---#
+
+        for gh_mode in (:reduced, :lut)
+            ref_sys = fresh_psys()
+            ref_cache = fresh_cache(ref_sys, 4, Float32)
+            _binning_device_run(ref_sys, ref_cache; mode=:classsplit,
+                subsort=false, gh_mode)
+            gsys = fresh_psys()
+            gcache = RadixFMMCache(gsys; expansion_order=4, ell=3, near_radius2=16,
+                hessian=true, device=true,
+                options=CUDARadixLifecycleOptions(; precision=Float32,
+                    m2l_strategy=FastMultipole.DenseTranslationM2L(
+                        apply_chunk=64, build_chunk=8)))
+            for _ in 1:3
+                _binning_device_run(gsys, gcache; mode=:classsplit,
+                    subsort=false, gh_mode)
+            end
+            hctx = gcache.state.interaction_list
+            if FastMultipole.CUDA_GRAPH_LIFECYCLE[] && FastMultipole.CUDA_CACHED_WINDOWS[]
+                @test hctx.graph_exec !== nothing
+                @test hctx.graph_epoch == hctx.epoch_id
+            end
+            u_scale = maximum(abs.(_binning_inner(ref_sys).gradient_stretching[1:3, :]))
+            @test maximum(abs.(_binning_inner(gsys).gradient_stretching[1:3, :] .-
+                _binning_inner(ref_sys).gradient_stretching[1:3, :])) / u_scale < 2e-3
+        end
+
+        #--- (5) validation paths: invalid mode rejected at launch; :lut on a
+        #    regularized kernel without the bin context (flat path) refused ---#
+
+        FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :bogus
+        try
+            fresh = fresh_psys()
+            fcache = RadixFMMCache(fresh; expansion_order=4, ell=3, near_radius2=16,
+                hessian=true, device=true,
+                options=CUDARadixLifecycleOptions(; precision=Float32,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+            @test_throws ArgumentError fmm!(fresh, fcache; scalar_potential=false,
+                gradient=true, hessian=true)
+        finally
+            FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :shipped
+        end
+        rsys = SmoothedVortex(generate_vortex(seed, 400), fill(0.02, 400))
+        rcache = RadixFMMCache(rsys; expansion_order=4, ell=2, hessian=true,
+            device=true, policy=FastMultipole.ConstantPAnalyticStencil(4, 1e-3),
+            options=CUDARadixLifecycleOptions(; precision=Float32,
+                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+        FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :lut
+        try
+            @test_throws ArgumentError fmm!(rsys, rcache; scalar_potential=false,
+                gradient=true, hessian=true)
+        finally
+            FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :shipped
         end
     end
 end

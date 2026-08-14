@@ -666,6 +666,10 @@ mutable struct CUDANearfieldBinContext
     subsort_keys::Any
     # homogeneity diagnostics (device UInt64 counters; diagnostic launches only)
     diag::Any
+    # task 037f :lut g/h mode: device Float32 (2, _NF_GH_LUT_N) table of the
+    # normalized G = g/rho^3, H = h/rho^5 over x = rho^2 in [0, rho_t^2],
+    # built and uploaded once at construction (counted as an operator upload)
+    gh_lut::Any
 end
 
 abstract type RadixTraversalStrategy end

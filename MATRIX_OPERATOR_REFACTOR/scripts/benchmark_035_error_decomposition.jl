@@ -206,8 +206,10 @@ function fm035d_reference_matrix(values, rows)
 end
 
 function fm035d_config(label, order, rho, case, n, ell, q;
-        kernel=:partitioned, rho_c=nothing, rectangular=false)
-    return (; label, order, rho, case, n, ell, q, kernel, rho_c, rectangular)
+        kernel=:partitioned, rho_c=nothing, rectangular=false,
+        gh_mode=:shipped)
+    return (; label, order, rho, case, n, ell, q, kernel, rho_c, rectangular,
+        gh_mode)
 end
 
 function fm035d_parse_config(line)
@@ -222,7 +224,8 @@ function fm035d_parse_config(line)
         parse(Int, kv[:ell]), parse(Int, kv[:q]);
         kernel=Symbol(get(kv, :kernel, "partitioned")),
         rho_c=haskey(kv, :rho_c) ? parse(Float64, kv[:rho_c]) : nothing,
-        rectangular=get(kv, :rectangular, "0") == "1")
+        rectangular=get(kv, :rectangular, "0") == "1",
+        gh_mode=Symbol(get(kv, :gh_mode, "shipped")))   # task 037f
 end
 
 # Honest component labeling (header note above): for twopass rows the "cutoff"
@@ -245,7 +248,7 @@ const CONFIGS = isempty(FM035D_CONFIG_FILE) ? [
      if !isempty(strip(line)) && !startswith(strip(line), '#')]
 const HEADER = ("label","job","host","case","n","tf","literature_P",
     "expansion_order","ell","q","kernel","rho_t","rho_c","rectangular",
-    "component_semantics",
+    "gh_mode","component_semantics",
     "reference_checksum",
     "reference_u_rel","reference_j_rel","u_cutoff_rel","u_fmm_rel",
     "u_total_rel","u_triangle_rel","u_correlation","u_cancellation_ratio",
@@ -291,7 +294,8 @@ open(FM035D_OUT, "w") do io
                 row = (cfg.label, get(ENV,"SLURM_JOB_ID",""), gethostname(),
                     case, n, Float64, cfg.order+1, cfg.order, cfg.ell, cfg.q,
                     cfg.kernel, cfg.rho, something(cfg.rho_c, ""),
-                    cfg.rectangular, sem, ref.checksum, urefrel, jrefrel,
+                    cfg.rectangular, cfg.gh_mode, sem, ref.checksum,
+                    urefrel, jrefrel,
                     ucut, "", "", "", "", "", "", "",
                     jcut, "", "", "", "", "", "")
                 println(io, join(row, ',')); flush(io)
@@ -305,6 +309,11 @@ open(FM035D_OUT, "w") do io
             P_U, P_J = exact.partitioned[cfg.rho]
             for TF in (Float32, Float64)
                 gpu = fm035d_to_gpu(cpu)
+                # task 037f: gh mode is read inside the lifecycle (graph-baked
+                # at record time) — set BEFORE cache construction.  Note
+                # :fp32/:reduced_fp32 are documented no-ops on the TF=Float32
+                # row of a config (they equal :shipped/:reduced there).
+                FM.CUDA_NEARFIELD_GH_MODE[] = cfg.gh_mode
                 vpm.radix_fmm_settings!(gpu; expansion_order=cfg.order,
                     ell=cfg.ell, near_radius2=cfg.q, precision=TF,
                     direct_kernel=cfg.kernel, rho_t=cfg.rho, rho_c=cfg.rho_c,
@@ -318,7 +327,7 @@ open(FM035D_OUT, "w") do io
                 row = (cfg.label, get(ENV,"SLURM_JOB_ID",""), gethostname(), case,
                     n, TF, cfg.order+1, cfg.order, cfg.ell, cfg.q, cfg.kernel,
                     cfg.rho, something(cfg.rho_c, ""), cfg.rectangular,
-                    fm035d_component_semantics(cfg.kernel),
+                    cfg.gh_mode, fm035d_component_semantics(cfg.kernel),
                     ref.checksum,
                     urefrel, jrefrel, um.cutoff_rel, um.fmm_rel, um.total_rel,
                     um.triangle_rel, um.correlation, um.cancellation_ratio,

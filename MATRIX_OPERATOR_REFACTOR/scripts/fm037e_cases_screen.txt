@@ -1,0 +1,42 @@
+# Task 037e Stage 1: mixed-bucket pair-AABB fast path screen.
+#
+# Same-job anchors (shipped classsplit defaults, *_anchor labels) paired with
+# pair_aabb=1 rows on identical configs, so the A/B shares one node/build.
+# Shipped per-case geometry: cube ell4 (1e5) / ell5 (1e6) q12; wake ell5
+# (1e5) / ell6 (1e6) q6;
+# rotor ell5 (1e5) / ell6 (1e6) q6; expansion_order=4 (literature P5),
+# kernel=partitioned at the FLOWVPM production rho_t=3.668, strategy=dense.
+# NOTE: pair_aabb (like twopass_aabb) is baked into the captured graph at
+# record time; the driver sets the Ref before cache construction per row.
+# The output CSV schema includes the 037e pair-AABB telemetry columns — use a
+# fresh FM035_OUTNAME (e.g. fm037e_screen.csv), not an 035/037a campaign file.
+
+# ---- cube q12 (ell4 at 1e5, ell5 at 1e6) ----
+label=037e_c5_f32_anchor case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1
+label=037e_c5_f32_paabb case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+label=037e_c5_f64_anchor case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1
+label=037e_c5_f64_paabb case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+label=037e_c6_f32_anchor case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1
+label=037e_c6_f32_paabb case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+label=037e_c6_f64_anchor case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1
+label=037e_c6_f64_paabb case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+
+# ---- wake ell5/ell6 q6 ----
+label=037e_w5_f32_anchor case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1
+label=037e_w5_f32_paabb case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+label=037e_w5_f64_anchor case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1
+label=037e_w5_f64_paabb case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+label=037e_w6_f32_anchor case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=037e_w6_f32_paabb case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+label=037e_w6_f64_anchor case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=037e_w6_f64_paabb case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+
+# ---- rotor ell5/ell6 q6 (per-particle sigma: the heterogeneity case) ----
+label=037e_r5_f32_anchor case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1
+label=037e_r5_f32_paabb case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+label=037e_r5_f64_anchor case=rotor n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1
+label=037e_r5_f64_paabb case=rotor n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+label=037e_r6_f32_anchor case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=037e_r6_f32_paabb case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 pair_aabb=1
+label=037e_r6_f64_anchor case=rotor n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=037e_r6_f64_paabb case=rotor n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 pair_aabb=1

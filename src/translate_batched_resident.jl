@@ -441,15 +441,19 @@ end
 # the functor-abstraction benchmark reference).
 function _add_host_direct_pairs!(state::DeviceResidentRadixState)
     hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
+    # task 037f: cheapened g/h mode (host maps :lut -> :shipped, see
+    # _validated_host_gh_mode); Val() barrier specializes the loop per mode
     _host_direct_pairs_functor_kernel!(state.options.direct_kernel, state.output,
         state.source_bodies, state.cell_ranges, state.direct_targets,
-        state.direct_sources, state.counts.n_direct, hsv)
+        state.direct_sources, state.counts.n_direct, hsv,
+        Val(_validated_host_gh_mode()))
     return state
 end
 
 function _host_direct_pairs_functor_kernel!(kernel::AbstractDirectKernel,
         output::AbstractMatrix{TF}, source_bodies, cell_ranges, direct_targets,
-        direct_sources, n_direct::Int, ::Val{HS}) where {TF,HS}
+        direct_sources, n_direct::Int, ::Val{HS},
+        ghv::Val=Val(:shipped)) where {TF,HS}
     ep = _emits_potential(kernel)
     @inbounds for pair_i in 1:n_direct
         target_cell = direct_targets[pair_i]
@@ -473,7 +477,7 @@ function _host_direct_pairs_functor_kernel!(kernel::AbstractDirectKernel,
                 if HS
                     u, gx, gy, gz, h1, h2, h3, h4, h5, h6, h7, h8, h9 =
                         _direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
-                            source_bodies, j)
+                            source_bodies, j, ghv)
                     ep && (output[1, i] += u)
                     output[2, i] += gx
                     output[3, i] += gy
@@ -489,7 +493,7 @@ function _host_direct_pairs_functor_kernel!(kernel::AbstractDirectKernel,
                     output[13, i] += h9
                 else
                     u, gx, gy, gz = _direct_pair_ug(kernel, dx, dy, dz, r2, invr,
-                        source_bodies, j)
+                        source_bodies, j, ghv)
                     ep && (output[1, i] += u)
                     output[2, i] += gx
                     output[3, i] += gy
@@ -872,6 +876,220 @@ end
     (T(kernel.rho_c) < rho <= T(kernel.rho_t)) || return zero(T), zero(T)
     gbar, rhogp = _gaussianerf_gbar_rhogp(rho)
     return -gbar, muladd(T(3), gbar, rhogp)
+end
+
+#------- cheapened g/h evaluation modes (task 037f) -------#
+#
+# `CUDA_NEARFIELD_GH_MODE` selects how the regularized-family pair functors
+# evaluate the gaussianerf (g, h) — budgets, sizing, and the pointwise ->
+# delivered-error mapping in `theory/nearfield-kernel-cheapening-budget.md`
+# (derivation script `scripts/fm037f_error_budget.jl`):
+#
+#   :shipped       the unmodified evaluation above (default; every other call
+#                  path is bitwise-identical to pre-037f code);
+#   :reduced       12-term series in both precisions (from 19/13), outer
+#                  branch unchanged (deg-2 s(u) fails the mapped budget);
+#   :fp32          Float64 configurations only: the shipped Float32 math
+#                  (13-term series + deg-3 outer), pair U/J assembled in
+#                  Float32, accumulated in Float64.  On Float32
+#                  configurations this is the shipped path (documented no-op);
+#   :reduced_fp32  :fp32 with the 12-term reduced series;
+#   :lut           device-only shared-memory lookup table (see
+#                  translate_batched_cuda.jl).  The HOST reference path falls
+#                  back to :shipped under :lut — host/device parity for :lut
+#                  is gated at its budgeted pointwise error, not bitwise.
+#
+# Like the stage-C mechanism Refs, the CUDA side reads this inside the
+# lifecycle body, so the selection is baked into a captured CUDA graph at
+# record time: flip it only BEFORE cache construction (or force a new epoch),
+# or a replayed graph keeps the old mode silently.
+const NEARFIELD_GH_MODES = (:shipped, :reduced, :fp32, :reduced_fp32, :lut)
+const CUDA_NEARFIELD_GH_MODE = Ref{Symbol}(:shipped)
+
+# 12-term truncations of the exact series (task 037f sizing: delta vs shipped
+# <= 4.9e-6 relative on the series branch, >= 7x under the coherent-tier
+# delivered budget B = 2.66e-4; fm037f_budget.csv)
+const _GAUSSERF_G_COEFFS_R = _GAUSSERF_G_COEFFS[1:12]
+const _GAUSSERF_H_COEFFS_R = _GAUSSERF_H_COEFFS[1:12]
+const _GAUSSERF_G_COEFFS32_R = _GAUSSERF_G_COEFFS32[1:12]
+const _GAUSSERF_H_COEFFS32_R = _GAUSSERF_H_COEFFS32[1:12]
+
+@inline _gausserf_series_g_r(z::Float64) = evalpoly(z, _GAUSSERF_G_COEFFS_R)
+@inline _gausserf_series_h_r(z::Float64) = evalpoly(z, _GAUSSERF_H_COEFFS_R)
+@inline _gausserf_series_g_r(z::Float32) = evalpoly(z, _GAUSSERF_G_COEFFS32_R)
+@inline _gausserf_series_h_r(z::Float32) = evalpoly(z, _GAUSSERF_H_COEFFS32_R)
+
+@inline function _gaussianerf_g_h_reduced(rho::T) where T<:AbstractFloat
+    z = rho * rho
+    if rho <= T(2)
+        g = T(_GAUSSERF_A) * rho * z * _gausserf_series_g_r(z)
+        h = T(_GAUSSERF_A) * rho * z * z * _gausserf_series_h_r(z)
+        return g, h
+    end
+    gbar, rhogp = _gaussianerf_gbar_rhogp(rho)
+    g = one(T) - gbar
+    return g, rhogp - 3 * g
+end
+
+# scalar mode dispatch (:lut resolves at the kernel level on the device and
+# falls back to :shipped here; the fp32 modes narrow rho when the caller has
+# not already narrowed the whole pair computation)
+@inline _gaussianerf_g_h(rho::T, ::Val{:shipped}) where T<:AbstractFloat =
+    _gaussianerf_g_h(rho)
+@inline _gaussianerf_g_h(rho::T, ::Val{:reduced}) where T<:AbstractFloat =
+    _gaussianerf_g_h_reduced(rho)
+@inline _gaussianerf_g_h(rho::T, ::Val{:lut}) where T<:AbstractFloat =
+    _gaussianerf_g_h(rho)
+@inline _gaussianerf_g_h(rho::Float32, ::Val{:fp32}) = _gaussianerf_g_h(rho)
+@inline _gaussianerf_g_h(rho::Float32, ::Val{:reduced_fp32}) =
+    _gaussianerf_g_h_reduced(rho)
+@inline function _gaussianerf_g_h(rho::Float64, ::Val{:fp32})
+    g, h = _gaussianerf_g_h(Float32(rho))
+    return Float64(g), Float64(h)
+end
+@inline function _gaussianerf_g_h(rho::Float64, ::Val{:reduced_fp32})
+    g, h = _gaussianerf_g_h_reduced(Float32(rho))
+    return Float64(g), Float64(h)
+end
+
+# (g, h) under a mode with the kernel's branch structure: RegularizedVortex is
+# regularized everywhere; the split kernels switch to singular beyond the
+# pass-1 cutoff.  sigma <= 0 padding falls back to singular as shipped.
+@inline function _pair_gh_mode(::RegularizedVortex, r2::T, invr::T, sigma::T,
+        mv::Val) where T
+    sigma > zero(T) || return one(T), -T(3)
+    return _gaussianerf_g_h(r2 * invr / sigma, mv)
+end
+@inline function _pair_gh_mode(kernel::Union{PartitionedVortex,TwoPassVortex},
+        r2::T, invr::T, sigma::T, mv::Val) where T
+    g = one(T)
+    h = -T(3)
+    if sigma > zero(T)
+        rho = r2 * invr / sigma
+        if rho <= T(_pass1_regularized_cutoff(kernel))
+            g, h = _gaussianerf_g_h(rho, mv)
+        end
+    end
+    return g, h
+end
+
+@inline _widen_pair(::Type{T}, v::NTuple{N,Float32}) where {T,N} =
+    ntuple(i -> T(v[i]), Val(N))
+
+# Mode-threaded functor entry points.  The generic fallback ignores the mode,
+# so consumer functors keep the documented 8-argument contract and the
+# singular kernels are mode-independent; :shipped routes straight to the
+# 8-argument methods (bitwise-identical code paths).
+@inline _direct_pair_ug(kernel::AbstractDirectKernel, dx, dy, dz, r2, invr,
+        source_bodies, j, ::Val) =
+    _direct_pair_ug(kernel, dx, dy, dz, r2, invr, source_bodies, j)
+@inline _direct_pair_ugh(kernel::AbstractDirectKernel, dx, dy, dz, r2, invr,
+        source_bodies, j, ::Val) =
+    _direct_pair_ugh(kernel, dx, dy, dz, r2, invr, source_bodies, j)
+
+@inline function _direct_pair_ug(kernel::AbstractRegularizedVortex, dx, dy, dz,
+        r2, invr, source_bodies, j, ::Val{GH}) where GH
+    T = typeof(r2)
+    if GH === :shipped || GH === :lut || (GH === :fp32 && T === Float32)
+        return _direct_pair_ug(kernel, dx, dy, dz, r2, invr, source_bodies, j)
+    elseif (GH === :fp32 || GH === :reduced_fp32) && T === Float64
+        @inbounds gsx = Float32(source_bodies[5, j])
+        @inbounds gsy = Float32(source_bodies[6, j])
+        @inbounds gsz = Float32(source_bodies[7, j])
+        @inbounds sigma = Float32(source_bodies[kernel.sigma_row, j])
+        r232 = Float32(r2)
+        invr32 = Float32(invr)
+        g, _ = _pair_gh_mode(kernel, r232, invr32, sigma,
+            GH === :fp32 ? Val(:shipped) : Val(:reduced))
+        v = _vortex_pair_ug(Float32(dx), Float32(dy), Float32(dz), invr32,
+            gsx, gsy, gsz, g)
+        return _widen_pair(T, v)
+    else # :reduced (also :reduced_fp32 on a Float32 configuration)
+        @inbounds gsx = source_bodies[5, j]
+        @inbounds gsy = source_bodies[6, j]
+        @inbounds gsz = source_bodies[7, j]
+        @inbounds sigma = source_bodies[kernel.sigma_row, j]
+        g, _ = _pair_gh_mode(kernel, r2, invr, sigma, Val(:reduced))
+        return _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
+    end
+end
+
+@inline function _direct_pair_ugh(kernel::AbstractRegularizedVortex, dx, dy, dz,
+        r2, invr, source_bodies, j, ::Val{GH}) where GH
+    T = typeof(r2)
+    if GH === :shipped || GH === :lut || (GH === :fp32 && T === Float32)
+        return _direct_pair_ugh(kernel, dx, dy, dz, r2, invr, source_bodies, j)
+    elseif (GH === :fp32 || GH === :reduced_fp32) && T === Float64
+        @inbounds gsx = Float32(source_bodies[5, j])
+        @inbounds gsy = Float32(source_bodies[6, j])
+        @inbounds gsz = Float32(source_bodies[7, j])
+        @inbounds sigma = Float32(source_bodies[kernel.sigma_row, j])
+        r232 = Float32(r2)
+        invr32 = Float32(invr)
+        g, h = _pair_gh_mode(kernel, r232, invr32, sigma,
+            GH === :fp32 ? Val(:shipped) : Val(:reduced))
+        v = _vortex_pair_ugh(Float32(dx), Float32(dy), Float32(dz), r232,
+            invr32, gsx, gsy, gsz, g, h)
+        return _widen_pair(T, v)
+    else # :reduced (also :reduced_fp32 on a Float32 configuration)
+        @inbounds gsx = source_bodies[5, j]
+        @inbounds gsy = source_bodies[6, j]
+        @inbounds gsz = source_bodies[7, j]
+        @inbounds sigma = source_bodies[kernel.sigma_row, j]
+        g, h = _pair_gh_mode(kernel, r2, invr, sigma, Val(:reduced))
+        return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
+    end
+end
+
+# Host-side :lut table builder (task 037f; also the construction source of the
+# device table).  Linear interpolation in x = rho^2 over [0, rho_t^2] of the
+# NORMALIZED functions G(x) = g/rho^3 and H(x) = h/rho^5 — analytic in x with
+# G(0) = A/3 != 0, so the table preserves relative accuracy down to rho -> 0.
+# Values sample the shipped Float64 evaluator, so the LUT inherits (never adds
+# to) the shipped outer-fit error; Float32 storage; N = 1024 sized in
+# fm037f_budget.csv (interp delta <= 3.0e-6 relative, 6x under budget).
+const _NF_GH_LUT_N = 1024
+
+function _build_gh_lut(rho_t::Float64)
+    x_max = rho_t * rho_t
+    tab = Matrix{Float32}(undef, 2, _NF_GH_LUT_N)
+    tab[1, 1] = Float32(_GAUSSERF_A / 3)
+    tab[2, 1] = Float32(-_GAUSSERF_A / 5)
+    for i in 2:_NF_GH_LUT_N
+        x = x_max * (i - 1) / (_NF_GH_LUT_N - 1)
+        rho = sqrt(x)
+        g, h = _gaussianerf_g_h(rho)
+        tab[1, i] = Float32(g / rho^3)
+        tab[2, i] = Float32(h / rho^5)
+    end
+    return tab
+end
+
+# Shared LUT lookup (host mirror of the device math; `tab` is any 2 x N
+# indexable).  Returns the singular (1, -3) for x >= x_max — the partitioned
+# cutoff itself (half-open boundary, measure zero vs the shipped `<=`).
+@inline function _gh_from_lut(tab, rho::T, x_max::T) where T
+    x = rho * rho
+    x >= x_max && return one(T), -T(3)
+    t = x * (T(_NF_GH_LUT_N - 1) / x_max)
+    i0 = unsafe_trunc(Int32, t)
+    f = t - T(i0)
+    i1 = i0 + Int32(1)
+    @inbounds G0 = T(tab[1, i1])
+    @inbounds G1 = T(tab[1, i1 + Int32(1)])
+    @inbounds H0 = T(tab[2, i1])
+    @inbounds H1 = T(tab[2, i1 + Int32(1)])
+    G = muladd(f, G1 - G0, G0)
+    H = muladd(f, H1 - H0, H0)
+    return rho * x * G, rho * x * x * H
+end
+
+# Validated host-side mode (the host reference path maps :lut -> :shipped)
+function _validated_host_gh_mode()
+    m = CUDA_NEARFIELD_GH_MODE[]
+    m in NEARFIELD_GH_MODES || throw(ArgumentError(
+        "CUDA_NEARFIELD_GH_MODE must be one of $(NEARFIELD_GH_MODES); got $m"))
+    return m === :lut ? :shipped : m
 end
 
 # Singular Biot-Savart direct kernel for Point{Vortex} sources (task 032 stage 1):
@@ -1597,6 +1815,29 @@ _leaf_stencil_min_gap(cache::RadixFMMCache) =
         dmax2 <= cmin * cmin && return Int32(2)
     end
     return Int32(3)
+end
+
+# Task 037e: exact target-point/source-cell-AABB reachability predicate for the
+# mixed-bucket pair-level fast path (`CUDA_NEARFIELD_PAIR_AABB`). Returns true
+# when the point (xi, yi, zi) can reach the source-cell AABB
+# [slo, slo + h_leaf]^3 within rho_cut·σ_max(source cell), i.e. when at least
+# one source body in that cell COULD satisfy the regularized branch predicate
+# ρ = r/σ ≤ rho_cut. The point-to-AABB gap arithmetic mirrors the 037a-validated
+# `_cuda_twopass_deficit_kernel!` qx/near2 form exactly. Pure Julia scalar
+# arithmetic — shared verbatim by the CUDA kernels, the host unit tests, and
+# the fm037e scoping script.
+@inline function _nearfield_point_aabb_reach(xi::T, yi::T, zi::T, slo_x::T,
+        slo_y::T, slo_z::T, h_leaf::T, rho_cut::T,
+        sigma_max_s::T) where T<:AbstractFloat
+    sigma_max_s > zero(T) || return false
+    shi_x = slo_x + h_leaf
+    shi_y = slo_y + h_leaf
+    shi_z = slo_z + h_leaf
+    qx = xi < slo_x ? slo_x - xi : (xi > shi_x ? xi - shi_x : zero(T))
+    qy = yi < slo_y ? slo_y - yi : (yi > shi_y ? yi - shi_y : zero(T))
+    qz = zi < slo_z ? slo_z - zi : (zi > shi_z ? zi - shi_z : zero(T))
+    near2 = qx * qx + qy * qy + qz * qz
+    return near2 <= (rho_cut * sigma_max_s)^2
 end
 
 # Construction-sized compacted offset ball for the device TwoPassVortex pass-2

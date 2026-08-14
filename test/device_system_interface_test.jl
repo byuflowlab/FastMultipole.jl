@@ -919,6 +919,189 @@ end
     end
 end
 
+@testset "cheapened g/h modes (task 037f)" begin
+    # budgets and mode sizing: theory/nearfield-kernel-cheapening-budget.md
+    # (data/kernel_splitting/fm037f_budget.csv); pointwise gates below are the
+    # measured mode errors with ~2x margin
+
+    seed = 20260814
+
+    # BigFloat series reference (same construction as the stage-2 testset)
+    function gh_big37f(rho)
+        rb = big(rho)
+        x = rb / sqrt(big(2))
+        s = zero(BigFloat); term = x; n = 0
+        while true
+            add = term / (2n + 1); s += add; n += 1; term *= -x * x / n
+            abs(add) <= eps(BigFloat) * max(abs(s), one(BigFloat)) && break
+        end
+        erfb = 2 / sqrt(big(pi)) * s
+        Ab = sqrt(big(2) / big(pi))
+        gb = erfb - Ab * rb * exp(-rb * rb / 2)
+        hb = Ab * rb^3 * exp(-rb * rb / 2) - 3 * gb
+        return Float64(gb), Float64(hb)
+    end
+    A37 = sqrt(2 / pi)
+    g_ref37(rho) = _ref_erf(rho / sqrt(2)) - A37 * rho * exp(-rho^2 / 2)
+    outer_budget = 0.5e-3 * g_ref37(2.0)     # 3.69e-4, the shipped outer gate
+
+    #--- (a) defaults and validation ---#
+
+    @test FastMultipole.CUDA_NEARFIELD_GH_MODE[] === :shipped
+    @test FastMultipole._validated_host_gh_mode() === :shipped
+    FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :bogus
+    try
+        @test_throws ArgumentError FastMultipole._validated_host_gh_mode()
+    finally
+        FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :shipped
+    end
+    # the host reference path maps :lut -> :shipped (documented fallback)
+    FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :lut
+    try
+        @test FastMultipole._validated_host_gh_mode() === :shipped
+    finally
+        FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :shipped
+    end
+
+    #--- (b) per-mode pointwise bounds vs the references ---#
+
+    # :reduced — 12-term series (measured 4.9e-6 rel; gate 1e-5), outer
+    # branch unchanged, singular limit exact
+    for TF in (Float64, Float32)
+        emax = 0.0
+        for rho in range(1e-3, 2.0, length=501)
+            g, h = FastMultipole._gaussianerf_g_h(TF(rho), Val(:reduced))
+            gb, hb = gh_big37f(rho)
+            emax = max(emax, abs(g / gb - 1), abs(h / hb - 1))
+        end
+        @test emax < 1e-5
+        for rho in (2.5, 4.0, 40.0)
+            @test FastMultipole._gaussianerf_g_h(TF(rho), Val(:reduced)) ===
+                FastMultipole._gaussianerf_g_h(TF(rho))
+        end
+        g, h = FastMultipole._gaussianerf_g_h(TF(40), Val(:reduced))
+        @test g == one(TF) && h == -TF(3)
+    end
+
+    # fp32 modes on Float64 arguments: Float32-quality series (shipped 13-term
+    # gate 2e-6; reduced 1e-5), outer within the shipped absolute budget
+    for (mode, rtol) in ((:fp32, 2e-6), (:reduced_fp32, 1e-5))
+        emax_series = 0.0
+        for rho in range(1e-3, 2.0 - 1e-6, length=501)
+            g, h = FastMultipole._gaussianerf_g_h(Float64(rho), Val(mode))
+            gb, hb = gh_big37f(rho)
+            emax_series = max(emax_series, abs(g / gb - 1), abs(h / hb - 1))
+        end
+        @test emax_series < rtol
+        emax_outer = 0.0
+        for rho in range(2.001, 40.0, length=501)
+            g, _ = FastMultipole._gaussianerf_g_h(Float64(rho), Val(mode))
+            emax_outer = max(emax_outer, abs(g - g_ref37(rho)))
+        end
+        @test emax_outer < outer_budget
+        g, h = FastMultipole._gaussianerf_g_h(40.0, Val(mode))
+        @test g == 1.0 && h == -3.0
+    end
+
+    #--- (c) :lut table + interpolation: relative accuracy over the whole
+    #    domain (normalized G/H preserves it near rho -> 0), exact singular
+    #    beyond, branch continuity ---#
+
+    for rho_t in (3.668, 4.252)
+        tab = FastMultipole._build_gh_lut(rho_t)
+        @test size(tab) == (2, FastMultipole._NF_GH_LUT_N)
+        for TF in (Float64, Float32)
+            # domain end exactly as the device computes it (T(rho_t)^2)
+            x_max = TF(rho_t)^2
+            emax = 0.0
+            for rho in range(1e-3, rho_t - 1e-4, length=701)
+                # delta vs shipped: the LUT cheapens the shipped evaluator
+                g, h = FastMultipole._gh_from_lut(tab, TF(rho), x_max)
+                g0, h0 = FastMultipole._gaussianerf_g_h(rho)
+                # skip the one interpolation cell containing the rho = 2
+                # branch discontinuity of the shipped evaluator itself
+                abs(rho - 2.0) < 2 * Float64(x_max) / FastMultipole._NF_GH_LUT_N && continue
+                emax = max(emax, abs(Float64(g) / g0 - 1), abs(Float64(h) / h0 - 1))
+            end
+            @test emax < 2e-5
+            # half-open domain end: singular exactly at and beyond rho_t
+            g, h = FastMultipole._gh_from_lut(tab, TF(rho_t), x_max)
+            @test g == one(TF) && h == -TF(3)
+        end
+    end
+
+    #--- (d) :shipped bitwise on the functor entry points, all kernels ---#
+
+    rng = MersenneTwister(seed)
+    for TF in (Float64, Float32)
+        srcb = zeros(TF, 8, 1)
+        for kernel in (RegularizedVortex(; sigma_row=8),
+                PartitionedVortex(; sigma_row=8),
+                TwoPassVortex(; sigma_row=8), SingularVortex())
+            for trial in 1:50
+                srcb[5:7, 1] .= randn(rng, TF, 3)
+                srcb[8, 1] = TF(0.01 + 0.09 * rand(rng))
+                d = TF.(0.3 .* randn(rng, 3))
+                r2 = sum(abs2, d)
+                invr = inv(sqrt(r2))
+                @test FastMultipole._direct_pair_ugh(kernel, d[1], d[2], d[3],
+                    r2, invr, srcb, 1, Val(:shipped)) ===
+                    FastMultipole._direct_pair_ugh(kernel, d[1], d[2], d[3],
+                    r2, invr, srcb, 1)
+                @test FastMultipole._direct_pair_ug(kernel, d[1], d[2], d[3],
+                    r2, invr, srcb, 1, Val(:shipped)) ===
+                    FastMultipole._direct_pair_ug(kernel, d[1], d[2], d[3],
+                    r2, invr, srcb, 1)
+            end
+        end
+        # fp32 modes on Float32 configurations are the documented no-ops
+        srcb[5:7, 1] .= randn(rng, TF, 3)
+        srcb[8, 1] = TF(0.05)
+        pk = PartitionedVortex(; sigma_row=8)
+        d = TF.((0.06, 0.02, 0.01))
+        r2 = sum(abs2, d); invr = inv(sqrt(r2))
+        if TF === Float32
+            @test FastMultipole._direct_pair_ugh(pk, d..., r2, invr, srcb, 1,
+                Val(:fp32)) ===
+                FastMultipole._direct_pair_ugh(pk, d..., r2, invr, srcb, 1)
+            @test FastMultipole._direct_pair_ugh(pk, d..., r2, invr, srcb, 1,
+                Val(:reduced_fp32)) ===
+                FastMultipole._direct_pair_ugh(pk, d..., r2, invr, srcb, 1)
+        end
+    end
+
+    #--- (e) host end-to-end threading: fmm! under each host mode vs :shipped
+    #    (delta gated at the mapped budget scale; :lut host == :shipped) ---#
+
+    nv = 300
+    sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
+    function run_mode37f(mode)
+        sys = PartitionedSmoothedVortex(SmoothedVortex(generate_vortex(seed, nv),
+            copy(sigma)))
+        cache = RadixFMMCache(sys; expansion_order=4, ell=2, hessian=true,
+            options=CUDARadixLifecycleOptions(; precision=Float64,
+                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+        old = FastMultipole.CUDA_NEARFIELD_GH_MODE[]
+        FastMultipole.CUDA_NEARFIELD_GH_MODE[] = mode
+        try
+            fmm!(sys, cache; scalar_potential=false, gradient=true, hessian=true)
+        finally
+            FastMultipole.CUDA_NEARFIELD_GH_MODE[] = old
+        end
+        inner = sys.smoothed.inner
+        return copy(inner.gradient_stretching[1:3, :]), copy(inner.potential[5:13, :])
+    end
+    U0, J0 = run_mode37f(:shipped)
+    u_scale = maximum(abs.(U0)); j_scale = maximum(abs.(J0))
+    for (mode, tol) in ((:reduced, 1e-4), (:fp32, 1e-5), (:reduced_fp32, 1e-4))
+        U, J = run_mode37f(mode)
+        @test maximum(abs.(U .- U0)) / u_scale < tol
+        @test maximum(abs.(J .- J0)) / j_scale < tol
+    end
+    Ul, Jl = run_mode37f(:lut)     # host falls back to :shipped
+    @test Ul == U0 && Jl == J0
+end
+
 @testset "shipped nearfield defaults (task 032a Checkpoint D, 2026-08-07)" begin
     # user-approved defaults: PartitionedVortex is the recommended σ-carrying
     # vortex nearfield; the split kernels default to the §6.4 RMS radius
