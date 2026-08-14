@@ -157,12 +157,33 @@ gate-minimal for the global `sigma_max`); the rotor's ~18x per-cell
 `sigma_max` spread creates both ceilings.
 
 Screen verdict (12 candidate rows vs same-job anchors, warmed U/J
-medians): accuracy identical to anchors on every row (accepted-pair set
-unchanged, as designed; all `<= 1e-3`); performance FAILS the promotion
-gate — best material row `+2.4%` (rotor `1e6` F64), worst regression
-`-17.3%` (wake `1e5` F32); F32 rows regress broadly (predicate/blocked-
-traversal overhead exceeds the removed divergence). Counters flat and
-per-step allocation flag-independent on all rows.
+medians): accuracy equal to anchors to accumulation-order tolerance on
+every row, exactly as pre-registered (the accepted regularized-pair set
+is unchanged; F64 rows match the anchor `u_rel_rms` digits exactly, F32
+rows differ only in trailing digits from atomic accumulation order —
+e.g. rotor `1e6` F32 `6.9387e-4` vs anchor `6.9383e-4` — and every row
+is `<= 1e-3`); performance FAILS the promotion gate — best material row
+`+2.41%` (**wake** `1e6` F64, `258.826 -> 252.745 ms`; rotor `1e6` F64
+is `+1.46%`, `594.032 -> 585.465 ms`), worst regression `-17.3%` (wake
+`1e5` F32); F32 rows regress broadly (predicate/blocked-traversal
+overhead exceeds the removed divergence). The residual-headroom
+attribution therefore points at the wake, not the rotor, for E1-style
+traversal savings. Counters flat and per-step allocation
+flag-independent on all rows.
+
+Job log of record: `data/flowvpm_gpu_campaign/fm037ef-13170768.out`
+(preflight stages incl. the 358/358 CUDA nearfield-binning assertions on
+hardware; the stage-f log `fm037ef-13170769.out` is deposited alongside).
+
+Review notes (2026-08-14 clear-context review; non-blocking, documented
+only): pre-registration temporal precedence is not provable from git
+history (the registration and results landed in one commit — future rows
+should commit the registration before submission); the analyzer prints
+but does not programmatically assert the anchor-identity check; the
+mixed-AABB kernel never writes `output[1]` (harmless — the split
+nearfield path routes only vortex kernels, which emit no scalar
+potential); `device_mem_gb` is a point-in-time reading, not a contract
+quantity.
 
 E2 disposition: the pre-registered `>= 10%` build criterion fired (rotor),
 but E2 is not built here. Decision basis: (i) it requires the leaf-M2L
