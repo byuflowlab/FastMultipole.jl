@@ -521,8 +521,10 @@ end
         end
         @test true
     else
-        # shipped default asserted before any test mutates the Ref
-        @test FastMultipole.CUDA_NEARFIELD_GH_MODE[] === :shipped
+        # production default asserted before any test mutates the Ref
+        # (:fp32 for Float64 configs, user-approved 2026-08-14; bitwise
+        # no-op on Float32 configs; :shipped retained as control/opt-out)
+        @test FastMultipole.CUDA_NEARFIELD_GH_MODE[] === :fp32
 
         seed = 20260814
         nv = 1500

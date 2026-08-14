@@ -160,11 +160,25 @@ U/J medians = overlapped critical path):
 | `:lut` (F64) | +5.3% / +8.6% | +2.9% / +2.9% | -1.9% / -2.9% | fail (material best 2.9% < 5%) |
 | `:reduced` | ~0-1.8% | ~0-1.5% | -2.7% / +1.0% | fail (< 5%) |
 
-Promotion recommendation (awaiting explicit user approval per the
-stop-and-report rule): make `:fp32` the default g/h evaluation for
-Float64 configurations (F32 configurations keep `:shipped`); it passes
-every arm of the gate — velocity RMS `<= 1e-3` everywhere (deltas
-`~1e-8`), `+7.4-7.8%` on the material wake case, worst other-case
-regression `-2.5% < 3%`. `:reduced`, `:reduced_fp32`, `:lut` remain
-opt-in with the ceilings above. Rotor J diagnostic: watched, unchanged at
-`1e-7` scale.
+Promotion recommendation (stop-and-report): make `:fp32` the default g/h
+evaluation for Float64 configurations; it passes every arm of the gate —
+velocity RMS `<= 1e-3` everywhere (deltas `~1e-8`), `+7.4-7.8%` on the
+material wake case, worst other-case regression `-2.5% < 3%`. `:reduced`,
+`:reduced_fp32`, `:lut` remain opt-in with the ceilings above. Rotor J
+diagnostic: watched, unchanged at `1e-7` scale.
+
+**Default flip APPROVED by user 2026-08-14 and implemented:**
+`CUDA_NEARFIELD_GH_MODE` now defaults to `:fp32`
+(`translate_batched_resident.jl`). On Float32 configurations `:fp32` is
+bitwise the shipped path (structurally and test-asserted), so only
+Float64 configurations change; `:shipped` remains the control/opt-out and
+its bitwise-identity tests are retained as opt-out coverage (they pin the
+mode explicitly, as does the benchmark driver per row — driver rows
+without `gh_mode` still pin the historical `shipped` control, documented
+in the driver header). Default assertions updated in
+`device_system_interface_test.jl` and
+`cuda_radix_nearfield_binning_test.jl`; host suites re-run green under
+the new default (840 + 8362 assertions, single-thread smoke per the
+standing local-compute constraint — the flip's hardware evidence is the
+already-recorded job `13170769`, no new run required). The E2 -> 038
+routing question from 037e remains on hold, unacknowledged.

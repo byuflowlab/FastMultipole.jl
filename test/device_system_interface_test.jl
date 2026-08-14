@@ -947,8 +947,13 @@ end
 
     #--- (a) defaults and validation ---#
 
-    @test FastMultipole.CUDA_NEARFIELD_GH_MODE[] === :shipped
-    @test FastMultipole._validated_host_gh_mode() === :shipped
+    # default = :fp32 for Float64 configurations (user-approved 2026-08-14,
+    # task 037f Work Record); bitwise no-op on Float32 configurations.
+    # :shipped stays available as the control/opt-out (asserted below by the
+    # bitwise-identity tests, which set the mode explicitly).
+    @test FastMultipole.CUDA_NEARFIELD_GH_MODE[] === :fp32
+    @test FastMultipole._validated_host_gh_mode() === :fp32
+    @test :shipped in FastMultipole.NEARFIELD_GH_MODES
     FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :bogus
     try
         @test_throws ArgumentError FastMultipole._validated_host_gh_mode()

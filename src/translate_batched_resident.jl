@@ -903,8 +903,17 @@ end
 # lifecycle body, so the selection is baked into a captured CUDA graph at
 # record time: flip it only BEFORE cache construction (or force a new epoch),
 # or a replayed graph keeps the old mode silently.
+#
+# DEFAULT = :fp32 (user-approved flip, 2026-08-14, task 037f): on Float64
+# configurations the g/h transcendental (and functor-path assembly) runs in
+# Float32 with Float64 accumulation — measured +6.8-10.2% end-to-end U/J on
+# cube and +7.4-7.8% on the wake at delivered-error deltas of ~1e-8 relative
+# RMS (fm037f_screen.csv / fm037f_decomposition.csv, H200 job 13170769). On
+# Float32 configurations :fp32 is bitwise the shipped path (documented
+# no-op), so this default changes nothing there. :shipped remains the
+# control/opt-out.
 const NEARFIELD_GH_MODES = (:shipped, :reduced, :fp32, :reduced_fp32, :lut)
-const CUDA_NEARFIELD_GH_MODE = Ref{Symbol}(:shipped)
+const CUDA_NEARFIELD_GH_MODE = Ref{Symbol}(:fp32)
 
 # 12-term truncations of the exact series (task 037f sizing: delta vs shipped
 # <= 4.9e-6 relative on the series branch, >= 7x under the coherent-tier

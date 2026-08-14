@@ -31,8 +31,11 @@
 #   rho_t   kernel cutoff override (optional)
 #   rho_c   TwoPassVortex primary/direct cutoff override (optional)
 #   gh_mode shipped | reduced | fp32 | reduced_fp32 | lut   (task 037f
-#           cheapened nearfield g/h; default shipped; set before cache
-#           construction because a captured graph bakes the mode)
+#           cheapened nearfield g/h; set before cache construction because a
+#           captured graph bakes the mode). NOTE: rows without the key pin
+#           gh_mode=shipped — the historical control — NOT the production
+#           default, which is :fp32 since 2026-08-14 (user-approved flip);
+#           the driver always sets the Ref explicitly per row.
 #   twopass_aabb 1 = target-point/source-cell pass-2 AABB prune (default 0)
 #   pair_aabb 1 = 037e mixed-bucket pair-AABB fast path (default 0; the flag
 #                 is set before cache construction, per the graph-bake contract)
