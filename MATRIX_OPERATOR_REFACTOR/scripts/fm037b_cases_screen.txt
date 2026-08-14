@@ -1,0 +1,69 @@
+# 037b pre-registered co-design screen (written before submission; gate and
+# grid pre-registered in 037b-explore-twopass-deficit-geometry.md).
+# Anchors = shipped defaults (partitioned P5 rho_t=3.668 dense, auto or
+# shipped-auto-equal pinned geometry), same job as every candidate.
+# Two-pass rows: pass-1 hybrid switch rho_c sizes the primary stencil
+# (adequacy: rho_c*sigma_max < g_min(q)*h_leaf, verified locally for every
+# row via the production arithmetic); rho_t is the pass-2 deficit truncation
+# radius, chosen from the 037b exact-only truncated-deficit curves so that
+# truncated_deficit + expected FMM component can pass the conservative-sum
+# 1e-3 gate. aabb=1 (037a exact prune) except the no-aabb controls.
+# All rows Float32 screen, dense M2L, profile on; F64/RK3 follow for winners.
+
+# ---- cube n=1e5 (anchor ell=4 q=12; deficit curve pins rho_t=3.668) ----
+label=037b_cu5_anchor case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1
+label=037b_cu5_tp_l4q6 case=cube n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=4 q=6 rho_t=3.668 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu5_tp_l4q4_p5 case=cube n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=4 q=4 rho_t=3.668 rho_c=1.7 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu5_tp_l4q4_p6 case=cube n=100000 kernel=twopass tf=Float32 expansion_order=5 ell=4 q=4 rho_t=3.668 rho_c=1.7 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu5_tp_l5q12 case=cube n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 rho_c=1.9 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu5_tp_l5q16 case=cube n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=16 rho_t=3.668 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu5_tp_l5q12_noaabb case=cube n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 rho_c=1.9 twopass_aabb=0 strategy=dense profile=1
+
+# ---- cube n=1e6 (anchor ell=5 q=12; rho_t=3.668 pinned by curve) ----
+label=037b_cu6_anchor case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1
+label=037b_cu6_tp_l5q6 case=cube n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu6_tp_l5q4_p5 case=cube n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=4 rho_t=3.668 rho_c=1.7 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu6_tp_l5q4_p6 case=cube n=1000000 kernel=twopass tf=Float32 expansion_order=5 ell=5 q=4 rho_t=3.668 rho_c=1.7 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu6_tp_l6q12 case=cube n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=12 rho_t=3.668 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu6_tp_l6q16 case=cube n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=16 rho_t=3.668 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_cu6_tp_l6q12_noaabb case=cube n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=12 rho_t=3.668 rho_c=2.0 twopass_aabb=0 strategy=dense profile=1
+
+# ---- wake n=1e5 (anchor ell=5 q=6; curve admits rho_t 3.4, 3.2 marginal) ----
+label=037b_wa5_anchor case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1
+label=037b_wa5_tp_l5q3_p6 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=5 ell=5 q=3 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa5_tp_l5q4_p5 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=4 rho_t=3.668 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa5_tp_l5q4_p6 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=5 ell=5 q=4 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa5_tp_l6q6 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 rho_c=1.9 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa5_tp_l6q6_r34 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.4 rho_c=1.9 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa5_tp_l6q6_r32 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.2 rho_c=1.9 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa5_tp_l6q9 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=9 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa5_tp_l6q6_noaabb case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.4 rho_c=1.9 twopass_aabb=0 strategy=dense profile=1
+
+# ---- wake n=1e6 (anchor ell=6 q=6; curve admits rho_t 3.2 and 3.0) ----
+label=037b_wa6_anchor case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=037b_wa6_tp_l6q4_p5 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=4 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa6_tp_l7q6 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.668 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa6_tp_l7q6_r34 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa6_tp_l7q6_r30 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.0 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa6_tp_l7q9 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=9 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_wa6_tp_l7q6_noaabb case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.4 rho_c=2.0 twopass_aabb=0 strategy=dense profile=1
+
+# ---- rotor n=1e5 (new case; sigma_max=3.108e-3, adequacy is non-binding:
+# even partitioned reach fits ell=7/q6, so co-design lets BOTH kernels go
+# deep; anchor = shipped auto geometry) ----
+label=037b_ro5_anchor case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 q=6 rho_t=3.668 strategy=dense profile=1
+label=037b_ro5_pa_l6q6 case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=037b_ro5_pa_l7q6 case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.668 strategy=dense profile=1
+label=037b_ro5_tp_l7q6 case=rotor n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.668 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_ro5_tp_l7q6_r34 case=rotor n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_ro5_tp_l7q4 case=rotor n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=4 rho_t=3.4 rho_c=1.7 twopass_aabb=1 strategy=dense profile=1
+label=037b_ro5_tp_l7q6_noaabb case=rotor n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.4 rho_c=2.0 twopass_aabb=0 strategy=dense profile=1
+
+# ---- rotor n=1e6 (sigma_max=3.108e-4; adequacy non-binding to ell=8) ----
+label=037b_ro6_anchor case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 q=6 rho_t=3.668 strategy=dense profile=1
+label=037b_ro6_pa_l7q6 case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.668 strategy=dense profile=1
+label=037b_ro6_pa_l8q6 case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=8 q=6 rho_t=3.668 strategy=dense profile=1
+label=037b_ro6_tp_l8q6 case=rotor n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=8 q=6 rho_t=3.668 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_ro6_tp_l8q6_r34 case=rotor n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=8 q=6 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_ro6_tp_l7q6 case=rotor n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=7 q=6 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037b_ro6_tp_l8q6_noaabb case=rotor n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=8 q=6 rho_t=3.4 rho_c=2.0 twopass_aabb=0 strategy=dense profile=1

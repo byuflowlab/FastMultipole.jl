@@ -1,0 +1,73 @@
+=== node: m13h-1-2
+GPU 0: NVIDIA H200 (UUID: GPU-06c58ce4-35b4-30cf-fbd9-bec4a8af8522)
+=== 033 reference integrity ===
+direct_reference_cube_n1000.csv: OK
+direct_reference_cube_n3162.csv: OK
+direct_reference_cube_n10000.csv: OK
+direct_reference_cube_n31623.csv: OK
+direct_reference_cube_n100000.csv: OK
+direct_reference_cube_n316228.csv: OK
+direct_reference_cube_n1000000.csv: OK
+direct_reference_wake_n1000.csv: OK
+direct_reference_wake_n3162.csv: OK
+direct_reference_wake_n10000.csv: OK
+direct_reference_wake_n31623.csv: OK
+direct_reference_wake_n100000.csv: OK
+direct_reference_wake_n316228.csv: OK
+direct_reference_wake_n1000000.csv: OK
+direct_reference_rotor_n100000.csv: OK
+direct_reference_rotor_n1000000.csv: OK
+direct_reference_rotor_n10000.csv: OK
+=== 033 refcheck at shipped coupling defaults ===
+=== 034 reference comparison: device-resident radix FMM vs 033 checksummed sampled-direct references
+mode: DEVICE (CuArray-resident)
+cases: cube, wake  n: 10000, 100000  gate: Float64 u_rel_rms <= 0.001
+[cube n=10000] built (n_actual=10000, 0.1s); reference direct_reference_cube_n10000.csv samples=10000 sha256=6f94bc0b3e7507e39bca95eec46667fe8cdb1fa24edf2f83057b6169460b9f78
+[cube n=10000 Float64] u_rel_rms=0.0005541713643458657 u_abs_rms=2.1761681720027666e-6 u_max_err=7.648723968641516e-6 j_rel_rms=0.0028202334812779764 warm_solve_s=0.020977595
+[cube n=10000 Float32] u_rel_rms=0.0005541594710738187 u_abs_rms=2.1761214684706913e-6 u_max_err=7.648137358326331e-6 j_rel_rms=0.0028202254762330686 warm_solve_s=0.059416924
+[cube n=100000] built (n_actual=100000, 0.2s); reference direct_reference_cube_n100000.csv samples=512 sha256=82fe79cd3e2ae3078da9ab28ec386973ecd67d5f0fa353b245c1c6ba68bb4cbb
+[cube n=100000 Float64] u_rel_rms=0.000680594524229907 u_abs_rms=1.435273427096865e-6 u_max_err=4.054048338941846e-6 j_rel_rms=0.003882401915305422 warm_solve_s=0.024405446
+[cube n=100000 Float32] u_rel_rms=0.0006805923339987107 u_abs_rms=1.4352688082224497e-6 u_max_err=4.054189535337954e-6 j_rel_rms=0.003882396106650047 warm_solve_s=0.014104703
+[wake n=10000] built (n_actual=10000, 0.0s); reference direct_reference_wake_n10000.csv samples=10000 sha256=d1923057915d19c8c7f4cd0a1b33a0a53b484a551253e3eacaf12439b4011ed0
+[wake n=10000 Float64] u_rel_rms=0.00034484068581541575 u_abs_rms=9.382519766339876e-6 u_max_err=4.003220319779276e-5 j_rel_rms=0.0017907259395389067 warm_solve_s=0.004748665
+[wake n=10000 Float32] u_rel_rms=0.00034479615774521107 u_abs_rms=9.381308234417925e-6 u_max_err=4.002841282091553e-5 j_rel_rms=0.0017907014412396588 warm_solve_s=0.004315503
+[wake n=100000] built (n_actual=100000, 0.0s); reference direct_reference_wake_n100000.csv samples=512 sha256=3dd3f918317fa51fe684b1d6439baa27369a491638098a52c8086451ac8a2951
+[wake n=100000 Float64] u_rel_rms=0.0003299206509042562 u_abs_rms=1.0276671844312865e-5 u_max_err=5.3592304713305245e-5 j_rel_rms=0.0024547827773391266 warm_solve_s=0.018042049
+[wake n=100000 Float32] u_rel_rms=0.00032988432328485913 u_abs_rms=1.0275540278215362e-5 u_max_err=5.359238346064857e-5 j_rel_rms=0.0024547742410919106 warm_solve_s=0.011436815
+
+case,n,precision,u_rel_rms,u_abs_rms,u_max_err,j_rel_rms,warm_solve_s
+cube,10000,Float64,0.0005541713643458657,2.1761681720027666e-6,7.648723968641516e-6,0.0028202334812779764,0.020977595
+cube,10000,Float32,0.0005541594710738187,2.1761214684706913e-6,7.648137358326331e-6,0.0028202254762330686,0.059416924
+cube,100000,Float64,0.000680594524229907,1.435273427096865e-6,4.054048338941846e-6,0.003882401915305422,0.024405446
+cube,100000,Float32,0.0006805923339987107,1.4352688082224497e-6,4.054189535337954e-6,0.003882396106650047,0.014104703
+wake,10000,Float64,0.00034484068581541575,9.382519766339876e-6,4.003220319779276e-5,0.0017907259395389067,0.004748665
+wake,10000,Float32,0.00034479615774521107,9.381308234417925e-6,4.002841282091553e-5,0.0017907014412396588,0.004315503
+wake,100000,Float64,0.0003299206509042562,1.0276671844312865e-5,5.3592304713305245e-5,0.0024547827773391266,0.018042049
+wake,100000,Float32,0.00032988432328485913,1.0275540278215362e-5,5.359238346064857e-5,0.0024547742410919106,0.011436815
+
+034 reference-comparison gate PASSED (all Float64 u_rel_rms <= 0.001)
+=== 035 tuning sweep ===
+=== 035 GPU tuning sweep: 15 configs (0 already done), reps=15, out=/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm037b_confirm.csv
+node=m13h-1-2 gpu=NVIDIA H200 julia=1.11.7 cuda=12.8.0
+[build] cube n=100000 (1.2s), reference direct_reference_cube_n100000.csv ok
+[ok] 037bc_cu5_anchor_f32: uj=11.343 ms (refresh=0.319 eval=10.901 finalize=0.056) u=6.8060e-04 gate=true J=3.8824e-03
+[ok] 037bc_cu5_anchor_f64: uj=21.033 ms (refresh=0.33 eval=21.009 finalize=0.066) u=6.8059e-04 gate=true J=3.8824e-03
+[build] wake n=100000 (0.0s), reference direct_reference_wake_n100000.csv ok
+[ok] 037bc_wa5_anchor_f32: uj=7.849 ms (refresh=0.313 eval=7.422 finalize=0.056) u=3.2988e-04 gate=true J=2.4548e-03
+[ok] 037bc_wa5_anchor_f64: uj=14.43 ms (refresh=0.33 eval=13.987 finalize=0.064) u=3.2992e-04 gate=true J=2.4548e-03
+[build] wake n=1000000 (0.3s), reference direct_reference_wake_n1000000.csv ok
+[ok] 037bc_wa6_anchor_f64: uj=179.024 ms (refresh=1.159 eval=176.638 finalize=0.86) u=2.9898e-04 gate=true J=2.8695e-03
+[ok] 037bc_wa6_tp_l7q6_r30_f64: uj=196.447 ms (refresh=2.784 eval=192.515 finalize=0.858) u=4.6991e-04 gate=true J=1.3086e-02
+[build] rotor n=100000 (0.3s), reference direct_reference_rotor_n100000.csv ok
+[ok] 037bc_ro5_anchor_f32: uj=12.331 ms (refresh=0.444 eval=11.835 finalize=0.052) u=4.4067e-04 gate=true J=5.0825e-05
+[ok] 037bc_ro5_anchor_f64: uj=22.943 ms (refresh=0.456 eval=23.951 finalize=0.063) u=4.3689e-04 gate=true J=5.0860e-05
+[ok] 037bc_ro5_pa_l6q6_f32: uj=7.006 ms (refresh=0.325 eval=6.589 finalize=0.051) u=5.4102e-04 gate=true J=5.1527e-05
+[ok] 037bc_ro5_pa_l6q6_f64: uj=11.491 ms (refresh=0.337 eval=11.055 finalize=0.062) u=5.3775e-04 gate=true J=5.1410e-05
+[build] rotor n=1000000 (0.3s), reference direct_reference_rotor_n1000000.csv ok
+[ok] 037bc_ro6_anchor_f32: uj=240.236 ms (refresh=1.27 eval=235.378 finalize=0.399) u=6.9386e-04 gate=true J=4.7009e-05
+[ok] 037bc_ro6_anchor_f64: uj=477.864 ms (refresh=1.336 eval=477.976 finalize=0.715) u=8.6378e-05 gate=true J=4.2937e-05
+[ok] 037bc_ro6_pa_l8q6_f32: uj=33.971 ms (refresh=2.818 eval=30.205 finalize=0.396) u=6.9663e-04 gate=true J=4.9489e-05
+[ok] 037bc_ro6_pa_l8q6_f64: uj=60.867 ms (refresh=2.946 eval=57.595 finalize=0.718) u=1.0711e-04 gate=true J=4.2938e-05
+[ok] 037bc_ro6_tp_l8q6_r34_f64: uj=73.543 ms (refresh=2.911 eval=69.808 finalize=0.715) u=1.8745e-04 gate=true J=1.5161e-04
+035 sweep complete
+fm035 job complete

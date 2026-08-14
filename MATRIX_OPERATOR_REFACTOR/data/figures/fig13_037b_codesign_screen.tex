@@ -1,0 +1,34 @@
+% fig13 (037b): co-design screen — U/J-solve speedup of every candidate vs
+% its same-job shipped-default anchor (H200 job 13170509, F32, median of 15
+% warmed reps). Filled bars pass the conservative-sum accuracy gate; hollow
+% bars fail it. Two-pass never beats the anchor on cube/wake; on the rotor
+% the pinned-depth PARTITIONED rows are the winners (1.81x / 7.16x) — the
+% uniform-grid auto geometry, not the kernel split, is what binds.
+% Compile: pdflatex fig13_037b_codesign_screen.tex
+\documentclass[tikz]{standalone}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{pgfplotstable}
+\begin{document}
+\begin{tikzpicture}
+\pgfplotstableread[col sep=comma]{fig13_037b_codesign_screen/screen.csv}\screentab
+\begin{axis}[
+    width=15cm, height=8.5cm, ybar=0pt, bar width=5.5pt,
+    xlabel={candidate (grouped cube / wake / rotor $\times$ $n{=}10^5,10^6$)},
+    ylabel={speedup vs same-job shipped anchor},
+    ymode=log, log origin=infty, ymin=0.1, ymax=10,
+    xtick=data, xticklabels from table={\screentab}{label},
+    x tick label style={rotate=60, anchor=east, font=\tiny},
+    grid=major, major grid style={gray!30},
+    legend pos=north west, legend style={font=\footnotesize},
+]
+\addplot[ybar, fill=blue!60, draw=blue!60!black]
+    table[col sep=comma, x=idx, y=speedup]{fig13_037b_codesign_screen/pass.csv};
+\addlegendentry{passes conservative-sum gate}
+\addplot[ybar, fill=none, draw=red!70!black]
+    table[col sep=comma, x=idx, y=speedup]{fig13_037b_codesign_screen/fail.csv};
+\addlegendentry{fails gate}
+\draw[black, thick] (axis cs:0,1) -- (axis cs:33,1);
+\end{axis}
+\end{tikzpicture}
+\end{document}

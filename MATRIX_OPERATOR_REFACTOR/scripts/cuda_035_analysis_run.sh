@@ -17,5 +17,10 @@ export FASTMULTIPOLE_FORCE_CUDA_LOAD=1 JULIA_NUM_THREADS=8 FM035_FMDIR="$FMDIR"
 cd "$FMDIR/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references"
 sha256sum -c direct_reference_checksums.sha256
 cd "$FMDIR"
-export FM035D_OUT="$DATADIR/fm035_error_decomposition.csv"
+export FM035D_OUT="$DATADIR/${FM035D_OUTNAME:-fm035_error_decomposition.csv}"
+# Optional config-file-driven run (037b): FM035D_CONFIGNAME names a file in
+# MATRIX_OPERATOR_REFACTOR/scripts/ that becomes FM035D_CONFIG_FILE.
+if [ -n "${FM035D_CONFIGNAME:-}" ]; then
+    export FM035D_CONFIG_FILE="$FMDIR/MATRIX_OPERATOR_REFACTOR/scripts/$FM035D_CONFIGNAME"
+fi
 julia --project="$ENVDIR" MATRIX_OPERATOR_REFACTOR/scripts/benchmark_035_error_decomposition.jl

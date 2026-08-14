@@ -29,6 +29,8 @@
 #   strategy concat | dense | precomputed_y        (default concat)
 #   K       window_classes (default 256, the 034 coupling default)
 #   rho_t   kernel cutoff override (optional)
+#   rho_c   TwoPassVortex primary/direct cutoff override (optional)
+#   twopass_aabb 1 = target-point/source-cell pass-2 AABB prune (default 0)
 #   profile 1 = per-stage profile (default 0)
 #   rk3     1 = also time one full RK3 step (default 0)
 # Lines starting with # and blank lines are ignored.
@@ -94,7 +96,9 @@ function parse_config(line::AbstractString)
         strategy = Symbol(get(kv, :strategy, "concat")),
         K = parse(Int, get(kv, :K, "256")),
         rho_t = haskey(kv, :rho_t) ? parse(Float64, kv[:rho_t]) : nothing,
+        rho_c = haskey(kv, :rho_c) ? parse(Float64, kv[:rho_c]) : nothing,
         rectangular = get(kv, :rectangular, "0") == "1",   # task 037 stage 5
+        twopass_aabb = get(kv, :twopass_aabb, "0") == "1",
         profile = get(kv, :profile, "0") == "1",
         rk3 = get(kv, :rk3, "0") == "1",
     )
@@ -112,16 +116,20 @@ if FM035_DRYRUN
         s = vpm.RadixFMMSettings(; expansion_order=cfg.expansion_order,
             ell=cfg.ell, near_radius2=cfg.q,
             level_radii2=cfg.sched, window_classes=cfg.K, precision=cfg.tf,
-            direct_kernel=cfg.kernel, rho_t=cfg.rho_t,
+            direct_kernel=cfg.kernel, rho_t=cfg.rho_t, rho_c=cfg.rho_c,
             m2l_strategy=cfg.strategy, rectangular=cfg.rectangular)
         k = vpm._radix_direct_kernel(s)
         strat, op = vpm._radix_m2l_strategy(s)
+        rho_c_text = k isa FM.TwoPassVortex ? string(k.rho_c) : "n/a"
         println("[dryrun ok] $(cfg.label): $(cfg.case) n=$(cfg.n) " *
-            "$(typeof(k)) rho_t=$(k.rho_t) $(typeof(strat)) tf=$(cfg.tf) " *
+            "$(typeof(k)) rho_t=$(k.rho_t) " *
+            "rho_c=$rho_c_text " *
+            "$(typeof(strat)) tf=$(cfg.tf) " *
             "literature_P=$(cfg.expansion_order + 1) " *
             "expansion_order=$(cfg.expansion_order) " *
             "ell=$(cfg.ell) q=$(cfg.q) sched=$(cfg.sched) K=$(cfg.K) " *
             "rectangular=$(cfg.rectangular) " *
+            "twopass_aabb=$(cfg.twopass_aabb) " *
             "profile=$(cfg.profile) rk3=$(cfg.rk3)")
     end
     println("dryrun: $(length(configs)) configs valid")
@@ -177,16 +185,29 @@ _median_gpu_ms(f!, state, reps) = median(_gpu_samples_ms(f!, state, reps))
 
 _wall_ms(f) = (CUDA.synchronize(); t = @elapsed (f(); CUDA.synchronize()); t * 1e3)
 
+function _direct_body_pair_total(state)
+    n_cells = state.counts.n_cells
+    n_direct = state.counts.n_direct
+    ranges = Array(state.grid.cell_ranges)[:, 1:n_cells]
+    sizes = Int64.(ranges[2, :])
+    targets = Array(state.direct_targets)[1:n_direct]
+    sources = Array(state.direct_sources)[1:n_direct]
+    all(1 .<= targets .<= n_cells) && all(1 .<= sources .<= n_cells) ||
+        error("direct route cell index outside 1:$n_cells")
+    return sum(sizes[t] * sizes[s] for (t, s) in zip(targets, sources))
+end
+
 const CSV_COLUMNS = [
     "label", "job", "host", "case", "n", "kernel", "tf", "ell", "q", "sched",
-    "strategy", "K", "rho_t", "status", "message",
-    "leaf_q", "rectangular", "ell_axes",
+    "strategy", "K", "rho_t", "rho_c", "status", "message",
+    "leaf_q", "rectangular", "twopass_aabb", "ell_axes",
     "uj_ms_median", "uj_ms_min", "reset_ms", "refresh_ms", "eval_ms",
     "finalize_ms", "overhead_ms", "rk3_step_ms",
     "b2m_ms", "m2m_ms", "m2l_ms", "l2l_ms", "l2b_ms",
     "grid_ms", "occupancy_ms", "direct_gen_ms", "route_gen_ms", "groups_ms",
     "u_rel_rms", "u_max_err", "j_rel_rms", "gate_pass",
-    "n_cells", "n_nodes", "n_routes", "n_direct", "total_cells",
+    "n_cells", "n_nodes", "n_routes", "n_direct", "direct_body_pairs",
+    "twopass_candidate_pairs", "twopass_shell_pairs", "total_cells",
     "nodes_per_level", "routes_per_level",
     "construct_s", "alloc_bytes_step", "device_mem_gb", "counters_flat",
     "literature_P", "expansion_order",
@@ -237,10 +258,13 @@ for cfg in configs
         "sched" => cfg.sched === nothing ? "uniform" : join(cfg.sched, ' '),
         "strategy" => cfg.strategy, "K" => cfg.K,
         "rho_t" => cfg.rho_t === nothing ? "default" : cfg.rho_t,
+        "rho_c" => cfg.rho_c === nothing ? "default" : cfg.rho_c,
         "rectangular" => cfg.rectangular,
+        "twopass_aabb" => cfg.twopass_aabb,
         "status" => "failed", "message" => "")
     gpu = nothing
     try
+        FM.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = cfg.twopass_aabb
         key = (cfg.case, cfg.n)
         if !haskey(cpu_fields, key)
             t = @elapsed cpu_fields[key] = fm033_build(cfg.case, cfg.n)
@@ -259,7 +283,7 @@ for cfg in configs
             expansion_order=cfg.expansion_order,
             ell=cfg.ell, near_radius2=cfg.q, level_radii2=cfg.sched,
             window_classes=cfg.K, precision=cfg.tf,
-            direct_kernel=cfg.kernel, rho_t=cfg.rho_t,
+            direct_kernel=cfg.kernel, rho_t=cfg.rho_t, rho_c=cfg.rho_c,
             m2l_strategy=cfg.strategy, rectangular=cfg.rectangular)
 
         construct_s = @elapsed (vpm.UJ_fmm(gpu); CUDA.synchronize())
@@ -328,6 +352,12 @@ for cfg in configs
         row["n_nodes"] = counts.n_nodes
         row["n_routes"] = counts.n_routes
         row["n_direct"] = counts.n_direct
+        row["direct_body_pairs"] = _direct_body_pair_total(state)
+        if state.options.direct_kernel isa FM.TwoPassVortex
+            shell = FM.cuda_twopass_shell_homogeneity(state)
+            row["twopass_candidate_pairs"] = shell.candidate_pairs
+            row["twopass_shell_pairs"] = shell.shell_pairs
+        end
         row["device_mem_gb"] = round(
             (CUDA.total_memory() - CUDA.free_memory()) / 2^30, digits=2)
 

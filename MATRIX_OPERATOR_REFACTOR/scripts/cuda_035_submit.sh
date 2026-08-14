@@ -42,6 +42,12 @@ rsync -az --delete \
     MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/references \
     "$REMOTE:$FMDIR/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/"
 
+# 037b rotor-wake case input (vendored DJI 9443 circulation table read by
+# benchmark_033_common.jl's fm033_build_rotor at case-construction time)
+rsync -az --delete --exclude '*.out' \
+    MATRIX_OPERATOR_REFACTOR/data/rotor_wake \
+    "$REMOTE:$FMDIR/MATRIX_OPERATOR_REFACTOR/data/"
+
 # env refresh (dev paths already registered by cuda_034_submit.sh)
 ssh "$REMOTE" "bash -lc 'module load julia/1.11.7-6bmogfl \
   && export JULIA_PKG_PRECOMPILE_AUTO=0 \

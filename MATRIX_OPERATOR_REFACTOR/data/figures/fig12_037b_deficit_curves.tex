@@ -1,0 +1,47 @@
+% fig12 (037b): exact truncated-deficit velocity error vs pass-2 truncation
+% radius rho_x, per case and scale, from the extended 3C oracle
+% (fm037b_deficit_curves.csv; 512-sample checksummed references).
+% The 1e-3 line is the phase velocity gate; the conservative-sum budget the
+% FMM component consumes sits below it. Compile: pdflatex fig12_037b_deficit_curves.tex
+\documentclass[tikz]{standalone}
+\usepackage{amsmath}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+    width=11.5cm, height=8cm,
+    xlabel={pass-2 truncation radius $\rho_x$},
+    ylabel={truncated-deficit $U$ error $\lVert P(\rho_x)-R\rVert/\lVert R\rVert$},
+    ymode=log, xmin=1.9, xmax=3.75,
+    legend pos=south west, legend cell align=left,
+    legend style={font=\footnotesize},
+    grid=both, minor grid style={gray!15}, major grid style={gray!30},
+]
+\addplot[blue, thick, mark=*] table[col sep=comma, x=rho, y=u_deficit]
+    {fig12_037b_deficit_curves/cube_n100000.csv};
+\addlegendentry{cube $n{=}10^5$}
+\addplot[blue, thick, dashed, mark=o] table[col sep=comma, x=rho, y=u_deficit]
+    {fig12_037b_deficit_curves/cube_n1000000.csv};
+\addlegendentry{cube $n{=}10^6$}
+\addplot[red, thick, mark=square*] table[col sep=comma, x=rho, y=u_deficit]
+    {fig12_037b_deficit_curves/wake_n100000.csv};
+\addlegendentry{wake $n{=}10^5$}
+\addplot[red, thick, dashed, mark=square] table[col sep=comma, x=rho, y=u_deficit]
+    {fig12_037b_deficit_curves/wake_n1000000.csv};
+\addlegendentry{wake $n{=}10^6$}
+\addplot[green!50!black, thick, mark=triangle*] table[col sep=comma, x=rho, y=u_deficit]
+    {fig12_037b_deficit_curves/rotor_n100000.csv};
+\addlegendentry{rotor $n{=}10^5$}
+\addplot[green!50!black, thick, dashed, mark=triangle] table[col sep=comma, x=rho, y=u_deficit]
+    {fig12_037b_deficit_curves/rotor_n1000000.csv};
+\addlegendentry{rotor $n{=}10^6$}
+\addplot[black, thick, domain=1.9:3.75] {1e-3};
+\node[anchor=south west, font=\footnotesize] at (axis cs:1.95,1e-3)
+    {velocity gate $10^{-3}$ (deficit + FMM share it)};
+\node[anchor=north west, align=left, font=\footnotesize] at (axis cs:1.95,2e-1)
+    {$\rho_x\!\approx\!2$ (037b premise):\\error $6\times10^{-2}$--$10^{-1}$\\
+     admissible floor: 3.67 (cube),\\3.2--3.4 (wake, rotor)};
+\end{axis}
+\end{tikzpicture}
+\end{document}

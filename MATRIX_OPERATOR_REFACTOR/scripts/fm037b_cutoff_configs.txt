@@ -1,0 +1,39 @@
+# 037b pre-registered exact decomposition mirror of fm037b_cases_screen.txt
+# (unique accuracy configs; both precisions evaluated by the driver; the
+# conservative-sum gate truncated_deficit/cutoff + fmm < 1e-3 governs).
+label=d37b_cu5_anchor expansion_order=4 rho_t=3.668 case=cube n=100000 ell=4 q=12 kernel=partitioned
+label=d37b_cu5_tp_l4q6 expansion_order=4 rho_t=3.668 case=cube n=100000 ell=4 q=6 kernel=twopass rho_c=2.0
+label=d37b_cu5_tp_l4q4_p5 expansion_order=4 rho_t=3.668 case=cube n=100000 ell=4 q=4 kernel=twopass rho_c=1.7
+label=d37b_cu5_tp_l4q4_p6 expansion_order=5 rho_t=3.668 case=cube n=100000 ell=4 q=4 kernel=twopass rho_c=1.7
+label=d37b_cu5_tp_l5q12 expansion_order=4 rho_t=3.668 case=cube n=100000 ell=5 q=12 kernel=twopass rho_c=1.9
+label=d37b_cu5_tp_l5q16 expansion_order=4 rho_t=3.668 case=cube n=100000 ell=5 q=16 kernel=twopass rho_c=2.0
+label=d37b_cu6_anchor expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=5 q=12 kernel=partitioned
+label=d37b_cu6_tp_l5q6 expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=5 q=6 kernel=twopass rho_c=2.0
+label=d37b_cu6_tp_l5q4_p5 expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=5 q=4 kernel=twopass rho_c=1.7
+label=d37b_cu6_tp_l5q4_p6 expansion_order=5 rho_t=3.668 case=cube n=1000000 ell=5 q=4 kernel=twopass rho_c=1.7
+label=d37b_cu6_tp_l6q12 expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=6 q=12 kernel=twopass rho_c=2.0
+label=d37b_cu6_tp_l6q16 expansion_order=4 rho_t=3.668 case=cube n=1000000 ell=6 q=16 kernel=twopass rho_c=2.0
+label=d37b_wa5_anchor expansion_order=4 rho_t=3.668 case=wake n=100000 ell=5 q=6 kernel=partitioned
+label=d37b_wa5_tp_l5q3_p6 expansion_order=5 rho_t=3.4 case=wake n=100000 ell=5 q=3 kernel=twopass rho_c=2.0
+label=d37b_wa5_tp_l5q4_p5 expansion_order=4 rho_t=3.668 case=wake n=100000 ell=5 q=4 kernel=twopass rho_c=2.0
+label=d37b_wa5_tp_l5q4_p6 expansion_order=5 rho_t=3.4 case=wake n=100000 ell=5 q=4 kernel=twopass rho_c=2.0
+label=d37b_wa5_tp_l6q6 expansion_order=4 rho_t=3.668 case=wake n=100000 ell=6 q=6 kernel=twopass rho_c=1.9
+label=d37b_wa5_tp_l6q6_r34 expansion_order=4 rho_t=3.4 case=wake n=100000 ell=6 q=6 kernel=twopass rho_c=1.9
+label=d37b_wa5_tp_l6q6_r32 expansion_order=4 rho_t=3.2 case=wake n=100000 ell=6 q=6 kernel=twopass rho_c=1.9
+label=d37b_wa5_tp_l6q9 expansion_order=4 rho_t=3.4 case=wake n=100000 ell=6 q=9 kernel=twopass rho_c=2.0
+label=d37b_wa6_anchor expansion_order=4 rho_t=3.668 case=wake n=1000000 ell=6 q=6 kernel=partitioned
+label=d37b_wa6_tp_l6q4_p5 expansion_order=4 rho_t=3.4 case=wake n=1000000 ell=6 q=4 kernel=twopass rho_c=2.0
+label=d37b_wa6_tp_l7q6 expansion_order=4 rho_t=3.668 case=wake n=1000000 ell=7 q=6 kernel=twopass rho_c=2.0
+label=d37b_wa6_tp_l7q6_r34 expansion_order=4 rho_t=3.4 case=wake n=1000000 ell=7 q=6 kernel=twopass rho_c=2.0
+label=d37b_wa6_tp_l7q6_r30 expansion_order=4 rho_t=3.0 case=wake n=1000000 ell=7 q=6 kernel=twopass rho_c=2.0
+label=d37b_wa6_tp_l7q9 expansion_order=4 rho_t=3.4 case=wake n=1000000 ell=7 q=9 kernel=twopass rho_c=2.0
+label=d37b_ro5_pa_l6q6 expansion_order=4 rho_t=3.668 case=rotor n=100000 ell=6 q=6 kernel=partitioned
+label=d37b_ro5_pa_l7q6 expansion_order=4 rho_t=3.668 case=rotor n=100000 ell=7 q=6 kernel=partitioned
+label=d37b_ro5_tp_l7q6 expansion_order=4 rho_t=3.668 case=rotor n=100000 ell=7 q=6 kernel=twopass rho_c=2.0
+label=d37b_ro5_tp_l7q6_r34 expansion_order=4 rho_t=3.4 case=rotor n=100000 ell=7 q=6 kernel=twopass rho_c=2.0
+label=d37b_ro5_tp_l7q4 expansion_order=4 rho_t=3.4 case=rotor n=100000 ell=7 q=4 kernel=twopass rho_c=1.7
+label=d37b_ro6_pa_l7q6 expansion_order=4 rho_t=3.668 case=rotor n=1000000 ell=7 q=6 kernel=partitioned
+label=d37b_ro6_pa_l8q6 expansion_order=4 rho_t=3.668 case=rotor n=1000000 ell=8 q=6 kernel=partitioned
+label=d37b_ro6_tp_l8q6 expansion_order=4 rho_t=3.668 case=rotor n=1000000 ell=8 q=6 kernel=twopass rho_c=2.0
+label=d37b_ro6_tp_l8q6_r34 expansion_order=4 rho_t=3.4 case=rotor n=1000000 ell=8 q=6 kernel=twopass rho_c=2.0
+label=d37b_ro6_tp_l7q6 expansion_order=4 rho_t=3.4 case=rotor n=1000000 ell=7 q=6 kernel=twopass rho_c=2.0
