@@ -1,0 +1,9 @@
+# Task 037a optimization cycle: exact target-point/source-cell AABB pruning.
+# Same-job centered rectangular shipped baseline, unpruned passing P6/rho=3.4
+# control, and the only changed lever (twopass_aabb=1), at both wake scales.
+label=037a_aabb_w5_base case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense rectangular=1 profile=1
+label=037a_aabb_w5_control case=wake n=100000 kernel=twopass tf=Float32 expansion_order=5 ell=5 q=3 rho_t=3.4 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_aabb_w5_pruned case=wake n=100000 kernel=twopass tf=Float32 expansion_order=5 ell=5 q=3 rho_t=3.4 rho_c=2.0 strategy=dense rectangular=1 twopass_aabb=1 profile=1
+label=037a_aabb_w6_base case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense rectangular=1 profile=1
+label=037a_aabb_w6_control case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=5 ell=6 q=3 rho_t=3.4 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_aabb_w6_pruned case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=5 ell=6 q=3 rho_t=3.4 rho_c=2.0 strategy=dense rectangular=1 twopass_aabb=1 profile=1

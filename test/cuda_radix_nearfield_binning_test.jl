@@ -28,19 +28,23 @@ end
 
 # run one device fmm! for `sys_ctor(seed, n)` under the given binning
 # mechanism, returning (U 3×n, J 9×n) from the wrapped VortexParticles
-function _binning_device_run(sys, cache; mode, subsort, pass2_queued=false)
+function _binning_device_run(sys, cache; mode, subsort, pass2_queued=false,
+        pass2_aabb=false)
     old_mode = FastMultipole.CUDA_NEARFIELD_BINNING[]
     old_sub = FastMultipole.CUDA_NEARFIELD_SUBSORT[]
     old_q = FastMultipole.CUDA_TWOPASS_PASS2_QUEUED[]
+    old_aabb = FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[]
     FastMultipole.CUDA_NEARFIELD_BINNING[] = mode
     FastMultipole.CUDA_NEARFIELD_SUBSORT[] = subsort
     FastMultipole.CUDA_TWOPASS_PASS2_QUEUED[] = pass2_queued
+    FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = pass2_aabb
     try
         fmm!(sys, cache; scalar_potential=false, gradient=true, hessian=true)
     finally
         FastMultipole.CUDA_NEARFIELD_BINNING[] = old_mode
         FastMultipole.CUDA_NEARFIELD_SUBSORT[] = old_sub
         FastMultipole.CUDA_TWOPASS_PASS2_QUEUED[] = old_q
+        FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = old_aabb
     end
     return nothing
 end
@@ -245,6 +249,17 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         h_shell = FastMultipole.cuda_twopass_shell_homogeneity(tcache.state)
         @test h_shell.instants > 0
         @test h_shell.uniform + h_shell.mixed == h_shell.instants
+        @test h_shell.candidate_pairs >= h_shell.shell_pairs > 0
+        _binning_device_run(tsys, tcache; mode=:unbinned, subsort=true,
+            pass2_aabb=true)
+        FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = true
+        h_pruned = try
+            FastMultipole.cuda_twopass_shell_homogeneity(tcache.state)
+        finally
+            FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = false
+        end
+        @test h_pruned.shell_pairs == h_shell.shell_pairs
+        @test h_pruned.candidate_pairs <= h_shell.candidate_pairs
 
         #--- (6) validation paths: flat-policy device TwoPass refused with the
         #    policy message; invalid binning mode rejected at launch ---#

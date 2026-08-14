@@ -2411,9 +2411,10 @@ the next `fmm!`.
   host). `padding` is a nonnegative fraction of the tight cube's side added on
   each face: `x_min = lo - padding*L_tight`, `L = (1 + 2*padding)*L_tight`.
   A rectangular cache (non-uniform `ell_axes`) applies the same convention per
-  axis — `x_min_a = lo_a - padding*ext_a`, `L_a = (1 + 2*padding)*ext_a` — and
-  rebuilds with vector bounds, so rectangularity (and, for a similar-shaped
-  cloud, the resolved `ell_axes`) is preserved.
+  axis and then pads each shorter extent symmetrically to the power-of-two leaf
+  count required by the shared cubic leaf width. Thus the snapped rectangular
+  box remains centered on the tight cloud; rectangularity (and, for a
+  similar-shaped cloud, the resolved `ell_axes`) is preserved.
 
 Validation errors (`ArgumentError`) — an empty system, non-finite or
 nonpositive bounds, negative padding, a changed system count, or a live count
@@ -2467,6 +2468,15 @@ function recenter!(cache::RadixFMMCache{TF,LH}, systems;
                 "(zero-extent) axis; pass explicit bounds=(x_min, box_size)"))
             x_min_new = lo .- TF(padding) .* ext_tight
             L_new = (1 + 2 * TF(padding)) .* ext_tight
+            # `_resolve_radix_ell_axes` pads short axes upward to power-of-two
+            # leaf counts. Apply that padding equally on both faces for derived
+            # bounds; retaining the raw lower face shifts the leaf lattice and
+            # can inflate occupied/direct/M2L counts for a centered cloud.
+            center_new = (lo + hi) / 2
+            _, _, snapped_extent =
+                _resolve_radix_ell_axes(L_new, cache.ell, TF)
+            x_min_new = center_new - snapped_extent / 2
+            L_new = snapped_extent
         else
             L_tight = max(hi[1] - lo[1], hi[2] - lo[2], hi[3] - lo[3])
             L_tight > zero(TF) || throw(ArgumentError(

@@ -1938,6 +1938,10 @@ const CUDA_NEARFIELD_SUBSORT = Ref(true)
 # TwoPassVortex pass-2 deficit sweep kernel mode: shell-queue (ballot-compacted)
 # versus plain predicated evaluation of the (rho_c, rho_t] shell.
 const CUDA_TWOPASS_PASS2_QUEUED = Ref(false)
+# Exact target-point/source-cell AABB pruning for the pass-2 correction. The
+# final pair predicate remains authoritative; this only avoids body scans for
+# source cells that cannot intersect a lane's physical correction shell.
+const CUDA_TWOPASS_TARGET_AABB_PRUNE = Ref(false)
 # per-lane shared-memory queue depth of the ballot kernels
 const _NF_QUEUE_CAP = 8
 
@@ -2443,9 +2447,11 @@ end
 # ballot queue; otherwise the shell membership is predicated. APPLY=false skips
 # the output atomics (homogeneity telemetry only, diag slots 1/2/4).
 function _cuda_twopass_deficit_kernel!(kernel::TwoPassVortex, output,
-        source_bodies, cell_ranges, cell_coords, cell_sigma_min, cell_keys,
+        source_bodies, cell_ranges, cell_coords, cell_sigma_max, cell_sigma_min,
+        cell_keys,
         n_cells::Int, tp_offsets, tp_gap2, K::Int, nf_scalars, ell::Int,
-        h_leaf, ::Val{HS}, ::Val{QUEUED}, ::Val{APPLY}, diag) where {HS,QUEUED,APPLY}
+        h_leaf, x_min, ::Val{HS}, ::Val{QUEUED}, ::Val{AABB}, ::Val{APPLY},
+        diag) where {HS,QUEUED,AABB,APPLY}
     T = eltype(output)
     # the ball prune runs in Float64 so Float32 rounding can never exclude a
     # boundary offset class the host sweep would visit
@@ -2463,6 +2469,7 @@ function _cuda_twopass_deficit_kernel!(kernel::TwoPassVortex, output,
     tid = threadIdx().x
     qbuf = CUDA.CuStaticSharedArray(Int32, (_NF_QUEUE_CAP, 2, 128))
     d_inst = UInt64(0); d_uni = UInt64(0); d_mixed = UInt64(0)
+    d_candidate_pairs = UInt64(0); d_shell_pairs = UInt64(0)
     total = n_cells * K
     G = 1 << ell
     @inbounds while w <= total
@@ -2486,6 +2493,13 @@ function _cuda_twopass_deficit_kernel!(kernel::TwoPassVortex, output,
                     dmax2 = (mx * mx + my * my + mz * mz) * hl2
                     core = smin > zero(T) && dmax2 <= (rho_c * smin)^2
                     if !core
+                        smax = T(cell_sigma_max[src])
+                        slo_x = T(x_min[1]) + T(sx) * h_leaf
+                        slo_y = T(x_min[2]) + T(sy) * h_leaf
+                        slo_z = T(x_min[3]) + T(sz) * h_leaf
+                        shi_x = slo_x + h_leaf
+                        shi_y = slo_y + h_leaf
+                        shi_z = slo_z + h_leaf
                         tfirst = cell_ranges[1, cell]
                         tcount = cell_ranges[2, cell]
                         sfirst = cell_ranges[1, src]
@@ -2501,17 +2515,36 @@ function _cuda_twopass_deficit_kernel!(kernel::TwoPassVortex, output,
                                 yi = source_bodies[2, i]
                                 zi = source_bodies[3, i]
                             end
+                            could_shell = has_i
+                            if AABB && has_i
+                                qx = xi < slo_x ? slo_x - xi :
+                                    (xi > shi_x ? xi - shi_x : zero(T))
+                                qy = yi < slo_y ? slo_y - yi :
+                                    (yi > shi_y ? yi - shi_y : zero(T))
+                                qz = zi < slo_z ? slo_z - zi :
+                                    (zi > shi_z ? zi - shi_z : zero(T))
+                                near2 = qx*qx + qy*qy + qz*qz
+                                fx = max(abs(xi - slo_x), abs(xi - shi_x))
+                                fy = max(abs(yi - slo_y), abs(yi - shi_y))
+                                fz = max(abs(zi - slo_z), abs(zi - shi_z))
+                                far2 = fx*fx + fy*fy + fz*fz
+                                could_shell = near2 <= (rho_t * smax)^2 &&
+                                    !(smin > zero(T) &&
+                                      far2 <= (rho_c * smin)^2)
+                            end
                             acc = (zero(T), zero(T), zero(T), zero(T), zero(T),
                                 zero(T), zero(T), zero(T), zero(T), zero(T),
                                 zero(T), zero(T), zero(T))
                             cntQ = Int32(0)
+                            any_shell = !AABB || CUDA.vote_any_sync(0xffffffff,
+                                could_shell)
                             j = sfirst
-                            while j <= slast
+                            while any_shell && j <= slast
                                 dx = xi - source_bodies[1, j]
                                 dy = yi - source_bodies[2, j]
                                 dz = zi - source_bodies[3, j]
                                 r2 = dx * dx + dy * dy + dz * dz
-                                valid = has_i && i != j && r2 > zero(T)
+                                valid = could_shell && i != j && r2 > zero(T)
                                 invr = zero(T)
                                 rho = zero(T)
                                 in_shell = false
@@ -2531,6 +2564,8 @@ function _cuda_twopass_deficit_kernel!(kernel::TwoPassVortex, output,
                                     if diag !== nothing && lane == Int32(0) &&
                                             (mask_sh | mask_no) != 0x00000000
                                         d_inst += UInt64(1)
+                                        d_candidate_pairs += UInt64(count_ones(mask_sh | mask_no))
+                                        d_shell_pairs += UInt64(count_ones(mask_sh))
                                         if mask_sh == 0x00000000 || mask_no == 0x00000000
                                             d_uni += UInt64(1)
                                         else
@@ -2604,6 +2639,8 @@ function _cuda_twopass_deficit_kernel!(kernel::TwoPassVortex, output,
         CUDA.@atomic diag[1] += d_inst
         CUDA.@atomic diag[2] += d_uni
         CUDA.@atomic diag[4] += d_mixed
+        CUDA.@atomic diag[9] += d_candidate_pairs
+        CUDA.@atomic diag[10] += d_shell_pairs
     end
     return nothing
 end
@@ -4466,9 +4503,10 @@ function _launch_cuda_split_nearfield_typed!(state::DeviceResidentRadixState{TF,
         blocks2 = min(cld(total, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
         CUDA.@cuda threads=threads blocks=blocks2 _cuda_twopass_deficit_kernel!(
             dk, state.output, state.source_bodies, state.cell_ranges, cell_coords,
-            cell_sigma_min, state.grid.cell_keys, n_cells, tp_offsets, tp_gap2,
-            nfctx.twopass_K, nf_scalars, state.grid.ell, h_leaf, hsv,
-            Val(CUDA_TWOPASS_PASS2_QUEUED[]), Val(true), nothing)
+            cell_sigma_max, cell_sigma_min, state.grid.cell_keys, n_cells,
+            tp_offsets, tp_gap2, nfctx.twopass_K, nf_scalars, state.grid.ell,
+            h_leaf, nfctx.x_min, hsv, Val(CUDA_TWOPASS_PASS2_QUEUED[]),
+            Val(CUDA_TWOPASS_TARGET_AABB_PRUNE[]), Val(true), nothing)
     end
     return state
 end
@@ -4566,13 +4604,17 @@ function cuda_twopass_shell_homogeneity(state::DeviceResidentRadixState{TF}) whe
         blocks2 = min(cld(total, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
         CUDA.@cuda threads=threads blocks=blocks2 _cuda_twopass_deficit_kernel!(
             dk, state.output, state.source_bodies, state.cell_ranges,
-            nfctx.cell_coords, nfctx.cell_sigma_min, state.grid.cell_keys,
-            n_cells, nfctx.twopass_offsets, nfctx.twopass_gap2, nfctx.twopass_K,
-            nfctx.nf_scalars, state.grid.ell, TF(nfctx.h_leaf), hsv,
-            Val(false), Val(false), diag)
+            nfctx.cell_coords, nfctx.cell_sigma_max, nfctx.cell_sigma_min,
+            state.grid.cell_keys, n_cells, nfctx.twopass_offsets,
+            nfctx.twopass_gap2, nfctx.twopass_K, nfctx.nf_scalars,
+            state.grid.ell, TF(nfctx.h_leaf), nfctx.x_min, hsv, Val(false),
+            Val(CUDA_TWOPASS_TARGET_AABB_PRUNE[]), Val(false), diag)
     end
     CUDA.synchronize()
-    return _nf_homogeneity_result(diag)
+    result = _nf_homogeneity_result(diag)
+    d = Array(diag)
+    return merge(result,
+        (; candidate_pairs=Int(d[9]), shell_pairs=Int(d[10])))
 end
 
 # fill + nearfield on the side stream; returns the event L2B must wait on
@@ -5536,8 +5578,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
     if hierarchical_ctx !== nothing &&
             options.direct_kernel isa Union{PartitionedVortex,TwoPassVortex}
         hierarchical_ctx.nearfield = _build_cuda_nearfield_bin_context(TF,
-            options.direct_kernel, stencil_policy, accepted, ell, h0, max_cells,
-            direct_capacity, ctx, counters)
+            options.direct_kernel, stencil_policy, accepted, ell, h0, x_min,
+            max_cells, direct_capacity, ctx, counters)
     end
     cache = RadixFMMCache{TF,LH}(
         P, ell, x_min, h0, ell_axes, box_extent, root_level, maxn, true, hessian,
@@ -7129,7 +7171,7 @@ end
 # implicit sync is illegal inside stream capture).
 function _build_cuda_nearfield_bin_context(::Type{TF},
         dk::Union{PartitionedVortex,TwoPassVortex}, policy, accepted,
-        ell::Int, h0, max_cells::Int, direct_capacity::Int, ctx,
+        ell::Int, h0, x_min, max_cells::Int, direct_capacity::Int, ctx,
         counters::CUDARadixTransferCounters) where TF
     h_leaf = 2 * Float64(h0) / (1 << ell)
     cap = direct_capacity
@@ -7152,9 +7194,9 @@ function _build_cuda_nearfield_bin_context(::Type{TF},
         CUDA.zeros(Float64, 2),
         CUDA.zeros(Int32, 3 * cap), CUDA.zeros(Int32, 3 * cap),
         CUDA.zeros(Int32, 3), cap,
-        ctx.cell_coords, h_leaf,
+        ctx.cell_coords, h_leaf, SVector{3,Float64}(x_min),
         tp_offsets, tp_gap2, K, reach_cap,
-        ctx.subsort_keys, CUDA.zeros(UInt64, 8))
+        ctx.subsort_keys, CUDA.zeros(UInt64, 10))
     for arr in (nf.cell_sigma_max, nf.cell_sigma_min, nf.nf_scalars,
             nf.bin_targets, nf.bin_sources, nf.bin_counts, nf.diag,
             ctx.cell_coords, ctx.grid.cell_keys)

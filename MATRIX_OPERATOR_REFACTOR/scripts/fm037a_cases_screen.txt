@@ -1,0 +1,31 @@
+# Task 037a Stage 1: centered rectangular baseline and two-pass nearfield screen.
+#
+# Baselines reproduce the shipped P5/q6 partitioned geometry after symmetric
+# rectangular snap-up. Two-pass candidates use the minimum q3 primary stencil,
+# rho_c=2, the current depth and one deeper level, and a bracket below the
+# validated rho_t=3.668 velocity-RMS cutoff. Float32 screens the mechanism;
+# finalists are repeated in both precisions after exact error decomposition.
+
+# ---- centered baseline parity ----
+label=037a_w5_base_cubic case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1
+label=037a_w5_base_rect case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense rectangular=1 profile=1
+label=037a_w6_base_cubic case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=037a_w6_base_rect case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense rectangular=1 profile=1
+
+# ---- wake n=1e5: P5 cutoff bracket, then P6 if q3 accuracy needs it ----
+label=037a_w5_tp_r300_e5 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=3 rho_t=3.0 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w5_tp_r320_e5 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=3 rho_t=3.2 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w5_tp_r340_e5 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=3 rho_t=3.4 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w5_tp_r350_e5 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=3 rho_t=3.5 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w5_tp_r3668_e5 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=4 ell=5 q=3 rho_t=3.668 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w5_tp_p6_r340 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=5 ell=5 q=3 rho_t=3.4 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w5_tp_p6_r3668 case=wake n=100000 kernel=twopass tf=Float32 expansion_order=5 ell=5 q=3 rho_t=3.668 rho_c=2.0 strategy=dense rectangular=1 profile=1
+
+# ---- wake n=1e6: P5 cutoff bracket, then P6 if q3 accuracy needs it ----
+label=037a_w6_tp_r300_e6 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=3 rho_t=3.0 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w6_tp_r320_e6 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=3 rho_t=3.2 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w6_tp_r340_e6 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=3 rho_t=3.4 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w6_tp_r350_e6 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=3 rho_t=3.5 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w6_tp_r3668_e6 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=4 ell=6 q=3 rho_t=3.668 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w6_tp_p6_r340 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=5 ell=6 q=3 rho_t=3.4 rho_c=2.0 strategy=dense rectangular=1 profile=1
+label=037a_w6_tp_p6_r3668 case=wake n=1000000 kernel=twopass tf=Float32 expansion_order=5 ell=6 q=3 rho_t=3.668 rho_c=2.0 strategy=dense rectangular=1 profile=1

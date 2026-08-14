@@ -371,6 +371,11 @@ end
     @test rec_cache.ell_axes == SVector(4, 2, 2)
     @test rec_cache.box_extent[2] == rec_cache.box_extent[3] <
         rec_cache.box_extent[1] / 2
+    rec_lo = SVector(ntuple(a -> minimum(
+        rec.bodies[i].position[a] for i in eachindex(rec.bodies)), 3))
+    rec_hi = SVector(ntuple(a -> maximum(
+        rec.bodies[i].position[a] for i in eachindex(rec.bodies)), 3))
+    @test rec_cache.x_min + rec_cache.box_extent / 2 ≈ (rec_lo + rec_hi) / 2
     @test rec_cache.step == 1
     rec.potential .= 0
     fmm!(rec, rec_cache; scalar_potential=true, gradient=true)

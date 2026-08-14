@@ -655,6 +655,7 @@ mutable struct CUDANearfieldBinContext
     # step-invariant geometry references (shared with the update context)
     cell_coords::Any                # Int 3×max_cells, epoch-refreshed
     h_leaf::Float64
+    x_min::SVector{3,Float64}       # fixed box lower corner for AABB pruning
     # pass-2 offset ball (TwoPassVortex only; empty otherwise): gap-ascending
     # integer offsets and their squared lattice gaps, device Int32
     twopass_offsets::Any            # Int32 3×K

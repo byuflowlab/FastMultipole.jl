@@ -1,0 +1,15 @@
+# Exact cutoff/FMM decomposition candidates. The driver evaluates both TFs.
+label=037a_w5_r300 case=wake n=100000 expansion_order=4 ell=5 q=3 kernel=twopass rho_t=3.0 rho_c=2.0 rectangular=1
+label=037a_w5_r320 case=wake n=100000 expansion_order=4 ell=5 q=3 kernel=twopass rho_t=3.2 rho_c=2.0 rectangular=1
+label=037a_w5_r340 case=wake n=100000 expansion_order=4 ell=5 q=3 kernel=twopass rho_t=3.4 rho_c=2.0 rectangular=1
+label=037a_w5_r350 case=wake n=100000 expansion_order=4 ell=5 q=3 kernel=twopass rho_t=3.5 rho_c=2.0 rectangular=1
+label=037a_w5_r3668 case=wake n=100000 expansion_order=4 ell=5 q=3 kernel=twopass rho_t=3.668 rho_c=2.0 rectangular=1
+label=037a_w5_p6_r340 case=wake n=100000 expansion_order=5 ell=5 q=3 kernel=twopass rho_t=3.4 rho_c=2.0 rectangular=1
+label=037a_w5_p6_r3668 case=wake n=100000 expansion_order=5 ell=5 q=3 kernel=twopass rho_t=3.668 rho_c=2.0 rectangular=1
+label=037a_w6_r300 case=wake n=1000000 expansion_order=4 ell=6 q=3 kernel=twopass rho_t=3.0 rho_c=2.0 rectangular=1
+label=037a_w6_r320 case=wake n=1000000 expansion_order=4 ell=6 q=3 kernel=twopass rho_t=3.2 rho_c=2.0 rectangular=1
+label=037a_w6_r340 case=wake n=1000000 expansion_order=4 ell=6 q=3 kernel=twopass rho_t=3.4 rho_c=2.0 rectangular=1
+label=037a_w6_r350 case=wake n=1000000 expansion_order=4 ell=6 q=3 kernel=twopass rho_t=3.5 rho_c=2.0 rectangular=1
+label=037a_w6_r3668 case=wake n=1000000 expansion_order=4 ell=6 q=3 kernel=twopass rho_t=3.668 rho_c=2.0 rectangular=1
+label=037a_w6_p6_r340 case=wake n=1000000 expansion_order=5 ell=6 q=3 kernel=twopass rho_t=3.4 rho_c=2.0 rectangular=1
+label=037a_w6_p6_r3668 case=wake n=1000000 expansion_order=5 ell=6 q=3 kernel=twopass rho_t=3.668 rho_c=2.0 rectangular=1
