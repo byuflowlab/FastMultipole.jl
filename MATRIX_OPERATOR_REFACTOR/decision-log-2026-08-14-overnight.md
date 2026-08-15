@@ -858,3 +858,12 @@ Design decisions of record (overnight/user-absent; all in-scope):
   Output ~/fm041b_13180171.out. The full pre-registered measurement job
   (scripts/fm041_cuda_cost.jl, committed in 69ac964) submits only after the
   tests are green. sacct will be verified on every resume.
+
+## 2026-08-15 11:09 MDT — 041 bring-up iteration 1
+
+- Job **13180171** FAILED (00:04:52): slurm placed it on m13l-1-2 (L40S).
+  The fm034env CUDA stack's pkgimage caches are CPU-target-specific and the
+  local-toolkit discovery failed during re-precompile on that node — the
+  proven environment (job 13170768) runs on the m13h H200 partition, which
+  the measurements require anyway. Fix: '#SBATCH -p m13h' added.
+- Resubmitted as job **13180196** (fm041b, m13h, 1 GPU, 2h).
