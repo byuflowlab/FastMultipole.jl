@@ -953,3 +953,18 @@ Design decisions of record (overnight/user-absent; all in-scope):
   itself is untouched and remains covered by 037f's own mode tests.
 - Committed before resubmission; snapshot resynced. Resubmitted as job
   **13180510**.
+
+## 2026-08-15 13:05 MDT — 041 gate-2 diagnostic (job 13180628)
+
+- Job **13180510** FAILED at gate 2 again — same interface-test parity
+  asserts (RegularizedVortex F64 P=8 host-vs-device), but the hessian delta
+  CHANGED (9.9e-7 vs 3.0e-7 in 13180348) and the :shipped pin did not
+  restore parity → the gh-mode hypothesis alone is insufficient; the
+  varying delta suggests run-to-run nondeterminism on the shipped surface.
+- Evidence review: the suite last ran green on H200 (jobs 13170768/69)
+  BEFORE commits 0c53012 (037e/f surfaces: 438+249 changed lines in the
+  CUDA/resident files) and bf2eccb (default flip) landed. The failure is
+  plausibly latent-upstream, not 041.
+- Decisive A/B submitted as job **13180628**: (A) pre-041 tree at 981f7ff
+  (fresh snapshot ~/FastMultipole-041base + env clone) interface test;
+  (B) 041 tree interface test; (C) repeat of B (flakiness probe).
