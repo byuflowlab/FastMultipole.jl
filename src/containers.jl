@@ -2374,6 +2374,133 @@ mutable struct AdaptiveResidentLifecycle
     step::Int
 end
 
+"""
+Device-resident adaptive octree context (task 041) — the CUDA mirror of the
+039/040 host adaptive machinery. Owns the device adaptive node table (a
+`DeviceRadixGrid` whose node block is the level-major adaptive tree, with
+leaves presented as cells), the construction/balance/DTR scratch, the
+device-resident U/V/W/X lists with the class-partitioned V CSR stream, the
+occupancy-epoch snapshot, and the CUDA-graph state for the adaptive lifecycle
+body. All device arrays are `Any`-typed (CUDA types are runtime-loaded);
+typed function barriers in `tree_batched_cuda.jl` do the work. Everything is
+capacity-sized at construction; recurring refreshes allocate nothing
+(loud `AssertionError` on any capacity violation).
+
+Occupancy lookup on this path is the **sorted-Morton binary search** over the
+level-major node key blocks and the sorted full-depth body keys — the dense
+`Σ8^L` `node_at` table of the uniform device path is never built, so the
+adaptive device path carries no `ell <= 8` cap (depths to `RADIX_GRID_MAX_ELL`).
+"""
+mutable struct DeviceAdaptiveCUDAContext
+    # host-side geometry/class metadata
+    policy::Any                 # AdaptiveTreePolicy
+    tables::Any                 # RigidHierarchicalTables at the policy near radius
+    first_m2l_level::Int
+    noffsets::Int
+    nclasses::Int
+    lut_reach::Int
+    # capacities (fixed at construction)
+    node_capacity::Int
+    leaf_capacity::Int
+    u_capacity::Int
+    v_capacity::Int
+    wx_capacity::Int
+    frontier_capacity::Int
+    window_capacity::Int
+    # device adaptive node table (the state's grid aliases this one)
+    grid::Any                   # DeviceRadixGrid over CuArrays (adaptive nodes)
+    node_lo::Any                # CuVector{Int32}: subtree body ranges (sorted order)
+    node_hi::Any                # CuVector{Int32}
+    node_sigma_max::Any         # CuVector{TF}
+    leaf_slot_of::Any           # CuVector{Int32}: node -> leaf cell slot (0 internal)
+    d_leaf_index::Any           # CuVector{Int32}: leaf slot -> node
+    level_offsets::Vector{Int}  # host level-major offsets (ell_max + 2)
+    # construction scratch (device)
+    keys::Any                   # CuVector{UInt64} raw full-depth keys (maxn)
+    sorted_keys::Any            # CuVector{UInt64} keys in sorted order (maxn)
+    leaf_levels::Any            # ping/pong leaf set (Int32 / UInt64 / Int32 / Int32)
+    leaf_keys::Any
+    leaf_lo::Any
+    leaf_hi::Any
+    leaf_levels2::Any
+    leaf_keys2::Any
+    leaf_lo2::Any
+    leaf_hi2::Any
+    leaf_shifted::Any           # CuVector{UInt64}: full-depth-shifted leaf starts
+    leaf_order::Any             # CuVector{Int}: sortperm scratch over leaves
+    leaf_marks::Any             # CuVector{Int32}: balance marks
+    scratch_keys::Any           # CuVector{UInt64}: per-level ancestor candidates
+    flags::Any                  # CuVector{Int32}: generic flag buffer
+    prefix::Any                 # CuVector{Int32}: generic inclusive-scan buffer
+    # DTR pair frontier (ping/pong; Int32 node ids + Int32 demotion bit)
+    fa::Any
+    fb::Any
+    fdem::Any
+    fa2::Any
+    fb2::Any
+    fdem2::Any
+    # device lists
+    u_targets::Any              # CuVector{Int32} node-id pairs
+    u_sources::Any
+    w_targets::Any
+    w_sources::Any
+    x_targets::Any
+    x_sources::Any
+    vstage_targets::Any         # CuVector{Int32} unpartitioned V emissions
+    vstage_sources::Any
+    vstage_class::Any           # CuVector{Int32} global class ids
+    vsort_keys::Any             # CuVector{UInt64} (class << 32 | index) sort keys
+    vsort_ix::Any               # CuVector{Int} sortperm scratch
+    route_targets::Any          # CuVector{Int} class-partitioned CSR stream
+    route_sources::Any          # CuVector{Int}
+    route_class::Any            # CuVector{Int32} global class ids (CSR order)
+    route_class_offset::Any     # CuVector{Int32} per-offset ids (dense family)
+    class_counts_dev::Any       # CuVector{Int32} device class histogram
+    host_class_counts::Any      # pinned Vector{Int32}
+    class_starts::Vector{Int}   # host CSR starts (nclasses + 1)
+    level_starts::Vector{Int}   # host per-level CSR starts (ell_max + 2)
+    # class geometry LUTs (device, construction-uploaded)
+    d_offset_lut::Any           # CuArray{Int32,3}
+    d_level_class_of::Any       # CuArray{Int32,3}
+    # dense-family per-level expansion scales (empty unless dense plan)
+    source_scale::Any
+    target_scale::Any
+    # per-cell sigma gate (theory §5, sticky demotion)
+    sigma_row::Int
+    rho_t::Float64
+    gate_gmin::Float64
+    sigma_armed::Bool
+    # invariant flags: [1] V-class membership violation, [2] U endpoint not a leaf
+    violation_flags::Any        # CuVector{Int32} (2)
+    host_flag::Any              # pinned Vector{Int32} (2)
+    host_scalar32::Any          # pinned Vector{Int32} (1)
+    host_level_counts::Any      # pinned Vector{Int} (ell_max + 1)
+    # occupancy epoch over the adaptive leaf set (levels + shifted keys)
+    epoch_leaf_keys::Any        # CuVector{UInt64} snapshot
+    epoch_leaf_levels::Any      # CuVector{Int32} snapshot
+    epoch_flag::Any             # CuVector{Int32} (1)
+    epoch_prev_leaves::Int
+    epoch_have::Bool
+    epoch_id::Int
+    # CUDA-graph state for the adaptive lifecycle body (dense fused family)
+    graph_exec::Any
+    graph_epoch::Int
+    graph_warm_epoch::Int
+    # step counts
+    n_nodes::Int
+    n_leaves::Int
+    n_u::Int
+    n_routes::Int
+    n_w::Int
+    n_x::Int
+    n_demoted::Int
+    n_balance_splits::Int
+    # diagnostics
+    profile_stages::Bool
+    stage_ns::Vector{UInt64}    # refresh sub-stages (sort/build/balance/finalize/dtr/csr/groups)
+    step::Int
+end
+
 function RadixStepCounts(source_bodies, cell_ranges, multipoles::FlatCoefficientBuffer,
         route_targets, direct_targets)
     n_bodies = source_bodies === nothing ? 0 : size(source_bodies, 2)

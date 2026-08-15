@@ -705,3 +705,145 @@ slightly understated as "no effect at n ≥ 1e5"; (3) adaptive S2L
 body-type coverage is a runtime throw — consider a construction guard in
 041; (4) user-ratification items carried unchanged (veto OFF, option (b),
 E2, 040 deferrals, cube "agreed tolerance", §4.2 wording caveat).
+
+## 2026-08-15 10:17 MDT — 041 lead agent start
+
+- 041 lead agent started (040 Done+Approved 2026-08-15 10:14). Read
+  START_HERE (protocol + 041 row + placement rules), this log in full, and
+  the 041 task file. Binding items re-confirmed: sticky demotion approved,
+  option (b) NOT implemented, split veto default OFF, no production default
+  changes, 023 counter/zero-alloc/graph-capture contracts, resident sign
+  conventions (+(-1)^(n+m) q; chi at P+1; theory §4.2 top-row caveat),
+  V-list M2L consumes UNCHANGED plans/tables.
+- Carry-over items in this lane: (a) 040-approval note (3) — adaptive S2L
+  body-type construction-time guard; (b) 040 priced levers: double refresh
+  elimination, sort unification, stage-slab memory chunking (implement if
+  they fit, else price+log).
+- Surface mapping of the CUDA lifecycle (7,739-line translate_batched_cuda.jl)
+  and the 039/040 adaptive host surfaces delegated to Explore subagents.
+
+## 2026-08-15 10:26 MDT — 041 design of record (lead agent)
+
+Design decisions of record (overnight/user-absent; all in-scope):
+
+1. **Branch, don't append (kills the device double refresh).** The device
+   adaptive path branches inside `update_cuda_radix_state!`: with the
+   adaptive policy armed on a device cache, the UNIFORM grid update,
+   uniform route/direct generation, and `node_at` scatter do NOT run —
+   the adaptive refresh (device tree build + DTR lists + leaf-cell
+   presentation) replaces them. This lands the 040 "double refresh
+   elimination" lever on the device path by construction. The adaptive
+   path also uses ONLY the full-depth Morton sort (single sort — the
+   "sort unification" lever lands on device too). Stage-slab chunking:
+   price + log only (unchanged from host).
+2. **Full device construction + DTR** in a new `src/tree_batched_cuda.jl`
+   (placement rule 2/4), included from `translate_batched_cuda.jl`:
+   theory §1.2 as a host-orchestrated per-level frontier of small kernels
+   (map/scan/compact + per-split 8-way binary-search child runs), §1.4
+   balance rounds (emit ≤8 parent keys, device sort/unique, interval
+   match, split), finalize = one (level, full-depth-shifted-key) device
+   sort into the level-major node table, σ upward sweep per level. All
+   data device-resident; host sees only 4-byte scalars (existing
+   pinned-scalar pattern). Same resulting topology as the host tree
+   (split rule is local; finalize order is a unique total order) —
+   asserted by structural parity tests.
+3. **DTR lists on device** as the theory §2.7 frontier: classify kernel
+   (three-clamp near test, source-side σ gate, sticky lineage bit),
+   scan/compact per class (deterministic, no atomic cursors for V), CSR
+   class partition via stable sort by global class id. U/W/X grouped;
+   U node pairs mapped to leaf slots on device. The emission-time 025
+   phase-table membership invariant is enforced as a device-side flag +
+   loud host assert (mirror of 039's throw).
+4. **Occupancy lookup:** the adaptive path needs NO dense Σ8^L table —
+   occupancy is resolved by the tree's own child links + sorted-key
+   binary search (parent/balance/range lookups). The uniform device
+   path's `node_at` table and its ℓ≤8 cap are left UNTOUCHED this row:
+   swapping binary search into the shipped `_cuda_hier_*_flags/compact`
+   kernels risks the 028/029 record for zero measured need (deep uniform
+   grids are exactly what the adaptive path replaces). RECORDED DECISION
+   per the task: the cap does not lift for the uniform path in 041; the
+   adaptive device path has no ℓ cap up to `RADIX_GRID_MAX_ELL`(21).
+   Evidence + revisit note go in the completion report.
+5. **V-list M2L**: device mirror of the 040 host window driver — walk the
+   device-resident CSR stream in windows, D2D-copy targets/sources/class
+   into `state.route_*`/`plan.route_class`, dispatch the UNCHANGED
+   dense/precomputed-y/concat plan launchers with `clear_locals=false`.
+   No new operator tables; construction-only operator/route uploads.
+6. **M2T/S2L device kernels** in `translate_batched_cuda.jl`: ports of
+   the 040 host kernels (resident signs: +(-1)^(n+m) q, chi at P+1),
+   thread-per-body (M2T) / block-per-pair with shared accumulation or
+   atomic adds (S2L), irregular harmonics computed thread-locally with
+   compile-time P sizing. Ordered on the main stream (M2T after L2B).
+   NEW construction-time guard for unsupported S2L body types (040
+   approval note (3)) on BOTH host and device caches.
+7. **Epoch caching + graph capture**: adaptive leaf-key-set epoch check
+   reuses the `_cuda_keys_differ_kernel!` pattern; on an unchanged epoch
+   the DTR list build and stage-group refresh are SKIPPED (the CSR
+   stream is the window cache — it is device-resident and static within
+   an epoch). Graph capture of the adaptive lifecycle body follows the
+   uniform warm-up/epoch pattern; if capture proves unstable on H200 it
+   ships OFF for adaptive with the deviation priced + logged.
+8. **Contracts**: zero per-step allocation (all capacities from the 039
+   policy formulas/overrides; loud asserts); counters —
+   route_uploads/operator_uploads constant after construction,
+   expansion_host_copies == 0; binned/split nearfield contexts and the
+   symmetric path stay OFF on adaptive (guards); TwoPass/Partitioned +
+   adaptive device throws (mirror of host).
+9. **Tests**: new `test/cuda_radix_adaptive_test.jl` (standard
+   FASTMULTIPOLE_REQUIRE_CUDA_TESTS gating), wired into runtests.jl +
+   test/cuda/runtests.jl: structural parity (device tree/node table/
+   U/V/W/X/CSR set-equality vs host 039), lifecycle parity vs host
+   adaptive (P=4+P=8, F64+F32, LH vortex), velocity RMS <= 1e-3 vs
+   direct on cube/wake-filament/multiscale, counter/zero-alloc tests,
+   uniform-device non-regression (existing suites re-run).
+10. **Measurement**: pre-registered `scripts/fm041_cuda_cost.jl` — H200,
+    cube/wake/multiscale x n in {1e5, 1e6}, adaptive K in {64,128} vs
+    uniform ell in {5,6}, per-stage breakdown + refresh + memory,
+    Float64 + Float32, same-job anchors, warm medians; CSV of record
+    `data/fm041_cuda_cost.csv`. Cluster env: reuse the fm034env
+    local-toolkit CUDA environment with a fresh `~/FastMultipole-041`
+    snapshot (dev path repoint).
+
+
+## 2026-08-15 10:54 MDT — 041 implementation surface complete (lead agent)
+
+- Implemented per the design of record:
+  - `src/tree_batched_cuda.jl` (NEW, ~1050 lines): device adaptive
+    construction (Phase A K_max frontier split via sorted-key binary-search
+    child occupancy; Phase B 2:1 balance as Jacobi rounds over the leaf key
+    set — proven to terminate at the same unique balance closure as the
+    host's deepest-first sweep, so structural parity is exact; Phase C
+    level-major finalize reusing the per-level ancestor-compaction /
+    parent-child binary-search patterns), per-node sigma sweep, DTR frontier
+    (deterministic scan-ordered emission, sticky demotion, device 025
+    phase-table membership flag), deterministic (class, index)-keyed CSR
+    partition, U slot mapping, occupancy-epoch snapshot/compare over the
+    adaptive leaf set (epoch fast path refreshes node/cell ranges only).
+  - `src/translate_batched_cuda.jl` adaptive section: device M2T/S2L kernels
+    (thread-local irregular harmonics reusing the HOST `irregular_harmonics!`
+    + `_resident_multipole_eval_flat*` as device functions — sign conventions
+    shared by construction; vortex S2L verbatim port; atomic accumulation),
+    adaptive M2L driver over the UNCHANGED plans (dense CUDA family:
+    per-level in-place applies of CSR segments, zero copies; precomputed-y/
+    concat: D2D windows mirroring the 040 host driver), lifecycle body with
+    nearfield overlap + graph capture (uniform warm-up/epoch pattern,
+    dense-fused-only eligibility, exact mirror), cache build/step/update
+    plumbing (BRANCH design: uniform grid/route refresh does NOT run on the
+    adaptive device path — double-refresh + sort-unification levers land).
+  - `src/containers.jl`: `DeviceAdaptiveCUDAContext` (Any-typed device
+    fields per the established convention).
+  - `src/translate_batched_resident.jl`: device throw removed; NEW
+    construction guards — S2L body-type (host+device, the 040 approval
+    item) and device+split_veto (device limitation, veto pending
+    ratification anyway).
+  - `_cuda_hier_dense_apply_routes!` hctx parameter annotation relaxed
+    (duck-typed; only first_m2l_level + scales read) so the adaptive context
+    can drive the unchanged per-level dense applies. No other change to the
+    uniform path.
+- Local: all 4 touched files parse; package loads; host adaptive suites
+  re-run green (exit 0, incl. guards) — host path unbroken.
+- Cluster: `~/fm041env` created from fm034env (local-toolkit CUDA prefs,
+  dev path repointed to `~/FastMultipole-041`).
+- Tests (`test/cuda_radix_adaptive_test.jl`) + pre-registered measurement
+  script (`scripts/fm041_cuda_cost.jl`) delegated to a fork subagent with
+  full context; runtests wiring + sbatch included.

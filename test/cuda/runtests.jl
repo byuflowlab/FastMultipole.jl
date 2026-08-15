@@ -8,3 +8,5 @@ include(joinpath(@__DIR__, "..", "cuda_radix_integration_test.jl"))
 include(joinpath(@__DIR__, "..", "cuda_radix_hierarchical_test.jl"))
 
 include(joinpath(@__DIR__, "..", "cuda_radix_interface_test.jl"))
+
+include(joinpath(@__DIR__, "..", "cuda_radix_adaptive_test.jl"))

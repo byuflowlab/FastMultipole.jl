@@ -2411,9 +2411,18 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     # the policy armed the host fmm! branch runs the ADAPTIVE lifecycle (task
     # 040) instead of the uniform one. Production defaults are unchanged.
     if adaptive !== nothing
-        device && throw(ArgumentError(
-            "the adaptive octree is host-only until row 041; construct with " *
-            "device=false or drop the adaptive policy"))
+        # task 041: the device mirror supports the same lifecycle surface as
+        # the host path. The S2L stage supports Point{Source}/Point{Vortex}
+        # only — guard at construction (040 approval note) instead of the
+        # former runtime throw alone.
+        options.body_type <: Union{Point{Source},Point{Vortex}} ||
+            throw(ArgumentError(
+                "the adaptive octree S2L stage supports Point{Source} and " *
+                "Point{Vortex} body types; got $(options.body_type)"))
+        device && adaptive.split_veto && throw(ArgumentError(
+            "the adaptive device path does not implement the §5.4 split veto " *
+            "(default OFF, pending user ratification); construct with " *
+            "split_veto=false or run host-resident"))
         ell_axes == SVector(Int(ell), Int(ell), Int(ell)) || throw(ArgumentError(
             "the adaptive octree requires a cubic Morton domain in task 039; " *
             "rectangular ell_axes support is a recorded deferral"))
@@ -2459,7 +2468,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             hierarchical_tables, class_level, class_offset,
             hierarchical_level_class_of, hierarchical_level_radii2,
             max_level_nodes, hessian, ell_axes, box_extent,
-            root_level, first_m2l_level)
+            root_level, first_m2l_level,
+            adaptive_policy=adaptive, dpb_adaptive=dpb)
         cache.built = true
         return cache
     end

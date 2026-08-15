@@ -5750,7 +5750,9 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         box_extent::SVector{3,TF}=SVector{3,TF}(2 * h0, 2 * h0, 2 * h0),
         # active-level trimming (task 037 stage 3): node levels root_level:ell,
         # M2L levels first_m2l_level:ell; flat-policy callers keep 0/2
-        root_level::Int=0, first_m2l_level::Int=2) where {TF,B,LH}
+        root_level::Int=0, first_m2l_level::Int=2,
+        # task 041: opt-in adaptive octree policy (device-resident mirror)
+        adaptive_policy=nothing, dpb_adaptive::Int=0) where {TF,B,LH}
     _require_cuda_radix_available()
     _assert_cuda_supported_operator!(options)
     hierarchical = stencil_policy isa HierarchicalRigidStencil
@@ -5965,6 +5967,19 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
             options.direct_kernel, stencil_policy, accepted, ell, h0, x_min,
             max_cells, direct_capacity, ctx, counters)
     end
+    # task 041: opt-in device-resident adaptive octree. cache.adaptive_tree
+    # holds the DeviceAdaptiveCUDAContext (device tree + lists), cache.
+    # adaptive_state the adaptive DeviceResidentRadixState; adaptive_lists is
+    # unused on the device path (lists live in the context).
+    if adaptive_policy === nothing
+        adaptive_actx = nothing
+        adaptive_state = nothing
+    else
+        adaptive_actx, adaptive_state = _cuda_allocate_adaptive_lifecycle(TF,
+            basis_info, options, adaptive_policy::AdaptiveTreePolicy, x_min, h0,
+            maxn, dpb_adaptive > 0 ? dpb_adaptive : dpb, hessian,
+            ctx.invariant, counters, ctx)
+    end
     cache = RadixFMMCache{TF,LH}(
         P, ell, x_min, h0, ell_axes, box_extent, root_level, maxn, true, hessian,
         options, stencil_policy,
@@ -5972,7 +5987,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         nothing, zeros(Int32, 0, 0, 0), SVector{3,Int}[], zeros(Int, ell + 2),
         UInt64[], Int[], Int[], Int[], nothing, nothing, ctx,
         length(sources), false, 0,
-        nothing, nothing, nothing, nothing,   # adaptive octree is host-only (tasks 039/040; CUDA is row 041)
+        adaptive_policy, adaptive_actx, nothing, adaptive_state,
     )
     update_cuda_radix_state!(cache, sources)
     return cache
@@ -6211,6 +6226,10 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
     ctx = cache.device_ctx
     ctx === nothing &&
         throw(ArgumentError("update_cuda_radix_state! requires a cache built with device=true"))
+    # task 041: with the adaptive policy armed, the adaptive refresh REPLACES
+    # the uniform grid/route refresh (no double refresh on device)
+    cache.adaptive === nothing ||
+        return _cuda_update_adaptive_radix_state!(cache, systems)
     length(systems) == cache.n_systems ||
         throw(ArgumentError("cache was built for $(cache.n_systems) source systems, got $(length(systems))"))
     n = get_n_bodies(systems)
@@ -6378,8 +6397,17 @@ update_cuda_radix_state!(cache::RadixFMMCache, systems) =
 
 function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple)
     update_cuda_radix_state!(cache, targets)
-    run_cuda_radix_lifecycle!(cache.state)
-    finalize_cuda_radix_output!(cache.state, targets; derivatives_switches=switches,
+    if cache.adaptive === nothing
+        run_cuda_radix_lifecycle!(cache.state)
+        state = cache.state
+    else
+        # task 041: adaptive device lifecycle (B2M -> M2M -> V M2L -> X S2L ->
+        # L2L -> U direct + L2B -> W M2T) over the device adaptive tree
+        state = cache.adaptive_state::DeviceResidentRadixState
+        run_cuda_adaptive_radix_lifecycle!(state,
+            cache.adaptive_tree::DeviceAdaptiveCUDAContext)
+    end
+    finalize_cuda_radix_output!(state, targets; derivatives_switches=switches,
         host_output_staging=cache.device_ctx.host_output,
         target_buffers=_radix_cache_target_buffers!(cache, switches),
         device_target_buffers=cache.device_ctx.device_target_buffers)
@@ -7205,7 +7233,10 @@ end
 # occupancy-epoch window cache (per-level views of the cached concatenation).
 function _cuda_hier_dense_apply_routes!(state::DeviceResidentRadixState{TF,B,LH},
         ws::ResidentOperatorWorkspace{TF,B,LH}, plan::ResidentM2LDenseCUDAPlan,
-        hctx::DeviceHierarchicalM2LContext, L::Int, route_class, route_sources,
+        # `hctx` is duck-typed (task 041): only first_m2l_level and the
+        # per-level source/target scales are read, so the adaptive device
+        # context can drive the same per-level applies over its CSR stream
+        hctx, L::Int, route_class, route_sources,
         route_targets, n_routes::Int) where {TF,B,LH}
     n_routes == 0 && return state
     lcol = L - hctx.first_m2l_level + 1
@@ -7736,4 +7767,549 @@ function cuda_hierarchical_route_window!(state::DeviceResidentRadixState,
     hctx.last_window_routes = n
     state.counts.n_routes = n
     return n
+end
+
+#------- adaptive octree device-resident lifecycle (task 041) -------#
+#
+# CUDA mirror of the task-040 host adaptive lifecycle. Construction/refresh and
+# the DTR lists live in tree_batched_cuda.jl (included below); this section adds
+# the device M2T/S2L kernels, the adaptive V-CSR M2L driver over the UNCHANGED
+# resident window plans, the lifecycle body with the uniform path's nearfield
+# overlap + graph-capture semantics, and the cache build/step plumbing.
+#
+# Contract mirror of the uniform device path: construction-only operator/route
+# uploads (route_uploads/operator_uploads constant after construction),
+# expansion_host_copies == 0 around the pipeline, zero recurring allocation
+# outside CUDA's pool-served sort scratch, and the adaptive path is entirely
+# opt-in (nothing here runs unless the cache carries an AdaptiveTreePolicy).
+
+include(joinpath(@__DIR__, "tree_batched_cuda.jl"))
+
+#------- device M2T (W list) -------#
+
+# Block-per-W-pair, thread-per-target-body: each thread evaluates the source
+# node's multipole at its body via thread-local irregular harmonics (the
+# validated host irregular_harmonics! + _resident_multipole_eval_flat run as
+# device functions — sign conventions are shared with the host by
+# construction). Different W pairs may share a target leaf, so output
+# accumulation is atomic.
+function _cuda_adaptive_m2t_kernel!(output, source_bodies, cell_ranges,
+        leaf_slot_of, node_centers, w_targets, w_sources, n_w, ph, ch,
+        ::Val{P_phi}, ::Val{P_active}, ::Val{NH}, lhv::Val{LH},
+        ::Val{HS}) where {P_phi,P_active,NH,LH,HS}
+    TF = eltype(output)
+    k = Int(blockIdx().x)
+    stride = Int(gridDim().x)
+    @inbounds while k <= n_w
+        ia = Int(w_targets[k])
+        ib = Int(w_sources[k])
+        slot = Int(leaf_slot_of[ia])
+        first = cell_ranges[1, slot]
+        count = cell_ranges[2, slot]
+        cx = node_centers[1, ib]
+        cy = node_centers[2, ib]
+        cz = node_centers[3, ib]
+        i = first + Int(threadIdx().x) - 1
+        while i <= first + count - 1
+            H = MArray{Tuple{2,1,NH},TF}(undef)
+            dx = source_bodies[1, i] - cx
+            dy = source_bodies[2, i] - cy
+            dz = source_bodies[3, i] - cz
+            r, theta, phi = cartesian_to_spherical(dx, dy, dz)
+            irregular_harmonics!(H, r, theta, phi, P_phi + 2)
+            if HS
+                vals = _resident_multipole_eval_flat_hessian(ph, ch, ib, H,
+                    P_phi, P_active, lhv)
+                for row in 1:13
+                    CUDA.@atomic output[row, i] += vals[row]
+                end
+            else
+                u, gx, gy, gz = _resident_multipole_eval_flat(ph, ch, ib, H,
+                    P_phi, P_active, lhv)
+                CUDA.@atomic output[1, i] += u
+                CUDA.@atomic output[2, i] += gx
+                CUDA.@atomic output[3, i] += gy
+                CUDA.@atomic output[4, i] += gz
+            end
+            i += Int(blockDim().x)
+        end
+        k += stride
+    end
+    return nothing
+end
+
+function _launch_cuda_adaptive_m2t!(state::DeviceResidentRadixState{TF,B,LH},
+        actx::DeviceAdaptiveCUDAContext) where {TF,B,LH}
+    n_w = actx.n_w
+    n_w == 0 && return state
+    orders = state.invariant_cache.basis_info.orders
+    P_phi = orders.P_phi
+    NH = harmonic_index(P_phi + 2, P_phi + 2)
+    hs = size(state.output, 1) >= 13
+    grid = state.grid::DeviceRadixGrid
+    threads = 128
+    blocks = min(n_w, 1 << 16)
+    CUDA.@cuda threads=threads blocks=blocks _cuda_adaptive_m2t_kernel!(
+        state.output, state.source_bodies, state.cell_ranges,
+        actx.leaf_slot_of::CUDA.CuVector{Int32}, grid.node_centers,
+        actx.w_targets::CUDA.CuVector{Int32},
+        actx.w_sources::CUDA.CuVector{Int32}, n_w,
+        phi_slab(state.multipoles), chi_slab(state.multipoles),
+        Val(P_phi), Val(orders.P_active), Val(NH), Val(LH),
+        hs ? Val(true) : Val(false))
+    return state
+end
+
+#------- device S2L (X list) -------#
+
+# Block-per-X-pair, thread-per-source-body, atomic accumulation into the finer
+# target node's local expansion. Scalar rule (resident convention, task 040):
+# L_n^m += (-1)^(n+m) q conj(S_n^m(x_s - c_A)) — no legacy strength negation.
+function _cuda_adaptive_s2l_kernel!(lp, source_bodies, cell_ranges,
+        leaf_slot_of, node_centers, x_targets, x_sources, n_x,
+        ::Val{P_phi}, ::Val{NH}) where {P_phi,NH}
+    TF = eltype(lp)
+    k = Int(blockIdx().x)
+    stride = Int(gridDim().x)
+    @inbounds while k <= n_x
+        ia = Int(x_targets[k])
+        ib = Int(x_sources[k])
+        slot = Int(leaf_slot_of[ib])
+        first = cell_ranges[1, slot]
+        count = cell_ranges[2, slot]
+        cx = node_centers[1, ia]
+        cy = node_centers[2, ia]
+        cz = node_centers[3, ia]
+        s = first + Int(threadIdx().x) - 1
+        while s <= first + count - 1
+            H = MArray{Tuple{2,1,NH},TF}(undef)
+            dx = source_bodies[1, s] - cx
+            dy = source_bodies[2, s] - cy
+            dz = source_bodies[3, s] - cz
+            q = source_bodies[5, s]
+            r, theta, phi = cartesian_to_spherical(dx, dy, dz)
+            irregular_harmonics!(H, r, theta, phi, P_phi)
+            for n in 0:P_phi, m in 0:n
+                i = harmonic_index(n, m)
+                sq = isodd(n + m) ? -q : q
+                row = flat_basis_index(n, m, 1)
+                CUDA.@atomic lp[row, ia] += sq * _adt_S_re(H, i)
+                CUDA.@atomic lp[row + 1, ia] -= sq * _adt_S_im(H, i)
+            end
+            s += Int(blockDim().x)
+        end
+        k += stride
+    end
+    return nothing
+end
+
+# Vortex S2L: verbatim device port of the task-040 host kernel (legacy
+# strength-to-channel map, chi rows through P_active = P_phi + 1 per 008h).
+function _cuda_adaptive_s2l_vortex_kernel!(lp, lc, source_bodies, cell_ranges,
+        leaf_slot_of, node_centers, x_targets, x_sources, n_x,
+        ::Val{P_phi}, ::Val{P_active}, ::Val{NH}) where {P_phi,P_active,NH}
+    TF = eltype(lp)
+    k = Int(blockIdx().x)
+    stride = Int(gridDim().x)
+    @inbounds while k <= n_x
+        ia = Int(x_targets[k])
+        ib = Int(x_sources[k])
+        slot = Int(leaf_slot_of[ib])
+        first = cell_ranges[1, slot]
+        count = cell_ranges[2, slot]
+        cx = node_centers[1, ia]
+        cy = node_centers[2, ia]
+        cz = node_centers[3, ia]
+        s = first + Int(threadIdx().x) - 1
+        while s <= first + count - 1
+            H = MArray{Tuple{2,1,NH},TF}(undef)
+            dx = source_bodies[1, s] - cx
+            dy = source_bodies[2, s] - cy
+            dz = source_bodies[3, s] - cz
+            wx = source_bodies[5, s]
+            wy = source_bodies[6, s]
+            wz = source_bodies[7, s]
+            r, theta, phi = cartesian_to_spherical(dx, dy, dz)
+            irregular_harmonics!(H, r, theta, phi, P_phi + 2)
+            # phi channel (phi_00 = 0)
+            for n in 1:P_phi
+                _1_n = isodd(n) ? -one(TF) : one(TF)
+                n_inv = inv(TF(n))
+                for m in 0:n
+                    _1_m = isodd(m) ? -one(TF) : one(TF)
+                    i = harmonic_index(n, m)
+                    local Spre::TF, Spim::TF, Smre::TF, Smim::TF
+                    if m < n
+                        Spre = -_1_m * _adt_S_re(H, i + 1)
+                        Spim = _1_m * _adt_S_im(H, i + 1)
+                    else
+                        Spre = zero(TF); Spim = zero(TF)
+                    end
+                    Sre = _1_m * _adt_S_re(H, i)
+                    Sim = -_1_m * _adt_S_im(H, i)
+                    if m == 0
+                        Smre = -_1_m * Spre; Smim = _1_m * Spim
+                    else
+                        Smre = -_1_m * _adt_S_re(H, i - 1)
+                        Smim = _1_m * _adt_S_im(H, i - 1)
+                    end
+                    row = flat_basis_index(n, m, 1)
+                    CUDA.@atomic lp[row, ia] += -_1_n * n_inv * (
+                        (n - m) * TF(0.5) * (wx * Spre - wy * Spim) -
+                        (n + m) * TF(0.5) * (wx * Smre + wy * Smim) +
+                        wz * m * Sim)
+                    CUDA.@atomic lp[row + 1, ia] += -_1_n * n_inv * (
+                        (n - m) * TF(0.5) * (wx * Spim + wy * Spre) -
+                        (n + m) * TF(0.5) * (wx * Smim - wy * Smre) -
+                        wz * m * Sre)
+                end
+            end
+            # chi channel through P_active (008h neighbor row included)
+            for n in 0:P_active
+                _1_np1 = isodd(n + 1) ? -one(TF) : one(TF)
+                np1_inv = inv(TF(n + 1))
+                for m in 0:n
+                    _1_m = isodd(m) ? -one(TF) : one(TF)
+                    i_np1 = harmonic_index(n + 1, m)
+                    Sp1pre = -_1_m * _adt_S_re(H, i_np1 + 1)
+                    Sp1pim = _1_m * _adt_S_im(H, i_np1 + 1)
+                    Sp1re = _1_m * _adt_S_re(H, i_np1)
+                    Sp1im = -_1_m * _adt_S_im(H, i_np1)
+                    local Sp1mre::TF, Sp1mim::TF
+                    if m == 0
+                        Sp1mre = -_1_m * Sp1pre; Sp1mim = _1_m * Sp1pim
+                    else
+                        Sp1mre = -_1_m * _adt_S_re(H, i_np1 - 1)
+                        Sp1mim = _1_m * _adt_S_im(H, i_np1 - 1)
+                    end
+                    row = flat_basis_index(n, m, 1)
+                    CUDA.@atomic lc[row, ia] += _1_np1 * np1_inv * (
+                        TF(0.5) * (wy * Sp1mre - wx * Sp1mim) -
+                        TF(0.5) * (wy * Sp1pre + wx * Sp1pim) - wz * Sp1re)
+                    CUDA.@atomic lc[row + 1, ia] += _1_np1 * np1_inv * (
+                        TF(0.5) * (wy * Sp1mim + wx * Sp1mre) -
+                        TF(0.5) * (wy * Sp1pim - wx * Sp1pre) - wz * Sp1im)
+                end
+            end
+            s += Int(blockDim().x)
+        end
+        k += stride
+    end
+    return nothing
+end
+
+function _launch_cuda_adaptive_s2l!(state::DeviceResidentRadixState{TF,B,LH},
+        actx::DeviceAdaptiveCUDAContext) where {TF,B,LH}
+    n_x = actx.n_x
+    n_x == 0 && return state
+    orders = state.invariant_cache.basis_info.orders
+    P_phi = orders.P_phi
+    grid = state.grid::DeviceRadixGrid
+    threads = 128
+    blocks = min(n_x, 1 << 16)
+    if state.options.body_type <: Point{Vortex}
+        NH = harmonic_index(P_phi + 2, P_phi + 2)
+        CUDA.@cuda threads=threads blocks=blocks _cuda_adaptive_s2l_vortex_kernel!(
+            phi_slab(state.locals), chi_slab(state.locals), state.source_bodies,
+            state.cell_ranges, actx.leaf_slot_of::CUDA.CuVector{Int32},
+            grid.node_centers, actx.x_targets::CUDA.CuVector{Int32},
+            actx.x_sources::CUDA.CuVector{Int32}, n_x,
+            Val(P_phi), Val(orders.P_active), Val(NH))
+    elseif state.options.body_type <: Point{Source}
+        NH = harmonic_index(P_phi, P_phi)
+        CUDA.@cuda threads=threads blocks=blocks _cuda_adaptive_s2l_kernel!(
+            phi_slab(state.locals), state.source_bodies, state.cell_ranges,
+            actx.leaf_slot_of::CUDA.CuVector{Int32}, grid.node_centers,
+            actx.x_targets::CUDA.CuVector{Int32},
+            actx.x_sources::CUDA.CuVector{Int32}, n_x, Val(P_phi), Val(NH))
+    else
+        throw(ArgumentError("adaptive S2L supports Point{Source} and " *
+            "Point{Vortex}; got $(state.options.body_type)"))
+    end
+    return state
+end
+
+#------- adaptive V-list M2L over the unchanged resident plans -------#
+
+# Device mirror of the host _launch_adaptive_resident_m2l!: the class-
+# partitioned CSR stream feeds the UNCHANGED window plans. The dense CUDA
+# family applies whole level segments in place (per-offset class ids +
+# per-level expansion scales — no window copies at all); the precomputed-y and
+# concat families walk device-to-device windows exactly like the host driver.
+# No new operator tables; no transfers.
+function _launch_cuda_adaptive_m2l!(state::DeviceResidentRadixState{TF,B,LH},
+        actx::DeviceAdaptiveCUDAContext) where {TF,B,LH}
+    ws = state.scratch
+    ws isa ResidentOperatorWorkspace ||
+        throw(ArgumentError("adaptive M2L requires ResidentOperatorWorkspace scratch"))
+    plan = ws.m2l_concat
+    plan isa Union{ResidentM2LConcatPlan,ResidentM2LPrecomputedYPlan,
+        ResidentM2LDenseCUDAPlan} || throw(ArgumentError(
+        "adaptive device M2L requires a concat, precomputed-y, or dense CUDA " *
+        "window plan; got $(typeof(plan))"))
+    fill!(state.locals.phi, zero(TF))
+    LH && fill!(state.locals.chi, zero(TF))
+    nroutes = actx.n_routes
+    nroutes == 0 && (state.counts.n_routes = 0; return state)
+    ell_max = (actx.policy::AdaptiveTreePolicy).ell_max
+    if plan isa ResidentM2LDenseCUDAPlan
+        ls = actx.level_starts
+        rco = actx.route_class_offset::CUDA.CuVector{Int32}
+        rsrc = actx.route_sources::CUDA.CuVector{Int}
+        rtgt = actx.route_targets::CUDA.CuVector{Int}
+        for L in actx.first_m2l_level:ell_max
+            s = ls[L + 1]
+            e = ls[L + 2]
+            n = e - s
+            n > 0 && _cuda_hier_dense_apply_routes!(state, ws, plan, actx, L,
+                view(rco, s:(e - 1)), view(rsrc, s:(e - 1)),
+                view(rtgt, s:(e - 1)), n)
+        end
+        state.counts.n_routes = nroutes
+        return state
+    end
+    window = actx.window_capacity
+    i = 1
+    while i <= nroutes
+        count = min(window, nroutes - i + 1)
+        copyto!(state.route_targets, 1, actx.route_targets::CUDA.CuVector{Int},
+            i, count)
+        copyto!(state.route_sources, 1, actx.route_sources::CUDA.CuVector{Int},
+            i, count)
+        copyto!(plan.route_class, 1, actx.route_class::CUDA.CuVector{Int32},
+            i, count)
+        state.counts.n_routes = count
+        if plan isa ResidentM2LPrecomputedYPlan
+            _cuda_refresh_precomputed_y_m2l_routes!(plan, plan.route_class, count)
+            _launch_resident_m2l_precomputed_y_plan!(state, ws, plan;
+                clear_locals=false)
+        else
+            _launch_resident_m2l_concat!(state; clear_locals=false)
+        end
+        i += count
+    end
+    state.counts.n_routes = nroutes
+    return state
+end
+
+#------- adaptive lifecycle body + graph capture -------#
+
+function _cuda_adaptive_lifecycle_body!(state::DeviceResidentRadixState,
+        actx::DeviceAdaptiveCUDAContext)
+    nearfield_done = CUDA_OVERLAP_NEARFIELD[] ?
+        _launch_cuda_nearfield_async!(state) : nothing
+    _launch_cuda_b2m!(state)
+    _assert_cuda_resident_stage!(state, :b2m)
+    # adaptive M2M: per-level edge groups WITHOUT the uniform nonleaf prefix
+    # zeroing (which would zero coarse adaptive leaves); B2M refilled the
+    # whole multipole buffer above (task 040 semantics)
+    _launch_adaptive_resident_m2m!(state)
+    _assert_cuda_resident_stage!(state, :m2m)
+    _launch_cuda_adaptive_m2l!(state, actx)
+    _launch_cuda_adaptive_s2l!(state, actx)
+    _assert_cuda_resident_stage!(state, :m2l)
+    _launch_resident_l2l!(state)
+    _assert_cuda_resident_stage!(state, :l2l)
+    if nearfield_done === nothing
+        _launch_cuda_resident_l2b!(state)
+    else
+        _launch_cuda_resident_l2b_only!(state, nearfield_done)
+    end
+    _launch_cuda_adaptive_m2t!(state, actx)
+    _assert_cuda_resident_stage!(state, :l2b)
+    return state
+end
+
+# Graph eligibility mirrors the uniform rule: the dense fused family's body is
+# sync-free and capacity-static within an occupancy epoch (the adaptive CSR
+# stream is fully materialized on device — it IS the window cache). The
+# precomputed-y/concat windows perform per-window host work and stay uncaptured,
+# exactly as on the uniform path.
+function _cuda_adaptive_graph_eligible(state::DeviceResidentRadixState,
+        actx::DeviceAdaptiveCUDAContext)
+    CUDA_GRAPH_LIFECYCLE[] || return false
+    actx.graph_warm_epoch == typemin(Int) && return false
+    ws = state.scratch
+    ws isa ResidentOperatorWorkspace || return false
+    ws.m2l_concat isa ResidentM2LDenseCUDAPlan && DENSE_CUDA_FUSED[] || return false
+    actx.profile_stages && return false
+    DEBUG[] && return false
+    return true
+end
+
+function run_cuda_adaptive_radix_lifecycle!(state::DeviceResidentRadixState,
+        actx::DeviceAdaptiveCUDAContext)
+    _require_cuda_radix_available()
+    _assert_cuda_supported_operator!(state.options)
+    state.counters.expansion_host_copies == 0 ||
+        throw(AssertionError("adaptive CUDA radix lifecycle observed expansion host copies before execution"))
+    _cuda_adaptive_graph_eligible(state, actx) &&
+        return _run_cuda_adaptive_lifecycle_graph!(state, actx)
+    return _cuda_adaptive_lifecycle_body!(state, actx)
+end
+
+function _run_cuda_adaptive_lifecycle_graph!(state::DeviceResidentRadixState,
+        actx::DeviceAdaptiveCUDAContext)
+    exec = actx.graph_exec
+    if exec !== nothing && actx.graph_epoch == actx.epoch_id
+        CUDA.launch(exec::CUDA.CuGraphExec)
+        return state
+    end
+    if actx.graph_warm_epoch != actx.epoch_id
+        _cuda_adaptive_lifecycle_body!(state, actx)
+        actx.graph_warm_epoch = actx.epoch_id
+        return state
+    end
+    graph = try
+        CUDA.capture(; throw_error=false) do
+            _cuda_adaptive_lifecycle_body!(state, actx)
+        end
+    catch err
+        err isa CUDA.CuError || rethrow()
+        actx.graph_warm_epoch = typemin(Int)
+        nothing
+    end
+    if graph === nothing
+        _cuda_adaptive_lifecycle_body!(state, actx)
+        return state
+    end
+    actx.graph_exec = CUDA.instantiate(graph)
+    actx.graph_epoch = actx.epoch_id
+    CUDA.launch(actx.graph_exec::CUDA.CuGraphExec)
+    return state
+end
+
+#------- adaptive cache build + per-step refresh -------#
+
+# Device analog of the host _allocate_adaptive_resident_lifecycle: allocate the
+# adaptive context + device state over the UNCHANGED workspace/plan machinery.
+function _cuda_allocate_adaptive_lifecycle(::Type{TF},
+        basis_info::OperatorBasisInfo{B,LH}, options::CUDARadixLifecycleOptions,
+        policy::AdaptiveTreePolicy, x_min::SVector{3,TF}, h0::TF, maxn::Int,
+        dpb::Int, hessian::Bool, invariant::OperatorInvariantCache,
+        counters::CUDARadixTransferCounters, ctx) where {TF,B,LH}
+    actx = _cuda_allocate_adaptive_context(TF, policy, maxn, x_min, h0, counters)
+    # alias the ordinal-indexed body maps filled by the shared position collector
+    grid = actx.grid::DeviceRadixGrid
+    grid.body_system = ctx.grid.body_system
+    grid.body_index = ctx.grid.body_index
+    ell = policy.ell_max
+    node_cap = actx.node_capacity
+    leaf_cap = actx.leaf_capacity
+    window_cap = actx.window_capacity
+    tables = actx.tables::RigidHierarchicalTables
+    _, _, effective_offsets = _hierarchical_class_metadata(tables, ell,
+        actx.first_m2l_level)
+    multipoles = _cuda_flat_buffer(TF, basis_info, node_cap)
+    locals_buf = _cuda_flat_buffer(TF, basis_info, node_cap)
+    fill!(multipoles.phi, zero(TF)); fill!(multipoles.chi, zero(TF))
+    fill!(locals_buf.phi, zero(TF)); fill!(locals_buf.chi, zero(TF))
+    specialized = options.m2l_strategy isa Union{PrecomputedFactoredYM2L,
+        DenseTranslationM2L}
+    ws_strategy = specialized ? options.m2l_strategy : ConcatenatedFixedZM2L()
+    ws_operator = specialized ? options.operator : MaterializedYRotationM2L()
+    workspace = _radix_cache_workspace(TF, basis_info, multipoles, ell, h0,
+        leaf_cap, node_cap, window_cap, effective_offsets, invariant,
+        ws_strategy, ws_operator; compact_cuda_factored=true,
+        hierarchical_noffsets=actx.noffsets,
+        ell_axes=SVector(ell, ell, ell), first_level=0)
+    if workspace.m2l_concat isa ResidentM2LFactoredPlan
+        _pin_host_array(workspace.m2l_concat.host_class_counts)
+        _cuda_factored_whole_pass_setup!(workspace.m2l_concat, TF, basis_info)
+    elseif workspace.m2l_concat isa ResidentM2LPrecomputedYPlan
+        _pin_host_array(workspace.m2l_concat.host_class_counts)
+        _cuda_precomputed_y_whole_pass_setup!(workspace.m2l_concat, TF, basis_info)
+    elseif workspace.m2l_concat isa ResidentM2LDenseCUDAPlan
+        # dense family: per-level expansion scales (025 level-scaling law),
+        # built at the leaf reference depth ell_max
+        hs_scale, ht_scale = _cuda_hier_dense_scales(TF, basis_info, ell,
+            workspace.m2l_concat.ndof, actx.first_m2l_level)
+        actx.source_scale = CUDA.CuArray{TF}(hs_scale)
+        actx.target_scale = CUDA.CuArray{TF}(ht_scale)
+    end
+    counters.operator_uploads += 1     # construction-only operator upload
+    source_bodies = CUDA.zeros(TF, dpb, maxn)
+    n_output_rows = hessian ? 13 : 4
+    output = CUDA.zeros(TF, n_output_rows, maxn)
+    route_levels = CUDA.zeros(Int, window_cap)
+    route_offsets = CUDA.zeros(Int, 3, window_cap)
+    route_targets = CUDA.zeros(Int, window_cap)
+    route_sources = CUDA.zeros(Int, window_cap)
+    direct_targets = CUDA.zeros(Int, actx.u_capacity)
+    direct_sources = CUDA.zeros(Int, actx.u_capacity)
+    edge_placeholder = CUDA.zeros(Int, 0)
+    state = DeviceResidentRadixState{TF,CompressedComplexBasis,LH}(
+        grid, actx, source_bodies, source_bodies,
+        grid.perm, grid.body_system, grid.body_index,
+        ctx.host_perm, ctx.host_body_system, ctx.host_body_index,
+        nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
+        nothing,
+        grid.cell_centers, grid.cell_ranges,
+        edge_placeholder, edge_placeholder, edge_placeholder, edge_placeholder,
+        multipoles, locals_buf,
+        route_levels, route_offsets, route_targets, route_sources,
+        direct_targets, direct_sources, output,
+        invariant, workspace, counters, options,
+        RadixStepCounts(0, 0, 0, 0, 0),
+    )
+    # side-stream nearfield ordering is event-based; disable implicit per-array
+    # cross-stream synchronization exactly as on the uniform path (illegal
+    # inside stream capture)
+    for arr in (output, source_bodies, grid.cell_ranges, direct_targets,
+            direct_sources)
+        CUDA.enable_synchronization!(arr, false)
+    end
+    return actx, state
+end
+
+# Per-step refresh of the adaptive device cache: single full-depth sort +
+# device tree rebuild + (on occupancy epochs) DTR lists, CSR partition, U slot
+# mapping, and stage-group refresh. The uniform grid/route machinery does NOT
+# run on this path (the 040 double-refresh lever lands on device by
+# construction). The global geometry gate is replaced by the per-cell sticky
+# demotion (armed at construction for regularized kernels).
+function _cuda_update_adaptive_radix_state!(cache::RadixFMMCache{TF,LH},
+        systems::Tuple) where {TF,LH}
+    ctx = cache.device_ctx
+    actx = cache.adaptive_tree::DeviceAdaptiveCUDAContext
+    state = cache.adaptive_state::DeviceResidentRadixState
+    length(systems) == cache.n_systems ||
+        throw(ArgumentError("cache was built for $(cache.n_systems) source systems, got $(length(systems))"))
+    n = get_n_bodies(systems)
+    n > 0 || throw(ArgumentError("update requires at least one body"))
+    n <= cache.max_n_bodies ||
+        throw(ArgumentError("n=$n exceeds the cache capacity max_n_bodies=$(cache.max_n_bodies)"))
+    source_buffers = _radix_cache_refresh_source_buffers!(ctx, systems, TF)
+    _radix_cache_collect_positions!(ctx, source_buffers)
+    grid = actx.grid::DeviceRadixGrid
+    occ_changed = _cuda_refresh_adaptive_tree!(ctx, actx, cache, n)
+    _pack_radix_body_matrix!(state.source_bodies, source_buffers,
+        view(grid.perm, 1:n), grid.body_system, grid.body_index)
+    policy = actx.policy::AdaptiveTreePolicy
+    actx.sigma_armed = policy.sigma_row > 0 && policy.rho_t > 0
+    actx.sigma_armed && _cuda_adaptive_sigma_sweep!(actx, state.source_bodies)
+    if occ_changed
+        _cuda_refresh_adaptive_lists!(actx, state.direct_targets,
+            state.direct_sources)
+        profile = actx.profile_stages
+        t0 = profile ? (CUDA.synchronize(); time_ns()) : UInt64(0)
+        _cuda_refresh_resident_stage_groups!(
+            state.scratch::ResidentOperatorWorkspace, grid, actx.level_offsets,
+            policy.ell_max, 0)
+        profile && (CUDA.synchronize(); actx.stage_ns[8] = time_ns() - t0)
+    end
+    if _radix_any_host_resident(systems)
+        copyto!(ctx.host_perm, 1, grid.perm, 1, n)
+        copyto!(ctx.host_body_system, 1, grid.body_system, 1, n)
+        copyto!(ctx.host_body_index, 1, grid.body_index, 1, n)
+        ctx.counters.metadata_downloads += 3
+    end
+    counts = state.counts
+    counts.n_bodies = n
+    counts.n_cells = actx.n_leaves
+    counts.n_nodes = actx.n_nodes
+    counts.n_routes = actx.n_routes
+    counts.n_direct = actx.n_u
+    cache.step += 1
+    return cache
 end
