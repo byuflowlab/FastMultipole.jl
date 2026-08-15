@@ -985,3 +985,21 @@ Design decisions of record (overnight/user-absent; all in-scope):
   tolerances (upstream of 041; not chased inside this row).
 - Committed before resubmission; resynced; measurement job resubmitted as
   **13180706**.
+
+## 2026-08-15 15:49 MDT — 041 measurement amendments + final run (job 13182172)
+
+- Job **13180706** COMPLETED (gates green: 608/608 adaptive + full uniform
+  CUDA suites incl. the amended interface tolerances). Sweep: all 46 dense
+  rows OK and inside the 1e-3 gate (max 6.6e-4); 48 'default' rows failed
+  (ArgumentError at construction — the bare-default SharedRotationM2L
+  options are rejected by the DEVICE build for uniform AND adaptive alike;
+  the intended concat engine must be selected explicitly, as the 041 tests
+  do) and wake-1e6 dense adaptive K=64 hit a capacity AssertionError (V ~
+  2.2e7 vs the fixed 1.6e7 DTR frontier; K=128 at 1.45e7 fits).
+- Amendments (committed before resubmission): (i) src — DTR frontier
+  capacity now tracks v_capacity; (ii) script — 'concat' strategy selects
+  ConcatenatedFixedZM2L explicitly (row key renamed default->concat);
+  (iii) script — fail rows carry the full error text. Protocol-neutral:
+  same intended configurations, same anchors/medians/accuracy sampling.
+- Final measurement run resubmitted as job **13182172**; its CSV supersedes
+  the interim 13180706 CSV (committed for the record).
