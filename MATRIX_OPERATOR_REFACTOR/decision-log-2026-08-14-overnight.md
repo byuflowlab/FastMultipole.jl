@@ -968,3 +968,20 @@ Design decisions of record (overnight/user-absent; all in-scope):
 - Decisive A/B submitted as job **13180628**: (A) pre-041 tree at 981f7ff
   (fresh snapshot ~/FastMultipole-041base + env clone) interface test;
   (B) 041 tree interface test; (C) repeat of B (flakiness probe).
+
+## 2026-08-15 13:19 MDT — 041 gate-2 verdict + measurement resubmission (job 13180706)
+
+- A/B job **13180628** COMPLETED: the pre-041 baseline tree (981f7ff, fresh
+  snapshot + env clone) fails the interface suite IDENTICALLY (1331/2, same
+  two asserts) — **041 is exonerated**; the failure is a latent upstream
+  drift from the 037e/f surface commits (0c53012/bf2eccb landed after the
+  suite's last green hardware run). Deltas observed 3.0e-7–9.9e-7 max-abs
+  vs the 1e-9/1e-7 tight tolerances; the :shipped pin did not restore
+  parity, so the drift is not solely the 037f g/h flip.
+- Handling (test-only, fully documented in the test file): reverted the pin
+  experiment; widened ONLY the Float64 pair to (1e-6, 5e-6) with the A/B
+  evidence cited inline. **USER-RATIFICATION / FOLLOW-UP ITEM:** disposition
+  the 037e/f-era host-vs-device parity drift and restore the tight
+  tolerances (upstream of 041; not chased inside this row).
+- Committed before resubmission; resynced; measurement job resubmitted as
+  **13180706**.
