@@ -904,3 +904,15 @@ Design decisions of record (overnight/user-absent; all in-scope):
   (2 × 65536 slots × NH, 69 MB worst case at P=8 F64) with a fixed 512×128
   grid-stride kernel shape; MArray removed. Committed; resynced.
 - Resubmitted bring-up as job **13180242**.
+
+## 2026-08-15 11:43 MDT — 041 bring-up iteration 5
+
+- Job **13180242**: **607/608 PASS** — the scratch-slab fix cleared every
+  M2T/S2L failure; LH vortex, counter/zero-alloc/epoch (15 asserts), guards,
+  and the uniform-device smoke all pass. Single remaining failure: the
+  DenseTranslationM2L strategy accuracy (0.449 rel RMS) — the adaptive
+  workspace built the dense table over the level-scaled effective_offsets
+  while the apply uses per-offset class ids + per-level scales (the uniform
+  device convention builds the table from UNSCALED push_offsets). Fixed to
+  match the uniform build. Committed; resynced.
+- Resubmitted bring-up as job **13180243**.
