@@ -2,9 +2,10 @@
 
 ## Status and Entry Gate
 
-**Proposed follow-on item; not started.**
+**DONE 2026-08-14 (overnight lead agent); pending clear-context approval.**
 
-Entry gate: `038` complete and approved.
+Entry gate: `038` complete and approved — satisfied 2026-08-14 19:38 MDT
+(commits `04f6c3c`/`5f57db4`/`86c4951`).
 
 ## Objective
 
@@ -58,3 +59,181 @@ Lists proven exact-once on all test distributions, uniform-limit parity with
 the existing hierarchical routes, zero per-step allocation on refresh, and
 construction cost measured and recorded vs the uniform grid on the two phase
 cases plus the multi-scale case.
+
+## Completion Notes (2026-08-14, overnight lead agent)
+
+### What shipped and where
+
+- **`src/containers.jl`** — new types (per the Implementation Code Placement
+  rules): `AdaptiveTreePolicy` (K_max, ell_max, constant `near_radius2`,
+  balance/split_veto toggles, `rho_t`/`sigma_row` σ-gate plumbing,
+  `beta_balance`, explicit capacity overrides), `AdaptiveRadixTree{TF}`
+  (capacity-sized SoA node pool + final **level-major, Morton-sorted-within-
+  level** node table matching the uniform `level_offsets` convention, per-body
+  sort machinery, per-node subtree `sigma_max`), `AdaptiveInteractionLists`
+  (V routes in the production class format + CSR class partition, U/W/X,
+  DTR stack, staging + counting-sort scratch). `RadixFMMCache` gains three
+  trailing opt-in fields (`adaptive`/`adaptive_tree`/`adaptive_lists`,
+  all `nothing` by default).
+- **`src/tree_batched.jl`** — construction: `AdaptiveRadixTree(systems; ...)`,
+  `update_adaptive_tree!` (fixed root cube/capacities; keys at `ell_max`,
+  in-place LSD sort, DFS top-down `K_max` split with optional §5.4 veto,
+  §1.4 **Sundar-style 2:1 balance sweep** (per-round sorted leaf-interval
+  tables + binary-search matching, deepest-first, fixed point with guard;
+  8 touching parent-level cells per leaf — provably 2 per axis — instead of
+  the 26-neighbor form), level-major finalize by per-level counting/key
+  sort, upward `sigma_max` sweep), `adaptive_is_leaf`/`adaptive_node_range`
+  accessors, and the cache refresh hook `_refresh_adaptive_radix!`.
+- **`src/interaction_list_batched.jl`** — `AdaptiveInteractionLists(tree)`
+  and `build_adaptive_interaction_lists!`: theory §2.2 dual-tree recursion
+  with the §5.2 **sticky** per-cell σ demotion gate (integer-exact
+  finest-lattice AABB gap; source-side σ), mixed-level near predicate
+  (§2.1 per-axis clamp), U/W/X emission with structural invariant throws,
+  V emission with **runtime 025 phase-table membership enforcement**
+  (`level_class_of[phase(source), k, L+1] != 0`, else throw), and the
+  in-place counting sort producing the class-partitioned route stream.
+- **`src/translate_batched_resident.jl`** — `RadixFMMCache(...; adaptive=)`
+  keyword: host-only + cubic-only guards, σ-row validation, construction of
+  the adaptive structures, `update_radix_state!` refresh hook (runs AFTER
+  the unchanged uniform refresh), `recenter!` forwards the policy.
+  **No production default changes**: `adaptive === nothing` is bit-identical
+  to before (asserted by test).
+- **`src/translate_batched_cuda.jl`** — device constructor passes the three
+  `nothing`s (adaptive is host-only until row 041; `device=true` + adaptive
+  throws).
+- **`src/FastMultipole.jl`** — exports.
+- **`test/adaptive_octree_test.jl`** (wired into `test/runtests.jl` after
+  `radix_trimming_test.jl`).
+- **`MATRIX_OPERATOR_REFACTOR/theory/adaptive-radix-octree.md`** — §2.4
+  orientation slip fixed on this touch (per the 038 re-approval note):
+  the phase identity now pairs `o = c_A - c_B` (= T − S, the 025
+  convention) with the source phase, with the one-line derivation; §5.4
+  gains the split-veto implementation note (below).
+- **`MATRIX_OPERATOR_REFACTOR/scripts/fm039_construction_cost.jl`** +
+  **`data/fm039_construction_cost.csv`** — pre-registered acceptance
+  measurement (protocol in the script header; cluster CPU job of record).
+
+### Format decisions (for row 040)
+
+- V routes: the five production arrays (`route_levels/route_offsets/
+  route_targets/route_sources/route_class`) with the production numbering
+  `(L - 2) * noffsets + k` over `RigidHierarchicalTables(q).push_offsets`
+  and `_hierarchical_class_metadata(tables, ell_max, 2)`
+  (`effective_offsets[c] = 2^(ell_max - L) * o`, leaf reference width at
+  `ell_max`) — byte-compatible with the existing windowed consumers — plus
+  a CSR `class_starts` so 040 can feed whole classes or windows without
+  re-sorting. No new operator tables (theory §2.4).
+- U/W/X endpoints are **flat adaptive node indices** (leaves live at
+  multiple levels; the uniform path's `direct_sources = node - leaf_base`
+  cell convention cannot represent them). Body ranges come from
+  `node_lo`/`node_hi` (subtree ranges into `perm`).
+- Constant near radius only (`q ∈` supported set; both 3 and 12 tested);
+  the production per-level schedule is a recorded deferral.
+- Host DFS pair stack (capacity `64·(2·ell_max+2)`) replaces the theory
+  §2.7 frontier on the host; the flag/scan/compact frontier remains the
+  041 device shape.
+
+### Verification (all local, single thread, commands exact)
+
+- `julia --project=. --threads=1 -e 'using Test; include("test/adaptive_octree_test.jl")'`
+  — **60,773 pass / 0 fail**: construction invariants (partition, K_max,
+  depth cap, level-major layout, parent/child/subtree consistency, trivial
+  and coincident-body edge cases); 2:1 balance asserted structurally;
+  **exact-once brute-force painting** over all ordered body pairs on
+  uniform / wake-like filament / clustered multi-scale fields × 2 seeds ×
+  K_max ∈ {8,32} × **q ∈ {3,12}**, balanced AND unbalanced (57,790
+  assertions, all zero-defect); independent V-class re-checks (separated,
+  geometric parent nearness, Chebyshev reach, phase membership, class ids)
+  on gated AND ungated lists; W/X structure + ungated W/X duality; σ-gate
+  suite (sticky demotion engaged, 031a cutoff contract `r ≤ ρ_t σ_src ⇒ U`
+  brute-forced to zero violations, coverage exact under the gate, veto-ON
+  variant); **uniform-limit parity** (jittered complete grids, `K_max=1`):
+  adaptive V set == production `build_hierarchical_routes_window!` set
+  (level, offset, coords, AND class id) and adaptive U == production
+  direct pairs, exactly, for q ∈ {3,5,12} × ell ∈ {2,3} at **P=4**;
+  zero-allocation refresh (0 bytes for `update_adaptive_tree!` and
+  `build_adaptive_interaction_lists!`, gated and ungated, after body
+  motion); cache opt-in (P=4 construction, bit-identical uniform fmm!
+  output with the policy armed, σ pulled from packed row 4, guards,
+  `recenter!` preservation, <1 KB constant dynamic-dispatch overhead per
+  step through the cache hook).
+- Regression: `radix_grid_clustering / radix_interaction_list /
+  hierarchical_m2l_host / radix_fmm_integration / radix_trimming /
+  radix_fmm_timestepping` re-run in one session — **114,015 pass / 0
+  fail**.
+
+### Deviations from theory (quantified; logged in the decision log)
+
+1. **§5.4 split veto defaults OFF** (`AdaptiveTreePolicy(split_veto=false)`).
+   The literal veto keys on the cell's own subtree `σ_max`, so one fat-σ
+   body vetoes every ancestor split: measured one-fat-core field (n=1500,
+   σ=3e-4 + one 0.15, ρ_t=4.789) collapses to a **single root leaf** at
+   q=3 (g_min=1) — global direct, the pathology §5 exists to remove —
+   while q=12 (g_min=√5) only coarsens locally (411 vs 424 leaves).
+   Sticky demotion alone preserves cost locality (116/183 demotions at
+   q=3/12; exact-once + contract intact). Veto remains available for
+   spatially smooth σ fields. Implementation note added to theory §5.4;
+   **user ratification item**.
+2. **Capacity formulas**: §6.4 with hard occupancy caps
+   (`node ≤ (ell_max+1)·n+1`; U/W/X per-leaf factors × `min(node_cap, n)`;
+   `V = push_max · min(node_cap, 4n)`) + explicit per-policy overrides;
+   overflow throws. The raw §6.4 products are memory-infeasible at n=1e6;
+   measured-to-capacity ratios are recorded in the cost CSV for 040
+   tightening.
+3. DFS stack in place of the §2.7 frontier (host only; improvement, not a
+   weakening — the device form is unchanged for 041).
+
+### Construction cost (acceptance measurement)
+
+Pre-registered protocol committed at `fd58aea` before submission; cluster
+CPU job **13178905** (`~/FastMultipole-039`, Julia 1.12.6, 1 thread,
+same-job anchors). Cases: unitcube, helical-wake-cylinder positions (033),
+multiscale100; n ∈ {1e5, 1e6}; adaptive K_max ∈ {32,64,128} (ell_max=10,
+q=5, balance on) vs uniform `RadixFMMCache` default policy at ell ∈ {5,6}.
+Results in `data/fm039_construction_cost.csv`:
+
+Job 13178905 COMPLETED 00:05:20, ExitCode 0:0 (sacct-verified). Headline
+rows at n = 1e6 (warm refresh = tree + lists, median of 5; `u_pairs` =
+direct body-pair work; popmax = worst leaf population):
+
+| case | config | refresh (ms) | popmax | u_pairs | V routes |
+| --- | --- | --- | --- | --- | --- |
+| unitcube | adaptive K=64 | 1222 | 64 | 1.84e9 | 1.23e7 |
+| unitcube | uniform ell=5 | 534 | 61 | 1.84e9 | 1.23e7 |
+| wake | adaptive K=128 | 1502 | 128 | 1.51e9 | 1.45e7 |
+| wake | uniform ell=5 | 311 | 1231 | 4.36e10 | 2.72e5 |
+| wake | uniform ell=6 | 377 | 182 | 6.69e9 | 2.65e6 |
+| multiscale100 | adaptive K=128 | 1239 | 128 | 1.79e9 | 1.25e7 |
+| multiscale100 | uniform ell=5 | 464 | 2442 | 2.85e10 | 1.23e7 |
+| multiscale100 | uniform ell=6 | 2220 | 346 | 4.72e9 | 8.70e7 |
+
+Reading: (i) **uniform-limit sanity** — on the unit cube, adaptive K=64
+reproduces the uniform ell=5 structure almost exactly (37,363 vs 37,390
+nodes; identical direct pairs and routes to 3 digits), at 2.3x the refresh
+cost (1.22 s vs 0.53 s) — the price of pool build + balance + finalize +
+DTR vs closed-form windowed emission at equal structure. (ii) **Bounded
+worst cell where the uniform grid cannot** — on the wake/multiscale cases
+the adaptive tree holds popmax at K_max by construction while the uniform
+grid pays fat cells (1231/2442 at ell=5; 182/346 at ell=6) or explodes its
+route count going deeper: at n=1e6 the adaptive K=128 direct body-pair
+work is 28.8x/4.4x (wake) and 15.9x/2.6x (multiscale) below uniform
+ell=5/ell=6, at comparable or lower refresh cost than ell=6 (1.24 s vs
+2.22 s on multiscale). This is the counted 038 mechanism reproduced at
+production scale on the host. (iii) Worst-case adaptive refresh at n=1e6
+is 4.35 s (unitcube K=32, a deliberately over-fine setting); cold
+construction <= 5.3 s everywhere. (iv) Measured-to-capacity ratios peak
+at node 0.83, U 0.60, V 0.91 (wake K=128) — the shipped formulas held
+with margin but the V margin is thin at wake-like density contrast;
+recorded for 040 tightening.
+
+### Open items
+
+- User ratification: split-veto default (deviation 1); option (b)
+  table-free M2T/S2L re-admission (038 carry-over, not implemented per
+  standing instruction); E2 disposition (still open).
+- 040: consume the lists (M2T/S2L kernels + pipeline), unify the body sort
+  with the uniform path, tighten capacities from the recorded ratios,
+  rectangular domains, per-level radius schedule.
+- Pre-existing (not 039): `update_radix_state!` allocates ~30 KB/step on
+  the uniform path with or without the adaptive opt-in (repo's own gates
+  are <512 KB bounds); noted for a future cleanup row.

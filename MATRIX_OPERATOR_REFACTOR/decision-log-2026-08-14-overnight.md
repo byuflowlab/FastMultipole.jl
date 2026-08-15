@@ -373,3 +373,39 @@ by 039; repo's own step-allocation gates are <512 KB bounds).
   /capacity ratios recorded. Output CSV
   `data/fm039_construction_cost.csv` (cluster run is the measurement of
   record; a local n=2e4 smoke validated the script only).
+
+## 2026-08-14 20:20 MDT — 039 cost job submitted
+
+- Implementation + tests + pre-registration committed as `fd58aea` BEFORE
+  submission (protocol honored).
+- Cluster job **13178905** (`fm039cost`, CPU node, 1 Julia thread,
+  OPENBLAS=1, 64G, 3h wall) submitted from `~/FastMultipole-039` (rsync
+  snapshot of the fd58aea working tree; Julia 1.12.6 module; package
+  loads verified on login node). Output `~/fm039cost_13178905.out`;
+  CSV of record `~/FastMultipole-039/MATRIX_OPERATOR_REFACTOR/data/
+  fm039_construction_cost.csv` — to be pulled back and committed.
+- sacct will be checked on every resume until a terminal state is
+  verified (monitors have missed terminal states before).
+
+## 2026-08-14 20:32 MDT — 039 DONE (lead agent completion)
+
+- Cluster job **13178905** terminal: COMPLETED 00:05:20 ExitCode 0:0
+  (sacct re-verified by the lead agent per the standing rule). CSV of
+  record pulled to `data/fm039_construction_cost.csv` and committed.
+- Measurement headlines (n=1e6, warm refresh = tree+lists median-of-5,
+  same-job anchors): uniform-limit sanity — unitcube adaptive K=64
+  reproduces uniform ell=5 structure to 3 digits (37,363 vs 37,390 nodes,
+  identical u_pairs/V) at 2.3x refresh cost (1.22 vs 0.53 s). Bounded
+  worst cell where uniform cannot: wake adaptive K=128 popmax 128 vs 1231
+  (ell=5) / 182 (ell=6), direct body-pair work 28.8x / 4.4x lower;
+  multiscale100 K=128 popmax 128 vs 2442/346, u_pairs 15.9x / 2.6x lower,
+  refresh 1.24 s vs 2.22 s (ell=6). The 038 counted mechanism reproduced
+  at production scale on the host. Worst adaptive refresh 4.35 s
+  (unitcube K=32, over-fine); cold construction <= 5.3 s. Capacity ratios
+  peak node 0.83 / U 0.60 / V 0.91 (wake K=128 — V margin thin; 040
+  tightening note).
+- Task file updated with completion notes + results; START_HERE 039 row
+  marked **Done** (Approved left blank). Committing as `039: close-out`.
+- Row 039 is ready for clear-context approval. User-ratification items
+  carried: split-veto default OFF (quantified deviation), 038 option (b)
+  M2T/S2L re-admission (not implemented), E2 disposition (open).
