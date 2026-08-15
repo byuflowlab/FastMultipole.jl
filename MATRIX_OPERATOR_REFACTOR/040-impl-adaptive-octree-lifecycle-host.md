@@ -214,3 +214,82 @@ recorded honestly for 041a).
   candidate.
 - Theory §4.2 "exact per-channel oracle" wording deserves a top-row caveat
   (finding 2 above) on the next theory touch.
+
+---
+
+## Clear-Context Approval (2026-08-15 10:14 MDT)
+
+**Verdict: APPROVED.** Independent clear-context review per START_HERE
+protocol item 6 (objectives, correctness, performance, robustness, minimal
+invasiveness, readability, in that order).
+
+Evidence checked:
+
+- Read: START_HERE (protocol + 040 row + phase preamble), this task file,
+  the full `118174d`/`48b5ac6`/`630f3f3` diffs (all src/test/script/theory
+  surfaces), `theory/adaptive-radix-octree.md` §2.6/§4/§5/§9, the overnight
+  decision log, `scripts/fm040_lifecycle_cost.jl`, and the CSV of record.
+- Re-ran locally: `julia --project=. --threads=1
+  test/adaptive_lifecycle_test.jl` — 357 pass / 0 fail, exit 0, per-testset
+  counts (40/12/16/4×32/2×38/2×34/3/11/3) matching the completion notes.
+- Hand-verified correctness claims: (1) no-new-operator-tables — the window
+  driver mirrors `_launch_hierarchical_resident_m2l!` exactly (same plan
+  types, same refresh calls, `clear_locals=false`, `route_levels`/
+  `route_offsets` unread by the plan launchers), and both the 039 CSR
+  `vstage_class` numbering and the workspace plans derive from the same
+  `_hierarchical_class_metadata` (`(L−first_m2l_level)·noffsets+k`,
+  level-scaled `effective_offsets`) — the class-id sharing is by shared
+  construction, and the machine-exact uniform-limit parity (2.4e-17,
+  ell=3 exercises multi-level classes) locks it. (2) M2M prefix-zeroing
+  omission is sound: `_launch_host_b2m!` `fill!`s the whole multipole
+  buffer before writing leaves. (3) Sign findings are justified: the
+  resident `_host_b2m_kernel!` carries `+(−1)^{n+m} q` (no legacy
+  negation), the oracles compose resident P2M through the validated dense
+  M2L, and the independent analytic Biot-Savart anchor pins the absolute
+  sign — a shared convention error cannot hide. The §4.2 χ-top-row caveat
+  characterization is sound (truncated LH row-up mixing in the M2L top row
+  vs S2L's exact projection; representation difference at truncation
+  order, correctly tested via φ+χ(≤P) machine parity + tail-scaled
+  evaluated parity + the anchor). (4) Gate semantics: global
+  `_direct_kernel_geometry_gate!` skipped only when `cache.adaptive !==
+  nothing`; regularized kernels refuse construction unless the per-cell σ
+  gate is armed (`rho_t ≥ _gate_reach_rho`, matching `sigma_row`).
+  (5) Exact-once consumption: 039 proves list-level exact-once; the
+  lifecycle consumes each of U/V/W/X in exactly one stage (U inside
+  `_launch_host_l2b!` after `fill!(output,0)`, V in the window driver, X
+  in S2L before L2L, W in M2T after L2B — all accumulate-only), with the
+  uniform-limit machine parity and the P=8 end-to-end gates (6.5e-6)
+  excluding double counting.
+- Measurement protocol verified: pre-registration `118174d` (21:30) before
+  job 13179268 (21:34); amendment `48b5ac6` committed and logged before
+  resubmission 13179323; same-job anchors; every headline recomputed from
+  the CSV and exact (wake 2.423×, multiscale 3.273×, cube 1.07× slower
+  with the 1.28 s double-refresh delta ≈ the whole gap, U-pair 46×/20×,
+  accuracy 3.87e-4–6.58e-4 all inside the gate); the wake n=1e5 honest
+  negative is recorded.
+- Minimal invasiveness: uniform path bit-preserved when `adaptive ===
+  nothing` (gate-skip condition, fmm! branch, ctor guards, one trailing
+  `Any` field, CUDA ctor `nothing` — opt-in only, production defaults
+  unchanged). Option (b) correctly NOT implemented; split veto default OFF
+  preserved; theory §9 stale veto line fixed on this touch as mandated.
+
+NOTED (non-blocking):
+
+1. "Best uniform" in the headlines means best of the pre-registered
+   uniform ℓ∈{5,6} sweep; wake/multiscale at ℓ=7 were not measured. Fine
+   for this row's acceptance; `041a` should widen the uniform depth sweep
+   before publishable adaptive-vs-uniform claims.
+2. The `48b5ac6` amendment's sampling fix (Set-dedup-sort-truncate →
+   exact shuffle-sample) also removed a low-index selection bias in the
+   original target draw, not only the small-n undershoot. Strictly an
+   improvement, committed+logged before the job of record — but it is a
+   sampling-distribution change, slightly understated as "no effect at
+   n ≥ 1e5".
+3. Adaptive S2L supports `Point{Source}`/`Point{Vortex}` only, enforced
+   by a loud runtime throw inside the lifecycle; consider promoting to a
+   construction-time guard on the 041 touch.
+4. User-ratification items carried unchanged: split-veto default OFF, 038
+   option (b), E2 disposition, the 040 deferrals (TwoPass/Partitioned on
+   adaptive, W-list M2T LH hessian, rectangular, per-level radius
+   schedules), the uniform-cube "agreed tolerance" (7% at n=1e6, double
+   refresh), and the theory §4.2 top-row wording caveat.

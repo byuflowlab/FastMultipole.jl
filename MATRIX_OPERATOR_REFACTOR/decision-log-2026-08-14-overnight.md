@@ -665,3 +665,43 @@ Implementation complete per the 20:55 design; all local verification green.
   bound; the test now asserts `pop <= K_max` unconditionally below the depth
   cap (039 suite re-run: 60,774 pass). Item (3) preserved as-is (W/X duality
   asserted only on ungated lists — source-side σ asymmetry is correct).
+
+## 2026-08-15 10:14 MDT — 040 clear-context approval: APPROVED
+
+Reviewer: clear-context approval agent (no prior campaign context).
+Verdict: **APPROVED** — 040 Approved checkbox marked in START_HERE;
+committed as `040: clear-context approval`.
+
+Evidence: read START_HERE protocol + 040 row, the 040 task file, the full
+`118174d`/`48b5ac6`/`630f3f3` diffs, theory §2.6/§4/§5/§9, the script and
+CSV of record. Re-ran `test/adaptive_lifecycle_test.jl` locally (1
+thread): 357 pass / 0 fail, exit 0, per-testset counts matching the
+completion notes. Hand-verified: the no-new-tables claim (window driver
+mirrors the uniform hierarchical driver call-for-call; CSR `vstage_class`
+and the workspace plans share `_hierarchical_class_metadata` numbering;
+route_levels/route_offsets unread by plan launchers; machine-exact
+uniform-limit parity at ell=3 locks multi-level class ids); the M2M
+no-prefix-zeroing argument (B2M `fill!`s the whole buffer); the resident
+sign findings (resident P2M carries `+(−1)^{n+m} q`; the independent
+analytic Biot-Savart anchor excludes a shared convention error); the
+§4.2 χ-top-row caveat (sound — truncated LH row-up mixing vs exact
+projection, equal truncation order, properly tested); gate replacement
+semantics (global throw skipped only when adaptive armed; regularized
+kernels require the armed σ gate at construction); exact-once consumption
+(each of U/V/W/X consumed in exactly one accumulate-only stage over the
+039-proven lists). Measurement protocol honored: pre-registration in
+`118174d` before job 13179268; the `48b5ac6` amendment committed+logged
+before resubmission 13179323 and is protocol-neutral (incremental CSV,
+flush, wall; the sampling fix also removed a low-index draw bias —
+strictly an improvement, noted); every headline recomputed from the CSV
+and exact (2.423×/3.273×/1.07×, 46×/20× U pairs, accuracy range, honest
+wake n=1e5 negative). Production defaults unchanged; option (b) not
+implemented; split veto OFF preserved; theory §9 fixed as mandated.
+
+NOTED (recorded in the task-file approval block): (1) "best uniform" =
+best of the pre-registered ℓ∈{5,6} only — 041a should widen the depth
+sweep before publishable claims; (2) the amendment's sampling change is
+slightly understated as "no effect at n ≥ 1e5"; (3) adaptive S2L
+body-type coverage is a runtime throw — consider a construction guard in
+041; (4) user-ratification items carried unchanged (veto OFF, option (b),
+E2, 040 deferrals, cube "agreed tolerance", §4.2 wording caveat).
