@@ -916,3 +916,22 @@ Design decisions of record (overnight/user-absent; all in-scope):
   device convention builds the table from UNSCALED push_offsets). Fixed to
   match the uniform build. Committed; resynced.
 - Resubmitted bring-up as job **13180243**.
+
+## 2026-08-15 11:50 MDT — 041 test gate GREEN + measurement job submitted
+
+- Job **13180243** COMPLETED 0:0 — **608/608 PASS** (sacct re-verified):
+  full device test gate green on H200. Device-parity evidence now includes
+  exact structural equality across 24 configs + σ-gate demotion parity,
+  host-vs-device lifecycle parity (3 cases × P=4/8 × F64/F32), dense +
+  precomputed-y strategy accuracy, LH vortex accuracy, the 023 counter/
+  zero-alloc/epoch contract (route/operator uploads constant, 
+  expansion_host_copies == 0, warmed lifecycle CUDA.@allocated == 0,
+  epoch fast path verified), guards, and the uniform-device smoke.
+- Measurement-of-record job **13180348** submitted (fm041, H200, 8h):
+  gate 1 re-runs the adaptive tests, gate 2 runs the existing CUDA suites
+  (uniform non-regression), then the PRE-REGISTERED
+  scripts/fm041_cuda_cost.jl (committed 69ac964, before any submission)
+  writes data/fm041_cuda_cost.csv incrementally (cube/wake/multiscale ×
+  n 1e5/1e6 × F64/F32 × concat/dense × adaptive K 64/128 vs uniform
+  ell 5/6, per-stage refresh breakdown, memory, counts, sampled-direct
+  accuracy; same-job anchors).
