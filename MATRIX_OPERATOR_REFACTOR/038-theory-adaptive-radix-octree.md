@@ -2,7 +2,8 @@
 
 ## Status and Entry Gate
 
-**Proposed follow-on item; not started.**
+**DONE `2026-08-14` (overnight campaign lead agent); awaiting clear-context
+approval.**
 
 Entry gate: `035` must complete its profiling campaign and `036` (Integration
 Phase milestone review) and `037` (rectangular grid) must be complete and
@@ -11,6 +12,96 @@ record that multi-scale density (dense clusters plus diffuse regions — e.g.
 wake rollup, `CoreSpreading`-grown σ) is a binding cost that the uniform-depth
 grid cannot serve, or obtain an explicit user waiver to proceed without that
 evidence. Record the confirming evidence or waiver here.
+
+**Entry gate: MET on evidence (adjudicated `2026-08-14 19:04 MDT`, decision
+log entry of that time).** `037b`'s rotor-wake campaign measured multi-scale
+density as a binding cost of the uniform-depth grid: 7.16x at `n=1e6`
+(238.7 → 33.3 ms at pinned `ℓ8`) and 1.81x at `n=1e5` from depth selection
+alone; occupancy contrast (max/mean bodies per occupied cell 5–7× at every
+level vs wake ≤1.9×; top-1% densest cells hold ~6% of bodies,
+`data/rotor_wake/rotor_case_stats.csv`); the uniform path's `ℓ≤8` cap
+plausibly still binds at `1e6`. Nuance recorded for honesty: the `σ_max`
+geometry-gate mechanism does NOT bind on the rotor (thin tip cores keep
+`σ_max` small) — the binding mechanism is density contrast; the per-cell σ
+gate is derived as a correctness/generality deliverable, not the measured
+win mechanism. No waiver was needed.
+
+## Completion Notes (2026-08-14)
+
+Artifacts delivered:
+
+- `theory/adaptive-radix-octree.md` — the full derivation, items 1–7 of the
+  Objective: §1 construction as sort/scan/compact over full-depth Morton
+  keys (occupied linear octree, prefix property, frontier sweep, 2:1
+  balance sweep with termination proof); §2 near predicates (same-level
+  `N_q` offsets; mixed-level finer-lattice clamp rule), the dual-tree
+  recursion with invariants, U/V/W/X definitions, V-class admissibility
+  (**`025` level-scaled operator tables reused unchanged — no new
+  tables**), W/X level structure (classic one-level proposition proven for
+  the complete-tree limit, occupancy-pruned deeper entries identified and
+  measured), pipeline placement, flag/scan/compact generation; §3
+  exact-once theorem (partition-invariant proof, predicate-independent —
+  which is what makes the σ-gate demotion free) + uniform-limit `025`
+  parity proposition; §4 M2T/S2L in the compressed complex basis
+  (Gumerov-normalized irregular harmonics, production-consistent P2M/P2L
+  mirror rules, LH channels at `P_chi = P_phi + 1` per `008h`, exact
+  M2L-composition verification oracles for 040/041, error bounds inside
+  the same-level V budget via the `008d` bound, `c > 2` shown for every
+  admissible offset at both radii); §5 per-cell σ gate (per-node
+  `σ_max` upward sweep, gated far predicate with demotion + correctness
+  theorem implying the `031a` §5.1 contract, split-veto variant, global
+  throw eliminated); §6 cost/capacity model (work terms, list bounds,
+  node capacity `≤ β_bal(1 + 8·ℓ_max·⌈n/(K_max+1)⌉)`, explicit
+  `RadixFMMCache` capacity box, counted multi-scale evidence); §7
+  refresh/rebuild/recenter! policy (frozen-leaf-set refresh with cheap
+  validity reductions incl. unmatched-key and σ-margin triggers,
+  hysteresis `K_hi = 2K_max`, epoch semantics); §9 explicit implementation
+  contract for 039–041.
+- `scripts/adaptive_octree_verify.jl` — stdlib-only, single-threaded,
+  deterministic validation (byte-identical reruns verified).
+- `data/adaptive_octree/{exact_once_coverage,sigma_gate_contract,
+  cost_model_counts,constant_p_bound_consistency,s2l_m2t_convergence}.csv`
+  + `summary.txt`.
+
+Verification status — ALL CHECKS PASS:
+
+- exact-once ordered-pair coverage (brute-force `n²` painting, `n = 3000`)
+  on 5 distributions (uniform, multiscale 30×/100×, rotor-like filament,
+  adversarial two-cluster) × `q ∈ {3, 12}` × `K_max ∈ {16, 64}` ×
+  balanced/unbalanced — 40 configurations, zero violations;
+- 2:1 balance fixed point + property; V-class admissibility (separated
+  offset, near parent, Chebyshev reach ≤ 3/7) on every emitted V pair;
+- uniform-limit parity vs an independent `025` first-separated-ancestor
+  implementation, both radii — exact list equality, W/X empty;
+- per-cell σ gate: `031a` cutoff-coverage contract (every pair with
+  `r ≤ ρ_t σ_src` lands in U) holds with zero violations across uniform /
+  heterogeneous (2-decade) / one-fat-core σ fields, with demotion active
+  and coverage still exact-once;
+- M2T/S2L scalar convergence to the analytic potential with
+  self-contained Gumerov-form harmonics at `P = 4/8/12` (P=4 coverage
+  invariant): relative errors ~1e-8 / ~1e-14 / ~1e-16, confirming the
+  documented sign/conjugation rules numerically;
+- capacity bounds respected in every configuration; `008d` bound
+  monotonicity at `P = 4` and `P = 8`.
+
+Counted cost-model headline (equal worst-cell population `max|A|`, the GPU
+fat-cell metric): multiscale100 `q=3` **7.8×** less modeled work than the
+uniform grid (`q=12`: **20.7×**), filament `q=3` **5.1×**; uniform-cube
+non-regression is *exact row equality* (adaptive collapses to the uniform
+grid's own depth).
+
+Open items / notes for the approval agent:
+
+- The E2-subsumption observation (per-cell gate naturally replaces the
+  global adequacy mechanism) is logged in the overnight decision log; the
+  held E2 disposition item remains open for the user per standing rule.
+- W/X entries deeper than one level under occupancy pruning are a
+  deliberate, proven-correct deviation from the classic complete-tree
+  statement; capacity formulas do not assume the one-level property.
+- LH vortex S2L channel content is defined structurally (production B2M
+  strength-to-channel map on irregular harmonics) with the exact
+  M2L∘P2M point-source oracle mandated as a `040` parity test; no
+  theory-level numerical LH check was run (stdlib scope).
 
 Scoped derivation row: `theory/`, `scripts/`, `data/` artifacts only; does not
 reopen the Theory Phase hard gate and does not re-block any completed row.

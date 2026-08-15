@@ -1,0 +1,7 @@
+adaptive_octree_verify.jl — ALL CHECKS PASS
+n = 3000 per case, ell_max = 8, rho_t = 4.789
+cases: uniform, multiscale30, multiscale100, filament, adversarial
+checks: exact-once (q = 3, 12; balanced + unbalanced), 2:1 balance
+fixed point, V-class admissibility, classic-limit W/X one-level,
+uniform-limit 025 parity, per-cell sigma gate 031a contract,
+capacity bounds, P = 4 / P = 8 bound monotonicity.
