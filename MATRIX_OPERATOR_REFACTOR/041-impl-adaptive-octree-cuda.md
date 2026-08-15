@@ -200,3 +200,75 @@ replaces). Revisit only if a uniform-path consumer actually needs ℓ > 8.
 7. Bare-default `CUDARadixLifecycleOptions` are rejected by the device
    build (pre-existing behavior, applies to uniform too); the measurement's
    concat rows select `ConcatenatedFixedZM2L` explicitly, as the tests do.
+
+## Clear-Context Approval (2026-08-15 16:35 MDT)
+
+**Verdict: APPROVED.** Independent clear-context review per START_HERE
+§Routine task protocol item 6, commit range `69ac964`…`ae0d9cb`.
+
+Evidence checked (verified, not trusted):
+
+1. **Objectives-consistency** — every START_HERE 041 row item delivered:
+   device construction/refresh as flag/scan/compact; sorted-Morton
+   binary-search occupancy with the ℓ≤8 cap decision explicitly recorded
+   (adaptive path uncapped, ran ell_max=10; uniform `node_at` deliberately
+   untouched with a sound risk rationale); device M2T/S2L; occupancy-epoch
+   caching; 023 counter/zero-alloc parity; H200 before/after on all three
+   cases; default-selection recommendation routed to 042 with no production
+   default changed. The acceptance clause's "documented as multi-scale-only"
+   branch is properly exercised for the wake regime.
+2. **Correctness** — the Jacobi-balance argument is a valid least-fixed-point
+   claim (the mark kernel's 8 touching parent-level cells cover
+   face/edge/corner coarse neighbors; splits are monotone and only of leaves
+   forced by the unique 2:1 closure) and is empirically pinned by EXACT
+   structural parity vs the host 039 tree on 24 configs including
+   `n_balance_splits` (jobs 13180242/13180243). Exact-once transfers from
+   039's brute-force proof via U/V/W/X pair-set and V-CSR multiset equality.
+   The 025 phase-table sticky-demotion invariant is enforced on device
+   (violation flag + loud host assert, `src/tree_batched_cuda.jl:1363`).
+   No new operator tables: the adaptive M2L drives the UNCHANGED resident
+   plans; the single shared-path touch is the duck-typed `hctx` parameter of
+   `_cuda_hier_dense_apply_routes!` (reads `first_m2l_level` + scales only).
+3. **Tolerance widening** — genuine latent-upstream finding, not a 041
+   regression: A/B job 13180628 (sacct COMPLETED 0:0) fails the pre-041 tree
+   at `981f7ff` identically (same two asserts); deltas 3.0e-7–9.9e-7 vs the
+   old 1e-9/1e-7 pair; widened Float64 pair (1e-6, 5e-6) retains ~5–10×
+   margin over the observed drift and stays 2–3 orders below the Float32
+   pair and the physical gate; in-file documentation is complete and the
+   restoration follow-up is recorded.
+4. **Performance methodology** — measurement script pre-registered in
+   `69ac964` (10:58) before any submission (11:01); every failed/resubmitted
+   job and both protocol-neutral amendments logged with root causes; jobs
+   13180243/13180628/13180706/13182172 independently sacct-verified
+   COMPLETED 0:0 on m13h-1-1. CSV of record cross-checked: all headline
+   ratios reproduce (multiscale 259.0/138.2 = 1.87× step, 151.2/50.1 =
+   3.02× life, 3.1× memory; cube 1.11×; wake 129.9/164.4 = 1.27× SLOWER —
+   honestly recorded, mechanism plausible: uniform ℓ6 wake u_pairs 6.69e9
+   is absorbed by the tuned fused-dense/warp-per-pair device kernels that
+   the host lacks); popmax = K_max on every adaptive row; 96/96 rows ok,
+   max velocity error 6.584e-4 ≤ 1e-3; Float32 and n=1e5 claims match.
+5. **Robustness** — 608/608 device tests: P=4+P=8, F64+F32, LH vortex,
+   strategies, guards (S2L body-type on host+device per the 040 approval
+   item; device split-veto), counters, epoch fast path, warmed
+   `CUDA.@allocated == 0`, uniform-device smoke; full uniform CUDA suites
+   green in the measurement jobs.
+6. **Minimal invasiveness** — diff surface confined to the new
+   `tree_batched_cuda.jl`, the adaptive section of
+   `translate_batched_cuda.jl`, `DeviceAdaptiveCUDAContext` in
+   `containers.jl`, the guard block in `translate_batched_resident.jl`, and
+   tests/scripts/data/logs; placement rules honored; package loads locally.
+7. **Readability** — file-head design narratives and per-kernel comments are
+   exemplary; the decision log is a complete, timestamped reconstruction.
+
+NOTED items (non-blocking, all already recorded by the lead): split veto
+unimplemented on device (default OFF, pending ratification); frozen-leaf-set
+refresh, per-n K/depth sweep, graph-engagement instrumentation, and
+stage-slab chunking carried to 041a; the 037e/f-era parity-drift
+disposition + tight-tolerance restoration is a user-ratification follow-up
+upstream of 041; bare-default `CUDARadixLifecycleOptions` device rejection
+is pre-existing behavior worth a friendlier error in a later maintenance
+pass.
+
+No required changes. Row 041 marked Approved in START_HERE.md. Campaign
+PAUSES for user review per the 2026-08-15 15:58 MDT directive — 041a/042
+are not launched.

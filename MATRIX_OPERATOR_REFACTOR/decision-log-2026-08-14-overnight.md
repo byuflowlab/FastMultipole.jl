@@ -1034,3 +1034,23 @@ Design decisions of record (overnight/user-absent; all in-scope):
   parity drift follow-up (tolerances widened, documented), wake-regime
   default recommendation for 042, 041a items (per-n K/depth sweep, frozen-
   set refresh lever, graph-engagement profiling, stage-slab chunking).
+
+## 2026-08-15 16:35 MDT — 041 clear-context APPROVED
+
+- Independent clear-context review of `69ac964`…`ae0d9cb`: **APPROVED**, no
+  required changes. Verified (not trusted): CSV-of-record cross-check of all
+  headline ratios/counts/gate (96/96 ok, max 6.6e-4; multiscale 1.87×/3.02×/
+  3.1× mem; cube 1.11×; wake 1.27× slower honestly recorded; popmax=K_max;
+  wake u_pairs 9.39e8 vs 6.69e9/4.36e10); sacct re-verification of jobs
+  13180243/13180628/13180706/13182172 (all COMPLETED 0:0, m13h-1-1);
+  pre-registration order (script in 69ac964 10:58, first submission 11:01);
+  Jacobi-balance least-fixed-point argument + exact 24-config structural
+  parity; device 025 phase-table assert; no new operator tables (single
+  duck-typed hctx touch on the shared dense apply); guard block; the
+  latent-drift tolerance widening judged genuine (pre-041 A/B) and still
+  meaningfully tight (1e-6/5e-6 vs 3.0e-7–9.9e-7 observed); diff surface
+  minimal; package loads locally. Noted (non-blocking): items already
+  recorded by the lead (veto, 041a levers, 037e/f drift disposition,
+  bare-default device rejection ergonomics).
+- START_HERE row 041 marked Approved. Per the 2026-08-15 15:58 MDT user
+  directive the campaign now PAUSES for user review; 041a/042 not launched.
