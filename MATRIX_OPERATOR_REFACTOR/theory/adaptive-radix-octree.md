@@ -279,11 +279,19 @@ Every emitted V pair $(A,B)$ at level $\ell$ satisfies, by Invariant 2 and
 the far test:
 
 $$
-o = c_B - c_A \notin N_{q_\ell},
+o = c_A - c_B \notin N_{q_\ell},
 \qquad
 p = \operatorname{fld}(u+o,2) \in N_{q_{\ell-1}},
 \quad u = c_B \bmod 2 \ \text{(source phase)},
 $$
+
+(Orientation note, corrected on the `039` touch per the `038` re-approval
+review: the phase identity holds for $o = c_T - c_S = c_A - c_B$ paired
+with the *source* phase $u = c_B \bmod 2$ — writing $c_B = 2p_B + u$ gives
+$p_A - p_B = \operatorname{fld}(c_B + o, 2) - p_B = \operatorname{fld}(u+o,2)$
+— matching the `025` definition $o = T - S$. Set-level membership is
+orientation-independent because $N_q = -N_q$ and the phase-table family is
+closed under the push/pull bijection, so no downstream claim changes.)
 
 which is precisely the `025` source-major phase-table membership
 $V_{\rm push}(u)$. Therefore:
@@ -753,6 +761,21 @@ it must not veto *balance* splits (balance keeps priority; demotion covers
 any resulting inadmissible geometry). Recommended default: veto ON for
 population splits, OFF for balance splits, with the demotion gate always
 armed.
+
+**Implementation note (039 measurement, pending user ratification).** The
+veto as displayed keys on the cell's *own subtree* $\sigma_{\max}$, so a
+single fat-$\sigma$ body vetoes every one of its ancestors' population
+splits up to the root: on the one-fat-core field ($n=1500$,
+$\sigma=3\times10^{-4}$ background plus one $0.15$, $\rho_t=4.789$) the
+$q=3$ tree ($g_{\min}=1$) collapses to a single root leaf — globally
+direct, the very pathology §5 exists to remove — while $q=12$
+($g_{\min}=\sqrt5$) only coarsens locally (411 vs 424 leaves). Sticky
+demotion alone reproduces the cost-locality claim (116/183 demotions at
+$q=3/12$, exact-once and §5.3 contract intact). Row `039` therefore ships
+the veto **default OFF** (`AdaptiveTreePolicy(split_veto=...)`), retained
+as an option for spatially smooth $\sigma$ fields; a locality-limited
+veto (population- or quantile-bounded) is a candidate re-derivation if
+measurement in `040` justifies it.
 
 **Recorded alternative (user decision required to adopt).** The far-field
 work sticky demotion forgoes could be recovered *without* new operator

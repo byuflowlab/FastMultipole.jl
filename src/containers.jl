@@ -530,6 +530,240 @@ mutable struct HostHierarchicalM2LContext{O<:RadixLevelOccupancy,A}
     m2l_level_ns::Vector{UInt64}
 end
 
+#------- adaptive radix octree (Matrix Operator Refactor, tasks 038/039) -------#
+
+"""
+    AdaptiveTreePolicy(; K_max=64, ell_max=8, near_radius2=5, balance=true,
+        split_veto=false, rho_t=0.0, sigma_row=0, beta_balance=2.0,
+        node_capacity=0, u_capacity=0, v_capacity=0, wx_capacity=0)
+
+Opt-in policy for the 2:1-balanced adaptive Morton octree of
+`theory/adaptive-radix-octree.md` (task 038), implemented on the host by task
+039. The uniform-depth radix grid remains the production default; nothing about
+`RadixFMMCache` behavior changes unless this policy is passed explicitly.
+
+- `K_max`: leaf split threshold — a node splits while its population exceeds
+  `K_max` and its level is below `ell_max`.
+- `ell_max`: depth cap (`<= 21`, the `RADIX_GRID_MAX_ELL` UInt64 Morton
+  limit); bodies are quantized once at this depth and every coarser level is a
+  key prefix.
+- `near_radius2`: the constant squared lattice near radius `q` (theory §2.1);
+  the same supported set as [`HierarchicalRigidStencil`](@ref). The adaptive
+  path uses one constant radius at every level (a non-increasing level
+  schedule is a recorded deferral, not implemented here).
+- `balance`: run the §1.4 Sundar-style 2:1 balance sweep (correctness never
+  depends on it; it is a performance/regularity device).
+- `split_veto`: veto *population* splits whose children could not clear the
+  regularization cutoff for the cell's own sources (theory §5.4). Balance
+  splits are never vetoed. Only active when the σ gate is armed.
+  **Default OFF** — a measured deviation from the theory's recommended
+  default: the literal §5.4 rule keys on the cell's own subtree `σ_max`, so a
+  single fat-σ body vetoes every one of its ancestors' splits up to the root
+  and the one-fat-core field collapses to a single root leaf (global direct),
+  reproducing the very pathology the per-cell gate exists to remove. Sticky
+  demotion alone (always armed with the gate) provides the theory's
+  cost-locality; the veto stays available for σ fields that are smooth in
+  space (e.g. `CoreSpreading`-grown wakes), pending 040 measurement and user
+  ratification.
+- `rho_t`/`sigma_row`: per-cell geometry gate (theory §5). `rho_t > 0` arms
+  the sticky-demotion gate whenever per-body σ values are supplied;
+  `sigma_row > 0` tells the `RadixFMMCache` integration which packed source
+  row carries σ. `rho_t == 0` disables the gate entirely.
+- `beta_balance`: balance allowance factor of the theory §6.4 node capacity.
+- `node_capacity`/`u_capacity`/`v_capacity`/`wx_capacity`: explicit capacity
+  overrides; `0` selects the theory §6.4 formulas (with hard occupancy caps).
+  Capacity violation at refresh is a loud error, never a silent realloc
+  (the `RadixFMMCache` invariant style).
+"""
+struct AdaptiveTreePolicy
+    K_max::Int
+    ell_max::Int
+    near_radius2::Int
+    balance::Bool
+    split_veto::Bool
+    rho_t::Float64
+    sigma_row::Int
+    beta_balance::Float64
+    node_capacity::Int
+    u_capacity::Int
+    v_capacity::Int
+    wx_capacity::Int
+    function AdaptiveTreePolicy(; K_max::Integer=64, ell_max::Integer=8,
+            near_radius2::Integer=RADIX_DEFAULT_NEAR_RADIUS2,
+            balance::Bool=true, split_veto::Bool=false,
+            rho_t::Real=0.0, sigma_row::Integer=0,
+            beta_balance::Real=2.0, node_capacity::Integer=0,
+            u_capacity::Integer=0, v_capacity::Integer=0,
+            wx_capacity::Integer=0)
+        K_max >= 1 || throw(ArgumentError("AdaptiveTreePolicy K_max must be >= 1"))
+        2 <= ell_max <= RADIX_GRID_MAX_ELL || throw(ArgumentError(
+            "AdaptiveTreePolicy ell_max must lie in 2:$(RADIX_GRID_MAX_ELL)"))
+        q = _validate_rigid_near_radius2(near_radius2, "AdaptiveTreePolicy")
+        rho_t >= 0 || throw(ArgumentError("AdaptiveTreePolicy rho_t must be >= 0"))
+        sigma_row >= 0 || throw(ArgumentError("AdaptiveTreePolicy sigma_row must be >= 0"))
+        beta_balance >= 1 || throw(ArgumentError(
+            "AdaptiveTreePolicy beta_balance must be >= 1"))
+        for (name, cap) in (("node", node_capacity), ("u", u_capacity),
+                ("v", v_capacity), ("wx", wx_capacity))
+            cap >= 0 || throw(ArgumentError(
+                "AdaptiveTreePolicy $(name)_capacity must be >= 0 (0 = auto)"))
+        end
+        return new(Int(K_max), Int(ell_max), q, balance, split_veto,
+            Float64(rho_t), Int(sigma_row), Float64(beta_balance),
+            Int(node_capacity), Int(u_capacity), Int(v_capacity),
+            Int(wx_capacity))
+    end
+end
+
+"""
+Capacity-sized host adaptive Morton octree (task 039, theory §1). Leaves appear
+at multiple levels: a node splits while its population exceeds `policy.K_max`
+below the depth cap, followed by the optional §1.4 2:1 balance sweep. The final
+node table is **level-major and Morton-key-sorted within each level** — the
+same `level_offsets` convention as the uniform radix path
+(`level_offsets[L + 2] - level_offsets[L + 1]` nodes at level `L`) — so the
+per-level machinery (M2M/L2L stage grouping, node lookup) carries over.
+
+The root cube (`x_min`, `h0`), depth cap, and all capacities are fixed for the
+tree lifetime; [`update_adaptive_tree!`](@ref) rebuilds everything else in
+place with zero allocation (the task 023 invariant contract).
+
+Internal-node body ranges are subtree ranges (`node_lo:node_hi` into `perm`);
+`child_ranges[:, i] == (first_child, n_children)` with children contiguous in
+the next level block; `child_ranges[2, i] == 0` marks a leaf. `node_sigma_max`
+holds the per-node subtree σ maximum (theory §5.2) when the gate is armed.
+"""
+mutable struct AdaptiveRadixTree{TF}
+    policy::AdaptiveTreePolicy
+    x_min::SVector{3,TF}
+    h0::TF
+    max_n_bodies::Int
+    node_capacity::Int
+    split_stack_capacity::Int
+    gate_gmin::Float64
+    # per-body arrays (capacity max_n_bodies; valid prefix 1:n_bodies)
+    body_keys::Vector{UInt64}
+    body_system::Vector{Int}
+    body_index::Vector{Int}
+    perm::Vector{Int}
+    invperm::Vector{Int}
+    sort_scratch::Vector{Int}
+    sort_counts::Vector{Int}
+    sort_offsets::Vector{Int}
+    body_sigma::Vector{TF}
+    # construction pool (append order; capacity node_capacity)
+    pool_level::Vector{Int32}
+    pool_key::Vector{UInt64}
+    pool_lo::Vector{Int}
+    pool_hi::Vector{Int}
+    pool_parent::Vector{Int32}
+    pool_child_first::Vector{Int32}
+    pool_child_count::Vector{Int32}
+    pool_leaf::Vector{Bool}
+    split_stack::Vector{Int32}
+    # balance + finalize scratch (capacity node_capacity)
+    scratch_keys::Vector{UInt64}
+    scratch_ids::Vector{Int32}
+    scratch_perm::Vector{Int}
+    scratch_sort::Vector{Int}
+    leaf_sorted_start::Vector{UInt64}
+    leaf_sorted_id::Vector{Int32}
+    balance_mark::Vector{Bool}
+    node_of_pool::Vector{Int32}
+    final_to_pool::Vector{Int32}
+    pool_by_level::Vector{Int32}
+    level_cursor::Vector{Int}
+    # final level-major node table (capacity node_capacity; prefix 1:n_nodes)
+    node_levels::Vector{Int32}
+    node_keys::Vector{UInt64}
+    node_coords::Matrix{Int32}
+    node_centers::Matrix{TF}
+    node_lo::Vector{Int}
+    node_hi::Vector{Int}
+    parent_index::Vector{Int32}
+    child_ranges::Matrix{Int32}
+    leaf_index::Vector{Int32}
+    node_sigma_max::Vector{TF}
+    level_offsets::Vector{Int}
+    # step state
+    n_bodies::Int
+    n_pool::Int
+    n_nodes::Int
+    n_leaves::Int
+    n_balance_splits::Int
+    sigma_armed::Bool
+    built::Bool
+    step::Int
+end
+
+"""
+Capacity-sized U/V/W/X interaction lists over an [`AdaptiveRadixTree`](@ref)
+(task 039, theory §2). V lists are emitted in the existing hierarchical
+`(level, offset)` class format — the same five parallel arrays
+(`route_levels`, `route_offsets`, `route_targets`, `route_sources`,
+`route_class`) with the production class numbering
+`(L - first_m2l_level) * noffsets + k` over the task-025
+`RigidHierarchicalTables` push-offset union — and are additionally
+class-partitioned by the CSR `class_starts` (routes of class `c` occupy
+`class_starts[c]:class_starts[c + 1] - 1`), the layout the windowed resident
+M2L strategies consume. U/W/X endpoints are **flat adaptive node indices**
+(leaves live at multiple levels, so the uniform path's leaf-cell-index direct
+convention does not apply; row 040 consumes node body ranges directly).
+
+Emission follows the theory §2.2 dual-tree recursion with the §5 sticky
+per-cell σ demotion gate; every emitted V pair is checked against the 025
+phase-table membership at emission time (an invariant, enforced loudly).
+"""
+mutable struct AdaptiveInteractionLists
+    near_radius2::Int
+    ell_max::Int
+    first_m2l_level::Int
+    noffsets::Int
+    nclasses::Int
+    tables::RigidHierarchicalTables
+    level_class_of::Array{Int32,3}
+    class_level::Vector{Int32}
+    class_offset::Matrix{Int32}
+    effective_offsets::Vector{SVector{3,Int}}
+    offset_lut::Array{Int32,3}
+    lut_reach::Int
+    # capacities
+    u_capacity::Int
+    v_capacity::Int
+    wx_capacity::Int
+    pair_stack_capacity::Int
+    # V route stream (production class format, class-partitioned)
+    route_levels::Vector{Int}
+    route_offsets::Matrix{Int}
+    route_targets::Vector{Int}
+    route_sources::Vector{Int}
+    route_class::Vector{Int32}
+    class_starts::Vector{Int}
+    # staging + scratch for the class counting sort
+    vstage_targets::Vector{Int32}
+    vstage_sources::Vector{Int32}
+    vstage_class::Vector{Int32}
+    class_counts::Vector{Int}
+    # U/W/X lists (flat adaptive node indices)
+    u_targets::Vector{Int}
+    u_sources::Vector{Int}
+    w_targets::Vector{Int}
+    w_sources::Vector{Int}
+    x_targets::Vector{Int}
+    x_sources::Vector{Int}
+    # dual-tree recursion stack
+    stack_target::Vector{Int32}
+    stack_source::Vector{Int32}
+    stack_demoted::Vector{Bool}
+    # counts
+    n_routes::Int
+    n_u::Int
+    n_w::Int
+    n_x::Int
+    n_demoted::Int
+    step::Int
+end
+
 """
 Device mirror of [`HostHierarchicalM2LContext`](@ref) (task 027).  It owns the
 step-invariant task-025 stencil tables uploaded once at construction, the
@@ -2100,6 +2334,12 @@ mutable struct RadixFMMCache{TF,LH}
     n_systems::Int
     built::Bool
     step::Int
+    # opt-in adaptive octree (task 039): `nothing` unless an AdaptiveTreePolicy
+    # was passed at construction. Host-only until row 041; the uniform lifecycle
+    # above is unchanged — rows 040+ wire consumption.
+    adaptive::Any                   # AdaptiveTreePolicy or nothing
+    adaptive_tree::Any              # AdaptiveRadixTree{TF} or nothing
+    adaptive_lists::Any             # AdaptiveInteractionLists or nothing
 end
 
 function RadixStepCounts(source_bodies, cell_ranges, multipoles::FlatCoefficientBuffer,

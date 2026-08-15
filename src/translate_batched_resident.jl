@@ -2243,7 +2243,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         near_radius2::Union{Nothing,Integer}=nothing,
         level_radii2=nothing,
         window_classes::Union{Nothing,Integer}=nothing,
-        policy::Union{Nothing,ConstantPAnalyticStencil,HierarchicalRigidStencil}=nothing)
+        policy::Union{Nothing,ConstantPAnalyticStencil,HierarchicalRigidStencil}=nothing,
+        adaptive::Union{Nothing,AdaptiveTreePolicy}=nothing)
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
     _assert_radix_targets_are_sources(targets, sources)
@@ -2405,6 +2406,25 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     end
     _assert_device_kernel_policy(device, dk, hierarchical)
 
+    # Opt-in adaptive octree (task 039): host-only, cubic-domain-only in this
+    # row; refreshed alongside the uniform structures by update_radix_state!.
+    # The uniform lifecycle is untouched — rows 040+ wire consumption.
+    if adaptive !== nothing
+        device && throw(ArgumentError(
+            "the adaptive octree is host-only until row 041; construct with " *
+            "device=false or drop the adaptive policy"))
+        ell_axes == SVector(Int(ell), Int(ell), Int(ell)) || throw(ArgumentError(
+            "the adaptive octree requires a cubic Morton domain in task 039; " *
+            "rectangular ell_axes support is a recorded deferral"))
+        if adaptive.sigma_row > 0
+            for system in sources
+                adaptive.sigma_row <= data_per_body(system) || throw(ArgumentError(
+                    "AdaptiveTreePolicy sigma_row=$(adaptive.sigma_row) exceeds " *
+                    "data_per_body=$(data_per_body(system)) for $(typeof(system))"))
+            end
+        end
+    end
+
     if device
         cache = _radix_cache_device_build(sources, P, Int(ell), x_min, h0, maxn,
             options, stencil_policy, accepted, rejected, max_cells, max_nodes,
@@ -2489,6 +2509,10 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
 
     G = 1 << Int(ell)
     source_buffers = Tuple(Matrix{TF}(undef, data_per_body(system), maxn) for system in sources)
+    adaptive_tree = adaptive === nothing ? nothing :
+        _allocate_adaptive_radix_tree(TF, x_min, h0, adaptive, maxn)
+    adaptive_lists = adaptive === nothing ? nothing :
+        AdaptiveInteractionLists(adaptive_tree)
     cache = RadixFMMCache{TF,LH}(
         P, Int(ell), x_min, h0, ell_axes, box_extent, root_level, maxn, device,
         hessian, options, stencil_policy,
@@ -2498,6 +2522,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         zeros(Int, Int(ell) + 2), Vector{UInt64}(undef, maxn), Vector{Int}(undef, maxn),
         zeros(Int, 256), zeros(Int, 256), source_buffers, nothing, nothing,
         length(sources), false, 0,
+        adaptive, adaptive_tree, adaptive_lists,
     )
     update_radix_state!(cache, sources)
     cache.built = true
@@ -2753,7 +2778,8 @@ function recenter!(cache::RadixFMMCache{TF,LH}, systems;
         lamb_helmholtz=LH, hessian=cache.hessian, device=cache.device,
         options=cache.options,
         policy=_recentered_policy(cache.policy, cache.expansion_order,
-            maximum(L_new) / 2, cache.ell, TF, LH))
+            maximum(L_new) / 2, cache.ell, TF, LH),
+        adaptive=cache.adaptive)
     for f in fieldnames(RadixFMMCache)
         setfield!(cache, f, getfield(fresh, f))
     end
@@ -2912,6 +2938,13 @@ function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where 
     counts.n_nodes = n_nodes
     counts.n_routes = n_routes
     counts.n_direct = n_direct
+
+    # opt-in adaptive octree refresh (task 039): rebuilds the adaptive tree and
+    # its U/V/W/X lists in place within capacity; no-op unless the cache was
+    # constructed with an AdaptiveTreePolicy. The uniform structures above are
+    # unaffected.
+    cache.adaptive_tree === nothing || _refresh_adaptive_radix!(cache, systems)
+
     cache.step += 1
     return cache
 end

@@ -999,3 +999,307 @@ function build_radix_interaction_list(strategy::RadixTraversalStrategy,
     sort!(batches; by=batch -> (batch.level, batch.offset[3], batch.offset[2], batch.offset[1]))
     return RadixInteractionList{Int}(batches, direct_pairs)
 end
+
+#------- adaptive octree U/V/W/X interaction lists (task 039) -------#
+#
+# Dual-tree recursion of theory/adaptive-radix-octree.md §2.2-§2.4 over an
+# AdaptiveRadixTree, with the §5.2 STICKY per-cell sigma demotion gate. V lists
+# come out in the existing hierarchical (level, offset) class format —
+# route_levels/route_offsets/route_targets/route_sources/route_class with the
+# production class numbering (L - first_m2l_level) * noffsets + k over the
+# task-025 RigidHierarchicalTables push union — additionally class-partitioned
+# by a CSR (class_starts) via an in-place counting sort, the layout the
+# windowed resident M2L strategies consume. U/W/X endpoints are flat adaptive
+# node indices (leaves live at multiple levels, so the uniform leaf-cell-index
+# direct convention does not apply).
+
+# Mixed-level near predicate (theory §2.1): per-axis clamp distance of the
+# finer cell's coordinate to the coarser cell's tile interval, measured on the
+# finer lattice.
+@inline function _adaptive_axis_clamp(ca::Int, la::Int, cb::Int, lb::Int)
+    k = lb - la
+    a0 = ca << k
+    a1 = ((ca + 1) << k) - 1
+    return cb < a0 ? a0 - cb : (cb > a1 ? cb - a1 : 0)
+end
+
+@inline function _adaptive_isnear(tree::AdaptiveRadixTree, ia::Int, ib::Int, q::Int)
+    la = Int(tree.node_levels[ia])
+    lb = Int(tree.node_levels[ib])
+    ax = Int(tree.node_coords[1, ia]); ay = Int(tree.node_coords[2, ia]); az = Int(tree.node_coords[3, ia])
+    bx = Int(tree.node_coords[1, ib]); by = Int(tree.node_coords[2, ib]); bz = Int(tree.node_coords[3, ib])
+    local dx::Int, dy::Int, dz::Int
+    if la == lb
+        dx = bx - ax; dy = by - ay; dz = bz - az
+    elseif la < lb
+        dx = _adaptive_axis_clamp(ax, la, bx, lb)
+        dy = _adaptive_axis_clamp(ay, la, by, lb)
+        dz = _adaptive_axis_clamp(az, la, bz, lb)
+    else
+        dx = _adaptive_axis_clamp(bx, lb, ax, la)
+        dy = _adaptive_axis_clamp(by, lb, ay, la)
+        dz = _adaptive_axis_clamp(bz, lb, az, la)
+    end
+    return dx * dx + dy * dy + dz * dz <= q
+end
+
+# Squared AABB gap between the two closed cell boxes in finest-lattice units
+# (Delta_min = 2 h0 / 2^ell_max); integer-exact.
+@inline function _adaptive_gap2_lattice(tree::AdaptiveRadixTree, ia::Int, ib::Int,
+        ell_max::Int)
+    la = Int(tree.node_levels[ia])
+    lb = Int(tree.node_levels[ib])
+    sa = 1 << (ell_max - la)
+    sb = 1 << (ell_max - lb)
+    g2 = 0
+    @inbounds for a in 1:3
+        alo = Int(tree.node_coords[a, ia]) * sa
+        blo = Int(tree.node_coords[a, ib]) * sb
+        g = max(alo - (blo + sb), blo - (alo + sa), 0)
+        g2 += g * g
+    end
+    return g2
+end
+
+@inline function _adaptive_pair_push(st::Vector{Int32}, ss::Vector{Int32},
+        sd::Vector{Bool}, sp::Int, cap::Int, a::Int, b::Int, dem::Bool)
+    sp += 1
+    sp <= cap || throw(AssertionError("adaptive dual-tree pair stack overflow"))
+    @inbounds begin
+        st[sp] = Int32(a)
+        ss[sp] = Int32(b)
+        sd[sp] = dem
+    end
+    return sp
+end
+
+"""
+    AdaptiveInteractionLists(tree::AdaptiveRadixTree)
+
+Capacity-sized U/V/W/X list container for `tree` (task 039). Geometry tables
+are the task-025 `RigidHierarchicalTables` at the tree's constant near radius,
+with the production class metadata (`_hierarchical_class_metadata`) over levels
+`2:ell_max` — no new operator tables (theory §2.4). Capacities follow theory
+§6.4 with hard occupancy caps; `AdaptiveTreePolicy` fields override them.
+Populate with [`build_adaptive_interaction_lists!`](@ref).
+"""
+function AdaptiveInteractionLists(tree::AdaptiveRadixTree)
+    p = tree.policy
+    q = p.near_radius2
+    ell_max = p.ell_max
+    tables = RigidHierarchicalTables(q)
+    noffsets = length(tables.push_offsets)
+    first_m2l_level = 2
+    level_class_of = zeros(Int32, 8, noffsets, ell_max + 1)
+    for L in first_m2l_level:ell_max
+        @views level_class_of[:, :, L + 1] .= tables.class_of
+    end
+    class_level, class_offset, effective_offsets =
+        _hierarchical_class_metadata(tables, ell_max, first_m2l_level)
+    nclasses = length(class_level)
+    reach = 2 * isqrt(q) + 1
+    lut = zeros(Int32, 2 * reach + 1, 2 * reach + 1, 2 * reach + 1)
+    for (k, o) in enumerate(tables.push_offsets)
+        lut[o[1] + reach + 1, o[2] + reach + 1, o[3] + reach + 1] = Int32(k)
+    end
+    push_max = maximum(tables.phase_starts[ph + 1] - tables.phase_starts[ph]
+        for ph in 1:8)
+    maxn = tree.max_n_bodies
+    node_cap = tree.node_capacity
+    leaf_cap = min(node_cap, maxn)
+    u_cap = p.u_capacity > 0 ? p.u_capacity :
+        8 * length(tables.near_offsets) * leaf_cap
+    v_cap = p.v_capacity > 0 ? p.v_capacity : push_max * min(node_cap, 4 * maxn)
+    wx_cap = p.wx_capacity > 0 ? p.wx_capacity : u_cap
+    stack_cap = 64 * (2 * ell_max + 2)
+    return AdaptiveInteractionLists(q, ell_max, first_m2l_level, noffsets, nclasses,
+        tables, level_class_of, class_level, class_offset, effective_offsets,
+        lut, reach,
+        u_cap, v_cap, wx_cap, stack_cap,
+        Vector{Int}(undef, v_cap), Matrix{Int}(undef, 3, v_cap),
+        Vector{Int}(undef, v_cap), Vector{Int}(undef, v_cap),
+        Vector{Int32}(undef, v_cap), zeros(Int, nclasses + 1),
+        Vector{Int32}(undef, v_cap), Vector{Int32}(undef, v_cap),
+        Vector{Int32}(undef, v_cap), zeros(Int, nclasses + 1),
+        Vector{Int}(undef, u_cap), Vector{Int}(undef, u_cap),
+        Vector{Int}(undef, wx_cap), Vector{Int}(undef, wx_cap),
+        Vector{Int}(undef, wx_cap), Vector{Int}(undef, wx_cap),
+        Vector{Int32}(undef, stack_cap), Vector{Int32}(undef, stack_cap),
+        Vector{Bool}(undef, stack_cap),
+        0, 0, 0, 0, 0, 0)
+end
+
+"""
+    build_adaptive_interaction_lists!(lists, tree)
+
+Regenerate the U/V/W/X lists in place from the current tree (theory §2.2 DTR,
+§5.2 sticky demotion when the tree's σ gate is armed). Zero allocation;
+capacity violations throw. Every emitted V pair is verified against the
+task-025 phase-table class set at emission time (near geometric parents +
+Chebyshev reach — the sticky-demotion invariant of theory §2.4); the V stream
+is then class-partitioned by an in-place counting sort. Returns `lists`.
+"""
+function build_adaptive_interaction_lists!(L::AdaptiveInteractionLists,
+        tree::AdaptiveRadixTree{TF}) where TF
+    p = tree.policy
+    (L.near_radius2 == p.near_radius2 && L.ell_max == p.ell_max) || throw(ArgumentError(
+        "AdaptiveInteractionLists geometry does not match the tree policy"))
+    tree.n_nodes > 0 || throw(ArgumentError(
+        "build_adaptive_interaction_lists! requires an updated tree"))
+    q = p.near_radius2
+    gate = tree.sigma_armed && p.rho_t > 0
+    rho_t = p.rho_t
+    ell_max = p.ell_max
+    noffsets = L.noffsets
+    reach = L.lut_reach
+    delta_min = 2 * Float64(tree.h0) / (1 << ell_max)
+    delta_min2 = delta_min * delta_min
+    n_u = 0; n_w = 0; n_x = 0; n_v = 0; n_dem = 0
+    st = L.stack_target; ss = L.stack_source; sd = L.stack_demoted
+    cap = L.pair_stack_capacity
+    sp = 1
+    @inbounds begin
+        st[1] = Int32(1); ss[1] = Int32(1); sd[1] = false
+    end
+    @inbounds while sp > 0
+        ia = Int(st[sp]); ib = Int(ss[sp]); dem = sd[sp]
+        sp -= 1
+        la = Int(tree.node_levels[ia])
+        lb = Int(tree.node_levels[ib])
+        near = dem || _adaptive_isnear(tree, ia, ib, q)
+        if !near && gate
+            # per-cell sigma gate on the SOURCE side (031a: rho = r / sigma_src);
+            # a failed pair is demoted STICKILY — its entire descendant pair set
+            # terminates in U (theory §5.2)
+            g2 = _adaptive_gap2_lattice(tree, ia, ib, ell_max)
+            cut = rho_t * Float64(tree.node_sigma_max[ib])
+            if delta_min2 * Float64(g2) < cut * cut
+                near = true
+                dem = true
+                n_dem += 1
+            end
+        end
+        leaf_a = tree.child_ranges[2, ia] == 0
+        leaf_b = tree.child_ranges[2, ib] == 0
+        if !near
+            if la == lb
+                ox = Int(tree.node_coords[1, ia]) - Int(tree.node_coords[1, ib])
+                oy = Int(tree.node_coords[2, ia]) - Int(tree.node_coords[2, ib])
+                oz = Int(tree.node_coords[3, ia]) - Int(tree.node_coords[3, ib])
+                k = (abs(ox) <= reach && abs(oy) <= reach && abs(oz) <= reach) ?
+                    Int(L.offset_lut[ox + reach + 1, oy + reach + 1, oz + reach + 1]) : 0
+                phase = _rigid_phase_index(tree.node_coords[1, ib],
+                    tree.node_coords[2, ib], tree.node_coords[3, ib])
+                (k != 0 && la >= L.first_m2l_level &&
+                        L.level_class_of[phase, k, la + 1] != 0) ||
+                    throw(AssertionError(
+                        "adaptive V pair at level $la offset ($ox,$oy,$oz) lies " *
+                        "outside the task-025 phase-table class set — the sticky " *
+                        "demotion invariant (theory §2.4/§5.2) is violated"))
+                n_v += 1
+                n_v <= L.v_capacity || throw(AssertionError(
+                    "adaptive V route capacity $(L.v_capacity) exceeded; raise " *
+                    "AdaptiveTreePolicy v_capacity"))
+                L.vstage_targets[n_v] = Int32(ia)
+                L.vstage_sources[n_v] = Int32(ib)
+                L.vstage_class[n_v] = Int32((la - L.first_m2l_level) * noffsets + k)
+            elseif la < lb
+                leaf_a || throw(AssertionError(
+                    "adaptive DTR invariant: the coarser member of a W pair must be a leaf"))
+                n_w += 1
+                n_w <= L.wx_capacity || throw(AssertionError(
+                    "adaptive W list capacity $(L.wx_capacity) exceeded; raise " *
+                    "AdaptiveTreePolicy wx_capacity"))
+                L.w_targets[n_w] = ia
+                L.w_sources[n_w] = ib
+            else
+                leaf_b || throw(AssertionError(
+                    "adaptive DTR invariant: the coarser member of an X pair must be a leaf"))
+                n_x += 1
+                n_x <= L.wx_capacity || throw(AssertionError(
+                    "adaptive X list capacity $(L.wx_capacity) exceeded; raise " *
+                    "AdaptiveTreePolicy wx_capacity"))
+                L.x_targets[n_x] = ia
+                L.x_sources[n_x] = ib
+            end
+        else
+            if leaf_a && leaf_b
+                n_u += 1
+                n_u <= L.u_capacity || throw(AssertionError(
+                    "adaptive U list capacity $(L.u_capacity) exceeded; raise " *
+                    "AdaptiveTreePolicy u_capacity"))
+                L.u_targets[n_u] = ia
+                L.u_sources[n_u] = ib
+            elseif la == lb
+                if leaf_a
+                    c0 = Int(tree.child_ranges[1, ib])
+                    for jb in c0:(c0 + Int(tree.child_ranges[2, ib]) - 1)
+                        sp = _adaptive_pair_push(st, ss, sd, sp, cap, ia, jb, dem)
+                    end
+                elseif leaf_b
+                    c0 = Int(tree.child_ranges[1, ia])
+                    for ja in c0:(c0 + Int(tree.child_ranges[2, ia]) - 1)
+                        sp = _adaptive_pair_push(st, ss, sd, sp, cap, ja, ib, dem)
+                    end
+                else
+                    a0 = Int(tree.child_ranges[1, ia])
+                    b0 = Int(tree.child_ranges[2, ia])
+                    c0 = Int(tree.child_ranges[1, ib])
+                    d0 = Int(tree.child_ranges[2, ib])
+                    for ja in a0:(a0 + b0 - 1), jb in c0:(c0 + d0 - 1)
+                        sp = _adaptive_pair_push(st, ss, sd, sp, cap, ja, jb, dem)
+                    end
+                end
+            elseif la < lb
+                leaf_a || throw(AssertionError(
+                    "adaptive DTR invariant: the coarser member of a mixed pair must be a leaf"))
+                c0 = Int(tree.child_ranges[1, ib])
+                for jb in c0:(c0 + Int(tree.child_ranges[2, ib]) - 1)
+                    sp = _adaptive_pair_push(st, ss, sd, sp, cap, ia, jb, dem)
+                end
+            else
+                leaf_b || throw(AssertionError(
+                    "adaptive DTR invariant: the coarser member of a mixed pair must be a leaf"))
+                c0 = Int(tree.child_ranges[1, ia])
+                for ja in c0:(c0 + Int(tree.child_ranges[2, ia]) - 1)
+                    sp = _adaptive_pair_push(st, ss, sd, sp, cap, ja, ib, dem)
+                end
+            end
+        end
+    end
+    # class-partition the V stream (counting sort by global class): routes of
+    # class c occupy class_starts[c]:class_starts[c + 1] - 1, level-major then
+    # canonical offset order — the batch layout the resident M2L strategies
+    # consume.
+    cc = L.class_counts
+    fill!(cc, 0)
+    @inbounds for i in 1:n_v
+        cc[Int(L.vstage_class[i]) + 1] += 1
+    end
+    L.class_starts[1] = 1
+    @inbounds for c in 1:L.nclasses
+        L.class_starts[c + 1] = L.class_starts[c] + cc[c + 1]
+    end
+    @inbounds for c in 1:L.nclasses
+        cc[c] = L.class_starts[c]
+    end
+    @inbounds for i in 1:n_v
+        c = Int(L.vstage_class[i])
+        pos = cc[c]
+        cc[c] = pos + 1
+        L.route_targets[pos] = Int(L.vstage_targets[i])
+        L.route_sources[pos] = Int(L.vstage_sources[i])
+        L.route_class[pos] = Int32(c)
+        L.route_levels[pos] = Int(L.class_level[c])
+        L.route_offsets[1, pos] = Int(L.class_offset[1, c])
+        L.route_offsets[2, pos] = Int(L.class_offset[2, c])
+        L.route_offsets[3, pos] = Int(L.class_offset[3, c])
+    end
+    L.n_routes = n_v
+    L.n_u = n_u
+    L.n_w = n_w
+    L.n_x = n_x
+    L.n_demoted = n_dem
+    L.step += 1
+    return L
+end
