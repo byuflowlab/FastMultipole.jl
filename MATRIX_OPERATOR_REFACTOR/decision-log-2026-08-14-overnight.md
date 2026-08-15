@@ -935,3 +935,21 @@ Design decisions of record (overnight/user-absent; all in-scope):
   n 1e5/1e6 × F64/F32 × concat/dense × adaptive K 64/128 vs uniform
   ell 5/6, per-stage refresh breakdown, memory, counts, sampled-direct
   accuracy; same-job anchors).
+
+## 2026-08-15 12:29 MDT — 041 measurement resubmission (job 13180510)
+
+- Job **13180348** FAILED at gate 2 (uniform non-regression): 2 failures in
+  the EXISTING cuda_radix_interface_test host-vs-device RegularizedVortex
+  parity (max-abs hessian delta 3.0e-7 vs htol 1e-7). NOT a 041 regression:
+  this is the first hardware run of that suite since the user-approved 037f
+  default flip (CUDA_NEARFIELD_GH_MODE = :fp32, commit bf2eccb, landed AFTER
+  H200 job 13170769 ran the suite green) — device g/h now computes in
+  Float32 with documented ~1e-7-scale max-abs deltas. Gate 1 (all 608
+  adaptive tests) PASSED again in this job.
+- Fix (test-only, protocol-neutral, latent-037f follow-up fixed in passing):
+  the parity comparison pins the :shipped control mode — 037f's documented
+  opt-out — around the device evaluation, preserving the original
+  implementation-parity intent at the tight tolerances; the :fp32 default
+  itself is untouched and remains covered by 037f's own mode tests.
+- Committed before resubmission; snapshot resynced. Resubmitted as job
+  **13180510**.
