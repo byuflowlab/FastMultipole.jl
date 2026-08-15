@@ -1017,9 +1017,11 @@ and does not import or mutate production FastMultipole code.
 - `040` (host lifecycle): §2.6 pipeline; M2T/S2L kernels per §4 with the
   M2L-composition oracles as parity tests ($\phi$+$\chi$, both
   precisions, $P=4$ and $P=8$); §5 gate with *sticky* demotion default-on
-  (the §5.4 re-admission alternative only after user ratification),
-  split-veto default-on for population splits; accuracy gates per the
-  phase contract.
+  (the §5.4 re-admission alternative only after user ratification);
+  split-veto default **OFF** per the §5.4 implementation note (the `039`
+  measured deviation, pending user ratification — corrected here on the
+  `040` touch; an earlier draft of this line said default-on); accuracy
+  gates per the phase contract.
 - `041` (CUDA): §1.2/§2.7 as flag/scan/compact kernels; sorted-key binary
   search replaces the dense $\Sigma 8^L$ occupancy table (record whether
   this lifts the uniform path's $\ell\le8$ cap); §7 epochs.

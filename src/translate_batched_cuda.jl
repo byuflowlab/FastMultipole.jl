@@ -5972,7 +5972,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         nothing, zeros(Int32, 0, 0, 0), SVector{3,Int}[], zeros(Int, ell + 2),
         UInt64[], Int[], Int[], Int[], nothing, nothing, ctx,
         length(sources), false, 0,
-        nothing, nothing, nothing,   # adaptive octree is host-only (task 039; CUDA is row 041)
+        nothing, nothing, nothing, nothing,   # adaptive octree is host-only (tasks 039/040; CUDA is row 041)
     )
     update_cuda_radix_state!(cache, sources)
     return cache

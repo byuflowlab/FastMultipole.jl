@@ -442,3 +442,148 @@ NOTED (non-blocking, recorded in the task-file approval block): (1) theory
 fix on next theory touch. (2) the K_max population test's
 `|| n_balance_splits > 0` escape is weaker than needed. (3) W/X duality
 is correctly asserted only ungated (source-side σ is asymmetric).
+
+## 2026-08-14 20:39 MDT — 040 lead agent start
+
+- 040 lead agent started (039 Done+Approved 20:37). Read START_HERE
+  (protocol + 040 row), this log, the 040 task file, the full theory doc
+  `theory/adaptive-radix-octree.md`, and the 039 surfaces in full
+  (containers adaptive types, `tree_batched.jl` adaptive section,
+  `interaction_list_batched.jl` DTR + CSR, `test/adaptive_octree_test.jl`).
+  Host resident-lifecycle surface mapping delegated to an Explore subagent.
+- Binding constraints re-confirmed from the brief: sticky demotion is the
+  approved gate; option (b) NOT implemented; split veto stays default OFF;
+  theory §9 stale "split-veto default-on" to be fixed on this touch; LH
+  vortex S2L numerical parity (M2L∘P2M oracle) is due in this row; V-list
+  M2L consumes the existing resident strategies/tables UNCHANGED; host-only;
+  no production default changes; zero per-step allocation on the adaptive
+  path; P=4+P=8, Float64+Float32, velocity RMS ≤ 1e-3 on cube/wake/
+  multi-scale; uniform-limit lifecycle parity.
+- Carry-over item DONE: theory §9 stale "split-veto default-on" corrected to
+  default OFF (039 deviation, pending ratification), with an explicit
+  correction note on the 040 touch.
+
+## 2026-08-14 20:55 MDT — 040 design decisions (lead agent)
+
+Full surface map complete (Explore subagent + direct reads of the resident
+pipeline). Design of record, chosen for maximal reuse of the UNCHANGED
+resident strategies/operator tables and minimal invasion:
+
+1. **Adaptive lifecycle = a second capacity-sized `DeviceResidentRadixState`**
+   (host arrays) assembled from the 039 tree+lists, stored in a NEW
+   `RadixFMMCache.adaptive_state::Any` field (struct
+   `AdaptiveResidentLifecycle` in containers.jl). Its `grid` is a genuine
+   `DeviceRadixGrid` mirror of the adaptive node table (level-major layout
+   matches by 039 construction): `node_centers`/`node_keys`/`perm`/
+   `body_system`/`body_index` alias the tree; Int mirrors are refreshed for
+   `node_levels`/`parent_index` (tree stores Int32); leaves are presented as
+   "cells" (`cell_ranges`/`cell_centers`/`leaf_to_node` over `leaf_index`).
+   The adaptive path packs its OWN sorted `source_bodies`/`output` (the
+   adaptive full-depth sort differs from the uniform ℓ-depth sort; sort
+   unification stays an open 039 item, cost priced in 041a).
+2. **Stage reuse.** B2M = `_host_b2m_kernel!`/`_host_b2m_vortex_kernel!`
+   verbatim over adaptive leaves. M2M/L2L = the existing
+   `_resident_capacity_group` + `_refresh_resident_stage_groups!` +
+   `_resident_stage_group_apply!` machinery verbatim (adaptive parent-child
+   radius at child level L is the same `sqrt(3)·h0/2^L` the per-level groups
+   bake in; every non-root node has a parent; empty levels have count 0).
+   ONE new launcher `_launch_adaptive_m2m!` loops the groups WITHOUT the
+   uniform `_zero_resident_nonleaf_multipoles!` prefix zeroing — the uniform
+   prefix rule (nonleaf = first n_nodes−n_cells columns) would zero coarse
+   LEAVES on an adaptive tree; B2M's full-buffer fill makes zeroing
+   unnecessary. L2L reuses `_launch_resident_l2l!` unchanged.
+3. **V-list M2L consumes the existing plans UNCHANGED** via a window driver
+   that mirrors `_launch_hierarchical_resident_m2l!`: the 039 CSR route
+   stream is copied window-by-window into `state.route_*` + `plan.route_class`
+   (global class ids match the plan's `effective_offsets` ordering exactly —
+   both are `_hierarchical_class_metadata` order), then the UNCHANGED
+   `_refresh_dense_m2l_routes!` / `_refresh_precomputed_y_m2l_routes!` /
+   `_launch_hierarchical_concat_window!` launchers run with
+   `clear_locals=false`. No new operator tables; windows may split a class
+   (each window is an independent accumulate). Window capacity
+   `min(v_capacity, 32768)` bounds the concat slabs.
+4. **M2T/S2L kernels** (translate_batched.jl per the task file): per-pair
+   irregular-harmonic evaluation using the validated legacy
+   `irregular_harmonics!` into a preallocated scratch (host single-threaded),
+   with the legacy `evaluate_multipole` (M2T: φ deg-shift + χ same-degree,
+   `008h` χ at P+1) and `test/bodytolocal.jl` `body_to_local_point!` (S2L:
+   scalar `L += −(−1)^{n+m} q conj(S)`, vortex verbatim, χ filled through
+   P_active) formulas ported to the flat resident layout. Sign audit:
+   resident scalar output = −legacy and resident scalar M/L = −legacy, so the
+   legacy formulas port VERBATIM for u, gradient, and hessian; exact
+   M2L-composition oracles (theory §4) gate this in tests. M2T includes the
+   n = P term of the gradient (the legacy `n < P` gate is a legacy truncation
+   quirk; the M2L-composition oracle includes n = P, so M2T must too).
+5. **U-direct** = existing `_host_direct_pairs_functor_kernel!` (inside the
+   reused `_launch_host_l2b!`) over adaptive leaf slots: U node endpoints are
+   mapped through a refreshed `leaf_slot_of` to leaf-cell indices.
+6. **fmm! wiring**: with `adaptive=` armed, the host branch runs the adaptive
+   lifecycle INSTEAD of the uniform one (039's "uniform bit-identical with
+   policy armed" was an explicit stopgap — "rows 040+ wire consumption").
+   `finalize_radix_output!` works verbatim on the adaptive state (it carries
+   the tree's perm metadata). The 039 opt-in test's bit-identity assertion is
+   updated to an accuracy assertion; logged as the intended 040 semantics
+   change of the OPT-IN path only. Production defaults untouched.
+7. **Gate policy**: with adaptive armed, the global
+   `_direct_kernel_geometry_gate!` throw is SKIPPED (the §5 per-cell sticky
+   demotion is the contract enforcer). New construction-time guards:
+   regularized kernels on an adaptive cache REQUIRE the per-cell gate armed
+   (`rho_t >= _gate_reach_rho(kernel)`, `sigma_row > 0`); `TwoPassVortex`/
+   `PartitionedVortex` + adaptive throw (deferral — the twopass deficit sweep
+   enumerates the uniform lattice); `hessian=true` + LH + adaptive throws
+   (the legacy LH multipole hessian is marked broken upstream; W-path LH
+   hessian is a recorded deferral — scalar hessian IS supported).
+8. **Memory note (logged, not fixed tonight)**: workspace `max_batch` and the
+   M2M/L2L stage slabs scale with the max per-level node count (same behavior
+   as the uniform host cache); a chunked group apply is a 041 tightening
+   candidate.
+
+## 2026-08-14 21:29 MDT — 040 implementation green locally (lead agent)
+
+Implementation complete per the 20:55 design; all local verification green.
+
+- **Sign corrections found by the dev oracles** (the design's "legacy formulas
+  port verbatim" audit was wrong in one premise): the resident scalar pipeline
+  carries NO legacy strength negation anywhere (resident direct u = +q/4πr),
+  so (a) M2T returns +u/4π (the legacy evaluate_multipole's −u flip removed;
+  gradient/hessian unchanged) and (b) scalar S2L is
+  `L += +(−1)^{n+m} q conj(S)` (theory §4.2's leading minus is the legacy
+  convention; the resident rule drops it). Both locked machine-exact by the
+  M2L-composition oracles. Vortex ports needed no changes.
+- **Theory §4.2 "exact per-channel oracle" nuance (measured)**: the
+  P2M→M2L composition matches the vortex S2L machine-exactly on φ (all rows)
+  and χ degrees ≤ P, but the χ TOP row (P_active = P+1, the 008h neighbor
+  row) differs at O(1): the M2L's top row carries its own truncated LH row-up
+  mixing while S2L projects it exactly. A physical probe (analytic
+  Biot-Savart at leaf-scale offsets, P=4) shows the two representations are
+  EQUALLY accurate (S2L marginally better: rel err 3.4e-4 vs 4.5e-4 at
+  0.1-offset scale); the difference is truncation-tail content, not error.
+  The parity test therefore asserts machine parity on φ + χ(≤P), evaluated
+  parity + an independent analytic Biot-Savart anchor for the top row. Noted
+  for a future theory-touch caveat on §4.2's "exact" wording.
+- **Local verification**: new `test/adaptive_lifecycle_test.jl` (wired into
+  runtests after the 039 file) — all pass, 1 thread:
+  scalar accuracy 40 (cube/filament/multiscale × P=4,8 × F64,F32, vel rel
+  RMS ≤ 1e-3, W/X asserted nonempty on multi-level cases; measured e.g.
+  multiscale P=4 F64 3.9e-4, P=8 6.5e-6, F32 P=8 1.8e-5); LH vortex accuracy
+  12 (cube+multiscale × P × TF, e.g. P=4 5.0e-4, P=8 1.1e-5); uniform-limit
+  lifecycle parity 16 (matched rigid policy, ≤1e-12·scale — measured
+  2.4e-17, machine-exact); M2T oracles 128 (φ+χ+scalar hessian, both TF,
+  P=4/8); S2L oracles 144 incl. the 038-mandated LH vortex parity;
+  RegularizedVortex vs erf-based regularized direct through the adaptive U
+  list + armed per-cell gate 3; zero-allocation 11 (typed refresh = 0 B,
+  typed run = 1520 B constant Val() dispatch at the shared nearfield-mode
+  barrier ≤ 4096 gate, warm fmm! 28.8 KB < 512 KB repo gate — the
+  pre-existing ~30 KB update_radix_state! baseline, NOT inherited by the
+  adaptive stages themselves); counters all zero; guards 3.
+- 039 opt-in test updated for the 040 semantics (bit-identity stopgap →
+  accuracy agreement ≤ 2e-3 combined truncation) — all 039 testsets pass.
+- **Regression**: 7 related host radix test files in one session:
+  150,279 pass / 0 fail.
+- Pre-registration `scripts/fm040_lifecycle_cost.jl` (protocol in header:
+  Gravitational P=4 F64 q=5, n ∈ {1e5,1e6}, adaptive K ∈ {64,128} ell_max=10
+  with 039 capacity overrides vs uniform ell ∈ {5,6}, warm medians of 5,
+  same-job anchors, 2000-target sampled-direct velocity rel RMS). Local
+  n=2e4 smoke validated the script only (all rel RMS 1.7e-4–4.8e-4; local
+  CSV deleted; cluster run is the measurement of record). Committing BEFORE
+  submission next.

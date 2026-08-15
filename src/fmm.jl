@@ -889,10 +889,21 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         to_vector(hessian, length(targets)), targets)
     if cache.device
         _radix_cache_device_step!(cache, targets, switches)
-    else
+    elseif cache.adaptive === nothing
         update_radix_state!(cache, sources)
         run_host_radix_lifecycle!(cache.state)
         finalize_radix_output!(cache.state, targets; derivatives_switches=switches,
+            target_buffers=_radix_cache_target_buffers!(cache, switches))
+    else
+        # task 040: with an AdaptiveTreePolicy armed, the host branch runs the
+        # adaptive resident lifecycle (B2M/M2M/V-M2L/S2L/L2L/direct/L2B/M2T)
+        # instead of the uniform one; the adaptive state carries the adaptive
+        # sort's permutation metadata, so the finalize path is unchanged.
+        update_radix_state!(cache, sources)
+        run_adaptive_host_radix_lifecycle!(cache)
+        finalize_radix_output!(
+            (cache.adaptive_state::AdaptiveResidentLifecycle).state, targets;
+            derivatives_switches=switches,
             target_buffers=_radix_cache_target_buffers!(cache, switches))
     end
     return cache

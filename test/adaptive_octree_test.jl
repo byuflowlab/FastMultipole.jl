@@ -527,8 +527,14 @@ end
     @test cache_ad.adaptive_tree isa AdaptiveRadixTree
     @test cache_ad.adaptive_lists isa AdaptiveInteractionLists
     r_ad = fmm!(sys_b, cache_ad; scalar_potential=true, gradient=true)
-    # the uniform lifecycle is bit-identical with the opt-in armed
-    @test sys_a.potential == sys_b.potential
+    # task 040: with the opt-in armed, fmm! runs the ADAPTIVE lifecycle (039's
+    # bit-identity stopgap is superseded); both paths satisfy the accuracy
+    # gate, so they agree to combined truncation
+    gd = sqrt(sum(abs2, sys_a.potential[5:7, :] .- sys_b.potential[5:7, :])) /
+        sqrt(sum(abs2, sys_a.potential[5:7, :]))
+    @test gd <= 2e-3
+    @test maximum(abs.(sys_a.potential[1, :] .- sys_b.potential[1, :])) <=
+        2e-3 * maximum(abs.(sys_a.potential[1, :]))
 
     tree = cache_ad.adaptive_tree
     lists = cache_ad.adaptive_lists

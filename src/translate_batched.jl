@@ -4592,3 +4592,387 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         ystk_phi, ystk_chi,
     )
 end
+
+#------- adaptive octree host lifecycle: M2T/S2L operators + stage launchers (task 040) -------#
+#
+# The host resident lifecycle over the task-039 adaptive octree
+# (theory/adaptive-radix-octree.md §2.6). V-list M2L, M2M/L2L, B2M/L2B, and the
+# U-list direct nearfield all reuse the existing resident machinery UNCHANGED
+# (see translate_batched_resident.jl for the state assembly); this section adds
+# the two genuinely new body-mediated operators:
+#
+#   M2T (§4.1, W list): evaluate a source cell's multipole expansion directly at
+#     a coarse target leaf's bodies — irregular solid harmonics of the physical
+#     displacement, the multipole sibling of the resident L2B evaluation. The
+#     Lamb-Helmholtz channel follows 008e/008h: velocity reads phi_{n+1}
+#     (degree shift) and chi_n (same degree, chi carried at P_active = P_phi+1).
+#   S2L (§4.2, X list): accumulate a coarse source leaf's bodies directly into a
+#     finer target cell's local expansion — the irregular-harmonic mirror of the
+#     production B2M rules (scalar: L_n^m += -(-1)^(n+m) q conj(S_n^m); vortex:
+#     the verbatim strength-to-channel map of test/bodytolocal.jl, chi rows
+#     carried through P_active).
+#
+# Conventions: the formulas are the LEGACY evaluate_multipole /
+# body_to_local_point! forms ported verbatim to the flat resident buffers. For
+# the scalar channel both the resident multipole/local coefficients AND the
+# resident outputs are the negatives of their legacy counterparts, so the
+# legacy formulas (including the -u sign flip on the M2T potential) transfer
+# unchanged by linearity; the vortex channel is convention-identical. Both
+# operators are gated by the exact M2L-composition oracles of theory §4 in
+# test/adaptive_lifecycle_test.jl.
+#
+# No new operator tables are introduced (both operators are body-mediated,
+# like L2B/B2M). Kernels use the validated legacy irregular_harmonics! into a
+# preallocated scratch (host, single-threaded); zero per-step allocation.
+
+# Irregular-harmonic accessor pair for the legacy scratch layout H[1:2, 1, i].
+@inline _adt_S_re(H, i) = @inbounds H[1, 1, i]
+@inline _adt_S_im(H, i) = @inbounds H[2, 1, i]
+
+# Evaluate the truncated multipole field (potential + gradient) of expansion
+# column `node` at displacement (dx, dy, dz) from the expansion center.
+# `H` must be pre-filled with irregular harmonics of that displacement to
+# order >= P_phi + 1 (the caller fills to P_phi + 2). Mirrors
+# _resident_local_eval_flat's structure and output conventions.
+function _resident_multipole_eval_flat(ph, ch, node, H, P_phi::Int,
+        P_active::Int, ::Val{LH}) where LH
+    TF = eltype(ph)
+    c = inv(TF(4) * TF(pi))
+    u = zero(TF)
+    vx = zero(TF); vy = zero(TF); vz = zero(TF)
+    @inbounds for n in 0:P_active
+        for m in 0:n
+            i_n_m = harmonic_index(n, m)
+            s_m = m > 0 ? TF(2) : TF(1)
+            Sre = _adt_S_re(H, i_n_m)
+            Sim = _adt_S_im(H, i_n_m)
+            if n <= P_phi
+                pre = _resident_flat_phi_re(ph, node, P_phi, n, m)
+                pim = _resident_flat_phi_im(ph, node, P_phi, n, m)
+                # scalar potential (same LH gating as the resident local eval)
+                if !LH || (n == 0 && m == 0)
+                    u += s_m * (Sre * pre - Sim * pim)
+                end
+                # gradient due to phi: S_{n+1, m-1 | m | m+1}
+                ip = harmonic_index(n + 1, m)
+                Sp0re = _adt_S_re(H, ip); Sp0im = _adt_S_im(H, ip)
+                Sppre = _adt_S_re(H, ip + 1); Sppim = _adt_S_im(H, ip + 1)
+                local Spmre::TF, Spmim::TF
+                if m == 0
+                    Spmre = -Sppre; Spmim = Sppim
+                else
+                    Spmre = _adt_S_re(H, ip - 1); Spmim = _adt_S_im(H, ip - 1)
+                end
+                vx += s_m * TF(-0.5) * (pre * (Sppim + Spmim) + pim * (Sppre + Spmre))
+                vy += s_m * TF(0.5) * (pre * (Sppre - Spmre) - pim * (Sppim - Spmim))
+                vz += s_m * (-pre * Sp0re + pim * Sp0im)
+            end
+            # gradient due to chi (same degree, 008h: chi carried at P_active)
+            if LH && n > 0
+                cre = _resident_flat_chi_re(ch, node, P_active, n, m)
+                cim = _resident_flat_chi_im(ch, node, P_active, n, m)
+                local Snpre::TF, Snpim::TF, Snmre::TF, Snmim::TF
+                if m < n
+                    Snpre = _adt_S_re(H, i_n_m + 1); Snpim = _adt_S_im(H, i_n_m + 1)
+                else
+                    Snpre = zero(TF); Snpim = zero(TF)
+                end
+                if m == 0
+                    Snmre = -Snpre; Snmim = Snpim
+                else
+                    Snmre = _adt_S_re(H, i_n_m - 1); Snmim = _adt_S_im(H, i_n_m - 1)
+                end
+                vx += s_m * (cre * TF(0.5) * (-(n + m) * Snmre + (n - m) * Snpre) -
+                             cim * TF(0.5) * (-(n + m) * Snmim + (n - m) * Snpim))
+                vy += s_m * (cre * TF(0.5) * ((n + m) * Snmim + (n - m) * Snpim) +
+                             cim * TF(0.5) * ((n + m) * Snmre + (n - m) * Snpre))
+                vz += s_m * m * (cre * Sim + cim * Sre)
+            end
+        end
+    end
+    # note: the legacy evaluate_multipole returns -u/4pi; the resident scalar
+    # pipeline carries no legacy strength negation (see the resident B2M note),
+    # so the resident-convention potential is +u/4pi (dev-verified against the
+    # resident direct kernel and locked by the M2L-composition oracle test)
+    return u * c, vx * c, vy * c, vz * c
+end
+
+# Hessian-emitting variant (scalar phi channel only — the Lamb-Helmholtz
+# multipole hessian is a recorded task-040 deferral, excluded at cache
+# construction). `H` must be filled to order P_phi + 2. Returns the same
+# 13-tuple order as _resident_local_eval_flat_hessian.
+function _resident_multipole_eval_flat_hessian(ph, ch, node, H, P_phi::Int,
+        P_active::Int, lhv::Val{LH}) where LH
+    TF = eltype(ph)
+    LH && throw(ArgumentError(
+        "the Lamb-Helmholtz M2T hessian is a task-040 deferral"))
+    u, vx, vy, vz = _resident_multipole_eval_flat(ph, ch, node, H, P_phi,
+        P_active, lhv)
+    c = inv(TF(4) * TF(pi))
+    hxx = zero(TF); hxy = zero(TF); hxz = zero(TF)
+    hyx = zero(TF); hyy = zero(TF); hyz = zero(TF)
+    hzx = zero(TF); hzy = zero(TF); hzz = zero(TF)
+    @inbounds for n in 0:P_phi
+        for m in 0:n
+            s_m = m > 0 ? TF(2) : TF(1)
+            pre = _resident_flat_phi_re(ph, node, P_phi, n, m)
+            pim = _resident_flat_phi_im(ph, node, P_phi, n, m)
+            i2 = harmonic_index(n + 2, m)
+            S0re = _adt_S_re(H, i2); S0im = _adt_S_im(H, i2)
+            Sp1re = _adt_S_re(H, i2 + 1); Sp1im = _adt_S_im(H, i2 + 1)
+            Sp2re = _adt_S_re(H, i2 + 2); Sp2im = _adt_S_im(H, i2 + 2)
+            local Sm1re::TF, Sm1im::TF, Sm2re::TF, Sm2im::TF
+            if m == 0
+                Sm1re = -Sp1re; Sm1im = Sp1im
+                Sm2re = Sp2re; Sm2im = -Sp2im
+            elseif m == 1
+                Sm1re = _adt_S_re(H, i2 - 1); Sm1im = _adt_S_im(H, i2 - 1)
+                Sm2re = -S0re; Sm2im = S0im
+            else
+                Sm1re = _adt_S_re(H, i2 - 1); Sm1im = _adt_S_im(H, i2 - 1)
+                Sm2re = _adt_S_re(H, i2 - 2); Sm2im = _adt_S_im(H, i2 - 2)
+            end
+            hxx += s_m * TF(0.25) * (-pre * (Sp2re + 2 * S0re + Sm2re) +
+                                     pim * (Sp2im + 2 * S0im + Sm2im))
+            t_xy = s_m * TF(-0.25) * (pre * (Sp2im - Sm2im) + pim * (Sp2re - Sm2re))
+            hxy += t_xy
+            hyx += t_xy
+            t_xz = s_m * TF(0.5) * (pre * (Sp1im + Sm1im) + pim * (Sp1re + Sm1re))
+            hxz += t_xz
+            hzx += t_xz
+            hyy += s_m * TF(0.25) * (pre * (Sp2re - 2 * S0re + Sm2re) -
+                                     pim * (Sp2im - 2 * S0im + Sm2im))
+            t_yz = s_m * TF(0.5) * (-pre * (Sp1re - Sm1re) + pim * (Sp1im - Sm1im))
+            hyz += t_yz
+            hzy += t_yz
+            hzz += s_m * (pre * S0re - pim * S0im)
+        end
+    end
+    return u, vx, vy, vz,
+        hxx * c, hxy * c, hxz * c, hyx * c, hyy * c, hyz * c,
+        hzx * c, hzy * c, hzz * c
+end
+
+# W-list M2T sweep: for every W pair (coarse target leaf `ia`, finer source
+# cell `ib`, both flat adaptive node indices), evaluate ib's multipole at every
+# body of ia and accumulate into the output slab.
+function _host_m2t_pairs_kernel!(output::AbstractMatrix{TF}, source_bodies,
+        node_lo, node_hi, node_centers, w_targets, w_sources, n_w::Int,
+        ph, ch, H, P_phi::Int, P_active::Int, lhv::Val{LH},
+        ::Val{HS}) where {TF,LH,HS}
+    Hord = P_phi + 2
+    @inbounds for k in 1:n_w
+        ia = w_targets[k]
+        ib = w_sources[k]
+        cx = node_centers[1, ib]
+        cy = node_centers[2, ib]
+        cz = node_centers[3, ib]
+        for i in node_lo[ia]:node_hi[ia]
+            dx = source_bodies[1, i] - cx
+            dy = source_bodies[2, i] - cy
+            dz = source_bodies[3, i] - cz
+            r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
+            irregular_harmonics!(H, r, theta, phi, Hord)
+            if HS
+                vals = _resident_multipole_eval_flat_hessian(ph, ch, ib, H,
+                    P_phi, P_active, lhv)
+                for row in 1:13
+                    output[row, i] += vals[row]
+                end
+            else
+                u, gx, gy, gz = _resident_multipole_eval_flat(ph, ch, ib, H,
+                    P_phi, P_active, lhv)
+                output[1, i] += u
+                output[2, i] += gx
+                output[3, i] += gy
+                output[4, i] += gz
+            end
+        end
+    end
+    return output
+end
+
+# X-list scalar S2L sweep: for every X pair (finer target cell `ia`, coarse
+# source leaf `ib`), accumulate ib's point sources into ia's local expansion:
+# L_n^m += (-1)^(n+m) q conj(S_n^m(x_s - c_A)). This is the theory §4.2 rule
+# WITHOUT the legacy strength negation — the resident scalar pipeline carries
+# none (resident direct u = +q/4pi r; dev-verified and locked by the
+# P2M-M2L composition oracle test).
+function _host_s2l_pairs_kernel!(lp::AbstractMatrix{TF}, source_bodies,
+        node_lo, node_hi, node_centers, x_targets, x_sources, n_x::Int,
+        H, P_phi::Int) where TF
+    @inbounds for k in 1:n_x
+        ia = x_targets[k]
+        ib = x_sources[k]
+        cx = node_centers[1, ia]
+        cy = node_centers[2, ia]
+        cz = node_centers[3, ia]
+        for s in node_lo[ib]:node_hi[ib]
+            dx = source_bodies[1, s] - cx
+            dy = source_bodies[2, s] - cy
+            dz = source_bodies[3, s] - cz
+            q = source_bodies[5, s]
+            r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
+            irregular_harmonics!(H, r, theta, phi, P_phi)
+            for n in 0:P_phi, m in 0:n
+                i = harmonic_index(n, m)
+                sq = isodd(n + m) ? -q : q
+                row = flat_basis_index(n, m, 1)
+                lp[row, ia] += sq * _adt_S_re(H, i)
+                lp[row + 1, ia] -= sq * _adt_S_im(H, i)
+            end
+        end
+    end
+    return lp
+end
+
+# X-list vortex S2L sweep: verbatim port of test/bodytolocal.jl
+# body_to_local_point!(Point{Vortex}, ...) to the flat resident layout, with
+# the chi rows carried through P_active = P_phi + 1 (008h). The vortex
+# coefficient conventions are legacy-identical on the resident path (see the
+# resident vortex B2M note), so no sign adjustments are needed.
+function _host_s2l_vortex_pairs_kernel!(lp::AbstractMatrix{TF}, lc,
+        source_bodies, node_lo, node_hi, node_centers, x_targets, x_sources,
+        n_x::Int, H, P_phi::Int, P_active::Int) where TF
+    Hord = P_phi + 2
+    @inbounds for k in 1:n_x
+        ia = x_targets[k]
+        ib = x_sources[k]
+        cx = node_centers[1, ia]
+        cy = node_centers[2, ia]
+        cz = node_centers[3, ia]
+        for s in node_lo[ib]:node_hi[ib]
+            dx = source_bodies[1, s] - cx
+            dy = source_bodies[2, s] - cy
+            dz = source_bodies[3, s] - cz
+            wx = source_bodies[5, s]
+            wy = source_bodies[6, s]
+            wz = source_bodies[7, s]
+            r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
+            irregular_harmonics!(H, r, theta, phi, Hord)
+            # phi channel (phi_00 = 0)
+            for n in 1:P_phi
+                _1_n = isodd(n) ? -one(TF) : one(TF)
+                n_inv = inv(TF(n))
+                for m in 0:n
+                    _1_m = isodd(m) ? -one(TF) : one(TF)
+                    i = harmonic_index(n, m)
+                    local Spre::TF, Spim::TF, Smre::TF, Smim::TF
+                    if m < n
+                        Spre = -_1_m * _adt_S_re(H, i + 1)
+                        Spim = _1_m * _adt_S_im(H, i + 1)
+                    else
+                        Spre = zero(TF); Spim = zero(TF)
+                    end
+                    Sre = _1_m * _adt_S_re(H, i)
+                    Sim = -_1_m * _adt_S_im(H, i)
+                    if m == 0
+                        Smre = -_1_m * Spre; Smim = _1_m * Spim
+                    else
+                        Smre = -_1_m * _adt_S_re(H, i - 1)
+                        Smim = _1_m * _adt_S_im(H, i - 1)
+                    end
+                    row = flat_basis_index(n, m, 1)
+                    lp[row, ia] -= _1_n * n_inv * (
+                        (n - m) * TF(0.5) * (wx * Spre - wy * Spim) -
+                        (n + m) * TF(0.5) * (wx * Smre + wy * Smim) +
+                        wz * m * Sim)
+                    lp[row + 1, ia] -= _1_n * n_inv * (
+                        (n - m) * TF(0.5) * (wx * Spim + wy * Spre) -
+                        (n + m) * TF(0.5) * (wx * Smim - wy * Smre) -
+                        wz * m * Sre)
+                end
+            end
+            # chi channel, carried through P_active (008h neighbor row included)
+            for n in 0:P_active
+                _1_np1 = isodd(n + 1) ? -one(TF) : one(TF)
+                np1_inv = inv(TF(n + 1))
+                for m in 0:n
+                    _1_m = isodd(m) ? -one(TF) : one(TF)
+                    i_np1 = harmonic_index(n + 1, m)
+                    Sp1pre = -_1_m * _adt_S_re(H, i_np1 + 1)
+                    Sp1pim = _1_m * _adt_S_im(H, i_np1 + 1)
+                    Sp1re = _1_m * _adt_S_re(H, i_np1)
+                    Sp1im = -_1_m * _adt_S_im(H, i_np1)
+                    local Sp1mre::TF, Sp1mim::TF
+                    if m == 0
+                        Sp1mre = -_1_m * Sp1pre; Sp1mim = _1_m * Sp1pim
+                    else
+                        Sp1mre = -_1_m * _adt_S_re(H, i_np1 - 1)
+                        Sp1mim = _1_m * _adt_S_im(H, i_np1 - 1)
+                    end
+                    row = flat_basis_index(n, m, 1)
+                    lc[row, ia] += _1_np1 * np1_inv * (
+                        TF(0.5) * (wy * Sp1mre - wx * Sp1mim) -
+                        TF(0.5) * (wy * Sp1pre + wx * Sp1pim) - wz * Sp1re)
+                    lc[row + 1, ia] += _1_np1 * np1_inv * (
+                        TF(0.5) * (wy * Sp1mim + wx * Sp1mre) -
+                        TF(0.5) * (wy * Sp1pim - wx * Sp1pre) - wz * Sp1im)
+                end
+            end
+        end
+    end
+    return lp
+end
+
+# Adaptive M2M: the existing per-level edge groups (refreshed from the adaptive
+# node table) applied bottom-up. The uniform launcher's nonleaf prefix zeroing
+# (_zero_resident_nonleaf_multipoles!, nonleaf = first n_nodes - n_cells
+# columns) would zero coarse adaptive LEAVES, so it is deliberately omitted:
+# the adaptive B2M launcher refills the whole multipole buffer every step
+# (leaves written, internal nodes zero), which is exactly the required state.
+function _launch_adaptive_resident_m2m!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
+    ws = state.scratch
+    ws isa ResidentOperatorWorkspace ||
+        throw(ArgumentError("adaptive M2M requires ResidentOperatorWorkspace scratch"))
+    for group in ws.m2m_groups
+        _resident_stage_group_apply!(state.multipoles, state.multipoles, group, ws, :m2m)
+    end
+    return state
+end
+
+# Adaptive V-list M2L: consume the task-039 class-partitioned CSR route stream
+# through the UNCHANGED resident window plans. The stream is level-major in
+# canonical class order — the exact _hierarchical_class_metadata ordering the
+# plans were built over — so plan.route_class receives the global class ids
+# directly. Windows are contiguous CSR ranges bounded by the state's route
+# capacity; a window may split a class (each window accumulates
+# independently, clear_locals=false).
+function _launch_adaptive_resident_m2l!(state::DeviceResidentRadixState{TF,B,LH},
+        lists::AdaptiveInteractionLists, window_capacity::Int) where {TF,B,LH}
+    ws = state.scratch
+    ws isa ResidentOperatorWorkspace ||
+        throw(ArgumentError("adaptive M2L requires ResidentOperatorWorkspace scratch"))
+    plan = ws.m2l_concat
+    plan isa Union{ResidentM2LConcatPlan,ResidentM2LPrecomputedYPlan,
+        ResidentM2LDensePlan} || throw(ArgumentError(
+        "adaptive M2L requires a concat, precomputed-y, or dense window plan; " *
+        "got $(typeof(plan))"))
+    fill!(state.locals.phi, zero(TF))
+    LH && fill!(state.locals.chi, zero(TF))
+    nroutes = lists.n_routes
+    i = 1
+    @inbounds while i <= nroutes
+        count = min(window_capacity, nroutes - i + 1)
+        copyto!(state.route_targets::Vector{Int}, 1, lists.route_targets, i, count)
+        copyto!(state.route_sources::Vector{Int}, 1, lists.route_sources, i, count)
+        copyto!(plan.route_class::Vector{Int32}, 1, lists.route_class, i, count)
+        state.counts.n_routes = count
+        if plan isa ResidentM2LDensePlan
+            _refresh_dense_m2l_routes!(plan, state.route_sources::Vector{Int},
+                state.route_targets::Vector{Int}, count)
+            _launch_resident_m2l_dense_plan!(state, ws, plan; clear_locals=false)
+        elseif plan isa ResidentM2LPrecomputedYPlan
+            _refresh_precomputed_y_m2l_routes!(plan, state.route_sources::Vector{Int},
+                state.route_targets::Vector{Int}, count)
+            _launch_resident_m2l_precomputed_y_plan!(state, ws, plan;
+                clear_locals=false)
+        else
+            _launch_hierarchical_concat_window!(state, ws,
+                plan::ResidentM2LConcatPlan, count)
+        end
+        i += count
+    end
+    state.counts.n_routes = nroutes
+    return state
+end

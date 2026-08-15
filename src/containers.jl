@@ -2335,11 +2335,43 @@ mutable struct RadixFMMCache{TF,LH}
     built::Bool
     step::Int
     # opt-in adaptive octree (task 039): `nothing` unless an AdaptiveTreePolicy
-    # was passed at construction. Host-only until row 041; the uniform lifecycle
-    # above is unchanged — rows 040+ wire consumption.
+    # was passed at construction. Host-only until row 041. Task 040 wires
+    # consumption: with the policy armed, the host `fmm!` branch runs the
+    # adaptive resident lifecycle (`adaptive_state`) instead of the uniform one.
     adaptive::Any                   # AdaptiveTreePolicy or nothing
     adaptive_tree::Any              # AdaptiveRadixTree{TF} or nothing
     adaptive_lists::Any             # AdaptiveInteractionLists or nothing
+    adaptive_state::Any             # AdaptiveResidentLifecycle or nothing (task 040)
+end
+
+"""
+Host resident-lifecycle container for the adaptive octree (task 040). Wraps a
+capacity-sized [`DeviceResidentRadixState`](@ref) whose `grid` is a genuine
+`DeviceRadixGrid` **mirror** of the [`AdaptiveRadixTree`](@ref) node table
+(the 039 level-major layout matches the uniform convention): `node_centers`,
+`node_keys`, and the body permutation arrays alias the tree; `node_levels`
+and `parent_index` are Int mirrors of the tree's Int32 columns (refreshed per
+step); adaptive **leaves** are presented as the state's "cells"
+(`cell_ranges`/`cell_centers`/`leaf_to_node` gathered over `leaf_index`), so
+the existing B2M/L2B/direct host kernels and the M2M/L2L edge-group machinery
+run verbatim. V-list M2L flows through the unchanged resident window plans
+(the 039 CSR class stream is copied window-by-window); U endpoints are mapped
+to leaf-cell slots via `leaf_slot_of`; W/X pairs feed the task-040 M2T/S2L
+kernels using the `harmonics` scratch (legacy `irregular_harmonics!` layout,
+order `P_phi + 2`).
+
+All capacities are fixed at construction (task 023 contract): per-step refresh
+and the full lifecycle are allocation-free after warm-up, and capacity
+violations throw. Host-only, single-threaded (the `harmonics` scratch is
+shared across pairs); the CUDA mirror is row 041.
+"""
+mutable struct AdaptiveResidentLifecycle
+    state::Any                # DeviceResidentRadixState (host arrays)
+    leaf_slot_of::Vector{Int32}   # node index -> leaf cell slot (0 = internal)
+    harmonics::Any            # Array{TF,3} legacy-layout irregular-harmonic scratch
+    route_window_capacity::Int
+    leaf_capacity::Int
+    step::Int
 end
 
 function RadixStepCounts(source_bodies, cell_ranges, multipoles::FlatCoefficientBuffer,

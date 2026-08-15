@@ -1054,9 +1054,16 @@ function _adaptive_fill_sigma_from_buffers!(body_sigma::Vector{TF},
 end
 
 function _refresh_adaptive_radix!(cache, systems::Tuple)
-    _refresh_adaptive_radix_typed!(cache.adaptive_tree::AdaptiveRadixTree,
-        cache.adaptive_lists::AdaptiveInteractionLists, cache.source_buffers,
-        systems)
+    tree = cache.adaptive_tree::AdaptiveRadixTree
+    lists = cache.adaptive_lists::AdaptiveInteractionLists
+    _refresh_adaptive_radix_typed!(tree, lists, cache.source_buffers, systems)
+    # task 040: refresh the resident-lifecycle mirrors (leaf-as-cell arrays,
+    # Int node mirrors, packed adaptive-order bodies, U leaf slots, M2M/L2L
+    # group columns) from the rebuilt tree + lists
+    al = cache.adaptive_state
+    al === nothing ||
+        _refresh_adaptive_lifecycle!(al::AdaptiveResidentLifecycle, tree, lists,
+            cache.source_buffers)
     return cache
 end
 
