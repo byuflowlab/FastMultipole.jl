@@ -867,3 +867,15 @@ Design decisions of record (overnight/user-absent; all in-scope):
   proven environment (job 13170768) runs on the m13h H200 partition, which
   the measurements require anyway. Fix: '#SBATCH -p m13h' added.
 - Resubmitted as job **13180196** (fm041b, m13h, 1 GPU, 2h).
+
+## 2026-08-15 11:13 MDT — 041 bring-up iteration 2
+
+- Job **13180196** FAILED (00:00:40, m13h-1-1): same CUDA.jl load failure.
+  ROOT CAUSE found via the proven in-repo GPU submit script
+  (scripts/cuda_035_run.sh): all working GPU jobs pin
+  'module load cuda julia/1.11.7-6bmogfl' (julia 1.12.6 segfaults in host
+  LLVM JIT — job 13058191 — and has no CUDA pkgimage caches, so it
+  re-precompiled the CUDA stack broken) and pin the GPU as
+  '--gpus=h200:1'. My scripts used 'module load julia cuda' (1.12.6).
+- Both the bring-up and the measurement submit scripts fixed to the proven
+  module line + h200 gres. Resubmitted bring-up as job **13180197**.

@@ -9,12 +9,13 @@
 #SBATCH --time=08:00:00
 #SBATCH --ntasks=8
 #SBATCH --nodes=1
-#SBATCH --gpus=1
+#SBATCH --gpus=h200:1
 #SBATCH --mem=192G
 #SBATCH -J fm041
 #SBATCH -o /home/rander39/fm041_%j.out
 
-module load julia cuda
+source /etc/profile
+module load cuda julia/1.11.7-6bmogfl
 echo "=== node: $(hostname)"
 nvidia-smi -L
 
