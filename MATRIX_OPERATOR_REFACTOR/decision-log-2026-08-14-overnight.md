@@ -409,3 +409,36 @@ by 039; repo's own step-allocation gates are <512 KB bounds).
 - Row 039 is ready for clear-context approval. User-ratification items
   carried: split-veto default OFF (quantified deviation), 038 option (b)
   M2T/S2L re-admission (not implemented), E2 disposition (open).
+
+## 2026-08-14 20:37 MDT — 039 clear-context approval: APPROVED
+
+Reviewer: clear-context approval agent (no prior campaign context).
+Verdict: **APPROVED** — 039 Approved checkbox marked in START_HERE;
+committed as `039: clear-context approval`.
+
+Evidence: read START_HERE protocol + 039 row, the 039 task file, the full
+theory doc, and the complete `fd58aea`/`44a803f` diffs (src, test, script,
+CSV). Re-ran `test/adaptive_octree_test.jl` locally (1 thread): 60,773
+pass / 0 fail, per-testset counts matching the completion notes exactly.
+Hand-verified: sticky-demotion semantics (lineage bit, gate on !near only,
+V/W/X on never-demoted paths — theory §5.2/§2.4 as re-approved), the
+emission-time 025 phase-table membership throw (T−S offset + source
+phase), integer-exact source-side σ-gap test, the 8-cell balance emission
+set, DFS/pair stack capacity sufficiency, CSR counting-sort indexing, and
+σ-from-buffers ordinal-order consistency. Uniform-limit parity test is
+genuine (production `build_hierarchical_routes_window!` reference, tuple
+equality incl. class ids, duplicate-exclusion, P=4). No production default
+changes (bit-identical uniform fmm! asserted; guards throw). Measurement
+of record: pre-registration in `fd58aea` (20:18) precedes job 13178905
+submission (20:20); same-job anchors; every headline number re-derived
+from the CSV and exact (28.8x/4.4x wake, 15.9x/2.6x multiscale, 2.3x
+uniform-limit refresh cost, capacity peaks 0.83/0.60/0.91). Deviations
+accepted as logged (veto default OFF, capped capacities, host DFS stack);
+option (b) correctly not implemented; user-ratification items unchanged
+(veto default, option (b), E2).
+
+NOTED (non-blocking, recorded in the task-file approval block): (1) theory
+§9 still says "split-veto default-on" for 040 — stale vs the §5.4 note;
+fix on next theory touch. (2) the K_max population test's
+`|| n_balance_splits > 0` escape is weaker than needed. (3) W/X duality
+is correctly asserted only ungated (source-side σ is asymmetric).
