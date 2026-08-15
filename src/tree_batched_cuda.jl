@@ -55,7 +55,10 @@ function _cuda_adaptive_capacities(policy::AdaptiveTreePolicy, maxn::Int)
         min(v_host, max(64 * maxn, 1 << 22))
     wx_cap = policy.wx_capacity > 0 ? policy.wx_capacity :
         min(u_host, max(4 * maxn, 1 << 18))
-    frontier_cap = max(16 * maxn, 1 << 22)
+    # DTR frontier peak width scales with the V emission volume (measured:
+    # wake n=1e6 K=64 with V ~ 2.2e7 overflowed a fixed 1.6e7 frontier,
+    # job 13180706), so the frontier tracks the V capacity
+    frontier_cap = max(16 * maxn, v_cap, 1 << 22)
     return node_cap, leaf_cap, u_cap, v_cap, wx_cap, frontier_cap, tables
 end
 

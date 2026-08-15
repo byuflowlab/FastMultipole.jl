@@ -157,7 +157,11 @@ function write_rows(rows)
 end
 
 const STRATS = (
-    ("default", TF -> FM.CUDARadixLifecycleOptions(precision=TF)),
+    # "concat": the shipped concat window engine, selected EXPLICITLY (the
+    # bare-default SharedRotationM2L options are rejected by the device build
+    # — job 13180706; the intended engine is what the 041 tests exercise)
+    ("concat", TF -> FM.CUDARadixLifecycleOptions(precision=TF,
+        m2l_strategy=FM.ConcatenatedFixedZM2L())),
     ("dense", TF -> FM.CUDARadixLifecycleOptions(precision=TF,
         m2l_strategy=FM.DenseTranslationM2L(apply_chunk=64, build_chunk=8))),
 )
@@ -201,8 +205,9 @@ function main()
                             adaptive=pol, options=mkopts(TF), device=true)
                         CUDA.synchronize()
                     catch err
-                        push!(rows, "$key,fail:$(typeof(err))," * join(fill("", 21), ","))
-                        @printf("%s FAILED %s\n", key, typeof(err))
+                        emsg = replace(first(sprint(showerror, err), 90), "," => ";", "\n" => " ")
+                        push!(rows, "$key,fail:$(typeof(err)) $emsg," * join(fill("", 21), ","))
+                        @printf("%s FAILED %s %s\n", key, typeof(err), emsg)
                         write_rows(rows)
                         CUDA.reclaim(); GC.gc()
                         continue
@@ -259,8 +264,9 @@ function main()
                             options=mkopts(TF), device=true)
                         CUDA.synchronize()
                     catch err
-                        push!(rows, "$key,fail:$(typeof(err))," * join(fill("", 21), ","))
-                        @printf("%s FAILED %s\n", key, typeof(err))
+                        emsg = replace(first(sprint(showerror, err), 90), "," => ";", "\n" => " ")
+                        push!(rows, "$key,fail:$(typeof(err)) $emsg," * join(fill("", 21), ","))
+                        @printf("%s FAILED %s %s\n", key, typeof(err), emsg)
                         write_rows(rows)
                         CUDA.reclaim(); GC.gc()
                         continue
