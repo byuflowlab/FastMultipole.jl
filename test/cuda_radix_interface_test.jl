@@ -148,7 +148,19 @@ end
                 options=opts, device=true)
             @test dc.state.options.direct_kernel == RegularizedVortex(; sigma_row=8)
             fmm!(host_sys, hc; scalar_potential=false, gradient=true, hessian=true)
-            fmm!(dev_sys, dc; scalar_potential=false, gradient=true, hessian=true)
+            # host/device implementation parity at the tight tolerances requires
+            # the :shipped g/h control mode: the 037f production default (:fp32,
+            # user-approved 2026-08-14) computes device g/h in Float32 with
+            # documented ~1e-7-scale max-abs deltas, which is 037f's own tested
+            # surface, not this parity check's (fixed in passing by task 041 —
+            # this suite had not run on hardware after the default flip)
+            gh_mode_prev = FastMultipole.CUDA_NEARFIELD_GH_MODE[]
+            FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :shipped
+            try
+                fmm!(dev_sys, dc; scalar_potential=false, gradient=true, hessian=true)
+            finally
+                FastMultipole.CUDA_NEARFIELD_GH_MODE[] = gh_mode_prev
+            end
             @test maximum(abs.(dev_sys.inner.gradient_stretching[1:3, :] .-
                 host_sys.inner.gradient_stretching[1:3, :])) < gtol
             @test maximum(abs.(dev_sys.inner.potential[5:13, :] .-
