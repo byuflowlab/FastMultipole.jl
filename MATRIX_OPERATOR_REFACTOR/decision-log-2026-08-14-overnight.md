@@ -879,3 +879,12 @@ Design decisions of record (overnight/user-absent; all in-scope):
   '--gpus=h200:1'. My scripts used 'module load julia cuda' (1.12.6).
 - Both the bring-up and the measurement submit scripts fixed to the proven
   module line + h200 gres. Resubmitted bring-up as job **13180197**.
+
+## 2026-08-15 11:24 MDT — 041 bring-up iteration 3
+
+- Job **13180197** FAILED but was major progress: CUDA loads under
+  julia/1.11.7, FastMultipole compiles on H200, and every testset reached
+  execution. Single failure mode: DeviceAdaptiveCUDAContext MethodError —
+  the allocator passed 91 args to the 93-field struct (missing the fb2/fdem2
+  DTR ping-pong frontier buffers). Fixed, arity mechanically verified 93/93,
+  committed, resynced. Resubmitted bring-up as job **13180198**.
