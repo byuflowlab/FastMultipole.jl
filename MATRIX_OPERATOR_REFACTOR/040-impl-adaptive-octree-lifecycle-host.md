@@ -161,11 +161,41 @@ uniform cube/wake cases beyond an agreed tolerance.
 - **Regression** (7 related host radix files, one session): 150,279 pass /
   0 fail. Full `Pkg.test()` run overnight (see decision log).
 
-### Measurement of record (cluster job 13179268)
+### Measurement of record (cluster job 13179323)
 
-Pre-registration committed (`118174d`) before submission. Results in
-`data/fm040_lifecycle_cost.csv` — see the decision-log completion entry for
-the headline numbers (filled on job completion).
+Pre-registration committed (`118174d`) before the first submission
+(13179268, cancelled — CSV-at-end + block-buffered stdout risked losing all
+rows at the 3h wall; protocol-neutral amendment `48b5ac6` committed before
+resubmission). Job **13179323**: COMPLETED 02:38:19 ExitCode 0:0 (sacct
+re-verified). CSV of record `data/fm040_lifecycle_cost.csv` (24/24 rows ok;
+warm fmm! medians of 5, same-job anchors, 2000-target sampled-direct
+velocity rel RMS; P=4, Float64, q=5).
+
+**Accuracy**: every row within the 1e-3 gate — adaptive 3.87e-4 – 6.58e-4,
+uniform 2.30e-4 – 5.09e-4.
+
+**Headlines at n = 1e6 (t_step, warm median)**:
+
+| case | adaptive K=64 | uniform ℓ=5 | uniform ℓ=6 | adaptive vs best uniform |
+|---|---|---|---|---|
+| wake | **18.31 s** (popmax 64) | 262.99 s (popmax 1231) | 44.37 s (popmax 182) | **2.42× faster** |
+| multiscale100 | **18.62 s** (popmax 64) | 176.04 s (popmax 2442) | 60.94 s (popmax 346) | **3.27× faster** |
+| unitcube | 18.90 s (popmax 64) | 17.67 s (popmax 61) | 36.67 s | 1.07× slower (7%) |
+
+The 038 cost mechanism is reproduced end-to-end at production scale:
+bounded leaf population (popmax = K_max everywhere) at per-region depth
+kills the fat-cell direct term (wake U body pairs 9.39e8 adaptive vs
+4.36e10 at uniform ℓ=5 — 46×; multiscale 1.43e9 vs 2.85e10 — 20×). The
+uniform-cube non-regression is structural: adaptive K=64 lands on the ℓ=5
+partition (32,686 vs 32,710 leaves, U pairs equal to 5 digits, V 12.25M vs
+12.28M); the 7% step overhead is dominated by the known double refresh
+(adaptive t_update 1.79 s vs uniform 0.51 s — the uniform structures still
+refresh with the policy armed; 039 open item, priced for 041/041a).
+At n = 1e5 the same pattern holds (multiscale 1.94 s vs best uniform
+4.23 s = 2.2×; unitcube adaptive 1.74 s vs 2.99 s; wake is the one case
+where the best uniform (ℓ=6, 1.39 s) beats adaptive K=64 (1.75 s) at this
+n — K below the pre-registered {64,128} sweep would likely close it;
+recorded honestly for 041a).
 
 ### Deviations / open items
 

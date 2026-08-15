@@ -621,6 +621,44 @@ Implementation complete per the 20:55 design; all local verification green.
   and committed BEFORE resubmission. Also fixed a small-n-only sampling bug
   found in the smoke (dedup could undershoot nsample; now an exact
   shuffle-sample — no effect at n ≥ 1e5).
+- Amendment committed as `48b5ac6`; snapshot re-rsynced; resubmitted as
+  cluster job **13179323** (`fm040cost`, 12h wall, CPU node, 1 Julia thread,
+  64G; submit script now at `~/fm040_cost.sh` outside the repo dir so rsync
+  cannot delete it). Output `~/fm040cost_13179323.out`; CSV of record
+  `~/FastMultipole-040/MATRIX_OPERATOR_REFACTOR/data/fm040_lifecycle_cost.csv`.
+- sacct will be checked on every resume until a terminal state is verified.
+
+## 2026-08-15 10:07 MDT — 040 DONE (lead agent completion)
+
+- Cluster job **13179323** terminal: **COMPLETED 02:38:19 ExitCode 0:0**
+  (sacct re-verified by the lead agent per the standing rule; superseded job
+  13179268 confirmed CANCELLED). CSV of record pulled to
+  `data/fm040_lifecycle_cost.csv` and committed — 24/24 rows ok.
+- Local full `Pkg.test()` confirmed PASSED ("Testing FastMultipole tests
+  passed", exit 0) — includes the new `adaptive_lifecycle_test.jl` and the
+  updated 039 suite.
+- **Measurement headlines** (warm fmm! median-of-5, same-job anchors, P=4
+  F64 q=5, 2000-target sampled-direct accuracy): every row inside the 1e-3
+  gate (adaptive 3.87e-4–6.58e-4; uniform 2.30e-4–5.09e-4). At n=1e6,
+  adaptive K=64 vs BEST uniform depth: wake **18.31 s vs 44.37 s (2.42×)**,
+  multiscale100 **18.62 s vs 60.94 s (3.27×)**; vs the auto-scale ℓ=5:
+  14.4× / 9.5×. Uniform-cube non-regression: 18.90 s vs 17.67 s (1.07×
+  slower; structurally the same partition — 32,686 vs 32,710 leaves, equal
+  U pairs to 5 digits — with the gap dominated by the known double refresh:
+  adaptive t_update 1.79 s vs 0.51 s). The 038 mechanism reproduced
+  end-to-end: popmax = K_max everywhere; wake U body pairs 9.39e8 vs
+  4.36e10 (ℓ=5, 46×) / 6.69e9 (ℓ=6, 7.1×). Honest negative: wake at n=1e5
+  is the one case where best-uniform (ℓ=6, 1.39 s) beats adaptive K=64
+  (1.75 s); K < 64 (outside the pre-registered sweep) would likely close
+  it — recorded for 041a.
+- Task file updated (completion notes + measurement section); START_HERE 040
+  row marked **Done** (Approved left blank). Committing as `040 DONE:
+  close-out` next.
+- Row 040 is ready for clear-context approval. User-ratification items
+  carried: split-veto default OFF, 038 option (b) not implemented, E2
+  disposition open, plus the 040 deferrals (TwoPass/Partitioned kernels on
+  adaptive, W-list M2T LH hessian, rectangular domains, per-level radius
+  schedules) and the theory §4.2 top-row-caveat note.
 - 039-approval noted item (2) DONE: the K_max population test's
   `|| n_balance_splits > 0` escape removed — with the veto off, a balance
   split opens a leaf that already had pop ≤ K_max, so children inherit the
