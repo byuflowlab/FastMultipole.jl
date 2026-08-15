@@ -218,3 +218,36 @@ runs exact-once painting on the parity tree (reviewer's non-blocking
 note); data regenerated; ALL CHECKS PASS; byte-identical rerun
 re-confirmed; task file carries a Review Correction block. Committing as
 `038: review corrections` next. Row ready for fresh re-approval.
+
+## 2026-08-14 19:38 MDT — 038 clear-context re-approval: APPROVED
+
+Reviewer: fresh clear-context re-approval agent (no prior campaign
+context). Verdict: **APPROVED** — 038 Approved checkbox marked in
+START_HERE; committed as `038: clear-context re-approval`.
+
+Blocker verified fixed: `build_lists` sticky semantics confirmed in code
+(lineage bit propagates every descent; `near = dem || isnear`; V/W/X
+require `!near`, hence never-demoted paths with geometric parent
+nearness — Invariant 2 restored); `check_v_classes` = exact phase-table
+membership (separated + parent in N_q + Chebyshev reach) now runs on
+GATED lists and passes on all 18 σ-gate rows (`v_classes_ok_gated=true`,
+`contract_bad=0`, exact-once 0). Script re-run (`--threads=1`, ~10 s):
+ALL CHECKS PASS, artifacts byte-identical to committed (shasum). Nothing
+else broke: 40-config exact-once, uniform-limit parity (now with
+exact-once painting — first review's noted item addressed), σ contract,
+capacity bounds, P=4/8 monotonicity, M2T/S2L P=4/8/12 all pass.
+Quantitative claims re-derived from CSVs and match the task file / 19:33
+entry exactly (3.51× worst sticky over-cost; ≤2.9% q=12; 7.78×/20.7×/
+5.12× cost headlines; exact uniform non-regression). `5f57db4` surface:
+`MATRIX_OPERATOR_REFACTOR/` only. Option (b) and the sticky-demotion
+adoption remain user-ratification items; E2 disposition stays open.
+
+NOTED (non-blocking, recorded in the task-file approval block): §2.4's
+displayed identity `p = fld(u+o,2)` pairs `o = c_B - c_A` (S−T) with the
+source phase, but 025 defines it for `o = T − S`; as literally written it
+misses the parent offset when parent phases differ. Set-level membership
+(the actual claim) is orientation-independent and the script checks true
+tree parents, so nothing downstream is affected — fix the orientation on
+the next touch of the theory file (e.g. during 039). Also noted: script
+`balance!` is the O(leaves²) reference form; `039` implements the §1.4
+Sundar-style sweep per the theory.

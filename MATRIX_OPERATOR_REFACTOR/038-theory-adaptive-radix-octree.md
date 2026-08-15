@@ -138,6 +138,70 @@ Open items / notes for the approval agent:
 Scoped derivation row: `theory/`, `scripts/`, `data/` artifacts only; does not
 reopen the Theory Phase hard gate and does not re-block any completed row.
 
+## Clear-Context Re-Approval (2026-08-14 19:38 MDT)
+
+**APPROVED** by a fresh clear-context re-approval agent (no prior campaign
+context), after the sticky-demotion correction (`5f57db4`, following
+`04f6c3c`).
+
+Evidence checked: START_HERE protocol §6 + 038 row; this task file
+including the Review Correction block; `theory/adaptive-radix-octree.md`
+in full; `scripts/adaptive_octree_verify.jl` in full; all 5 CSVs +
+`summary.txt`; decision-log entries 19:04/19:22/19:27/19:33 MDT. Re-ran
+the script (`--threads=1`, ~10 s): ALL CHECKS PASS and the regenerated
+artifacts are byte-identical (shasum before/after) to the committed data.
+`git show --stat 5f57db4`: `MATRIX_OPERATOR_REFACTOR/` only, no `src/`.
+
+Blocker verification (the point of this re-review):
+
+- `build_lists` sticky semantics confirmed in code: the lineage bit `dem`
+  propagates through every descent, `near = dem || isnear(...)` forces
+  demoted lineages to terminate in U, and V/W/X emission requires
+  `!near` — hence a never-demoted path, on which every descended ancestor
+  pair satisfied the *geometric* near predicate. Invariant 2 is restored
+  geometrically; §2.4's "025 tables reused unchanged" now holds
+  unconditionally with the gate active, and §5.2/§5.3 give the matching
+  proof (emission ⇒ the pair itself passed the gate, which also yields
+  the §5.3 cutoff-coverage contrapositive).
+- `check_v_classes` (separated offset + parent offset in `N_q` +
+  Chebyshev reach ≤ 3/7 — exactly phase-table membership) now runs on
+  GATED lists (`vok_g`, folded into `allpass`):
+  `v_classes_ok_gated = true` on all 18 σ-gate rows, alongside
+  `contract_bad = 0` and exact-once `= 0`. `wx_max_leveldiff_gated`
+  recorded. The reviewer's measured out-of-table pairs (reach ≤ 11) are
+  gone.
+- Nothing else broke: exact-once passes on all 40 configurations (both
+  radii, balanced/unbalanced) and on every gated configuration;
+  uniform-limit parity passes with the newly added exact-once painting
+  on the parity tree (first review's noted item, addressed); σ-contract
+  zero violations; capacity bounds hold; P=4/P=8 bound monotonicity and
+  M2T/S2L convergence (P=4/8/12) unchanged.
+- Quantitative claims re-derived from the CSVs: sticky over-cost worst
+  3.51× (filament q=3 heterogeneous, 993224/283296), one-fat-core
+  1.25/1.36/2.18× at q=3, ≤2.9% on all q=12 heterogeneous rows —
+  matching the task file and 19:33 decision-log entry (no remaining
+  overstatement). Cost headlines re-verified at equal `max|A|`:
+  7.78× (multiscale100 q=3), 20.7× (q=12), 5.12× (filament q=3);
+  uniform-cube non-regression is exact row equality
+  (`K=64 ↔ ℓ=2`, `K=16/32 ↔ ℓ=3`, both radii).
+- Option (b) (table-free M2T/S2L re-admission) properly recorded in
+  §5.4 + decision log as a user-ratification item with quantified
+  stakes; the sticky-demotion adoption itself is flagged for user
+  ratification. E2 disposition stays open per standing rule.
+
+NOTED (non-blocking, fix on next touch of the theory file): §2.4's
+displayed phase identity pairs `o = c_B - c_A` (A = target, i.e.
+`S - T`) with `u = c_B mod 2` (source phase); `025` defines
+`p = fld(u+o,2)` for `o = T - S` with source phase, so as literally
+written the identity misses the parent offset when parent phases differ
+(e.g. target phase 1, source phase 0). Set-level membership — the claim
+that matters — is orientation-independent (`N_q = -N_q`, 025's symmetry
+note) and the script verifies parent offsets directly from the tree, so
+no proof or datum is affected; either flip the offset to `c_A - c_B` or
+use the target phase. Also noted: the script's `balance!` is the
+O(leaves²) reference form — fine for validation; `039` should implement
+the §1.4 Sundar-style sweep as the theory already specifies.
+
 ## Motivation
 
 The uniform radix grid is occupancy-compacted (compute scales with occupied
