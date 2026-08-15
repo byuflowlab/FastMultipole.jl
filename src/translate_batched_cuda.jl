@@ -7787,6 +7787,11 @@ include(joinpath(@__DIR__, "tree_batched_cuda.jl"))
 
 #------- device M2T (W list) -------#
 
+# Fixed harmonic-kernel grid: blocks x 128 threads share the preallocated
+# per-thread irregular-harmonic scratch slab (grid-stride loops cover any list
+# length). 512 x 128 slots x 66 complex terms (P=8) is 69 MB in Float64.
+const _ADT_CUDA_HARMONIC_BLOCKS = 512
+
 # Block-per-W-pair, thread-per-target-body: each thread evaluates the source
 # node's multipole at its body via thread-local irregular harmonics (the
 # validated host irregular_harmonics! + _resident_multipole_eval_flat run as
@@ -7794,10 +7799,12 @@ include(joinpath(@__DIR__, "tree_batched_cuda.jl"))
 # construction). Different W pairs may share a target leaf, so output
 # accumulation is atomic.
 function _cuda_adaptive_m2t_kernel!(output, source_bodies, cell_ranges,
-        leaf_slot_of, node_centers, w_targets, w_sources, n_w, ph, ch,
-        ::Val{P_phi}, ::Val{P_active}, ::Val{NH}, lhv::Val{LH},
-        ::Val{HS}) where {P_phi,P_active,NH,LH,HS}
+        leaf_slot_of, node_centers, w_targets, w_sources, n_w, ph, ch, Hall,
+        ::Val{P_phi}, ::Val{P_active}, lhv::Val{LH},
+        ::Val{HS}) where {P_phi,P_active,LH,HS}
     TF = eltype(output)
+    slot = (Int(blockIdx().x) - 1) * Int(blockDim().x) + Int(threadIdx().x)
+    H = view(Hall, :, slot:slot, :)
     k = Int(blockIdx().x)
     stride = Int(gridDim().x)
     @inbounds while k <= n_w
@@ -7811,7 +7818,6 @@ function _cuda_adaptive_m2t_kernel!(output, source_bodies, cell_ranges,
         cz = node_centers[3, ib]
         i = first + Int(threadIdx().x) - 1
         while i <= first + count - 1
-            H = MArray{Tuple{2,1,NH},TF}(undef)
             dx = source_bodies[1, i] - cx
             dy = source_bodies[2, i] - cy
             dz = source_bodies[3, i] - cz
@@ -7844,18 +7850,18 @@ function _launch_cuda_adaptive_m2t!(state::DeviceResidentRadixState{TF,B,LH},
     n_w == 0 && return state
     orders = state.invariant_cache.basis_info.orders
     P_phi = orders.P_phi
-    NH = harmonic_index(P_phi + 2, P_phi + 2)
     hs = size(state.output, 1) >= 13
     grid = state.grid::DeviceRadixGrid
     threads = 128
-    blocks = min(n_w, 1 << 16)
+    blocks = min(n_w, _ADT_CUDA_HARMONIC_BLOCKS)
     CUDA.@cuda threads=threads blocks=blocks _cuda_adaptive_m2t_kernel!(
         state.output, state.source_bodies, state.cell_ranges,
         actx.leaf_slot_of::CUDA.CuVector{Int32}, grid.node_centers,
         actx.w_targets::CUDA.CuVector{Int32},
         actx.w_sources::CUDA.CuVector{Int32}, n_w,
         phi_slab(state.multipoles), chi_slab(state.multipoles),
-        Val(P_phi), Val(orders.P_active), Val(NH), Val(LH),
+        actx.harmonics_scratch::CUDA.CuArray{TF,3},
+        Val(P_phi), Val(orders.P_active), Val(LH),
         hs ? Val(true) : Val(false))
     return state
 end
@@ -7866,9 +7872,11 @@ end
 # target node's local expansion. Scalar rule (resident convention, task 040):
 # L_n^m += (-1)^(n+m) q conj(S_n^m(x_s - c_A)) — no legacy strength negation.
 function _cuda_adaptive_s2l_kernel!(lp, source_bodies, cell_ranges,
-        leaf_slot_of, node_centers, x_targets, x_sources, n_x,
-        ::Val{P_phi}, ::Val{NH}) where {P_phi,NH}
+        leaf_slot_of, node_centers, x_targets, x_sources, n_x, Hall,
+        ::Val{P_phi}) where {P_phi}
     TF = eltype(lp)
+    slot = (Int(blockIdx().x) - 1) * Int(blockDim().x) + Int(threadIdx().x)
+    H = view(Hall, :, slot:slot, :)
     k = Int(blockIdx().x)
     stride = Int(gridDim().x)
     @inbounds while k <= n_x
@@ -7882,7 +7890,6 @@ function _cuda_adaptive_s2l_kernel!(lp, source_bodies, cell_ranges,
         cz = node_centers[3, ia]
         s = first + Int(threadIdx().x) - 1
         while s <= first + count - 1
-            H = MArray{Tuple{2,1,NH},TF}(undef)
             dx = source_bodies[1, s] - cx
             dy = source_bodies[2, s] - cy
             dz = source_bodies[3, s] - cz
@@ -7906,9 +7913,11 @@ end
 # Vortex S2L: verbatim device port of the task-040 host kernel (legacy
 # strength-to-channel map, chi rows through P_active = P_phi + 1 per 008h).
 function _cuda_adaptive_s2l_vortex_kernel!(lp, lc, source_bodies, cell_ranges,
-        leaf_slot_of, node_centers, x_targets, x_sources, n_x,
-        ::Val{P_phi}, ::Val{P_active}, ::Val{NH}) where {P_phi,P_active,NH}
+        leaf_slot_of, node_centers, x_targets, x_sources, n_x, Hall,
+        ::Val{P_phi}, ::Val{P_active}) where {P_phi,P_active}
     TF = eltype(lp)
+    slot = (Int(blockIdx().x) - 1) * Int(blockDim().x) + Int(threadIdx().x)
+    H = view(Hall, :, slot:slot, :)
     k = Int(blockIdx().x)
     stride = Int(gridDim().x)
     @inbounds while k <= n_x
@@ -7922,7 +7931,6 @@ function _cuda_adaptive_s2l_vortex_kernel!(lp, lc, source_bodies, cell_ranges,
         cz = node_centers[3, ia]
         s = first + Int(threadIdx().x) - 1
         while s <= first + count - 1
-            H = MArray{Tuple{2,1,NH},TF}(undef)
             dx = source_bodies[1, s] - cx
             dy = source_bodies[2, s] - cy
             dz = source_bodies[3, s] - cz
@@ -8006,22 +8014,22 @@ function _launch_cuda_adaptive_s2l!(state::DeviceResidentRadixState{TF,B,LH},
     P_phi = orders.P_phi
     grid = state.grid::DeviceRadixGrid
     threads = 128
-    blocks = min(n_x, 1 << 16)
+    blocks = min(n_x, _ADT_CUDA_HARMONIC_BLOCKS)
     if state.options.body_type <: Point{Vortex}
-        NH = harmonic_index(P_phi + 2, P_phi + 2)
         CUDA.@cuda threads=threads blocks=blocks _cuda_adaptive_s2l_vortex_kernel!(
             phi_slab(state.locals), chi_slab(state.locals), state.source_bodies,
             state.cell_ranges, actx.leaf_slot_of::CUDA.CuVector{Int32},
             grid.node_centers, actx.x_targets::CUDA.CuVector{Int32},
             actx.x_sources::CUDA.CuVector{Int32}, n_x,
-            Val(P_phi), Val(orders.P_active), Val(NH))
+            actx.harmonics_scratch::CUDA.CuArray{TF,3},
+            Val(P_phi), Val(orders.P_active))
     elseif state.options.body_type <: Point{Source}
-        NH = harmonic_index(P_phi, P_phi)
         CUDA.@cuda threads=threads blocks=blocks _cuda_adaptive_s2l_kernel!(
             phi_slab(state.locals), state.source_bodies, state.cell_ranges,
             actx.leaf_slot_of::CUDA.CuVector{Int32}, grid.node_centers,
             actx.x_targets::CUDA.CuVector{Int32},
-            actx.x_sources::CUDA.CuVector{Int32}, n_x, Val(P_phi), Val(NH))
+            actx.x_sources::CUDA.CuVector{Int32}, n_x,
+            actx.harmonics_scratch::CUDA.CuArray{TF,3}, Val(P_phi))
     else
         throw(ArgumentError("adaptive S2L supports Point{Source} and " *
             "Point{Vortex}; got $(state.options.body_type)"))
@@ -8228,6 +8236,11 @@ function _cuda_allocate_adaptive_lifecycle(::Type{TF},
         actx.target_scale = CUDA.CuArray{TF}(ht_scale)
     end
     counters.operator_uploads += 1     # construction-only operator upload
+    # M2T/S2L per-thread irregular-harmonic scratch (2 x slots x NH at order
+    # P_phi + 2); slot count = the fixed harmonic grid (blocks x 128 threads)
+    P_phi = basis_info.orders.P_phi
+    nH2 = harmonic_index(P_phi + 2, P_phi + 2)
+    actx.harmonics_scratch = CUDA.zeros(TF, 2, _ADT_CUDA_HARMONIC_BLOCKS * 128, nH2)
     source_bodies = CUDA.zeros(TF, dpb, maxn)
     n_output_rows = hessian ? 13 : 4
     output = CUDA.zeros(TF, n_output_rows, maxn)

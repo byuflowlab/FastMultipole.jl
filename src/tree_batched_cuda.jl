@@ -134,6 +134,7 @@ function _cuda_allocate_adaptive_context(::Type{TF}, policy::AdaptiveTreePolicy,
         zeros(Int, nclasses + 1), zeros(Int, ell_max + 2),
         d_offset_lut, d_level_class_of,
         CUDA.zeros(TF, 0, 0), CUDA.zeros(TF, 0, 0),
+        CUDA.zeros(TF, 0, 0, 0),      # harmonics_scratch: sized by the lifecycle allocator
         policy.sigma_row, policy.rho_t,
         _ball_stencil_min_gap(q), false,
         CUDA.zeros(Int32, 2), _pin_host_array(zeros(Int32, 2)),

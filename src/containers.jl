@@ -2465,6 +2465,10 @@ mutable struct DeviceAdaptiveCUDAContext
     # dense-family per-level expansion scales (empty unless dense plan)
     source_scale::Any
     target_scale::Any
+    # per-thread irregular-harmonic scratch slab for the M2T/S2L kernels
+    # (2 x slots x NH; a per-thread MArray escapes to device heap — measured
+    # 448 B/thread device-malloc failures on H200, job 13180198)
+    harmonics_scratch::Any
     # per-cell sigma gate (theory §5, sticky demotion)
     sigma_row::Int
     rho_t::Float64
