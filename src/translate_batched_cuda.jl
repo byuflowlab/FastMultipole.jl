@@ -8216,8 +8216,14 @@ function _cuda_allocate_adaptive_lifecycle(::Type{TF},
         DenseTranslationM2L}
     ws_strategy = specialized ? options.m2l_strategy : ConcatenatedFixedZM2L()
     ws_operator = specialized ? options.operator : MaterializedYRotationM2L()
+    # The dense CUDA table is stored per UNSCALED union offset and level-scaled
+    # per apply (the uniform device convention; per-offset class ids +
+    # source/target scales); every other plan is built over the (level, offset)
+    # effective classes exactly like the host adaptive workspace.
+    plan_offsets = options.m2l_strategy isa DenseTranslationM2L ?
+        tables.push_offsets : effective_offsets
     workspace = _radix_cache_workspace(TF, basis_info, multipoles, ell, h0,
-        leaf_cap, node_cap, window_cap, effective_offsets, invariant,
+        leaf_cap, node_cap, window_cap, plan_offsets, invariant,
         ws_strategy, ws_operator; compact_cuda_factored=true,
         hierarchical_noffsets=actx.noffsets,
         ell_axes=SVector(ell, ell, ell), first_level=0)
