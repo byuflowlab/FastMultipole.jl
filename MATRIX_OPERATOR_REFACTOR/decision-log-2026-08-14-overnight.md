@@ -1003,3 +1003,34 @@ Design decisions of record (overnight/user-absent; all in-scope):
   same intended configurations, same anchors/medians/accuracy sampling.
 - Final measurement run resubmitted as job **13182172**; its CSV supersedes
   the interim 13180706 CSV (committed for the record).
+
+## 2026-08-15 15:58 MDT — USER DIRECTIVE (user returned)
+
+- The user has returned and directed (orchestrator session): complete row
+  041 through close-out and clear-context approval, then PAUSE the campaign
+  for user review. Rows 041a and 042 are NOT to be launched until the user
+  releases them.
+
+## 2026-08-15 16:31 MDT — 041 DONE (lead agent completion)
+
+- Final measurement job **13182172** COMPLETED 00:38:18 ExitCode 0:0 (sacct
+  verified); both gates green in-job (608/608 adaptive tests + full uniform
+  CUDA suites); CSV of record pulled and committed: 96/96 rows ok, every
+  row inside the 1e-3 velocity gate (max 6.6e-4).
+- Headlines (n=1e6, F64, dense family, best-vs-best): multiscale100
+  adaptive K=64 **1.87× faster end-to-end / 3.02× faster lifecycle / 3.1×
+  less memory** than best uniform; unitcube 1.11× faster step with
+  lifecycle parity (uniform non-regression holds); wake **1.27× slower**
+  (honest negative — the device fused-dense M2L absorbs deep-uniform cost
+  far better than the host did; 040's wake win does not transfer). popmax
+  = K_max everywhere; wake U pairs 9.4e8 vs 6.7e9/4.4e10. Warm adaptive
+  refresh 10–11 ms (epoch-cached; epoch rebuilds add ~45–85 ms dominated by
+  the CSR key sort). ℓ≤8 cap: adaptive path has NO cap (ran ell_max=10);
+  uniform path deliberately untouched (decision recorded in the task file).
+- Task file completion notes written; START_HERE row 041 marked **Done**
+  (Approved left blank). Ready for clear-context approval.
+- User-ratification/open items carried: split-veto default OFF + no device
+  veto, 038 option (b) not implemented, E2 open, the 037e/f-era interface
+  parity drift follow-up (tolerances widened, documented), wake-regime
+  default recommendation for 042, 041a items (per-n K/depth sweep, frozen-
+  set refresh lever, graph-engagement profiling, stage-slab chunking).
