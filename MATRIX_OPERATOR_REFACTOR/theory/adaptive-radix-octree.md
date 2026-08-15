@@ -290,7 +290,11 @@ $V_{\rm push}(u)$. Therefore:
 
 - the admissible offset set at each level is a subset of the finite `025`
   phase-table set (Chebyshev reach $\le3$ for $q=3$, $\le7$ for $q=12$;
-  per-phase cardinalities 189 / 1253);
+  per-phase cardinalities 189 / 1253). This holds **with the §5 gate
+  active** because demotion is sticky (§5.2): V is emitted only on
+  never-demoted paths, where descent used the geometric near predicate,
+  so Invariant 2's parent nearness is geometric — verified computationally
+  on both gated and ungated lists;
 - batching by $(\ell, o)$ class and the level-scaling law
   $K(sr)=s^{-1}\Lambda(s)K(r)\Lambda(s)$ (scalar and LH forms) apply
   verbatim — **no new operator tables** are required, satisfying the task
@@ -353,8 +357,9 @@ GPU dual-tree formulation), mirroring the construction sweep:
 1. Frontier = array of (A, B) node-id pairs; initialize to [(root, root)].
 2. **Classify** each pair in $O(1)$: evaluate near (three clamps), the §5
    gate (one compare against the precomputed per-node
-   $\rho_t\sigma_{\max}$, §5.2), leaf flags, and levels → one of {U, V, W,
-   X, expand-A, expand-B, expand-both}.
+   $\rho_t\sigma_{\max}$, §5.2, plus the sticky lineage bit carried in the
+   pair record), leaf flags, and levels → one of {U, V, W, X, expand-A,
+   expand-B, expand-both}.
 3. **Emit**: scan the per-class counts; compact U/V/W/X records into their
    output arrays.
 4. **Expand**: scan the child-pair counts (product of child counts for
@@ -419,9 +424,11 @@ same-cell and same-body pairs, is covered exactly once.
    The root covers all ordered pairs. $\square$
 
 Note what the proof does *not* use: the specific form of the near
-predicate (any pairwise predicate yields a valid partition — this is what
-makes the §5 demotion gate free), balance, or radius constancy across
-levels. Those choices govern *efficiency* and *error*, not coverage.
+predicate — any per-pair classification rule, including one carrying
+recursion-path state like the §5 sticky-demotion lineage bit, yields a
+valid partition, which is what makes the §5 gate free — nor balance, nor
+radius constancy across levels. Those choices govern *efficiency* and
+*error*, not coverage.
 
 Self-interaction: the pair $(A,A)$ is near ($o=0$) at every level, so it
 descends to leaf self pairs emitted in U; the direct kernel's existing
@@ -664,10 +671,23 @@ cell boxes (for same-level cells this is the `025` lattice gap
 $\mathrm{gap}(o)\,\Delta_\ell$ with
 $\mathrm{gap}(o)=\sqrt{\textstyle\sum_i \max(|o_i|-1,0)^2}$; for mixed
 levels it is the per-axis clamp form). A separated pair that fails the
-test is **demoted**: the DTR treats it as near and continues descent,
-terminating in U at leaf pairs. Only the source side is tested because the
+test is **demoted, stickily**: the DTR continues descent following the
+ordinary near-pair split rules, and the *entire* descendant pair set of a
+demoted pair terminates in U — no V/W/X emission occurs below a demotion
+(the lineage carries one bit). Only the source side is tested because the
 kernel's regularization variable is $\rho=r/\sigma_{\rm src}$ (the
 production pair kernels read only the source $\sigma$).
+
+Stickiness is what preserves §2.4: Invariant 2 (every emitted V pair has
+*geometrically* near parents) survives the gate because V is only ever
+emitted on never-demoted recursion paths, where "near" coincides with the
+geometric predicate. A non-sticky variant — re-admitting descendants of a
+demoted pair to V once their refined $\sigma_{\max}$ passes the gate —
+emits V pairs whose parents are geometrically separated, i.e. offsets
+*outside* the `025` phase-table class set (measured before this
+correction: up to Chebyshev reach 11 on the one-fat-core test fields),
+violating the no-new-tables constraint. See §5.4 for the recorded
+alternative that recovers that lost far-field work without new tables.
 
 Precompute $\rho_t\sigma_{\max}(B)$ per node; the gate is then one
 comparison per classified pair in the §2.7 sweep.
@@ -679,10 +699,12 @@ unchanged, and (ii) every ordered body pair with $r\le\rho_t\sigma_s$ is
 covered by U.
 
 *Proof.* (i) is immediate from §3.2: the proof is independent of the
-near/far predicate's form, and demotion only changes which predicate is
-used. (ii): suppose the pair $(t,s)$ is covered by an expansion bucket
-V/W/X $(A,B)$ with $s\in\mathrm{sub}(B)$, $t\in\mathrm{sub}(A)$. The
-bucket was emitted, so it passed the gate:
+near/far predicate's form, and sticky demotion only changes which pairs
+descend (the lineage bit alters classification, never the partition
+structure of an expansion step). (ii): suppose the pair $(t,s)$ is
+covered by an expansion bucket V/W/X $(A,B)$ with $s\in\mathrm{sub}(B)$,
+$t\in\mathrm{sub}(A)$. Expansion buckets are emitted only on non-demoted
+paths, so the pair itself passed the gate:
 $r \ge \mathrm{gap}(A,B) \ge \rho_t\,\sigma_{\max}(B) \ge \rho_t\sigma_s$
 (the first inequality because $t$ and $s$ lie inside the respective closed
 boxes). Contrapositive: a cutoff pair cannot be covered by an expansion
@@ -696,12 +718,20 @@ throw eliminated: *any* $\sigma$ field is admissible, in the worst case by
 demoting everything near a fat-$\sigma$ region to direct (which is the
 regularized-everywhere limit, correct by `032`'s contract).
 
-**Descent helps.** Demoting a pair and descending does not change the
-physical gap, but it *refines the source bound*: $\sigma_{\max}$ of a
-child is $\le$ the parent's, so children away from the offending fat
-bodies re-become admissible; only the subtree actually holding large
-$\sigma$ stays direct. The gate is therefore genuinely per-cell: one fat
-core forces direct work only in its own neighborhood.
+**Cost locality.** Sticky demotion converts the whole demoted pair set
+$\mathrm{sub}(A)\times\mathrm{sub}(B)$ to direct work, including sources
+whose own $\sigma$ is small. The over-cost is nevertheless *local*: a
+demotion at $(A,B)$ requires $\mathrm{gap}(A,B) < \rho_t\sigma_{\max}(B)$,
+so demoted work is confined to the physical
+$\rho_t\sigma_{\max}$-neighborhood of the subtree that actually holds the
+fat sources — regions the `031a` contract forces (mostly) direct anyway —
+and the split veto below keeps such subtrees coarse, bounding the demoted
+volume. Away from fat-$\sigma$ subtrees the gate never fires and nothing
+changes. The gate is therefore still per-cell in the sense that matters:
+one fat core costs direct work only in its own neighborhood, not a
+globally shallow tree. The gated-vs-ungated direct-pair counts in
+`data/adaptive_octree/sigma_gate_contract.csv` quantify the over-cost on
+the one-fat-core and two-decade-heterogeneous test fields.
 
 ### 5.4 Split veto, hysteresis, and the E2 mechanism
 
@@ -723,6 +753,20 @@ it must not veto *balance* splits (balance keeps priority; demotion covers
 any resulting inadmissible geometry). Recommended default: veto ON for
 population splits, OFF for balance splits, with the demotion gate always
 armed.
+
+**Recorded alternative (user decision required to adopt).** The far-field
+work sticky demotion forgoes could be recovered *without* new operator
+tables by re-admitting demoted-descendant far pairs only as body-mediated
+M2T/S2L entries (the §4.3 bound already covers their geometry, and those
+operators are table-free): sources in the small-$\sigma$ octants of a
+demoted subtree would then still be accelerated. The price is M2T/S2L
+with internal-node partners (per-body cost $\propto|\mathrm{sub}|$), a
+larger W/X capacity term, and a more intricate lineage rule. Sticky
+demotion was chosen for this derivation as the theoretically cleanest
+form (unconditional table claim, one-bit lineage, simplest proofs); the
+re-admission variant is recorded here and in the campaign decision log as
+an optimization for user ratification, implementable inside `039`–`040`
+without changing this row's theorems.
 
 Because the veto/demotion pair keys off the *live* per-node
 $\sigma_{\max}$, `CoreSpreading`-grown $\sigma$ degrades geometry
@@ -926,8 +970,9 @@ writes to `MATRIX_OPERATOR_REFACTOR/data/adaptive_octree/`:
 
 - `exact_once_coverage.csv` — §3 exact-once + balance + V-class + W/X
   level statistics per (case, $q$, $K_{\max}$, balanced);
-- `sigma_gate_contract.csv` — §5 demotion counts and cutoff-coverage
-  contract checks (uniform-small, heterogeneous, one-fat-core $\sigma$);
+- `sigma_gate_contract.csv` — §5 sticky-demotion counts, cutoff-coverage
+  contract checks, and gated-list V-class/phase-table membership + W/X
+  structure (uniform-small, heterogeneous, one-fat-core $\sigma$);
 - `cost_model_counts.csv` — §6 counted work terms, adaptive vs uniform
   depths;
 - `constant_p_bound_consistency.csv` — §4.3/§4.4 bound values and
@@ -948,7 +993,8 @@ and does not import or mutate production FastMultipole code.
   (clustered + uniform + P=4-sized cases).
 - `040` (host lifecycle): §2.6 pipeline; M2T/S2L kernels per §4 with the
   M2L-composition oracles as parity tests ($\phi$+$\chi$, both
-  precisions, $P=4$ and $P=8$); §5 gate with demotion default-on,
+  precisions, $P=4$ and $P=8$); §5 gate with *sticky* demotion default-on
+  (the §5.4 re-admission alternative only after user ratification),
   split-veto default-on for population splits; accuracy gates per the
   phase contract.
 - `041` (CUDA): §1.2/§2.7 as flag/scan/compact kernels; sorted-key binary

@@ -119,3 +119,102 @@ non-regression on the uniform cube.
 Bookkeeping: 038 task file updated (gate record + completion notes),
 START_HERE row 038 marked Done (Approved left blank), committing on
 `matrix-ops` next. Row is ready for clear-context approval.
+
+## 2026-08-14 19:27 MDT — 038 clear-context review: CHANGES REQUIRED
+
+Reviewer: clear-context approval agent (no prior campaign context).
+Verdict: **CHANGES REQUIRED — 038 not approved; Approved checkbox left
+blank.**
+
+Evidence checked: START_HERE (038 row + phase preamble + protocol §6),
+the 038 task file (incl. entry-gate record — adjudication accepted:
+037b density-contrast evidence is on point, the σ-gate honesty nuance is
+properly recorded), `theory/adaptive-radix-octree.md` in full,
+`scripts/adaptive_octree_verify.jl` in full, all 5 CSVs + summary.
+Re-ran the script (`--threads=1`): ALL CHECKS PASS, byte-identical rerun
+confirmed. Commit `04f6c3c` surface verified: `MATRIX_OPERATOR_REFACTOR/`
+only, no production `src/`. Headline cost ratios independently recomputed
+from `cost_model_counts.csv`: 8.68e7/1.116e7 = 7.8×, 3.578e8/1.731e7 =
+20.7×, 2.946e7/5.752e6 = 5.1×, at equal `max|A|` as stated; uniform-cube
+non-regression row equality confirmed. Exact-once proof (§3.2), mixed-level
+finer-lattice near predicate (§2.1, incl. the every-tile-separated
+property §4.3 relies on), σ-gate correctness theorem (§5.3), `008h` χ at
+P+1 usage (§4.1–4.3), and the c>2 exclusion (§4.4) all check out.
+
+**REQUIRED CHANGE (correctness of the `025` table-reuse claim under the
+§5 σ gate).** §2.4 claims every emitted V offset lies inside the finite
+`025` phase-table set ("no new operator tables"), proven via Invariant 2
+(parent nearness). With the §5 demotion gate active, "near" includes
+demoted-but-geometrically-separated pairs, and §5.3's "descent helps"
+re-admission then emits V pairs whose parents are geometrically separated
+— outside the `V_push` phase-table set. Reviewer measured it on the
+script's own σ-gate configurations (K_max=32, ρ_t=4.789): e.g. uniform
+q=3 one_fat: 2712 V pairs beyond Chebyshev reach 3 (worst reach 7), 2971
+with separated parents; filament q=3 one_fat: worst reach 11; even q=12
+one_fat cases emit 932–963 V pairs with separated parents (i.e. not in
+the 1253-entry push table) while within reach 7. The script masked this
+by running `check_v_classes` only on ungated lists. Exact-once coverage
+and the σ contract are unaffected (predicate-independent), and the error
+bound at larger ‖o‖ is smaller, so this is a table-membership/constraint
+violation, not an accuracy bug — but the task constraint says any
+deviation from "no new tables" must be quantified and stopped for user
+discussion. Fix options for the owner (pick + prove + re-verify):
+(a) sticky demotion — a demoted pair descends to U only (matches the
+`build_lists` docstring as written; weakens §5.3 "descent helps" and its
+cost claim); (b) re-admit demoted-descendant far pairs only as W/X-style
+body-mediated M2T/S2L (table-free; §4.3 bound already covers the
+geometry); (c) allow out-of-table V classes and stop for user discussion
+per the constraint. Required in all cases: make §2.4/§5.3 consistent
+with the chosen rule, run the V-class/phase-table membership check on
+GATED lists in the script, regenerate data, and correct the overstated
+"every emitted V pair proven inside the phase-table class set" claims
+(this log's earlier entry, task-file completion notes).
+
+Noted (non-blocking): uniform-limit parity compares `Set(L.V)` — a
+duplicate V emission would pass the set equality (exact-once painting is
+not run on the parity tree); consider painting there too when touching
+the script.
+
+## 2026-08-14 19:33 MDT — 038 review correction: sticky demotion (lead agent)
+
+Correction to the 19:04/19:22 entries above, fixing the 19:27 review
+blocker. The reviewer was right: the original demote-and-descend gate
+allowed descendants of a demoted (geometrically separated) pair to
+re-admit to V, emitting V pairs with separated parents — outside the 025
+phase-table set — so the 19:22 entry's claim 6 ("every emitted V pair
+proven inside the phase-table class set") was OVERSTATED: it had been
+verified on ungated lists only. Coverage and accuracy were never
+affected.
+
+**Decision (overnight, user unavailable): option (a), sticky demotion.**
+A demoted pair's entire descendant pair set terminates in U (one lineage
+bit; no V/W/X below a demotion). Rationale: (i) restores Invariant 2
+*geometrically*, making the no-new-tables claim unconditional — the
+cleanest theory; (ii) matches the build_lists docstring semantics as
+originally written; (iii) simplest proofs and 039–041 contract (no
+internal-node M2T/S2L semantics, no extra capacity term); (iv) the
+over-cost is local to fat-σ neighborhoods that the 031a contract forces
+(mostly) direct anyway, and the split veto bounds it.
+
+**Item for user ratification tomorrow — recorded alternative (option b):**
+re-admit demoted-descendant far pairs as table-free body-mediated M2T/S2L
+entries (the §4.3 bound already covers that geometry). Recovers far-field
+acceleration for small-σ sources inside demoted subtrees at the price of
+internal-node-partner M2T/S2L (per-body cost ∝ subtree size), a larger
+W/X capacity term, and a more intricate lineage rule. Measured stakes
+(sigma_gate_contract.csv, gated vs ungated direct pairs, n=3000): worst
+case 3.5× more direct pairs under sticky demotion (q=3, 2-decade
+heterogeneous σ; filament 993k vs 283k); one-fat-core 1.2–2.2× at q=3;
+≤3% on all q=12 heterogeneous rows. If real σ fields look like the
+2-decade case at q=3, option (b) is worth implementing in 039/040; it
+fits inside this row's theorems (recorded in theory §5.4) and needs no
+re-derivation.
+
+Changes made: theory §2.4/§2.7/§3.2/§5.2/§5.3/§5.4/§8/§9 reconciled
+("descent helps" replaced by the cost-locality argument; option (b)
+recorded in §5.4); build_lists made sticky; V-class/phase-table + W/X
+checks now run on GATED lists (all pass); uniform-limit parity now also
+runs exact-once painting on the parity tree (reviewer's non-blocking
+note); data regenerated; ALL CHECKS PASS; byte-identical rerun
+re-confirmed; task file carries a Review Correction block. Committing as
+`038: review corrections` next. Row ready for fresh re-approval.

@@ -2,8 +2,10 @@
 
 ## Status and Entry Gate
 
-**DONE `2026-08-14` (overnight campaign lead agent); awaiting clear-context
-approval.**
+**DONE `2026-08-14` (overnight campaign lead agent); first clear-context
+review returned CHANGES REQUIRED (19:27 MDT decision-log entry); the
+blocker is fixed (sticky demotion, see Review Correction below); awaiting
+fresh clear-context re-approval.**
 
 Entry gate: `035` must complete its profiling campaign and `036` (Integration
 Phase milestone review) and `037` (rectangular grid) must be complete and
@@ -63,6 +65,35 @@ Artifacts delivered:
   cost_model_counts,constant_p_bound_consistency,s2l_m2t_convergence}.csv`
   + `summary.txt`.
 
+## Review Correction (2026-08-14, after the 19:27 MDT CHANGES REQUIRED)
+
+The first clear-context review found the §2.4 "no new operator tables"
+claim FALSE as originally derived: the §5 gate's demote-and-descend rule
+allowed descendants of a demoted (geometrically separated) pair to
+re-admit to V, emitting V pairs with separated parents — offsets outside
+the `025` phase-table set (reviewer measured up to Chebyshev reach 11 on
+the one-fat-core fields; the original script only checked V classes on
+UNGATED lists, masking it). Coverage and accuracy were unaffected.
+
+Fix adopted (option a, **sticky demotion** — overnight decision, user
+ratification item recorded in the decision log): a demoted pair's entire
+descendant pair set terminates in U; V/W/X are emitted only on
+never-demoted paths, restoring Invariant 2 geometrically and making the
+§2.4 table claim hold unconditionally with the gate active. Theory
+§2.4/§5.2/§5.3/§5.4 reconciled; the former "descent helps" re-admission
+claim replaced by a cost-locality argument; the table-free M2T/S2L
+re-admission variant (option b) is recorded in §5.4 as a user-ratifiable
+optimization for `039`/`040`. Script now checks V-class/phase-table
+membership and W/X structure on GATED lists (all pass), and the
+uniform-limit parity check additionally runs exact-once painting on the
+parity tree (reviewer's non-blocking note). Sticky over-cost quantified
+in `sigma_gate_contract.csv` (gated vs ungated direct pairs: worst 3.5×
+at q=3 with 2-decade heterogeneous σ; ≤3% on q=12 heterogeneous).
+
+The verification claims below are as corrected (gated-list V-class checks
+included); data regenerated, ALL CHECKS PASS, byte-identical rerun
+re-confirmed.
+
 Verification status — ALL CHECKS PASS:
 
 - exact-once ordered-pair coverage (brute-force `n²` painting, `n = 3000`)
@@ -70,13 +101,14 @@ Verification status — ALL CHECKS PASS:
   adversarial two-cluster) × `q ∈ {3, 12}` × `K_max ∈ {16, 64}` ×
   balanced/unbalanced — 40 configurations, zero violations;
 - 2:1 balance fixed point + property; V-class admissibility (separated
-  offset, near parent, Chebyshev reach ≤ 3/7) on every emitted V pair;
+  offset, near parent, Chebyshev reach ≤ 3/7) on every emitted V pair, on
+  both ungated AND σ-gated lists (review correction);
 - uniform-limit parity vs an independent `025` first-separated-ancestor
   implementation, both radii — exact list equality, W/X empty;
 - per-cell σ gate: `031a` cutoff-coverage contract (every pair with
   `r ≤ ρ_t σ_src` lands in U) holds with zero violations across uniform /
-  heterogeneous (2-decade) / one-fat-core σ fields, with demotion active
-  and coverage still exact-once;
+  heterogeneous (2-decade) / one-fat-core σ fields, with sticky demotion
+  active, coverage still exact-once, and V classes still in-table;
 - M2T/S2L scalar convergence to the analytic potential with
   self-contained Gumerov-form harmonics at `P = 4/8/12` (P=4 coverage
   invariant): relative errors ~1e-8 / ~1e-14 / ~1e-16, confirming the

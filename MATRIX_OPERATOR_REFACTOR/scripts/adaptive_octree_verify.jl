@@ -22,10 +22,13 @@
 #      self-contained Gumerov-normalized harmonics);
 #   5. uniform-limit parity: forcing all leaves to one depth reproduces the
 #      025 first-separated-ancestor (L*) list construction exactly;
-#   6. the per-cell sigma gate (demotion form): with heterogeneous sigma,
-#      every body pair inside the regularization cutoff r <= rho_t*sigma_src
-#      is covered by U (the 031a §5.1 contract), while far work survives
-#      where sigma permits;
+#   6. the per-cell sigma gate (STICKY demotion form, review correction
+#      2026-08-14): with heterogeneous sigma, every body pair inside the
+#      regularization cutoff r <= rho_t*sigma_src is covered by U (the 031a
+#      §5.1 contract), coverage stays exact-once, AND every emitted V pair
+#      on the gated lists remains inside the 025 phase-table class set
+#      (near parents, Chebyshev reach) — the table-reuse claim holds with
+#      the gate active;
 #   7. capacity formulas: measured node/leaf/list counts never exceed the
 #      closed-form capacity bounds of theory §6;
 #   8. constant-P bound consistency (P = 4 and P = 8 per the standing test
@@ -270,25 +273,30 @@ struct Lists
                                    # continued descent (diagnostic only)
 end
 
-"""Dual-tree recursion of theory §2.3. `sigma_node[i]` is the subtree max of
-the source smoothing radius (0 disables the gate); `rho_t` the 031a cutoff.
-The gate is folded into the far predicate: a geometrically separated pair
-whose physical AABB gap cannot guarantee gap >= rho_t*sigma_max(source) is
-treated as near (demotion), which terminates in U at leaf pairs."""
+"""Dual-tree recursion of theory §2.3 with the STICKY demotion gate of
+theory §5.2 (review correction 2026-08-14). `sigma_node[i]` is the subtree
+max of the source smoothing radius (0 disables the gate); `rho_t` the 031a
+cutoff. A geometrically separated pair whose physical AABB gap cannot
+guarantee gap >= rho_t*sigma_max(source) is demoted: it descends, and its
+ENTIRE descendant pair set terminates in U (no V/W/X emission below a
+demoted pair). This preserves Invariant 2 — every emitted V pair has
+geometrically near parents — so the 025 phase-table membership holds with
+the gate active."""
 function build_lists(t::Tree, q::Int; sigma_node::Vector{Float64} = Float64[],
         rho_t::Float64 = 0.0)
     L = Lists(NTuple{2,Int}[], NTuple{2,Int}[], NTuple{2,Int}[], NTuple{2,Int}[],
         NTuple{2,Int}[])
     gate = !isempty(sigma_node) && rho_t > 0
-    stack = [(1, 1)]
+    stack = [(1, 1, false)]                    # (target, source, demoted lineage)
     while !isempty(stack)
-        (ia, ib) = pop!(stack)
+        (ia, ib, dem) = pop!(stack)
         A = t.nodes[ia]; B = t.nodes[ib]
-        near = isnear(A, B, q)
+        near = dem || isnear(A, B, q)
         if !near && gate
             # per-cell sigma gate on the SOURCE side (031a: rho = r/sigma_src)
             if aabb_gap(t, A, B) < rho_t * sigma_node[ib]
                 near = true
+                dem = true                     # sticky: direct-only from here down
                 push!(L.demoted, (ia, ib))
             end
         end
@@ -307,20 +315,20 @@ function build_lists(t::Tree, q::Int; sigma_node::Vector{Float64} = Float64[],
                 push!(L.U, (ia, ib))
             elseif A.level == B.level
                 if A.leaf                      # split the internal one
-                    for jb in B.children; push!(stack, (ia, jb)); end
+                    for jb in B.children; push!(stack, (ia, jb, dem)); end
                 elseif B.leaf
-                    for ja in A.children; push!(stack, (ja, ib)); end
+                    for ja in A.children; push!(stack, (ja, ib, dem)); end
                 else                           # split both
                     for ja in A.children, jb in B.children
-                        push!(stack, (ja, jb))
+                        push!(stack, (ja, jb, dem))
                     end
                 end
             elseif A.level < B.level           # A coarser => A leaf; split B
                 @assert A.leaf
-                for jb in B.children; push!(stack, (ia, jb)); end
+                for jb in B.children; push!(stack, (ia, jb, dem)); end
             else
                 @assert B.leaf
-                for ja in A.children; push!(stack, (ja, ib)); end
+                for ja in A.children; push!(stack, (ja, ib, dem)); end
             end
         end
     end
@@ -724,13 +732,17 @@ function main()
         t = build_tree(xs, typemax(Int), ell; force_uniform_depth = ell)
         L = build_lists(t, q)
         ok = check_uniform_parity(t, L, q, ell)
+        # review note 2026-08-14: set equality alone would mask duplicate
+        # emissions — run exact-once painting on the parity tree as well
+        ok &= (check_exact_once(t, L) == 0)
         allpass &= ok
-        println("uniform-limit parity q=$q ell=$ell: ", ok ? "PASS" : "FAIL")
+        println("uniform-limit parity q=$q ell=$ell (incl. exact-once painting): ",
+            ok ? "PASS" : "FAIL")
     end
 
     # ---- per-cell sigma gate (theory §5) -----------------------------------
     sigma_rows = String[]
-    push!(sigma_rows, "case,q,K_max,sigma_kind,rho_t,demoted,contract_bad,u_pairs_gated,u_pairs_ungated")
+    push!(sigma_rows, "case,q,K_max,sigma_kind,rho_t,demoted,contract_bad,v_classes_ok_gated,wx_max_leveldiff_gated,u_pairs_gated,u_pairs_ungated")
     for (name, xs) in cases[[1, 2, 4]], q in (3, 12)
         K_max = 32
         nn = size(xs, 2)
@@ -746,14 +758,21 @@ function main()
             L0 = build_lists(t, q)
             bad_cov = check_exact_once(t, Lg)
             bad_ct = check_sigma_contract(t, Lg, xs, sigma, rho_t)
-            allpass &= (bad_cov == 0) && (bad_ct == 0)
+            # review correction 2026-08-14: V-class/phase-table membership must
+            # hold on the GATED lists too (sticky demotion preserves Invariant 2,
+            # so every emitted V pair keeps geometrically near parents)
+            vok_g = check_v_classes(t, Lg, q)
+            wxmax_g, _ = wx_level_stats(t, Lg)
+            allpass &= (bad_cov == 0) && (bad_ct == 0) && vok_g
             wcg = work_counts(t, Lg); wc0 = work_counts(t, L0)
             push!(sigma_rows, join([name, q, K_max, skind, rho_t,
-                length(Lg.demoted), bad_ct, wcg.u_pairs, wc0.u_pairs], ","))
-            @printf("sigma-gate %-13s q=%-2d %-14s demoted=%5d contract=%s cover=%s\n",
+                length(Lg.demoted), bad_ct, vok_g, wxmax_g,
+                wcg.u_pairs, wc0.u_pairs], ","))
+            @printf("sigma-gate %-13s q=%-2d %-14s demoted=%5d contract=%s cover=%s vclasses=%s\n",
                 name, q, skind, length(Lg.demoted),
                 bad_ct == 0 ? "PASS" : "FAIL($bad_ct)",
-                bad_cov == 0 ? "PASS" : "FAIL($bad_cov)")
+                bad_cov == 0 ? "PASS" : "FAIL($bad_cov)",
+                vok_g ? "PASS" : "FAIL")
         end
     end
     open(joinpath(OUTDIR, "sigma_gate_contract.csv"), "w") do io
@@ -861,9 +880,11 @@ function main()
         println(io, "n = $n per case, ell_max = $ell_max, rho_t = $rho_t")
         println(io, "cases: uniform, multiscale30, multiscale100, filament, adversarial")
         println(io, "checks: exact-once (q = 3, 12; balanced + unbalanced), 2:1 balance")
-        println(io, "fixed point, V-class admissibility, classic-limit W/X one-level,")
-        println(io, "uniform-limit 025 parity, per-cell sigma gate 031a contract,")
-        println(io, "capacity bounds, P = 4 / P = 8 bound monotonicity.")
+        println(io, "fixed point, V-class admissibility (ungated AND sigma-gated lists),")
+        println(io, "W/X level statistics, uniform-limit 025 parity (set equality +")
+        println(io, "exact-once painting), per-cell sigma gate (sticky demotion) 031a")
+        println(io, "contract, capacity bounds, P = 4 / P = 8 bound monotonicity,")
+        println(io, "M2T/S2L scalar convergence at P = 4/8/12.")
     end
     return allpass
 end
