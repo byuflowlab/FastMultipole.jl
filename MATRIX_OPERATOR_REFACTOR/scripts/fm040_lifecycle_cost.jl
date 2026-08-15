@@ -37,6 +37,15 @@
 #   - A per-config failure is recorded as a row with status != ok and the
 #     sweep continues.
 #
+# Amendment (2026-08-14 22:37 MDT, logged in the campaign decision log,
+# committed before resubmission): the first submission (job 13179268) was
+# cancelled at ~1h because the CSV was only written at sweep end (a wall-limit
+# timeout would have lost every completed row) and stdout was block-buffered
+# (no progress visibility). The CSV is now (re)written after EVERY row and
+# stdout is flushed per row; the wall limit is raised to 12h. The measurement
+# protocol itself (cases, params, medians, anchors, accuracy sampling) is
+# UNCHANGED.
+#
 # Output: MATRIX_OPERATOR_REFACTOR/data/fm040_lifecycle_cost.csv
 # Usage:  julia --project=. -t 1 MATRIX_OPERATOR_REFACTOR/scripts/fm040_lifecycle_cost.jl [nlist]
 
@@ -135,6 +144,17 @@ end
 
 median5(f) = median([(t0 = time_ns(); f(); (time_ns() - t0) / 1e6) for _ in 1:5])
 
+function write_rows(rows)
+    mkpath(dirname(OUTFILE))
+    open(OUTFILE, "w") do io
+        for r in rows
+            println(io, r)
+        end
+    end
+    flush(stdout)
+    return nothing
+end
+
 function adaptive_counts(tree, lists)
     leaf_ids = Int.(tree.leaf_index[1:tree.n_leaves])
     popmax = maximum(length(adaptive_node_range(tree, f)) for f in leaf_ids)
@@ -163,7 +183,7 @@ function main()
         for (name, x) in cases
             b = make_bodies(x)
             rngs = MersenneTwister(40201)
-            targets = sort!(collect(Set(rand(rngs, 1:n, ceil(Int, 1.2 * nsample)))))[1:nsample]
+            targets = sort!(Random.shuffle(rngs, collect(1:n))[1:min(nsample, n)])
             gref = sampled_direct(b, targets)
             # adaptive sweep
             for K in (64, 128)
@@ -181,6 +201,7 @@ function main()
                     push!(rows, "$name,$n,adaptive,$K,fail:$(typeof(err))," *
                         join(fill("", 11), ","))
                     @printf("%-13s n=%-8d adaptive K=%-3d FAILED %s\n", name, n, K, typeof(err))
+                    write_rows(rows)
                     continue
                 end
                 t_cold = (time_ns() - t0) / 1e9
@@ -199,6 +220,7 @@ function main()
                     lists.n_routes, lists.n_w, lists.n_x], ","))
                 @printf("%-13s n=%-8d adaptive K=%-3d cold=%.2fs update=%.1fms life=%.1fms step=%.1fms rel=%.3e popmax=%d\n",
                     name, n, K, t_cold, t_update, t_life, t_step, rel, popmax)
+                write_rows(rows)
                 sys = nothing; cache = nothing; GC.gc()
             end
             # uniform baseline
@@ -212,6 +234,7 @@ function main()
                     push!(rows, "$name,$n,uniform,$ell,fail:$(typeof(err))," *
                         join(fill("", 11), ","))
                     @printf("%-13s n=%-8d uniform ell=%d FAILED %s\n", name, n, ell, typeof(err))
+                    write_rows(rows)
                     continue
                 end
                 t_cold = (time_ns() - t0) / 1e9
@@ -237,16 +260,12 @@ function main()
                     ctx.total_routes, 0, 0], ","))
                 @printf("%-13s n=%-8d uniform  ell=%-3d cold=%.2fs update=%.1fms life=%.1fms step=%.1fms rel=%.3e popmax=%d\n",
                     name, n, ell, t_cold, t_update, t_life, t_step, rel, popmax)
+                write_rows(rows)
                 sys = nothing; cache = nothing; GC.gc()
             end
         end
     end
-    mkpath(dirname(OUTFILE))
-    open(OUTFILE, "w") do io
-        for r in rows
-            println(io, r)
-        end
-    end
+    write_rows(rows)
     println("wrote ", OUTFILE)
 end
 

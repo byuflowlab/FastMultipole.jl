@@ -233,14 +233,15 @@ end
     end
     @test all(covered)
 
-    # populations respect K_max except depth-capped and balance-split leaves;
-    # balance splits only shrink populations, so a strict global check is
-    # population <= K_max unless the leaf sits at ell_max
+    # populations respect K_max strictly below the depth cap (039-approval
+    # noted item 2, tightened in 040): with the split veto off, population
+    # splits terminate only at pop <= K_max, and a balance split opens a leaf
+    # that already had pop <= K_max, so its children inherit pop <= K_max —
+    # no escape clause is needed
     for f in leaf_ids
         pop = length(adaptive_node_range(tree, f))
         if Int(tree.node_levels[f]) < tree.policy.ell_max
-            @test pop <= tree.policy.K_max ||
-                tree.n_balance_splits > 0   # balance children may inherit any pop <= K_max anyway
+            @test pop <= tree.policy.K_max
         end
     end
     @test maximum(_adt_leaf_levels(tree)) <= tree.policy.ell_max

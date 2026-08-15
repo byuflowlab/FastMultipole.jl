@@ -587,3 +587,43 @@ Implementation complete per the 20:55 design; all local verification green.
   n=2e4 smoke validated the script only (all rel RMS 1.7e-4–4.8e-4; local
   CSV deleted; cluster run is the measurement of record). Committing BEFORE
   submission next.
+
+## 2026-08-14 21:34 MDT — 040 cost job submitted
+
+- Implementation + tests + pre-registration committed as `118174d` BEFORE
+  submission (protocol honored).
+- Cluster job **13179268** (`fm040cost`, CPU node, 1 Julia thread,
+  OPENBLAS=1, 64G, 3h wall) submitted from `~/FastMultipole-040` (rsync
+  snapshot of the 118174d working tree). Output `~/fm040cost_13179268.out`;
+  CSV of record `~/FastMultipole-040/MATRIX_OPERATOR_REFACTOR/data/
+  fm040_lifecycle_cost.csv` — to be pulled back and committed.
+- sacct will be checked on every resume until a terminal state is verified.
+- Carry-over finding on the pre-existing ~30 KB/step `update_radix_state!`
+  allocation (brief: "do not let the adaptive path inherit it"): measured
+  warm at n=1500/ell=3 — plain uniform cache 29,984 B/step; adaptive-armed
+  cache 26,912 B/step (slightly LOWER; the global geometry gate is skipped).
+  The adaptive-specific refresh is exactly 0 B and the adaptive lifecycle
+  run is a 1,520 B constant, so the adaptive path does NOT inherit the
+  baseline — it is entirely the uniform refresh, which still runs when the
+  policy is armed (the known double-refresh open item, priced in 041a).
+## 2026-08-14 22:37 MDT — 040 cost job 13179268 CANCELLED + protocol-neutral resubmission
+
+- Full local `Pkg.test()` (all suites incl. the new lifecycle tests): PASSED
+  (exit 0), logged here for the record.
+- Job 13179268 diagnosed at ~1h elapsed: julia at 99% CPU (healthy,
+  computing) but ZERO output — stdout block-buffered AND the script only
+  wrote its CSV at sweep end, so the projected n=1e6 host-step cost
+  (~minutes/step × 12 configs) risked a 3h-wall TIMEOUT losing every
+  completed row. Decision: `scancel 13179268` (verified), amend the script
+  to (re)write the CSV after EVERY row + flush stdout per row, raise the
+  wall to 12h. The measurement protocol (cases, params, medians, anchors,
+  accuracy sampling) is UNCHANGED — amendment recorded in the script header
+  and committed BEFORE resubmission. Also fixed a small-n-only sampling bug
+  found in the smoke (dedup could undershoot nsample; now an exact
+  shuffle-sample — no effect at n ≥ 1e5).
+- 039-approval noted item (2) DONE: the K_max population test's
+  `|| n_balance_splits > 0` escape removed — with the veto off, a balance
+  split opens a leaf that already had pop ≤ K_max, so children inherit the
+  bound; the test now asserts `pop <= K_max` unconditionally below the depth
+  cap (039 suite re-run: 60,774 pass). Item (3) preserved as-is (W/X duality
+  asserted only on ungated lists — source-side σ asymmetry is correct).
