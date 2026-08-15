@@ -888,3 +888,19 @@ Design decisions of record (overnight/user-absent; all in-scope):
   the allocator passed 91 args to the 93-field struct (missing the fb2/fdem2
   DTR ping-pong frontier buffers). Fixed, arity mechanically verified 93/93,
   committed, resynced. Resubmitted bring-up as job **13180198**.
+
+## 2026-08-15 11:34 MDT — 041 bring-up iteration 4 (major pass)
+
+- Job **13180198**: 563/576 PASS on H200 — ALL 24 structural-parity configs
+  (exact node-table equality incl. parent/child links, level_offsets,
+  n_balance_splits — the Jacobi≡deepest-first closure argument HOLDS on
+  hardware; U/W/X set equality; V CSR multiset + class_starts), both σ-gate
+  parity sets, and cube lifecycle parity (P=4/8 × F64/F32). The 13 errors
+  share ONE root cause: the M2T/S2L kernels' per-thread MArray harmonics
+  escaped to device heap (exactly 448 B/thread at P=4) and exhausted the
+  device-malloc heap; the KernelException then poisoned every later testset
+  (filament/multiscale lifecycle, strategies, LH multiscale, counters).
+- Fix: preallocated per-thread irregular-harmonic scratch slab
+  (2 × 65536 slots × NH, 69 MB worst case at P=8 F64) with a fixed 512×128
+  grid-stride kernel shape; MArray removed. Committed; resynced.
+- Resubmitted bring-up as job **13180242**.

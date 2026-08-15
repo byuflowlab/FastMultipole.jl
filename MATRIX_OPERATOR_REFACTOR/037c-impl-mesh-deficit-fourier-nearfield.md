@@ -2,8 +2,24 @@
 
 ## Status and Entry Gate
 
-**Staged by user direction `2026-08-13`; not started; conditional.**
-Precedes `038` in the roadmap order by that same direction.
+**CLOSED by pointer, user direction `2026-08-14`. No campaign run.**
+
+The `037b` verdict (see `037b-explore-twopass-deficit-geometry.md`, Work
+Record and final report; data of record from H200 jobs `13170509`/`13170230`/
+`13170520`) recommended NO-GO, and the user formally accepted the closure on
+`2026-08-14`. Quantitative basis recorded by `037b`: the deficit has no
+compact-support regime at the 1e-3 velocity gate (truncating at `ρ_x = 2σ`
+leaves 6.3e-2–9.5e-2 error; the admissible cutoff floor is 3.2–3.4σ
+wake/rotor, 3.668σ cube), and critical-path pricing shows meshing the pass
+could save at most ~18 ms where the two-pass shortfall is ≥28 ms (wake
+`n=1e6`), or ~7 ms the partitioned path avoids entirely (rotor) — even a
+zero-cost deficit evaluator loses on the deeper tree's far-field growth.
+`038` follows `037b` directly. The general question of Fourier-space
+nearfield evaluation without a deficit split (full particle-mesh) is owned
+by the separate paper-study row `037d`.
+
+Original staging (for the record): staged by user direction `2026-08-13`;
+conditional; preceded `038` in roadmap order by that same direction.
 
 Entry gate: `037b` Done and clear-context approved, AND its §6 verdict
 recommends this row (with the quantitative basis recorded there), AND
