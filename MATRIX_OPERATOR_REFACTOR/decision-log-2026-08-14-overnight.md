@@ -847,3 +847,14 @@ Design decisions of record (overnight/user-absent; all in-scope):
 - Tests (`test/cuda_radix_adaptive_test.jl`) + pre-registered measurement
   script (`scripts/fm041_cuda_cost.jl`) delegated to a fork subagent with
   full context; runtests wiring + sbatch included.
+
+## 2026-08-15 11:01 MDT — 041 committed + bring-up job submitted
+
+- Implementation + tests + pre-registered measurement committed as 69ac964
+  BEFORE any submission (protocol honored). Snapshot rsynced to
+  ~/FastMultipole-041; env ~/fm041env (fm034env clone, dev path repointed).
+- Cluster job **13180171** (fm041b, GPU partition m13l/m13h, 1 GPU, 2h wall)
+  submitted: bring-up only — CUDA load preflight + test/cuda_radix_adaptive_test.jl.
+  Output ~/fm041b_13180171.out. The full pre-registered measurement job
+  (scripts/fm041_cuda_cost.jl, committed in 69ac964) submits only after the
+  tests are green. sacct will be verified on every resume.
