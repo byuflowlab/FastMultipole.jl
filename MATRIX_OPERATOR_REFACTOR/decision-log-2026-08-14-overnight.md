@@ -1054,3 +1054,38 @@ Design decisions of record (overnight/user-absent; all in-scope):
   bare-default device rejection ergonomics).
 - START_HERE row 041 marked Approved. Per the 2026-08-15 15:58 MDT user
   directive the campaign now PAUSES for user review; 041a/042 not launched.
+
+## 2026-08-15 22:06 MDT — 041a lead agent start (user released 041a)
+
+- 041a lead agent started per explicit user release ("finish 041a"); rows
+  038-041 all Done+Approved. Read START_HERE in full, this log in full, and
+  the 041a task file only (no sibling task files).
+- Evidence base on hand: fm039_construction_cost.csv (31 rows),
+  fm040_lifecycle_cost.csv (24 rows, job 13179323),
+  fm041_cuda_cost.csv (96 rows, job 13182172), data/adaptive_octree/ (038
+  verification CSVs). Binding carry-overs re-confirmed: widen the uniform
+  depth sweep before any publishable best-uniform claim (040 approval note);
+  honest negatives (wake n=1e6 GPU 1.27x slower; wake n=1e5 host) must
+  appear; priced items (frozen-leaf refresh, per-n K/depth sweep,
+  graph-engagement instrumentation, stage-slab chunking) included if budget
+  allows else priced+deferred.
+- Gap analysis vs the required figure set: (1) contrast sweep data does NOT
+  exist (only contrast=100) -> new pre-registered H200 job; (2) best-uniform
+  is an ENDPOINT (ell in {5,6} only) in most cases on both host and device ->
+  widened depth sweeps, host + H200; (3) no lifecycle per-stage breakdown in
+  the CSVs of record -> stage-timing section in the new GPU job; (4) no
+  leaf-population distribution data -> emitted from the same jobs (structure
+  readout, no extra timing); (5) sigma-heterogeneous variant unmeasured ->
+  attempt a scoped section on the H200 job (per-cell gate shipped in 038-041,
+  so the task-file conditional is active); (6) accuracy-cost frontier: existing
+  geometry sweeps provide (time, error) points at P=4; a small P sweep is
+  added to the GPU job for the frontier figure.
+- Plan of record: 3 pre-registered jobs — G1 fm041a_gpu.jl (H200: widened
+  ell/K grid + n densification F64-dense, F32 subset, P sweep, stage
+  breakdown, leaf histograms), G2 fm041a_contrast.jl (H200: contrast sweep
+  1..1000 + sigma-heterogeneous section), H1 fm041a_host.jl (CPU node:
+  widened host depths + adaptive K=32 probe of the wake n=1e5 negative +
+  same-job anchors). Figures fig14-fig19 extending the 024a set (fig12/13
+  same-named-data-dir convention, fmfigstyle palette); report at
+  data/adaptive_octree/report.md.
+
