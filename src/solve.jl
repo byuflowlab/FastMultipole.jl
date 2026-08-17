@@ -531,6 +531,28 @@ function add_self_interactions(direct_list::Vector{SVector{2,Int32}}, source_tre
     return full_direct_list
 end
 
+"""
+    assert_shared_topology(target_tree, source_tree)
+
+Errors if the two trees do not share identical octree topology (branch count and
+per-branch `bodies_index`/`branch_index`). `FastGaussSeidel` requires this invariant
+because its interaction lists and influence matrices use source- and target-tree branch
+indices interchangeably; a silent divergence would mis-associate blocks rather than crash.
+"""
+function assert_shared_topology(target_tree::Tree, source_tree::Tree)
+    length(target_tree.branches) == length(source_tree.branches) || error(
+        "FastGaussSeidel requires structurally identical source/target trees, but got " *
+        "$(length(target_tree.branches)) target vs $(length(source_tree.branches)) source branches; " *
+        "the target tree should replay the source tree's topology — please file an issue.")
+    for (i_branch, (tb, sb)) in enumerate(zip(target_tree.branches, source_tree.branches))
+        (tb.bodies_index == sb.bodies_index && tb.branch_index == sb.branch_index) || error(
+            "FastGaussSeidel requires structurally identical source/target trees, but branch " *
+            "$i_branch differs: target (bodies_index=$(tb.bodies_index), branch_index=$(tb.branch_index)) " *
+            "vs source (bodies_index=$(sb.bodies_index), branch_index=$(sb.branch_index)); " *
+            "the target tree should replay the source tree's topology — please file an issue.")
+    end
+end
+
 FastGaussSeidel(system; optargs...) = FastGaussSeidel((system,); optargs...)
 
 FastGaussSeidel(systems::Tuple; optargs...) = FastGaussSeidel(systems, systems; optargs...)
@@ -554,12 +576,16 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     # promote leaf_size to vector
     leaf_size = to_vector(leaf_size, length(source_systems))
 
-    # create trees
+    # create trees; the target tree REPLAYS the source tree's topology (identical branch
+    # structure and body order) with a target-role shrink pass, since the block
+    # bookkeeping below indexes both trees interchangeably and independently built trees
+    # can diverge (source subdivision stops early at large body radii)
     TF = promote_type(numtype.(target_systems)...)
-    switches = DerivativesSwitch(true, true, true, target_systems)
-    target_tree = Tree(target_systems, true, switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
     switches = DerivativesSwitch(true, true, true, source_systems)
     source_tree = Tree(source_systems, false, switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
+    switches = DerivativesSwitch(true, true, true, target_systems)
+    target_tree = Tree(source_tree, target_systems, switches; shrink, recenter)
+    assert_shared_topology(target_tree, source_tree)
 
     #--- ensure no leaves have fewer than 2 bodies ---#
 
@@ -574,6 +600,19 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
 
     farfield, nearfield, self_induced = true, true, false # self-induced interactions accounted for in self-influence matrices
     m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
+
+    # Canonical owner-major order is required before any threaded M2L
+    # assignments or matrix/index maps are constructed.  `assign_m2l!`
+    # partitions only at contiguous target boundaries; the parallel list
+    # builder's assignment-order concatenation does not guarantee that all
+    # interactions for one target are contiguous, which otherwise permits
+    # concurrent `+=` into the same target expansion.
+    # The counting sorts are stable and O(list + branches): source first,
+    # then target, yields lexicographic (target, source) order.
+    m2l_list = sort_by_target(sort_by_source(m2l_list, source_tree.branches),
+                              target_tree.branches)
+    direct_list = sort_by_target(sort_by_source(direct_list, source_tree.branches),
+                                 target_tree.branches)
 
     #--- build non-self influence matrices ---#
 

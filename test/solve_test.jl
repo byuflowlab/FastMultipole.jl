@@ -407,3 +407,83 @@ for i in 1:FastMultipole.get_n_bodies(system)
 end
 
 end
+
+@testset "Fast Gauss Seidel: shared source/target tree topology" begin
+
+#--- system whose body radii split independently built source/target trees ---#
+
+n_bodies = 300
+seed = 42
+leaf_size = 10
+expansion_order = 4
+
+# large body radii make the source tree stop subdividing early (child radius < max body
+# radius) while a target tree keeps splitting to leaf_size
+system = generate_gravitational(seed, n_bodies; radius_factor=4.0)
+
+# premise guard: independent builds MUST diverge, else this test is vacuous
+switches = FastMultipole.DerivativesSwitch(true, true, true, (system,))
+independent_target_tree = FastMultipole.Tree((system,), true, switches; expansion_order, leaf_size=SVector{1}(leaf_size), shrink=true, recenter=false, interaction_list_method=FastMultipole.Barba())
+independent_source_tree = FastMultipole.Tree((system,), false, switches; expansion_order, leaf_size=SVector{1}(leaf_size), shrink=true, recenter=false, interaction_list_method=FastMultipole.Barba())
+@test length(independent_target_tree.branches) != length(independent_source_tree.branches)
+
+#--- FGS constructor must produce structurally identical trees ---#
+
+fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order, multipole_acceptance=0.5, leaf_size)
+
+@test length(fgs.target_tree.branches) == length(fgs.source_tree.branches)
+@test all(t.bodies_index == s.bodies_index && t.branch_index == s.branch_index for (t, s) in zip(fgs.target_tree.branches, fgs.source_tree.branches))
+FastMultipole.assert_shared_topology(fgs.target_tree, fgs.source_tree) # must not throw
+
+# target-role shrink keeps target leaf radii tight (source radii include body radii)
+@test all(fgs.target_tree.branches[i].radius <= fgs.source_tree.branches[i].radius + 1e-12 for i in fgs.source_tree.leaf_index)
+
+#--- one solve must run without BoundsError ---#
+
+direct!(system; scalar_potential=true, gradient=false)
+system.potential[1, :] .*= -1.0 # invert external potential so FGS solves for strengths
+FastMultipole.solve!(system, fgs; scalar_potential=true, gradient=false, max_iterations=20, tolerance=1e-3)
+@test all(isfinite(b.strength) for b in system.bodies)
+
+end
+
+@testset "Fast Gauss Seidel: threaded M2L repeatability" begin
+
+# Multiple leaves and a nonempty M2L list are premise guards: without both,
+# the owner-partitioning race fixed by canonical target/source ordering is not
+# exercised.  Keep the solve cold and fixed-iteration so threshold behavior
+# cannot hide an early bit difference.
+system = generate_gravitational(20260815, 800)
+direct!(system; scalar_potential=true, gradient=false)
+system.potential[1, :] .*= -1.0
+
+fgs = FastMultipole.FastGaussSeidel((system,), (system,);
+    expansion_order=4, multipole_acceptance=0.5, leaf_size=40,
+    shrink=true, recenter=false)
+@test length(fgs.source_tree.leaf_index) > 1
+@test !isempty(fgs.m2l_list)
+@test issorted(fgs.m2l_list; by=ij -> (ij[1], ij[2]))
+
+function cold_fixed_solve!()
+    for i in eachindex(system.bodies)
+        body = system.bodies[i]
+        system.bodies[i] = typeof(body)(body.position, body.radius, 0.0)
+    end
+    residuals = Float64[]
+    FastMultipole.solve!(system, fgs; scalar_potential=true, gradient=false,
+        max_iterations=6, inner_iterations=2, tolerance=-1.0,
+        reverse_pass=false, final_update=false, verbose=false,
+        callback=(_, residual) -> push!(residuals, residual))
+    strengths = [body.strength for body in system.bodies]
+    return collect(reinterpret(UInt64, residuals)),
+           collect(reinterpret(UInt64, strengths))
+end
+
+reference_residuals, reference_strengths = cold_fixed_solve!()
+for _ in 1:3
+    residuals, strengths = cold_fixed_solve!()
+    @test residuals == reference_residuals
+    @test strengths == reference_strengths
+end
+
+end

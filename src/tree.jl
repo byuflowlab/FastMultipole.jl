@@ -173,6 +173,59 @@ function Tree(system, target::Bool, TF=numtype(system); optargs...)
 end
 
 """
+    Tree(source_tree::Tree, target_systems::Tuple, switches; shrink=true, recenter=false)
+
+Constructs a TARGET tree sharing `source_tree`'s octree topology — root box, subdivision
+decisions, `bodies_index` partitions, branch/level/leaf structure, and body sort order —
+instead of re-deriving splits from body positions. Branch geometry is then replaced by the
+role-appropriate target shrink pass, so target centers/radii/boxes stay tight for the
+error machinery.
+
+Required by `FastGaussSeidel`, whose influence-matrix and interaction-list bookkeeping
+uses source- and target-tree branch indices interchangeably: independently built trees can
+diverge because source subdivision stops once the child radius falls below the largest
+body radius (see `branch!`) while target subdivision keeps going — bodies with inflated
+radii (e.g. panels carrying regularization reach) make the source tree strictly shallower.
+
+`target_systems` must contain the same bodies (count and positions) as the systems used to
+build `source_tree`.
+"""
+function Tree(source_tree::Tree{TF,N}, target_systems::Tuple, switches;
+    shrink=true, recenter=false) where {TF,N}
+
+    @assert length(target_systems) == N "target_systems has $(length(target_systems)) systems but source_tree represents $N"
+    for (i_system, system) in enumerate(target_systems)
+        @assert get_n_bodies(system) == length(source_tree.sort_index_list[i_system]) "target system $i_system has $(get_n_bodies(system)) bodies but source_tree sorted $(length(source_tree.sort_index_list[i_system]))"
+    end
+
+    # empty source tree -> empty target tree
+    length(source_tree.branches) == 0 && (return EmptyTree(target_systems))
+
+    # replay topology: branch structure is role-independent; geometry is replaced below
+    branches = copy(source_tree.branches)
+    levels_index = copy(source_tree.levels_index)
+    leaf_index = copy(source_tree.leaf_index)
+    sort_index = map(copy, source_tree.sort_index_list)
+    inverse_sort_index = map(copy, source_tree.inverse_sort_index_list)
+
+    # fill target buffers directly in the source tree's sorted order
+    buffers = allocate_buffers(target_systems, true, TF, switches)
+    small_buffers = allocate_small_buffers(target_systems, TF, switches; target=true)
+    target_to_buffer!(buffers, target_systems, sort_index, switches)
+
+    # role-appropriate updates, in the same order as the standard constructor
+    update_min_influence!(branches, levels_index, buffers, target_systems, switches)
+    if shrink
+        shrink_recenter_target!(branches, levels_index, buffers, recenter)
+    end
+
+    expansions = initialize_expansions(source_tree.expansion_order, length(branches), TF)
+
+    return Tree(branches, expansions, levels_index, leaf_index, sort_index, inverse_sort_index,
+        buffers, small_buffers, source_tree.expansion_order, source_tree.leaf_size)
+end
+
+"""
     EmptyTree(system)
 
 Returns an empty tree. Used if `system` is empty.

@@ -1225,7 +1225,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
                         n_points = length(direct_list)
                         n_per_thread, rem = divrem(n_points,n_threads)
-                        n = n_per_thread + (rem > 0)
+                        # max(...,1): an empty direct_list would give a zero-step range
+                        n = max(n_per_thread + (rem > 0), 1)
                         assignments = 1:n:n_points
 
                         Threads.@threads :static for i_assignment in eachindex(assignments)
