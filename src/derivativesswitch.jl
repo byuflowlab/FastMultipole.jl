@@ -155,5 +155,10 @@ Accumulates `value` into extra output row `j` for target-buffer column `i`.
     return nothing
 end
 
+"""
+    extra_output_view(buffer, switch, i)
+
+Returns a view of all extra output rows for target-buffer column `i`.
+"""
 @inline extra_output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i) = view(buffer, extra_output_range(switch), i)
 @inline output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i) = view(buffer, output_range(switch), i)

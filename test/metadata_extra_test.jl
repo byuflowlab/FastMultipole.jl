@@ -135,6 +135,27 @@ end
     @test_throws ArgumentError FastMultipole.fmm!(system, cache; scalar_potential=false, gradient=true, hessian=true)
 end
 
+@testset "tune_fmm cache matches requested switch layout" begin
+    system = generate_gravitational(123, 32)
+    opt_params, cache = FastMultipole.tune_fmm(system;
+        scalar_potential=true, gradient=false, hessian=false,
+        error_tolerance=PowerAbsolutePotential(1e-4),
+        multipole_acceptances=0.3:0.1:0.3,
+        max_expansion_order=4,
+        verbose=false,
+    )
+
+    @test opt_params isa NamedTuple
+    @test begin
+        FastMultipole.fmm!(system, cache;
+            scalar_potential=true, gradient=false, hessian=false,
+            error_tolerance=PowerAbsolutePotential(1e-4),
+            opt_params...,
+        )
+        true
+    end
+end
+
 @testset "threaded fmm extra_farfield" begin
     if Threads.nthreads() == 1
         @test_skip "requires multiple Julia threads"
