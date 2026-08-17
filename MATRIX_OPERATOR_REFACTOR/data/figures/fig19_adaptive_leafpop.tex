@@ -1,0 +1,46 @@
+% fig19 (041a): leaf-population complementary CDF (fraction of leaves with
+% population >= x), multiscale field at contrast 100 and 1000, n = 1e6 —
+% the mechanistic explanation of the timing gap.  The uniform grid at any
+% fixed depth leaves a fat tail: at the auto-scale depth ell = 5 the densest
+% cells reach popmax in the thousands, and each such cell serializes O(K^2)
+% direct nearfield work; deeper depths shrink the tail but multiply cells
+% and routes.  The adaptive octree truncates the distribution at exactly
+% K_max = 64 by construction (vertical cutoff).
+% Data: fig19_adaptive_leafpop/*.csv from fm041a_contrast_leafpop.csv
+% (H200 job 13184014).
+% Compile: pdflatex fig19_adaptive_leafpop.tex
+\documentclass[tikz]{standalone}
+\input{fmfigstyle}
+\begin{document}
+\begin{tikzpicture}
+\begin{groupplot}[
+    group style={group size=2 by 1, horizontal sep=15mm},
+    fmbase,
+    width=62mm, height=56mm,
+    xmode=log, ymode=log,
+    xlabel={leaf population $x$},
+    every axis plot/.append style={const plot},
+]
+\nextgroupplot[title={contrast 100}, ylabel={fraction of leaves $\geq x$},
+    legend to name=fignineteenlegend, legend columns=3,
+    legend style={draw=fmAxis, fill=white}]
+\addplot[color=fmStwo, line width=1.1pt]
+    table[col sep=comma, x=pop, y=ccdf]{fig19_adaptive_leafpop/c100_uniform_5.csv};
+\addlegendentry{uniform $\ell{=}5$}
+\addplot[color=fmMuted, dashed, line width=1.0pt]
+    table[col sep=comma, x=pop, y=ccdf]{fig19_adaptive_leafpop/c100_uniform_6.csv};
+\addlegendentry{uniform $\ell{=}6$}
+\addplot[color=fmSone, line width=1.1pt]
+    table[col sep=comma, x=pop, y=ccdf]{fig19_adaptive_leafpop/c100_adaptive_64.csv};
+\addlegendentry{adaptive $K_{\max}{=}64$}
+\nextgroupplot[title={contrast 1000}]
+\addplot[color=fmStwo, line width=1.1pt]
+    table[col sep=comma, x=pop, y=ccdf]{fig19_adaptive_leafpop/c1000_uniform_5.csv};
+\addplot[color=fmMuted, dashed, line width=1.0pt]
+    table[col sep=comma, x=pop, y=ccdf]{fig19_adaptive_leafpop/c1000_uniform_6.csv};
+\addplot[color=fmSone, line width=1.1pt]
+    table[col sep=comma, x=pop, y=ccdf]{fig19_adaptive_leafpop/c1000_adaptive_64.csv};
+\end{groupplot}
+\node[anchor=north, yshift=-9mm] at (group c1r1.south east) {\pgfplotslegendfromname{fignineteenlegend}};
+\end{tikzpicture}
+\end{document}

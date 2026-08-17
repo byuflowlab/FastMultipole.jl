@@ -1,0 +1,56 @@
+% fig20 (041a): sigma-heterogeneous vortex variant (SmoothedVortex,
+% gaussianerf RegularizedVortex nearfield, Lamb-Helmholtz, n = 1e5, H200,
+% Float64, concat M2L, P = 4) — resident step time vs smoothing-radius
+% spread sigma_max/sigma_min (log-uniform sigma in [1e-4, spread*1e-4]).
+% The uniform path's GLOBAL sigma_max geometry gate disqualifies depths as
+% the spread grows: depths past the admissible bound THROW at construction
+% (a curve simply ENDS at the spread where its depth threw — recorded as
+% fail rows with the error text).  At spread 300 only ell = 2 survives
+% (80.7 ms); the adaptive octree's per-cell gate (038 sticky demotion)
+% handles any sigma field — the blue curve exists, stays flat (~28-31 ms),
+% and passes the 1e-3 velocity gate at every spread (as does every
+% surviving uniform row; there are no gate-failing ok rows in this sweep).
+% Honest note: at spreads <= 100 the surviving uniform ell = 3 is FASTER
+% than adaptive (14 vs ~28 ms) — the per-cell gate's win appears at the
+% extreme spread where the global gate collapses the admissible depth.
+% Data: fig20_adaptive_sigma/*.csv from fm041a_gpu_sigma.csv (H200 job
+% 13184014).
+% Compile: pdflatex fig20_adaptive_sigma.tex
+\documentclass[tikz]{standalone}
+\input{fmfigstyle}
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+    fmbase,
+    width=95mm, height=62mm,
+    xmode=log, ymode=log,
+    log ticks with fixed point,
+    xlabel={smoothing-radius spread $\sigma_{\max}/\sigma_{\min}$},
+    ylabel={resident step time [ms]},
+    legend pos=outer north east,
+]
+\addplot[color=fmMuted, mark=triangle, mark size=1.8pt, densely dotted, line width=0.8pt]
+    table[col sep=comma, x=spread, y=t_step_ms]{fig20_adaptive_sigma/uniform_2.csv};
+\addlegendentry{uniform $\ell{=}2$}
+\addplot[color=fmMuted, mark=square, mark size=1.8pt, dashed, line width=0.8pt]
+    table[col sep=comma, x=spread, y=t_step_ms]{fig20_adaptive_sigma/uniform_3.csv};
+\addlegendentry{uniform $\ell{=}3$}
+\addplot[color=fmMuted, mark=o, mark size=1.8pt, dashdotted, line width=0.8pt]
+    table[col sep=comma, x=spread, y=t_step_ms]{fig20_adaptive_sigma/uniform_4.csv};
+\addlegendentry{uniform $\ell{=}4$}
+\addplot[color=fmStwo, mark=square*, line width=1.2pt]
+    table[col sep=comma, x=spread, y=t_step_ms]{fig20_adaptive_sigma/uniform_5.csv};
+\addlegendentry{uniform $\ell{=}5$}
+\addplot[color=fmStwo, mark=diamond*, densely dashed, line width=1.2pt]
+    table[col sep=comma, x=spread, y=t_step_ms]{fig20_adaptive_sigma/uniform_6.csv};
+\addlegendentry{uniform $\ell{=}6$}
+\addplot[color=fmSone, mark=*, line width=1.2pt]
+    table[col sep=comma, x=spread, y=t_step_ms]{fig20_adaptive_sigma/adaptive_64.csv};
+\addlegendentry{adaptive $K_{\max}{=}64$, per-cell gate}
+% every surviving row in fm041a_gpu_sigma.csv passes the 1e-3 velocity gate
+% (fig20_adaptive_sigma/gatefail.csv is empty); a uniform curve ENDING at a
+% spread means construction THREW there (global sigma_max gate) — the fail
+% rows carry the error text in the CSV of record.
+\end{axis}
+\end{tikzpicture}
+\end{document}

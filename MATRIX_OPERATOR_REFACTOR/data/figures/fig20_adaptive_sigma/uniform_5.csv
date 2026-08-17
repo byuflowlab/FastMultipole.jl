@@ -1,0 +1,5 @@
+spread,t_step_ms,vel_rel_rms,gate_pass
+1,142.828,0.0005767,1
+10,142.289,0.0006147,1
+100,nan,nan,0
+300,nan,nan,0

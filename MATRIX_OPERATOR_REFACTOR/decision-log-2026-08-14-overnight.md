@@ -1089,3 +1089,126 @@ Design decisions of record (overnight/user-absent; all in-scope):
   same-named-data-dir convention, fmfigstyle palette); report at
   data/adaptive_octree/report.md.
 
+
+## 2026-08-15 22:17 MDT — 041a pre-registration committed + 3 jobs submitted
+
+- Pre-registration committed as `ecebdb8` BEFORE submission (protocol
+  honored): fm041a_gpu_widen.jl, fm041a_gpu_contrast.jl,
+  fm041a_host_widen.jl + submit scripts. Local smokes (host n=3000; sigma
+  machinery n=2000) validated scripts only; smoke CSVs deleted.
+- Smoke finding worth recording: at sigma spread=100 (n=2000 host) the
+  uniform global gate THROWS for ell >= 5 ("regularized nearfield near-set
+  adequacy failed") and the deepest passing depth ell=4 misses the 1e-3
+  velocity gate (1.358e-3) — the global-sigma_max failure mechanism the
+  sigma section is designed to measure, visible even in the smoke.
+- Cluster jobs submitted from ~/FastMultipole-041 (rsync of ecebdb8 tree),
+  env ~/fm041env, proven module line (cuda + julia/1.11.7-6bmogfl, h200
+  gres) for GPU, repo project for host:
+    - **13184013** fm041aG (H200, 8h): widened ell{3,4,7}/K{32,256} grid +
+      n in {1e4,3.16e4,1e5,3.16e5,1e6} F64-dense + F32 subset + P sweep
+      {2,3,6,8} + leaf histograms -> fm041a_gpu_widen.csv, fm041a_pweep.csv,
+      fm041a_leafpop.csv.
+    - **13184014** fm041aC (H200, 8h): contrast sweep {1..1000} n=1e6 +
+      lifecycle stage breakdown (CUDA.@elapsed per launcher, overlap/graph
+      off; + graph-engagement A/B) + sigma-heterogeneous vortex n=1e5
+      spreads {1,10,100,300} -> fm041a_gpu_contrast.csv,
+      fm041a_contrast_leafpop.csv, fm041a_gpu_stages.csv, fm041a_gpu_sigma.csv.
+    - **13184015** fm041aH (CPU node, 12h, 1 thread): widened host depths
+      (cube ell4/ell3@1e5, wake ell7, ms ell4@1e5+ell7) + adaptive K32 both
+      n / K16@1e5 (wake negative probe) + same-job anchors ->
+      fm041a_host_widen.csv.
+- sacct will be verified on every resume until terminal states are recorded.
+
+## 2026-08-15 22:25 MDT — 041a priced carry-over items: disposition
+
+- **per-n K/depth sweep**: LANDED in job 13184013 (K in {32,64,128,256},
+  ell in {3..7}, n in {1e4..1e6}, 3 cases, F64 dense).
+- **graph-engagement instrumentation**: LANDED in job 13184014 S2 (per
+  config: lifecycle at graph+overlap / no-graph+overlap / fully serialized).
+- **frozen-leaf-set refresh**: LANDED — warm t_update (epoch fast path) vs
+  forced epoch rebuild recorded per S2 config (fm041 already showed
+  10-11 ms warm vs 45-85 ms rebuild; S2 re-anchors both).
+- **stage-slab chunking assessment**: DEFERRED with price — host-only
+  memory lever (M2M/L2L stage slabs scale with max per-level node count);
+  requires src instrumentation + a chunked prototype (~one focused
+  maintenance row + 1 CPU job); no bearing on the H200 headline path.
+  Recommend a 042-audit note, not 041a work (benchmark row: no src).
+- Also carried for 042: host double-refresh elimination + host sort
+  unification (landed on device in 041; host still runs both — visible as
+  adaptive t_update excess in fm040/fm041a_host anchors).
+- Early widened-sweep signal (partial data, to be finalized from the CSVs
+  of record): host cube best-uniform moves ell5 -> ell4 (2.16 vs 2.99 s at
+  n=1e5); GPU multiscale c=100 best-uniform moves ell6 -> ell7 (212.5 ms,
+  58.2 GB device memory vs adaptive ~5 GB) — the widened sweep will shrink
+  some headline ratios while sharpening the memory contrast; report will
+  quote the widened numbers, not the fm040/fm041 endpoint ratios.
+
+## 2026-08-15 22:27 MDT — 041a jobs requeued by scheduler (benign)
+
+- All three 041a jobs were preempted/requeued by slurm and restarted from
+  scratch at ~22:17 MDT (sacct current incarnations: 13184013 start
+  22:17:35 m13h-1-2; 13184014 start 22:18:10 m13h-1-2; 13184015 start
+  22:17:00 m8-19-14). Harmless to the protocol: every script rebuilds its
+  CSV from row 1 within one process, so the CSVs of record will come
+  entirely from the surviving incarnation (partial pre-requeue rows are
+  overwritten, never mixed).
+- Both GPU jobs now share node m13h-1-2 (two H200s). Same-job anchors are
+  unaffected (each comparison is within one process/GPU); noted for the
+  report as a possible source of minor host-side contention during the
+  reference computations.
+
+## 2026-08-15 22:56 MDT — USER DIRECTIVE: pause all work
+
+- The user directed a full pause mid-041a. The 041a lead agent and all
+  orchestrator watches were stopped. 041a is IN PROGRESS, not Done: figure
+  work incomplete; three pre-registered benchmark jobs (13184013, 13184014,
+  13184015) were already submitted and remain RUNNING on the cluster —
+  deliberately not cancelled; their CSVs will be on the cluster for pickup
+  when work resumes. Resume point: wake/relaunch the 041a lead, sacct-verify
+  those three jobs, and continue from the task file's state.
+- **Correction on inspection (same entry):** fm041a_host_widen.csv is in
+  fact COMPLETE — all 29 pre-registered rows present including the final
+  config (multiscale100 n=1e6 adaptive K=32); the scancel landed after the
+  last row's incremental CSV write and before the closing stdout print
+  (the .out tail was buffer-lagged). NO resubmission needed; the CSV as
+  pulled is the host measurement of record (single incarnation, one
+  process, same-job anchors intact for BOTH n blocks).
+- Immediate same-job verdict deltas from the widened host sweep (full
+  analysis to follow): wake n=1e6 best-uniform moves ell6 -> ell7
+  (77.998 -> 21.323 s), overturning the fm040 2.42x adaptive wake win —
+  best-uniform ell7 now BEATS adaptive K=64 (24.205 s) by 1.14x; cube
+  n=1e5 best-uniform moves ell5 -> ell4 (2.196 s, beats adaptive 2.539 s);
+  multiscale remains an adaptive win at both n (2.27x @1e5 vs ell5;
+  2.99x @1e6 vs ell7). The 040-approval requirement (widen before
+  publishable claims) was decisive.
+
+## 2026-08-17 06:28 MDT — 041a DONE (lead agent completion)
+
+- All three measurement jobs terminal and verified: 13184013 COMPLETED
+  0:0, 13184014 COMPLETED 0:0, 13184015 CANCELLED 0:0 by the user
+  pause-all AFTER its final pre-registered row (CSV complete = host
+  record). CSVs of record committed with SHA-256 checksums
+  (data/adaptive_octree/checksums_041a.sha256).
+- Deliverables: figures fig14-fig20 (TikZ/pgfplots + same-named CSV data
+  dirs, fmfigstyle palette, ALL compile clean with pdflatex — verified
+  locally today, with rendered-PNG visual inspection; two compile bugs
+  (fig16 stacked-tick, fig19 const-plot) and one stacking-semantics bug
+  (shipped-lifecycle ticks stacking onto the bars) found and fixed);
+  report of record data/adaptive_octree/report.md; prep script
+  scripts/figures_041a_prepare.jl (stdlib-only); data/figures/README.md
+  041a section.
+- Widened-sweep verdicts (same-job): multiscale 1.86x H200 / 2.99x host
+  + ~11x device memory; cube parity (0.96x both); wake best-uniform
+  ell=7 WINS time 1.17x H200 / 1.11x host at 17x the device memory —
+  the fm040 wake host "2.42x adaptive win" is overturned as an
+  ell-endpoint artifact and recorded as such. Sigma variant: global gate
+  throws collapse uniform to ell=2 at spread 300; adaptive flat and
+  gate-passing throughout (2.6x there). Honest negatives all plotted and
+  reported (wake both platforms, every n<=1e5 case, K non-monotonicity).
+- Priced items: per-n K/depth sweep + graph-engagement (measured:
+  0.5-4.6% at n=1e6) + frozen-leaf refresh (9 ms epoch path vs 51-93 ms
+  rebuild) LANDED; stage-slab chunking deferred with price; host
+  double-refresh/sort-unification quantified and routed to 042.
+- START_HERE row 041a marked Done (Approved left blank; a different
+  agent must review). Committing as `041a DONE`. Ready for
+  clear-context approval.

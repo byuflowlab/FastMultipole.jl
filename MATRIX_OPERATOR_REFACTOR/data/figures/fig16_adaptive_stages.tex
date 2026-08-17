@@ -1,0 +1,57 @@
+% fig16 (041a): per-stage lifecycle breakdown at n = 1e6 (H200, Float64,
+% dense M2L, P = 4) — adaptive (K_max = 64) vs uniform depths, per case.
+% Stacked bars: each stage launcher timed individually (CUDA event medians
+% of 7, nearfield overlap and graph capture disabled so stages serialize);
+% the stack therefore shows WHERE each machinery spends its time — the
+% uniform grid's fat-cell direct(U) domination on wake/multiscale vs the
+% adaptive tree's bounded near stage plus its new M2T/S2L cost.  The
+% serialized stack overstates the shipped wall time (overlap + graph
+% recover concurrency); the shipped whole-lifecycle time is the black tick
+% on each bar.  Far-field family in blue shades, direct nearfield in
+% orange, adaptive-only M2T/S2L in aqua shades, refresh in violet.
+% Data: fig16_adaptive_stages/stages.csv from fm041a_gpu_stages.csv
+% (H200 job 13184014).
+% Compile: pdflatex fig16_adaptive_stages.tex
+\documentclass[tikz]{standalone}
+\input{fmfigstyle}
+\begin{document}
+\begin{tikzpicture}
+\pgfplotstableread[col sep=comma]{fig16_adaptive_stages/stages.csv}\stagestab
+\begin{axis}[
+    fmbase,
+    width=150mm, height=62mm,
+    ybar stacked, bar width=9pt,
+    xlabel={configuration (grouped by case)},
+    ylabel={stage time, serialized [ms]},
+    xtick=data,
+    xticklabels from table={\stagestab}{label},
+    x tick label style={rotate=45, anchor=east, font=\scriptsize},
+    legend columns=5,
+    legend style={at={(0.5,1.02)}, anchor=south},
+    every axis plot/.append style={draw=white, line width=0.4pt},
+]
+\addplot[fill=fmSone!35] table[col sep=comma, x=idx, y=b2m]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{B2M}
+\addplot[fill=fmSone!60] table[col sep=comma, x=idx, y=m2m]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{M2M}
+\addplot[fill=fmSone] table[col sep=comma, x=idx, y=m2l]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{M2L (V)}
+\addplot[fill=fmSfour!60] table[col sep=comma, x=idx, y=l2l]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{L2L}
+\addplot[fill=fmSfour] table[col sep=comma, x=idx, y=l2b]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{L2B}
+\addplot[fill=fmSthree!55] table[col sep=comma, x=idx, y=s2l]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{S2L (X)}
+\addplot[fill=fmSthree] table[col sep=comma, x=idx, y=m2t]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{M2T (W)}
+\addplot[fill=fmStwo] table[col sep=comma, x=idx, y=near]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{direct (U)}
+\addplot[fill=fmMuted!70] table[col sep=comma, x=idx, y=update]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{refresh}
+% shipped whole-lifecycle wall time (graph + overlap on): black tick marks
+\addplot[stack plots=false, only marks, mark=-, mark size=5pt, color=fmInk, line width=1.1pt]
+    table[col sep=comma, x=idx, y=life_shipped]{fig16_adaptive_stages/stages.csv};
+\addlegendentry{shipped lifecycle}
+\end{axis}
+\end{tikzpicture}
+\end{document}

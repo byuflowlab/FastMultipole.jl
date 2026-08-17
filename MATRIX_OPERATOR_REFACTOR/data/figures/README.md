@@ -202,3 +202,34 @@ final review:
 - **Device-side stencil generation.** The 019 "implicit stencil" still
   materializes every route and pair on the host, so `fig03b`'s host list-build
   bar is a real remaining cost, not an artifact.
+
+## Task 041a figures (adaptive octree vs uniform grid)
+
+Figures `fig14`–`fig20` extend the set for the Adaptive Octree Phase
+benchmark report (task `041a`; report at `../adaptive_octree/report.md`).
+They follow the newer per-figure convention (`figNN_name.tex` + same-named
+`figNN_name/` CSV directory) and share `fmfigstyle.tex`. Prepare data with
+`julia MATRIX_OPERATOR_REFACTOR/scripts/figures_041a_prepare.jl`, then
+`pdflatex figNN_name.tex` in this directory.
+
+| Figure | Shows | CSV of record (job) |
+|---|---|---|
+| `fig14_adaptive_contrast` | step time vs cluster contrast, n=1e6 H200 | `fm041a_gpu_contrast.csv` (13184014) |
+| `fig15_adaptive_time_vs_n` | step time vs n per case, H200 + host, best-vs-best from WIDENED sweeps | `fm041a_gpu_widen.csv` (13184013), `fm041a_host_widen.csv` (13184015) |
+| `fig16_adaptive_stages` | per-stage lifecycle breakdown, n=1e6 H200 (serialized CUDA-event medians + shipped-lifecycle ticks) | `fm041a_gpu_stages.csv` (13184014) |
+| `fig17_adaptive_memory` | device memory vs depth/K_max, n=1e6 | `fm041a_gpu_widen.csv` (13184013) |
+| `fig18_adaptive_accuracy_cost` | accuracy–cost frontier (P sweep + P=4 geometry sweep), 1e-3 gate rule | `fm041a_pweep.csv` + `fm041a_gpu_widen.csv` (13184013) |
+| `fig19_adaptive_leafpop` | leaf-population CCDF, contrast 100/1000 (fat-cell mechanism) | `fm041a_contrast_leafpop.csv` (13184014) |
+| `fig20_adaptive_sigma` | sigma-heterogeneous vortex: global-gate throws/forced-shallow vs per-cell gate | `fm041a_gpu_sigma.csv` (13184014) |
+
+Caveats specific to this set:
+
+- **fig16 stacks are serialized stage times** (overlap + graph capture
+  disabled so stages can be timed individually); the shipped lifecycle wall
+  time (graph + overlap on) is the black tick, and the stack sum
+  deliberately exceeds it by the recovered concurrency.
+- **fig15/fig14 "best uniform" curves select only gate-passing rows** from
+  the widened sweeps; a missing point means no uniform depth in the sweep
+  both constructed and passed the gate at that x.
+- **Host series in fig15 are single-thread** (the fm040 convention) and
+  exist only at n = 1e5 and 1e6.
