@@ -1317,3 +1317,85 @@ tracked as historical record). report.md is not in
 checksums_041a.sha256 (data CSVs only), so no checksum update.
 START_HERE 041a remains Done / Approved blank. Committing as
 `041a: review corrections — report prose`. Ready for re-approval.
+
+## 2026-08-17 14:54 MDT — 041a clear-context re-review: CHANGES REQUIRED
+
+Reviewer: fresh clear-context re-approval agent (no prior context).
+Verdict: **CHANGES REQUIRED — one remaining factual conflict; Approved
+checkbox left blank.** All four corrections from the 14:46 MDT review are
+verified exact, and the noted-item edits introduced no errors — but the
+final skim (item the first review did not flag) found one pre-existing
+prose claim that conflicts with the CSVs of record and with fig15 itself.
+
+Verified (re-derived from the CSVs, not trusted):
+1. §3 adaptive contrast band: fm041a_gpu_contrast.csv adaptive c=3..1000
+   t_step spans 120.823–156.0 ms (c=3: 155.981, c=30: 155.214) —
+   "120.8–156.0 ms, c=3/c=30 at the ~156 ms top" exact. ell=4
+   151→284,083 ms and ell=5 106→6,185 ms blow-ups exact; 1.67x (c=100:
+   212.513/126.910) and 2.11x (c=1000: 254.765/120.823) exact.
+2. §3 best-uniform threshold: c=30 best is ell=5 at 170.073 ms (ell=7:
+   251.44); ell=7 best from c>=100 (212.513 vs ell=6 230.332) — exact.
+3. §1 accuracy maxima: GPU-widen CSV-wide max 7.937e-4 (unitcube n=1e4
+   uniform ell=7, unplotted; plotted max 6.584e-4 → "6.6e-4"); contrast
+   max 5.435e-4 (adaptive c=30, plotted); host 6.583e-4; sigma ok-rows
+   9.523e-4 — all as stated, all inside the 1e-3 gate.
+4. §7 graph engagement: (t_serial − t_graph+overlap)/t_serial over the
+   12 stage rows spans 0.31% (cube ell=7) to 4.79% (multiscale ell=6);
+   multiscale ell=5 178.077 vs 185.357 ms — exact as corrected.
+Noted-item edits: §5 endpoint-disclosure extension consistent with the
+data (ell=7 mem 53.9–59.5 GB device, 8x/level, 64G host job per the
+submit script, K=256 wake endpoint + non-monotonicity K=128 214.664 vs
+K=256 113.391 ms); fig20 recompiled clean locally with the new in-figure
+throw annotation; .gitignore ignores figure pdf/png/aux/log while the 18
+pre-041a pdf/png remain tracked (git ls-files count 18; nothing
+previously tracked deleted). `git show --stat aaf7bca` surface is
+exactly report.md, fig20 .tex, .gitignore, decision log — no CSV, src/,
+or figure-data changes; 041b/041c working-tree edits untouched. Also
+re-confirmed §2 headline ratios, §4 negatives, §5 memory bands, sigma
+2.6x (80.691/30.51), stage numbers, and refresh ms values against the
+CSVs — all exact.
+
+REQUIRED CHANGE (report.md prose; no figure/CSV change needed):
+1. §2 closing sentence "At n=1e5 (both platforms) best-uniform wins
+   every case by 1.05–1.6x" is false for host multiscale100: in
+   fm041a_host_widen.csv at n=1e5 best adaptive (K=64, 2632.65 ms) beats
+   best probed uniform (ell=5, 5967.37 ms) by 2.27x — an adaptive WIN,
+   plotted as such in fig15's host panel (multiscale100_host_*.csv).
+   §8's "Small n (<= 1e5): uniform grid everywhere" inherits the same
+   conflict (and collides with §8's own clustered-fields bullet).
+   Restate scoped: on H200, best-uniform wins all three cases at
+   n<=1e5 (1.10–1.61x at n=1e5); on host 1T at n=1e5 uniform wins wake
+   (1.09x) and cube (1.16x) but multiscale100 is a 2.27x adaptive win
+   (ell=6 unprobed there) — and scope the §8 small-n recommendation
+   accordingly. This feeds the §8 regime table 042 audits, hence
+   blocking.
+
+Noted (non-blocking): (a) §7 "5.7x–9.9x saved" pairs band endpoints;
+row-wise rebuild/warm ratios are 5.66x (cube), 6.52x (multiscale),
+10.08x (wake) — true band 5.7–10.1x, current text conservative.
+(b) §7 "adaptive rows ~1–2%" — measured 0.83/0.98/2.18%; acceptable as
+an approximation.
+
+Per protocol the fixing agent applies the change and a fresh
+clear-context agent re-reviews. START_HERE 041a remains Done / Approved
+blank. Campaign remains PAUSED; 042 not launched.
+
+## 2026-08-17 14:56 MDT — 041a review corrections 2 (lead agent)
+
+Fix for the 14:54 MDT re-review's single blocking item, verified against
+fm041a_host_widen.csv before editing:
+- §2 closing sentence rescoped: H200 best-uniform wins all cases at
+  n<=1e5 (1.10x cube / 1.14x multiscale / 1.61x wake at 1e5); host 1T at
+  1e5 uniform wins cube (1.16x, ell=4) and wake (1.09x, ell=6) only —
+  multiscale100 is a 2.27x ADAPTIVE win (2632.65 vs 5967.37 ms, K=64 vs
+  ell=5), as fig15's host panel already plotted.
+- §8 small-n regime row rescoped to match, with an explicit precedence
+  note (clustered-fields rule beats the small-n rule on the host).
+- §4 item 3's H200-scoped claim confirmed correct and left unchanged.
+- Non-blocking notes taken: §7 refresh saving restated as 5.7x–10.1x
+  row-wise; graph bullet's adaptive-row figure restated as 0.83–2.18%.
+No figure, CSV, or best-vs-best number changes. The reviewer's 14:54
+entry was left uncommitted in the worktree; it is committed together
+with this correction. START_HERE 041a remains Done / Approved blank.
+Committing as `041a: review corrections 2 — n=1e5 regime scoping`.
+Ready for re-approval.

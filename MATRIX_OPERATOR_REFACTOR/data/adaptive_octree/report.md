@@ -57,8 +57,13 @@ publishable claim — was **decisive**: the fm040/fm041 baselines (ell in
 | wake | host 1T | 21.3 s (**ell=7**) | 23.6 s (K=32) | **0.90x (uniform wins)** |
 | multiscale100 | host 1T | 79.9 s (**ell=7**) | 26.7 s (K=64) | **2.99x** |
 
-At n=1e5 (both platforms) best-uniform wins every case by 1.05–1.6x —
-the adaptive path's fixed refresh/list overhead is not amortized there.
+At n=1e5 the picture is platform- and case-scoped: on the H200,
+best-uniform wins every case (cube 1.10x, multiscale 1.14x, wake 1.61x);
+on the host at 1e5, uniform wins cube (1.16x, ell=4) and wake (1.09x,
+ell=6) but multiscale100 is already a **2.27x adaptive win** (2.63 vs
+5.97 s, K=64 vs ell=5 — plotted in fig15's host panel). The adaptive
+path's fixed refresh/list overhead is not amortized at small n except
+where the fat-cell cost already dominates (host multiscale).
 
 **Corrections to prior-row headlines** (they used the narrow ell in {5,6}
 baseline): the fm040 host wake "2.42x adaptive win" inverts to a 0.90x
@@ -171,13 +176,14 @@ best-uniform deliver the same error order at every quoted point.
 
 - **Frozen-leaf-set refresh (measured)**: the adaptive occupancy-epoch
   fast path refreshes in 9.0–9.4 ms warm at n=1e6 (vs 50.9–92.9 ms for a
-  forced full rebuild — 5.7x–9.9x saved when the leaf set is stable) and
+  forced full rebuild — 5.7x–10.1x saved row-wise when the leaf set is
+  stable) and
   sits within 1.2–1.6x of the uniform refresh (5.8–7.9 ms).
 - **Graph capture / nearfield overlap (measured)**: at n=1e6 dense-F64
   the shipped lifecycle beats the fully serialized run by only
   0.31–4.79% (computed as (t_serial − t_graph+overlap)/t_serial over the
   12 stage rows; min cube ell=7, max multiscale ell=6 — e.g. multiscale
-  ell=5: 178.1 vs 185.4 ms; adaptive rows ~1–2%) — graph/overlap engagement is not a material factor at this
+  ell=5: 178.1 vs 185.4 ms; adaptive rows 0.83–2.18%) — graph/overlap engagement is not a material factor at this
   scale (it was priced from ~50 us/window launch latency at much smaller
   windows in 027–029).
 - **Per-n K/depth sweep**: landed as the fig15/fig18 grids (this row).
@@ -205,7 +211,11 @@ best-uniform deliver the same error order at every quoted point.
   adaptive when memory is constrained, when n or density will grow
   (ell=8 cap), or when the field may develop density contrast. S2L is
   the top adaptive tuning target to close the wake gap.
-- **Small n (<= 1e5)**: uniform grid everywhere.
+- **Small n (<= 1e5)**: uniform grid on the H200 for all three cases,
+  and on the host for uniform/sparse fields; clustered fields on the
+  host already favor adaptive at n=1e5 (2.27x on multiscale100) — i.e.
+  the clustered-fields rule above takes precedence over the small-n rule
+  on the host.
 - Production default: **no change recommended by this row** (benchmark
   row; the 041 decision that adaptive stays opt-in stands). The `042`
   review owns the default-selection audit against these figures.
