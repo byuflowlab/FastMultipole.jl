@@ -1399,3 +1399,38 @@ entry was left uncommitted in the worktree; it is committed together
 with this correction. START_HERE 041a remains Done / Approved blank.
 Committing as `041a: review corrections 2 — n=1e5 regime scoping`.
 Ready for re-approval.
+
+## 2026-08-17 14:58 MDT — 041a clear-context re-approval: APPROVED
+
+Reviewer: fresh clear-context re-approval agent (no prior context); third
+review, scoped to the `69075db` fix per protocol (14:46 and 14:54 MDT
+reviews had verified everything else; not repeated).
+
+Re-derived from the CSVs of record, all exact:
+1. §2 n=1e5 rescope: H200 F64 best-uniform wins all cases at 1e5 —
+   cube 7.397/8.114 = 1.10x (ell=4 vs K=64), multiscale 15.192/17.270
+   = 1.14x (ell=5 vs K=64), wake 7.638/12.331 = 1.61x (ell=5 vs K=256);
+   host 1T at 1e5 uniform wins cube 2195.50/2538.73 = 1.16x (ell=4) and
+   wake 1851.64/2026.30 = 1.09x (ell=6), while multiscale100 is a 2.27x
+   ADAPTIVE win (2632.65 ms K=64 vs 5967.37 ms ell=5) — matching §2, §8,
+   and fig15's host-panel CSVs (multiscale100_host_*.csv carry the same
+   two numbers).
+2. Consistency: §8's small-n row matches the rescoped §2 and states the
+   host precedence of the clustered-fields rule; §4 item 3 remains
+   H200-scoped and exact; no §2/§4.3/§8/fig15 contradiction remains.
+3. §7 restatements: refresh 5.7x–10.1x row-wise (5.66/6.52/10.08x;
+   warm 9.003/9.224/9.396 ms vs rebuild 50.944/92.947/61.221 ms; uniform
+   5.833–7.913 ms) and adaptive graph rows 0.83/0.98/2.18% within the
+   0.31–4.79% 12-row band — text matches measurement.
+4. `git show --stat 69075db`: report.md (+20/-5 net across both files:
+   20 report lines) + decision log (the 14:54 entry) only; no figure,
+   CSV, task-file, src/, or 041b/041c changes.
+5. Final §2/§8 skim: no new number conflicts with the CSVs; §8 wake
+   1.11–1.18x is the inverse of §2's 0.90x/0.85x.
+
+Verdict: **APPROVED.** Approval record appended to the 041a task file;
+START_HERE 041a Approved ticked (checkbox line only; the uncommitted
+041b/041c START_HERE edits remain uncommitted and untouched — the
+commit stages a HEAD-based blob carrying only the checkbox flip).
+Campaign remains PAUSED per user directive; 042 not launched or
+recommended.

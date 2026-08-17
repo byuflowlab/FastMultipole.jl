@@ -170,6 +170,39 @@ the report and visible in figs 15/16.
   quantified (host adaptive update 2.1–2.9 s vs 0.44–1.0 s uniform at
   n=1e6); routed to the 042 audit.
 
+## Clear-context approval (2026-08-17 14:58 MDT, fresh re-approval agent)
+
+**APPROVED.** Third clear-context review, scoped per protocol to the
+`69075db` fix and residual consistency (reviews of 14:46 and 14:54 MDT
+verified jobs, completeness, headlines, figures, compiles, checksums, and
+hygiene; not repeated). Verified, re-derived from the CSVs of record:
+
+1. §2 n=1e5 rescope exact: H200 F64 best-uniform wins all cases
+   (cube 7.397/8.114 = 1.10x, multiscale 15.192/17.270 = 1.14x,
+   wake 7.638/12.331 = 1.61x); host 1T uniform wins cube 2195.50/2538.73
+   = 1.16x (ell=4) and wake 1851.64/2026.30 = 1.09x (ell=6);
+   multiscale100 is a 2.27x adaptive win (2632.65 ms K=64 vs 5967.37 ms
+   ell=5) — all from `fm041a_gpu_widen.csv` / `fm041a_host_widen.csv`.
+2. §8 small-n row matches the rescoped §2 and states the host precedence
+   of the clustered-fields rule; §4 item 3 is H200-scoped and exact;
+   fig15's host panel CSVs carry the same 2632.65/5967.37 points. No
+   remaining §2/§4/§8/fig15 contradiction.
+3. §7 restatements exact: refresh 5.7x–10.1x row-wise (rebuild/warm
+   5.66x cube, 6.52x multiscale, 10.08x wake; warm 9.003–9.396 ms vs
+   rebuild 50.944–92.947 ms); adaptive graph rows 0.83/0.98/2.18%;
+   full band 0.31–4.79% (min cube ell=7, max multiscale ell=6);
+   multiscale ell=5 example 178.077 vs 185.357 ms.
+4. `git show --stat 69075db`: surface is report.md + decision log only
+   (20 + 82 lines); no figure, CSV, task-file, or 041b/041c changes.
+5. Final §2/§8 skim: every number introduced by the edit re-derives from
+   the CSVs; §8's wake 1.11–1.18x is the consistent inverse of §2's
+   0.90x/0.85x.
+
+No changes required. 041a marked Approved in START_HERE.md (checkbox
+line only; the uncommitted 041b/041c working-tree edits left uncommitted
+and untouched). Campaign remains PAUSED per user directive; 042 not
+launched.
+
 ### Open items for 042
 
 Default-selection audit against the report's §8 regime table; S2L device
