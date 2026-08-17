@@ -42,3 +42,13 @@ Manifest.toml
 
 # vim
 *.swp
+
+# MATRIX_OPERATOR_REFACTOR figure build artifacts (commit only .tex + CSVs;
+# 18 pdf/png from the pre-041a sets remain tracked as historical record)
+MATRIX_OPERATOR_REFACTOR/data/figures/*.pdf
+MATRIX_OPERATOR_REFACTOR/data/figures/*.png
+MATRIX_OPERATOR_REFACTOR/data/figures/*.aux
+MATRIX_OPERATOR_REFACTOR/data/figures/*.log
+MATRIX_OPERATOR_REFACTOR/data/figures/*.fls
+MATRIX_OPERATOR_REFACTOR/data/figures/*.fdb_latexmk
+MATRIX_OPERATOR_REFACTOR/data/figures/*.synctex.gz

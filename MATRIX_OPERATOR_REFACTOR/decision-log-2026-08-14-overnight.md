@@ -1212,3 +1212,108 @@ Design decisions of record (overnight/user-absent; all in-scope):
 - START_HERE row 041a marked Done (Approved left blank; a different
   agent must review). Committing as `041a DONE`. Ready for
   clear-context approval.
+
+## 2026-08-17 14:46 MDT — 041a clear-context review: CHANGES REQUIRED
+
+Reviewer: clear-context approval agent (no prior campaign context).
+Verdict: **CHANGES REQUIRED — 041a not approved; Approved checkbox left
+blank.** Every crux item verified; the required changes are confined to
+four factual slips in the prose of `data/adaptive_octree/report.md` (the
+document of record 042 will cite). Figures and CSVs need no changes.
+
+Evidence checked (verified, not trusted):
+- **Jobs**: sacct re-verified 13184013 COMPLETED 0:0 1:18:22, 13184014
+  COMPLETED 0:0 1:20:58, 13184015 CANCELLED+ 0:0 1:35:07 (End 23:52:07).
+- **13184015 completeness**: re-enumerated the pre-registered
+  `config_plan` in `ecebdb8`'s fm041a_host_widen.jl — exactly 29 rows
+  (17 at n=1e5, 12 at n=1e6; final = multiscale100/1e6/adaptive/32);
+  the committed CSV contains all 29, in order, all `ok`, final row
+  present → the cancel landed after the last pre-registered row. Claim
+  substantiated.
+- **Pre-registration order**: ecebdb8 committed 2026-08-15 22:16:24 MDT;
+  job starts 22:17:00–22:18:10 (sacct). Honored.
+- **Headline numbers**: every §2 best-vs-best number and ratio re-derived
+  from the CSVs and exact (cube 92.298/95.899=0.96x GPU, 27.535/28.779
+  =0.96x host; wake 96.609/113.391=0.85x, 21.323/23.622=0.90x;
+  multiscale 246.347/132.359=1.86x, 79.911/26.718=2.99x). Memory 17.3x
+  wake / 11.2x multiscale exact. Contrast 1.67x/2.11x exact; sigma 2.6x
+  (80.691/30.51) exact; stage numbers (155/158, 174/186, 43+104+17,
+  22.2+7.2, 54.7 vs 26.0), refresh (9.0–9.4 vs 50.9–92.9 ms), and all
+  §4 honest negatives exact. fm040 2.42x-overturn cross-checked in-job
+  (77.998 s ell6 vs 21.323 s ell7).
+- **Figure hygiene**: `figures_041a_prepare.jl` re-run locally —
+  regenerates every figure CSV byte-identically (git-clean diff);
+  checksums_041a.sha256 verifies 8/8; all seven figures re-compiled
+  clean with local pdflatex and visually inspected (axes/units/legends/
+  gate line/CCDF tails all sound); fig14's uniform_best envelope is
+  computed correctly (ell5 at c=30). No .pdf/.aux in `b04176c`; commit
+  surface is 041a files + the single START_HERE 041a Done tick only; no
+  src/ changes.
+- **Gates**: gpu widen 165/165 ok, host 29/29, contrast 35/35 ok, sigma
+  18 ok + 6 measured ArgumentError global-gate throws with error text
+  (spread 100: ell>=5; spread 300: ell>=3) — a finding, correctly
+  plotted as truncated uniform curves.
+
+REQUIRED CHANGES (all in report.md prose; none affect any verdict,
+figure, or regime recommendation):
+1. §3 bullet 1: "adaptive stays flat at 120–137 ms ... from c=3 to
+   c=1000" — measured adaptive t_step spans 120.8–156.0 ms (c=3:
+   156.0 ms, c=30: 155.2 ms; fig14 plots these correctly). Restate the
+   band honestly.
+2. §3 bullet 1: "best-uniform envelope survives by moving ever deeper
+   (ell=7 by c>=30)" — at c=30 the best uniform is ell=5 (170.1 ms vs
+   ell=7 251.4 ms); ell=7 becomes best from c>=100 (fig14
+   uniform_best.csv already has this right). Correct the threshold.
+3. §1 accuracy parenthetical: "contrast sweep max 4.7e-4" — the plotted
+   adaptive c=30 row measures 5.435e-4. Also state the scope of "GPU
+   widen max 6.6e-4": the CSV-wide max is 7.937e-4 (unitcube n=1e4
+   uniform ell=7, unplotted, still inside the gate); either quote the
+   true max or say "plotted/quoted rows" explicitly.
+4. §7 graph-capture bullet: "0.5–4.6%" — recomputed
+   (serial − graph)/serial over the 12 stage rows spans 0.31–4.79%
+   (min cube ell7, max multiscale ell6). Correct the band or state the
+   exact formula used.
+
+NOTED (non-blocking): (a) wake/multiscale best-uniform ell=7 is a
+swept-range ENDPOINT on both platforms; defensible because ell=8 is
+memory-infeasible (~8x of 54–58 GB device; > the 64G host job) and
+capped — §5 states this for wake/H200 only; consider extending the
+feasibility note to multiscale and host when touching the report.
+(b) wake-GPU best adaptive K=256 is also an endpoint (K non-monotonicity
+already flagged for 042); if K=512 were faster the 0.85x loss would
+narrow — worth one sentence. (c) untracked local fig*.pdf builds sit in
+data/figures/ and are not gitignored; housekeeping only, correctly NOT
+committed. (d) fig20 shows throws as truncated curves (gatefail.csv is
+a nan placeholder); fine with the report text, an in-figure annotation
+would be referee-friendlier.
+
+Per protocol the fixing agent re-marks Done and a fresh clear-context
+agent re-reviews. The campaign remains PAUSED per the user directive;
+042 not launched.
+
+## 2026-08-17 14:50 MDT — 041a review corrections (lead agent)
+
+Fixes for the 14:46 MDT CHANGES-REQUIRED review; all four required items
+were prose slips in data/adaptive_octree/report.md (no figure, CSV,
+verdict, or regime change):
+1. §3 adaptive contrast band restated honestly as 120.8–156.0 ms
+   (c=3/c=30 at the ~156 ms top; fig14 always plotted these correctly).
+2. §3 best-uniform depth threshold corrected: ell=5 still best at c=30
+   (170.1 ms); ell=7 best from c>=100.
+3. §1 accuracy maxima made exact and scoped: GPU widen CSV-wide max
+   7.937e-4 (unplotted cube n=1e4 ell=7; plotted rows max 6.6e-4);
+   contrast sweep max 5.435e-4 (plotted adaptive c=30 row).
+4. §7 graph-engagement band corrected to 0.31–4.79% with the formula
+   ((t_serial − t_graph+overlap)/t_serial, 12 stage rows) stated.
+Reviewer noted items addressed: (a) §5 endpoint disclosure extended —
+ell=7 is the swept endpoint on wake AND multiscale, BOTH platforms,
+with the ell=8 infeasibility argument (8x of 54–58 GB device vs ~141 GB
+H200; 64 GB host job; hard cap), plus (b) the K=256 wake-GPU endpoint
+sentence; (d) fig20 gained an in-figure annotation marking where the
+global-gate throws truncate the uniform curves (recompiled clean,
+visually re-checked); (c) figure build artifacts (pdf/png/aux/log) now
+gitignored under data/figures/ (the 18 pre-041a tracked pdf/png stay
+tracked as historical record). report.md is not in
+checksums_041a.sha256 (data CSVs only), so no checksum update.
+START_HERE 041a remains Done / Approved blank. Committing as
+`041a: review corrections — report prose`. Ready for re-approval.

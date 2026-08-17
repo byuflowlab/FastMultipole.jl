@@ -35,10 +35,12 @@ sampled-direct accuracy under the phase velocity gate (rel RMS <= 1e-3,
     re-ran from scratch in a single incarnation; both GPU jobs shared node
     m13h-1-2 (one H200 each). Prior-row records: fm039 (13178905), fm040
     (13179323), fm041 (13182172).
-- Accuracy: every plotted/quoted configuration passed the 1e-3 velocity
-  gate (GPU widen max 6.6e-4; host max 6.6e-4; sigma sweep max 9.5e-4;
-  contrast sweep max 4.7e-4). No gate-failing row is used as a winner
-  anywhere; construction failures are fail rows with error text.
+- Accuracy: every configuration passed the 1e-3 velocity gate — CSV-wide
+  maxima: GPU widen 7.937e-4 (unitcube n=1e4 ell=7, an unplotted row;
+  the plotted/quoted GPU-widen rows max at 6.6e-4), host 6.6e-4, sigma
+  sweep 9.5e-4, contrast sweep 5.435e-4 (the plotted adaptive c=30 row).
+  No gate-failing row is used as a winner anywhere; construction
+  failures are fail rows with error text.
 
 ## 2. Headline verdicts (best-vs-best, widened sweeps, same-job)
 
@@ -74,9 +76,11 @@ memory, §5). The fm041 cube 1.11x GPU win becomes 0.96x parity.
   O(K^2) direct work concentrates in the cluster (fig19: at c=1000 and
   ell=5 the leaf-population CCDF has a tail beyond 20,000 bodies/leaf;
   adaptive truncates at exactly K_max=64 by construction). The
-  best-uniform envelope survives by moving ever deeper (ell=7 by c>=30),
-  paying 54–58 GB of device capacity; adaptive stays flat at 120–137 ms
-  and 5.2 GB from c=3 to c=1000: **1.67x at c=100, 2.11x at c=1000** vs
+  best-uniform envelope survives by moving ever deeper (ell=5 still best
+  at c=30 with 170.1 ms; ell=7 best from c>=100), paying 54–58 GB of
+  device capacity at ell=7; adaptive stays in a 120.8–156.0 ms band at
+  5.2 GB from c=3 to c=1000 (c=3/c=30 sit at the ~156 ms top of the
+  band; fig14 plots every point): **1.67x at c=100, 2.11x at c=1000** vs
   the best gate-passing uniform depth, with **11x less device memory**.
   (Honest endpoint: at c=1 the generator's contrast ball spills outside
   the unit cube, inflating W/X to 8.1e5 entries — adaptive 321 ms vs
@@ -138,6 +142,16 @@ occupancy-sized capacity spans a narrow band, **3.1 GB (K=256) to 8.3 GB
   to spare, and ell=8 (the uniform cap) would not fit an H200 at all.
 - multiscale: adaptive wins time (1.86x) AND memory (11.2x, 5.2 vs
   58.2 GB) simultaneously.
+- Endpoint disclosure: the winning/best-uniform ell=7 is the swept-range
+  ENDPOINT on wake and multiscale, on BOTH platforms. Extending to ell=8
+  is memory-infeasible, not merely unswept: device capacity grows ~8x
+  per level from 54–58 GB at ell=7 (an H200 has ~141 GB), and the host
+  job ran in 64 GB; ell=8 is also the uniform path's hard cap. The
+  best-uniform curves are therefore effectively complete even where they
+  end at ell=7. Symmetrically, wake-GPU's best adaptive K=256 is a sweep
+  endpoint too — given the observed K non-monotonicity, an unswept
+  K=512 could narrow the 0.85x wake loss; flagged with the K-tuning item
+  for `042`.
 - The uniform ell<=8 cap remains (041 decision: untouched); the adaptive
   path has no depth cap below `RADIX_GRID_MAX_ELL`=21 and ran ell_max=10
   throughout.
@@ -160,9 +174,10 @@ best-uniform deliver the same error order at every quoted point.
   forced full rebuild — 5.7x–9.9x saved when the leaf set is stable) and
   sits within 1.2–1.6x of the uniform refresh (5.8–7.9 ms).
 - **Graph capture / nearfield overlap (measured)**: at n=1e6 dense-F64
-  the shipped lifecycle beats the fully serialized stage sum by only
-  0.5–4.6% (e.g. multiscale ell=5: 178.1 vs 185.4 ms; adaptive rows
-  ~1–2%) — graph/overlap engagement is not a material factor at this
+  the shipped lifecycle beats the fully serialized run by only
+  0.31–4.79% (computed as (t_serial − t_graph+overlap)/t_serial over the
+  12 stage rows; min cube ell=7, max multiscale ell=6 — e.g. multiscale
+  ell=5: 178.1 vs 185.4 ms; adaptive rows ~1–2%) — graph/overlap engagement is not a material factor at this
   scale (it was priced from ~50 us/window launch latency at much smaller
   windows in 027–029).
 - **Per-n K/depth sweep**: landed as the fig15/fig18 grids (this row).

@@ -47,6 +47,12 @@
 \addplot[color=fmSone, mark=*, line width=1.2pt]
     table[col sep=comma, x=spread, y=t_step_ms]{fig20_adaptive_sigma/adaptive_64.csv};
 \addlegendentry{adaptive $K_{\max}{=}64$, per-cell gate}
+% in-figure annotation: uniform curves END where construction THREW
+\node[anchor=west, font=\scriptsize, color=fmCritical, align=left]
+    at (axis cs:13, 200) {global $\sigma_{\max}$ gate throws:\\
+    $\ell\geq5$ beyond spread 10,\\ $\ell\geq3$ beyond spread 100};
+\draw[fmruleline, ->] (axis cs:12.5, 170) -- (axis cs:10.5, 140);
+\draw[fmruleline, ->] (axis cs:105, 20) -- (axis cs:101, 15.2);
 % every surviving row in fm041a_gpu_sigma.csv passes the 1e-3 velocity gate
 % (fig20_adaptive_sigma/gatefail.csv is empty); a uniform curve ENDING at a
 % spread means construction THREW there (global sigma_max gate) — the fail
