@@ -160,5 +160,10 @@ end
 
 Returns a view of all extra output rows for target-buffer column `i`.
 """
-@inline extra_output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i) = view(buffer, extra_output_range(switch), i)
-@inline output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i) = view(buffer, output_range(switch), i)
+@inline function extra_output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i)
+    return view(buffer, extra_output_range(switch), i)
+end
+
+@inline function output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i)
+    return view(buffer, output_range(switch), i)
+end
