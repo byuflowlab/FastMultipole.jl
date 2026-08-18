@@ -487,3 +487,74 @@ for _ in 1:3
 end
 
 end
+
+@testset "Fast Gauss Seidel: cached leaf LU factorizations" begin
+    # This deterministic tree has multiple leaves and no one-body gravitational
+    # leaf (whose deliberately zero self term would make that block singular).
+    system = generate_gravitational(20260815, 800)
+    direct!(system; scalar_potential=true, gradient=false)
+    system.potential[1, :] .*= -1.0
+
+    original_strengths = [body.strength for body in system.bodies]
+    cached = FastMultipole.FastGaussSeidel((system,), (system,);
+        expansion_order=4, multipole_acceptance=0.5, leaf_size=40,
+        shrink=true, recenter=false)
+    self_data = copy(cached.self_matrices.data)
+    cache = cached.leaf_lu_cache
+
+    @test cached.cache_leaf_lu
+    @test cache !== nothing
+    @test length(cache.factorizations) == length(cached.self_matrices.sizes) > 1
+    @test cache.data !== cached.self_matrices.data
+    @test cache.data != cached.self_matrices.data
+    @test cached.self_matrices.data == self_data
+    @test cache.build_time >= 0.0
+    @test cache.bytes == sizeof(cache.data) + sum(sizeof(F.ipiv) for F in cache.factorizations)
+    @test all(parent(parent(F.factors)) === cache.data for F in cache.factorizations)
+
+    uncached = FastMultipole.FastGaussSeidel((system,), (system,);
+        expansion_order=4, multipole_acceptance=0.5, leaf_size=40,
+        shrink=true, recenter=false, cache_leaf_lu=false)
+    @test !uncached.cache_leaf_lu
+    @test uncached.leaf_lu_cache === nothing
+    @test uncached.self_matrices.data == cached.self_matrices.data
+
+    for i_leaf in eachindex(cached.self_matrices.sizes)
+        _, rhs = FastMultipole.get_matrix_vector(cached.self_matrices, i_leaf)
+        rhs .= sin.(eachindex(rhs))
+        x_cached = similar(rhs)
+        x_uncached = similar(rhs)
+        FastMultipole.solve_leaf!(x_cached, cached.self_matrices, cache, i_leaf)
+        FastMultipole.solve_leaf!(x_uncached, cached.self_matrices, nothing, i_leaf)
+        @test x_cached ≈ x_uncached rtol=1e-12 atol=1e-12
+        @test cached.self_matrices.data == self_data
+    end
+
+    function cached_path_cold_solve!(system, solver, original_strengths;
+                                     reverse_pass)
+        for (i, body) in enumerate(system.bodies)
+            system.bodies[i] = typeof(body)(body.position, body.radius,
+                                             original_strengths[i])
+        end
+        residuals = Float64[]
+        FastMultipole.solve!(system, solver; scalar_potential=true, gradient=false,
+            max_iterations=5, inner_iterations=2, tolerance=-1.0,
+            reverse_pass, final_update=false, verbose=false,
+            callback=(_, residual) -> push!(residuals, residual))
+        return residuals, [body.strength for body in system.bodies]
+    end
+
+    for reverse_pass in (false, true), repetition in 1:2
+        residuals_cached, strengths_cached = cached_path_cold_solve!(
+            system, cached, original_strengths; reverse_pass)
+        residuals_uncached, strengths_uncached = cached_path_cold_solve!(
+            system, uncached, original_strengths; reverse_pass)
+        @test residuals_cached ≈ residuals_uncached rtol=1e-11 atol=1e-12
+        @test strengths_cached ≈ strengths_uncached rtol=1e-11 atol=1e-12
+        @test cached.self_matrices.data == self_data
+    end
+
+    singular = FastMultipole.Matrices([(2, 2)])
+    singular.data .= [1.0, 2.0, 2.0, 4.0]
+    @test_throws LinearAlgebra.SingularException FastMultipole.build_leaf_lu_cache(singular)
+end

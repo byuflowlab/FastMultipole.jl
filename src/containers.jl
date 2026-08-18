@@ -283,8 +283,17 @@ struct Matrices{TF}
     rhs_offsets::Vector{Int}
 end
 
-struct FastGaussSeidel{TF,Nsys,TIL} <: AbstractSolver
+struct LeafLUCache{TF,LF}
+    data::Vector{TF}
+    factorizations::Vector{LF}
+    build_time::Float64
+    bytes::Int
+end
+
+struct FastGaussSeidel{TF,Nsys,TIL,TLC} <: AbstractSolver
     self_matrices::Matrices{TF}
+    leaf_lu_cache::TLC
+    cache_leaf_lu::Bool
     nonself_matrices::Matrices{TF}
     index_map::Vector{UnitRange{Int}}
     m2l_list::Vector{SVector{2,Int}}

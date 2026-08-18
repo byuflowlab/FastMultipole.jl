@@ -50,6 +50,36 @@ function get_matrix_vector(ms::Matrices, k::Int)
     return reshape(mat, m, n), view(ms.rhs, vrange)
 end
 
+function build_leaf_lu_cache(self_matrices::Matrices{TF}) where TF
+    start_time = time_ns()
+    data = copy(self_matrices.data)
+    factors = map(eachindex(self_matrices.sizes)) do k
+        m, n = self_matrices.sizes[k]
+        m == n || throw(DimensionMismatch(
+            "FastGaussSeidel self-influence block $k must be square, got $(m)×$(n)"))
+        matrix_range = get_matrix_range(self_matrices, k, m, n)
+        factor_matrix = reshape(view(data, matrix_range), m, n)
+        lu!(factor_matrix; check=true)
+    end
+    build_time = (time_ns() - start_time) * 1e-9
+    bytes = sizeof(data) + sum(sizeof(F.ipiv) for F in factors)
+    return LeafLUCache{TF,eltype(factors)}(data, factors, build_time, bytes)
+end
+
+@inline function solve_leaf!(leaf_strengths, self_matrices::Matrices,
+                             ::Nothing, i_leaf::Int)
+    mat, rhs = get_matrix_vector(self_matrices, i_leaf)
+    leaf_strengths .= mat \ rhs
+    return leaf_strengths
+end
+
+@inline function solve_leaf!(leaf_strengths, self_matrices::Matrices,
+                             cache::LeafLUCache, i_leaf::Int)
+    _, rhs = get_matrix_vector(self_matrices, i_leaf)
+    ldiv!(leaf_strengths, cache.factorizations[i_leaf], rhs)
+    return leaf_strengths
+end
+
 function set_unit_strength!(source_buffers::AbstractVector{<:Matrix}, source_systems::Tuple)
     for i_source_system in eachindex(source_systems)
         source_system = source_systems[i_source_system]
@@ -563,7 +593,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     expansion_order=4, multipole_acceptance=0.5, leaf_size=30,
     interaction_list_method=Barba(), shrink=true, recenter=false,
     derivatives_switches=DerivativesSwitch(true, true, false, target_systems),
-    extra_farfield=false
+    extra_farfield=false, cache_leaf_lu::Bool=true
 )
 
     #--- identical source and target trees ---#
@@ -630,6 +660,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     #--- build self-influence matrices ---#
 
     self_matrices = self_influence_matrices(target_tree.buffers, source_tree.buffers, source_systems, target_tree, source_tree, derivatives_switches)
+    leaf_lu_cache = cache_leaf_lu ? build_leaf_lu_cache(self_matrices) : nothing
 
     #--- source strength vector ---#
 
@@ -667,8 +698,10 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     # construct residual vector
     residual_vector = Vector{TF}(undef, n_max)
 
-    return FastGaussSeidel{TF,length(source_systems),typeof(interaction_list_method)}(
+    return FastGaussSeidel{TF,length(source_systems),typeof(interaction_list_method),typeof(leaf_lu_cache)}(
         self_matrices,
+        leaf_lu_cache,
+        cache_leaf_lu,
         nonself_matrices,
         index_map,
         m2l_list,
@@ -857,6 +890,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
     source_buffers = source_tree.buffers
     target_buffers = target_tree.buffers
     self_matrices = solver.self_matrices
+    leaf_lu_cache = solver.leaf_lu_cache
     nonself_matrices = solver.nonself_matrices
     index_map = solver.index_map
     m2l_list = solver.m2l_list
@@ -969,14 +1003,11 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
 
             for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
 
-                # unpack influence matrix and right-hand side
-                mat, rhs = get_matrix_vector(self_matrices, i_leaf)
-
                 # unpack strengths
                 leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
 
                 # solve for strengths
-                leaf_strengths .= mat \ rhs
+                solve_leaf!(leaf_strengths, self_matrices, leaf_lu_cache, i_leaf)
 
                 # update non-self influence
                 length(direct_list) > 0 && update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, i_leaf, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
@@ -988,14 +1019,11 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
 
                 for (i_leaf, i_branch) in enumerate(reverse(source_tree.leaf_index))
 
-                    # unpack influence matrix and right-hand side
-                    mat, rhs = get_matrix_vector(self_matrices, i_leaf)
-
                     # unpack strengths
                     leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
 
                     # solve for strengths
-                    leaf_strengths .= mat \ rhs
+                    solve_leaf!(leaf_strengths, self_matrices, leaf_lu_cache, i_leaf)
 
                     # update non-self influence
                     length(direct_list) > 0 && update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, i_leaf, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
