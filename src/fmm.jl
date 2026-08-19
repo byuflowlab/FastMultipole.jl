@@ -1113,15 +1113,30 @@ function build_nearfield_cache!(plan::FmmPlan, target_systems::Tuple, source_sys
 end
 
 # cached near-field evaluation inside fmm!; returns the timing vector the
-# kernel paths return (total cached time in slot 1 — per-source-system
-# attribution is meaningless for the fused matvec)
+# kernel paths return. Without tune, the total cached time lands in slot 1
+# (cheap); with tune, the total is attributed per source system in proportion
+# to its share of block interaction counts, so the tune path's division by
+# n_interactions yields the cached per-interaction cost.
 function nearfield_cached!(target_tree, source_tree, cache, direct_conditioning, source_systems, n_threads, tune)
-    tune && throw(ArgumentError("tune=true is incompatible with nearfield_cache — " *
-        "per-interaction kernel timing cannot be measured on the cached path"))
     _refuse_conditioning(direct_conditioning, "fmm! evaluation")
     check_cache_trees(cache, target_tree, source_tree)
     t_nf = @MVector zeros(length(source_systems))
-    t_nf[1] = @elapsed nearfield_matvec!(target_tree.buffers, cache, source_tree.buffers; n_threads)
+    t = @elapsed nearfield_matvec!(target_tree.buffers, cache, source_tree.buffers; n_threads)
+    if tune
+        counts = zeros(length(source_systems))
+        for k in eachindex(cache.entries)
+            i_ss = cache.entries[k][4]
+            counts[i_ss] += length(cache.target_ranges[k]) * length(cache.source_ranges[k])
+        end
+        total = sum(counts)
+        if total > 0
+            for i in eachindex(t_nf)
+                t_nf[i] = t * counts[i] / total
+            end
+        end
+    else
+        t_nf[1] = t
+    end
     return t_nf
 end
 
@@ -1171,12 +1186,25 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     extra_farfield=false,
     direct_conditioning=(),
     nearfield_cache=nothing,
+    tune_nearfield_cache::Bool=false,
+    nearfield_cache_max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
+    nearfield_cache_max_build_time::Real=Inf,
 )
 
     #--- check if lamb-helmholtz decomposition is required ---#
 
     lamb_helmholtz = has_vector_potential(source_systems)
     direct_conditioning = normalize_direct_conditioning(direct_conditioning)
+
+    #--- near-field cache bookkeeping (see NearfieldInfluenceCache) ---#
+
+    # a PROVIDED cache locks the trees and direct list, so tune=true may only
+    # tune expansion_order for it (a leaf_size_source suggestion would
+    # invalidate the cache); leaf/MAC tuning under cached economics goes
+    # through tune_nearfield_cache, which builds a throwaway cache per call
+    nearfield_cache_provided = !isnothing(nearfield_cache)
+    nearfield_cache_feasible = true
+    nearfield_cache_build_time = 0.0
 
     #--- check for datarace condition ---#
 
@@ -1264,6 +1292,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             if has_direct_conditioning(direct_conditioning)
                 throw(ArgumentError("direct_conditioning is only supported for CPU nearfield; use nearfield_device=false"))
             end
+            if nearfield_cache_provided || tune_nearfield_cache
+                throw(ArgumentError("nearfield_cache/tune_nearfield_cache are only supported for CPU nearfield; use nearfield_device=false"))
+            end
 
             # allow nearfield_device! to be called concurrently with upward and horizontal passes
             t1 = Threads.@spawn nearfield && nearfield_device!(target_systems, target_tree, derivatives_switches, source_systems, source_tree, direct_list)
@@ -1281,6 +1312,30 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             downward_pass && downward_pass_multithread_2!(target_tree.branches, target_systems, derivatives_switches, Pmax, lamb_helmholtz, tree.leaf_index, n_threads)
 
         else # use CPU
+
+            # tune_nearfield_cache: build a THROWAWAY cache for this call's
+            # trees/lists so the tune leaf-size model reflects cached
+            # economics (build cost stays out of t_direct by construction);
+            # over-cap trials are NOT built — the kernel path runs instead and
+            # optargs.nearfield_cache_feasible=false tells the tuner to stop
+            # leaf growth at the last feasible trial
+            if tune && tune_nearfield_cache && !nearfield_cache_provided
+                _refuse_conditioning(direct_conditioning, "tune_nearfield_cache")
+                est = estimate_nearfield_cache(target_tree, source_tree,
+                    direct_list, derivatives_switches, source_systems;
+                    sample=isfinite(nearfield_cache_max_build_time))
+                if est.bytes <= nearfield_cache_max_bytes &&
+                        !(isfinite(nearfield_cache_max_build_time) &&
+                          est.est_build_time > nearfield_cache_max_build_time)
+                    nearfield_cache = NearfieldInfluenceCache(target_systems,
+                        target_tree, source_systems, source_tree, direct_list,
+                        derivatives_switches;
+                        max_bytes=nearfield_cache_max_bytes)
+                    nearfield_cache_build_time = nearfield_cache.build_time
+                else
+                    nearfield_cache_feasible = false
+                end
+            end
 
             # single threaded
             if n_threads == 1
@@ -1341,7 +1396,11 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 # finish autotuning
                 if tune
 
-                    if length(m2l_list) > 0
+                    if nearfield_cache_provided
+                        # a provided cache locks the trees/lists: tune only
+                        # expansion_order; leave leaf_size_source unchanged
+                        # (a new leaf would invalidate the cache)
+                    elseif length(m2l_list) > 0
                         #--- compute optimal leaf_size_source ---#
 
                         # t per m2l transformation
@@ -1427,7 +1486,11 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 # finish autotuning
                 if tune
 
-                    if length(m2l_list) > 0
+                    if nearfield_cache_provided
+                        # a provided cache locks the trees/lists: tune only
+                        # expansion_order; leave leaf_size_source unchanged
+                        # (a new leaf would invalidate the cache)
+                    elseif length(m2l_list) > 0
                         #--- compute optimal leaf_size_source ---#
 
                         # t per m2l transformation
@@ -1458,6 +1521,12 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                        leaf_size_source = leaf_size_source,
                        expansion_order = max(expansion_order, 1),
                        multipole_acceptance = multipole_acceptance,
+                       # cached-near-field tuning telemetry (see tune_nearfield_cache):
+                       # feasible=false means this call's cache exceeded a cap and
+                       # the kernel path ran; build_time lets tuners subtract the
+                       # throwaway build from wall-clock comparisons
+                       nearfield_cache_feasible = nearfield_cache_feasible,
+                       nearfield_cache_build_time = nearfield_cache_build_time,
                       )
 
     cache = Cache(;

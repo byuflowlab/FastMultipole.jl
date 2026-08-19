@@ -162,9 +162,99 @@ end
         @test isapprox(sys_cached.potential, sys_ref.potential; rtol=1e-12)
     end
 
-    # tune is incompatible with the cached path
-    @test_throws ArgumentError FastMultipole.fmm!((sys_cached,), (sys_cached,),
-        plan_cached; tune=true)
+    # tune=true with a provided cache tunes expansion_order ONLY (leaf/MAC are
+    # locked by the cache) — behavior verified in the cached-path tuning testset
+
+end
+
+@testset "NearfieldInfluenceCache: cached-path tuning" begin
+
+    n_bodies = 2000
+    plan_kwargs = (; expansion_order=8, multipole_acceptance=0.4,
+                   leaf_size_source=30, scalar_potential=true, gradient=true,
+                   hessian=false)
+
+    #--- provided cache + tune=true: expansion_order only, leaf locked ---#
+
+    sys = generate_gravitational(321, n_bodies)
+    sys_ref = generate_gravitational(321, n_bodies)
+    plan = FastMultipole.FmmPlan((sys,), (sys,); plan_kwargs...)
+    @test length(plan.direct_list) > 0   # premise: real near field
+    @test length(plan.m2l_list) > 0      # premise: real far field
+    build_nearfield_cache!(plan, (sys,), (sys,))
+
+    sys.potential .= 0
+    sys_ref.potential .= 0
+    result = FastMultipole.fmm!((sys,), (sys,), plan; tune=true)
+    optargs = result[1]
+    # leaf suggestion suppressed: a provided cache locks trees/lists
+    @test optargs.leaf_size_source == plan.leaf_size_source
+    @test optargs.expansion_order == plan_kwargs.expansion_order
+    @test optargs.nearfield_cache_feasible === true
+    @test optargs.nearfield_cache_build_time == 0.0   # provided, not built here
+    # outputs unaffected by tune=true on the cached path
+    FastMultipole.fmm!((sys_ref,), (sys_ref,); plan_kwargs...)
+    @test any(!iszero, sys_ref.potential)   # non-vacuous
+    @test isapprox(sys.potential, sys_ref.potential; rtol=1e-12)
+
+    #--- tune_fmm with per-trial throwaway caches (uncapped) ---#
+
+    tune_kwargs = (; scalar_potential=true, gradient=true, hessian=false,
+                   leaf_size_source=20, expansion_order=6,
+                   multipole_acceptances=[0.4], verbose=false)
+    sys_a = generate_gravitational(11, 800)
+    tuned, _, info = FastMultipole.tune_fmm((sys_a,), (sys_a,);
+        tune_kwargs..., tune_nearfield_cache=true)
+    @test all(tuned.leaf_size_source .>= 1)
+    @test tuned.expansion_order >= 1
+    @test info.cache_capped === false   # premise: 4 GiB cap can't bind at n=800
+
+    #--- capped run: leaf changes stop at the last cache-feasible trial ---#
+
+    # place the cap BETWEEN the initial trial's bytes and the (measured)
+    # tuned-leaf bytes so the first trial fits and the tuner's suggested move
+    # does not (at this scale the tuner SHRINKS the leaf and bytes grow with
+    # smaller leaves — the clamp is direction-agnostic either way)
+    est_at(leaf) = begin
+        p = FastMultipole.FmmPlan((sys_a,), (sys_a,);
+            scalar_potential=true, gradient=true, hessian=false,
+            leaf_size_source=leaf, expansion_order=6, multipole_acceptance=0.4)
+        estimate_nearfield_cache(p.target_tree, p.source_tree, p.direct_list,
+            p.derivatives_switches, (sys_a,); sample=false)
+    end
+    est0 = est_at(20)
+    est_move = est_at(tuned.leaf_size_source)
+    @test est_move.bytes > est0.bytes   # premise: the tuner's move costs more bytes
+    max_bytes_cap = (est0.bytes + est_move.bytes) ÷ 2
+    tuned_c, _, info_c = FastMultipole.tune_fmm((sys_a,), (sys_a,);
+        tune_kwargs..., tune_nearfield_cache=true,
+        nearfield_cache_max_bytes=max_bytes_cap)
+    @test info_c.cache_capped === true   # premise: the cap actually bound
+    # the returned knobs must themselves be cache-feasible under the cap
+    plan_tuned = FastMultipole.FmmPlan((sys_a,), (sys_a,);
+        scalar_potential=true, gradient=true, hessian=false,
+        leaf_size_source=tuned_c.leaf_size_source,
+        expansion_order=tuned_c.expansion_order,
+        multipole_acceptance=tuned_c.multipole_acceptance)
+    est_tuned = estimate_nearfield_cache(plan_tuned.target_tree,
+        plan_tuned.source_tree, plan_tuned.direct_list,
+        plan_tuned.derivatives_switches, (sys_a,); sample=false)
+    @test est_tuned.bytes <= max_bytes_cap
+
+    # first trial already infeasible -> loud error
+    @test_throws ErrorException FastMultipole.tune_fmm((sys_a,), (sys_a,);
+        tune_kwargs..., tune_nearfield_cache=true, nearfield_cache_max_bytes=64)
+
+    #--- multi-system throwaway tuning completes (attribution smoke) ---#
+
+    sys_b = generate_gravitational(12, 400)
+    tuned_m, _, info_m = FastMultipole.tune_fmm((sys_a, sys_b), (sys_a, sys_b);
+        scalar_potential=true, gradient=true, hessian=false,
+        leaf_size_source=20, expansion_order=6,
+        multipole_acceptances=[0.4], verbose=false,
+        tune_nearfield_cache=true)
+    @test all(tuned_m.leaf_size_source .>= 1)
+    @test info_m.cache_capped === false
 
 end
 
