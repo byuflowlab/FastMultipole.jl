@@ -1103,10 +1103,11 @@ inherits the plan's validity contract (frozen geometry, only strengths
 change) and dies with the plan's trees. Returns the cache.
 """
 function build_nearfield_cache!(plan::FmmPlan, target_systems::Tuple, source_systems::Tuple;
-        max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES)
+        max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
+        max_build_time::Real=Inf)
     cache = NearfieldInfluenceCache(target_systems, plan.target_tree,
         source_systems, plan.source_tree, plan.direct_list,
-        plan.derivatives_switches; max_bytes)
+        plan.derivatives_switches; max_bytes, max_build_time)
     plan.nearfield_cache[] = cache
     return cache
 end

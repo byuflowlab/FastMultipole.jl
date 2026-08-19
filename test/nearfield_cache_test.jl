@@ -100,6 +100,23 @@ linear map cacheable as packed BLAS matvecs.
     @test_throws ArgumentError NearfieldInfluenceCache((sys,), tt, (sys,), st,
         plan.direct_list, switches; max_bytes=tiny)
 
+    #--- estimator + build-time cap (estimate BEFORE building, never after) ---#
+
+    est = estimate_nearfield_cache(tt, st, plan.direct_list, switches, (sys,))
+    @test est.bytes == cache.bytes            # exact same size-pass arithmetic
+    @test est.n_blocks == length(cache.entries)
+    @test est.total_probe_pairs > 0
+    @test est.est_build_time > 0.0            # sampled kernel time
+    est_nosample = estimate_nearfield_cache(tt, st, plan.direct_list, switches,
+        (sys,); sample=false)
+    @test est_nosample.bytes == est.bytes
+    @test isnan(est_nosample.est_build_time)
+    # absurdly small max_build_time throws before probing
+    tiny_time = est.est_build_time / 1e6
+    @test est.est_build_time > tiny_time      # premise: estimate exceeds the cap
+    @test_throws ArgumentError NearfieldInfluenceCache((sys,), tt, (sys,), st,
+        plan.direct_list, switches; max_build_time=tiny_time)
+
 end
 
 @testset "NearfieldInfluenceCache: fmm!/FmmPlan integration" begin

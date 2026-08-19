@@ -49,22 +49,32 @@ function NearfieldInfluenceCache(target_systems::Tuple, target_tree::Tree,
         source_systems::Tuple, source_tree::Tree, direct_list,
         derivatives_switches::Tuple;
         max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
+        max_build_time::Real=Inf,
         direct_conditioning=())
 
     _refuse_conditioning(direct_conditioning, "build")
 
+    entries, target_ranges, source_ranges =
+        _tree_block_specs(target_tree, source_tree, direct_list)
+
+    return _build_nearfield_cache(entries, target_ranges, source_ranges,
+        target_tree.buffers, source_systems, source_tree.buffers,
+        derivatives_switches, max_bytes, max_build_time,
+        objectid(target_tree), objectid(source_tree))
+end
+
+# block specs in target-major (direct-list) order
+function _tree_block_specs(target_tree::Tree, source_tree::Tree, direct_list)
     target_branches = target_tree.branches
     source_branches = source_tree.branches
-
-    # block specs in target-major (direct-list) order
     entries = SVector{4,Int32}[]
     target_ranges = UnitRange{Int}[]
     source_ranges = UnitRange{Int}[]
     for (i_target, i_source) in direct_list
-        for i_target_system in eachindex(target_systems)
+        for i_target_system in eachindex(target_branches[i_target].bodies_index)
             target_index = target_branches[i_target].bodies_index[i_target_system]
             length(target_index) == 0 && continue
-            for i_source_system in eachindex(source_systems)
+            for i_source_system in eachindex(source_branches[i_source].bodies_index)
                 source_index = source_branches[i_source].bodies_index[i_source_system]
                 length(source_index) == 0 && continue
                 push!(entries, SVector{4,Int32}(i_target, i_source, i_target_system, i_source_system))
@@ -73,11 +83,7 @@ function NearfieldInfluenceCache(target_systems::Tuple, target_tree::Tree,
             end
         end
     end
-
-    return _build_nearfield_cache(entries, target_ranges, source_ranges,
-        target_tree.buffers, source_systems, source_tree.buffers,
-        derivatives_switches, max_bytes,
-        objectid(target_tree), objectid(source_tree))
+    return entries, target_ranges, source_ranges
 end
 
 """
@@ -90,6 +96,7 @@ over the full body index ranges. Body counts are the only validity guard.
 function NearfieldInfluenceCache(target_systems::Tuple, target_buffers,
         source_systems::Tuple, source_buffers, derivatives_switches::Tuple;
         max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
+        max_build_time::Real=Inf,
         direct_conditioning=())
 
     _refuse_conditioning(direct_conditioning, "build")
@@ -111,27 +118,13 @@ function NearfieldInfluenceCache(target_systems::Tuple, target_buffers,
 
     return _build_nearfield_cache(entries, target_ranges, source_ranges,
         target_buffers, source_systems, source_buffers,
-        derivatives_switches, max_bytes, UInt(0), UInt(0))
+        derivatives_switches, max_bytes, max_build_time, UInt(0), UInt(0))
 end
 
-@inline function _refuse_conditioning(direct_conditioning, stage::String)
-    rules = normalize_direct_conditioning(direct_conditioning)
-    has_direct_conditioning(rules) && throw(ArgumentError(
-        "NearfieldInfluenceCache cannot be used with direct_conditioning rules " *
-        "(conditioning mutates source buffers around near-field evaluation, " *
-        "which the cached linear map cannot represent); remove the rules or " *
-        "disable the cache ($stage)"))
-    return nothing
-end
-
-function _build_nearfield_cache(entries, target_ranges, source_ranges,
-        target_buffers, source_systems, source_buffers, derivatives_switches,
-        max_bytes, target_tree_id::UInt, source_tree_id::UInt)
-
-    start_time = time_ns()
-    TF = promote_type(eltype.(source_buffers)...)
-
-    # size pass + memory guard BEFORE allocation
+# one size pass shared by the builder and the estimator (no drift):
+# per-block (m, n), output metadata, total flop/probe counts, and bytes
+function _nearfield_cache_size_pass(entries, target_ranges, source_ranges,
+        derivatives_switches, source_systems, TF)
     n_blocks = length(entries)
     sizes = Vector{Tuple{Int,Int}}(undef, n_blocks)
     n_out = Vector{Int}(undef, n_blocks)
@@ -140,6 +133,7 @@ function _build_nearfield_cache(entries, target_ranges, source_ranges,
     total_mn = 0
     total_m = 0
     max_width = 0
+    total_probe_pairs = 0   # the probe loop touches each (target, source) pair n_comp times
     for k in 1:n_blocks
         i_ts = entries[k][3]
         i_ss = entries[k][4]
@@ -154,12 +148,109 @@ function _build_nearfield_cache(entries, target_ranges, source_ranges,
         total_mn += m * n
         total_m += m
         max_width = max(max_width, n)
+        total_probe_pairs += sd * length(target_ranges[k]) * length(source_ranges[k])
     end
     bytes = sizeof(TF) * (total_mn + total_m)
-    bytes > max_bytes && throw(ArgumentError(
-        "NearfieldInfluenceCache would require $bytes bytes " *
-        "($(round(bytes / 1024^3; digits=2)) GiB) for $n_blocks blocks, " *
+    return (; sizes, n_out, n_comp, output_ranges, max_width,
+              total_probe_pairs, bytes)
+end
+
+# per-(target,source)-pair kernel time from one warmed-up single-source
+# direct! sample on the first block (min-of-3); leaves the sampled output
+# rows zeroed
+function _sample_probe_time(target_buffers, source_buffers, source_systems,
+        derivatives_switches, entries, target_ranges, source_ranges,
+        output_ranges)
+    i_ts = entries[1][3]
+    i_ss = entries[1][4]
+    switch = derivatives_switches[i_ts]
+    target_buffer = target_buffers[i_ts]
+    source_buffer = source_buffers[i_ss]
+    source_system = source_systems[i_ss]
+    target_range = target_ranges[1]
+    i_body = first(source_ranges[1]):first(source_ranges[1])
+    # warm up (compile), then time
+    direct!(target_buffer, target_range, switch, source_system, source_buffer, i_body)
+    t = minimum(@elapsed direct!(target_buffer, target_range, switch,
+            source_system, source_buffer, i_body)
+        for _ in 1:3)
+    @views target_buffer[output_ranges[1], target_range] .= zero(eltype(target_buffer))
+    return t / length(target_range)
+end
+
+"""
+    estimate_nearfield_cache(target_tree, source_tree, direct_list,
+        derivatives_switches, source_systems; sample=true)
+
+Estimate a [`NearfieldInfluenceCache`](@ref)'s cost WITHOUT building it:
+returns `(; bytes, est_build_time, n_blocks, total_probe_pairs)`. `bytes`
+uses the exact size-pass arithmetic the builder uses; `est_build_time` times
+one warmed-up single-source kernel evaluation and scales it by the number of
+probe pairs (`sample=false` skips the timing and reports `NaN`). Used by the
+builder's `max_build_time` guard and by cached-near-field autotuning
+feasibility checks (non-throwing by design).
+"""
+function estimate_nearfield_cache(target_tree::Tree, source_tree::Tree,
+        direct_list, derivatives_switches::Tuple, source_systems::Tuple;
+        sample::Bool=true)
+    entries, target_ranges, source_ranges =
+        _tree_block_specs(target_tree, source_tree, direct_list)
+    TF = promote_type(eltype.(source_tree.buffers)...)
+    sp = _nearfield_cache_size_pass(entries, target_ranges, source_ranges,
+        derivatives_switches, source_systems, TF)
+    est_build_time = NaN
+    if length(entries) == 0
+        est_build_time = 0.0
+    elseif sample
+        t_per_pair = _sample_probe_time(target_tree.buffers,
+            source_tree.buffers, source_systems, derivatives_switches,
+            entries, target_ranges, source_ranges, sp.output_ranges)
+        est_build_time = t_per_pair * sp.total_probe_pairs
+    end
+    return (; bytes=sp.bytes, est_build_time, n_blocks=length(entries),
+              total_probe_pairs=sp.total_probe_pairs)
+end
+
+@inline function _refuse_conditioning(direct_conditioning, stage::String)
+    rules = normalize_direct_conditioning(direct_conditioning)
+    has_direct_conditioning(rules) && throw(ArgumentError(
+        "NearfieldInfluenceCache cannot be used with direct_conditioning rules " *
+        "(conditioning mutates source buffers around near-field evaluation, " *
+        "which the cached linear map cannot represent); remove the rules or " *
+        "disable the cache ($stage)"))
+    return nothing
+end
+
+function _build_nearfield_cache(entries, target_ranges, source_ranges,
+        target_buffers, source_systems, source_buffers, derivatives_switches,
+        max_bytes, max_build_time, target_tree_id::UInt, source_tree_id::UInt)
+
+    start_time = time_ns()
+    TF = promote_type(eltype.(source_buffers)...)
+
+    # size pass + guards BEFORE allocation
+    n_blocks = length(entries)
+    sp = _nearfield_cache_size_pass(entries, target_ranges, source_ranges,
+        derivatives_switches, source_systems, TF)
+    sp.bytes > max_bytes && throw(ArgumentError(
+        "NearfieldInfluenceCache would require $(sp.bytes) bytes " *
+        "($(round(sp.bytes / 1024^3; digits=2)) GiB) for $n_blocks blocks, " *
         "exceeding max_bytes = $max_bytes; raise max_bytes or disable the cache"))
+    if isfinite(max_build_time) && n_blocks > 0
+        t_per_pair = _sample_probe_time(target_buffers, source_buffers,
+            source_systems, derivatives_switches, entries, target_ranges,
+            source_ranges, sp.output_ranges)
+        est_build_time = t_per_pair * sp.total_probe_pairs
+        est_build_time > max_build_time && throw(ArgumentError(
+            "NearfieldInfluenceCache build is estimated at " *
+            "$(round(est_build_time; digits=2)) s (kernel sample " *
+            "$(t_per_pair) s/pair × $(sp.total_probe_pairs) probe pairs), " *
+            "exceeding max_build_time = $max_build_time s; raise " *
+            "max_build_time or disable the cache"))
+    end
+    sizes, n_out, n_comp, output_ranges, max_width =
+        sp.sizes, sp.n_out, sp.n_comp, sp.output_ranges, sp.max_width
+    bytes = sp.bytes
 
     matrices = n_blocks == 0 ? EmptyMatrices(TF) : Matrices(sizes, TF)
 
