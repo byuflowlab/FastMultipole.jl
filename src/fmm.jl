@@ -1017,6 +1017,112 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     return fmm!(target_systems, target_tree, source_systems, source_tree, leaf_size_source, m2l_list, direct_list, derivatives_switches, interaction_list_method; multipole_acceptance, t_source_tree, t_target_tree, t_lists, optargs...)
 end
 
+"""
+    FmmPlan(target_systems::Tuple, source_systems::Tuple; kwargs...)
+
+Precomputed state for repeated `fmm!` calls over FROZEN geometry: `Cache`
+buffers, both `Tree`s, sorted `m2l_list`/`direct_list`, and the derivatives
+switches, built once. `fmm!(target_systems, source_systems, plan)` then skips
+tree and interaction-list construction, refreshing only source strengths and
+target outputs per call.
+
+Validity contract: positions, radii (including any radius contributions that
+depend on system state, e.g. regularization offsets folded into the buffer
+radius), body counts, leaf sizes, expansion order, and the requested
+derivative set are all FROZEN at plan construction — only source STRENGTHS
+may change between calls. The plan performs no staleness detection beyond a
+body-count check; the caller owns invalidation (rebuild the plan whenever
+geometry or radius-affecting state changes).
+
+Accepts the union of the tree-building and list-building kwargs of the
+`fmm!(target_systems, source_systems)` entry point (`expansion_order`,
+`leaf_size_source`/`leaf_size_target`, `multipole_acceptance`,
+`scalar_potential`/`gradient`/`hessian`, `extra_outputs`, `metadata`,
+`shrink`, `recenter`, `interaction_list_method`, `farfield`, `nearfield`,
+`self_induced`).
+"""
+struct FmmPlan{TF,TTT<:Tree,TST<:Tree,TM,TD,TDS,TLS,TILM}
+    cache::Cache{TF}
+    target_tree::TTT
+    source_tree::TST
+    m2l_list::TM
+    direct_list::TD
+    derivatives_switches::TDS
+    leaf_size_source::TLS
+    multipole_acceptance::Float64
+    interaction_list_method::TILM
+    expansion_order::Int
+    n_target_bodies::Int
+    n_source_bodies::Int
+end
+
+function FmmPlan(target_systems::Tuple, source_systems::Tuple;
+    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing,
+    leaf_size_target=nothing,
+    leaf_size_source=default_leaf_size(source_systems),
+    expansion_order=5,
+    shrink=true, recenter=false,
+    interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
+    multipole_acceptance=0.4,
+    farfield=true, nearfield=true, self_induced=true,
+)
+    # mirror of fmm!(targets, sources) construction (see the methods above),
+    # stopping short of the passes
+    TF = get_type(target_systems, source_systems)
+    scalar_potential_v = to_vector(scalar_potential, length(target_systems))
+    gradient_v = to_vector(gradient, length(target_systems))
+    hessian_v = to_vector(hessian, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; extra_outputs, metadata)
+    cache = Cache(target_systems, source_systems, derivatives_switches)
+
+    leaf_size_source = to_vector(leaf_size_source, length(source_systems))
+    leaf_size_target = to_vector(isnothing(leaf_size_target) ? minimum(leaf_size_source) : leaf_size_target, length(target_systems))
+
+    target_tree = Tree(target_systems, true, derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
+    source_tree = Tree(source_systems, false, derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
+
+    m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
+    m2l_list = sort_by_target(m2l_list, target_tree.branches)
+    direct_list = sort_by_target(direct_list, target_tree.branches)
+
+    return FmmPlan(cache, target_tree, source_tree, m2l_list, direct_list,
+        derivatives_switches, leaf_size_source, Float64(multipole_acceptance),
+        interaction_list_method, Int(expansion_order),
+        get_n_bodies(target_systems), get_n_bodies(source_systems))
+end
+
+"""
+    fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
+         refresh_strengths=true, reset_targets=true, optargs...)
+
+Run the FMM using the precomputed `plan` (see [`FmmPlan`](@ref)): refresh
+source strengths into the plan's sorted source buffers, zero the target
+output rows, and dispatch straight to the prebuilt-tree/prebuilt-list `fmm!`
+method. Returns the same tuple as the allocating `fmm!` entry point.
+"""
+function fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
+    refresh_strengths::Bool=true, reset_targets::Bool=true, optargs...
+)
+    get_n_bodies(target_systems) == plan.n_target_bodies &&
+        get_n_bodies(source_systems) == plan.n_source_bodies ||
+        throw(ArgumentError("FmmPlan body counts ($(plan.n_target_bodies) targets, " *
+            "$(plan.n_source_bodies) sources) do not match the provided systems — " *
+            "rebuild the plan after any geometry change"))
+
+    # only strengths may change between calls (see the FmmPlan contract);
+    # buffers are refilled in the trees' sorted order, exactly as at build
+    refresh_strengths && system_to_buffer!(plan.source_tree.buffers,
+        source_systems, plan.source_tree.sort_index_list)
+    reset_targets && reset!(plan.target_tree.buffers)
+
+    return fmm!(target_systems, plan.target_tree, source_systems,
+        plan.source_tree, plan.leaf_size_source, plan.m2l_list,
+        plan.direct_list, plan.derivatives_switches,
+        plan.interaction_list_method;
+        expansion_order=plan.expansion_order,
+        multipole_acceptance=plan.multipole_acceptance, optargs...)
+end
+
 function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, source_tree::Tree, leaf_size_source, m2l_list, direct_list, derivatives_switches::Tuple, interaction_list_method::InteractionListMethod;
     expansion_order=5, error_tolerance=nothing,
     upward_pass::Bool=true, horizontal_pass::Bool=true, downward_pass::Bool=true,
