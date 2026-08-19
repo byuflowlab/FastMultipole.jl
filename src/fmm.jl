@@ -1198,10 +1198,11 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
     #--- near-field cache bookkeeping (see NearfieldInfluenceCache) ---#
 
-    # a PROVIDED cache locks the trees and direct list, so tune=true may only
-    # tune expansion_order for it (a leaf_size_source suggestion would
-    # invalidate the cache); leaf/MAC tuning under cached economics goes
-    # through tune_nearfield_cache, which builds a throwaway cache per call
+    # with a PROVIDED cache, tune=true still suggests a new leaf_size_source
+    # (computed from the cached per-interaction timing); acting on it means
+    # new trees, so the USER decides whether to rebuild the cache at the
+    # suggested leaf. tune_nearfield_cache instead builds a throwaway cache
+    # per call (the tune_fmm route).
     nearfield_cache_provided = !isnothing(nearfield_cache)
     nearfield_cache_feasible = true
     nearfield_cache_build_time = 0.0
@@ -1396,11 +1397,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 # finish autotuning
                 if tune
 
-                    if nearfield_cache_provided
-                        # a provided cache locks the trees/lists: tune only
-                        # expansion_order; leave leaf_size_source unchanged
-                        # (a new leaf would invalidate the cache)
-                    elseif length(m2l_list) > 0
+                    if length(m2l_list) > 0
                         #--- compute optimal leaf_size_source ---#
 
                         # t per m2l transformation
@@ -1486,11 +1483,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 # finish autotuning
                 if tune
 
-                    if nearfield_cache_provided
-                        # a provided cache locks the trees/lists: tune only
-                        # expansion_order; leave leaf_size_source unchanged
-                        # (a new leaf would invalidate the cache)
-                    elseif length(m2l_list) > 0
+                    if length(m2l_list) > 0
                         #--- compute optimal leaf_size_source ---#
 
                         # t per m2l transformation

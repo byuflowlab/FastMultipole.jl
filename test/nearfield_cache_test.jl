@@ -162,8 +162,8 @@ end
         @test isapprox(sys_cached.potential, sys_ref.potential; rtol=1e-12)
     end
 
-    # tune=true with a provided cache tunes expansion_order ONLY (leaf/MAC are
-    # locked by the cache) — behavior verified in the cached-path tuning testset
+    # tune=true with a provided cache suggests a new leaf from cached timing
+    # (user decides whether to re-cache) — see the cached-path tuning testset
 
 end
 
@@ -174,7 +174,7 @@ end
                    leaf_size_source=30, scalar_potential=true, gradient=true,
                    hessian=false)
 
-    #--- provided cache + tune=true: expansion_order only, leaf locked ---#
+    #--- provided cache + tune=true: leaf suggested from cached timing ---#
 
     sys = generate_gravitational(321, n_bodies)
     sys_ref = generate_gravitational(321, n_bodies)
@@ -187,8 +187,10 @@ end
     sys_ref.potential .= 0
     result = FastMultipole.fmm!((sys,), (sys,), plan; tune=true)
     optargs = result[1]
-    # leaf suggestion suppressed: a provided cache locks trees/lists
-    @test optargs.leaf_size_source == plan.leaf_size_source
+    # a leaf suggestion IS returned (computed from the cached per-interaction
+    # timing); acting on it means new trees, so the USER decides whether to
+    # rebuild the cache at the suggested leaf (Ryan 2026-08-19)
+    @test all(optargs.leaf_size_source .>= 1)
     @test optargs.expansion_order == plan_kwargs.expansion_order
     @test optargs.nearfield_cache_feasible === true
     @test optargs.nearfield_cache_build_time == 0.0   # provided, not built here
