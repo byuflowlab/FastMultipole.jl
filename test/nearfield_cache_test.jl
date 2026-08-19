@@ -102,6 +102,55 @@ linear map cacheable as packed BLAS matvecs.
 
 end
 
+@testset "NearfieldInfluenceCache: fmm!/FmmPlan integration" begin
+
+    n_bodies = 2000
+    plan_kwargs = (; expansion_order=8, multipole_acceptance=0.4,
+                   leaf_size_source=30, scalar_potential=true, gradient=true,
+                   hessian=false)
+
+    sys_cached = generate_gravitational(123, n_bodies)
+    sys_ref = generate_gravitational(123, n_bodies)
+    plan_cached = FastMultipole.FmmPlan((sys_cached,), (sys_cached,); plan_kwargs...)
+    plan_ref = FastMultipole.FmmPlan((sys_ref,), (sys_ref,); plan_kwargs...)
+
+    # premise guards: real near field AND real far field
+    @test length(plan_cached.direct_list) > 0
+    @test length(plan_cached.m2l_list) > 0
+
+    cache = build_nearfield_cache!(plan_cached, (sys_cached,), (sys_cached,))
+    @test plan_cached.nearfield_cache[] === cache
+    @test isnothing(plan_ref.nearfield_cache[])
+
+    for trial in 1:2
+        if trial > 1
+            # mutate strengths identically in both systems (proves cache
+            # validity across strength changes through the plan path)
+            for i in 1:n_bodies
+                b = sys_cached.bodies[i]
+                new_strength = b.strength * 1.5 + 0.001 * i
+                sys_cached.bodies[i] = typeof(b)(b.position, b.radius, new_strength)
+                r = sys_ref.bodies[i]
+                sys_ref.bodies[i] = typeof(r)(r.position, r.radius, new_strength)
+            end
+        end
+
+        sys_cached.potential .= 0
+        sys_ref.potential .= 0
+        FastMultipole.fmm!((sys_cached,), (sys_cached,), plan_cached)
+        FastMultipole.fmm!((sys_ref,), (sys_ref,), plan_ref)
+
+        @test any(!iszero, sys_ref.potential)   # non-vacuous
+        # rtol, not bitwise: the cached near field sums in BLAS order
+        @test isapprox(sys_cached.potential, sys_ref.potential; rtol=1e-12)
+    end
+
+    # tune is incompatible with the cached path
+    @test_throws ArgumentError FastMultipole.fmm!((sys_cached,), (sys_cached,),
+        plan_cached; tune=true)
+
+end
+
 @testset "NearfieldInfluenceCache: standalone direct!" begin
 
     n_targets = 300

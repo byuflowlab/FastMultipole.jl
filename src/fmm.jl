@@ -1054,6 +1054,7 @@ struct FmmPlan{TF,TTT<:Tree,TST<:Tree,TM,TD,TDS,TLS,TILM}
     expansion_order::Int
     n_target_bodies::Int
     n_source_bodies::Int
+    nearfield_cache::Base.RefValue{Any}   # nothing, or a NearfieldInfluenceCache built from this plan's trees (see build_nearfield_cache!)
 end
 
 function FmmPlan(target_systems::Tuple, source_systems::Tuple;
@@ -1088,7 +1089,39 @@ function FmmPlan(target_systems::Tuple, source_systems::Tuple;
     return FmmPlan(cache, target_tree, source_tree, m2l_list, direct_list,
         derivatives_switches, leaf_size_source, Float64(multipole_acceptance),
         interaction_list_method, Int(expansion_order),
-        get_n_bodies(target_systems), get_n_bodies(source_systems))
+        get_n_bodies(target_systems), get_n_bodies(source_systems),
+        Ref{Any}(nothing))
+end
+
+"""
+    build_nearfield_cache!(plan::FmmPlan, target_systems, source_systems; max_bytes)
+
+Build a [`NearfieldInfluenceCache`](@ref) from the plan's trees and sorted
+direct list and store it in the plan; subsequent `fmm!(targets, sources,
+plan)` calls evaluate the near field as cached BLAS matvecs. The cache
+inherits the plan's validity contract (frozen geometry, only strengths
+change) and dies with the plan's trees. Returns the cache.
+"""
+function build_nearfield_cache!(plan::FmmPlan, target_systems::Tuple, source_systems::Tuple;
+        max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES)
+    cache = NearfieldInfluenceCache(target_systems, plan.target_tree,
+        source_systems, plan.source_tree, plan.direct_list,
+        plan.derivatives_switches; max_bytes)
+    plan.nearfield_cache[] = cache
+    return cache
+end
+
+# cached near-field evaluation inside fmm!; returns the timing vector the
+# kernel paths return (total cached time in slot 1 — per-source-system
+# attribution is meaningless for the fused matvec)
+function nearfield_cached!(target_tree, source_tree, cache, direct_conditioning, source_systems, n_threads, tune)
+    tune && throw(ArgumentError("tune=true is incompatible with nearfield_cache — " *
+        "per-interaction kernel timing cannot be measured on the cached path"))
+    _refuse_conditioning(direct_conditioning, "fmm! evaluation")
+    check_cache_trees(cache, target_tree, source_tree)
+    t_nf = @MVector zeros(length(source_systems))
+    t_nf[1] = @elapsed nearfield_matvec!(target_tree.buffers, cache, source_tree.buffers; n_threads)
+    return t_nf
 end
 
 """
@@ -1120,7 +1153,8 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
         plan.direct_list, plan.derivatives_switches,
         plan.interaction_list_method;
         expansion_order=plan.expansion_order,
-        multipole_acceptance=plan.multipole_acceptance, optargs...)
+        multipole_acceptance=plan.multipole_acceptance,
+        nearfield_cache=plan.nearfield_cache[], optargs...)
 end
 
 function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, source_tree::Tree, leaf_size_source, m2l_list, direct_list, derivatives_switches::Tuple, interaction_list_method::InteractionListMethod;
@@ -1135,6 +1169,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     silence_warnings=false,
     extra_farfield=false,
     direct_conditioning=(),
+    nearfield_cache=nothing,
 )
 
     #--- check if lamb-helmholtz decomposition is required ---#
@@ -1250,7 +1285,11 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             if n_threads == 1
 
                 # perform nearfield calculations
-                t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, direct_conditioning)
+                if isnothing(nearfield_cache)
+                    t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, direct_conditioning)
+                else
+                    t_direct = nearfield_cached!(target_tree, source_tree, nearfield_cache, direct_conditioning, source_systems, 1, tune)
+                end
                 # println("Direct interaction time: ", t_direct[1])
 
                 # check number of interactions
@@ -1321,7 +1360,11 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             else
 
                 # perform nearfield calculations
-                t_direct = nearfield_multithread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, n_threads, direct_conditioning)
+                if isnothing(nearfield_cache)
+                    t_direct = nearfield_multithread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, n_threads, direct_conditioning)
+                else
+                    t_direct = nearfield_cached!(target_tree, source_tree, nearfield_cache, direct_conditioning, source_systems, n_threads, tune)
+                end
                 # println("Direct interaction time: ", t_direct[1])
                 # check number of interactions
                 if tune
