@@ -149,6 +149,10 @@ include("probes.jl")
 
 include("solve.jl")
 
+include("nearfield_cache.jl")
+
+export NearfieldInfluenceCache, nearfield_matvec!, build_nearfield_cache!
+
 include("extra_farfield.jl")
 
 export FastGaussSeidel, JacobiPreconditioner

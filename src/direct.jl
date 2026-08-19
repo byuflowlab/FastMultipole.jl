@@ -45,7 +45,7 @@ function _direct!(target_system, source_system; n_threads=Threads.nthreads(), ar
 end
 
 
-function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)), extra_outputs=0, metadata=nothing, direct_conditioning=())
+function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)), extra_outputs=0, metadata=nothing, direct_conditioning=(), nearfield_cache=nothing)
 
     # get float type
     TF = get_type(target_systems, source_systems)
@@ -70,7 +70,10 @@ function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; targ
 
     direct_conditioning = normalize_direct_conditioning(direct_conditioning)
 
-    if has_direct_conditioning(direct_conditioning)
+    if !isnothing(nearfield_cache)
+        _refuse_conditioning(direct_conditioning, "standalone direct! evaluation")
+        nearfield_matvec!(target_buffers, nearfield_cache, source_buffers; n_threads=1)
+    elseif has_direct_conditioning(direct_conditioning)
         for (i_source_system, (source_system, source_buffer)) in enumerate(zip(source_systems, source_buffers))
             for (i_target_system, (target_system, target_buffer, derivatives_switch)) in enumerate(zip(target_systems, target_buffers, derivatives_switches))
                 with_direct_conditioning!(direct_conditioning, source_buffer, source_system, i_source_system, target_buffer, i_target_system) do
@@ -91,7 +94,7 @@ function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; targ
 
 end
 
-function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_threads; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)), extra_outputs=0, metadata=nothing, direct_conditioning=())
+function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_threads; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)), extra_outputs=0, metadata=nothing, direct_conditioning=(), nearfield_cache=nothing)
 
     # get float type
     TF = get_type(target_systems, source_systems)
@@ -116,7 +119,10 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
 
     direct_conditioning = normalize_direct_conditioning(direct_conditioning)
 
-    if has_direct_conditioning(direct_conditioning)
+    if !isnothing(nearfield_cache)
+        _refuse_conditioning(direct_conditioning, "standalone direct! evaluation")
+        nearfield_matvec!(target_buffers, nearfield_cache, source_buffers; n_threads)
+    elseif has_direct_conditioning(direct_conditioning)
         for (i_source_system, (source_system, source_buffer)) in enumerate(zip(source_systems, source_buffers))
             n_source_bodies = get_n_bodies(source_system)
             for (i_target_system, (target_system, target_buffer, derivatives_switch)) in enumerate(zip(target_systems, target_buffers, derivatives_switches))
