@@ -311,6 +311,11 @@ struct FastGaussSeidel{TF,Nsys,TIL,TLC} <: AbstractSolver
     influences_per_system::Vector{Vector{TF}}
     residual_vector::Vector{TF}
     extra_farfield::Bool
+    # colored-sweep mode (opt-in; changes the Gauss-Seidel iteration to
+    # color-major leaf order — see `color_leaves` in solve.jl):
+    sweep_order::Symbol                   # :lexicographic (default) or :colored
+    leaf_colors::Vector{Int}              # color id per leaf (empty when lexicographic)
+    leaves_by_color::Vector{Vector{Int}}  # ascending leaf ids per color
 end
 
 #--- memory cache ---#
