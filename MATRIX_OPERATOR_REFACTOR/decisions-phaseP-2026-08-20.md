@@ -184,3 +184,34 @@ WIP-coupling note: FLOWPanel's uncommitted working tree defaults the
 filament family to Gaussian (BRAINSTORM 025) while HEAD (and my functor) is
 Vatistas — stage 2 adds the Gaussian branch so CPU/GPU arms compare
 like-for-like under the user's WIP.
+
+## D10 (2026-08-21) — 051 stage 2 + 052 stage A landed; env-stacking decision
+
+051 stage 2 (FLOWPanel seam): pass 1/pass 3 routed to direct_rectangular!
+behind env FLOWPANEL_GPU_INFLUENCE (default off — default behavior
+unchanged); parity 1e-16 vs direct on all passes and all three filament
+regularization families at a reduced 018-like config; FLOWPanel-side changes
+deliberately left UNCOMMITTED alongside the user's WIP (their src/FLOWPanel.jl
+carries uncommitted hunks a commit would sweep in) — archived instead under
+MATRIX_OPERATOR_REFACTOR/data/fm051_flowpanel_seam/ (new files + hook patch;
+note the FLOWPanel.jl part of the patch also contains the user's own WIP
+hunks). Filament-family port cites working-tree line numbers (will drift when
+the user commits their WIP).
+
+052 stage A: driver GPU arm (VPM_ARRAYTYPE=cuarray + FLOWPANEL_GPU_INFLUENCE)
+with host-mirror maintenance seams; DynamicSFS beforeUJ/afterUJ broadcast
+ports (parity 0.0 / 2.7e-20); default CPU path verified unchanged (4-step
+smoke). Known disclosed physics deltas GPU-vs-CPU arm: radix fixed P=4 vs CPU
+autotuned fmm!, whole-pass kerneloffset conditioning, radix test-filter UJ —
+stage b of job 13247860 quantifies the net CT/Gamma effect.
+
+Env conflict + resolution (autonomous): CUDA>=6.2 (FastMultipole weakdep
+compat) requires CUDATools->PrettyTables 3.x, unsatisfiable with FLOWPanel's
+geo pins (PrettyTables 2.x) in a single environment; julia 1.12.6 (the only
+1.12 on the cluster) is barred by the recorded device-step segfault.
+Resolution: JULIA_LOAD_PATH environment stacking — fm052env (FLOWPanel stack,
+no CUDA) primary + fm048env (validated CUDA 6.3) secondary; login-node test
+confirmed PrettyTables 2.4 and CUDA/CUDATools load together (cross-major
+PrettyTables exposure limited to cosmetic printing paths on both sides).
+Alternative CUDA 5.8.5 single-env also resolves and is recorded as fallback
+if stacking misbehaves on the compute node.
