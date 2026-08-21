@@ -138,3 +138,21 @@ with a capacity regression test. Pair-list per-direction convention verified
 on both device generators. Production-relevant note for 049/052: SFS
 delivered accuracy is J-error-bound; if production SFS accuracy ever binds,
 the knob is J accuracy (gh mode / P / MAC), not the SFS pass.
+
+## D8 (2026-08-21) — 049 results + 050 verdict (autonomous)
+
+049 (H200 job 13247848, p018 210k field): UJ parity 3.4e-4 PASS; SFS
+marginal cost 0.3 ms; device-resident RK3 step 0.199 s = 6% of the 3.3 s
+target; residency measurement says transfers = 35% of step ⇒ RECOMMEND
+device-resident (default unchanged — user checkpoint open). Flags: SFS
+0.666 vs exact-J reference (J-error-bound; like-for-like test deferred to
+052's CT gate), CPU/GPU direct cross-check 2.6e-4 (follow-up before 051
+parity gates).
+
+050 verdict (my call, full pricing in theory/panel-multisystem-scoping.md):
+option B' — keep the 3-pass structure; NEW rectangular GPU brute-force
+kernels for the cross passes (the sizes make FMM unnecessary: 7.7e9 pairs);
+device-resident dense nearfield-cache matvec for the solve (measure first);
+radix framework untouched. A rejected because radix source-homogeneity
+excludes panel elements regardless of the targets===sources lift; C rejected
+(ceiling 60-80 s/step misses the target) but recorded as fallback.
