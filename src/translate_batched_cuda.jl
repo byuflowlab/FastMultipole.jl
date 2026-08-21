@@ -9020,7 +9020,7 @@ function _cuda_rect_points_kernel!(out, targets, sources, n_targets, n_sources,
 end
 
 function _cuda_rect_panels_kernel!(out, targets, sources, n_targets, n_sources,
-        ::Val{GRAD}) where GRAD
+        ::Val{GRAD}, ::Val{REG}=Val(1)) where {GRAD,REG}
     T = eltype(out)
     tid = threadIdx().x
     sh = CUDA.CuStaticSharedArray(T, (17, _RECT_TILE_PANELS))
@@ -9057,7 +9057,7 @@ function _cuda_rect_panels_kernel!(out, targets, sources, n_targets, n_sources,
                     s2 = sh[16, k]
                     koff = sh[17, k]
                     uq, gq = _rect_panel_pair(RectangularPanelInfluence(), target,
-                        tag, nv, v1, v2, v3, v4, s1, s2, koff, Val(GRAD))
+                        tag, nv, v1, v2, v3, v4, s1, s2, koff, Val(GRAD), Val(REG))
                     u += uq
                     if GRAD
                         g += gq
@@ -9107,12 +9107,13 @@ function direct_rectangular!(out::CUDA.CuMatrix{T}, targets::CUDA.CuMatrix{T},
     n_sources = size(sources, 2)
     n_targets == 0 && return out
     blocks = min(cld(n_targets, _RECT_TILE_PANELS), _RECT_MAX_BLOCKS)
+    regv = _rect_reg_val(kernel.filament_reg)
     if gradient
         CUDA.@cuda threads=_RECT_TILE_PANELS blocks=blocks _cuda_rect_panels_kernel!(
-            out, targets, sources, n_targets, n_sources, Val(true))
+            out, targets, sources, n_targets, n_sources, Val(true), regv)
     else
         CUDA.@cuda threads=_RECT_TILE_PANELS blocks=blocks _cuda_rect_panels_kernel!(
-            out, targets, sources, n_targets, n_sources, Val(false))
+            out, targets, sources, n_targets, n_sources, Val(false), regv)
     end
     return out
 end

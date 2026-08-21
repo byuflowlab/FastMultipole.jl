@@ -396,5 +396,62 @@ end
             @test relerr(out[4:12, :], ref[4:12, :]) < 1e-12
             @info "FLOWPanel parity ($label)" relerr_U=relerr(out[1:3, :], ref[1:3, :]) relerr_H=relerr(out[4:12, :], ref[4:12, :])
         end
+
+        # --- filament-regularization families (051 stage 2): run the
+        # ring-containing element sets once per family, selecting the family
+        # on BOTH sides (set_filament_regularization! for the FLOWPanel
+        # reference, filament_reg on the rectangular functor). Requires the
+        # working-tree FLOWPanel with the selectable-family upgrade; on HEAD
+        # FLOWPanel only the vatistas case above runs.
+        if isdefined(pnl, :set_filament_regularization!)
+            fam0 = pnl.FILAMENT_REGULARIZATION[]
+            for (fam, regi) in ((:vatistas, 1), (:compact, 2), (:gaussian, 3))
+                pnl.set_filament_regularization!(fam)
+                for (label, E, tag, nk) in (
+                        ("source+vortexring", Union{pnl.ConstantSource, pnl.VortexRing}, 4, 2),
+                        ("pure vortexring", pnl.VortexRing, 3, 1),
+                    )
+                    body = pnl.NonLiftingBody{E}(copy(nodes), copy(cells); kerneloffset=koff)
+                    body.strength .= randn(body.ncells, nk)
+                    tgt_local = copy(tgt)
+                    for (slot, ic) in enumerate((3, 20, 41))
+                        va = SVector{3}(body.nodes[:, body.cells[1, ic]])
+                        vb = SVector{3}(body.nodes[:, body.cells[2, ic]])
+                        vc = SVector{3}(body.nodes[:, body.cells[3, ic]])
+                        tgt_local[:, slot] .= (va + vb + vc) ./ 3
+                    end
+                    srcp = zeros(17, body.ncells)
+                    for ic in 1:body.ncells
+                        verts = (SVector{3}(body.nodes[:, body.cells[1, ic]]),
+                                 SVector{3}(body.nodes[:, body.cells[2, ic]]),
+                                 SVector{3}(body.nodes[:, body.cells[3, ic]]))
+                        s1 = body.strength[ic, 1]
+                        s2 = nk == 2 ? body.strength[ic, 2] : 0.0
+                        _pack_panel!(srcp, ic, tag, verts, s1, s2, koff)
+                    end
+                    out = zeros(12, n_tgt)
+                    direct_rectangular!(out, tgt_local,
+                        RectangularPanelInfluence(fam), srcp; gradient=true)
+                    switch = FastMultipole.DerivativesSwitch(false, true, true)
+                    ref = zeros(12, n_tgt)
+                    for i in 1:n_tgt
+                        target = SVector{3}(tgt_local[:, i])
+                        for ic in 1:body.ncells
+                            _, U, H = pnl.induced(target, body, ic, switch; kerneloffset=koff)
+                            ref[1:3, i] .+= U
+                            for j in 1:3, k in 1:3
+                                ref[3 + (j-1)*3 + k, i] += H[k, j]
+                            end
+                        end
+                    end
+                    @test relerr(out[1:3, :], ref[1:3, :]) < 1e-12
+                    @test relerr(out[4:12, :], ref[4:12, :]) < 1e-12
+                    @info "FLOWPanel parity ($fam, $label)" relerr_U=relerr(out[1:3, :], ref[1:3, :]) relerr_H=relerr(out[4:12, :], ref[4:12, :])
+                end
+            end
+            pnl.set_filament_regularization!(fam0)
+        else
+            @info "loaded FLOWPanel lacks set_filament_regularization!; family parity limited to vatistas"
+        end
     end
 end

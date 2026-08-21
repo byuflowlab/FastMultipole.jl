@@ -62,13 +62,26 @@ CUDA extension's `gpu_interaction!`.
 struct RectangularGaussianErfVortex <: AbstractRectangularKernel end
 
 """
-    RectangularPanelInfluence()
+    RectangularPanelInfluence(filament_reg=1)
+    RectangularPanelInfluence(:vatistas | :compact | :gaussian)
 
 Rectangular pair kernel for FLOWPanel panel elements (the 018 rotor element
 set), transcribed from FLOWPanel.jl `src/FLOWPanel_elements_fmm.jl` at commit
-75b45c7 (committed HEAD; the working-tree WIP filament-regularization family
-is NOT included — this kernel is the HEAD Vatistas n=2 filament). Source row
-layout (17 rows, fixed max-vertex layout):
+75b45c7, plus the working-tree (branch fastmultipole, 2026-08-20) selectable
+filament-regularization families for the vortex-ring branch. `filament_reg`
+selects the bound-vortex filament family (FLOWPanel's
+`FilamentRegularization` enum, working-tree elements_fmm.jl:910-915):
+
+- `1` = Vatistas n=2 (legacy/HEAD; default here)
+- `2` = compact support (working-tree elements_fmm.jl:971-976, 1017-1029)
+- `3` = Gaussian / Lamb-Oseen (working-tree elements_fmm.jl:977-982, 1030-1042;
+  FLOWPanel's working-tree DEFAULT)
+
+The family is stamped into the pair loop at compile time (one kernel
+instantiation per family — no runtime branch per edge, matching FLOWPanel's
+`Val(FILAMENT_REGULARIZATION[])` function-barrier contract at
+elements_fmm.jl:936-944). Source row layout (17 rows, fixed max-vertex
+layout):
 
 | row | content |
 |---|---|
@@ -90,7 +103,26 @@ CPU `direct!` surface limits. TE-wake attachments (`_induced_wake` for
 `RigidWakeBody` TE panels) are NOT evaluated here; pack each TE wake quad as
 an extra tag-3 ring source instead.
 """
-struct RectangularPanelInfluence <: AbstractRectangularKernel end
+struct RectangularPanelInfluence <: AbstractRectangularKernel
+    filament_reg::Int32
+end
+
+RectangularPanelInfluence() = RectangularPanelInfluence(Int32(1))
+function RectangularPanelInfluence(family::Symbol)
+    family === :vatistas && return RectangularPanelInfluence(Int32(1))
+    family === :compact && return RectangularPanelInfluence(Int32(2))
+    family === :gaussian && return RectangularPanelInfluence(Int32(3))
+    throw(ArgumentError("unknown filament regularization $(repr(family)); " *
+        "use :vatistas, :compact, or :gaussian"))
+end
+
+# Int -> Val barrier (one dynamic dispatch per direct_rectangular! call / CUDA
+# launch, never inside the pair loop)
+@inline function _rect_reg_val(reg::Integer)
+    reg == 2 && return Val(2)
+    reg == 3 && return Val(3)
+    return Val(1)
+end
 
 rect_source_rows(::RectangularGaussianErfVortex) = 7
 rect_source_rows(::RectangularPanelInfluence) = 17
@@ -412,9 +444,13 @@ end
     return u_out, g_out
 end
 
-# Vatistas n=2 bound-vortex filament velocity (elements_fmm.jl:867-898, HEAD)
+# Bound-vortex filament velocity, per-family regularization. Vatistas (REG=1)
+# is the HEAD kernel (elements_fmm.jl:867-898 @ 75b45c7); compact (REG=2) and
+# Gaussian (REG=3) are the working-tree families (branch fastmultipole,
+# 2026-08-20): _bound_vortex_velocity ::Val{F} at working-tree
+# elements_fmm.jl:945-987, finite_core=true path (elements_fmm.jl:966-985).
 @inline function _rect_bound_vortex_velocity(r1::SVector{3,T}, r2::SVector{3,T},
-        core_size::T) where T
+        core_size::T, ::Val{REG}) where {T,REG}
     nr1 = sqrt(r1[1]*r1[1] + r1[2]*r1[2] + r1[3]*r1[3])
     nr2 = sqrt(r2[1]*r2[1] + r2[2]*r2[2] + r2[3]*r2[3])
     if nr1 < 5*eps(T) || nr2 < 5*eps(T)                    # elements_fmm.jl:873
@@ -424,17 +460,39 @@ end
                        r1[3]*r2[1] - r1[1]*r2[3],
                        r1[1]*r2[2] - r1[2]*r2[1])
     r0 = r1 - r2
-    dotrixrj = num[1]*num[1] + num[2]*num[2] + num[3]*num[3]
-    r0sqr = r0[1]*r0[1] + r0[2]*r0[2] + r0[3]*r0[3]
+    dotrixrj = num[1]*num[1] + num[2]*num[2] + num[3]*num[3]   # A = |r1×r2|²
+    r0sqr = r0[1]*r0[1] + r0[2]*r0[2] + r0[3]*r0[3]            # B = |r0|²
     rh = r1/nr1 - r2/nr2
     rijdothat = r0[1]*rh[1] + r0[2]*rh[2] + r0[3]*rh[3]
-    rc4 = core_size*core_size*core_size*core_size          # elements_fmm.jl:884
-    return num * rijdothat / sqrt(dotrixrj*dotrixrj + rc4*r0sqr*r0sqr) / (4*T(pi))
+    if REG == 2
+        # compact support (working-tree elements_fmm.jl:971-976):
+        # 1/h² → 1/(h² + δ(h)), δ = (h-rc)² inside support, 0 beyond;
+        # D = A + δB
+        h = sqrt(dotrixrj / r0sqr)
+        D = h < core_size ?
+            dotrixrj + (h - core_size)*(h - core_size) * r0sqr : dotrixrj
+        return num * rijdothat / D / (4*T(pi))
+    elseif REG == 3
+        # Gaussian / Lamb-Oseen (working-tree elements_fmm.jl:977-982):
+        # u = c*q*g(h)/(4π A), g = 1 - exp(-h²/2rc²); evaluated as
+        # g/A = (g/x²)/(B rc²), x² = (h/rc)², exact h → 0 limit
+        x2 = dotrixrj / (r0sqr * core_size * core_size)
+        gscaled = x2 < T(1e-12) ? T(0.5) : T(-expm1(-x2/2) / x2)
+        return num * rijdothat * gscaled / (r0sqr * core_size * core_size) / (4*T(pi))
+    else
+        # Vatistas n=2 (HEAD elements_fmm.jl:884 / working tree :968-970)
+        rc4 = core_size*core_size*core_size*core_size
+        return num * rijdothat / sqrt(dotrixrj*dotrixrj + rc4*r0sqr*r0sqr) / (4*T(pi))
+    end
 end
 
-# Vatistas n=2 bound-vortex filament gradient (elements_fmm.jl:900-939, HEAD)
+# Bound-vortex filament gradient, per-family regularization. Vatistas (REG=1)
+# is the HEAD kernel (elements_fmm.jl:900-939 @ 75b45c7); compact (REG=2) and
+# Gaussian (REG=3) transcribe the working-tree _bound_vortex_gradient
+# ::Val{F} per-family D and ∇D = κ ∇A blocks (working-tree
+# elements_fmm.jl:1010-1043), ∇A = 2 s×c.
 @inline function _rect_bound_vortex_gradient(r1::SVector{3,T}, r2::SVector{3,T},
-        core_size::T) where T
+        core_size::T, ::Val{REG}) where {T,REG}
     nr1 = sqrt(r1[1]*r1[1] + r1[2]*r1[2] + r1[3]*r1[3])
     nr2 = sqrt(r2[1]*r2[1] + r2[2]*r2[2] + r2[3]*r2[3])
     if nr1 < 5*eps(T) || nr2 < 5*eps(T)                    # elements_fmm.jl:905
@@ -448,13 +506,43 @@ end
     B = s[1]*s[1] + s[2]*s[2] + s[3]*s[3]
     rh = r1/nr1 - r2/nr2
     q = s[1]*rh[1] + s[2]*rh[2] + s[3]*rh[3]
-    rc4 = core_size*core_size*core_size*core_size          # elements_fmm.jl:916
-    D = sqrt(A*A + rc4*B*B)
-    D == zero(D) && return zero(SMatrix{3,3,T,9})
+    if REG == 2
+        # compact support (working-tree elements_fmm.jl:1017-1029)
+        B == zero(B) && return zero(SMatrix{3,3,T,9})
+        h = sqrt(A / B)
+        if h < core_size
+            D = A + (h - core_size)*(h - core_size) * B
+            # κ = 2 - rc/h; h → 0 clamp keeps κ finite where ∇A → 0 anyway
+            kappa = 2 - core_size / max(h, eps(T)*core_size)
+        else
+            D = A
+            kappa = one(T)
+        end
+        D == zero(D) && return zero(SMatrix{3,3,T,9})
+    elseif REG == 3
+        # Gaussian (working-tree elements_fmm.jl:1030-1042)
+        B == zero(B) && return zero(SMatrix{3,3,T,9})
+        x2 = A / (B * core_size * core_size)               # (h/rc)²
+        if x2 < T(1e-12)
+            # series limits: D → 2 B rc², κ → 1/2
+            D = 2 * B * core_size * core_size
+            kappa = T(0.5)
+        else
+            gg = T(-expm1(-x2/2))
+            D = A / gg
+            kappa = (1 - x2 * exp(-x2/2) / (2*gg)) / gg
+        end
+    else
+        # Vatistas n=2 (HEAD elements_fmm.jl:916-919 / working tree :1012-1016)
+        rc4 = core_size*core_size*core_size*core_size
+        D = sqrt(A*A + rc4*B*B)
+        D == zero(D) && return zero(SMatrix{3,3,T,9})
+        kappa = A / D
+    end
     sxc = SVector{3,T}(s[2]*c[3] - s[3]*c[2],
                        s[3]*c[1] - s[1]*c[3],
                        s[1]*c[2] - s[2]*c[1])
-    dD_coeff = (A / D) * (2 * sxc)                         # elements_fmm.jl:919
+    dD_coeff = kappa * (2 * sxc)                           # elements_fmm.jl:1043
     r1hat = r1 / nr1
     r2hat = r2 / nr2
     # dq_coeff = -((I - r1hat r1hat^T) s)/nr1 + ((I - r2hat r2hat^T) s)/nr2
@@ -473,7 +561,7 @@ end
 # elements_fmm.jl:811-861; VS/GS blocks). Per-unit-Gamma result.
 @inline function _rect_ring(target::SVector{3,T}, v1::SVector{3,T}, v2::SVector{3,T},
         v3::SVector{3,T}, v4::SVector{3,T}, nv::Int, core_size::T,
-        ::Val{GRAD}) where {T,GRAD}
+        ::Val{GRAD}, ::Val{REG}) where {T,GRAD,REG}
     u = zero(SVector{3,T})
     g = zero(SMatrix{3,3,T,9})
     for i in 1:nv
@@ -482,8 +570,8 @@ end
         vb = ip1 == 1 ? v1 : (ip1 == 2 ? v2 : (ip1 == 3 ? v3 : v4))
         r1 = va - target                                   # elements_fmm.jl:838-839
         r2 = vb - target
-        u += _rect_bound_vortex_velocity(r1, r2, core_size)
-        GRAD && (g += _rect_bound_vortex_gradient(r1, r2, core_size))
+        u += _rect_bound_vortex_velocity(r1, r2, core_size, Val(REG))
+        GRAD && (g += _rect_bound_vortex_gradient(r1, r2, core_size, Val(REG)))
     end
     return u, g
 end
@@ -516,7 +604,8 @@ end
 # pairs and zeroes the gradient there, matching `induced` (elements_fmm.jl:250-253).
 @inline function _rect_panel_pair(::RectangularPanelInfluence, target::SVector{3,T},
         tag::Int, nv::Int, v1::SVector{3,T}, v2::SVector{3,T}, v3::SVector{3,T},
-        v4::SVector{3,T}, s1::T, s2::T, kerneloffset::T, ::Val{GRAD}) where {T,GRAD}
+        v4::SVector{3,T}, s1::T, s2::T, kerneloffset::T, ::Val{GRAD},
+        ::Val{REG}=Val(1)) where {T,GRAD,REG}
     u = zero(SVector{3,T})
     g = zero(SMatrix{3,3,T,9})
     if tag == 1 || tag == 4 || tag == 5      # ConstantSource part
@@ -535,7 +624,7 @@ end
     if tag == 3 || tag == 4                  # VortexRing part
         gam = tag == 3 ? s1 : s2
         nvr = tag == 4 ? 3 : nv              # combined tag is a tri panel
-        ur, gr = _rect_ring(target, v1, v2, v3, v4, nvr, kerneloffset, Val(GRAD))
+        ur, gr = _rect_ring(target, v1, v2, v3, v4, nvr, kerneloffset, Val(GRAD), Val(REG))
         u += gam * ur
         GRAD && (g += gam * gr)
     end
@@ -636,10 +725,11 @@ function direct_rectangular!(out::AbstractMatrix{T}, targets::AbstractMatrix{T},
     _rect_check_args(out, targets, kernel, sources, gradient)
     n_targets = size(targets, 2)
     n_sources = size(sources, 2)
+    regv = _rect_reg_val(kernel.filament_reg)
     if gradient
-        _rect_panels_host!(out, targets, sources, n_targets, n_sources, Val(true))
+        _rect_panels_host!(out, targets, sources, n_targets, n_sources, Val(true), regv)
     else
-        _rect_panels_host!(out, targets, sources, n_targets, n_sources, Val(false))
+        _rect_panels_host!(out, targets, sources, n_targets, n_sources, Val(false), regv)
     end
     return out
 end
@@ -659,7 +749,8 @@ end
     return tag, nv, v1, v2, v3, v4, s1, s2, koff
 end
 
-function _rect_panels_host!(out, targets, sources, n_targets, n_sources, ::Val{GRAD}) where GRAD
+function _rect_panels_host!(out, targets, sources, n_targets, n_sources,
+        ::Val{GRAD}, ::Val{REG}=Val(1)) where {GRAD,REG}
     T = eltype(out)
     Threads.@threads :static for i in 1:n_targets
         @inbounds begin
@@ -670,7 +761,7 @@ function _rect_panels_host!(out, targets, sources, n_targets, n_sources, ::Val{G
                 tag, nv, v1, v2, v3, v4, s1, s2, koff =
                     _rect_load_panel_source(sources, q, T)
                 uq, gq = _rect_panel_pair(RectangularPanelInfluence(), target,
-                    tag, nv, v1, v2, v3, v4, s1, s2, koff, Val(GRAD))
+                    tag, nv, v1, v2, v3, v4, s1, s2, koff, Val(GRAD), Val(REG))
                 u += uq
                 GRAD && (g += gq)
             end

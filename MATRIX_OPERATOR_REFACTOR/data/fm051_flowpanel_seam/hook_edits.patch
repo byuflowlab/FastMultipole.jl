@@ -1,0 +1,49 @@
+diff --git a/src/FLOWPanel.jl b/src/FLOWPanel.jl
+index d76e6b4..bd0575b 100644
+--- a/src/FLOWPanel.jl
++++ b/src/FLOWPanel.jl
+@@ -90,7 +90,7 @@ for header_name in ["elements", "fmm",
+                     "elements_fmm", "frames",
+                     "liftingline",
+                     "utils", "postprocess",
+-                    "wake", "formulation", "kutta", "simulate_monitors", "simulate_monitors_fieldprobe", "metadata", "simulate", "warmstart",
++                    "wake", "gpu_influence", "formulation", "kutta", "simulate_monitors", "simulate_monitors_fieldprobe", "metadata", "simulate", "warmstart",
+                     "replay",
+                     ]
+   include("FLOWPanel_"*header_name*".jl")
+@@ -123,6 +123,13 @@ function __init__()
+         @warn "PythonPlot is not available; monitors will not be loaded"
+     end
+ 
++    # BRAINSTORM 025: pin the filament regularization family from the
++    # environment so frozen drivers can select it without code changes
++    # (compact/gaussian/vatistas; default compact).
++    if haskey(ENV, "FLOWPANEL_FILAMENT_REG")
++        set_filament_regularization!(Symbol(lowercase(ENV["FLOWPANEL_FILAMENT_REG"])))
++    end
++
+ end
+ 
+ 
+diff --git a/src/FLOWPanel_fmm.jl b/src/FLOWPanel_fmm.jl
+index 3512009..610ff56 100644
+--- a/src/FLOWPanel_fmm.jl
++++ b/src/FLOWPanel_fmm.jl
+@@ -69,6 +69,17 @@ function influence!(target_bodies::Tuple, source_bodies::Tuple, backend::FastMul
+         end
+     end
+ 
++    # 051 stage 2 seam: brute-force rectangular influence (host or CUDA) when
++    # armed via FLOWPANEL_GPU_INFLUENCE; a no-op returning false otherwise.
++    # Handles only the wake-influence and post-solve body-influence passes;
++    # the panel solve and anything unrecognized fall through to fmm! below.
++    # See src/FLOWPanel_gpu_influence.jl.
++    if _gpu_rect_influence!(target_bodies, source_bodies;
++            scalar_potential, velocity, velocity_gradient, optargs...)
++        postcalc && post_evaluate_influence!(target_bodies, source_bodies, backend, nothing)
++        return nothing
++    end
++
+     # determine if extra_farfield is needed based
+     extra_farfield = false
+     for body in source_bodies
