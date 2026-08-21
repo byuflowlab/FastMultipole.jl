@@ -156,3 +156,31 @@ device-resident dense nearfield-cache matvec for the solve (measure first);
 radix framework untouched. A rejected because radix source-homogeneity
 excludes panel elements regardless of the targets===sources lift; C rejected
 (ceiling 60-80 s/step misses the target) but recorded as fallback.
+
+## D9 (2026-08-21) — 051 stage 1 measured (H200 job 13247858) + eps2 production fix
+
+Rectangular kernels parity: F64 1.3e-16 (pass 1 U), 4.5e-15 (pass 2 U) —
+machine-exact vs the host reference (which matched FLOWPanel's own direct!
+at ~1e-15 locally). Timings @ p018 shape (2.1e5 particles, 36,752 panels):
+pass 1 (particles→panel centers) 0.124 s F64 U-only (0.071 F32); pass 2
+(panels→particles) 2.03 s F64 U-only (3.65 with J; 018 requests U-only by
+default). Both slower than my estimate band (0.02-0.04 / 0.4-2.0) but
+budget-viable: particles 0.2 + pass1 0.12 + pass2 2.0 ≈ 2.4 s/step leaves
+<1 s for the panel solve ⇒ the solve is now the binding lever for the <1 h
+goal (CPU solve 16-21 s/step would alone cost ~5-6 h/30 revs). 054-type
+kernel levers and F32 remain on the shelf for pass 2 (~2x each).
+
+Production fix (committed FLOWVPM baf8fb3): gpu_interaction!'s absolute
+r2>1e-6 pair cutoff dropped every sub-mm pair — measured 2.6e-4 U rel RMS
+on p018 (the 049 cross-check discrepancy, root-caused quantitatively by the
+051 agent: 240/2000 sampled targets affected). Guard is now
+exact-coincidence/zero-sigma only, matching the CPU loop.
+
+Also: vendored-erf test failure under Pkg.test was 1-ulp erf-difference
+amplification (3·eps/rho²) at near-coincident pairs — test restructured
+with a derived bound; erf transcription verified 1 ulp; no kernel changes.
+
+WIP-coupling note: FLOWPanel's uncommitted working tree defaults the
+filament family to Gaussian (BRAINSTORM 025) while HEAD (and my functor) is
+Vatistas — stage 2 adds the Gaussian branch so CPU/GPU arms compare
+like-for-like under the user's WIP.
