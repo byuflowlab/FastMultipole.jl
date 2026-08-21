@@ -1140,6 +1140,57 @@ function nearfield_cached!(target_tree, source_tree, cache, direct_conditioning,
     return t_nf
 end
 
+# a switch whose requested outputs are direction-carrying: cached near-field
+# blocks for these rows would need a per-block rotation after rigid motion.
+# extra outputs are treated as sensitive (their semantics are user-defined).
+@inline _rotation_sensitive_outputs(::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM} =
+    GS || HS || NO > 0
+
+"""
+    transform_plan!(plan::FmmPlan, target_systems::Tuple, R, t)
+
+Update `plan` for a RIGID motion `x -> R*x + t` of the (co-moving) target and
+source systems, so the plan can be reused across timesteps of a rigidly
+moving body instead of being rebuilt: both trees are transformed with
+[`transform_tree!`](@ref) (interaction lists are exactly invariant), and the
+target buffer positions/metadata — frozen at plan build; planned `fmm!` calls
+only zero their output rows — are refreshed from the moved `target_systems`.
+Source buffers need no attention here (planned `fmm!` refills them from the
+systems on every call).
+
+Call AFTER the systems have moved (the refreshed target positions are read
+from them). This amends the `FmmPlan` validity contract: geometry may change
+between calls exactly when each rigid step is mirrored by a `transform_plan!`
+call; relative geometry must still be frozen.
+
+A stored [`NearfieldInfluenceCache`](@ref) remains EXACTLY valid for
+scalar-potential outputs (the cached blocks map strengths to outputs through
+the scalar kernel of relative distances, which rigid motion preserves).
+Gradient/hessian/extra-output rows are direction-carrying and would need a
+per-block `G -> R*G` rotation, which is not implemented: transforming a plan
+whose cache serves such outputs throws rather than silently returning
+stale-frame vectors. Drop or rebuild the cache (or the plan) in that case.
+"""
+function transform_plan!(plan::FmmPlan, target_systems::Tuple, R, t)
+    get_n_bodies(target_systems) == plan.n_target_bodies ||
+        throw(ArgumentError("transform_plan!: target body count " *
+            "$(get_n_bodies(target_systems)) does not match the plan's " *
+            "$(plan.n_target_bodies) — rigid motion cannot change body counts"))
+    if plan.nearfield_cache[] !== nothing &&
+            any(_rotation_sensitive_outputs, plan.derivatives_switches)
+        throw(ArgumentError("transform_plan! v1 supports a stored nearfield " *
+            "cache only for scalar-potential-only outputs: cached gradient/" *
+            "hessian/extra-output rows would need a per-block rotation after " *
+            "rigid motion. Drop the cache (plan.nearfield_cache[] = nothing) " *
+            "and rebuild it after the motion, or rebuild the plan."))
+    end
+    transform_tree!(plan.target_tree, R, t)
+    plan.source_tree === plan.target_tree || transform_tree!(plan.source_tree, R, t)
+    target_to_buffer!(plan.target_tree.buffers, target_systems,
+        plan.target_tree.sort_index_list, plan.derivatives_switches)
+    return plan
+end
+
 """
     fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
          refresh_strengths=true, reset_targets=true, optargs...)
