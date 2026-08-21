@@ -8941,3 +8941,178 @@ function _cuda_update_adaptive_radix_state!(cache::RadixFMMCache{TF,LH},
     cache.step += 1
     return cache
 end
+
+#------- RECTANGULAR DIRECT-EVALUATION KERNELS (task 051 stage 1) -------#
+#
+# Device counterparts of src/direct_rectangular.jl: tiled
+# source-in-shared-memory rectangular sweep (041k tiled pattern, see
+# MATRIX_OPERATOR_REFACTOR/scripts/fm041k_direct_bruteforce_gpu.jl), one
+# thread per target, block-level grid stride over target chunks, no atomics
+# (each target column owned by exactly one thread). Pair math is the SAME
+# inlined host functions (_rect_point_pair / _rect_panel_pair), so host and
+# device agree to summation-order roundoff. Precision-generic: F64 primary;
+# pass Float32 CuMatrices for the F32 point variant.
+#
+# WRITTEN BLIND (no CUDA hardware on the dev machine): parse-checked only,
+# following the existing kernel idioms in this file. Verify on the cluster via
+# FLOWVPM.jl/scripts/fm051_rect_bench.jl before trusting numbers.
+
+const _RECT_TILE_POINTS = 256
+const _RECT_TILE_PANELS = 128
+const _RECT_MAX_BLOCKS = 65535
+
+function _cuda_rect_points_kernel!(out, targets, sources, n_targets, n_sources,
+        ::Val{GRAD}) where GRAD
+    T = eltype(out)
+    tid = threadIdx().x
+    sh = CUDA.CuStaticSharedArray(T, (7, _RECT_TILE_POINTS))
+    nchunks = cld(n_targets, _RECT_TILE_POINTS)
+    ntiles = cld(n_sources, _RECT_TILE_POINTS)
+    chunk = blockIdx().x
+    while chunk <= nchunks
+        i = (chunk - 1) * _RECT_TILE_POINTS + tid
+        active = i <= n_targets
+        tx = ty = tz = zero(T)
+        if active
+            @inbounds begin
+                tx = targets[1, i]; ty = targets[2, i]; tz = targets[3, i]
+            end
+        end
+        u1 = u2 = u3 = zero(T)
+        j1 = j2 = j3 = j4 = j5 = j6 = j7 = j8 = j9 = zero(T)
+        for t in 1:ntiles
+            q0 = (t - 1) * _RECT_TILE_POINTS
+            ql = q0 + tid
+            if ql <= n_sources
+                @inbounds for r in 1:7
+                    sh[r, tid] = sources[r, ql]
+                end
+            end
+            CUDA.sync_threads()
+            if active
+                @inbounds for k in 1:min(_RECT_TILE_POINTS, n_sources - q0)
+                    Ux, Uy, Uz, a1, a2, a3, a4, a5, a6, a7, a8, a9 =
+                        _rect_point_pair(RectangularGaussianErfVortex(), tx, ty, tz,
+                            sh[1, k], sh[2, k], sh[3, k],
+                            sh[4, k], sh[5, k], sh[6, k], sh[7, k], Val(GRAD))
+                    u1 += Ux; u2 += Uy; u3 += Uz
+                    if GRAD
+                        j1 += a1; j2 += a2; j3 += a3; j4 += a4; j5 += a5
+                        j6 += a6; j7 += a7; j8 += a8; j9 += a9
+                    end
+                end
+            end
+            CUDA.sync_threads()
+        end
+        if active
+            @inbounds begin
+                out[1, i] += u1; out[2, i] += u2; out[3, i] += u3
+                if GRAD
+                    out[4, i] += j1; out[5, i] += j2; out[6, i] += j3
+                    out[7, i] += j4; out[8, i] += j5; out[9, i] += j6
+                    out[10, i] += j7; out[11, i] += j8; out[12, i] += j9
+                end
+            end
+        end
+        chunk += gridDim().x
+    end
+    return nothing
+end
+
+function _cuda_rect_panels_kernel!(out, targets, sources, n_targets, n_sources,
+        ::Val{GRAD}) where GRAD
+    T = eltype(out)
+    tid = threadIdx().x
+    sh = CUDA.CuStaticSharedArray(T, (17, _RECT_TILE_PANELS))
+    nchunks = cld(n_targets, _RECT_TILE_PANELS)
+    ntiles = cld(n_sources, _RECT_TILE_PANELS)
+    chunk = blockIdx().x
+    while chunk <= nchunks
+        i = (chunk - 1) * _RECT_TILE_PANELS + tid
+        active = i <= n_targets
+        target = zero(SVector{3,T})
+        if active
+            @inbounds target = SVector{3,T}(targets[1, i], targets[2, i], targets[3, i])
+        end
+        u = zero(SVector{3,T})
+        g = zero(SMatrix{3,3,T,9})
+        for t in 1:ntiles
+            q0 = (t - 1) * _RECT_TILE_PANELS
+            ql = q0 + tid
+            if ql <= n_sources
+                @inbounds for r in 1:17
+                    sh[r, tid] = sources[r, ql]
+                end
+            end
+            CUDA.sync_threads()
+            if active
+                @inbounds for k in 1:min(_RECT_TILE_PANELS, n_sources - q0)
+                    tag = Int(sh[1, k])
+                    nv = Int(sh[2, k])
+                    v1 = SVector{3,T}(sh[3, k], sh[4, k], sh[5, k])
+                    v2 = SVector{3,T}(sh[6, k], sh[7, k], sh[8, k])
+                    v3 = SVector{3,T}(sh[9, k], sh[10, k], sh[11, k])
+                    v4 = SVector{3,T}(sh[12, k], sh[13, k], sh[14, k])
+                    s1 = sh[15, k]
+                    s2 = sh[16, k]
+                    koff = sh[17, k]
+                    uq, gq = _rect_panel_pair(RectangularPanelInfluence(), target,
+                        tag, nv, v1, v2, v3, v4, s1, s2, koff, Val(GRAD))
+                    u += uq
+                    if GRAD
+                        g += gq
+                    end
+                end
+            end
+            CUDA.sync_threads()
+        end
+        if active
+            @inbounds begin
+                out[1, i] += u[1]; out[2, i] += u[2]; out[3, i] += u[3]
+                if GRAD
+                    for j in 1:3, kk in 1:3
+                        out[3 + (j-1)*3 + kk, i] += g[kk, j]
+                    end
+                end
+            end
+        end
+        chunk += gridDim().x
+    end
+    return nothing
+end
+
+function direct_rectangular!(out::CUDA.CuMatrix{T}, targets::CUDA.CuMatrix{T},
+        kernel::RectangularGaussianErfVortex, sources::CUDA.CuMatrix{T};
+        gradient::Bool=false) where T
+    _rect_check_args(out, targets, kernel, sources, gradient)
+    n_targets = size(targets, 2)
+    n_sources = size(sources, 2)
+    n_targets == 0 && return out
+    blocks = min(cld(n_targets, _RECT_TILE_POINTS), _RECT_MAX_BLOCKS)
+    if gradient
+        CUDA.@cuda threads=_RECT_TILE_POINTS blocks=blocks _cuda_rect_points_kernel!(
+            out, targets, sources, n_targets, n_sources, Val(true))
+    else
+        CUDA.@cuda threads=_RECT_TILE_POINTS blocks=blocks _cuda_rect_points_kernel!(
+            out, targets, sources, n_targets, n_sources, Val(false))
+    end
+    return out
+end
+
+function direct_rectangular!(out::CUDA.CuMatrix{T}, targets::CUDA.CuMatrix{T},
+        kernel::RectangularPanelInfluence, sources::CUDA.CuMatrix{T};
+        gradient::Bool=false) where T
+    _rect_check_args(out, targets, kernel, sources, gradient)
+    n_targets = size(targets, 2)
+    n_sources = size(sources, 2)
+    n_targets == 0 && return out
+    blocks = min(cld(n_targets, _RECT_TILE_PANELS), _RECT_MAX_BLOCKS)
+    if gradient
+        CUDA.@cuda threads=_RECT_TILE_PANELS blocks=blocks _cuda_rect_panels_kernel!(
+            out, targets, sources, n_targets, n_sources, Val(true))
+    else
+        CUDA.@cuda threads=_RECT_TILE_PANELS blocks=blocks _cuda_rect_panels_kernel!(
+            out, targets, sources, n_targets, n_sources, Val(false))
+    end
+    return out
+end

@@ -99,6 +99,7 @@ include("tree_batched.jl")
 include("interaction_list_batched.jl")
 include("translate_batched_resident.jl")
 include("radix_settings.jl")
+include("direct_rectangular.jl")
 
 export Branch, SingleBranch, MultiBranch, Tree, SingleTree, MultiTree, initialize_expansion, initialize_harmonics
 export RadixGrid, DeviceRadixGrid, RadixSortBackend, HostRadixSort, DeviceRadixSort, AutoRadixSort, radix_grid
@@ -109,6 +110,9 @@ export RadixM2LBatch, RadixInteractionList
 export Residency, HostResident, DeviceResident, residency
 export AbstractDirectKernel, SingularSource, SingularVortex, RegularizedVortex,
     PartitionedVortex, TwoPassVortex, direct_kernel
+export AbstractRectangularKernel, RectangularGaussianErfVortex,
+    RectangularPanelInfluence, direct_rectangular!, rect_source_rows,
+    rect_output_rows
 export CUDARadixTransferCounters, CUDARadixLifecycleOptions, DeviceResidentRadixState
 export AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M
 export AbstractResidentM2LStrategy, DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L, PrecomputedFactoredYM2L
