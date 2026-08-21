@@ -96,6 +96,7 @@ include("tree.jl")
 
 export Branch, SingleBranch, MultiBranch, Tree, SingleTree, MultiTree, initialize_expansion, initialize_harmonics
 export unsort!, resort!, unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
+export transform_tree!
 
 include("compatibility.jl")
 

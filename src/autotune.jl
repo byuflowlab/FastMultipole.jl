@@ -292,3 +292,137 @@ function tune_fmm(target_systems::Tuple, source_systems::Tuple;
     return tuned_params, cache, tune_info
 end
 
+
+#------- perturbation descent on tuned parameters -------#
+
+"""
+    tune_fmm_perturb(target_systems, source_systems;
+        expansion_order, multipole_acceptance, leaf_size_source, optargs...)
+
+Greedy one-at-a-time perturbation descent on measured `fmm!` wall time,
+starting from already-tuned parameters (e.g. the first return value of
+[`tune_fmm`](@ref), splatted). `tune_fmm` trusts the cost model to pick
+`leaf_size_source` and `expansion_order` per multipole acceptance; this
+routine instead *measures* each neighbor of the current point and moves while
+a neighbor beats the incumbent by more than `improve_tol` (relative), so a
+model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
+023, Ryan 2026-08-20).
+
+**Keyword Arguments**
+
+- `expansion_order::Int`, `multipole_acceptance::Float64`, `leaf_size_source`:
+  the starting point (splat `tune_fmm`'s `tuned_params`)
+- `error_tolerance`: same contract as `fmm!`/`tune_fmm`; candidates whose
+  trial reports `error_success=false` are rejected. `nothing` disables the
+  guard (pure cost descent at fixed `expansion_order` semantics)
+- `max_expansion_order=20`, `mac_step=0.05`, `mac_bounds=(0.25, 0.85)`,
+  `leaf_factor=1.5`: neighborhood definition (`P ± 1`, `MAC ± mac_step`
+  clamped, `leaf ×/÷ leaf_factor`)
+- `reps=2`: min-of-reps timing per candidate (tree build included, as in
+  production use)
+- `improve_tol=0.02`: relative improvement required to accept a move
+- `max_iters=20`: maximum accepted moves
+- `verbose=true`
+- `kwargs...`: forwarded to `fmm!` (must match the production call's
+  `scalar_potential`/`gradient`/`hessian` request)
+
+**Returns**
+
+- `tuned_params::NamedTuple`: `(leaf_size_source, expansion_order,
+  multipole_acceptance)` at the cost minimum, splat-able into `fmm!`
+- `history::Vector{<:NamedTuple}`: every evaluated candidate with fields
+  `(iter, expansion_order, multipole_acceptance, leaf_size_source, t,
+  error_success, accepted)`
+"""
+function tune_fmm_perturb(target_systems, source_systems;
+    expansion_order, multipole_acceptance, leaf_size_source,
+    error_tolerance=nothing,
+    max_expansion_order=20,
+    mac_step=0.05, mac_bounds=(0.25, 0.85),
+    leaf_factor=1.5,
+    reps=2, improve_tol=0.02, max_iters=20,
+    verbose=true, kwargs...)
+
+    target_systems = to_tuple(target_systems)
+    source_systems = to_tuple(source_systems)
+
+    # preallocate cache with the same target buffer layout as the trials
+    _, cache, _ = fmm!(target_systems, source_systems;
+        expansion_order=1, leaf_size_source,
+        nearfield=false, farfield=false, self_induced=false,
+        kwargs..., tune=true, update_target_systems=false)
+
+    scale_leaf(leaf::Integer, f) = max(1, round(Int, leaf * f))
+    scale_leaf(leaf, f) = map(l -> max(1, round(Int, l * f)), leaf)
+    key(P, mac, leaf) = (P, round(mac; digits=3), leaf)
+
+    memo = Dict{Any, Tuple{Float64, Bool}}()
+    function benchmark(P, mac, leaf)
+        k = key(P, mac, leaf)
+        haskey(memo, k) && return memo[k]
+        t_min = Inf
+        success = true
+        for _ in 1:reps
+            t = @elapsed result = fmm!(target_systems, source_systems, cache;
+                expansion_order=P, leaf_size_source=leaf,
+                multipole_acceptance=mac,
+                error_tolerance, kwargs...,
+                tune=true, update_target_systems=false)
+            success = result[8]
+            success || break
+            t_min = min(t_min, t)
+        end
+        memo[k] = (t_min, success)
+        return memo[k]
+    end
+
+    P0, mac0, leaf0 = expansion_order, multipole_acceptance, leaf_size_source
+    t0, ok = benchmark(P0, mac0, leaf0)
+    ok || error("tune_fmm_perturb: the starting parameters do not satisfy error_tolerance")
+
+    history = [(iter=0, expansion_order=P0, multipole_acceptance=mac0,
+                leaf_size_source=leaf0, t=t0, error_success=true, accepted=true)]
+    verbose && println("\n#======= Begin FastMultipole.tune_fmm_perturb() =======#")
+    verbose && println("start: P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s")
+
+    for iter in 1:max_iters
+        neighbors = [
+            (min(P0 + 1, max_expansion_order), mac0, leaf0),
+            (max(P0 - 1, 1), mac0, leaf0),
+            (P0, min(round(mac0 + mac_step; digits=3), mac_bounds[2]), leaf0),
+            (P0, max(round(mac0 - mac_step; digits=3), mac_bounds[1]), leaf0),
+            (P0, mac0, scale_leaf(leaf0, leaf_factor)),
+            (P0, mac0, scale_leaf(leaf0, 1 / leaf_factor)),
+        ]
+        best_t = t0 * (1 - improve_tol)
+        best = nothing
+        for (P, mac, leaf) in neighbors
+            key(P, mac, leaf) == key(P0, mac0, leaf0) && continue
+            t, success = benchmark(P, mac, leaf)
+            push!(history, (iter=iter, expansion_order=P, multipole_acceptance=mac,
+                            leaf_size_source=leaf, t=t, error_success=success,
+                            accepted=false))
+            verbose && println("  iter $iter: P=$P MAC=$mac leaf=$leaf " *
+                (success ? "t=$(round(t; digits=3)) s" : "REJECTED (error tolerance)"))
+            if success && t < best_t
+                best_t = t
+                best = (P, mac, leaf)
+            end
+        end
+        best === nothing && break
+        P0, mac0, leaf0 = best
+        t0, _ = benchmark(P0, mac0, leaf0)
+        push!(history, (iter=iter, expansion_order=P0, multipole_acceptance=mac0,
+                        leaf_size_source=leaf0, t=t0, error_success=true,
+                        accepted=true))
+        verbose && println("  -> move to P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s")
+    end
+
+    verbose && println("minimum: P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s " *
+        "($(length(memo)) distinct candidates)")
+    verbose && println("\n#===============================================#\n")
+
+    tuned_params = (leaf_size_source=leaf0, expansion_order=P0,
+                    multipole_acceptance=mac0)
+    return tuned_params, history
+end

@@ -2182,3 +2182,58 @@ function get_interaction_list(tree, m2l_list, i_target)
 
 	return interaction_list
 end
+
+#--- rigid-motion transform (BRAINSTORM 021 rigid_motion_tree_reuse item) ---#
+
+"""
+    transform_tree!(tree::Tree, R, t)
+
+Apply the rigid transform `x -> R*x + t` (rotation `R`, translation `t`) to a
+tree built for a rigidly moving system, so the tree can be reused instead of
+rebuilt after the motion.
+
+Everything the tree encodes about *relative* geometry is invariant under rigid
+motion: leaf/body assignments and `bodies_index` are unchanged, branch radii
+are rotation-invariant, and interaction lists built from center distances,
+radii, and the multipole acceptance criterion remain exactly valid. Only the
+branch centers must move with the bodies (`center -> R*center + t`); the
+stored axis-aligned box half-widths are replaced by `abs.(R) * box`, the tight
+axis-aligned bounding box of the rotated box, so the enclosure property
+consumed by the error-bound paths (`minimum_distance`) is preserved (bounds
+can only become more conservative). Expansions are recomputed from the
+buffers on every `fmm!`/`solve!` call, so no expansion data needs updating.
+
+The caller owns buffer freshness: source buffers are refilled from the
+systems on each planned `fmm!` call, but target buffer POSITIONS are not —
+use [`transform_plan!`](@ref) (or the `FastGaussSeidel` `transform!`) which
+refreshes them, rather than calling this on a plan's trees directly.
+
+`R` must be a proper rotation (`R'R = I`, `det(R) = +1`); anything else
+(scaling, reflection) breaks radius/box invariance and throws.
+"""
+function transform_tree!(tree::Tree{TF,<:Any}, R, t) where TF
+    R_s = SMatrix{3,3,TF,9}(R)
+    t_s = SVector{3,TF}(t)
+    _assert_rigid_rotation(R_s)
+    absR = abs.(R_s)
+    branches = tree.branches
+    for i in eachindex(branches)
+        b = branches[i]
+        branches[i] = Branch(b.n_bodies, b.bodies_index, b.n_branches,
+            b.branch_index, b.i_parent, b.i_leaf, R_s * b.center + t_s,
+            b.radius, absR * b.box, b.min_potential, b.min_gradient)
+    end
+    return tree
+end
+
+function _assert_rigid_rotation(R::SMatrix{3,3,TF,9}; atol=1e-10) where TF
+    err = maximum(abs.(R' * R - SMatrix{3,3,TF,9}(I)))
+    err <= atol || throw(ArgumentError(
+        "transform_tree! requires a proper rotation: R'R deviates from I by " *
+        "$err (> $atol) — scaling or shear breaks radius/box invariance"))
+    d = det(R)
+    abs(d - 1) <= atol || throw(ArgumentError(
+        "transform_tree! requires a proper rotation: det(R) = $d != +1 — " *
+        "reflections break the transform's validity"))
+    return nothing
+end
