@@ -118,3 +118,23 @@ accuracy ever binds. Device testsets use the same J-aware gate.
 - CUDA kernels written blind (no local GPU) as close clones of validated
   kernel patterns; H200 job vpm048 validates (parity, counters, alloc,
   graph replay) + the 047 late-flip device check rides along.
+
+## D7 (2026-08-21) — H200 SFS "failure" was gate calibration, not a defect
+
+Job 13247540: everything green except the device SFS physics-parity gates
+(e_sfs=0.0293 vs the 3·j_rel=0.0062 gate; wake n=20000 F64; capture and
+replay bit-consistent). Diagnosis (reproduced ON HOST to 5 digits at the same
+operating point): E_str is a cancellation-dominated difference quantity, so
+the radix J error (erf-free g/h + far-field deficit, j_rel≈2.1e-3) amplifies
+field-dependently — measured E/J ratio 2.05 (cube) vs 14.1 (wake); the
+original 3x gate was calibrated on the benign cube. Zeta-truncation measured
+4 orders below the failure (2.1e-6 / 8.7e-7). Resolution: device testset now
+gates MECHANICAL parity (host mirror over the identical device pair list +
+delivered J) at 1e-6 F64 — this carries SFS correctness — and retiers the
+physics gate to max(base, 20·j_rel + 2·e_trunc) with truncation reported.
+Also fixed in passing: my sfs_to_target! ambiguity fix (buf::Matrix) broke
+capacity>np prefix views — widened to Union{Matrix,SubArray{<:Any,2,<:Matrix}}
+with a capacity regression test. Pair-list per-direction convention verified
+on both device generators. Production-relevant note for 049/052: SFS
+delivered accuracy is J-error-bound; if production SFS accuracy ever binds,
+the knob is J accuracy (gh mode / P / MAC), not the SFS pass.
