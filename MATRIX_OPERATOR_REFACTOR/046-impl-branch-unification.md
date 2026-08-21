@@ -201,3 +201,17 @@ cluster (no CUDA on this machine); they gate `047`/`048` work anyway.
 
 Open: 018 CPU smoke result; Stage 4 user checkpoint (retire tmp3 vs
 re-point).
+
+## Stage 4 resolution + retirement record (2026-08-20)
+
+User checkpoint answered by the user directly: **retire the tmp3 clones**.
+Executed same day: all tmp3 branch tips fetched into the projects clones as
+`tmp3/*` remote refs and SHA-verified before deletion (FastMultipole
+combined-tree/main/matrix-ops/worktree-agent + stash as tag
+`tmp3-stash-combined-tree`; FLOWVPM gpu-full/master); the
+`FLOWVPM-baseline-e2bd487` linked worktree was clean and its commit is in
+history; gitignored figure artifacts copied; tmp3 Manifests deliberately not
+copied (they pinned dev-paths to tmp3). tmp3 directory removed. 018 CPU
+smoke: 116/467 steps error-free on the merged stack before deliberate stop
+(the 467 = freestream-schedule revs; ~20 s/step, sensible CF/CM monitors) —
+gate PASS. Details: `decisions-phaseP-2026-08-20.md` D1–D3.
