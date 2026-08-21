@@ -34,8 +34,26 @@
       - a body element set outside {ConstantSource, ConstantDoublet,
         VortexRing, ConstantSource+VortexRing, ConstantSource+ConstantDoublet}
         or a RigidWakeBody with a semi-infinite attached wake;
-      - a self-paired ParticleField with SFS enabled (the FMM post hook needs
-        fmm! tree outputs for Estr; Estr stays on the FLOWVPM radix path).
+      - a self-paired HOST ParticleField with SFS enabled (the FMM post hook
+        needs fmm! tree outputs for Estr; Estr stays on the FLOWVPM radix
+        path).
+
+    Task 052 extensions (device-resident wake):
+      - a CuArray-backed ParticleField target evaluates its SELF influence
+        (U, J, and E_str when SFS is enabled) through the FLOWVPM radix GPU
+        lifecycle (`UJ_fmm_gpu!`), and receives all other sources through
+        device-resident `direct_rectangular!` (no per-step particle H2D/D2H);
+        its SFS AfterUJ hook runs via `post_evaluate_influence!(...,
+        ::Nothing)` in src/FLOWPanel_gpu_wake.jl.
+      - a CuArray-backed ParticleField SOURCE is packed as a device 7 x np
+        slice (rows 1:7 == X, Gamma, sigma — the RectangularGaussianErfVortex
+        layout).
+      - probe passes (all targets FastMultipole.ProbeSystem, request
+        `gradient=true` == velocity, `hessian` == velocity gradient) are
+        recognized so monitor probe evaluations (BoundCirculationMonitor
+        Kelvin slices, KuttaJoukowskiForce) never route a device particle
+        field into host fmm!.
+      - env-gated pass timers (FLOWPANEL_GPU_TIMERS=1).
 
     Known deviation from the CPU fmm! path: `direct_conditioning`
     (`_self_panel_kerneloffset_conditioning`) flips the source kerneloffset to
@@ -292,6 +310,12 @@ _gpu_source_columns(s::AbstractBody) = _gpu_n_panel_columns(s)
 
 # pack (with buffer reuse) and return (srcmat, functor)
 function _gpu_pack_source!(s::FLOWVPM.ParticleField, ::Nothing)
+    if !(s.particles isa Array)
+        # device-backed field: rows 1:7 are already the
+        # RectangularGaussianErfVortex layout (X, Gamma, sigma); slice on
+        # the device, no transfer (task 052)
+        return s.particles[1:7, 1:s.np], FastMultipole.RectangularGaussianErfVortex()
+    end
     m = _gpu_workmat!(s, :src, 7, s.np)
     pack_particles!(m, s)
     return m, FastMultipole.RectangularGaussianErfVortex()
@@ -340,6 +364,7 @@ _gpu_target_supported(t) = false
 _gpu_target_supported(t::AbstractBody) = true
 _gpu_target_supported(t::ProbeWrapper{<:PanelWake}) = true
 _gpu_target_supported(t::FLOWVPM.ParticleField) = true
+_gpu_target_supported(t::FastMultipole.ProbeSystem) = true
 
 ################################################################################
 # RESULT WRITE-BACK (same storage the fmm!/buffer path accumulates into)
@@ -372,6 +397,35 @@ function _gpu_add_result!(pw::ProbeWrapper{<:PanelWake}, out, grad::Bool)
         wake.velocity[isurf][3, irow, icol] += out[3, i]
         # gradient not stored for PanelWake probes (matches
         # buffer_to_target_system!, FLOWPanel_wake.jl:436-459)
+    end
+    return nothing
+end
+
+function _gpu_add_result!(ps::FastMultipole.ProbeSystemStatic, out, grad::Bool)
+    SV = FastMultipole.StaticArrays.SVector{3,Float64}
+    SM = FastMultipole.StaticArrays.SMatrix{3,3,Float64,9}
+    @inbounds for i in 1:FastMultipole.get_n_bodies(ps)
+        ps.gradient[i] += SV(out[1, i], out[2, i], out[3, i])
+        if grad
+            # out[3+(j-1)*3+i0] = du_i0/dx_j == column-major SMatrix order
+            ps.hessian[i] += SM(out[4, i], out[5, i], out[6, i],
+                                out[7, i], out[8, i], out[9, i],
+                                out[10, i], out[11, i], out[12, i])
+        end
+    end
+    return nothing
+end
+
+function _gpu_add_result!(ps::FastMultipole.ProbeSystemArray, out, grad::Bool)
+    @inbounds for i in 1:FastMultipole.get_n_bodies(ps)
+        ps.gradient[1, i] += out[1, i]
+        ps.gradient[2, i] += out[2, i]
+        ps.gradient[3, i] += out[3, i]
+        if grad
+            for j in 1:3, i0 in 1:3
+                ps.hessian[i0, j, i] += out[3 + (j-1)*3 + i0, i]
+            end
+        end
     end
     return nothing
 end
@@ -413,7 +467,10 @@ function _gpu_direct_batch!(out::Matrix{Float64}, tgt::Matrix{Float64},
         out_d = Base.invokelatest(CUDAmod.CuArray, out)
         tgt_d = Base.invokelatest(CUDAmod.CuArray, tgt)
         for (srcmat, kern) in packed
-            src_d = Base.invokelatest(CUDAmod.CuArray, srcmat)
+            # host-packed sources are uploaded; device slices (CuArray-backed
+            # particle fields, task 052) are used as-is
+            src_d = srcmat isa Matrix ?
+                Base.invokelatest(CUDAmod.CuArray, srcmat) : srcmat
             Base.invokelatest(FastMultipole.direct_rectangular!, out_d, tgt_d,
                 kern, src_d; gradient=grad)
         end
@@ -437,9 +494,23 @@ recognition and fallback rules.
 """
 function _gpu_rect_influence!(targets::Tuple, sources::Tuple;
         scalar_potential=false, velocity=false, velocity_gradient=false,
+        gradient=false, hessian=false,
         extra_outputs=nothing, direct_conditioning=nothing, kwargs...)
     gpu_influence_enabled() || return false
     scalar_potential === false || return false
+
+    # probe pass (task 052): FastMultipole.ProbeSystem targets request the
+    # potential gradient (= velocity) via `gradient`, and the velocity
+    # gradient via `hessian` (BoundCirculationMonitor Kelvin slices,
+    # KuttaJoukowskiForce, field probes).
+    grad_all = gradient === true ||
+        (gradient isa Tuple && length(gradient) > 0 && all(g -> g === true, gradient))
+    probe_pass = velocity === false && grad_all && length(targets) > 0 &&
+        all(t -> t isa FastMultipole.ProbeSystem, targets)
+    if probe_pass
+        velocity = true
+        velocity_gradient = hessian
+    end
     velocity === true || return false
     _gpu_all_zero(extra_outputs) || begin
         _gpu_info_once(:extra_outputs, "FLOWPanel gpu influence: pass requests " *
@@ -451,7 +522,7 @@ function _gpu_rect_influence!(targets::Tuple, sources::Tuple;
     pass1 = any(_gpu_is_wake_source, sources)
     pass3 = !pass1 && all(s -> s isa AbstractBody, sources) &&
         direct_conditioning !== nothing
-    (pass1 || pass3) || return false
+    (pass1 || pass3 || probe_pass) || return false
 
     # eligibility
     for s in sources
@@ -468,10 +539,12 @@ function _gpu_rect_influence!(targets::Tuple, sources::Tuple;
             return false
         end
     end
-    # a self-paired SFS-enabled particle field needs fmm! outputs for Estr
+    # a self-paired SFS-enabled HOST particle field needs fmm! outputs for
+    # Estr; a DEVICE (CuArray) field computes Estr through the radix
+    # lifecycle below instead (task 052)
     for t in targets
         if t isa FLOWVPM.ParticleField && FLOWVPM.isSFSenabled(t.SFS) &&
-                any(s -> s === t, sources)
+                any(s -> s === t, sources) && (t.particles isa Array)
             _gpu_info_once(:sfs, "FLOWPanel gpu influence: SFS-enabled particle " *
                 "self-influence needs fmm! Estr outputs; falling back to fmm! " *
                 "(Estr stays on the FLOWVPM radix path)")
@@ -481,11 +554,35 @@ function _gpu_rect_influence!(targets::Tuple, sources::Tuple;
 
     device = _gpu_device()
 
+    # a device-backed particle field anywhere in the pass REQUIRES the CUDA
+    # seam: falling back to host fmm! (or the host rectangular path) would
+    # scalar-index the CuArray. Fail loudly instead of silently degrading.
+    if device !== :cuda
+        for s in (targets..., sources...)
+            if s isa FLOWVPM.ParticleField && !(s.particles isa Array)
+                error("FLOWPanel gpu influence: CuArray-backed particle field " *
+                    "requires FLOWPANEL_GPU_INFLUENCE=cuda with functional " *
+                    "CUDA (mode=$(GPU_INFLUENCE[]), " *
+                    "status: $(FastMultipole.cuda_radix_status()))")
+            end
+        end
+    end
+
+    t_start = time()
+
     for (it, tsys) in enumerate(targets)
         grad = velocity_gradient isa Tuple ? velocity_gradient[it] === true :
             velocity_gradient === true
         n_t = FastMultipole.get_n_bodies(tsys)
         n_t == 0 && continue
+
+        if tsys isa FLOWVPM.ParticleField && !(tsys.particles isa Array)
+            # device-resident particle target (task 052): radix self
+            # influence + device rectangular for everything else
+            _gpu_device_pfield_target!(tsys, sources, grad)
+            continue
+        end
+
         tgt = _gpu_workmat!(tsys, :targets, 3, n_t)
         _gpu_fill_targets!(tgt, tsys)
         out = _gpu_workmat!(tsys, grad ? :out12 : :out3, grad ? 12 : 3, n_t)
@@ -505,6 +602,72 @@ function _gpu_rect_influence!(targets::Tuple, sources::Tuple;
         _gpu_direct_batch!(out, tgt, packed, grad, device)
         _gpu_add_result!(tsys, out, grad)
     end
+
+    if gpu_timers_enabled()
+        device === :cuda && _gpu_cuda_sync()
+        label = probe_pass ? "influence_probe" :
+                pass1 ? "influence_pass1" : "influence_pass3"
+        _gpu_timer_log(label, time() - t_start)
+    end
+
     GPU_INFLUENCE_HITS[] += 1
     return true
+end
+
+"Synchronize the CUDA device (timer accuracy); requires the lifecycle loaded."
+function _gpu_cuda_sync()
+    CUDAmod = getglobal(FastMultipole, :CUDA)
+    Base.invokelatest(CUDAmod.synchronize)
+    return nothing
+end
+
+"""
+    _gpu_device_pfield_target!(pfield, sources, grad)
+
+Task 052: accumulate a pass's influence into a CuArray-backed particle
+field without leaving the device. The SELF pair (particles -> particles)
+goes through the FLOWVPM radix GPU lifecycle — `UJ_fmm_gpu!` with
+`reset=false` accumulates U and J, and with SFS enabled additionally
+accumulates E_str into SFS_INDEX (matching the host `Estr_fmm!` +=
+convention; the AfterUJ dynamic procedure runs in the post hook). All other
+sources are evaluated by the device `direct_rectangular!` into a device
+output buffer and accumulated into the U (and J when `grad`) rows.
+"""
+function _gpu_device_pfield_target!(pfield::FLOWVPM.ParticleField,
+        sources::Tuple, grad::Bool)
+    np = pfield.np
+    np == 0 && return nothing
+
+    # self influence via the device radix lifecycle
+    if any(s -> s === pfield, sources)
+        FLOWVPM.UJ_fmm_gpu!(pfield; reset=false, reset_sfs=false,
+            sfs=FLOWVPM.isSFSenabled(pfield.SFS))
+    end
+
+    packed = Any[]
+    for ssys in sources
+        ssys === pfield && continue
+        _gpu_source_columns(ssys) == 0 && continue
+        push!(packed, _gpu_pack_source!(ssys, nothing))
+    end
+    isempty(packed) && return nothing
+
+    CUDAmod = getglobal(FastMultipole, :CUDA)
+    P = pfield.particles
+    tgt_d = P[1:3, 1:np]                       # device position slice
+    nout = grad ? 12 : 3
+    out_d = Base.invokelatest(CUDAmod.zeros, eltype(P), nout, np)
+    for (srcmat, kern) in packed
+        src_d = srcmat isa Matrix ?
+            Base.invokelatest(CUDAmod.CuArray, srcmat) : srcmat
+        Base.invokelatest(FastMultipole.direct_rectangular!, out_d, tgt_d,
+            kern, src_d; gradient=grad)
+    end
+    view(P, FLOWVPM.U_INDEX, 1:np) .+= view(out_d, 1:3, :)
+    if grad
+        # out rows 4:12 use out[3+(j-1)*3+i] = du_i/dx_j — the same order as
+        # J_INDEX (see the host `_gpu_add_result!` above)
+        view(P, FLOWVPM.J_INDEX, 1:np) .+= view(out_d, 4:12, :)
+    end
+    return nothing
 end

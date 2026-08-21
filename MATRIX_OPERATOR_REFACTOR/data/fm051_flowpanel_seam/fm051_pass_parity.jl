@@ -17,6 +17,12 @@
 #
 # Run (CPU, from the FLOWPanel.jl root):
 #   julia --project=. --threads=4 examples/fm051_pass_parity.jl
+#
+# Task 052: FM051_MODE=cuda arms the seam in :cuda mode instead of :host,
+# validating the device direct_rectangular! kernels through the same gates
+# (requires functional CUDA; the run FAILS if the seam falls back to host).
+
+armed_mode = lowercase(get(ENV, "FM051_MODE", "host")) == "cuda" ? :cuda : :host
 
 using LinearAlgebra: norm
 import Random
@@ -145,7 +151,12 @@ function evaluate(pass!, label)
     reset_outputs!()
     ref_dir = pass!(direct_backend)
     hits0 = pnl.GPU_INFLUENCE_HITS[]
-    pnl.set_gpu_influence!(:host)
+    pnl.set_gpu_influence!(armed_mode)
+    if armed_mode === :cuda
+        pnl._gpu_device() === :cuda || error(
+            "FM051_MODE=cuda but the CUDA seam is not functional: " *
+            pnl.FastMultipole.cuda_radix_status())
+    end
     reset_outputs!()
     got = pass!(fmm_backend)
     pnl.set_gpu_influence!(:off)

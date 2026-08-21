@@ -1,5 +1,47 @@
+diff --git a/examples/rotor_hover_pressure_comparison.jl b/examples/rotor_hover_pressure_comparison.jl
+index e98684e..d3af3c6 100644
+--- a/examples/rotor_hover_pressure_comparison.jl
++++ b/examples/rotor_hover_pressure_comparison.jl
+@@ -645,8 +645,37 @@ else
+      unsteady_filament = (nwakerows == 0))
+ end
+ 
++# --- Task 052: optional CuArray-backed (device-resident) wake particle field.
++# VPM_ARRAYTYPE=cuarray constructs the wake ParticleField on the GPU (requires
++# FLOWPANEL_GPU_INFLUENCE=cuda so every influence pass touching the device
++# field runs through the CUDA rectangular/radix seam). The device radix FMM
++# forbids autotuning, so the armed path pins the row-048-validated FMM
++# settings (p=4, ncrit=50, theta=0.4, autotune off). Default (unset/"array")
++# leaves the construction bit-identical to before this knob existed.
++vpm_arraytype_name = lowercase(get(ENV, "VPM_ARRAYTYPE", "array"))
++wake_pfield_kwargs = if vpm_arraytype_name in ("cuarray", "cuda", "gpu")
++    gpu_influence_mode = lowercase(get(ENV, "FLOWPANEL_GPU_INFLUENCE", "0"))
++    gpu_influence_mode in ("cuda", "gpu") || error(
++        "VPM_ARRAYTYPE=cuarray requires FLOWPANEL_GPU_INFLUENCE=cuda (got " *
++        "$(repr(gpu_influence_mode))): every influence pass touching the " *
++        "device particle field must be handled by the CUDA seam")
++    pnl.FastMultipole.load_cuda_radix_lifecycle!() || error(
++        "VPM_ARRAYTYPE=cuarray but the CUDA radix lifecycle failed to " *
++        "load: " * pnl.FastMultipole.cuda_radix_status())
++    println("Wake particle field: device-resident CuArray " *
++        "($(pnl.FastMultipole.cuda_radix_status()))")
++    (arraytype = getglobal(pnl.FastMultipole, :CUDA).CuArray,
++     pfield_fmm = FV.FMM(; p=4, ncrit=50, theta=0.4, autotune_p=false,
++                         autotune_ncrit=false, autotune_reg_error=false))
++elseif vpm_arraytype_name in ("array", "matrix")
++    (;)
++else
++    error("Unknown VPM_ARRAYTYPE=$(repr(vpm_arraytype_name)); use array or cuarray")
++end
++
+ wake_rotor = pnl.PanelParticleWake(rotor;
+     nwakerows, max_particles=500_000, core_size=wake_core_size,
++    wake_pfield_kwargs...,
+     particle_kerneloffset=kerneloffset_targets,
+     viscous=viscous_scheme,
+     SFS=sfs_choice,
 diff --git a/src/FLOWPanel.jl b/src/FLOWPanel.jl
-index d76e6b4..bd0575b 100644
+index d76e6b4..f29aa4d 100644
 --- a/src/FLOWPanel.jl
 +++ b/src/FLOWPanel.jl
 @@ -90,7 +90,7 @@ for header_name in ["elements", "fmm",
@@ -7,7 +49,7 @@ index d76e6b4..bd0575b 100644
                      "liftingline",
                      "utils", "postprocess",
 -                    "wake", "formulation", "kutta", "simulate_monitors", "simulate_monitors_fieldprobe", "metadata", "simulate", "warmstart",
-+                    "wake", "gpu_influence", "formulation", "kutta", "simulate_monitors", "simulate_monitors_fieldprobe", "metadata", "simulate", "warmstart",
++                    "wake", "gpu_influence", "gpu_wake", "formulation", "kutta", "simulate_monitors", "simulate_monitors_fieldprobe", "metadata", "simulate", "warmstart",
                      "replay",
                      ]
    include("FLOWPanel_"*header_name*".jl")
@@ -47,3 +89,220 @@ index 3512009..610ff56 100644
      # determine if extra_farfield is needed based
      extra_farfield = false
      for body in source_bodies
+diff --git a/src/FLOWPanel_formulation.jl b/src/FLOWPanel_formulation.jl
+index 923f7ac..7865b53 100644
+--- a/src/FLOWPanel_formulation.jl
++++ b/src/FLOWPanel_formulation.jl
+@@ -799,7 +799,9 @@ Formulation-dispatched replacement for the body solve inside
+ function solve_formulation!(::VelocityThroughSources, state, systems,
+         systems_tuple, wakes_tuple, body_solvers;
+         backend_solve, backend_wake, i_step::Int=0)
++    t0 = time()   # task 052: env-gated solve timer (FLOWPANEL_GPU_TIMERS)
+     solve!(systems, body_solvers; backend=backend_solve)
++    _gpu_timer_log("solve step=$(i_step)", time() - t0)
+     return nothing
+ end
+ 
+diff --git a/src/FLOWPanel_simulate_monitors.jl b/src/FLOWPanel_simulate_monitors.jl
+index dd0fcfd..b71dd28 100644
+--- a/src/FLOWPanel_simulate_monitors.jl
++++ b/src/FLOWPanel_simulate_monitors.jl
+@@ -3650,6 +3650,7 @@ over non-static particles only (statics are skipped by the sigma update); it is
+ contributes.
+ """
+ function _wake_health_stats(pfield, sigma_ref, dt)
++    pfield = _wake_monitor_host_pfield(pfield)   # task 052: host view of device fields
+     np = pfield.np
+     max_u2 = 0.0
+     min_sigma = Inf
+@@ -3794,6 +3795,7 @@ attribution tuple `(p1 sigma/sigma_ref, argmin x, argmin y, argmin z)` — see
+ the `WakeHealthMonitor` docstring. `buf` is a reusable scratch vector.
+ """
+ function _wake_health_attribution!(buf::Vector{Float64}, pfield, sigma_ref)
++    pfield = _wake_monitor_host_pfield(pfield)   # task 052: host view of device fields
+     np = pfield.np
+     np == 0 && return (NaN, NaN, NaN, NaN)
+     empty!(buf)
+@@ -3910,6 +3912,7 @@ an empty cell are `NaN`.
+ function _wake_inventory_stats!(vals::Vector{Float64},
+                                 bufs::Vector{Vector{Float64}}, pfield,
+                                 m::WakeInventoryMonitor)
++    pfield = _wake_monitor_host_pfield(pfield)   # task 052: host view of device fields
+     nbands = length(m.edges) - 1
+     ncells = nbands + 2
+     fill!(vals, 0.0)
+diff --git a/src/FLOWPanel_wake.jl b/src/FLOWPanel_wake.jl
+index 3a8d54e..ef09bc8 100644
+--- a/src/FLOWPanel_wake.jl
++++ b/src/FLOWPanel_wake.jl
+@@ -488,7 +488,8 @@ function rotate_to_panel(v1::FastMultipole.SVector{3,TF}, v2, v3) where {TF}
+     return R
+ end
+ 
+-function induced(target::AbstractVector{TF}, source_system::PanelWake{TK,NK,<:Any}, source_buffer::Matrix, i_source, derivatives_switch=FastMultipole.DerivativesSwitch(false,true,false)) where {TF,TK,NK}
++function induced(target::AbstractVector{TF}, source_system::PanelWake{TK,NK,<:Any}, source_buffer::Matrix, i_source, derivatives_switch=FastMultipole.DerivativesSwitch(false,true,false),
++        fam::Val=Val(FILAMENT_REGULARIZATION[])) where {TF,TK,NK}
+ 
+     # get vertices
+     v1 = FastMultipole.SVector{3}(view(source_buffer, 4+NK+1:4+NK+3, i_source))
+@@ -506,7 +507,7 @@ function induced(target::AbstractVector{TF}, source_system::PanelWake{TK,NK,<:An
+ 
+     # evaluate influence
+     kerneloffset = source_system.core_size
+-    potential, velocity, velocity_gradient = _induced(target, (v1, v2, v3), control_point, strength, TK, kerneloffset, R, derivatives_switch)
++    potential, velocity, velocity_gradient = _induced(target, (v1, v2, v3), control_point, strength, TK, kerneloffset, R, derivatives_switch, fam)
+ 
+     #--- second triangle ---#
+ 
+@@ -516,13 +517,19 @@ function induced(target::AbstractVector{TF}, source_system::PanelWake{TK,NK,<:An
+     control_point = (v1 + v3 + v4) * 0.3333333333333333
+ 
+     # evaluate influence
+-    potential2, velocity2, velocity_gradient2 = _induced(target, (v1, v3, v4), control_point, strength, TK, kerneloffset, R, derivatives_switch)
++    potential2, velocity2, velocity_gradient2 = _induced(target, (v1, v3, v4), control_point, strength, TK, kerneloffset, R, derivatives_switch, fam)
+ 
+     # return potential, velocity, velocity_gradient
+     return potential+potential2, velocity+velocity2, velocity_gradient+velocity_gradient2
+ end
+ 
+-function FastMultipole.direct!(target_system, target_index, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS,NO,NM}, source_system::PanelWake, source_buffer, source_index) where {PS,GS,HS,NO,NM}
++# function barrier: family in the type domain inside the loop (BRAINSTORM 025)
++function FastMultipole.direct!(target_system, target_index, derivatives_switch::FastMultipole.DerivativesSwitch, source_system::PanelWake, source_buffer, source_index)
++    _direct_panelwake!(target_system, target_index, derivatives_switch, source_system,
++        source_buffer, source_index, Val(FILAMENT_REGULARIZATION[]))
++end
++
++function _direct_panelwake!(target_system, target_index, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS,NO,NM}, source_system::PanelWake, source_buffer, source_index, fam::Val) where {PS,GS,HS,NO,NM}
+     TF = eltype(target_system)
+     for i_target in target_index # loop over targets
+         target = FastMultipole.StaticArrays.SVector{3,TF}(target_system[1, i_target],
+@@ -535,7 +542,7 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch::
+ 
+         for i_source in source_index # loop over sources
+             # evaluate influence due to this source
+-            phi, U, H = induced(target, source_system, source_buffer, i_source, derivatives_switch)
++            phi, U, H = induced(target, source_system, source_buffer, i_source, derivatives_switch, fam)
+             phi_out += phi
+             U_out += U
+             if HS
+@@ -1735,6 +1742,12 @@ function apply_particle_policies!(policies::Tuple, pfield, ctx::ParticleMaintena
+ end
+ 
+ function apply_particle_maintenance!(pfield, maintenance::ParticleMaintenance, ctx::ParticleMaintenanceContext)
++    # Task 052: device-backed particle fields run maintenance on a host
++    # mirror (trim policies and merge_particles! are host scalar-index code);
++    # see src/FLOWPanel_gpu_wake.jl.
++    if pfield isa FLOWVPM.ParticleField && !(pfield.particles isa Array)
++        return _apply_particle_maintenance_device!(pfield, maintenance, ctx)
++    end
+     apply_particle_policies!(maintenance.functional_policies, pfield, ctx)
+     prepared_trim_policies = prepare_particle_policies(maintenance.trim_policies, pfield, ctx)
+ 
+@@ -1892,6 +1905,11 @@ function PanelParticleWake(body::AbstractLiftingBody;
+         # Frozen-gradient geometric local integrator (BRAINSTORM 020 Phase 2R).
+         # Default false = stock forward Euler, bit-identical.
+         expint=false,
++        # Task 052: array container for the particle field (pass CUDA.CuArray
++        # for a device-resident wake) and an optional FMM settings override
++        # (a device field REQUIRES all-off autotune; see FLOWVPM_fmm_radix.jl).
++        arraytype=Matrix,
++        pfield_fmm=FLOWVPM.FMM(autotune_reg_error=false),
+         kwargs...)
+ 
+     # Resolve the legacy line policies against the selected strategy before any
+@@ -1949,10 +1967,11 @@ function PanelParticleWake(body::AbstractLiftingBody;
+     # no core spreading, no beta resets, silently inviscid.
+     pfield = FLOWVPM.ParticleField(max_particles, TF;
+         viscous,
+-        fmm=FLOWVPM.FMM(autotune_reg_error=false),
++        fmm=pfield_fmm,
+         SFS,
+         integration=(Bool(expint) ? FLOWVPM.euler_exp : FLOWVPM.euler),
+-        relaxation)
++        relaxation,
++        arraytype)
+ 
+     # Capture the resolved FLOWVPM construction options for reproduction metadata.
+     # Read back from the live particle field so the recorded values are authoritative
+@@ -2086,7 +2105,12 @@ function apply_freestream!(w::PanelParticleWake, uinf)
+     # apply to panel wake
+     apply_freestream!(w.panel_wake, uinf)
+ 
+-    # Add freestream to particle velocities
++    # Add freestream to particle velocities (broadcast on device-backed
++    # fields, task 052; the scalar loop is kept for the host path)
++    if !(w.pfield.particles isa Array)
++        _gpu_apply_freestream_device!(w.pfield, uinf)
++        return nothing
++    end
+     for i in 1:w.pfield.np
+         for d in 1:3
+             w.pfield.particles[FLOWVPM.U_INDEX[d], i] += uinf[d]
+@@ -2179,22 +2203,25 @@ function write_vtk(name, w::PanelParticleWake, idx, t; overwrite=false, compress
+     particles_block = joinpath(particles_subdir, vpm_name * "_particles")
+ 
+     np = w.pfield.np
+-    X = view(w.pfield.particles, FLOWVPM.X_INDEX, 1:np)
++    # Task 052: WriteVTK needs host arrays; on a device-backed field this is
++    # the refreshed host mirror (D2H of the live prefix), else a no-op alias.
++    host_particles = _wake_monitor_host_pfield(w.pfield).particles
++    X = view(host_particles, FLOWVPM.X_INDEX, 1:np)
+     cells = [WriteVTK.MeshCell(WriteVTK.PolyData.Verts(), 1:np)]
+ 
+     vtp_filename = particles_block * ".$idx.vtp"
+     vtp = WriteVTK.vtk_grid(vtp_filename, X, cells; compress)
+ 
+     if np > 0
+-        vtp["gamma", WriteVTK.VTKPointData()] = view(w.pfield.particles, FLOWVPM.GAMMA_INDEX, 1:np)
+-        vtp["sigma", WriteVTK.VTKPointData()] = view(w.pfield.particles, FLOWVPM.SIGMA_INDEX, 1:np)
+-        vtp["vol", WriteVTK.VTKPointData()] = view(w.pfield.particles, FLOWVPM.VOL_INDEX, 1:np)
+-        vtp["circulation", WriteVTK.VTKPointData()] = view(w.pfield.particles, FLOWVPM.CIRCULATION_INDEX, 1:np)
+-        vtp["velocity", WriteVTK.VTKPointData()] = view(w.pfield.particles, FLOWVPM.U_INDEX, 1:np)
+-        vtp["vorticity", WriteVTK.VTKPointData()] = view(w.pfield.particles, FLOWVPM.VORTICITY_INDEX, 1:np)
+-        vtp["C", WriteVTK.VTKPointData()] = view(w.pfield.particles, FLOWVPM.C_INDEX, 1:np)
+-        vtp["SFS", WriteVTK.VTKPointData()] = view(w.pfield.particles, FLOWVPM.SFS_INDEX, 1:np)
+-        vtp["velocity_gradient", WriteVTK.VTKPointData()] = reshape(view(w.pfield.particles, FLOWVPM.J_INDEX, 1:np), 3, 3, np)
++        vtp["gamma", WriteVTK.VTKPointData()] = view(host_particles, FLOWVPM.GAMMA_INDEX, 1:np)
++        vtp["sigma", WriteVTK.VTKPointData()] = view(host_particles, FLOWVPM.SIGMA_INDEX, 1:np)
++        vtp["vol", WriteVTK.VTKPointData()] = view(host_particles, FLOWVPM.VOL_INDEX, 1:np)
++        vtp["circulation", WriteVTK.VTKPointData()] = view(host_particles, FLOWVPM.CIRCULATION_INDEX, 1:np)
++        vtp["velocity", WriteVTK.VTKPointData()] = view(host_particles, FLOWVPM.U_INDEX, 1:np)
++        vtp["vorticity", WriteVTK.VTKPointData()] = view(host_particles, FLOWVPM.VORTICITY_INDEX, 1:np)
++        vtp["C", WriteVTK.VTKPointData()] = view(host_particles, FLOWVPM.C_INDEX, 1:np)
++        vtp["SFS", WriteVTK.VTKPointData()] = view(host_particles, FLOWVPM.SFS_INDEX, 1:np)
++        vtp["velocity_gradient", WriteVTK.VTKPointData()] = reshape(view(host_particles, FLOWVPM.J_INDEX, 1:np), 3, 3, np)
+     end
+ 
+     WriteVTK.vtk_save(vtp)
+@@ -2838,7 +2865,13 @@ function FastMultipole.body_to_multipole!(filaments::FilamentWrapper{<:PanelWake
+     end
+ end
+ 
+-function FastMultipole.direct!(target_system, target_index, switch::FastMultipole.DerivativesSwitch{PS,VS,GS,NO,NM}, source_system::FilamentWrapper, source_buffer, source_index) where {PS,VS,GS,NO,NM}
++# function barrier: family in the type domain inside the loop (BRAINSTORM 025)
++function FastMultipole.direct!(target_system, target_index, switch::FastMultipole.DerivativesSwitch, source_system::FilamentWrapper, source_buffer, source_index)
++    _direct_filaments!(target_system, target_index, switch, source_system,
++        source_buffer, source_index, Val(FILAMENT_REGULARIZATION[]))
++end
++
++function _direct_filaments!(target_system, target_index, switch::FastMultipole.DerivativesSwitch{PS,VS,GS,NO,NM}, source_system::FilamentWrapper, source_buffer, source_index, fam::Val) where {PS,VS,GS,NO,NM}
+     TF = FastMultipole.numtype(source_system)
+     @inbounds for j_target in target_index
+         target = FastMultipole.get_position(target_system, j_target)
+@@ -2851,13 +2884,13 @@ function FastMultipole.direct!(target_system, target_index, switch::FastMultipol
+             gamma = FastMultipole.get_strength(source_buffer, source_system, i_source)[1]
+             cs = source_buffer[12, i_source]
+             if VS
+-                v += _bound_vortex_velocity(target-v1, target-v2, true, cs) * gamma
++                v += _bound_vortex_velocity(target-v1, target-v2, true, cs, fam) * gamma
+             end
+             if GS
+-                g += _bound_vortex_gradient(v1-target, v2-target, true, cs) * gamma
++                g += _bound_vortex_gradient(v1-target, v2-target, true, cs, fam) * gamma
+             end
+             if NO == 3
+-                gf = _bound_vortex_gradient(v1-target, v2-target, true, cs) * gamma
++                gf = _bound_vortex_gradient(v1-target, v2-target, true, cs, fam) * gamma
+                 w += SVector{3,TF}(gf[3, 2] - gf[2, 3],
+                                    gf[1, 3] - gf[3, 1],
+                                    gf[2, 1] - gf[1, 2])
