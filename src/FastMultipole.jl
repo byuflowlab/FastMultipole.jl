@@ -98,6 +98,7 @@ include("tree.jl")
 include("tree_batched.jl")
 include("interaction_list_batched.jl")
 include("translate_batched_resident.jl")
+include("radix_settings.jl")
 
 export Branch, SingleBranch, MultiBranch, Tree, SingleTree, MultiTree, initialize_expansion, initialize_harmonics
 export RadixGrid, DeviceRadixGrid, RadixSortBackend, HostRadixSort, DeviceRadixSort, AutoRadixSort, radix_grid
@@ -127,6 +128,8 @@ export copy_cuda_radix_output!, finalize_cuda_radix_output!, take_cuda_radix_out
 export host_radix_state, run_host_radix_lifecycle!, host_resident_radix_grid
 export finalize_radix_output!
 export RadixFMMCache, update_radix_state!
+export radix_settings, radix_setting, set_radix_setting!, radix_setting_lock,
+    snapshot_locked_radix_settings, verify_locked_radix_settings
 export AdaptiveTreePolicy, AdaptiveRadixTree, AdaptiveInteractionLists,
     update_adaptive_tree!, build_adaptive_interaction_lists!,
     adaptive_is_leaf, adaptive_node_range

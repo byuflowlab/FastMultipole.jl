@@ -6331,6 +6331,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         UInt64[], Int[], Int[], Int[], nothing, nothing, ctx,
         length(sources), false, 0,
         adaptive_policy, adaptive_actx, nothing, adaptive_state,
+        snapshot_locked_radix_settings(),
     )
     update_cuda_radix_state!(cache, sources)
     return cache
@@ -6739,6 +6740,9 @@ update_cuda_radix_state!(cache::RadixFMMCache, systems) =
     update_cuda_radix_state!(cache, to_tuple(systems))
 
 function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple)
+    # task 047: construction-locked settings must not have drifted — a late
+    # flip is baked-in-silently otherwise (buffers/captured graph).
+    verify_locked_radix_settings(cache.locked_settings)
     update_cuda_radix_state!(cache, targets)
     if cache.adaptive === nothing
         run_cuda_radix_lifecycle!(cache.state)

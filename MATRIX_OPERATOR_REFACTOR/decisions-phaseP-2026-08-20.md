@@ -56,3 +56,31 @@ left unticked for the user's return, per the convention that approval is
 granted only by the user.
 
 (Later decisions appended below as they are made.)
+
+## D4 (2026-08-20) — 047 scope: dispatch-cleanup refactors deferred to the 053 punch list
+
+047 delivered: the consolidated validated settings surface
+(`src/radix_settings.jl`: registry of all 31 tunables with lock classes from
+the read-site audit, `radix_settings`/`radix_setting`/`set_radix_setting!`/
+`radix_setting_lock`), the construction-lock contract (snapshot on
+`RadixFMMCache.locked_settings` at both ctors; `verify_locked_radix_settings`
+at `_radix_cache_device_step!` entry throws loudly on drift — closing the
+documented silent-flip hazard), the regression test
+(`test/radix_settings_test.jl`, 93 assertions, registered in runtests), and
+the FLOWVPM passthrough (`radix_fmm_settings!(pfield; gpu=(;...))` applies
+validated settings before the cache rebuild).
+
+DEFERRED (my call): the Future Dispatch Cleanup Notes refactors
+(`allow_host_bodies` → source-buffer dispatch, legacy `nearfield_device::Bool`
+policy tag, `target::Bool` tree-role arg, route-selection flags →
+dispatch-on-object). Rationale: they are behavior-neutral refactors of
+device-path APIs, and with no local GPU every verification is a cluster
+round-trip; spending those round-trips on 048 (the 75%-of-018-step SFS lever)
+first serves the phase objective better. They are punch-listed for the 053
+review, which can reopen 047 if the user disagrees. The lock-class read-site
+audit table (the main input those refactors need) is preserved in this log's
+supporting doc and in radix_settings.jl comments.
+
+Also folded into 048's cluster job: the 047 device-side robustness sweep
+(F32/F64 × adaptive/uniform × P=4/P=8) and the device wiring check of the
+late-flip error.

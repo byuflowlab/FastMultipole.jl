@@ -2563,6 +2563,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         zeros(Int, 256), zeros(Int, 256), source_buffers, nothing, nothing,
         length(sources), false, 0,
         adaptive, adaptive_tree, adaptive_lists, adaptive_state,
+        snapshot_locked_radix_settings(),
     )
     update_radix_state!(cache, sources)
     cache.built = true

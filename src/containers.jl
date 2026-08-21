@@ -2360,6 +2360,10 @@ mutable struct RadixFMMCache{TF,LH}
     adaptive_tree::Any              # AdaptiveRadixTree{TF} or nothing
     adaptive_lists::Any             # AdaptiveInteractionLists or nothing
     adaptive_state::Any             # AdaptiveResidentLifecycle or nothing (task 040)
+    # task 047: construction snapshot of the construction-locked radix
+    # settings (Vector{Pair{Symbol,Any}}); verified at device-step entry so a
+    # post-construction flip errors loudly instead of being silently ignored.
+    locked_settings::Any
 end
 
 """
