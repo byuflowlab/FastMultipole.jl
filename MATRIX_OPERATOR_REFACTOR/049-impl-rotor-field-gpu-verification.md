@@ -160,3 +160,46 @@ loader-required point-data arrays (gamma, sigma, vol, circulation, velocity,
 vorticity, C, SFS, velocity_gradient) plus Points/connectivity/offsets;
 `NumberOfPoints="210056"` confirmed (matches the recorded n). XML PolyData,
 zlib-compressed appended data, header_type UInt64 — as recorded at staging.
+
+## Results (2026-08-21, H200 job 13247848)
+
+Snapshot: p018 step 710, np=210,056, sha256 0d9136...155ab. Artifacts:
+`data/rotor_field_gpu_verification/{fm049_report.txt,fm049_results.csv}`.
+
+**Accuracy.** Device UJ_fmm U rel RMS = 3.38e-4 sampled / 3.98e-4 full field
+vs a full-field GPU-direct O(N²) reference — **PASS at the 1e-3 gate**. J
+1.64e-2 (diagnostic). Device-resident nextstep U_prev row exact to 1.8e-15
+(the new broadcast fork). Two flags:
+1. The CPU-sampled vs GPU-direct cross-check disagreed at u=2.6e-4 (expected
+   ~1e-10 F64) — the two direct references differ somewhere (kernel-offset /
+   buffer-overload semantics suspected). ARM1 passes vs either (≤~6e-4
+   worst-case composition), but the discrepancy is flagged for follow-up.
+2. SFS rel RMS vs the exact-J reference = 0.666. Consistent with the D5/D7
+   J-error-bound mechanism at this field's J error (1.6e-2) with a
+   large real-wake amplification factor (E/J was already 14 on the synthetic
+   wake; E_str is cancellation-dominated). The 048 mechanical proof (SFS
+   exact from delivered J, 1e-15) stands. Production-relevant comparison is
+   CPU-FMM-SFS vs GPU-radix-SFS (both J-approximate) under the 052 CT/Γ(r/R)
+   gate — flagged as a 052 watch item, with J accuracy (gh mode/P/MAC) the
+   knob if it binds.
+
+**Per-pass budget (median wall).**
+| pass | time |
+| --- | --- |
+| cache build + first UJ (one-time, mostly JIT) | 56.6 s |
+| device UJ (no SFS) | 65.8 ms |
+| device UJ+SFS | 66.1 ms (**marginal SFS cost 0.3 ms ≈ 0.5%**) |
+| full RK3 nextstep (device-resident) | 198.7 ms (UJ 197.3 + rest 1.4) |
+| H2D 46×210056 | 5.1 ms; D2H U/J/SFS 18.2 ms |
+| host(CPU)-radix UJ datum | 72.8 s |
+
+**Budget verdict: the particle side costs 0.20 s/step = 6.0% of the 3.3
+s/step target** (vs 041a anchors 7.4 ms @1e5 / 92.3 ms @1e6; n=2.1e5 sits
+between). The binding constraint for 052 is therefore the panel side (the
+~36 s CPU body-pass floor), exactly what 050 must resolve.
+
+**Residency.** Per-step transfer cost (3× RK3 substeps) = 69.7 ms = 35.1% of
+the device step — exceeds the 15% rule ⇒ **recommendation: device-resident**
+(the U_prev fix makes it work; host callbacks stay host). USER CHECKPOINT
+still open: which mode ships as default (recommendation recorded, no default
+flipped).

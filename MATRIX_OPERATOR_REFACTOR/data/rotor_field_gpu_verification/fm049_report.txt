@@ -1,0 +1,28 @@
+fm049 rotor field GPU verification — p018 step 710, np=210056
+snapshot sha256: 0d913634de780b026649445a7a71e3e76c64ef5716c513636dc1998afd7155ab
+
+ACCURACY (reference: full-field GPU direct, CPU cross-check u=2.59e-04 j=1.50e-02)
+  ARM1 U rel RMS (2000 sampled) : 3.384e-04  gate 1e-03 -> PASS
+  ARM1 U rel RMS (full field)   : 3.982e-04
+  ARM1 J rel RMS (full, diag)   : 1.645e-02
+  ARM2 SFS rel RMS (full, diag) : 6.663e-01  (J-error-bound, 048)
+  ARM3 U_prev row check         : max err 1.78e-15 -> OK
+
+PER-PASS BUDGET (median wall, s)
+  cache build + first UJ        : 56.5963
+  device UJ (no SFS)            : 0.0658
+  device UJ (SFS)               : 0.0661  (marginal 0.0003)
+  full RK3 nextstep             : 0.1987  (UJ 0.1973 + rest 0.0014)
+  H2D 46 x 210056 matrix            : 0.0051
+  D2H U/J/SFS rows              : 0.0182
+  host(CPU)-radix UJ datum      : 72.7517
+
+BUDGET vs TARGET
+  step budget target            : 3.30 s/step (CPU baseline 170-230 s/step (018 CPU baseline, 64 cores))
+  measured device step          : 0.1987 s/step -> 6.0% of budget
+  anchors: 041a unitcube GPU best-uniform UJ: 7.40 ms @1e5, 92.3 ms @1e6
+  (this field: n = 2.10e+05, between the two anchors)
+
+RESIDENCY (15%-of-step-time rule)
+  per-step transfer cost (3x RK3): 0.0697 s = 35.1% of device step
+  recommendation: DEVICE-RESIDENT (transfers exceed 15% of step time)
