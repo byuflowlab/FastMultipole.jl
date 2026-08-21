@@ -258,3 +258,85 @@ end
     @test_throws ArgumentError transform_tree!(plan.source_tree, reflection, t)
 
 end
+@testset "transform_tree!: cells exactly follow the bodies" begin
+
+    # Direct geometric invariant (sharper than output equivariance): after
+    # each rigid motion mirrored by transform_plan!, every body's offset from
+    # its leaf center must be exactly the rotated pre-motion offset (no
+    # drift), and radius containment (incl. body radius) must survive. Two
+    # accumulated motions guard composition.
+    #
+    # NOTE box semantics under recenter=false (the production default):
+    # shrink computes the tight AABB about its own MIDPOINT but keeps the
+    # original expansion `center`, so `box` is NOT a strict componentwise
+    # enclosure about `center` even at BUILD time (measured here: 276/1500
+    # target bodies outside, worst excess ~0.027). The |R|*box transform
+    # preserves that same approximate character; since |R d| <= |R|(b + e)
+    # componentwise, excess can grow by at most sqrt(3) per motion — the
+    # assertion below is therefore "box slack does not degrade beyond that",
+    # not strict enclosure.
+    n_bodies = 1500
+    sys = generate_gravitational(77, n_bodies)
+    plan = FastMultipole.FmmPlan((sys,), (sys,); expansion_order=5,
+        multipole_acceptance=0.4, leaf_size_source=30,
+        scalar_potential=true, gradient=false, hessian=false)
+    src = plan.source_tree
+    tgt = plan.target_tree
+    @test length(src.leaf_index) > 1          # premise: nontrivial tree
+
+    # pre-motion per-leaf relative offsets (sorted buffer order)
+    buf = src.buffers[1]
+    offsets = Dict(i_branch =>
+            [SVector{3}(buf[1:3, j]) - src.branches[i_branch].center
+             for j in src.branches[i_branch].bodies_index[1]]
+        for i_branch in src.leaf_index)
+
+    box_excess(tree) = maximum(
+        maximum(abs.(SVector{3}(tree.buffers[1][1:3, j]) - br.center) - br.box)
+        for i_branch in tree.leaf_index
+        for br in (tree.branches[i_branch],)
+        for j in br.bodies_index[1])
+    excess0 = box_excess(tgt)
+
+    motions = ((_rodrigues(SVector(0.3, -1.0, 0.7), 37.0 * pi / 180),
+                SVector(0.3, -0.2, 0.5)),
+               (_rodrigues(SVector(-0.6, 0.2, 1.0), 71.0 * pi / 180),
+                SVector(-0.5, 0.4, 0.15)))
+    max_drift = 0.0
+    excess_prev = excess0
+    for (Rk, tk) in motions
+        for i in 1:n_bodies
+            b = sys.bodies[i]
+            sys.bodies[i] = typeof(b)(Rk * b.position + tk, b.radius, b.strength)
+        end
+        FastMultipole.transform_plan!(plan, (sys,), Rk, tk)
+        # what every planned fmm! call does before the passes
+        FastMultipole.system_to_buffer!(src.buffers, (sys,), src.sort_index_list)
+
+        ok_radius = true
+        for i_branch in src.leaf_index
+            br = src.branches[i_branch]
+            offs = offsets[i_branch]
+            for (k, j) in enumerate(br.bodies_index[1])
+                offs[k] = Rk * offs[k]                     # expected offset
+                d = SVector{3}(buf[1:3, j]) - br.center
+                max_drift = max(max_drift, norm(d - offs[k]))
+                ok_radius &= norm(d) + buf[4, j] <= br.radius + 1e-12
+            end
+        end
+        tbuf = tgt.buffers[1]
+        for i_branch in tgt.leaf_index
+            br = tgt.branches[i_branch]
+            for j in br.bodies_index[1]
+                ok_radius &= norm(SVector{3}(tbuf[1:3, j]) - br.center) <=
+                             br.radius + 1e-12
+            end
+        end
+        @test max_drift < 1e-12                # cells follow bodies EXACTLY
+        @test ok_radius                        # radius containment survives
+        excess_now = box_excess(tgt)
+        @test excess_now <= sqrt(3) * max(excess_prev, 0.0) + 1e-12
+        excess_prev = excess_now
+    end
+
+end
