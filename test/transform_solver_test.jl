@@ -110,3 +110,14 @@ fixed iteration count instead.
     @test all(isfinite(b.strength) for b in sys3.bodies)
 
 end
+
+@testset "transform_solver!: body-count mismatch" begin
+    sys = generate_gravitational(71, 96)
+    solver = FastMultipole.FastGaussSeidel((sys,);
+        expansion_order=5, multipole_acceptance=0.4, leaf_size=12,
+        cache_leaf_lu=false)
+    smaller = generate_gravitational(72, 95)
+
+    @test_throws ArgumentError FastMultipole.transform_solver!(solver,
+        (smaller,), Matrix{Float64}(I, 3, 3), SVector(0.0, 0.0, 0.0))
+end

@@ -760,8 +760,17 @@ scalar-potential rows depend only on relative geometry, which rigid motion
 preserves exactly. Their GRADIENT rows are direction-carrying and do NOT
 rotate with the body, so once a solver has been transformed, `solve!` with
 `gradient=true` refuses loudly (scalar-potential solves remain exact).
+
+Reusable dense blocks also require every kernel-consumed auxiliary geometry,
+active kernel offset, and source-buffer radius to remain invariant under the
+same rigid motion. Rebuild the solver after any non-rigid change to those
+quantities.
 """
 function transform_solver!(solver::FastGaussSeidel, target_systems::Tuple, R, t)
+    get_n_bodies(target_systems) == length(solver.strengths) ||
+        throw(ArgumentError("transform_solver!: target body count " *
+            "$(get_n_bodies(target_systems)) does not match the solver's " *
+            "$(length(solver.strengths)) — rigid motion cannot change body counts"))
     transform_tree!(solver.source_tree, R, t)
     solver.target_tree === solver.source_tree ||
         transform_tree!(solver.target_tree, R, t)
