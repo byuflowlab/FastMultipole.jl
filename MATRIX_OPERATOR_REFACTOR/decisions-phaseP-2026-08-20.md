@@ -84,3 +84,37 @@ supporting doc and in radix_settings.jl comments.
 Also folded into 048's cluster job: the 047 device-side robustness sweep
 (F32/F64 × adaptive/uniform × P=4/P=8) and the device wiring check of the
 late-flip error.
+
+## D5 (2026-08-21) — 048 physics-parity gate is J-error-bound, not a flat 1e-3
+
+The host SFS pass is mechanically exact: an all-pairs zeta brute force
+computed FROM the radix-delivered J agrees with the radix SFS output to
+2.6e-9 (F64). But a flat 1e-3 gate vs the exact-erf CPU references
+(Estr_direct!/Estr_fmm!) is unattainable at ANY radix setting on the test
+cube (measured e≈3.7e-3, P- and shell-independent): the radix J itself
+carries the 031a erf-free g/h nearfield approximation (j_rel_rms≈1.9e-3 on
+that case — pre-existing, not a 048 defect). Test structure adopted:
+(a) tight 1e-6 mechanical-parity gate at a widened shell; (b) physics gate
+max(1e-3, 3·j_rel_rms) vs both CPU references — self-tightening if g/h
+arithmetic improves, still fails loudly on any non-J-bound regression. The
+default-list zeta-truncation gap (≈3.0e-3 at derived q=12) is recorded in a
+test comment; widening near_radius2 is the accuracy knob if production SFS
+accuracy ever binds. Device testsets use the same J-aware gate.
+
+## D6 (2026-08-21) — 048 implementation decisions of note
+
+- DeviceResidentRadixState carries one Any-typed `sfs` NamedTuple
+  (tg/om/q + transposed) instead of three typed fields (avoids renumbering
+  the 38-arg positional ctor at 4 call sites; typed function barriers keep
+  kernels specialized).
+- The device SFS kernels always run once a cache is sfs-armed (graph-baked
+  at construction; FLOWVPM arms vortex couplings unconditionally); the
+  per-call `sfs` flag gates only the finalize/delivery. Cost when unused =
+  one tg pass + one pair pass; acceptable for v1, flagged for 054 retune.
+- transposed is construction-baked (sfs_transposed=pfield.transposed);
+  flipping pfield.transposed mid-run requires clear_radix_fmm_cache!.
+- Device zero-alloc assertion is a delta (alloc_sfs <= alloc_base) matching
+  the suite's existing treatment of pool-served sort scratch.
+- CUDA kernels written blind (no local GPU) as close clones of validated
+  kernel patterns; H200 job vpm048 validates (parity, counters, alloc,
+  graph replay) + the 047 late-flip device check rides along.
