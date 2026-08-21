@@ -5597,6 +5597,11 @@ function _cuda_lifecycle_body!(state::DeviceResidentRadixState)
     _launch_cuda_b2m!(state)
     _assert_cuda_resident_stage!(state, :b2m)
     _launch_cuda_resident_operator_pipeline!(state; nearfield_done)
+    # task 048: SFS pass on the default stream — U/J is complete here (L2B was
+    # launched after waiting on the nearfield-done event). No-op unless the
+    # cache was built with sfs=true. Launch bookkeeping only (no sync, no
+    # allocation, no D2H), so graph capture records it with the body.
+    _launch_cuda_sfs!(state)
     return state
 end
 
@@ -5748,6 +5753,229 @@ end
 function take_cuda_radix_output!(state::DeviceResidentRadixState)
     dest = Array{eltype(state.output)}(undef, size(state.output))
     return copy_cuda_radix_output!(dest, state)
+end
+
+#------- SFS (subfilter-scale vortex stretching) device pass (task 048) -------#
+#
+# CUDA mirror of the host SFS pass in translate_batched_resident.jl (see the
+# math/comment block there): (a) thread-per-body TG precompute T = op(J)Γ +
+# accumulator zeroing, (b) warp-per-pair ζ sweep over the FULL direct pair
+# list (clone of `_cuda_direct_pairs_functor_kernel!`'s loop skeleton; self
+# pair i == j skipped, matching the host mirror), both launched inside the
+# lifecycle body (graph-captured: persistent buffers only, no allocation, no
+# sync, no D2H); (c) E-formation + scatter OUTSIDE the graph in
+# `finalize_cuda_radix_sfs_output!`, mirroring `finalize_cuda_radix_output!`.
+# The transposed-scheme flag is baked at construction (Val at launch).
+
+function _cuda_sfs_tg_kernel!(tg, om, q, output, source_bodies,
+        ::Val{TRANSPOSED}, n_bodies) where TRANSPOSED
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > n_bodies && return nothing
+    T = eltype(tg)
+    @inbounds begin
+        g1 = source_bodies[5, i]
+        g2 = source_bodies[6, i]
+        g3 = source_bodies[7, i]
+        if TRANSPOSED
+            tg[1, i] = output[5, i] * g1 + output[6, i] * g2 + output[7, i] * g3
+            tg[2, i] = output[8, i] * g1 + output[9, i] * g2 + output[10, i] * g3
+            tg[3, i] = output[11, i] * g1 + output[12, i] * g2 + output[13, i] * g3
+        else
+            tg[1, i] = output[5, i] * g1 + output[8, i] * g2 + output[11, i] * g3
+            tg[2, i] = output[6, i] * g1 + output[9, i] * g2 + output[12, i] * g3
+            tg[3, i] = output[7, i] * g1 + output[10, i] * g2 + output[13, i] * g3
+        end
+        om[1, i] = zero(T); om[2, i] = zero(T); om[3, i] = zero(T)
+        q[1, i] = zero(T); q[2, i] = zero(T); q[3, i] = zero(T)
+    end
+    return nothing
+end
+
+function _cuda_sfs_zeta_pairs_kernel!(om, q, tg, source_bodies, cell_ranges,
+        direct_targets, direct_sources, npairs, rc2, K1)
+    T = eltype(om)
+    half = T(0.5)
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    pair_i = (blockIdx().x - 1) * warps_per_block + warp_in_block + 1
+    warp_stride = gridDim().x * warps_per_block
+    @inbounds while pair_i <= npairs
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + lane
+        while i <= tlast
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            o1 = zero(T); o2 = zero(T); o3 = zero(T)
+            q1 = zero(T); q2 = zero(T); q3 = zero(T)
+            for j in sfirst:slast
+                i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                sigma = source_bodies[8, j]
+                rho2 = r2 / (sigma * sigma)
+                if rho2 <= rc2
+                    z = K1 * exp(-half * rho2) / (sigma * sigma * sigma)
+                    o1 += z * source_bodies[5, j]
+                    o2 += z * source_bodies[6, j]
+                    o3 += z * source_bodies[7, j]
+                    q1 += z * tg[1, j]
+                    q2 += z * tg[2, j]
+                    q3 += z * tg[3, j]
+                end
+            end
+            CUDA.@atomic om[1, i] += o1
+            CUDA.@atomic om[2, i] += o2
+            CUDA.@atomic om[3, i] += o3
+            CUDA.@atomic q[1, i] += q1
+            CUDA.@atomic q[2, i] += q2
+            CUDA.@atomic q[3, i] += q3
+            i += 32
+        end
+        pair_i += warp_stride
+    end
+    return nothing
+end
+
+# in-graph launcher: no-op unless the cache was armed with sfs=true
+function _launch_cuda_sfs!(state::DeviceResidentRadixState{TF}) where TF
+    sfs = state.sfs
+    sfs === nothing && return state
+    size(state.output, 1) >= 13 || throw(AssertionError(
+        "the SFS pass requires the 13-row (hessian) output"))
+    _launch_cuda_sfs_typed!(state, sfs.tg, sfs.om, sfs.q,
+        sfs.transposed ? Val(true) : Val(false))
+    return state
+end
+
+# function barrier over the Any-typed sfs NamedTuple
+function _launch_cuda_sfs_typed!(state::DeviceResidentRadixState{TF},
+        tg::CUDA.CuMatrix{TF}, om::CUDA.CuMatrix{TF}, q::CUDA.CuMatrix{TF},
+        tv::Val) where TF
+    threads = 128
+    n = state.counts.n_bodies
+    tg_blocks = cld(n, threads)
+    tg_blocks > 0 || return state
+    CUDA.@cuda threads=threads blocks=tg_blocks _cuda_sfs_tg_kernel!(
+        tg, om, q, state.output, state.source_bodies, tv, n)
+    npairs = state.counts.n_direct
+    # warp-per-pair, grid-stride (the `_cuda_direct_pairs_functor_kernel!`
+    # launch shape)
+    pair_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+    if pair_blocks > 0
+        CUDA.@cuda threads=threads blocks=pair_blocks _cuda_sfs_zeta_pairs_kernel!(
+            om, q, tg, state.source_bodies, state.cell_ranges,
+            state.direct_targets, state.direct_sources, npairs,
+            _sfs_saturation_rc2(TF), TF(_SFS_ZETA_K1))
+    end
+    return state
+end
+
+# E-formation into `tg` (dead after the pair sweep), sorted body order
+function _cuda_sfs_form_e_kernel!(tg, om, q, output, ::Val{TRANSPOSED},
+        n_bodies) where TRANSPOSED
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > n_bodies && return nothing
+    @inbounds begin
+        o1 = om[1, i]; o2 = om[2, i]; o3 = om[3, i]
+        if TRANSPOSED
+            e1 = output[5, i] * o1 + output[6, i] * o2 + output[7, i] * o3
+            e2 = output[8, i] * o1 + output[9, i] * o2 + output[10, i] * o3
+            e3 = output[11, i] * o1 + output[12, i] * o2 + output[13, i] * o3
+        else
+            e1 = output[5, i] * o1 + output[8, i] * o2 + output[11, i] * o3
+            e2 = output[6, i] * o1 + output[9, i] * o2 + output[12, i] * o3
+            e3 = output[7, i] * o1 + output[10, i] * o2 + output[13, i] * o3
+        end
+        tg[1, i] = e1 - q[1, i]
+        tg[2, i] = e2 - q[2, i]
+        tg[3, i] = e3 - q[3, i]
+    end
+    return nothing
+end
+
+# sorted -> global permute of the 3-row E slab into a per-system device buffer
+# (clone of `_cuda_scatter_output_to_target_buffer_kernel!`)
+function _cuda_sfs_scatter_kernel!(target_buffer, e, perm, body_system,
+        body_index, isys, n_bodies)
+    sorted_i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    sorted_i > n_bodies && return nothing
+    global_i = perm[sorted_i]
+    body_system[global_i] == isys || return nothing
+    ibody = body_index[global_i]
+    @inbounds begin
+        target_buffer[1, ibody] = e[1, sorted_i]
+        target_buffer[2, ibody] = e[2, sorted_i]
+        target_buffer[3, ibody] = e[3, sorted_i]
+    end
+    return nothing
+end
+
+"""
+    finalize_cuda_radix_sfs_output!(state, target_systems;
+        host_sfs_staging=nothing, sfs_target_buffers=nothing,
+        device_sfs_buffers=nothing)
+
+Form E = op(J)Ω − Q from the device SFS accumulators, de-permute
+sorted -> global, and deliver a per-system `3 x n_bodies` global-order buffer
+(device buffer for `DeviceResident` targets, host buffer otherwise) through
+[`sfs_to_target!`](@ref). Called OUTSIDE the captured lifecycle graph, next to
+[`finalize_cuda_radix_output!`](@ref). Pass the preallocated stagings/caches
+(the recurring `_radix_cache_device_step!` path does) to keep steps
+allocation-free.
+"""
+function finalize_cuda_radix_sfs_output!(state::DeviceResidentRadixState{TF},
+        target_systems; host_sfs_staging=nothing, sfs_target_buffers=nothing,
+        device_sfs_buffers=nothing) where TF
+    _require_cuda_radix_available()
+    sfs = state.sfs
+    sfs === nothing && throw(ArgumentError(
+        "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
+    systems = to_tuple(target_systems)
+    n = state.counts.n_bodies
+    threads = 128
+    blocks = cld(n, threads)
+    blocks > 0 || return target_systems
+    tv = sfs.transposed ? Val(true) : Val(false)
+    CUDA.@cuda threads=threads blocks=blocks _cuda_sfs_form_e_kernel!(
+        sfs.tg, sfs.om, sfs.q, state.output, tv, n)
+    host_e = nothing
+    for (isys, target_system) in enumerate(systems)
+        nb = get_n_bodies(target_system)
+        if residency(target_system) isa DeviceResident
+            buf = _cuda_cached_target_buffer(device_sfs_buffers, isys, TF, 3, nb)
+            fill!(buf, zero(TF))
+            CUDA.@cuda threads=threads blocks=blocks _cuda_sfs_scatter_kernel!(
+                buf, sfs.tg, state.body_perm, state.body_system_ids,
+                state.body_indices, isys, n)
+            sfs_to_target!(target_system, buf, 1:nb)
+        else
+            if host_e === nothing
+                if host_sfs_staging === nothing
+                    host_e = Array(sfs.tg)
+                else
+                    copyto!(host_sfs_staging, 1, sfs.tg, 1, 3 * n)
+                    host_e = host_sfs_staging
+                end
+                state.counters.influence_downloads += 1
+            end
+            buf_full = sfs_target_buffers === nothing ?
+                Matrix{TF}(undef, 3, nb) : sfs_target_buffers[isys]
+            buf = size(buf_full, 2) == nb ? buf_full : view(buf_full, :, 1:nb)
+            _scatter_sfs_host!(buf, host_e, state.host_body_perm,
+                state.host_body_system_ids, state.host_body_indices, isys, n)
+            sfs_to_target!(target_system, buf, 1:nb)
+        end
+    end
+    return target_systems
 end
 
 #------- device-resident RadixFMMCache path (Matrix Operator Refactor, task 023) -------#
@@ -6087,6 +6315,9 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         hierarchical_level_class_of::Array{Int32,3}=Array{Int32}(undef, 0, 0, 0),
         hierarchical_level_radii2::Vector{Int}=Int[],
         max_level_nodes::Int=0, hessian::Bool=false,
+        # task 048: SFS device pass — persistent 3 x capacity accumulators plus
+        # the FLOWVPM transposed-scheme flag baked into the kernels/graph
+        sfs::Bool=false, sfs_transposed::Bool=true,
         # rectangular geometry contract (task 037 stage 2): per-axis leaf depths
         # and physical extents; cubic callers keep the virtual-cube defaults
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
@@ -6215,6 +6446,12 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
     # canonical all-rows packed layout + construction-chosen output rows (032)
     dpb = maximum(data_per_body(system) for system in sources)
     n_output_rows = hessian ? 13 : 4
+    # task 048: SFS device accumulators (persistent, default-stream only, so no
+    # cross-stream synchronization concerns; `nothing` disables the pass and
+    # its launches entirely)
+    sfs_device_ctx = sfs ?
+        (; tg=CUDA.zeros(TF, 3, maxn), om=CUDA.zeros(TF, 3, maxn),
+           q=CUDA.zeros(TF, 3, maxn), transposed=sfs_transposed) : nothing
     ctx = (;
         multipoles, locals, workspace, invariant, counters, grid,
         counts=RadixStepCounts(0, 0, 0, 0, 0),
@@ -6283,6 +6520,12 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         host_output=_pin_host_array(zeros(TF, n_output_rows, maxn)),
         # per-system device scatter buffers for the recurring finalize (028 rider)
         device_target_buffers=Dict{Int,Any}(),
+        # task 048: SFS pass context + finalize staging (separate scatter-buffer
+        # dict — SFS buffers are 3-row, UJ buffers 4/13-row, and the cache dict
+        # keys on isys only)
+        sfs_ctx=sfs_device_ctx,
+        host_sfs_staging=sfs ? _pin_host_array(zeros(TF, 3, maxn)) : nothing,
+        device_sfs_buffers=Dict{Int,Any}(),
     )
     # 029 cycle 1: the nearfield side stream's ordering against the main stream
     # is enforced by the cycle-3 begin/done events. CUDACore's per-array managed
@@ -6321,7 +6564,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         adaptive_actx, adaptive_state = _cuda_allocate_adaptive_lifecycle(TF,
             basis_info, options, adaptive_policy::AdaptiveTreePolicy, x_min, h0,
             maxn, dpb_adaptive > 0 ? dpb_adaptive : dpb, hessian,
-            ctx.invariant, counters, ctx)
+            ctx.invariant, counters, ctx; sfs, sfs_transposed)
     end
     cache = RadixFMMCache{TF,LH}(
         P, ell, x_min, h0, ell_axes, box_extent, root_level, maxn, true, hessian,
@@ -6332,6 +6575,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         length(sources), false, 0,
         adaptive_policy, adaptive_actx, nothing, adaptive_state,
         snapshot_locked_radix_settings(),
+        sfs, sfs_transposed, nothing,
     )
     update_cuda_radix_state!(cache, sources)
     return cache
@@ -6729,7 +6973,8 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
             ctx.multipoles, ctx.locals,
             ctx.route_levels, ctx.route_offsets, ctx.route_targets, ctx.route_sources,
             ctx.direct_targets, ctx.direct_sources, ctx.output,
-            ctx.invariant, ctx.workspace, counters, cache.options, counts,
+            ctx.invariant, ctx.workspace, counters, cache.options, counts;
+            sfs=ctx.sfs_ctx,
         )
     end
     cache.step += 1
@@ -6739,7 +6984,8 @@ end
 update_cuda_radix_state!(cache::RadixFMMCache, systems) =
     update_cuda_radix_state!(cache, to_tuple(systems))
 
-function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple)
+function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple;
+        sfs::Bool=false)
     # task 047: construction-locked settings must not have drifted — a late
     # flip is baked-in-silently otherwise (buffers/captured graph).
     verify_locked_radix_settings(cache.locked_settings)
@@ -6758,6 +7004,12 @@ function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switche
         host_output_staging=cache.device_ctx.host_output,
         target_buffers=_radix_cache_target_buffers!(cache, switches),
         device_target_buffers=cache.device_ctx.device_target_buffers)
+    # task 048: SFS delivery — the SFS kernels always run inside an sfs-armed
+    # cache's lifecycle body (graph-baked); the per-call flag gates delivery
+    sfs && finalize_cuda_radix_sfs_output!(state, targets;
+        host_sfs_staging=cache.device_ctx.host_sfs_staging,
+        sfs_target_buffers=_radix_cache_sfs_buffers!(cache, targets),
+        device_sfs_buffers=cache.device_ctx.device_sfs_buffers)
     return cache
 end
 
@@ -8472,6 +8724,9 @@ function _cuda_adaptive_lifecycle_body!(state::DeviceResidentRadixState,
     end
     _launch_cuda_adaptive_m2t!(state, actx)
     _assert_cuda_resident_stage!(state, :l2b)
+    # task 048: SFS pass after M2T so J carries every far-field contribution;
+    # same stream-ordering/capture contract as the uniform body
+    _launch_cuda_sfs!(state)
     return state
 end
 
@@ -8542,7 +8797,8 @@ function _cuda_allocate_adaptive_lifecycle(::Type{TF},
         basis_info::OperatorBasisInfo{B,LH}, options::CUDARadixLifecycleOptions,
         policy::AdaptiveTreePolicy, x_min::SVector{3,TF}, h0::TF, maxn::Int,
         dpb::Int, hessian::Bool, invariant::OperatorInvariantCache,
-        counters::CUDARadixTransferCounters, ctx) where {TF,B,LH}
+        counters::CUDARadixTransferCounters, ctx;
+        sfs::Bool=false, sfs_transposed::Bool=true) where {TF,B,LH}
     actx = _cuda_allocate_adaptive_context(TF, policy, maxn, x_min, h0, counters)
     # alias the ordinal-indexed body maps filled by the shared position collector
     grid = actx.grid::DeviceRadixGrid
@@ -8604,6 +8860,11 @@ function _cuda_allocate_adaptive_lifecycle(::Type{TF},
     direct_targets = CUDA.zeros(Int, actx.u_capacity)
     direct_sources = CUDA.zeros(Int, actx.u_capacity)
     edge_placeholder = CUDA.zeros(Int, 0)
+    # task 048: the adaptive lifecycle owns its own SFS accumulators (its body
+    # sort differs from the uniform grid's, so slabs are not shared)
+    sfs_device_ctx = sfs ?
+        (; tg=CUDA.zeros(TF, 3, maxn), om=CUDA.zeros(TF, 3, maxn),
+           q=CUDA.zeros(TF, 3, maxn), transposed=sfs_transposed) : nothing
     state = DeviceResidentRadixState{TF,CompressedComplexBasis,LH}(
         grid, actx, source_bodies, source_bodies,
         grid.perm, grid.body_system, grid.body_index,
@@ -8616,7 +8877,8 @@ function _cuda_allocate_adaptive_lifecycle(::Type{TF},
         route_levels, route_offsets, route_targets, route_sources,
         direct_targets, direct_sources, output,
         invariant, workspace, counters, options,
-        RadixStepCounts(0, 0, 0, 0, 0),
+        RadixStepCounts(0, 0, 0, 0, 0);
+        sfs=sfs_device_ctx,
     )
     # side-stream nearfield ordering is event-based; disable implicit per-array
     # cross-stream synchronization exactly as on the uniform path (illegal

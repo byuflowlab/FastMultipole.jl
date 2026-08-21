@@ -1132,3 +1132,132 @@ end
         @test cache.step == step0 + 1
     end
 end
+
+#------- SFS host pass (task 048) -------#
+#
+# Host mirror of the device SFS (subfilter-scale vortex stretching) pass:
+# TG = op(J)Γ precompute, ζ-pair sweep over the full direct list, and
+# E = op(J)Ω − Q formation/delivery through the sfs_to_target! trait.
+# Mechanical parity uses the SAME J the pass consumed (delivered rows 5:13),
+# so it isolates the SFS machinery from FMM truncation; the physics gate
+# compares against E built from the exact O(N²) regularized J.
+
+const _SFS048_CAPTURE = Dict{UInt,Matrix{Float64}}()
+function FastMultipole.sfs_to_target!(system::SmoothedVortex, buf,
+        sort_index=1:FastMultipole.get_n_bodies(system))
+    _SFS048_CAPTURE[objectid(system)] = Float64.(Array(buf))
+    return system
+end
+
+# op(J)v in the FLOWVPM J[(j-1)*3+i] storage order
+_sfs048_op(J, v, transposed) = transposed ?
+    (J[1] * v[1] + J[2] * v[2] + J[3] * v[3],
+     J[4] * v[1] + J[5] * v[2] + J[6] * v[3],
+     J[7] * v[1] + J[8] * v[2] + J[9] * v[3]) :
+    (J[1] * v[1] + J[4] * v[2] + J[7] * v[3],
+     J[2] * v[1] + J[5] * v[2] + J[8] * v[3],
+     J[3] * v[1] + J[6] * v[2] + J[9] * v[3])
+
+# brute-force E over ALL pairs from a supplied 9 x n J slab
+function _sfs048_reference(sys::SmoothedVortex, J::AbstractMatrix, transposed::Bool)
+    n = FastMultipole.get_n_bodies(sys)
+    K1 = FastMultipole._SFS_ZETA_K1
+    E = zeros(3, n)
+    for i in 1:n
+        xi = FastMultipole.get_position(sys, i)
+        Ji = view(J, :, i)
+        e = (0.0, 0.0, 0.0)
+        for j in 1:n
+            i == j && continue
+            d = xi - FastMultipole.get_position(sys, j)
+            sig = Float64(sys.sigma[j])
+            rho2 = dot(d, d) / sig^2
+            rho2 <= 81.0 || continue   # host/device saturation cutoff (F64)
+            z = K1 * exp(-rho2 / 2) / sig^3
+            G = sys.inner.bodies[j].strength
+            si = _sfs048_op(Ji, G, transposed)
+            sj = _sfs048_op(view(J, :, j), G, transposed)
+            e = e .+ z .* (si .- sj)
+        end
+        E[:, i] .= e
+    end
+    return E
+end
+
+_sfs048_relrms(A, B) = sqrt(sum(abs2, A .- B) / max(sum(abs2, B), eps()))
+
+@testset "SFS host pass (task 048)" begin
+    seed = 20260820
+    nv = 400
+    for P in (4, 8)   # standing rule: always cover P = 4 alongside P = 8
+        base = generate_vortex(seed, nv)
+        sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
+        ssys = SmoothedVortex(base, sigma)
+        cache = RadixFMMCache(ssys; expansion_order=P, ell=2, hessian=true,
+            sfs=true,
+            options=CUDARadixLifecycleOptions(; precision=Float64,
+                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+        @test cache.sfs && cache.sfs_transposed
+        fmm!(ssys, cache; scalar_potential=false, gradient=true, hessian=true,
+            sfs=true)
+        E_radix = _SFS048_CAPTURE[objectid(ssys)]
+        # (a) mechanical parity: same J as the pass consumed, all pairs. The
+        # only differences are U-list truncation (ζ at the leaf gap is
+        # ~exp(-19) of ζ(0) here) and summation order.
+        J_fmm = copy(base.potential[5:13, :])
+        E_mech = _sfs048_reference(ssys, J_fmm, true)
+        mech = _sfs048_relrms(E_radix, E_mech)
+        @info "SFS host pass mechanical parity [P=$P]" mech
+        @test mech < 1e-6
+        # (b) physics: E from the exact O(N²) regularized J
+        _, J_ref = _interface_regularized_direct(SmoothedVortex(base, sigma))
+        E_phys = _sfs048_reference(ssys, J_ref, true)
+        phys = _sfs048_relrms(E_radix, E_phys)
+        @info "SFS host pass vs exact-J brute force [P=$P]" phys
+        @test phys < 1e-3
+        # recurring evaluation reuses the cached SFS buffers (same answer)
+        fmm!(ssys, cache; scalar_potential=false, gradient=true, hessian=true,
+            sfs=true)
+        @test _sfs048_relrms(_SFS048_CAPTURE[objectid(ssys)], E_radix) < 1e-13
+        # sfs=false evaluations on an sfs-armed cache skip delivery entirely
+        delete!(_SFS048_CAPTURE, objectid(ssys))
+        fmm!(ssys, cache; scalar_potential=false, gradient=true, hessian=true)
+        @test !haskey(_SFS048_CAPTURE, objectid(ssys))
+    end
+
+    #--- classic (transposed=false) scheme ---#
+    base = generate_vortex(seed, nv)
+    sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
+    csys = SmoothedVortex(base, sigma)
+    ccache = RadixFMMCache(csys; expansion_order=8, ell=2, hessian=true,
+        sfs=true, sfs_transposed=false,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    @test !ccache.sfs_transposed
+    fmm!(csys, ccache; scalar_potential=false, gradient=true, hessian=true,
+        sfs=true)
+    E_radix_c = _SFS048_CAPTURE[objectid(csys)]
+    E_mech_c = _sfs048_reference(csys, copy(base.potential[5:13, :]), false)
+    @test _sfs048_relrms(E_radix_c, E_mech_c) < 1e-6
+    # the two schemes genuinely differ on this field
+    E_mech_t = _sfs048_reference(csys, copy(base.potential[5:13, :]), true)
+    @test _sfs048_relrms(E_mech_c, E_mech_t) > 1e-3
+
+    #--- validation error paths ---#
+    base_e = generate_vortex(seed, 100)
+    esys = SmoothedVortex(base_e, fill(0.02, 100))
+    # sfs requires hessian
+    @test_throws ArgumentError RadixFMMCache(esys; expansion_order=4, ell=2,
+        sfs=true, hessian=false,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    # sfs=true evaluation on a non-sfs cache throws
+    nocache = RadixFMMCache(esys; expansion_order=4, ell=2, hessian=true,
+        options=CUDARadixLifecycleOptions(; precision=Float64,
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    @test_throws ArgumentError fmm!(esys, nocache; gradient=true, hessian=true,
+        sfs=true)
+    # the sfs_to_target! trait fails loudly without an overload (explicit
+    # sort_index: the default would hit get_n_bodies first)
+    @test_throws ArgumentError FastMultipole.sfs_to_target!((;), zeros(3, 1), 1:1)
+end

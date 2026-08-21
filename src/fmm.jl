@@ -860,6 +860,9 @@ path is only selected by passing a `RadixFMMCache`.
 - `scalar_potential::Bool=false`, `gradient::Bool=true`: which outputs to write back
 - `hessian::Bool=false`: write back the 9-component hessian; requires a cache
   built with `RadixFMMCache(...; hessian=true)` (`ArgumentError` otherwise)
+- `sfs::Bool=false`: deliver the subfilter-scale vortex-stretching term E_str
+  through [`sfs_to_target!`](@ref) (task 048); requires a cache built with
+  `RadixFMMCache(...; sfs=true, hessian=true)` (`ArgumentError` otherwise)
 - `lamb_helmholtz=nothing`: optional cross-check against the cache's `LH` parameter
 
 v1 restrictions: `target_systems === source_systems`; body count `<= max_n_bodies`;
@@ -869,6 +872,7 @@ fmm!(system, cache::RadixFMMCache; optargs...) = fmm!(system, system, cache; opt
 
 function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         scalar_potential::Bool=false, gradient::Bool=true, hessian::Bool=false,
+        sfs::Bool=false,
         lamb_helmholtz::Union{Nothing,Bool}=nothing) where {TF,LH}
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
@@ -876,6 +880,9 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
     hessian && !cache.hessian && throw(ArgumentError(
         "hessian output requested but this RadixFMMCache was built with " *
         "hessian=false (4-row output); construct RadixFMMCache(...; hessian=true)"))
+    sfs && !cache.sfs && throw(ArgumentError(
+        "sfs output requested but this RadixFMMCache was built with " *
+        "sfs=false; construct RadixFMMCache(...; sfs=true, hessian=true)"))
     lamb_helmholtz === nothing || Bool(lamb_helmholtz) == LH || throw(ArgumentError(
         "lamb_helmholtz=$(lamb_helmholtz) conflicts with the cache's lamb_helmholtz=$LH; " *
         "the Lamb-Helmholtz channel is fixed at cache construction"))
@@ -888,12 +895,15 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         to_vector(gradient, length(targets)),
         to_vector(hessian, length(targets)), targets)
     if cache.device
-        _radix_cache_device_step!(cache, targets, switches)
+        _radix_cache_device_step!(cache, targets, switches; sfs)
     elseif cache.adaptive === nothing
         update_radix_state!(cache, sources)
         run_host_radix_lifecycle!(cache.state)
+        sfs && _run_host_radix_sfs!(cache.state)
         finalize_radix_output!(cache.state, targets; derivatives_switches=switches,
             target_buffers=_radix_cache_target_buffers!(cache, switches))
+        sfs && finalize_radix_sfs_output!(cache.state, targets;
+            sfs_buffers=_radix_cache_sfs_buffers!(cache, targets))
     else
         # task 040: with an AdaptiveTreePolicy armed, the host branch runs the
         # adaptive resident lifecycle (B2M/M2M/V-M2L/S2L/L2L/direct/L2B/M2T)
@@ -901,10 +911,13 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         # sort's permutation metadata, so the finalize path is unchanged.
         update_radix_state!(cache, sources)
         run_adaptive_host_radix_lifecycle!(cache)
-        finalize_radix_output!(
-            (cache.adaptive_state::AdaptiveResidentLifecycle).state, targets;
+        adaptive_state = (cache.adaptive_state::AdaptiveResidentLifecycle).state
+        sfs && _run_host_radix_sfs!(adaptive_state)
+        finalize_radix_output!(adaptive_state, targets;
             derivatives_switches=switches,
             target_buffers=_radix_cache_target_buffers!(cache, switches))
+        sfs && finalize_radix_sfs_output!(adaptive_state, targets;
+            sfs_buffers=_radix_cache_sfs_buffers!(cache, targets))
     end
     return cache
 end

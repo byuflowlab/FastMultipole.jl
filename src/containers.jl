@@ -2278,6 +2278,14 @@ struct DeviceResidentRadixState{TF,B,LH,
     counters::CUDARadixTransferCounters
     options::OPT
     counts::RadixStepCounts
+    # task 048: opt-in SFS (subfilter-scale vortex stretching) device pass.
+    # `nothing` when the cache was built without `sfs=true`; otherwise a
+    # NamedTuple `(; tg, om, q, transposed::Bool)` of persistent 3 x capacity
+    # accumulators (tg = op(J)Γ precompute, om/q = ζ-pair accumulators) plus
+    # the FLOWVPM `transposed` scheme flag baked at construction. Any-typed
+    # (function barriers in the launch/finalize helpers do the typed work) so
+    # the concrete state type is unchanged for non-SFS caches.
+    sfs::Any
 end
 
 @inline _radix_count_len(x) = x === nothing ? 0 : length(x)
@@ -2364,6 +2372,14 @@ mutable struct RadixFMMCache{TF,LH}
     # settings (Vector{Pair{Symbol,Any}}); verified at device-step entry so a
     # post-construction flip errors loudly instead of being silently ignored.
     locked_settings::Any
+    # task 048: SFS (subfilter-scale vortex-stretching) capability, chosen at
+    # construction like `hessian` (requires hessian=true). `sfs_transposed`
+    # bakes the FLOWVPM transposed-scheme convention into the kernels/graph;
+    # `sfs_target_buffers` lazily caches per-system 3-row host scatter buffers
+    # (device caches keep theirs in device_ctx.device_sfs_buffers).
+    sfs::Bool
+    sfs_transposed::Bool
+    sfs_target_buffers::Any
 end
 
 """
@@ -2565,7 +2581,7 @@ function DeviceResidentRadixState{TF,B,LH}(grid, interaction_list, source_bodies
         l2l_parent_routes, l2l_child_routes, multipoles, locals,
         route_levels, route_offsets, route_targets, route_sources,
         direct_targets, direct_sources, output, invariant_cache, scratch,
-        counters, options, counts) where {TF,B,LH}
+        counters, options, counts; sfs=nothing) where {TF,B,LH}
     return DeviceResidentRadixState{TF,B,LH,
         typeof(grid),typeof(interaction_list),typeof(source_bodies),
         typeof(host_body_perm),typeof(host_m2m_parent_routes),
@@ -2581,6 +2597,7 @@ function DeviceResidentRadixState{TF,B,LH}(grid, interaction_list, source_bodies
         m2m_child_routes, l2l_parent_routes, l2l_child_routes, multipoles, locals,
         route_levels, route_offsets, route_targets, route_sources, direct_targets,
         direct_sources, output, invariant_cache, scratch, counters, options, counts,
+        sfs,
     )
 end
 

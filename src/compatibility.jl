@@ -422,6 +422,28 @@ function buffer_to_target!(target_system, target_buffer, derivatives_switch, sor
 end
 
 """
+    sfs_to_target!(target_system, sfs_buffer, sort_index=1:get_n_bodies(target_system))
+
+Deliver the SFS (subfilter-scale vortex-stretching) result of an evaluation to
+the consumer: `sfs_buffer` is a **framework-owned** `3 x n_bodies` matrix in
+**global (unsorted) body order** holding `E_str` for every body of
+`target_system` (device caches pass a device matrix to `DeviceResident`
+systems, a host matrix otherwise). Same delivery semantics as
+[`buffer_to_target!`](@ref): the buffer holds the total influence of this
+evaluation; overwrite vs accumulate is the consumer's choice, and the call
+must be steady-state allocation-free. Only consumers evaluated with
+`fmm!(...; sfs=true)` on an `sfs=true` [`RadixFMMCache`](@ref) need this
+overload (task 048).
+"""
+function sfs_to_target!(target_system, sfs_buffer,
+        sort_index=1:get_n_bodies(target_system))
+    throw(ArgumentError(
+        "target systems evaluated with sfs=true must overload " *
+        "FastMultipole.sfs_to_target!(target_system, sfs_buffer, sort_index) " *
+        "for $(typeof(target_system))"))
+end
+
+"""
     extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
 
 Deprecated compatibility hook. New code should overload [`metadata_to_buffer!`](@ref)

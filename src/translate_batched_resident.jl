@@ -1730,6 +1730,187 @@ function run_host_radix_lifecycle!(state::DeviceResidentRadixState)
     return state
 end
 
+#------- SFS (subfilter-scale vortex stretching) pass, host mirror (task 048) -------#
+#
+# Mirrors the device SFS pass in translate_batched_cuda.jl: after the lifecycle
+# completes U/J in `state.output`, (a) precompute per body T = op(J)Γ and zero
+# the ζ-accumulators, (b) sweep the FULL direct pair list accumulating
+# Ω_i = Σ_j ζ_σj(r_ij) Γ_j and Q_i = Σ_j ζ_σj(r_ij) T_j (self pair skipped —
+# it cancels exactly in E), then (c) at finalize form
+# E_i = op(J_i) Ω_i − Q_i (041b §1.2 reordered transposed/classic scheme) and
+# scatter sorted -> global through the permutation metadata to
+# `sfs_to_target!`. Γ is packed rows 5:7, raw σ row 8 (source σ convention),
+# J is output rows 5:13 in FLOWVPM's J[(j-1)*3 + i] order.
+#
+# ζ_σ(r) = K1 exp(-ρ²/2)/σ³ with ρ = r/σ and K1 = (2π)^{-3/2} — the
+# gaussianerf regularization's ζ. The saturation cutoff ρ² ≤ rc² drops
+# contributions below ~1e-9 (F32) / ~1e-18 (F64) of ζ(0); it exists so the
+# device kernel's exp is never fed huge arguments and host/device agree.
+
+const _SFS_ZETA_K1 = 0.06349363593424097  # (2π)^(-3/2)
+@inline _sfs_saturation_rc2(::Type{Float32}) = 42.25f0
+@inline _sfs_saturation_rc2(::Type{Float64}) = 81.0
+
+# persistent host accumulators (3 x capacity each) + the baked scheme flag
+_host_sfs_context(::Type{TF}, maxn::Int, transposed::Bool) where TF =
+    (; tg=zeros(TF, 3, maxn), om=zeros(TF, 3, maxn), q=zeros(TF, 3, maxn),
+       transposed)
+
+@inline function _sfs_apply_op(J5, J6, J7, J8, J9, J10, J11, J12, J13,
+        v1, v2, v3, transposed::Bool)
+    if transposed
+        return (J5 * v1 + J6 * v2 + J7 * v3,
+                J8 * v1 + J9 * v2 + J10 * v3,
+                J11 * v1 + J12 * v2 + J13 * v3)
+    else
+        return (J5 * v1 + J8 * v2 + J11 * v3,
+                J6 * v1 + J9 * v2 + J12 * v3,
+                J7 * v1 + J10 * v2 + J13 * v3)
+    end
+end
+
+function _host_sfs_tg_and_zero!(tg, om, q, output::AbstractMatrix{TF},
+        source_bodies, transposed::Bool, n::Int) where TF
+    @inbounds for i in 1:n
+        g1 = source_bodies[5, i]
+        g2 = source_bodies[6, i]
+        g3 = source_bodies[7, i]
+        t1, t2, t3 = _sfs_apply_op(
+            output[5, i], output[6, i], output[7, i], output[8, i],
+            output[9, i], output[10, i], output[11, i], output[12, i],
+            output[13, i], g1, g2, g3, transposed)
+        tg[1, i] = t1; tg[2, i] = t2; tg[3, i] = t3
+        om[1, i] = zero(TF); om[2, i] = zero(TF); om[3, i] = zero(TF)
+        q[1, i] = zero(TF); q[2, i] = zero(TF); q[3, i] = zero(TF)
+    end
+    return tg
+end
+
+function _host_sfs_zeta_pairs!(om::AbstractMatrix{TF}, q, tg, source_bodies,
+        cell_ranges, direct_targets, direct_sources, n_direct::Int) where TF
+    rc2 = _sfs_saturation_rc2(TF)
+    K1 = TF(_SFS_ZETA_K1)
+    half = TF(0.5)
+    @inbounds for pair_i in 1:n_direct
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tcount = cell_ranges[2, target_cell]
+        sfirst = cell_ranges[1, source_cell]
+        scount = cell_ranges[2, source_cell]
+        for i in tfirst:(tfirst + tcount - 1)
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            o1 = zero(TF); o2 = zero(TF); o3 = zero(TF)
+            q1 = zero(TF); q2 = zero(TF); q3 = zero(TF)
+            for j in sfirst:(sfirst + scount - 1)
+                i == j && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                sigma = source_bodies[8, j]
+                rho2 = r2 / (sigma * sigma)
+                if rho2 <= rc2
+                    z = K1 * exp(-half * rho2) / (sigma * sigma * sigma)
+                    o1 += z * source_bodies[5, j]
+                    o2 += z * source_bodies[6, j]
+                    o3 += z * source_bodies[7, j]
+                    q1 += z * tg[1, j]
+                    q2 += z * tg[2, j]
+                    q3 += z * tg[3, j]
+                end
+            end
+            om[1, i] += o1; om[2, i] += o2; om[3, i] += o3
+            q[1, i] += q1; q[2, i] += q2; q[3, i] += q3
+        end
+    end
+    return om
+end
+
+"""
+    _run_host_radix_sfs!(state)
+
+Host mirror of the device SFS pass (task 048): TG precompute + ζ pair sweep
+over the full direct list. Requires a state built with `sfs=true` (13-row
+output). Call after `run_host_radix_lifecycle!` (U/J complete), before
+`finalize_radix_sfs_output!`.
+"""
+function _run_host_radix_sfs!(state::DeviceResidentRadixState)
+    sfs = state.sfs
+    sfs === nothing && throw(ArgumentError(
+        "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
+    size(state.output, 1) >= 13 || throw(AssertionError(
+        "the SFS pass requires the 13-row (hessian) output"))
+    n = state.counts.n_bodies
+    _host_sfs_tg_and_zero!(sfs.tg, sfs.om, sfs.q, state.output,
+        state.source_bodies, sfs.transposed, n)
+    _host_sfs_zeta_pairs!(sfs.om, sfs.q, sfs.tg, state.source_bodies,
+        state.cell_ranges, state.direct_targets, state.direct_sources,
+        state.counts.n_direct)
+    return state
+end
+
+# E-formation into `tg` (dead after the pair sweep) in sorted body order
+function _host_sfs_form_e!(tg, om, q, output::AbstractMatrix,
+        transposed::Bool, n::Int)
+    @inbounds for i in 1:n
+        e1, e2, e3 = _sfs_apply_op(
+            output[5, i], output[6, i], output[7, i], output[8, i],
+            output[9, i], output[10, i], output[11, i], output[12, i],
+            output[13, i], om[1, i], om[2, i], om[3, i], transposed)
+        tg[1, i] = e1 - q[1, i]
+        tg[2, i] = e2 - q[2, i]
+        tg[3, i] = e3 - q[3, i]
+    end
+    return tg
+end
+
+# sorted -> global permute of the 3-row E slab into a per-system buffer
+function _scatter_sfs_host!(buf::AbstractMatrix, e, perm, body_system,
+        body_index, isys::Int, n::Int)
+    fill!(buf, zero(eltype(buf)))
+    @inbounds for sorted_i in 1:n
+        global_i = perm[sorted_i]
+        body_system[global_i] == isys || continue
+        ibody = body_index[global_i]
+        buf[1, ibody] = e[1, sorted_i]
+        buf[2, ibody] = e[2, sorted_i]
+        buf[3, ibody] = e[3, sorted_i]
+    end
+    return buf
+end
+
+"""
+    finalize_radix_sfs_output!(state, target_systems; sfs_buffers=nothing)
+
+Form E = op(J)Ω − Q from the host SFS accumulators, de-permute into per-system
+`3 x n_bodies` global-order buffers, and deliver through
+[`sfs_to_target!`](@ref). Pass preallocated `sfs_buffers` (one 3-row matrix
+per system) to keep recurring steps allocation-free.
+"""
+function finalize_radix_sfs_output!(state::DeviceResidentRadixState{TF},
+        target_systems; sfs_buffers=nothing) where TF
+    sfs = state.sfs
+    sfs === nothing && throw(ArgumentError(
+        "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
+    systems = to_tuple(target_systems)
+    n = state.counts.n_bodies
+    _host_sfs_form_e!(sfs.tg, sfs.om, sfs.q, state.output, sfs.transposed, n)
+    for (isys, target_system) in enumerate(systems)
+        nb = get_n_bodies(target_system)
+        buf_full = sfs_buffers === nothing ? Matrix{TF}(undef, 3, nb) :
+            sfs_buffers[isys]
+        # capacity-sized cached buffers: deliver the live-body prefix
+        buf = size(buf_full, 2) == nb ? buf_full : view(buf_full, :, 1:nb)
+        _scatter_sfs_host!(buf, sfs.tg, state.host_body_perm,
+            state.host_body_system_ids, state.host_body_indices, isys, n)
+        sfs_to_target!(target_system, buf, 1:nb)
+    end
+    return target_systems
+end
+
 #------- RadixFMMCache: fixed-box recurring driver (task 023) -------#
 
 function _assert_radix_targets_are_sources(targets::Tuple, sources::Tuple)
@@ -2171,6 +2352,11 @@ is reallocated over the cache's lifetime.
 - `hessian::Bool=false`: allocate the 13-row output (potential + gradient +
   9-component hessian) and enable `fmm!(...; hessian=true)`. Off by default so
   the scalar path's output bandwidth is unchanged (task 032).
+- `sfs::Bool=false`: allocate the subfilter-scale vortex-stretching pass
+  (task 048) and enable `fmm!(...; sfs=true)` delivery through
+  [`sfs_to_target!`](@ref). Requires `hessian=true` and the raw smoothing
+  radius σ in packed row 8 (vortex couplings). `sfs_transposed::Bool=true`
+  bakes the FLOWVPM transposed-scheme convention.
 - `device::Bool=false`: run the lifecycle device-resident (CUDA; requires
   `load_cuda_radix_lifecycle!()`)
 - `options::CUDARadixLifecycleOptions`: operator strategies/precision. Omitted, both
@@ -2237,6 +2423,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         bounds_margin::Real=0.05,
         lamb_helmholtz::Union{Nothing,Bool}=nothing,
         hessian::Bool=false,
+        sfs::Bool=false,
+        sfs_transposed::Bool=true,
         device::Bool=false,
         options::Union{Nothing,CUDARadixLifecycleOptions}=nothing,
         stencil_epsilon::Union{Nothing,Real}=nothing,
@@ -2248,6 +2436,19 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
     _assert_radix_targets_are_sources(targets, sources)
+    # task 048: the SFS pass reads the 9-component J from the 13-row output
+    # and the raw smoothing radius sigma from packed row 8
+    sfs && !hessian && throw(ArgumentError(
+        "RadixFMMCache(sfs=true) requires hessian=true (the SFS pass reads " *
+        "the velocity Jacobian from the 13-row output)"))
+    if sfs
+        for system in sources
+            data_per_body(system) >= 8 || throw(ArgumentError(
+                "RadixFMMCache(sfs=true) requires the raw smoothing radius " *
+                "sigma in packed row 8; data_per_body must be >= 8 " *
+                "(got $(data_per_body(system)) for $(typeof(system)))"))
+        end
+    end
     LH = lamb_helmholtz === nothing ? has_vector_potential(sources) : Bool(lamb_helmholtz)
     # B2M element resolution (task 032): one shared body type per cache, checked
     # here so a Point{Vortex} system with the χ channel off fails at construction
@@ -2467,7 +2668,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             route_capacity, direct_capacity, basis_info, Val(LH);
             hierarchical_tables, class_level, class_offset,
             hierarchical_level_class_of, hierarchical_level_radii2,
-            max_level_nodes, hessian, ell_axes, box_extent,
+            max_level_nodes, hessian, sfs, sfs_transposed, ell_axes, box_extent,
             root_level, first_m2l_level,
             adaptive_policy=adaptive, dpb_adaptive=dpb)
         cache.built = true
@@ -2529,6 +2730,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         first_m2l_level,
         zeros(Int, Int(ell) + 2), 0, zeros(Int, Int(ell) + 1), 0,
         false, zeros(UInt64, 5), zeros(UInt64, Int(ell) + 1)) : nothing
+    sfs_ctx = sfs ? _host_sfs_context(TF, maxn, sfs_transposed) : nothing
     state = DeviceResidentRadixState{TF,CompressedComplexBasis,LH}(
         grid, hierarchical_ctx, source_bodies, source_bodies,
         grid.perm, grid.body_system, grid.body_index,
@@ -2541,7 +2743,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         multipoles, locals, route_levels, route_offsets, route_targets, route_sources,
         direct_targets, direct_sources, output,
         invariant, scratch, counters, options,
-        RadixStepCounts(0, 0, 0, 0, 0),
+        RadixStepCounts(0, 0, 0, 0, 0);
+        sfs=sfs_ctx,
     )
 
     G = 1 << Int(ell)
@@ -2552,7 +2755,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         AdaptiveInteractionLists(adaptive_tree)
     adaptive_state = adaptive === nothing ? nothing :
         _allocate_adaptive_resident_lifecycle(TF, basis_info, options,
-            adaptive_tree, adaptive_lists, invariant, dpb, maxn, hessian)
+            adaptive_tree, adaptive_lists, invariant, dpb, maxn, hessian;
+            sfs_ctx=sfs ? _host_sfs_context(TF, maxn, sfs_transposed) : nothing)
     cache = RadixFMMCache{TF,LH}(
         P, Int(ell), x_min, h0, ell_axes, box_extent, root_level, maxn, device,
         hessian, options, stencil_policy,
@@ -2564,6 +2768,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         length(sources), false, 0,
         adaptive, adaptive_tree, adaptive_lists, adaptive_state,
         snapshot_locked_radix_settings(),
+        sfs, sfs_transposed, nothing,
     )
     update_radix_state!(cache, sources)
     cache.built = true
@@ -3110,6 +3315,18 @@ function _radix_cache_target_buffers!(cache::RadixFMMCache{TF}, switches::Tuple)
     return cache.target_buffers.buffers
 end
 
+# task 048: lazy per-system 3-row host SFS scatter buffers (allocated once at
+# the first sfs=true evaluation, sized to capacity so live-count changes reuse
+# them; the finalize writes only the per-system body prefix)
+function _radix_cache_sfs_buffers!(cache::RadixFMMCache{TF}, targets::Tuple) where TF
+    sb = cache.sfs_target_buffers
+    if !(sb isa Tuple) || length(sb) != length(targets)
+        sb = Tuple(zeros(TF, 3, cache.max_n_bodies) for _ in targets)
+        cache.sfs_target_buffers = sb
+    end
+    return sb
+end
+
 # Device-resident construction/step; redefined by translate_batched_cuda.jl (task
 # 023 step 7) once load_cuda_radix_lifecycle!() has run.
 function _radix_cache_device_build(args...; kwargs...)
@@ -3124,7 +3341,8 @@ function _build_cuda_dense_m2l_plan(args...)
     throw(CUDARadixUnavailable(cuda_radix_status()))
 end
 
-function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple)
+function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple;
+        sfs::Bool=false)
     throw(CUDARadixUnavailable(cuda_radix_status()))
 end
 
@@ -3162,7 +3380,7 @@ function _allocate_adaptive_resident_lifecycle(::Type{TF},
         basis_info::OperatorBasisInfo{B,LH}, options::CUDARadixLifecycleOptions{TF},
         tree::AdaptiveRadixTree{TF}, lists::AdaptiveInteractionLists,
         invariant::OperatorInvariantCache, dpb::Int, maxn::Int,
-        hessian::Bool) where {TF,B,LH}
+        hessian::Bool; sfs_ctx=nothing) where {TF,B,LH}
     ell = tree.policy.ell_max
     node_cap = tree.node_capacity
     leaf_cap = min(node_cap, maxn)
@@ -3227,7 +3445,8 @@ function _allocate_adaptive_resident_lifecycle(::Type{TF},
         multipoles, locals_buf, route_levels, route_offsets, route_targets,
         route_sources, direct_targets, direct_sources, output,
         invariant, workspace, CUDARadixTransferCounters(), options,
-        RadixStepCounts(0, 0, 0, 0, 0),
+        RadixStepCounts(0, 0, 0, 0, 0);
+        sfs=sfs_ctx,
     )
     P_phi = basis_info.orders.P_phi
     nH = harmonic_index(P_phi + 2, P_phi + 2)
