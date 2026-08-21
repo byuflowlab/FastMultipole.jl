@@ -1,0 +1,22 @@
+# 024 gpu_crossovers.csv; cases whose complete recurring step is won by dense. regime_slot indexes the generated tick list.
+P,regime_slot
+4,2
+4,3
+4,4
+4,5
+4,6
+4,7
+4,9
+4,10
+4,12
+4,13
+4,14
+8,1
+8,2
+8,3
+8,4
+8,7
+8,8
+8,9
+8,10
+8,12

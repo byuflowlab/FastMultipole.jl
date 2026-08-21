@@ -1,0 +1,2 @@
+label,case,n,ell,q,tf,strategy,mode,subsort,rho_t,step_ms,nearfield_ms,u_rel_rms,j_rel_rms,hom_all,hom_mixed,n_direct
+cube1e3,cube,1000,1,16,F32,regularized,classsplit,1,4.7890,8.915890,0.386333,4.0632e-05,4.3927e-05,NaN,NaN,64

@@ -1,0 +1,2 @@
+schema_version,source_hash,slurm_job_id,host,blas_threads,policy,strategy,distribution,precision,lh,n,ell,P,seed,window_classes,accuracy_samples,level,occupied_nodes,routes,nonempty_classes,mean_occupancy,p50_occupancy,p90_occupancy,p95_occupancy,p99_occupancy,max_occupancy,occupancy_skew,m2l_ms_median,m2l_ms_min,m2l_ms_iqr
+026.2,34106787d876f81998fcf235af459f82b76eec11513b72460a64a1c3250749d3,12954303,m12-1-25,1,flat_3,precomputed_y,uniform,Float32,false,5000,3,4,26031304,4,256,3,512,251496,3348,75.11827956989248,48.0,180.0,240.0,320.0,384,1.4952752454332296,NaN,NaN,NaN

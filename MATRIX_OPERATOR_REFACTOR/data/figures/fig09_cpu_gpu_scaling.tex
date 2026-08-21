@@ -1,0 +1,104 @@
+\documentclass[border=8pt,varwidth=112mm]{standalone}
+\input{fmfigstyle.tex}
+\input{tables/fig09_status.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 9 --- End-user CPU and GPU scaling at literature $P=4$\fmfigstatusnine}
+
+\begin{tikzpicture}
+\begin{axis}[
+  fmbase,
+  width=98mm, height=52mm,
+  xmode=log, ymode=log,
+  xlabel={number of particles $n$},
+  ylabel={speedup over legacy CPU, 1 thread},
+  xmin=800, xmax=1.25e6,
+  legend pos=north west,
+]
+\addplot[fmA] table[x=n, y=speedup_cpu64, col sep=comma]
+  {tables/fig09_speedup_vs_n.csv};
+\addlegendentry{legacy CPU, 64 threads}
+
+\addplot[fmB, point meta=explicit symbolic,
+  nodes near coords={$\ell=\pgfplotspointmeta$},
+  every node near coord/.append style={font=\tiny, anchor=south west}]
+  table[x=n, y=speedup_gpu_f64, meta=best_ell_f64, col sep=comma]
+  {tables/fig09_speedup_vs_n.csv};
+\addlegendentry{resident H200, Float64}
+
+\addplot[fmC, fmalt, point meta=explicit symbolic,
+  nodes near coords={$\ell=\pgfplotspointmeta$},
+  every node near coord/.append style={font=\tiny, anchor=north west}]
+  table[x=n, y=speedup_gpu_f32, meta=best_ell_f32, col sep=comma]
+  {tables/fig09_speedup_vs_n.csv};
+\addlegendentry{resident H200, Float32}
+
+\addplot[fmrule, domain=800:1.25e6] {1};
+\node[anchor=south east, font=\tiny, color=fmCritical]
+  at (rel axis cs:0.99,0.02) {break-even};
+\end{axis}
+\end{tikzpicture}
+
+\vspace{2mm}
+\begin{tikzpicture}
+\begin{axis}[
+  fmbase,
+  width=90mm, height=42mm,
+  xmode=log, ymode=log,
+  xlabel={number of particles $n$},
+  ylabel={relative gradient RMS error},
+  xmin=800, xmax=1.25e6,
+  ymin=3e-5, ymax=1.2e-3,
+  % the CPU series sit near the top of this range; an in-axis legend hides them,
+  % so it goes below the axis instead
+  legend columns=4,
+  legend style={at={(0.5,-0.40)}, anchor=north},
+]
+\addplot[fmA] table[x=n, y=err_grad_rel_cpu1, col sep=comma]
+  {tables/fig09_speedup_vs_n.csv};
+\addlegendentry{CPU, 1 thread}
+\addplot[fmD] table[x=n, y=err_grad_rel_cpu64, col sep=comma]
+  {tables/fig09_speedup_vs_n.csv};
+\addlegendentry{CPU, 64 threads}
+\addplot[fmB] table[x=n, y=err_grad_rel_gpu_f64, col sep=comma]
+  {tables/fig09_speedup_vs_n.csv};
+\addlegendentry{GPU, Float64}
+\addplot[fmC, fmalt] table[x=n, y=err_grad_rel_gpu_f32, col sep=comma]
+  {tables/fig09_speedup_vs_n.csv};
+\addlegendentry{GPU, Float32}
+
+% Both CPU searches picked leaf_size = n at n = 1000, i.e. exact direct
+% evaluation with identically zero sampled error, which a log axis cannot draw.
+\node[anchor=south east, font=\tiny, color=fmInkTwo, align=right]
+  at (rel axis cs:0.985,0.04)
+  {both CPU curves begin at $n=3162$: at $n=1000$ the\\%
+   searched $\mathrm{leaf\_size}=n$ is exact direct evaluation,\\%
+   so the CPU error is identically $0$ and has no log position};
+\end{axis}
+\end{tikzpicture}
+
+\fmnote{\fmfigstatusninenote\ \textbf{Regime:} $n\in\{1000,3162,10^4,31623,10^5,316228,10^6\}$,
+literature $P=4$ means code \texttt{expansion\_order=3} (degrees $0{:}3$).
+The legacy octree fixes $\theta=0.5$ and independently searches leaf size for
+each $(n,\mathrm{threads})$ on a step-5 refinement grid; its timed call includes
+tree and interaction-list construction. It also disables threading outright
+below $n=5000$ (\texttt{src/fmm.jl} forces one thread when
+$n_\mathrm{target}+n_\mathrm{source}<\texttt{MIN\_BODIES}=10^4$), which is why the
+64-thread curve sits at $1\times$ for $n\le3162$ and jumps at $n=10^4$.
+The resident H200 path excludes
+one-shot cache construction, prefers dense translation, and selects the fastest
+measured $\ell$ per point. Its reviewed analytic stencil uses
+$\epsilon_\ell=0.19542385331034917\,2^{\ell-4}$, matching the legacy strict
+equal-cell cutoff (squared offset 12 rejected, 13 accepted); adaptive
+interaction lists are not structurally identical. At $n\ge10^5$, the planned
+$\ell=6/7$ caches exceeded H200 capacity even after the prescribed
+precomputed-$Y$ fallback; those eight attempts are retained in the failure
+ledger, and selection uses the 36 successfully constructed cases. Float64 GPU errors must be
+within $10\times$ of both CPU errors whenever the CPU result uses an FMM
+decomposition ($\mathrm{leaf\_size}<n$); exact/direct CPU cases are reported
+but exempt from that ratio gate. Float32 ratios are recorded but not gated.
+Curves use minimum post-warmup step time; the lower panel uses the shared
+sampled-direct references. \textbf{Data:} task 024b,
+\texttt{data/cpu\_gpu\_scaling/*.csv}.}
+
+\end{document}

@@ -1,0 +1,116 @@
+=== node: m13h-1-2
+GPU 0: NVIDIA H200 (UUID: GPU-6c234441-e274-d234-8829-8e63f5294292)
+=== preflight: CUDA functional ===
+┌ Info: CUDA
+└   CUDA.name(CUDA.device()) = "NVIDIA H200"
+=== 041k brute-force ceiling sweep ===
+fm041k brute-force ceiling  jobid=13246033  threads=8  gpu=true
+NVIDIA H200
+identity check n=1000: reordered-vs-pairwise E max rel 4.646e-15
+acc n=1000 f64 U     max rel 3.390e-16
+acc n=1000 f64 J     max rel 1.512e-15
+acc n=1000 f64 Omega max rel 3.683e-16
+acc n=1000 f64 Q     max rel 7.438e-16
+acc n=1000 f64 E     max rel 1.631e-15
+acc n=1000 f32 U     max rel 1.174e-06
+acc n=1000 f32 J     max rel 1.916e-05
+acc n=1000 f32 Omega max rel 1.714e-06
+acc n=1000 f32 Q     max rel 1.203e-06
+acc n=1000 f32 E     max rel 1.620e-05
+identity check n=10000: reordered-vs-pairwise E max rel 1.153e-14
+acc n=10000 f64 U     max rel 3.830e-16
+acc n=10000 f64 J     max rel 2.447e-15
+acc n=10000 f64 Omega max rel 3.944e-16
+acc n=10000 f64 Q     max rel 1.218e-15
+acc n=10000 f64 E     max rel 4.065e-15
+acc n=10000 f32 U     max rel 4.199e-06
+acc n=10000 f32 J     max rel 9.212e-05
+acc n=10000 f32 Omega max rel 2.219e-06
+acc n=10000 f32 Q     max rel 3.065e-06
+acc n=10000 f32 E     max rel 4.095e-05
+F64 accuracy gate passed; starting sweep
+uj    naive f64 n=100  median 0.0001 s  (7.81e+07 pairs/s)
+uj    tiled f64 n=100  median 0.0001 s  (8.7e+07 pairs/s)
+ujsfs naive f64 n=100  median 0.0002 s  (5.08e+07 pairs/s)
+ujsfs tiled f64 n=100  median 0.0001 s  (7.32e+07 pairs/s)
+uj    naive f32 n=100  median 0.0001 s  (1.24e+08 pairs/s)
+uj    tiled f32 n=100  median 0.0001 s  (1.43e+08 pairs/s)
+ujsfs naive f32 n=100  median 0.0001 s  (8.21e+07 pairs/s)
+ujsfs tiled f32 n=100  median 0.0001 s  (1.26e+08 pairs/s)
+uj    naive f64 n=316  median 0.0004 s  (2.27e+08 pairs/s)
+uj    tiled f64 n=316  median 0.0004 s  (2.67e+08 pairs/s)
+ujsfs naive f64 n=316  median 0.0006 s  (1.6e+08 pairs/s)
+ujsfs tiled f64 n=316  median 0.0004 s  (2.3e+08 pairs/s)
+uj    naive f32 n=316  median 0.0003 s  (3.78e+08 pairs/s)
+uj    tiled f32 n=316  median 0.0002 s  (4.53e+08 pairs/s)
+ujsfs naive f32 n=316  median 0.0004 s  (2.59e+08 pairs/s)
+ujsfs tiled f32 n=316  median 0.0002 s  (4.12e+08 pairs/s)
+uj    naive f64 n=1e+03  median 0.0015 s  (6.53e+08 pairs/s)
+uj    tiled f64 n=1e+03  median 0.0013 s  (7.63e+08 pairs/s)
+ujsfs naive f64 n=1e+03  median 0.0021 s  (4.7e+08 pairs/s)
+ujsfs tiled f64 n=1e+03  median 0.0015 s  (6.72e+08 pairs/s)
+uj    naive f32 n=1e+03  median 0.0009 s  (1.12e+09 pairs/s)
+uj    tiled f32 n=1e+03  median 0.0008 s  (1.33e+09 pairs/s)
+ujsfs naive f32 n=1e+03  median 0.0013 s  (7.9e+08 pairs/s)
+ujsfs tiled f32 n=1e+03  median 0.0008 s  (1.23e+09 pairs/s)
+uj    naive f64 n=3.16e+03  median 0.0045 s  (2.2e+09 pairs/s)
+uj    tiled f64 n=3.16e+03  median 0.0039 s  (2.6e+09 pairs/s)
+ujsfs naive f64 n=3.16e+03  median 0.0065 s  (1.54e+09 pairs/s)
+ujsfs tiled f64 n=3.16e+03  median 0.0044 s  (2.27e+09 pairs/s)
+uj    naive f32 n=3.16e+03  median 0.0027 s  (3.75e+09 pairs/s)
+uj    tiled f32 n=3.16e+03  median 0.0022 s  (4.55e+09 pairs/s)
+ujsfs naive f32 n=3.16e+03  median 0.0038 s  (2.6e+09 pairs/s)
+ujsfs tiled f32 n=3.16e+03  median 0.0024 s  (4.19e+09 pairs/s)
+uj    naive f64 n=1e+04  median 0.0137 s  (7.3e+09 pairs/s)
+uj    tiled f64 n=1e+04  median 0.0113 s  (8.82e+09 pairs/s)
+ujsfs naive f64 n=1e+04  median 0.0199 s  (5.03e+09 pairs/s)
+ujsfs tiled f64 n=1e+04  median 0.0131 s  (7.65e+09 pairs/s)
+uj    naive f32 n=1e+04  median 0.0080 s  (1.25e+10 pairs/s)
+uj    tiled f32 n=1e+04  median 0.0065 s  (1.53e+10 pairs/s)
+ujsfs naive f32 n=1e+04  median 0.0117 s  (8.51e+09 pairs/s)
+ujsfs tiled f32 n=1e+04  median 0.0071 s  (1.41e+10 pairs/s)
+uj    naive f64 n=3.16e+04  median 0.0408 s  (2.45e+10 pairs/s)
+uj    tiled f64 n=3.16e+04  median 0.0365 s  (2.74e+10 pairs/s)
+ujsfs naive f64 n=3.16e+04  median 0.0606 s  (1.65e+10 pairs/s)
+ujsfs tiled f64 n=3.16e+04  median 0.0424 s  (2.36e+10 pairs/s)
+uj    naive f32 n=3.16e+04  median 0.0239 s  (4.18e+10 pairs/s)
+uj    tiled f32 n=3.16e+04  median 0.0203 s  (4.92e+10 pairs/s)
+ujsfs naive f32 n=3.16e+04  median 0.0359 s  (2.78e+10 pairs/s)
+ujsfs tiled f32 n=3.16e+04  median 0.0224 s  (4.46e+10 pairs/s)
+uj    naive f64 n=1e+05  median 0.2658 s  (3.76e+10 pairs/s)
+uj    tiled f64 n=1e+05  median 0.2274 s  (4.4e+10 pairs/s)
+ujsfs naive f64 n=1e+05  median 0.3350 s  (2.99e+10 pairs/s)
+ujsfs tiled f64 n=1e+05  median 0.2697 s  (3.71e+10 pairs/s)
+uj    naive f32 n=1e+05  median 0.1118 s  (8.94e+10 pairs/s)
+uj    tiled f32 n=1e+05  median 0.0949 s  (1.05e+11 pairs/s)
+ujsfs naive f32 n=1e+05  median 0.1625 s  (6.15e+10 pairs/s)
+ujsfs tiled f32 n=1e+05  median 0.1116 s  (8.96e+10 pairs/s)
+uj    naive f64 n=3.16e+05  median 1.8582 s  (5.38e+10 pairs/s)
+uj    tiled f64 n=3.16e+05  median 1.6490 s  (6.06e+10 pairs/s)
+ujsfs naive f64 n=3.16e+05  median 2.5758 s  (3.88e+10 pairs/s)
+ujsfs tiled f64 n=3.16e+05  median 2.0524 s  (4.87e+10 pairs/s)
+uj    naive f32 n=3.16e+05  median 0.8792 s  (1.14e+11 pairs/s)
+uj    tiled f32 n=3.16e+05  median 0.7229 s  (1.38e+11 pairs/s)
+ujsfs naive f32 n=3.16e+05  median 1.3009 s  (7.69e+10 pairs/s)
+ujsfs tiled f32 n=3.16e+05  median 0.8784 s  (1.14e+11 pairs/s)
+uj    naive f64 n=1e+06  median 15.1501 s  (6.6e+10 pairs/s)
+  -> series uj/naive/f64 stops (>10 s)
+uj    tiled f64 n=1e+06  median 13.2562 s  (7.54e+10 pairs/s)
+  -> series uj/tiled/f64 stops (>10 s)
+ujsfs naive f64 n=1e+06  median 21.9011 s  (4.57e+10 pairs/s)
+  -> series ujsfs/naive/f64 stops (>10 s)
+ujsfs tiled f64 n=1e+06  median 17.3622 s  (5.76e+10 pairs/s)
+  -> series ujsfs/tiled/f64 stops (>10 s)
+uj    naive f32 n=1e+06  median 7.2423 s  (1.38e+11 pairs/s)
+uj    tiled f32 n=1e+06  median 5.7552 s  (1.74e+11 pairs/s)
+ujsfs naive f32 n=1e+06  median 11.1296 s  (8.99e+10 pairs/s)
+  -> series ujsfs/naive/f32 stops (>10 s)
+ujsfs tiled f32 n=1e+06  median 7.2803 s  (1.37e+11 pairs/s)
+uj    naive f32 n=3.16e+06  median 65.1310 s  (1.54e+11 pairs/s)
+  -> series uj/naive/f32 stops (>10 s)
+uj    tiled f32 n=3.16e+06  median 49.9400 s  (2e+11 pairs/s)
+  -> series uj/tiled/f32 stops (>10 s)
+ujsfs tiled f32 n=3.16e+06  median 64.9525 s  (1.54e+11 pairs/s)
+  -> series ujsfs/tiled/f32 stops (>10 s)
+done
+=== done ===

@@ -1,0 +1,89 @@
+\documentclass[border=8pt,varwidth=170mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 1 --- Crossover evidence: isolated per-column operators and the production whole-slab path}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  group style={group size=2 by 3, horizontal sep=14mm, vertical sep=13mm,
+               xlabels at=edge bottom},
+  xlabel={expansion order $P$}, xmin=0.6, xmax=12.6,
+  xtick={1,2,3,4,5,6,8,12},
+]
+
+% --- row 1: absolute per-expansion cost, single-thread BLAS -----------------
+\nextgroupplot[title={(a) $\varphi$ only, BLAS=1}, ylabel={time per expansion ($\mu$s)},
+               ymode=log, legend pos=north west]
+\addplot[fmA] table[x=P, y=recurrence_us, col sep=comma] {tables/fig01a_abs_phi.csv};
+\addlegendentry{production recurrence}
+\addplot[fmB] table[x=P, y=materialized_us, col sep=comma] {tables/fig01a_abs_phi.csv};
+\addlegendentry{materialized $T_s(\theta)$}
+\addplot[fmC] table[x=P, y=factored_us, col sep=comma] {tables/fig01a_abs_phi.csv};
+\addlegendentry{factored $Z/S/Z/S$}
+
+\nextgroupplot[title={(b) Lamb--Helmholtz, BLAS=1}, ymode=log]
+\addplot[fmA] table[x=P, y=recurrence_us, col sep=comma] {tables/fig01a_abs_lh.csv};
+\addplot[fmB] table[x=P, y=materialized_us, col sep=comma] {tables/fig01a_abs_lh.csv};
+\addplot[fmC] table[x=P, y=factored_us, col sep=comma] {tables/fig01a_abs_lh.csv};
+
+% --- row 2: whole-slab path; separate because the harness scope differs -----
+\nextgroupplot[title={(c) whole slab, $\varphi$ only}, ylabel={time per route ($\mu$s)},
+               ymode=log, legend pos=north west]
+\addplot[fmA] table[x=P, y=recurrence_blas1_us, col sep=comma] {tables/fig01c_wholeslab_phi.csv};
+\addlegendentry{route recurrence}
+\addplot[fmD] table[x=P, y=concat_blas1_us, col sep=comma] {tables/fig01c_wholeslab_phi.csv};
+\addlegendentry{whole-slab concat, BLAS=1}
+\addplot[fmD, fmalt] table[x=P, y=concat_blas64_us, col sep=comma] {tables/fig01c_wholeslab_phi.csv};
+\addlegendentry{whole-slab concat, BLAS=64}
+
+\nextgroupplot[title={(d) whole slab, Lamb--Helmholtz}, ymode=log]
+\addplot[fmA] table[x=P, y=recurrence_blas1_us, col sep=comma] {tables/fig01c_wholeslab_lh.csv};
+\addplot[fmD] table[x=P, y=concat_blas1_us, col sep=comma] {tables/fig01c_wholeslab_lh.csv};
+\addplot[fmD, fmalt] table[x=P, y=concat_blas64_us, col sep=comma] {tables/fig01c_wholeslab_lh.csv};
+
+% --- row 3: speedup over recurrence; crossover is where curves meet 1 -------
+\nextgroupplot[title={(e) per-column speedup, $\varphi$ only},
+               ylabel={recurrence time / variant time}, ymin=0.55, ymax=1.55,
+               legend pos=north west, legend columns=2]
+\addplot[fmrule, forget plot] coordinates {(0.6,1) (12.6,1)};
+\addplot[fmB] table[x=P, y=mat_blas1, col sep=comma] {tables/fig01b_ratio_phi.csv};
+\addlegendentry{materialized, BLAS=1}
+\addplot[fmC] table[x=P, y=fac_blas1, col sep=comma] {tables/fig01b_ratio_phi.csv};
+\addlegendentry{factored, BLAS=1}
+\addplot[fmB, fmalt] table[x=P, y=mat_blas64, col sep=comma] {tables/fig01b_ratio_phi.csv};
+\addlegendentry{materialized, BLAS=64}
+\addplot[fmC, fmalt] table[x=P, y=fac_blas64, col sep=comma] {tables/fig01b_ratio_phi.csv};
+\addlegendentry{factored, BLAS=64}
+\node[anchor=south west, font=\tiny, color=fmCritical] at (rel axis cs:0.03,0.47) {break-even};
+
+\nextgroupplot[title={(f) per-column speedup, Lamb--Helmholtz},
+               ymin=0.25, ymax=1.15]
+\addplot[fmrule, forget plot] coordinates {(0.6,1) (12.6,1)};
+\addplot[fmB] table[x=P, y=mat_blas1, col sep=comma] {tables/fig01b_ratio_lh.csv};
+\addplot[fmC] table[x=P, y=fac_blas1, col sep=comma] {tables/fig01b_ratio_lh.csv};
+\addplot[fmB, fmalt] table[x=P, y=mat_blas64, col sep=comma] {tables/fig01b_ratio_lh.csv};
+\addplot[fmC, fmalt] table[x=P, y=fac_blas64, col sep=comma] {tables/fig01b_ratio_lh.csv};
+
+\end{groupplot}
+\end{tikzpicture}
+
+\fmnote{\textbf{Machine / regime:} \texttt{m12-1-7}, AMD EPYC 7763, Julia 1.11.7, OpenBLAS pinned at
+process start to 1 and 64 threads; Float64; batch $=64$ expansions.
+\textbf{Data:} task 019b, \texttt{data/smallp\_fallback\_layout/m12-1-7/crossover\_\{isolated,stage\}\_blas\{1,64\}.csv}
+(tables \texttt{fig01a\_*}, \texttt{fig01b\_*}, \texttt{fig01c\_*}).
+\textbf{Reads as:} the isolated per-column 014 operators are slower than the production recurrence at
+every $P\le6$ and in every BLAS regime; the materialized path only reaches parity near $P=12$ and the
+factored path crosses break-even near $P=8$ for $\varphi$-only, while for Lamb--Helmholtz neither
+variant ever wins in this range. In contrast, the whole-slab concat path already wins at small $P$,
+then approaches or crosses back through parity as order and the $\chi$ channel increase.
+\textbf{Caveats:} rows 1 and 3 are the isolated operator harness at batch 64; row 2 is the
+\texttt{tiny\_parent} stage harness (3096 routes). They share a machine and per-expansion/per-route
+normalization but not harness scope, so they are deliberately adjacent rather than overlaid.
+The isolated kernels are scalar per-column, so per-expansion time is essentially
+batch-independent --- the batch choice does not change the conclusion, and the 64-thread BLAS curves
+lie on top of the single-thread ones. Fig.\ 2 expands the whole-slab comparison across route counts
+and adds both the 019b corner and integrated 024 GPU-vs-host results.}
+
+\end{document}

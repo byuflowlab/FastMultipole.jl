@@ -1,0 +1,5 @@
+# 024 memory_feasibility, cuda rows, n=20000; DenseTranslationM2L operator payload. Points above the 12 GiB gate are the infeasible cases; Float32/P=12 dense is a hard-coded skip. concat/factored/precomputed_y report operator_bytes = 0 (no materialized per-class operator).
+P,f64_phi_mib,f64_lh_mib,f32_phi_mib,f32_lh_mib,clustered_f64_phi_mib,clustered_f64_lh_mib
+4,7.5531005859375,36.11077880859375,3.77655029296875,18.055389404296875,130.2814483642578,771.8962860107422
+8,156.37637329101562,779.3334808349609,78.18818664550781,389.66674041748047,1478.367416381836,7369.925277709961
+12,708.6210021972656,3305.4176330566406,0,0,6464.750274658203,0

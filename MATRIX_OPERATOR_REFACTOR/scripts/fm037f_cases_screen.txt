@@ -1,0 +1,71 @@
+# 037f cheapened-g/h screen (pre-registered before submission).  Same-job
+# anchors (gh_mode=shipped) plus one row per admissible mode per case point;
+# all rows kernel=partitioned P5 (expansion_order=4) rho_t=3.668 dense M2L,
+# profile on — the mode is the ONLY delta within each (case, n, tf) block.
+# Budgets/sizing: theory/nearfield-kernel-cheapening-budget.md (all shipped
+# modes pass the rigorous coherent tier of B = 2.66e-4 with >= 2x margin).
+# Skipped combos: gh_mode=fp32 / reduced_fp32 on tf=Float32 rows — they are
+# documented no-ops (identical code path to shipped/reduced at Float32).
+# Rotor geometry (ell=5/6 at n=1e5/1e6) is the 037f pre-registered point,
+# not the 037b anchor geometry — the same-job anchors below keep every A/B
+# internally consistent.
+
+# ---- cube n=1e5 (ell=4 q=12) ----
+label=f37f_cu5f_anchor case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_cu5f_reduced case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_cu5f_lut case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+label=f37f_cu5d_anchor case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_cu5d_reduced case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_cu5d_fp32 case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=fp32
+label=f37f_cu5d_rfp32 case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced_fp32
+label=f37f_cu5d_lut case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+
+# ---- cube n=1e6 (ell=5 q=12; the budget-binding anchor) ----
+label=f37f_cu6f_anchor case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_cu6f_reduced case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_cu6f_lut case=cube n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+label=f37f_cu6d_anchor case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_cu6d_reduced case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_cu6d_fp32 case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=fp32
+label=f37f_cu6d_rfp32 case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced_fp32
+label=f37f_cu6d_lut case=cube n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=12 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+
+# ---- wake n=1e5 (ell=5 q=6) ----
+label=f37f_wa5f_anchor case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_wa5f_reduced case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_wa5f_lut case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+label=f37f_wa5d_anchor case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_wa5d_reduced case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_wa5d_fp32 case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=fp32
+label=f37f_wa5d_rfp32 case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced_fp32
+label=f37f_wa5d_lut case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+
+# ---- wake n=1e6 (ell=6 q=6) ----
+label=f37f_wa6f_anchor case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_wa6f_reduced case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_wa6f_lut case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+label=f37f_wa6d_anchor case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_wa6d_reduced case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_wa6d_fp32 case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=fp32
+label=f37f_wa6d_rfp32 case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced_fp32
+label=f37f_wa6d_lut case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+
+# ---- rotor n=1e5 (ell=5 q=6) ----
+label=f37f_ro5f_anchor case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_ro5f_reduced case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_ro5f_lut case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+label=f37f_ro5d_anchor case=rotor n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_ro5d_reduced case=rotor n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_ro5d_fp32 case=rotor n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=fp32
+label=f37f_ro5d_rfp32 case=rotor n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced_fp32
+label=f37f_ro5d_lut case=rotor n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+
+# ---- rotor n=1e6 (ell=6 q=6) ----
+label=f37f_ro6f_anchor case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_ro6f_reduced case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_ro6f_lut case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=lut
+label=f37f_ro6d_anchor case=rotor n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=shipped
+label=f37f_ro6d_reduced case=rotor n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced
+label=f37f_ro6d_fp32 case=rotor n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=fp32
+label=f37f_ro6d_rfp32 case=rotor n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=reduced_fp32
+label=f37f_ro6d_lut case=rotor n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 gh_mode=lut

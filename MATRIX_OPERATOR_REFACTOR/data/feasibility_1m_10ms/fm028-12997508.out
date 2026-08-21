@@ -1,0 +1,127 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=0e57eca91e2c725b
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Precompiling CUDA...
+   2662.0 ms  ✓ CUDA_Driver_jll
+   2937.7 ms  ✓ CUDA_Runtime_jll
+   2339.6 ms  ✓ CUDA_Compiler_jll
+   8895.7 ms  ✓ LLVM
+   2931.9 ms  ✓ LLVM → BFloat16sExt
+   2816.0 ms  ✓ UnsafeAtomics → UnsafeAtomicsLLVM
+   3267.0 ms  ✓ GPUToolbox
+   7969.3 ms  ✓ GPUArrays
+  21266.3 ms  ✓ PrettyTables
+  19256.4 ms  ✓ GPUCompiler
+  19366.1 ms  ✓ CUDACore
+   7984.2 ms  ✓ cuRAND
+   9029.5 ms  ✓ cuFFT
+   9372.9 ms  ✓ NVML
+   9825.1 ms  ✓ CUPTI
+  12411.1 ms  ✓ cuSPARSE
+  14494.9 ms  ✓ cuBLAS
+  16937.8 ms  ✓ CUDATools
+  13836.1 ms  ✓ cuSOLVER
+   9291.2 ms  ✓ CUDA
+   8686.0 ms  ✓ Atomix → AtomixCUDAExt
+  21 dependencies successfully precompiled in 100 seconds. 79 already precompiled.
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m16.8s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.8s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl (028)
+Test Summary:                          | Pass  Total   Time
+device convection lifecycle (task 028) |   24     24  53.8s
+CONVECTION_TEST_EXIT=0
+=== FM028_MODE=sweep
+=== tierA ell bracket
+hier12  dense          Float64  eo=3  LH=false n=1000000  ell=4 K=256   fit=true  eval   343.406  verdict   349.455  host   418.003 ms  grad_err 3.126e-04
+hier12  dense          Float64  eo=3  LH=false n=1000000  ell=6 K=256   fit=true  eval   545.171  verdict   546.689  host   661.175 ms  grad_err 3.202e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-084259.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-084259.csv.classes.csv
+EXIT[tierA ell bracket]=0
+=== tierB main ell=5
+hier12  dense          Float64  eo=3  LH=false n=1000000  ell=5 K=256   fit=true  eval   112.517  verdict   117.120  host   203.574 ms  grad_err 3.185e-04
+hier12  dense          Float64  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval   105.399  verdict   106.290  host   182.499 ms  grad_err 3.185e-04
+hier12  precomputed_y  Float64  eo=3  LH=false n=1000000  ell=5 K=256   fit=true  eval   161.796  verdict   176.514  host   243.615 ms  grad_err 3.185e-04
+hier12  precomputed_y  Float64  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval   166.287  verdict   172.265  host   246.182 ms  grad_err 3.185e-04
+hier3   dense          Float64  eo=3  LH=false n=1000000  ell=5 K=256   fit=true  eval    58.751  verdict    61.137  host   130.927 ms  grad_err 3.995e-03
+hier3   dense          Float64  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    55.642  verdict    58.597  host   127.060 ms  grad_err 3.995e-03
+hier3   precomputed_y  Float64  eo=3  LH=false n=1000000  ell=5 K=256   fit=true  eval    67.708  verdict    67.335  host   136.877 ms  grad_err 3.995e-03
+hier3   precomputed_y  Float64  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    66.321  verdict    61.614  host   136.148 ms  grad_err 3.995e-03
+hier12  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=256   fit=true  eval   101.292  verdict   115.534  host   187.858 ms  grad_err 3.186e-04
+hier12  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    86.424  verdict    91.407  host   159.406 ms  grad_err 3.186e-04
+hier12  precomputed_y  Float32  eo=3  LH=false n=1000000  ell=5 K=256   fit=true  eval   148.724  verdict   157.839  host   218.261 ms  grad_err 3.186e-04
+hier12  precomputed_y  Float32  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval   148.932  verdict   146.846  host   210.037 ms  grad_err 3.186e-04
+hier3   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=256   fit=true  eval    55.142  verdict    52.693  host   116.443 ms  grad_err 3.995e-03
+hier3   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    53.201  verdict    54.912  host   111.480 ms  grad_err 3.995e-03
+hier3   precomputed_y  Float32  eo=3  LH=false n=1000000  ell=5 K=256   fit=true  eval    62.803  verdict    62.904  host   123.394 ms  grad_err 3.995e-03
+hier3   precomputed_y  Float32  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    61.680  verdict    62.626  host   140.748 ms  grad_err 3.995e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-084449.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-084449.csv.classes.csv
+EXIT[tierB main ell=5]=0
+=== tierC scaling n
+hier12  dense          Float64  eo=3  LH=false n=200000   ell=5 K=1740  fit=true  eval    49.257  verdict    51.878  host    66.201 ms  grad_err 3.396e-04
+hier12  dense          Float64  eo=3  LH=false n=316228   ell=5 K=1740  fit=true  eval    57.651  verdict    54.666  host    79.066 ms  grad_err 3.266e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-084813.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-084813.csv.classes.csv
+EXIT[tierC scaling n]=0
+=== tierC 027 tie-in
+hier12  dense          Float64  eo=3  LH=false n=200000   ell=4 K=1740  fit=true  eval    22.115  verdict    23.437  host    34.750 ms  grad_err 3.343e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-084929.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-084929.csv.classes.csv
+EXIT[tierC 027 tie-in]=0
+=== tierD LH on
+hier12  dense          Float64  eo=3  LH=true  n=1000000  ell=5 K=1740  fit=true  eval   135.217  verdict   149.541  host   251.601 ms  grad_err 3.185e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-085039.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-085039.csv.classes.csv
+EXIT[tierD LH on]=0
+=== tierE stale policy
+hier12  dense          Float64  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    99.804  verdict   103.962  host   233.921 ms  grad_err 3.185e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-085157.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-085157.csv.classes.csv
+EXIT[tierE stale policy]=0
+=== flat baseline
+flat    dense          Float64  eo=3  LH=false n=1000000  ell=4 K=256   fit=true  eval   349.162  verdict   363.329  host   484.288 ms  grad_err 1.187e-04
+flat    dense          Float32  eo=3  LH=false n=1000000  ell=4 K=256   fit=true  eval   256.292  verdict   269.521  host   370.910 ms  grad_err 1.189e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260731-085317.csv
+EXIT[flat baseline]=0

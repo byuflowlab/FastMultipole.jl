@@ -1,0 +1,604 @@
+=== task 024b H200 environment
+node=m13h-1-1 cpus=16 job=12894403
+Sat Jul 25 07:37:07 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.159.04             Driver Version: 580.159.04     CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA H200                    On  |   00000000:CB:00.0 Off |                    0 |
+| N/A   25C    P0             80W /  700W |       0MiB / 143771MiB |      0%      Default |
+|                                         |                        |             Disabled |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+julia version 1.11.7
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.0
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.22.7
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+0
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+direct_reference_n1000.csv: OK
+direct_reference_n3162.csv: OK
+direct_reference_n10000.csv: OK
+direct_reference_n31623.csv: OK
+direct_reference_n100000.csv: OK
+direct_reference_n316228.csv: OK
+direct_reference_n1000000.csv: OK
+=== skip completed GPU tf=Float64 n=1000 ell=2
+=== skip completed GPU tf=Float32 n=1000 ell=2
+=== skip completed GPU tf=Float64 n=1000 ell=3
+=== skip completed GPU tf=Float32 n=1000 ell=3
+=== skip completed GPU tf=Float64 n=1000 ell=4
+=== skip completed GPU tf=Float32 n=1000 ell=4
+=== skip completed GPU tf=Float64 n=3162 ell=2
+=== skip completed GPU tf=Float32 n=3162 ell=2
+=== skip completed GPU tf=Float64 n=3162 ell=3
+=== skip completed GPU tf=Float32 n=3162 ell=3
+=== skip completed GPU tf=Float64 n=3162 ell=4
+=== skip completed GPU tf=Float32 n=3162 ell=4
+=== skip completed GPU tf=Float64 n=10000 ell=3
+=== skip completed GPU tf=Float32 n=10000 ell=3
+=== skip completed GPU tf=Float64 n=10000 ell=4
+=== skip completed GPU tf=Float32 n=10000 ell=4
+=== skip completed GPU tf=Float64 n=10000 ell=5
+=== skip completed GPU tf=Float32 n=10000 ell=5
+=== skip completed GPU tf=Float64 n=31623 ell=3
+=== skip completed GPU tf=Float32 n=31623 ell=3
+=== skip completed GPU tf=Float64 n=31623 ell=4
+=== skip completed GPU tf=Float32 n=31623 ell=4
+=== skip completed GPU tf=Float64 n=31623 ell=5
+=== skip completed GPU tf=Float32 n=31623 ell=5
+=== skip completed GPU tf=Float64 n=100000 ell=4
+=== skip completed GPU tf=Float32 n=100000 ell=4
+=== skip completed GPU tf=Float64 n=100000 ell=5
+=== skip completed GPU tf=Float32 n=100000 ell=5
+=== GPU tf=Float64 n=100000 ell=6
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 100000
+│   ell = 6
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+ERROR: LoadError: Out of GPU memory trying to allocate 223.517 GiB
+Effective GPU memory usage: 81.04% (113.296 GiB/139.801 GiB)
+Memory pool usage: 112.710 GiB (112.719 GiB reserved)
+
+Stacktrace:
+  [1] _pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:726 [inlined]
+  [2] macro expansion
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:683 [inlined]
+  [3] macro expansion
+    @ ./timing.jl:421 [inlined]
+  [4] pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:682 [inlined]
+  [5] (::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64})()
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:93
+  [6] cached_alloc(f::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64}, key::Tuple{UnionAll, CuDevice, DataType, Int64})
+    @ GPUArrays ~/.julia/packages/GPUArrays/VNJ6B/src/host/alloc_cache.jl:36
+  [7] CuArray{Int64, 2, CUDACore.DeviceMemory}(::UndefInitializer, dims::Tuple{Int64, Int64})
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:92
+  [8] CuArray
+    @ ~/.julia/packages/CUDACore/OIFhX/src/array.jl:143 [inlined]
+  [9] (CuArray{Int64})(::UndefInitializer, ::Int64, ::Int64)
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:161
+ [10] zeros(::Type, ::Int64, ::Vararg{Int64})
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:830
+ [11] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float64}, h0::Float64, maxn::Int64, options::CUDARadixLifecycleOptions{Float64}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float64, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3393
+ [12] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float64}, stencil_epsilon::Float64, policy::Nothing)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [13] RadixFMMCache (repeats 2 times)
+    @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [14] build_cache(sys::Gravitational{Float64}, label::String)
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [15] main()
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:97
+ [16] top-level scope
+    @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+in expression starting at /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+
+caused by: ArgumentError: DenseTranslationM2L estimated device footprint exceeds the free-memory budget: free memory=149557411840 bytes (142629.0625 MiB), reserved headroom=1073741824 bytes (1024.0 MiB), usable=148483670016 bytes. dense operators=4194721792 bytes (4000.3984375 MiB), route metadata=40008192816 bytes, expansion buffers=248783680 bytes (237.25860595703125 MiB), packing/application slabs=4194304 bytes (4.0 MiB), other scratch=480611493072 bytes (458346.83711242676 MiB), persistent total=44207108912 bytes (42159.18437194824 MiB), estimated device peak=525067385664 bytes (500743.28009033203 MiB); D=16, classes=2048204, chunk=16384. Lower P, disable Lamb-Helmholtz, reduce the applicable scratch chunk (DENSE_CUDA_CHUNK), or select PrecomputedFactoredYM2L / FactoredRotationM2L / ConcatenatedFixedZM2L (5-30x smaller footprint); chunking does not reduce dense operator storage.
+Stacktrace:
+ [1] _dense_cuda_limit_error(strategy::DenseTranslationM2L, footprint::@NamedTuple{ndof::Int64, operator_bytes::Int64, slab_bytes::Int64, route_metadata_bytes::Int64, expansion_bytes::Int64, other_bytes::Int64, persistent_bytes::Int64, estimated_peak_bytes::Int64}, nclasses::Int64, chunk::Int64, free_bytes::Int64, gate::Symbol)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:2599
+ [2] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float64}, h0::Float64, maxn::Int64, options::CUDARadixLifecycleOptions{Float64}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float64, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3332
+ [3] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float64}, stencil_epsilon::Float64, policy::Nothing)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [4] RadixFMMCache (repeats 2 times)
+   @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [5] build_cache(sys::Gravitational{Float64}, label::String)
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [6] main()
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:90
+ [7] top-level scope
+   @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+=== GPU tf=Float32 n=100000 ell=6
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 100000
+│   ell = 6
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+ERROR: LoadError: Out of GPU memory trying to allocate 223.517 GiB
+Effective GPU memory usage: 80.73% (112.858 GiB/139.801 GiB)
+Memory pool usage: 112.263 GiB (112.281 GiB reserved)
+
+Stacktrace:
+  [1] _pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:726 [inlined]
+  [2] macro expansion
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:683 [inlined]
+  [3] macro expansion
+    @ ./timing.jl:421 [inlined]
+  [4] pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:682 [inlined]
+  [5] (::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64})()
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:93
+  [6] cached_alloc(f::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64}, key::Tuple{UnionAll, CuDevice, DataType, Int64})
+    @ GPUArrays ~/.julia/packages/GPUArrays/VNJ6B/src/host/alloc_cache.jl:36
+  [7] CuArray{Int64, 2, CUDACore.DeviceMemory}(::UndefInitializer, dims::Tuple{Int64, Int64})
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:92
+  [8] CuArray
+    @ ~/.julia/packages/CUDACore/OIFhX/src/array.jl:143 [inlined]
+  [9] (CuArray{Int64})(::UndefInitializer, ::Int64, ::Int64)
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:161
+ [10] zeros(::Type, ::Int64, ::Vararg{Int64})
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:830
+ [11] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float32}, h0::Float32, maxn::Int64, options::CUDARadixLifecycleOptions{Float32}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float32, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3393
+ [12] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float32}, stencil_epsilon::Float64, policy::Nothing)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [13] RadixFMMCache (repeats 2 times)
+    @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [14] build_cache(sys::Gravitational{Float64}, label::String)
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [15] main()
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:97
+ [16] top-level scope
+    @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+in expression starting at /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+
+caused by: ArgumentError: DenseTranslationM2L estimated device footprint exceeds the free-memory budget: free memory=149557411840 bytes (142629.0625 MiB), reserved headroom=1073741824 bytes (1024.0 MiB), usable=148483670016 bytes. dense operators=2097360896 bytes (2000.19921875 MiB), route metadata=40008192816 bytes, expansion buffers=124391840 bytes (118.62930297851562 MiB), packing/application slabs=2097152 bytes (2.0 MiB), other scratch=480605893072 bytes (458341.4965362549 MiB), persistent total=42107650864 bytes (40156.98515319824 MiB), estimated device peak=522837935776 bytes (498617.11099243164 MiB); D=16, classes=2048204, chunk=16384. Lower P, disable Lamb-Helmholtz, reduce the applicable scratch chunk (DENSE_CUDA_CHUNK), or select PrecomputedFactoredYM2L / FactoredRotationM2L / ConcatenatedFixedZM2L (5-30x smaller footprint); chunking does not reduce dense operator storage.
+Stacktrace:
+ [1] _dense_cuda_limit_error(strategy::DenseTranslationM2L, footprint::@NamedTuple{ndof::Int64, operator_bytes::Int64, slab_bytes::Int64, route_metadata_bytes::Int64, expansion_bytes::Int64, other_bytes::Int64, persistent_bytes::Int64, estimated_peak_bytes::Int64}, nclasses::Int64, chunk::Int64, free_bytes::Int64, gate::Symbol)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:2599
+ [2] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float32}, h0::Float32, maxn::Int64, options::CUDARadixLifecycleOptions{Float32}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float32, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3332
+ [3] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float32}, stencil_epsilon::Float64, policy::Nothing)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [4] RadixFMMCache (repeats 2 times)
+   @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [5] build_cache(sys::Gravitational{Float64}, label::String)
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [6] main()
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:90
+ [7] top-level scope
+   @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+=== GPU tf=Float64 n=316228 ell=4
+024b GPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/gpu_m13h-1-1_12894403.csv: tf=Float64 n=316228 ell=4 strategy=dense min=0.078064809 s grad_rel=0.00012314857630125637
+=== GPU tf=Float32 n=316228 ell=4
+024b GPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/gpu_m13h-1-1_12894403.csv: tf=Float32 n=316228 ell=4 strategy=dense min=0.065194386 s grad_rel=0.00012314172055900494
+=== GPU tf=Float64 n=316228 ell=5
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 316228
+│   ell = 5
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+024b GPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/gpu_m13h-1-1_12894403.csv: tf=Float64 n=316228 ell=5 strategy=precomputed_y min=3.122026838 s grad_rel=5.90547463479941e-5
+=== GPU tf=Float32 n=316228 ell=5
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 316228
+│   ell = 5
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+024b GPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/gpu_m13h-1-1_12894403.csv: tf=Float32 n=316228 ell=5 strategy=precomputed_y min=3.027066212 s grad_rel=5.9163022578523506e-5
+=== GPU tf=Float64 n=316228 ell=6
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 316228
+│   ell = 6
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+ERROR: LoadError: Out of GPU memory trying to allocate 256.000 GiB
+Effective GPU memory usage: 100.00% (139.796 GiB/139.801 GiB)
+Memory pool usage: 109.747 MiB (139.219 GiB reserved)
+
+Stacktrace:
+  [1] _pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:726 [inlined]
+  [2] macro expansion
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:683 [inlined]
+  [3] macro expansion
+    @ ./timing.jl:421 [inlined]
+  [4] pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:682 [inlined]
+  [5] (::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64})()
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:93
+  [6] cached_alloc(f::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64}, key::Tuple{UnionAll, CuDevice, DataType, Int64})
+    @ GPUArrays ~/.julia/packages/GPUArrays/VNJ6B/src/host/alloc_cache.jl:36
+  [7] CuArray{Int32, 1, CUDACore.DeviceMemory}(::UndefInitializer, dims::Tuple{Int64})
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:92
+  [8] similar
+    @ ~/.julia/packages/CUDACore/OIFhX/src/array.jl:189 [inlined]
+  [9] similar
+    @ ./abstractarray.jl:824 [inlined]
+ [10] _array_like_vector
+    @ ~/FastMultipole-024b/src/translate_batched.jl:1377 [inlined]
+ [11] FastMultipole.ResidentM2LPrecomputedYPlan(::Type{Float64}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::CuArray{Float64, 2, CUDACore.DeviceMemory}, accepted_offsets::Vector{SVector{3, Int64}}, cell_width::Float64, route_capacity::Int64, max_cells::Int64, grid_resolution::Int64, invariant::OperatorInvariantCache{Float64, CompressedComplexBasis, false}; compact_device::Bool)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:3878
+ [12] ResidentM2LPrecomputedYPlan
+    @ ~/FastMultipole-024b/src/translate_batched.jl:3816 [inlined]
+ [13] _radix_cache_workspace(::Type{Float64}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::FlatCoefficientBuffer{Float64, CuArray{Float64, 2, CUDACore.DeviceMemory}, CompressedComplexBasis, false}, ell::Int64, h0::Float64, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, accepted_offsets::Vector{SVector{3, Int64}}, invariant::OperatorInvariantCache{Float64, CompressedComplexBasis, false}, m2l_strategy::PrecomputedFactoredYM2L, operator::FactoredRotationM2L; compact_cuda_factored::Bool, dense_cuda_estimated_peak_bytes::Int64)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:4196
+ [14] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float64}, h0::Float64, maxn::Int64, options::CUDARadixLifecycleOptions{Float64}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float64, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3345
+ [15] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float64}, stencil_epsilon::Float64, policy::Nothing)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [16] RadixFMMCache (repeats 2 times)
+    @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [17] build_cache(sys::Gravitational{Float64}, label::String)
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [18] main()
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:97
+ [19] top-level scope
+    @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+in expression starting at /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+
+caused by: ArgumentError: DenseTranslationM2L estimated device footprint exceeds the free-memory budget: free memory=149557411840 bytes (142629.0625 MiB), reserved headroom=1073741824 bytes (1024.0 MiB), usable=148483670016 bytes. dense operators=4194721792 bytes (4000.3984375 MiB), route metadata=274886099760 bytes, expansion buffers=632740672 bytes (603.4285278320312 MiB), packing/application slabs=4194304 bytes (4.0 MiB), other scratch=3300140001744 bytes (3.14725876020813e6 MiB), persistent total=279085015856 bytes (266156.21171569824 MiB), estimated device peak=3579857758272 bytes (3.41401840045166e6 MiB); D=16, classes=2048204, chunk=16384. Lower P, disable Lamb-Helmholtz, reduce the applicable scratch chunk (DENSE_CUDA_CHUNK), or select PrecomputedFactoredYM2L / FactoredRotationM2L / ConcatenatedFixedZM2L (5-30x smaller footprint); chunking does not reduce dense operator storage.
+Stacktrace:
+ [1] _dense_cuda_limit_error(strategy::DenseTranslationM2L, footprint::@NamedTuple{ndof::Int64, operator_bytes::Int64, slab_bytes::Int64, route_metadata_bytes::Int64, expansion_bytes::Int64, other_bytes::Int64, persistent_bytes::Int64, estimated_peak_bytes::Int64}, nclasses::Int64, chunk::Int64, free_bytes::Int64, gate::Symbol)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:2599
+ [2] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float64}, h0::Float64, maxn::Int64, options::CUDARadixLifecycleOptions{Float64}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float64, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3332
+ [3] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float64}, stencil_epsilon::Float64, policy::Nothing)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [4] RadixFMMCache (repeats 2 times)
+   @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [5] build_cache(sys::Gravitational{Float64}, label::String)
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [6] main()
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:90
+ [7] top-level scope
+   @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+=== GPU tf=Float32 n=316228 ell=6
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 316228
+│   ell = 6
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+ERROR: LoadError: Out of GPU memory trying to allocate 256.000 GiB
+Effective GPU memory usage: 100.00% (139.796 GiB/139.801 GiB)
+Memory pool usage: 59.445 MiB (139.219 GiB reserved)
+
+Stacktrace:
+  [1] _pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:726 [inlined]
+  [2] macro expansion
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:683 [inlined]
+  [3] macro expansion
+    @ ./timing.jl:421 [inlined]
+  [4] pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:682 [inlined]
+  [5] (::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64})()
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:93
+  [6] cached_alloc(f::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64}, key::Tuple{UnionAll, CuDevice, DataType, Int64})
+    @ GPUArrays ~/.julia/packages/GPUArrays/VNJ6B/src/host/alloc_cache.jl:36
+  [7] CuArray{Int32, 1, CUDACore.DeviceMemory}(::UndefInitializer, dims::Tuple{Int64})
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:92
+  [8] similar
+    @ ~/.julia/packages/CUDACore/OIFhX/src/array.jl:189 [inlined]
+  [9] similar
+    @ ./abstractarray.jl:824 [inlined]
+ [10] _array_like_vector
+    @ ~/FastMultipole-024b/src/translate_batched.jl:1377 [inlined]
+ [11] FastMultipole.ResidentM2LPrecomputedYPlan(::Type{Float32}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::CuArray{Float32, 2, CUDACore.DeviceMemory}, accepted_offsets::Vector{SVector{3, Int64}}, cell_width::Float32, route_capacity::Int64, max_cells::Int64, grid_resolution::Int64, invariant::OperatorInvariantCache{Float32, CompressedComplexBasis, false}; compact_device::Bool)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:3878
+ [12] ResidentM2LPrecomputedYPlan
+    @ ~/FastMultipole-024b/src/translate_batched.jl:3816 [inlined]
+ [13] _radix_cache_workspace(::Type{Float32}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::FlatCoefficientBuffer{Float32, CuArray{Float32, 2, CUDACore.DeviceMemory}, CompressedComplexBasis, false}, ell::Int64, h0::Float32, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, accepted_offsets::Vector{SVector{3, Int64}}, invariant::OperatorInvariantCache{Float32, CompressedComplexBasis, false}, m2l_strategy::PrecomputedFactoredYM2L, operator::FactoredRotationM2L; compact_cuda_factored::Bool, dense_cuda_estimated_peak_bytes::Int64)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:4196
+ [14] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float32}, h0::Float32, maxn::Int64, options::CUDARadixLifecycleOptions{Float32}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float32, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3345
+ [15] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float32}, stencil_epsilon::Float64, policy::Nothing)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [16] RadixFMMCache (repeats 2 times)
+    @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [17] build_cache(sys::Gravitational{Float64}, label::String)
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [18] main()
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:97
+ [19] top-level scope
+    @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+in expression starting at /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+
+caused by: ArgumentError: DenseTranslationM2L estimated device footprint exceeds the free-memory budget: free memory=149557411840 bytes (142629.0625 MiB), reserved headroom=1073741824 bytes (1024.0 MiB), usable=148483670016 bytes. dense operators=2097360896 bytes (2000.19921875 MiB), route metadata=274886099760 bytes, expansion buffers=316370336 bytes (301.7142639160156 MiB), packing/application slabs=2097152 bytes (2.0 MiB), other scratch=3300122292976 bytes (3.147241871810913e6 MiB), persistent total=276985557808 bytes (264154.01249694824 MiB), estimated device peak=3577424221120 bytes (3.4116975985717773e6 MiB); D=16, classes=2048204, chunk=16384. Lower P, disable Lamb-Helmholtz, reduce the applicable scratch chunk (DENSE_CUDA_CHUNK), or select PrecomputedFactoredYM2L / FactoredRotationM2L / ConcatenatedFixedZM2L (5-30x smaller footprint); chunking does not reduce dense operator storage.
+Stacktrace:
+ [1] _dense_cuda_limit_error(strategy::DenseTranslationM2L, footprint::@NamedTuple{ndof::Int64, operator_bytes::Int64, slab_bytes::Int64, route_metadata_bytes::Int64, expansion_bytes::Int64, other_bytes::Int64, persistent_bytes::Int64, estimated_peak_bytes::Int64}, nclasses::Int64, chunk::Int64, free_bytes::Int64, gate::Symbol)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:2599
+ [2] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float32}, h0::Float32, maxn::Int64, options::CUDARadixLifecycleOptions{Float32}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float32, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3332
+ [3] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float32}, stencil_epsilon::Float64, policy::Nothing)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [4] RadixFMMCache (repeats 2 times)
+   @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [5] build_cache(sys::Gravitational{Float64}, label::String)
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [6] main()
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:90
+ [7] top-level scope
+   @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+=== GPU tf=Float64 n=1000000 ell=4
+024b GPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/gpu_m13h-1-1_12894403.csv: tf=Float64 n=1000000 ell=4 strategy=dense min=0.424611738 s grad_rel=0.00011872953200051778
+=== GPU tf=Float32 n=1000000 ell=4
+024b GPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/gpu_m13h-1-1_12894403.csv: tf=Float32 n=1000000 ell=4 strategy=dense min=0.32129178 s grad_rel=0.00011888505746691474
+=== GPU tf=Float64 n=1000000 ell=5
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 1000000
+│   ell = 5
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+024b GPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/gpu_m13h-1-1_12894403.csv: tf=Float64 n=1000000 ell=5 strategy=precomputed_y min=3.279429293 s grad_rel=5.608824015923692e-5
+=== GPU tf=Float32 n=1000000 ell=5
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 1000000
+│   ell = 5
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+024b GPU wrote /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/data/cpu_gpu_scaling/gpu_m13h-1-1_12894403.csv: tf=Float32 n=1000000 ell=5 strategy=precomputed_y min=3.126819374 s grad_rel=5.6444245289064725e-5
+=== GPU tf=Float64 n=1000000 ell=6
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 1000000
+│   ell = 6
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+ERROR: LoadError: Out of GPU memory trying to allocate 256.000 GiB
+Effective GPU memory usage: 100.00% (139.796 GiB/139.801 GiB)
+Memory pool usage: 109.747 MiB (139.219 GiB reserved)
+
+Stacktrace:
+  [1] _pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:726 [inlined]
+  [2] macro expansion
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:683 [inlined]
+  [3] macro expansion
+    @ ./timing.jl:421 [inlined]
+  [4] pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:682 [inlined]
+  [5] (::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64})()
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:93
+  [6] cached_alloc(f::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64}, key::Tuple{UnionAll, CuDevice, DataType, Int64})
+    @ GPUArrays ~/.julia/packages/GPUArrays/VNJ6B/src/host/alloc_cache.jl:36
+  [7] CuArray{Int32, 1, CUDACore.DeviceMemory}(::UndefInitializer, dims::Tuple{Int64})
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:92
+  [8] similar
+    @ ~/.julia/packages/CUDACore/OIFhX/src/array.jl:189 [inlined]
+  [9] similar
+    @ ./abstractarray.jl:824 [inlined]
+ [10] _array_like_vector
+    @ ~/FastMultipole-024b/src/translate_batched.jl:1377 [inlined]
+ [11] FastMultipole.ResidentM2LPrecomputedYPlan(::Type{Float64}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::CuArray{Float64, 2, CUDACore.DeviceMemory}, accepted_offsets::Vector{SVector{3, Int64}}, cell_width::Float64, route_capacity::Int64, max_cells::Int64, grid_resolution::Int64, invariant::OperatorInvariantCache{Float64, CompressedComplexBasis, false}; compact_device::Bool)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:3878
+ [12] ResidentM2LPrecomputedYPlan
+    @ ~/FastMultipole-024b/src/translate_batched.jl:3816 [inlined]
+ [13] _radix_cache_workspace(::Type{Float64}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::FlatCoefficientBuffer{Float64, CuArray{Float64, 2, CUDACore.DeviceMemory}, CompressedComplexBasis, false}, ell::Int64, h0::Float64, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, accepted_offsets::Vector{SVector{3, Int64}}, invariant::OperatorInvariantCache{Float64, CompressedComplexBasis, false}, m2l_strategy::PrecomputedFactoredYM2L, operator::FactoredRotationM2L; compact_cuda_factored::Bool, dense_cuda_estimated_peak_bytes::Int64)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:4196
+ [14] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float64}, h0::Float64, maxn::Int64, options::CUDARadixLifecycleOptions{Float64}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float64, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3345
+ [15] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float64}, stencil_epsilon::Float64, policy::Nothing)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [16] RadixFMMCache (repeats 2 times)
+    @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [17] build_cache(sys::Gravitational{Float64}, label::String)
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [18] main()
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:97
+ [19] top-level scope
+    @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+in expression starting at /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+
+caused by: ArgumentError: DenseTranslationM2L estimated device footprint exceeds the free-memory budget: free memory=149557411840 bytes (142629.0625 MiB), reserved headroom=1073741824 bytes (1024.0 MiB), usable=148483670016 bytes. dense operators=4194721792 bytes (4000.3984375 MiB), route metadata=274886099760 bytes, expansion buffers=632740672 bytes (603.4285278320312 MiB), packing/application slabs=4194304 bytes (4.0 MiB), other scratch=3300271285968 bytes (3.147383962600708e6 MiB), persistent total=279085015856 bytes (266156.21171569824 MiB), estimated device peak=3579989042496 bytes (3.4141436028442383e6 MiB); D=16, classes=2048204, chunk=16384. Lower P, disable Lamb-Helmholtz, reduce the applicable scratch chunk (DENSE_CUDA_CHUNK), or select PrecomputedFactoredYM2L / FactoredRotationM2L / ConcatenatedFixedZM2L (5-30x smaller footprint); chunking does not reduce dense operator storage.
+Stacktrace:
+ [1] _dense_cuda_limit_error(strategy::DenseTranslationM2L, footprint::@NamedTuple{ndof::Int64, operator_bytes::Int64, slab_bytes::Int64, route_metadata_bytes::Int64, expansion_bytes::Int64, other_bytes::Int64, persistent_bytes::Int64, estimated_peak_bytes::Int64}, nclasses::Int64, chunk::Int64, free_bytes::Int64, gate::Symbol)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:2599
+ [2] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float64}, h0::Float64, maxn::Int64, options::CUDARadixLifecycleOptions{Float64}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float64, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3332
+ [3] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float64}, stencil_epsilon::Float64, policy::Nothing)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [4] RadixFMMCache (repeats 2 times)
+   @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [5] build_cache(sys::Gravitational{Float64}, label::String)
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [6] main()
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:90
+ [7] top-level scope
+   @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+=== GPU tf=Float32 n=1000000 ell=6
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 1000000
+│   ell = 6
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+ERROR: LoadError: Out of GPU memory trying to allocate 256.000 GiB
+Effective GPU memory usage: 100.00% (139.796 GiB/139.801 GiB)
+Memory pool usage: 59.445 MiB (139.219 GiB reserved)
+
+Stacktrace:
+  [1] _pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:726 [inlined]
+  [2] macro expansion
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:683 [inlined]
+  [3] macro expansion
+    @ ./timing.jl:421 [inlined]
+  [4] pool_alloc
+    @ ~/.julia/packages/CUDACore/OIFhX/src/memory.jl:682 [inlined]
+  [5] (::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64})()
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:93
+  [6] cached_alloc(f::CUDACore.var"#1226#1228"{CUDACore.DeviceMemory, Int64}, key::Tuple{UnionAll, CuDevice, DataType, Int64})
+    @ GPUArrays ~/.julia/packages/GPUArrays/VNJ6B/src/host/alloc_cache.jl:36
+  [7] CuArray{Int32, 1, CUDACore.DeviceMemory}(::UndefInitializer, dims::Tuple{Int64})
+    @ CUDACore ~/.julia/packages/CUDACore/OIFhX/src/array.jl:92
+  [8] similar
+    @ ~/.julia/packages/CUDACore/OIFhX/src/array.jl:189 [inlined]
+  [9] similar
+    @ ./abstractarray.jl:824 [inlined]
+ [10] _array_like_vector
+    @ ~/FastMultipole-024b/src/translate_batched.jl:1377 [inlined]
+ [11] FastMultipole.ResidentM2LPrecomputedYPlan(::Type{Float32}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::CuArray{Float32, 2, CUDACore.DeviceMemory}, accepted_offsets::Vector{SVector{3, Int64}}, cell_width::Float32, route_capacity::Int64, max_cells::Int64, grid_resolution::Int64, invariant::OperatorInvariantCache{Float32, CompressedComplexBasis, false}; compact_device::Bool)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:3878
+ [12] ResidentM2LPrecomputedYPlan
+    @ ~/FastMultipole-024b/src/translate_batched.jl:3816 [inlined]
+ [13] _radix_cache_workspace(::Type{Float32}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::FlatCoefficientBuffer{Float32, CuArray{Float32, 2, CUDACore.DeviceMemory}, CompressedComplexBasis, false}, ell::Int64, h0::Float32, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, accepted_offsets::Vector{SVector{3, Int64}}, invariant::OperatorInvariantCache{Float32, CompressedComplexBasis, false}, m2l_strategy::PrecomputedFactoredYM2L, operator::FactoredRotationM2L; compact_cuda_factored::Bool, dense_cuda_estimated_peak_bytes::Int64)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:4196
+ [14] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float32}, h0::Float32, maxn::Int64, options::CUDARadixLifecycleOptions{Float32}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float32, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3345
+ [15] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float32}, stencil_epsilon::Float64, policy::Nothing)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [16] RadixFMMCache (repeats 2 times)
+    @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [17] build_cache(sys::Gravitational{Float64}, label::String)
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [18] main()
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:97
+ [19] top-level scope
+    @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+in expression starting at /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+
+caused by: ArgumentError: DenseTranslationM2L estimated device footprint exceeds the free-memory budget: free memory=149557411840 bytes (142629.0625 MiB), reserved headroom=1073741824 bytes (1024.0 MiB), usable=148483670016 bytes. dense operators=2097360896 bytes (2000.19921875 MiB), route metadata=274886099760 bytes, expansion buffers=316370336 bytes (301.7142639160156 MiB), packing/application slabs=2097152 bytes (2.0 MiB), other scratch=3300215285968 bytes (3.1473305568389893e6 MiB), persistent total=276985557808 bytes (264154.01249694824 MiB), estimated device peak=3577517214112 bytes (3.4117862835998535e6 MiB); D=16, classes=2048204, chunk=16384. Lower P, disable Lamb-Helmholtz, reduce the applicable scratch chunk (DENSE_CUDA_CHUNK), or select PrecomputedFactoredYM2L / FactoredRotationM2L / ConcatenatedFixedZM2L (5-30x smaller footprint); chunking does not reduce dense operator storage.
+Stacktrace:
+ [1] _dense_cuda_limit_error(strategy::DenseTranslationM2L, footprint::@NamedTuple{ndof::Int64, operator_bytes::Int64, slab_bytes::Int64, route_metadata_bytes::Int64, expansion_bytes::Int64, other_bytes::Int64, persistent_bytes::Int64, estimated_peak_bytes::Int64}, nclasses::Int64, chunk::Int64, free_bytes::Int64, gate::Symbol)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:2599
+ [2] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float32}, h0::Float32, maxn::Int64, options::CUDARadixLifecycleOptions{Float32}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float32, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3332
+ [3] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float32}, stencil_epsilon::Float64, policy::Nothing)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [4] RadixFMMCache (repeats 2 times)
+   @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [5] build_cache(sys::Gravitational{Float64}, label::String)
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [6] main()
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:90
+ [7] top-level scope
+   @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+=== GPU tf=Float64 n=1000000 ell=7
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 1000000
+│   ell = 7
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+ERROR: LoadError: OutOfMemoryError()
+Stacktrace:
+  [1] GenericMemory
+    @ ./boot.jl:516 [inlined]
+  [2] Array
+    @ ./boot.jl:578 [inlined]
+  [3] FastMultipole.ResidentM2LPrecomputedYPlan(::Type{Float64}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::CuArray{Float64, 2, CUDACore.DeviceMemory}, accepted_offsets::Vector{SVector{3, Int64}}, cell_width::Float64, route_capacity::Int64, max_cells::Int64, grid_resolution::Int64, invariant::OperatorInvariantCache{Float64, CompressedComplexBasis, false}; compact_device::Bool)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:3878
+  [4] ResidentM2LPrecomputedYPlan
+    @ ~/FastMultipole-024b/src/translate_batched.jl:3816 [inlined]
+  [5] _radix_cache_workspace(::Type{Float64}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::FlatCoefficientBuffer{Float64, CuArray{Float64, 2, CUDACore.DeviceMemory}, CompressedComplexBasis, false}, ell::Int64, h0::Float64, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, accepted_offsets::Vector{SVector{3, Int64}}, invariant::OperatorInvariantCache{Float64, CompressedComplexBasis, false}, m2l_strategy::PrecomputedFactoredYM2L, operator::FactoredRotationM2L; compact_cuda_factored::Bool, dense_cuda_estimated_peak_bytes::Int64)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:4196
+  [6] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float64}, h0::Float64, maxn::Int64, options::CUDARadixLifecycleOptions{Float64}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float64, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3345
+  [7] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float64}, stencil_epsilon::Float64, policy::Nothing)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+  [8] RadixFMMCache (repeats 2 times)
+    @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+  [9] build_cache(sys::Gravitational{Float64}, label::String)
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [10] main()
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:97
+ [11] top-level scope
+    @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+in expression starting at /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+
+caused by: ArgumentError: DenseTranslationM2L estimated device footprint exceeds the free-memory budget: free memory=149557411840 bytes (142629.0625 MiB), reserved headroom=1073741824 bytes (1024.0 MiB), usable=148483670016 bytes. dense operators=33958289408 bytes (32385.1484375 MiB), route metadata=4000066324784 bytes, expansion buffers=2463869760 bytes (2349.7293090820312 MiB), packing/application slabs=4194304 bytes (4.0 MiB), other scratch=48006104744656 bytes (4.5782189125686646e7 MiB), persistent total=4034028808496 bytes (3.847149666305542e6 MiB), estimated device peak=52042597422912 bytes (4.963168852130127e7 MiB); D=16, classes=16581196, chunk=16384. Lower P, disable Lamb-Helmholtz, reduce the applicable scratch chunk (DENSE_CUDA_CHUNK), or select PrecomputedFactoredYM2L / FactoredRotationM2L / ConcatenatedFixedZM2L (5-30x smaller footprint); chunking does not reduce dense operator storage.
+Stacktrace:
+ [1] _dense_cuda_limit_error(strategy::DenseTranslationM2L, footprint::@NamedTuple{ndof::Int64, operator_bytes::Int64, slab_bytes::Int64, route_metadata_bytes::Int64, expansion_bytes::Int64, other_bytes::Int64, persistent_bytes::Int64, estimated_peak_bytes::Int64}, nclasses::Int64, chunk::Int64, free_bytes::Int64, gate::Symbol)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:2599
+ [2] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float64}, h0::Float64, maxn::Int64, options::CUDARadixLifecycleOptions{Float64}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float64, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3332
+ [3] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float64}, stencil_epsilon::Float64, policy::Nothing)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [4] RadixFMMCache (repeats 2 times)
+   @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [5] build_cache(sys::Gravitational{Float64}, label::String)
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [6] main()
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:90
+ [7] top-level scope
+   @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+=== GPU tf=Float32 n=1000000 ell=7
+┌ Warning: dense construction OOM; falling back to precomputed_y
+│   n = 1000000
+│   ell = 7
+└ @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:93
+ERROR: LoadError: OutOfMemoryError()
+Stacktrace:
+  [1] GenericMemory
+    @ ./boot.jl:516 [inlined]
+  [2] Array
+    @ ./boot.jl:578 [inlined]
+  [3] FastMultipole.ResidentM2LPrecomputedYPlan(::Type{Float32}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::CuArray{Float32, 2, CUDACore.DeviceMemory}, accepted_offsets::Vector{SVector{3, Int64}}, cell_width::Float32, route_capacity::Int64, max_cells::Int64, grid_resolution::Int64, invariant::OperatorInvariantCache{Float32, CompressedComplexBasis, false}; compact_device::Bool)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:3878
+  [4] ResidentM2LPrecomputedYPlan
+    @ ~/FastMultipole-024b/src/translate_batched.jl:3816 [inlined]
+  [5] _radix_cache_workspace(::Type{Float32}, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, exemplar::FlatCoefficientBuffer{Float32, CuArray{Float32, 2, CUDACore.DeviceMemory}, CompressedComplexBasis, false}, ell::Int64, h0::Float32, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, accepted_offsets::Vector{SVector{3, Int64}}, invariant::OperatorInvariantCache{Float32, CompressedComplexBasis, false}, m2l_strategy::PrecomputedFactoredYM2L, operator::FactoredRotationM2L; compact_cuda_factored::Bool, dense_cuda_estimated_peak_bytes::Int64)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched.jl:4196
+  [6] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float32}, h0::Float32, maxn::Int64, options::CUDARadixLifecycleOptions{Float32}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float32, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3345
+  [7] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float32}, stencil_epsilon::Float64, policy::Nothing)
+    @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+  [8] RadixFMMCache (repeats 2 times)
+    @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+  [9] build_cache(sys::Gravitational{Float64}, label::String)
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [10] main()
+    @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:97
+ [11] top-level scope
+    @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+in expression starting at /home/rander39/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+
+caused by: ArgumentError: DenseTranslationM2L estimated device footprint exceeds the free-memory budget: free memory=149557411840 bytes (142629.0625 MiB), reserved headroom=1073741824 bytes (1024.0 MiB), usable=148483670016 bytes. dense operators=16979144704 bytes (16192.57421875 MiB), route metadata=4000066324784 bytes, expansion buffers=1231934880 bytes (1174.8646545410156 MiB), packing/application slabs=2097152 bytes (2.0 MiB), other scratch=48006048744656 bytes (4.578213571992493e7 MiB), persistent total=4017047566640 bytes (3.830955092086792e6 MiB), estimated device peak=52024328246176 bytes (4.961426567666626e7 MiB); D=16, classes=16581196, chunk=16384. Lower P, disable Lamb-Helmholtz, reduce the applicable scratch chunk (DENSE_CUDA_CHUNK), or select PrecomputedFactoredYM2L / FactoredRotationM2L / ConcatenatedFixedZM2L (5-30x smaller footprint); chunking does not reduce dense operator storage.
+Stacktrace:
+ [1] _dense_cuda_limit_error(strategy::DenseTranslationM2L, footprint::@NamedTuple{ndof::Int64, operator_bytes::Int64, slab_bytes::Int64, route_metadata_bytes::Int64, expansion_bytes::Int64, other_bytes::Int64, persistent_bytes::Int64, estimated_peak_bytes::Int64}, nclasses::Int64, chunk::Int64, free_bytes::Int64, gate::Symbol)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:2599
+ [2] _radix_cache_device_build(sources::Tuple{Gravitational{Float64}}, P::Int64, ell::Int64, x_min::SVector{3, Float32}, h0::Float32, maxn::Int64, options::CUDARadixLifecycleOptions{Float32}, stencil_policy::ConstantPAnalyticStencil{ConstantPStencilConfig{Float32, false, :analytic}}, accepted::Vector{SVector{3, Int64}}, rejected::Vector{SVector{3, Int64}}, max_cells::Int64, max_nodes::Int64, route_capacity::Int64, direct_capacity::Int64, basis_info::OperatorBasisInfo{CompressedComplexBasis, false}, ::Val{false})
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_cuda.jl:3332
+ [3] RadixFMMCache(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}; expansion_order::Int64, ell::Int64, max_n_bodies::Int64, bounds::Tuple{SVector{3, Float64}, Float64}, bounds_margin::Float64, lamb_helmholtz::Nothing, device::Bool, options::CUDARadixLifecycleOptions{Float32}, stencil_epsilon::Float64, policy::Nothing)
+   @ FastMultipole ~/FastMultipole-024b/src/translate_batched_resident.jl:774
+ [4] RadixFMMCache (repeats 2 times)
+   @ ~/FastMultipole-024b/src/translate_batched_resident.jl:711 [inlined]
+ [5] build_cache(sys::Gravitational{Float64}, label::String)
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:73
+ [6] main()
+   @ Main ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:90
+ [7] top-level scope
+   @ ~/FastMultipole-024b/MATRIX_OPERATOR_REFACTOR/scripts/benchmark_024b_gpu.jl:142
+024b GPU completed feasible cases with 8 unresolved failures

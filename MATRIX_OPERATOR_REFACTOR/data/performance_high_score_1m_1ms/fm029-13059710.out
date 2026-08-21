@@ -1,0 +1,129 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== nvidia-smi power/clock record
+    Performance State                                  : P0
+    Clocks Event Reasons
+        Applications Clocks Setting                    : Not Active
+    Clocks Event Reasons Counters
+        Current Power Limit                            : 700.00 W
+        Requested Power Limit                          : 700.00 W
+        Default Power Limit                            : 700.00 W
+        Min Power Limit                                : 200.00 W
+        Max Power Limit                                : 700.00 W
+        Current Power Limit                            : N/A
+        Requested Power Limit                          : N/A
+        Default Power Limit                            : N/A
+        Min Power Limit                                : N/A
+        Max Power Limit                                : N/A
+        SM                                             : 345 MHz
+        Memory                                         : 3201 MHz
+    Applications Clocks
+        Memory                                         : 3201 MHz
+    Default Applications Clocks
+        Memory                                         : 3201 MHz
+        Memory                                         : N/A
+        SM                                             : 1980 MHz
+        Memory                                         : 3201 MHz
+=== nvidia-smi topology
+	[4mGPU0	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 		0		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+=== source manifest
+SOURCE_MANIFEST=5a5d41312dc113d2
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  216    216  1m41.9s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  8.1s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl
+Test Summary:                          | Pass  Total     Time
+device convection lifecycle (task 028) |   24     24  1m10.1s
+Test Summary:                                         | Pass  Total  Time
+fused dense M2L grid-stride parity (task 028 lever 2) |    8      8  3.7s
+Test Summary:                                      | Pass  Total  Time
+nearfield stream-overlap parity (task 028 cycle 3) |    4      4  1.2s
+Test Summary:                                     | Pass  Total  Time
+dense M2L operator-tile parity (task 028 cycle 2) |   12     12  2.1s
+Test Summary:                                | Pass  Total  Time
+_cuda_fast_rsqrt accuracy (task 028 lever 1) |    2      2  0.8s
+Test Summary:                                     | Pass  Total  Time
+nearfield warp-per-pair parity (task 028 lever 1) |   16     16  2.6s
+CONVECTION_TEST_EXIT=0
+=== test/cuda_radix_counting_sort_test.jl
+Test Summary:                                   | Pass  Total   Time
+bounded Morton counting sort (task 028 stage 6) |   20     20  51.1s
+COUNTING_SORT_TEST_EXIT=0
+=== 024b reference integrity (n=1e6)
+direct_reference_n1000.csv: OK
+direct_reference_n3162.csv: OK
+direct_reference_n10000.csv: OK
+direct_reference_n31623.csv: OK
+direct_reference_n100000.csv: OK
+direct_reference_n316228.csv: OK
+direct_reference_n1000000.csv: OK
+REFERENCE_GATE_EXIT=0
+=== 029 baseline policy=sched6-5-5-5 ell=5 tf=Float32 tensor=fp16
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval     8.245  verdict     9.442  host       NaN ms  grad_err 1.059e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029_base_sched6_5_5_5_fp16_n1000000_m13h-1-1_13059710.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029_base_sched6_5_5_5_fp16_n1000000_m13h-1-1_13059710.csv.classes.csv
+=== 029 baseline policy=sched6-5-4-4 ell=5 tf=Float32 tensor=fp16
+sched6-5-4-4 dense          Float32  eo=3  LH=false n=1000000  ell=5 K=898   fit=true  eval     6.258  verdict     7.436  host       NaN ms  grad_err 1.030e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029_base_sched6_5_4_4_fp16_n1000000_m13h-1-1_13059710.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029_base_sched6_5_4_4_fp16_n1000000_m13h-1-1_13059710.csv.classes.csv
+=== 029 baseline policy=sched6-4-4-3 ell=5 tf=Float32 tensor=fp16
+sched6-4-4-3 dense          Float32  eo=3  LH=false n=1000000  ell=5 K=904   fit=true  eval     5.813  verdict     7.003  host       NaN ms  grad_err 1.190e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029_base_sched6_4_4_3_fp16_n1000000_m13h-1-1_13059710.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029_base_sched6_4_4_3_fp16_n1000000_m13h-1-1_13059710.csv.classes.csv
+=== 029 baseline policy=sched6-5-5-5 ell=5 tf=Float64 tensor=off
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval    19.151  verdict    20.461  host       NaN ms  grad_err 1.050e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029_base_sched6_5_5_5_off_n1000000_m13h-1-1_13059710.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029_base_sched6_5_5_5_off_n1000000_m13h-1-1_13059710.csv.classes.csv
+=== 029 baseline complete; failed_cases=0
+BASELINE_EXIT=0

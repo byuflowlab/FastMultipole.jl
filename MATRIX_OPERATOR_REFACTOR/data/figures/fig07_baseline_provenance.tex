@@ -1,0 +1,93 @@
+\documentclass[border=8pt,varwidth=190mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 7 --- Provenance: the 008c projections, the transfer floor that forced device residency, and the projection the CPU operators did not realize}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=46mm, height=46mm,
+  group style={group size=3 by 1, horizontal sep=14mm},
+  xmode=log, log basis x=2,
+  xtick={1,8,64,512,4096,32768,262144},
+  xticklabels={1,8,64,512,4k,32k,256k},
+]
+
+% --- (a) 008c dense-vs-recurrence projection ------------------------------
+\nextgroupplot[title={(a) 008c dense vs recurrence, $P=20$}, xlabel={batch (expansions)},
+               ylabel={recurrence time / dense time}, ymode=log,
+               ymin=0.3, ymax=200, legend pos=south east, legend columns=1]
+\addplot[fmrule] coordinates {(1,1) (262144,1)};
+\addplot[fmA] table[x=batch, y=axis_swap_speedup, col sep=comma] {tables/fig07a_dense_speedup_blas1.csv};
+\addlegendentry{axis swap, BLAS=1}
+\addplot[fmB] table[x=batch, y=m2l_z_translation_speedup, col sep=comma] {tables/fig07a_dense_speedup_blas1.csv};
+\addlegendentry{M2L $z$, BLAS=1}
+\addplot[fmA, fmalt] table[x=batch, y=axis_swap_speedup, col sep=comma] {tables/fig07a_dense_speedup_blas72.csv};
+\addlegendentry{axis swap, BLAS=72}
+\addplot[fmB, fmalt] table[x=batch, y=m2l_z_translation_speedup, col sep=comma] {tables/fig07a_dense_speedup_blas72.csv};
+\addlegendentry{M2L $z$, BLAS=72}
+
+% --- (b) GPU transfer floor ----------------------------------------------
+\nextgroupplot[title={(b) 008c H200 transfer floor, $P=20$}, xlabel={batch (expansions)},
+               ylabel={ns per expansion}, ymode=log, legend pos=north east, legend columns=1]
+\addplot[fmA] table[x=batch, y=m2lz_resident_ns, col sep=comma] {tables/fig07b_gpu_transfer_floor.csv};
+\addlegendentry{M2L $z$, device-resident}
+\addplot[fmA, fmalt] table[x=batch, y=m2lz_with_transfer_ns, col sep=comma] {tables/fig07b_gpu_transfer_floor.csv};
+\addlegendentry{M2L $z$, with transfer}
+\addplot[fmB] table[x=batch, y=axisswap_resident_ns, col sep=comma] {tables/fig07b_gpu_transfer_floor.csv};
+\addlegendentry{axis swap, device-resident}
+\addplot[fmB, fmalt] table[x=batch, y=axisswap_with_transfer_ns, col sep=comma] {tables/fig07b_gpu_transfer_floor.csv};
+\addlegendentry{axis swap, with transfer}
+\addplot[fmrule] table[x=batch, y=m2lz_best_cpu_dense_ns, col sep=comma] {tables/fig07b_cpu_reference.csv};
+\addplot[fmrule] table[x=batch, y=axisswap_best_cpu_dense_ns, col sep=comma] {tables/fig07b_cpu_reference.csv};
+\node[anchor=south west, font=\tiny, color=fmCritical, align=left]
+  at (rel axis cs:0.02,0.02) {rules: best single-thread\\CPU dense, same node};
+
+% --- (c) what 015 actually realized -------------------------------------
+\nextgroupplot[title={(c) 015 per-column operators, realized}, xlabel={expansion order $P$},
+               ylabel={production time / variant time}, xmode=normal,
+               xmin=3, xmax=21, xtick={4,8,12,20}, xticklabels={4,8,12,20},
+               ymin=0.25, ymax=2,
+               legend pos=north west, legend columns=1]
+\addplot[fmrule] coordinates {(3,1) (21,1)};
+\addplot[fmA] table[x=P, y=materialized_phi, col sep=comma] {tables/fig07c_axisswap_speedup_blas1.csv};
+\addlegendentry{materialized, $\varphi$}
+\addplot[fmB] table[x=P, y=factored_phi, col sep=comma] {tables/fig07c_axisswap_speedup_blas1.csv};
+\addlegendentry{factored, $\varphi$}
+\addplot[fmA, fmalt] table[x=P, y=materialized_lh, col sep=comma] {tables/fig07c_axisswap_speedup_blas1.csv};
+\addlegendentry{materialized, LH}
+\addplot[fmB, fmalt] table[x=P, y=factored_lh, col sep=comma] {tables/fig07c_axisswap_speedup_blas1.csv};
+\addlegendentry{factored, LH}
+
+\end{groupplot}
+\end{tikzpicture}
+
+\fmnote{\textbf{Machines / regimes:} (a) \texttt{m13h-1-1} Xeon Platinum 8568Y+ with OpenBLAS pinned to 1
+thread, and \texttt{m12-2-5} EPYC 7763 with 72 BLAS threads; both BLAS installs tuned. (b) \texttt{m13h-1-1}
+NVIDIA H200, hand-written fused scalar CUDA kernel --- deliberately \emph{not} cuBLAS. (c)
+\texttt{tmpfac-126-17}, Apple M2 laptop, Julia 1.12.5, BLAS=1, batch 4096. All Float64.
+\textbf{Data:} \texttt{impl\_performance\_baseline/\{m13h-1-1/dense\_vs\_loop\_blas1.csv,
+m12-2-5/dense\_vs\_loop\_blas72.csv, m13h-1-1/dense\_gpu.csv\}},
+\texttt{axis\_swap/tmpfac-126-17.et.byu.edu/m2l\_variants\_blas1.csv}
+(tables \texttt{fig07a\_*}, \texttt{fig07b\_*}, \texttt{fig07c\_*}).
+\textbf{Reads as:} this is the honest arc of the project. Task 008c projected 31--118$\times$ for a dense
+axis swap over the recurrence, with multi-thread BLAS \emph{losing} below batch $\approx8$ (a). It also showed
+that per-expansion host--device transfer floors out worse than the best CPU dense at every batch width, so
+keeping expansions device-resident was an architectural requirement rather than an optimisation (b). Task 015
+then measured what the per-column operators of task 014 actually delivered on a CPU: at most 1.75$\times$
+(factored, $\varphi$-only, $P=20$) and below 1$\times$ for Lamb--Helmholtz almost everywhere (c). The
+projection in (a) was only realized later, by the whole-slab dense and fused-kernel GPU paths of tasks 019--024
+--- not by the per-column operators.
+\textbf{Scope:} every panel here is an \emph{isolated} operator or stage microbenchmark --- no panel in this
+figure runs an \texttt{fmm!} call, and none includes nearfield direct interactions. Contrast Figs.\ 3, 5 and
+6, whose timings are complete end-to-end evaluations.
+\textbf{Caveats:} in (a) the large-batch recurrence rows are projections --- only
+$\min(\text{batch},\,\text{cap})$ expansions were timed and scaled
+(\texttt{scaled\_from\_per\_expansion=true}). Panel (c) is a single-laptop measurement on a different machine,
+scope, and normalization from every other figure here, so it is shown as a ratio only and its microseconds must
+never be compared against the stage seconds of Fig.\ 3 or the step times of Figs.\ 5--6. Panel (b)'s
+\texttt{per\_block\_launch} variant is omitted (catastrophic at small batch); Float32 was measured and is not the
+lever --- 1.2--1.27$\times$ at large batch and slower below.}
+
+\end{document}

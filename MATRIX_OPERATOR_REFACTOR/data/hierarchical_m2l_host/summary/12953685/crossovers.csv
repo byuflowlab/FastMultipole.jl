@@ -1,0 +1,13 @@
+policy,strategy,blas_threads,ell,verdict,n_lower,n_upper
+hierarchical_12,precomputed_y,1,3,observed,256,512
+hierarchical_12,precomputed_y,1,4,observed,128,256
+hierarchical_12,precomputed_y,1,5,observed,0,256
+hierarchical_12,precomputed_y,64,3,observed,256,512
+hierarchical_12,precomputed_y,64,4,observed,128,256
+hierarchical_12,precomputed_y,64,5,observed,0,256
+hierarchical_3,precomputed_y,1,3,observed,0,64
+hierarchical_3,precomputed_y,1,4,observed,0,128
+hierarchical_3,precomputed_y,1,5,observed,0,256
+hierarchical_3,precomputed_y,64,3,observed,0,64
+hierarchical_3,precomputed_y,64,4,observed,0,128
+hierarchical_3,precomputed_y,64,5,observed,0,256

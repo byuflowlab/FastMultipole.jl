@@ -1,0 +1,105 @@
+\documentclass[border=8pt,varwidth=192mm]{standalone}
+\input{fmfigstyle.tex}
+\input{tables/fig05cpu_ticks.tex}
+\input{tables/fig05gpu_ticks.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 5 --- Which of the four resident M2L strategies to use, by platform and regime (task 024)}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=48mm, height=42mm,
+  group style={group size=3 by 1, horizontal sep=14mm},
+  xlabel={expansion order $P$}, xmin=3, xmax=13, xtick={4,8,12},
+]
+
+\nextgroupplot[title={(a) CPU relative step cost}, ylabel={step time / best strategy},
+               ymode=log, ymin=0.9, ymax=14, ytick={1,2,3,5,10},
+               legend pos=north west, legend columns=2]
+\addplot[fmrule] coordinates {(3,1) (13,1)};
+\addplot[fmA] table[x=P, y=concat_rel, col sep=comma] {tables/fig05a_relstep_cpu.csv};
+\addlegendentry{concat}
+\addplot[fmB] table[x=P, y=factored_rel, col sep=comma] {tables/fig05a_relstep_cpu.csv};
+\addlegendentry{factored}
+\addplot[fmC] table[x=P, y=precomputed_y_rel, col sep=comma] {tables/fig05a_relstep_cpu.csv};
+\addlegendentry{precomp.-$y$}
+\addplot[fmD] table[x=P, y=dense_rel, col sep=comma] {tables/fig05a_relstep_cpu.csv};
+\addlegendentry{dense}
+
+\nextgroupplot[title={(b) H200 relative step cost}, ymode=log, ymin=0.9, ymax=14,
+               ytick={1,2,3,5,10}]
+\addplot[fmrule] coordinates {(3,1) (13,1)};
+\addplot[fmA] table[x=P, y=concat_rel, col sep=comma] {tables/fig05a_relstep_gpu.csv};
+\addplot[fmB] table[x=P, y=factored_rel, col sep=comma] {tables/fig05a_relstep_gpu.csv};
+\addplot[fmC] table[x=P, y=precomputed_y_rel, col sep=comma] {tables/fig05a_relstep_gpu.csv};
+\addplot[fmD] table[x=P, y=dense_rel, col sep=comma] {tables/fig05a_relstep_gpu.csv};
+
+\nextgroupplot[title={(c) cases won on the complete step}, ylabel={cases won},
+               xlabel={}, xmin=0.4, xmax=4.6, xtick={1,2,3,4},
+               xticklabels={concat, factored, precomp.-$y$, dense},
+               xticklabel style={rotate=32, anchor=east, font=\tiny},
+               ymin=0, ymax=78, fmbaraxis, /tikz/bar width=5pt, legend pos=north west,
+               nodes near coords, nodes near coords style={font=\tiny, color=fmInkTwo},
+               point meta=explicit symbolic]
+\addplot[fmbars, fill=fmSone] table[x=strategy_index, y=wins, meta=wins, col sep=comma] {tables/fig05b_wins_cpu.csv};
+\addlegendentry{CPU (84 cases)}
+\addplot[fmbars, fill=fmStwo] table[x=strategy_index, y=wins, meta=wins, col sep=comma] {tables/fig05b_wins_gpu.csv};
+\addlegendentry{H200 (42 cases)}
+
+\end{groupplot}
+\end{tikzpicture}
+
+\vspace{4mm}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=30mm,
+  group style={group size=2 by 1, horizontal sep=48mm},
+  xlabel={expansion order $P$}, xmin=2.6, xmax=13.4, xtick={4,8,12},
+  every axis plot/.append style={only marks, mark size=2.4pt},
+  legend style={at={(0.5,-0.22)}, anchor=north, legend columns=3, draw=fmAxis},
+]
+
+\nextgroupplot[title={(d) CPU step winner by regime}, height=70mm, FigFiveCpuTicks,
+               yticklabel style={font=\tiny}, ymajorgrids=false, ytick style={draw=none}]
+\addplot[fmD] table[x=P, y=regime_slot, col sep=comma] {tables/fig05cpu_win_dense.csv};
+\addplot[fmC] table[x=P, y=regime_slot, col sep=comma] {tables/fig05cpu_win_precomputed_y.csv};
+
+\nextgroupplot[title={(e) H200 step winner by regime}, height=36mm, FigFiveGpuTicks,
+               yticklabel style={font=\tiny}, ymajorgrids=false, ytick style={draw=none}]
+\addplot[fmD] table[x=P, y=regime_slot, col sep=comma] {tables/fig05gpu_win_dense.csv};
+\addlegendentry{dense}
+\addplot[fmC] table[x=P, y=regime_slot, col sep=comma] {tables/fig05gpu_win_precomputed_y.csv};
+\addlegendentry{precomputed-$y$}
+\addplot[fmB] table[x=P, y=regime_slot, col sep=comma] {tables/fig05gpu_win_factored.csv};
+\addlegendentry{factored}
+
+\end{groupplot}
+\end{tikzpicture}
+
+\fmnote{\textbf{Machines / regimes:} CPU = \texttt{m12-2-17}, AMD EPYC 7763, Slurm job 12892009, two
+processes with OpenBLAS pinned before startup to 1 and 64 threads (\texttt{b1}/\texttt{b64} in the regime
+labels), \texttt{julia\_threads=1} throughout. GPU = \texttt{m13h-1-1}, NVIDIA H200, Slurm job 12892013,
+device-resident lifecycle. 126 cases $\times$ 4 strategies; 483 eligible rows, 21 infeasible, 0 disqualified;
+every eligible row passed its correctness gate. 2 warmups, 7 samples, medians.
+\textbf{Data:} \texttt{operator\_ab\_benchmark/summary/\{case\_rankings,cpu\_crossovers,gpu\_crossovers\}.csv}
+(tables \texttt{fig05a\_*}, \texttt{fig05b\_*}, \texttt{fig05\{cpu,gpu\}\_win\_*}).
+\textbf{Reads as:} on the CPU the choice is binary --- dense takes 63 of 84 cases and precomputed-$y$ the
+other 21; \texttt{concat} and \texttt{factored} win nothing and sit 1.8--4.1$\times$ off the best. On the H200
+the split is nearly even (20 dense / 21 precomputed-$y$ / 1 factored), and the pattern is orderly: dense owns
+$P=4$ and $\varphi$-only $P=8$, precomputed-$y$ owns $P=12$ and Lamb--Helmholtz at larger $n$. Neither
+$n$ nor mean class occupancy alone predicts the winner --- channel and order reverse it at matched occupancy.
+\textbf{Caveats:} panels (a,b) are geometric means over all cases at that $P$, so they compress regimes that
+(d,e) separate; strategies infeasible in a case are omitted from that case's mean rather than penalised.
+``Multi-thread CPU'' here means BLAS threads only. \textbf{Scope:} the ranked quantity is the complete
+recurring \texttt{fmm!} step --- state refresh, the full B2M$\to$M2M$\to$M2L$\to$L2L$\to$L2B lifecycle
+including the \emph{nearfield} direct pairs evaluated inside L2B, and output writeback --- so these are
+end-to-end evaluations, gated for every case against an all-bodies \texttt{direct!} reference. The M2L-only
+ranking (which flips 6 of 42 H200 winners) is the kernel subset of the same runs. Three eligible CPU rows had M2L IQR/median above 10\%
+(0.113, 0.195, 0.713) and were recorded as unresolved noise by task 024. The reconstructed per-column
+$T_s(\theta)$ path is a correctness oracle and is excluded from ranking. Task 024 changed no production
+defaults --- these are recommendations, not shipped dispatch.}
+
+\end{document}

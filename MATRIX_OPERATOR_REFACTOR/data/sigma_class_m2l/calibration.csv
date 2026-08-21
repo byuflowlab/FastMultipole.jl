@@ -1,0 +1,22 @@
+item,rate_ns,uncertainty,source,note
+direct_cube_body_pair,0.006720,0.25,multilevel_nearfield_shells/cost_calibration.csv,041c cube rate
+direct_wake_body_pair,0.009813,0.25,multilevel_nearfield_shells/cost_calibration.csv,041c wake rate
+direct_multiscale_or_rotor_body_pair,0.008641,0.35,multilevel_nearfield_shells/cost_calibration.csv,041c heterogeneous rate
+m2l_route_P4,0.5812,0.35,multilevel_nearfield_shells/cost_calibration.csv,existing batched route
+m2l_route_P8,1.1624,0.35,041c P4 rate scaled by coefficient count,optimistic two-times P4
+class_filtered_P2M_body,2.066,0.25,fm041a_gpu_stages.csv,unitcube B2M ms divided by 1e6
+refresh_scatter_body,0.450,0.35,fm041a_gpu_stages.csv+041a lifecycle,filter and compact
+class_metadata_item,0.900,0.35,041a lifecycle,preallocated refresh item
+route_group,0.250,0.35,041c calibration,CSR grouping
+new_table_offset_class,40.0,0.35,025 bounded table lifecycle,amortized refresh charge
+solve_unitcube_1m_ms,21.674,0.25,fm041a_gpu_stages.csv,graph-overlapped adaptive
+solve_wake_1m_ms,53.586,0.25,fm041a_gpu_stages.csv,graph-overlapped adaptive
+solve_multiscale_1m_ms,49.949,0.35,fm041a_gpu_stages.csv,graph-overlapped adaptive
+solve_rotor_100k_F32_ms,11.816,0.35,fm037f_screen.csv,shipped anchor
+solve_rotor_100k_F64_ms,22.020,0.35,fm037f_screen.csv,shipped anchor
+solve_rotor_1m_F32_ms,236.791,0.35,fm037f_screen.csv,shipped anchor
+solve_rotor_1m_F64_ms,470.122,0.35,fm037f_screen.csv,shipped anchor
+near_rotor_100k_F32_ms,12.269,0.35,fm037f_screen.csv,shipped UJ anchor
+near_rotor_100k_F64_ms,23.210,0.35,fm037f_screen.csv,shipped UJ anchor
+near_rotor_1m_F32_ms,240.636,0.35,fm037f_screen.csv,shipped UJ anchor
+near_rotor_1m_F64_ms,478.532,0.35,fm037f_screen.csv,shipped UJ anchor

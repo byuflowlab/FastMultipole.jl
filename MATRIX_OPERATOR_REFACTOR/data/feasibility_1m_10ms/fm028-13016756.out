@@ -1,0 +1,176 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== source manifest
+SOURCE_MANIFEST=2708401df42a7ee5
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Precompiling CUDA...
+   2516.9 ms  ✓ CUDA_Driver_jll
+   2862.9 ms  ✓ CUDA_Runtime_jll
+   2102.2 ms  ✓ CUDA_Compiler_jll
+   8079.5 ms  ✓ LLVM
+   2124.9 ms  ✓ LLVM → BFloat16sExt
+   2576.6 ms  ✓ UnsafeAtomics → UnsafeAtomicsLLVM
+   3278.4 ms  ✓ GPUToolbox
+   5381.6 ms  ✓ GPUArrays
+  20884.8 ms  ✓ PrettyTables
+  18869.7 ms  ✓ GPUCompiler
+  19910.9 ms  ✓ CUDACore
+   8081.0 ms  ✓ cuRAND
+  10020.6 ms  ✓ cuFFT
+  10827.6 ms  ✓ CUPTI
+  11288.6 ms  ✓ NVML
+  13206.2 ms  ✓ cuSPARSE
+  14340.7 ms  ✓ cuBLAS
+  14604.5 ms  ✓ CUDATools
+  12955.8 ms  ✓ cuSOLVER
+   9179.0 ms  ✓ CUDA
+   8648.6 ms  ✓ Atomix → AtomixCUDAExt
+  21 dependencies successfully precompiled in 98 seconds. 79 already precompiled.
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  215    215  3m11.2s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.8s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_convection_test.jl (028)
+Test Summary:                          | Pass  Total     Time
+device convection lifecycle (task 028) |   24     24  1m03.7s
+Test Summary:                                         | Pass  Total  Time
+fused dense M2L grid-stride parity (task 028 lever 2) |    8      8  3.3s
+Test Summary:                                      | Pass  Total  Time
+nearfield stream-overlap parity (task 028 cycle 3) |    4      4  1.1s
+Test Summary:                                     | Pass  Total  Time
+dense M2L operator-tile parity (task 028 cycle 2) |   12     12  2.1s
+Test Summary:                                | Pass  Total  Time
+_cuda_fast_rsqrt accuracy (task 028 lever 1) |    2      2  0.8s
+Test Summary:                                     | Pass  Total  Time
+nearfield warp-per-pair parity (task 028 lever 1) |   16     16  2.3s
+CONVECTION_TEST_EXIT=0
+=== FM028_MODE=attribute
+=== cycle 4 residual kernel attribution
+building target n=1000000 P=3 ell=5 q=12 K=1740 Float32
+M2L sweep threads= 32 cap=  512 blocks=  512  69.965 ms
+M2L sweep threads= 32 cap= 2048 blocks= 2048  18.791 ms
+M2L sweep threads= 32 cap= 8192 blocks= 8192  11.517 ms
+M2L sweep threads= 32 cap=16384 blocks=16384  11.172 ms
+M2L sweep threads= 32 cap=65536 blocks=65536  10.548 ms
+M2L sweep threads= 64 cap=  512 blocks=  512  38.821 ms
+M2L sweep threads= 64 cap= 2048 blocks= 2048  12.035 ms
+M2L sweep threads= 64 cap= 8192 blocks= 8192  10.851 ms
+M2L sweep threads= 64 cap=16384 blocks=16384  10.039 ms
+M2L sweep threads= 64 cap=65536 blocks=65536  9.636 ms
+M2L sweep threads=128 cap=  512 blocks=  512  23.484 ms
+M2L sweep threads=128 cap= 2048 blocks= 2048  12.626 ms
+M2L sweep threads=128 cap= 8192 blocks= 8192  10.895 ms
+M2L sweep threads=128 cap=16384 blocks=16384  10.463 ms
+M2L sweep threads=128 cap=65536 blocks=65536  10.360 ms
+M2L sweep threads=256 cap=  512 blocks=  512  14.596 ms
+M2L sweep threads=256 cap= 2048 blocks= 2048  13.755 ms
+M2L sweep threads=256 cap= 8192 blocks= 8192  11.679 ms
+M2L sweep threads=256 cap=16384 blocks=16384  11.516 ms
+M2L sweep threads=256 cap=65536 blocks=65536  11.600 ms
+M2L A/B atomic  10.461 ms
+M2L A/B store   8.752 ms
+M2L A/B nostore 8.660 ms
+near sweep threads= 64 cap=  512 blocks=  512  35.256 ms
+near sweep threads= 64 cap= 2048 blocks= 2048  14.779 ms
+near sweep threads= 64 cap= 8192 blocks= 8192  12.442 ms
+near sweep threads= 64 cap=16384 blocks=16384  11.766 ms
+near sweep threads= 64 cap=65536 blocks=65536  11.334 ms
+near sweep threads=128 cap=  512 blocks=  512  19.563 ms
+near sweep threads=128 cap= 2048 blocks= 2048  13.432 ms
+near sweep threads=128 cap= 8192 blocks= 8192  11.750 ms
+near sweep threads=128 cap=16384 blocks=16384  11.456 ms
+near sweep threads=128 cap=65536 blocks=65536  11.328 ms
+near sweep threads=256 cap=  512 blocks=  512  14.430 ms
+near sweep threads=256 cap= 2048 blocks= 2048  12.436 ms
+near sweep threads=256 cap= 8192 blocks= 8192  11.489 ms
+near sweep threads=256 cap=16384 blocks=16384  11.376 ms
+near sweep threads=256 cap=65536 blocks=65536  11.429 ms
+near sweep threads=512 cap=  512 blocks=  512  13.074 ms
+near sweep threads=512 cap= 2048 blocks= 2048  11.898 ms
+near sweep threads=512 cap= 8192 blocks= 8192  11.464 ms
+near sweep threads=512 cap=16384 blocks=16384  11.485 ms
+near sweep threads=512 cap=65536 blocks=65536  11.898 ms
+near A/B atomic  11.452 ms
+near A/B store   11.470 ms
+near A/B nostore 11.438 ms
+
+--- CUDA trace: production tiled leaf M2L
+Profiler ran for 25.6 ms, capturing 22 events.
+
+Host-side activity: calling CUDA APIs took 61.51 µs (0.24% of the trace)
+┌────┬──────────┬──────────┬──────────────────┐
+│ ID │    Start │     Time │ Name             │
+├────┼──────────┼──────────┼──────────────────┤
+│ 20 │ 15.09 ms │ 56.98 µs │ cuLaunchKernelEx │
+└────┴──────────┴──────────┴──────────────────┘
+
+Device-side activity: GPU was busy for 10.45 ms (40.83% of the trace)
+┌────┬──────────┬──────────┬─────────┬────────┬──────┬───────────────────┬───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ID │    Start │     Time │ Threads │ Blocks │ Regs │        Shared Mem │ Name                                                                                                                                                                                                                                                                                                                                                                                                                          │
+├────┼──────────┼──────────┼─────────┼────────┼──────┼───────────────────┼───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 20 │ 15.14 ms │ 10.45 ms │     128 │  16384 │   45 │ 1.250 KiB dynamic │ _cuda_hier_dense_tiled_kernel_(CuDeviceArray<Float32, 2, 1>, CuDeviceArray<Float32, 2, 1>, CuDeviceArray<Float32, 3, 1>, CuDeviceArray<Int32, 1, 1>, CuDeviceArray<Int64, 1, 1>, CuDeviceArray<Int64, 1, 1>, CuDeviceArray<Float32, 2, 1>, CuDeviceArray<Float32, 2, 1>, CuDeviceArray<Int64, 1, 1>, CuDeviceArray<Int64, 1, 1>, Int64, CuDeviceArray<Float32, 2, 1>, CuDeviceArray<Float32, 2, 1>, Int64, Int64, Val<false>) │
+└────┴──────────┴──────────┴─────────┴────────┴──────┴───────────────────┴───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+--- CUDA trace: production nearfield
+Profiler ran for 64.82 ms, capturing 14 events.
+
+Host-side activity: calling CUDA APIs took 30.28 µs (0.05% of the trace)
+┌────┬──────────┬──────────┬──────────────────┐
+│ ID │    Start │     Time │ Name             │
+├────┼──────────┼──────────┼──────────────────┤
+│ 12 │ 53.33 ms │ 26.46 µs │ cuLaunchKernelEx │
+└────┴──────────┴──────────┴──────────────────┘
+
+Device-side activity: GPU was busy for 11.46 ms (17.68% of the trace)
+┌────┬──────────┬──────────┬─────────┬────────┬──────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ ID │    Start │     Time │ Threads │ Blocks │ Regs │ Name                                                                                                                                                                                     │
+├────┼──────────┼──────────┼─────────┼────────┼──────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┤
+│ 12 │ 53.35 ms │ 11.46 ms │     128 │  16384 │   37 │ _cuda_direct_pairs_output_kernel_(CuDeviceArray<Float32, 2, 1>, CuDeviceArray<Float32, 2, 1>, CuDeviceArray<Int64, 2, 1>, CuDeviceArray<Int64, 1, 1>, CuDeviceArray<Int64, 1, 1>, Int64) │
+└────┴──────────┴──────────┴─────────┴────────┴──────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+wrote attribution CSVs with prefix attribution_m13h-1-1_20260801-062135
+ATTRIBUTION_EXIT=0
+=== cycle 4 optimized radius endpoints (q=3/q=12)
+hier3   dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval     6.545  verdict     9.434  host       NaN ms  grad_err 3.995e-03
+hier12  dense          Float32  eo=3  LH=false n=1000000  ell=5 K=1740  fit=true  eval    27.559  verdict    30.784  host       NaN ms  grad_err 3.186e-04
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-062246.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/feasibility_1m_10ms/cuda_m13h-1-1_20260801-062246.csv.classes.csv
+RADIUS_ENDPOINT_EXIT=0

@@ -1,0 +1,71 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== preflight: CUDA interface tests (stages 1-3) ===
+Test Summary:                           | Pass  Total     Time
+CUDA device-system interface (task 032) | 1246   1246  1m55.7s
+=== preflight: shipped lifecycle regression test ===
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  216    216  1m40.8s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.7s
+=== stage 4: device-resident vortex validation (n=100000, q=16) ===
+geometry: n=100000 beta=2.000 sigma=0.043089 q=16 g_min=2.4495 ell=3 h_leaf=0.127500
+adequacy margin g_min*h_leaf / (rho_t*sigma_max) = 1.5135 (must be > 1)
+Float64 step0 accuracy: u_rel_rms=5.182e-04 j_rel_rms=1.886e-03
+Float64 step 1: 340.901 ms
+Float64 step 2: 68.830 ms
+Float64 step 3: 68.372 ms
+Float64 step 4: 68.502 ms
+Float64 step 5: 68.278 ms
+WARNING: Float64 steady-state device allocation 11372 B > 0
+WARNING: Float64 steady-state host allocation 2514720 B > 16384 B
+Float64 post-convection accuracy (5 steps): u_rel_rms=5.182e-04 j_rel_rms=1.886e-03
+Float64 median steady step: 68.372 ms (min 68.278, max 68.502); dev alloc 11372 B, host alloc 2514720 B
+Float32 step0 accuracy: u_rel_rms=5.182e-04 j_rel_rms=1.886e-03
+Float32 step 1: 310.801 ms
+Float32 step 2: 41.826 ms
+Float32 step 3: 41.346 ms
+Float32 step 4: 41.510 ms
+Float32 step 5: 41.354 ms
+WARNING: Float32 steady-state device allocation 9084 B > 0
+WARNING: Float32 steady-state host allocation 2504912 B > 16384 B
+Float32 post-convection accuracy (5 steps): u_rel_rms=5.182e-04 j_rel_rms=1.886e-03
+Float32 median steady step: 41.354 ms (min 41.346, max 41.510); dev alloc 9084 B, host alloc 2504912 B
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms/cuda032v_m13h-1-1_20260806-075857.csv
+032 stage-4 validation PASSED
+=== stage 4: device-resident vortex validation (n=1000000, q=16) ===
+geometry: n=1000000 beta=2.000 sigma=0.020000 q=16 g_min=2.4495 ell=4 h_leaf=0.063750
+adequacy margin g_min*h_leaf / (rho_t*sigma_max) = 1.6304 (must be > 1)
+Float64 step0 accuracy: u_rel_rms=9.487e-04 j_rel_rms=2.903e-03
+Float64 step 1: 959.572 ms
+Float64 step 2: 694.086 ms
+Float64 step 3: 694.131 ms
+Float64 step 4: 693.777 ms
+Float64 step 5: 693.739 ms
+WARNING: Float64 steady-state device allocation 68240 B > 0
+WARNING: Float64 steady-state host allocation 6292224 B > 16384 B
+Float64 post-convection accuracy (5 steps): u_rel_rms=9.488e-04 j_rel_rms=2.903e-03
+Float64 median steady step: 693.777 ms (min 693.739, max 694.131); dev alloc 68240 B, host alloc 6292224 B
+Float32 step0 accuracy: u_rel_rms=9.488e-04 j_rel_rms=2.902e-03
+Float32 step 1: 601.035 ms
+Float32 step 2: 323.159 ms
+Float32 step 3: 322.914 ms
+Float32 step 4: 322.804 ms
+Float32 step 5: 323.064 ms
+WARNING: Float32 steady-state device allocation 62460 B > 0
+WARNING: Float32 steady-state host allocation 6282400 B > 16384 B
+Float32 post-convection accuracy (5 steps): u_rel_rms=9.488e-04 j_rel_rms=2.902e-03
+Float32 median steady step: 322.914 ms (min 322.804, max 323.064); dev alloc 62460 B, host alloc 6282400 B
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms/cuda032v_m13h-1-1_20260806-080033.csv
+032 stage-4 validation PASSED
+=== stage 4: scalar no-regression (028/030 verdict config, unchanged harness) ===
+=== no-regression case tf=Float32 fmt=fp16
+sched6-5-5-5 dense          Float32  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval     8.270  verdict     9.448  host       NaN ms  grad_err 1.059e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms/cuda032nr_sched6_5_5_5_fp16_n1000000_m13h-1-1_13059638.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms/cuda032nr_sched6_5_5_5_fp16_n1000000_m13h-1-1_13059638.csv.classes.csv
+=== no-regression case tf=Float64 fmt=off
+sched6-5-5-5 dense          Float64  eo=3  LH=false n=1000000  ell=5 K=874   fit=true  eval    19.179  verdict    20.495  host       NaN ms  grad_err 1.050e-03
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms/cuda032nr_sched6_5_5_5_off_n1000000_m13h-1-1_13059638.csv
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/feasibility_1m_10ms/cuda032nr_sched6_5_5_5_off_n1000000_m13h-1-1_13059638.csv.classes.csv
+fm032 job complete

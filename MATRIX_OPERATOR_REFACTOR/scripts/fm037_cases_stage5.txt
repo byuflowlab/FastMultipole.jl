@@ -1,0 +1,27 @@
+# Task 037 Stage 5 pre-registered comparison grid (2026-08-13).
+# Cubic vs rectangular radix grid at the SHIPPED 035 coupling defaults
+# (literature P5, partitioned rho_t=3.668, dense M2L, auto geometry).
+# The two arms share identical (ell, q, leaf width) by construction — the
+# rectangular long axis equals the cubic derived side — so any timing delta
+# is attributable to active-level trimming + per-axis capacities alone.
+#
+# Pre-registered expectation (035 handoff, recorded before this job ran):
+# wake n=1e5 end-to-end U/J gain in the 11-23% band; wake n=1e6 < 2%
+# (nearfield-dominated); cube neutral (rectangular degenerates to the same
+# active levels; ell_axes equal). Winner gate: sampled velocity RMS <= 1e-3
+# vs the sha256-checksummed 033 references; J diagnostic; counters flat.
+# RK3 recorded at n=1e5. Every row profiles the solve.
+
+# ---- wake: the target case ----
+label=st5_w5_cubic_f32 case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense profile=1 rk3=1
+label=st5_w5_rect_f32 case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense rectangular=1 profile=1 rk3=1
+label=st5_w5_cubic_f64 case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 q=6 strategy=dense profile=1 rk3=1
+label=st5_w5_rect_f64 case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 q=6 strategy=dense rectangular=1 profile=1 rk3=1
+label=st5_w6_cubic_f32 case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense profile=1
+label=st5_w6_rect_f32 case=wake n=1000000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense rectangular=1 profile=1
+label=st5_w6_cubic_f64 case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 q=6 strategy=dense profile=1
+label=st5_w6_rect_f64 case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 q=6 strategy=dense rectangular=1 profile=1
+
+# ---- cube: neutrality control ----
+label=st5_c5_cubic_f32 case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense profile=1
+label=st5_c5_rect_f32 case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 q=6 strategy=dense rectangular=1 profile=1

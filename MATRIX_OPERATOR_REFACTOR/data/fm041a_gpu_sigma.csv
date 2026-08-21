@@ -1,0 +1,25 @@
+spread,structure,param,status,t_cold_s,mem_gb,t_update_ms,t_lifecycle_ms,t_step_ms,vel_rel_rms,n_leaves,popmax,u_pairs,v_routes,w_entries,x_entries,sigma_max
+1.0,adaptive,64,ok,3.833,2.812,1.795,21.923,27.863,3.604e-04,4096,46,131696244,1240008,0,0,1.000e-04
+1.0,uniform,2,ok,2.67,0.062,1.056,72.411,80.81,8.498e-05,64,1867,4521847846,2328,0,0,1.000e-04
+1.0,uniform,3,ok,0.098,0.844,1.034,9.064,14.056,1.729e-04,512,263,868931082,121680,0,0,1.000e-04
+1.0,uniform,4,ok,0.049,1.062,1.081,18.987,24.094,3.542e-04,4096,46,131696244,1267224,0,0,1.000e-04
+1.0,uniform,5,ok,0.059,2.688,1.094,136.849,142.828,5.767e-04,29425,15,18391244,10611332,0,0,1.000e-04
+1.0,uniform,6,ok,0.141,6.531,1.112,279.753,285.902,8.936e-04,81282,7,2490166,21048786,0,0,1.000e-04
+10.0,adaptive,64,ok,0.118,3.344,1.815,21.977,27.848,3.842e-04,4096,46,131696244,1240008,0,0,1.000e-03
+10.0,uniform,2,ok,0.024,0.062,1.043,72.494,77.52,9.119e-05,64,1867,4521847846,2328,0,0,1.000e-03
+10.0,uniform,3,ok,0.029,0.844,1.035,9.076,14.083,1.846e-04,512,263,868931082,121680,0,0,1.000e-03
+10.0,uniform,4,ok,0.032,1.062,1.071,18.981,24.054,3.776e-04,4096,46,131696244,1267224,0,0,1.000e-03
+10.0,uniform,5,ok,0.056,2.688,1.086,136.833,142.289,6.147e-04,29425,15,18391244,10611332,0,0,1.000e-03
+10.0,uniform,6,ok,0.121,6.531,1.164,279.73,288.844,9.523e-04,81282,7,2490166,21048786,0,0,1.000e-03
+100.0,adaptive,64,ok,0.123,3.344,1.866,21.971,28.824,7.121e-04,4096,46,131696244,1240008,0,0,1.000e-02
+100.0,uniform,2,ok,0.03,0.062,1.041,71.967,77.841,1.684e-04,64,1867,4521847846,2328,0,0,1.000e-02
+100.0,uniform,3,ok,0.031,0.844,1.03,9.054,14.094,3.417e-04,512,263,868931082,121680,0,0,1.000e-02
+100.0,uniform,4,ok,0.032,1.062,1.083,18.993,24.106,6.998e-04,4096,46,131696244,1267224,0,0,1.000e-02
+100.0,uniform,5,fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil leaves an M2L gap of g_min*h_leaf = 0.03281 but the smooth,,,,,,,,,,,,1.000e-02
+100.0,uniform,6,fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil leaves an M2L gap of g_min*h_leaf = 0.01641 but the smooth,,,,,,,,,,,,1.000e-02
+300.0,adaptive,64,ok,0.109,3.344,1.839,23.997,30.51,2.968e-04,4096,46,579059137,1005494,0,0,3.000e-02
+300.0,uniform,2,ok,0.032,0.062,1.048,72.586,80.691,1.803e-04,64,1867,4521847846,2328,0,0,3.000e-02
+300.0,uniform,3,fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil leaves an M2L gap of g_min*h_leaf = 0.1312 but the smoothi,,,,,,,,,,,,3.000e-02
+300.0,uniform,4,fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil leaves an M2L gap of g_min*h_leaf = 0.06562 but the smooth,,,,,,,,,,,,3.000e-02
+300.0,uniform,5,fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil leaves an M2L gap of g_min*h_leaf = 0.03281 but the smooth,,,,,,,,,,,,3.000e-02
+300.0,uniform,6,fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil leaves an M2L gap of g_min*h_leaf = 0.01641 but the smooth,,,,,,,,,,,,3.000e-02

@@ -1,0 +1,53 @@
+\documentclass[border=8pt,varwidth=190mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 10 --- Task 035: isolated CUDA-event stage medians before and after the cycles (Float32; production eval overlaps NF with the far-field chain, so eval $<$ sum of stages)}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=47mm, height=46mm,
+  group style={group size=2 by 2, horizontal sep=16mm, vertical sep=14mm},
+  ymode=log,
+  fmbaraxis,
+  xtick={1,2,3,4,5,6},
+  xticklabels={B2M,M2M,M2L,L2L,NF{+}L2B,refr.},
+  xticklabel style={font=\tiny, rotate=30, anchor=north east},
+  ylabel={stage time (ms)},
+]
+
+% --- (a) cube 1e5 ----------------------------------------------------------
+\nextgroupplot[title={(a) cube $10^5$}, ymin=0.05, ymax=300,
+               legend pos=north west, legend columns=1]
+\addplot[fmbars, fill=fmSone] table[x=stage_index, y=shipped034, col sep=comma] {tables/fig10_stages_cube1e5.csv};
+\addlegendentry{shipped 034}
+\addplot[fmbars, fill=fmSthree] table[x=stage_index, y=pre3D, col sep=comma] {tables/fig10_stages_cube1e5.csv};
+\addlegendentry{pre-3D defaults}
+\addplot[fmbars, fill=fmSfour] table[x=stage_index, y=cycle3D, col sep=comma] {tables/fig10_stages_cube1e5.csv};
+\addlegendentry{cycle 3D (P5)}
+
+% --- (b) wake 1e5 ----------------------------------------------------------
+\nextgroupplot[title={(b) wake $10^5$}, ymin=0.05, ymax=300]
+\addplot[fmbars, fill=fmSone] table[x=stage_index, y=shipped034, col sep=comma] {tables/fig10_stages_wake1e5.csv};
+\addplot[fmbars, fill=fmSthree] table[x=stage_index, y=pre3D, col sep=comma] {tables/fig10_stages_wake1e5.csv};
+\addplot[fmbars, fill=fmSfour] table[x=stage_index, y=cycle3D, col sep=comma] {tables/fig10_stages_wake1e5.csv};
+
+% --- (c) cube 1e6 ----------------------------------------------------------
+% the 034-shipped 1e6 rows were not stage-profiled; two series only.
+\nextgroupplot[title={(c) cube $10^6$}, ymin=0.05, ymax=300,
+               legend pos=north west, legend columns=1]
+\addplot[fmbars, fill=fmSthree] table[x=stage_index, y=pre3D, col sep=comma] {tables/fig10_stages_cube1e6.csv};
+\addlegendentry{pre-3D defaults}
+\addplot[fmbars, fill=fmSfour] table[x=stage_index, y=cycle3D, col sep=comma] {tables/fig10_stages_cube1e6.csv};
+\addlegendentry{cycle 3D (P5)}
+
+% --- (d) wake 1e6 ----------------------------------------------------------
+\nextgroupplot[title={(d) wake $10^6$}, ymin=0.05, ymax=300]
+\addplot[fmbars, fill=fmSthree] table[x=stage_index, y=pre3D, col sep=comma] {tables/fig10_stages_wake1e6.csv};
+\addplot[fmbars, fill=fmSfour] table[x=stage_index, y=cycle3D, col sep=comma] {tables/fig10_stages_wake1e6.csv};
+
+\end{groupplot}
+\end{tikzpicture}
+
+\end{document}

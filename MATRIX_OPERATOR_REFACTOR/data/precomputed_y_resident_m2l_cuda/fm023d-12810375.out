@@ -1,0 +1,142 @@
+=== node: m13h-2-2
+GPU 0: NVIDIA H200 (UUID: GPU-b27350b7-628d-2b61-66f9-d5b8f1f0107a)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  205    205  1m28.4s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.2s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_integration_test.jl (023d precomputed-y sections)
+Test Summary:                          |   Pass   Total     Time
+CUDA radix fmm! integration (task 023) | 366064  366064  2m35.6s
+INTEGRATION_TEST_EXIT=0
+=== benchmark_023d_precomputed_y_cuda.jl
+concat                 Float64  P=4  LH=false N=150     m2l    0.282 ms  step    4.257 ms  mem   134.2 MB
+factored               Float64  P=4  LH=false N=150     m2l    0.057 ms  step    4.368 ms  mem    33.6 MB
+precomputed_y          Float64  P=4  LH=false N=150     m2l    0.042 ms  step    4.134 ms  mem    33.6 MB
+precomputed_y_perclass Float64  P=4  LH=false N=150     m2l   30.051 ms  step   35.294 ms  mem    33.6 MB
+precomputed_y          Float32  P=4  LH=false N=150     m2l    0.039 ms  step    4.008 ms  mem   123.7 MB
+concat                 Float64  P=4  LH=true  N=150     m2l    0.593 ms  step    6.573 ms  mem   167.8 MB
+factored               Float64  P=4  LH=true  N=150     m2l    0.123 ms  step    5.675 ms  mem    67.1 MB
+precomputed_y          Float64  P=4  LH=true  N=150     m2l    0.105 ms  step    5.708 ms  mem    67.1 MB
+precomputed_y_perclass Float64  P=4  LH=true  N=150     m2l   64.791 ms  step   72.319 ms  mem    67.1 MB
+precomputed_y          Float32  P=4  LH=true  N=150     m2l    0.106 ms  step    5.894 ms  mem    33.6 MB
+concat                 Float64  P=8  LH=false N=150     m2l    0.284 ms  step    4.920 ms  mem   167.8 MB
+factored               Float64  P=8  LH=false N=150     m2l    0.174 ms  step    4.699 ms  mem    67.1 MB
+precomputed_y          Float64  P=8  LH=false N=150     m2l    0.112 ms  step    4.711 ms  mem   100.7 MB
+precomputed_y_perclass Float64  P=8  LH=false N=150     m2l   82.489 ms  step   88.531 ms  mem   100.7 MB
+precomputed_y          Float32  P=8  LH=false N=150     m2l    0.091 ms  step    4.514 ms  mem    67.1 MB
+concat                 Float64  P=8  LH=true  N=150     m2l    0.619 ms  step    6.738 ms  mem   436.2 MB
+factored               Float64  P=8  LH=true  N=150     m2l    0.458 ms  step    6.331 ms  mem   167.8 MB
+precomputed_y          Float64  P=8  LH=true  N=150     m2l    0.285 ms  step    6.502 ms  mem   167.8 MB
+precomputed_y_perclass Float64  P=8  LH=true  N=150     m2l  245.677 ms  step  267.368 ms  mem   167.8 MB
+precomputed_y          Float32  P=8  LH=true  N=150     m2l    0.238 ms  step    6.411 ms  mem   100.7 MB
+concat                 Float64  P=12 LH=false N=150     m2l    0.653 ms  step    6.920 ms  mem   369.1 MB
+factored               Float64  P=12 LH=false N=150     m2l    0.468 ms  step    6.747 ms  mem   167.8 MB
+precomputed_y          Float64  P=12 LH=false N=150     m2l    0.263 ms  step    6.562 ms  mem   167.8 MB
+precomputed_y_perclass Float64  P=12 LH=false N=150     m2l   89.173 ms  step   91.559 ms  mem   167.8 MB
+precomputed_y          Float32  P=12 LH=false N=150     m2l    0.205 ms  step    5.768 ms  mem   100.7 MB
+concat                 Float64  P=12 LH=true  N=150     m2l    1.151 ms  step    8.997 ms  mem   906.0 MB
+factored               Float64  P=12 LH=true  N=150     m2l    0.912 ms  step    8.576 ms  mem   302.0 MB
+precomputed_y          Float64  P=12 LH=true  N=150     m2l    0.544 ms  step    8.519 ms  mem   335.5 MB
+precomputed_y_perclass Float64  P=12 LH=true  N=150     m2l  232.266 ms  step  239.592 ms  mem   335.5 MB
+precomputed_y          Float32  P=12 LH=true  N=150     m2l    0.424 ms  step    7.892 ms  mem   167.8 MB
+concat                 Float64  P=4  LH=false N=2000    m2l    0.268 ms  step    4.295 ms  mem   335.5 MB
+factored               Float64  P=4  LH=false N=2000    m2l    0.162 ms  step    4.131 ms  mem    67.1 MB
+precomputed_y          Float64  P=4  LH=false N=2000    m2l    0.106 ms  step    4.095 ms  mem    67.1 MB
+precomputed_y_perclass Float64  P=4  LH=false N=2000    m2l   49.624 ms  step   56.872 ms  mem    67.1 MB
+precomputed_y          Float32  P=4  LH=false N=2000    m2l    0.094 ms  step    4.019 ms  mem    33.6 MB
+concat                 Float64  P=4  LH=true  N=2000    m2l    0.550 ms  step    6.424 ms  mem   872.4 MB
+factored               Float64  P=4  LH=true  N=2000    m2l    0.339 ms  step    6.083 ms  mem   100.7 MB
+precomputed_y          Float64  P=4  LH=true  N=2000    m2l    0.231 ms  step    6.043 ms  mem   100.7 MB
+precomputed_y_perclass Float64  P=4  LH=true  N=2000    m2l  129.369 ms  step  129.304 ms  mem   100.7 MB
+precomputed_y          Float32  P=4  LH=true  N=2000    m2l    0.199 ms  step    5.835 ms  mem    67.1 MB
+concat                 Float64  P=8  LH=false N=2000    m2l    2.932 ms  step    8.538 ms  mem   973.1 MB
+factored               Float64  P=8  LH=false N=2000    m2l    2.317 ms  step    7.999 ms  mem   100.7 MB
+precomputed_y          Float64  P=8  LH=false N=2000    m2l    1.271 ms  step    6.945 ms  mem   100.7 MB
+precomputed_y_perclass Float64  P=8  LH=false N=2000    m2l  102.965 ms  step  103.788 ms  mem   100.7 MB
+precomputed_y          Float32  P=8  LH=false N=2000    m2l    1.079 ms  step    5.673 ms  mem    67.1 MB
+concat                 Float64  P=8  LH=true  N=2000    m2l    6.470 ms  step   14.482 ms  mem  2516.6 MB
+factored               Float64  P=8  LH=true  N=2000    m2l    5.996 ms  step   14.056 ms  mem   167.8 MB
+precomputed_y          Float64  P=8  LH=true  N=2000    m2l    3.460 ms  step   11.497 ms  mem   201.3 MB
+precomputed_y_perclass Float64  P=8  LH=true  N=2000    m2l  296.896 ms  step  300.004 ms  mem   201.3 MB
+precomputed_y          Float32  P=8  LH=true  N=2000    m2l    3.024 ms  step    9.875 ms  mem   100.7 MB
+concat                 Float64  P=12 LH=false N=2000    m2l    8.682 ms  step   25.995 ms  mem  2013.3 MB
+factored               Float64  P=12 LH=false N=2000    m2l    6.474 ms  step   23.827 ms  mem   167.8 MB
+precomputed_y          Float64  P=12 LH=false N=2000    m2l    3.342 ms  step   20.734 ms  mem   201.3 MB
+precomputed_y_perclass Float64  P=12 LH=false N=2000    m2l  107.356 ms  step  123.115 ms  mem   201.3 MB
+precomputed_y          Float32  P=12 LH=false N=2000    m2l    2.773 ms  step   15.829 ms  mem   100.7 MB
+concat                 Float64  P=12 LH=true  N=2000    m2l   16.366 ms  step   35.547 ms  mem  5033.2 MB
+factored               Float64  P=12 LH=true  N=2000    m2l   13.963 ms  step   33.269 ms  mem   335.5 MB
+precomputed_y          Float64  P=12 LH=true  N=2000    m2l    7.783 ms  step   27.001 ms  mem   335.5 MB
+precomputed_y_perclass Float64  P=12 LH=true  N=2000    m2l  303.084 ms  step  307.376 ms  mem   335.5 MB
+precomputed_y          Float32  P=12 LH=true  N=2000    m2l    6.387 ms  step   21.120 ms  mem   201.3 MB
+concat                 Float64  P=4  LH=false N=20000   m2l    0.260 ms  step   10.961 ms  mem   335.5 MB
+factored               Float64  P=4  LH=false N=20000   m2l    0.201 ms  step   10.690 ms  mem    67.1 MB
+precomputed_y          Float64  P=4  LH=false N=20000   m2l    0.132 ms  step   10.718 ms  mem    67.1 MB
+precomputed_y_perclass Float64  P=4  LH=false N=20000   m2l   49.664 ms  step   63.683 ms  mem    67.1 MB
+precomputed_y          Float32  P=4  LH=false N=20000   m2l    0.117 ms  step    9.327 ms  mem    67.1 MB
+concat                 Float64  P=4  LH=true  N=20000   m2l    0.551 ms  step   15.116 ms  mem   872.4 MB
+factored               Float64  P=4  LH=true  N=20000   m2l    0.359 ms  step   14.925 ms  mem   100.7 MB
+precomputed_y          Float64  P=4  LH=true  N=20000   m2l    0.242 ms  step   14.830 ms  mem   100.7 MB
+precomputed_y_perclass Float64  P=4  LH=true  N=20000   m2l  128.797 ms  step  139.431 ms  mem   100.7 MB
+precomputed_y          Float32  P=4  LH=true  N=20000   m2l    0.208 ms  step   12.482 ms  mem    67.1 MB
+concat                 Float64  P=8  LH=false N=20000   m2l    3.161 ms  step   30.603 ms  mem   973.1 MB
+factored               Float64  P=8  LH=false N=20000   m2l    2.506 ms  step   29.954 ms  mem   100.7 MB
+precomputed_y          Float64  P=8  LH=false N=20000   m2l    1.374 ms  step   28.804 ms  mem   100.7 MB
+precomputed_y_perclass Float64  P=8  LH=false N=20000   m2l  102.913 ms  step  122.854 ms  mem   100.7 MB
+precomputed_y          Float32  P=8  LH=false N=20000   m2l    1.167 ms  step   20.953 ms  mem    67.1 MB
+concat                 Float64  P=8  LH=true  N=20000   m2l    6.709 ms  step   41.194 ms  mem  2516.6 MB
+factored               Float64  P=8  LH=true  N=20000   m2l    6.184 ms  step   40.628 ms  mem   167.8 MB
+precomputed_y          Float64  P=8  LH=true  N=20000   m2l    3.567 ms  step   38.047 ms  mem   201.3 MB
+precomputed_y_perclass Float64  P=8  LH=true  N=20000   m2l  296.833 ms  step  318.033 ms  mem   201.3 MB
+precomputed_y          Float32  P=8  LH=true  N=20000   m2l    3.117 ms  step   28.134 ms  mem   100.7 MB
+concat                 Float64  P=12 LH=false N=20000   m2l    8.992 ms  step  101.013 ms  mem  2013.3 MB
+factored               Float64  P=12 LH=false N=20000   m2l    6.726 ms  step   98.794 ms  mem   201.3 MB
+precomputed_y          Float64  P=12 LH=false N=20000   m2l    3.488 ms  step   95.517 ms  mem   201.3 MB
+precomputed_y_perclass Float64  P=12 LH=false N=20000   m2l  107.573 ms  step  191.304 ms  mem   201.3 MB
+precomputed_y          Float32  P=12 LH=false N=20000   m2l    2.887 ms  step   68.863 ms  mem   134.2 MB
+concat                 Float64  P=12 LH=true  N=20000   m2l   17.870 ms  step  123.505 ms  mem  5066.7 MB
+factored               Float64  P=12 LH=true  N=20000   m2l   15.242 ms  step  121.036 ms  mem   335.5 MB
+precomputed_y          Float64  P=12 LH=true  N=20000   m2l    8.525 ms  step  114.231 ms  mem   369.1 MB
+precomputed_y_perclass Float64  P=12 LH=true  N=20000   m2l  303.806 ms  step  421.592 ms  mem   369.1 MB
+precomputed_y          Float32  P=12 LH=true  N=20000   m2l    6.984 ms  step   84.677 ms  mem   201.3 MB
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/precomputed_y_resident_m2l_cuda/cuda_m13h-2-2_20260718-165345.csv
+BENCH_EXIT=0

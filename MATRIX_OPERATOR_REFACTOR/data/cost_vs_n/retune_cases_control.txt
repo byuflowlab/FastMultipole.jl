@@ -1,0 +1,9 @@
+# Cross-node control (2026-08-04): job 13036854 ran on m13h-1-1 and the
+# refinement job 13044695 on m13h-1-2, so the refined winners are not directly
+# comparable to the first-pass ones. These four cases re-measure three
+# first-pass winners plus the refined n=1e6 winner in ONE job, so the winner
+# comparison is made under matched clock/thermal state on a single node.
+1000000:sched6-4-4-4:Float32:fp16
+1000000:sched6-4-4-3:Float32:fp16
+316228:sched6-4-4:Float32:fp16
+100000:sched6-5-5:Float32:fp16

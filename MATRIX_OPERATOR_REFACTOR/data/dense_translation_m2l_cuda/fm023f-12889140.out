@@ -1,0 +1,70 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-58eda106-52b7-5445-c10a-8f75fb83db2f)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  208    208  1m27.5s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  6.7s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_integration_test.jl (023f dense sections)
+Test Summary:                          |   Pass   Total      Time
+CUDA radix fmm! integration (task 023) | 416797  416797  22m17.4s
+INTEGRATION_TEST_EXIT=0
+=== benchmark_023f_dense_m2l_cuda.jl
+concat           Float64  P=4  LH=false N=150    fit=true  m2l    0.303 ms  step    4.406 ms  mem   134.2 MB
+factored         Float64  P=4  LH=false N=150    fit=true  m2l    0.066 ms  step    4.041 ms  mem    33.6 MB
+precomputed_y    Float64  P=4  LH=false N=150    fit=true  m2l    0.046 ms  step    4.155 ms  mem    33.6 MB
+dense            Float64  P=4  LH=false N=150    fit=true  m2l    5.969 ms  step   10.058 ms  mem    33.6 MB
+dense_perclass   Float64  P=4  LH=false N=150    fit=true  m2l   13.387 ms  step   17.397 ms  mem    33.6 MB
+dense_fused      Float64  P=4  LH=false N=150    fit=true  m2l    0.020 ms  step    3.954 ms  mem    33.6 MB
+dense            Float32  P=4  LH=false N=150    fit=true  m2l    5.656 ms  step    9.699 ms  mem   123.7 MB
+dense_perclass   Float32  P=4  LH=false N=150    fit=true  m2l   13.093 ms  step   17.058 ms  mem    33.6 MB
+dense_fused      Float32  P=4  LH=false N=150    fit=true  m2l    0.016 ms  step    3.921 ms  mem    33.6 MB
+concat           Float64  P=4  LH=true  N=150    fit=true  m2l    0.607 ms  step    6.553 ms  mem   167.8 MB
+factored         Float64  P=4  LH=true  N=150    fit=true  m2l    0.133 ms  step    5.574 ms  mem    67.1 MB
+precomputed_y    Float64  P=4  LH=true  N=150    fit=true  m2l    0.106 ms  step    5.558 ms  mem    67.1 MB
+dense            Float64  P=4  LH=true  N=150    fit=true  m2l    4.569 ms  step   10.071 ms  mem    67.1 MB
+dense_perclass   Float64  P=4  LH=true  N=150    fit=true  m2l   10.630 ms  step   16.155 ms  mem    67.1 MB
+dense_fused      Float64  P=4  LH=true  N=150    fit=true  m2l    0.030 ms  step    5.404 ms  mem    67.1 MB
+dense            Float32  P=4  LH=true  N=150    fit=true  m2l    4.216 ms  step    9.689 ms  mem    33.6 MB
+dense_perclass   Float32  P=4  LH=true  N=150    fit=true  m2l   10.533 ms  step   15.940 ms  mem    33.6 MB
+dense_fused      Float32  P=4  LH=true  N=150    fit=true  m2l    0.026 ms  step    5.392 ms  mem    33.6 MB
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/dense_translation_m2l_cuda/cuda_m13h-1-1_20260724-021313.csv
+BENCH_EXIT=0

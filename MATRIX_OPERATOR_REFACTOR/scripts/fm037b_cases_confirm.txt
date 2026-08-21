@@ -1,0 +1,19 @@
+# 037b confirmation grid (pre-registered after the 13170509 screen): F64 +
+# F32 repeat + RK3 at n=1e5 for the per-case verdict rows — same-job anchors,
+# the rotor pinned-depth partitioned winners, and the best accuracy-passing
+# two-pass rows for the record. All gates as in the screen.
+label=037bc_cu5_anchor_f32 case=cube n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=037bc_cu5_anchor_f64 case=cube n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=4 q=12 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=037bc_wa5_anchor_f32 case=wake n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=037bc_wa5_anchor_f64 case=wake n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=5 q=6 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=037bc_wa6_anchor_f64 case=wake n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1
+label=037bc_wa6_tp_l7q6_r30_f64 case=wake n=1000000 kernel=twopass tf=Float64 expansion_order=4 ell=7 q=6 rho_t=3.0 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1
+label=037bc_ro5_anchor_f32 case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 q=6 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=037bc_ro5_anchor_f64 case=rotor n=100000 kernel=partitioned tf=Float64 expansion_order=4 q=6 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=037bc_ro5_pa_l6q6_f32 case=rotor n=100000 kernel=partitioned tf=Float32 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=037bc_ro5_pa_l6q6_f64 case=rotor n=100000 kernel=partitioned tf=Float64 expansion_order=4 ell=6 q=6 rho_t=3.668 strategy=dense profile=1 rk3=1
+label=037bc_ro6_anchor_f32 case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 q=6 rho_t=3.668 strategy=dense profile=1
+label=037bc_ro6_anchor_f64 case=rotor n=1000000 kernel=partitioned tf=Float64 expansion_order=4 q=6 rho_t=3.668 strategy=dense profile=1
+label=037bc_ro6_pa_l8q6_f32 case=rotor n=1000000 kernel=partitioned tf=Float32 expansion_order=4 ell=8 q=6 rho_t=3.668 strategy=dense profile=1
+label=037bc_ro6_pa_l8q6_f64 case=rotor n=1000000 kernel=partitioned tf=Float64 expansion_order=4 ell=8 q=6 rho_t=3.668 strategy=dense profile=1
+label=037bc_ro6_tp_l8q6_r34_f64 case=rotor n=1000000 kernel=twopass tf=Float64 expansion_order=4 ell=8 q=6 rho_t=3.4 rho_c=2.0 twopass_aabb=1 strategy=dense profile=1

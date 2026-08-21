@@ -1,0 +1,5 @@
+# 024 memory_feasibility, cuda rows, Float64 phi-only uniform n=20000; peak_bytes is a per-strategy device-memory delta (comparable across strategies, unlike the process-wide CPU maxrss)
+P,concat_mib,factored_mib,precomputed_y_mib,dense_mib
+4,386,130,130,130
+8,994,162,162,290
+12,1986,258,258,866

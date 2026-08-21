@@ -1,0 +1,59 @@
+% fig15 (041a): resident step time vs n per field — old (uniform grid, best
+% gate-passing depth per n from the WIDENED sweep ell in 3..7) vs new
+% (adaptive octree, best K in 32..256), H200 Float64 dense (solid) and host
+% single-thread (dashed; best of the widened fm041a host job, n = 1e5/1e6).
+% The unitcube panel is the non-regression ground; wake carries the honest
+% GPU negative (uniform ell 6/7 remains faster at n = 1e6); multiscale100
+% shows the adaptive win.  All plotted rows pass the 1e-3 sampled-direct
+% velocity gate; best-config selection excludes gate-failing rows.
+% Data: fig15_adaptive_time_vs_n/*.csv from fm041a_gpu_widen.csv (H200 job
+% 13184013) and fm041a_host_widen.csv (CPU job 13184015); same-job anchors.
+% Compile: pdflatex fig15_adaptive_time_vs_n.tex
+\documentclass[tikz]{standalone}
+\input{fmfigstyle}
+\begin{document}
+\begin{tikzpicture}
+\begin{groupplot}[
+    group style={group size=3 by 1, horizontal sep=14mm},
+    fmbase,
+    width=52mm, height=52mm,
+    xlabel={$n$},
+    xmode=log, ymode=log,
+]
+\nextgroupplot[title={unitcube}, ylabel={resident step time [ms]},
+    legend to name=figfifteenlegend, legend columns=4,
+    legend style={draw=fmAxis, fill=white}]
+\addplot[color=fmStwo, mark=square*, line width=1.1pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/unitcube_gpu_uniform.csv};
+\addlegendentry{uniform, H200}
+\addplot[color=fmSone, mark=*, line width=1.1pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/unitcube_gpu_adaptive.csv};
+\addlegendentry{adaptive, H200}
+\addplot[color=fmStwo, mark=square, dashed, line width=0.9pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/unitcube_host_uniform.csv};
+\addlegendentry{uniform, host 1T}
+\addplot[color=fmSone, mark=o, dashed, line width=0.9pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/unitcube_host_adaptive.csv};
+\addlegendentry{adaptive, host 1T}
+\nextgroupplot[title={wake}]
+\addplot[color=fmStwo, mark=square*, line width=1.1pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/wake_gpu_uniform.csv};
+\addplot[color=fmSone, mark=*, line width=1.1pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/wake_gpu_adaptive.csv};
+\addplot[color=fmStwo, mark=square, dashed, line width=0.9pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/wake_host_uniform.csv};
+\addplot[color=fmSone, mark=o, dashed, line width=0.9pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/wake_host_adaptive.csv};
+\nextgroupplot[title={multiscale100}]
+\addplot[color=fmStwo, mark=square*, line width=1.1pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/multiscale100_gpu_uniform.csv};
+\addplot[color=fmSone, mark=*, line width=1.1pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/multiscale100_gpu_adaptive.csv};
+\addplot[color=fmStwo, mark=square, dashed, line width=0.9pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/multiscale100_host_uniform.csv};
+\addplot[color=fmSone, mark=o, dashed, line width=0.9pt]
+    table[col sep=comma, x=n, y=t_step_ms]{fig15_adaptive_time_vs_n/multiscale100_host_adaptive.csv};
+\end{groupplot}
+\node[anchor=north, yshift=-11mm] at (group c2r1.south) {\pgfplotslegendfromname{figfifteenlegend}};
+\end{tikzpicture}
+\end{document}

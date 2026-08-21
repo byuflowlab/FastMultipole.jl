@@ -1,0 +1,106 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  205    205  1m30.0s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.2s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_integration_test.jl (023b factored sections)
+Test Summary:                          | Pass  Total     Time
+CUDA radix fmm! integration (task 023) |  215    215  1m44.4s
+INTEGRATION_TEST_EXIT=0
+=== benchmark_023b_factored_cuda.jl
+concat    P=4  LH=false N=150     m2l    0.267 ms  step    4.274 ms  mem   134.2 MB
+factored  P=4  LH=false N=150     m2l    0.055 ms  step   46.410 ms  mem    67.1 MB
+factored_perclass P=4  LH=false N=150     m2l   30.540 ms  step   82.250 ms  mem    67.1 MB
+concat    P=4  LH=true  N=150     m2l    0.554 ms  step    6.056 ms  mem   167.8 MB
+factored  P=4  LH=true  N=150     m2l    0.125 ms  step   49.920 ms  mem    67.1 MB
+factored_perclass P=4  LH=true  N=150     m2l   66.729 ms  step  110.391 ms  mem    67.1 MB
+concat    P=8  LH=false N=150     m2l    0.284 ms  step    4.798 ms  mem   167.8 MB
+factored  P=8  LH=false N=150     m2l    0.185 ms  step  112.854 ms  mem   134.2 MB
+factored_perclass P=8  LH=false N=150     m2l   82.613 ms  step  192.595 ms  mem   134.2 MB
+concat    P=8  LH=true  N=150     m2l    0.620 ms  step    6.646 ms  mem   436.2 MB
+factored  P=8  LH=true  N=150     m2l    0.454 ms  step  125.985 ms  mem   201.3 MB
+factored_perclass P=8  LH=true  N=150     m2l  250.693 ms  step  364.190 ms  mem   201.3 MB
+concat    P=12 LH=false N=150     m2l    0.652 ms  step    6.894 ms  mem   369.1 MB
+factored  P=12 LH=false N=150     m2l    0.468 ms  step  154.280 ms  mem   234.9 MB
+factored_perclass P=12 LH=false N=150     m2l  118.767 ms  step  267.202 ms  mem   234.9 MB
+concat    P=12 LH=true  N=150     m2l    1.152 ms  step    8.871 ms  mem   906.0 MB
+factored  P=12 LH=true  N=150     m2l    0.914 ms  step  163.020 ms  mem   402.7 MB
+factored_perclass P=12 LH=true  N=150     m2l  243.639 ms  step  402.475 ms  mem   402.7 MB
+concat    P=4  LH=false N=2000    m2l    0.263 ms  step    4.275 ms  mem   335.5 MB
+factored  P=4  LH=false N=2000    m2l    0.162 ms  step   52.288 ms  mem   100.7 MB
+factored_perclass P=4  LH=false N=2000    m2l   51.973 ms  step  104.235 ms  mem   100.7 MB
+concat    P=4  LH=true  N=2000    m2l    0.556 ms  step    6.272 ms  mem   872.4 MB
+factored  P=4  LH=true  N=2000    m2l    0.339 ms  step   49.917 ms  mem   100.7 MB
+factored_perclass P=4  LH=true  N=2000    m2l  124.604 ms  step  176.530 ms  mem   100.7 MB
+concat    P=8  LH=false N=2000    m2l    2.933 ms  step    8.527 ms  mem   973.1 MB
+factored  P=8  LH=false N=2000    m2l    2.334 ms  step  124.817 ms  mem   167.8 MB
+factored_perclass P=8  LH=false N=2000    m2l  110.051 ms  step  231.272 ms  mem   167.8 MB
+concat    P=8  LH=true  N=2000    m2l    6.470 ms  step   14.400 ms  mem  2516.6 MB
+factored  P=8  LH=true  N=2000    m2l    5.993 ms  step  124.371 ms  mem   268.4 MB
+factored_perclass P=8  LH=true  N=2000    m2l  297.708 ms  step  410.433 ms  mem   268.4 MB
+concat    P=12 LH=false N=2000    m2l    8.688 ms  step   25.986 ms  mem  2013.3 MB
+factored  P=12 LH=false N=2000    m2l    6.481 ms  step  149.289 ms  mem   268.4 MB
+factored_perclass P=12 LH=false N=2000    m2l  153.577 ms  step  304.606 ms  mem   268.4 MB
+concat    P=12 LH=true  N=2000    m2l   16.371 ms  step   35.474 ms  mem  5033.2 MB
+factored  P=12 LH=true  N=2000    m2l   13.951 ms  step  158.406 ms  mem   469.8 MB
+factored_perclass P=12 LH=true  N=2000    m2l  341.529 ms  step  500.910 ms  mem   469.8 MB
+concat    P=4  LH=false N=20000   m2l    0.260 ms  step   10.784 ms  mem   335.5 MB
+factored  P=4  LH=false N=20000   m2l    0.201 ms  step   55.022 ms  mem   100.7 MB
+factored_perclass P=4  LH=false N=20000   m2l   51.952 ms  step  106.759 ms  mem   100.7 MB
+concat    P=4  LH=true  N=20000   m2l    0.547 ms  step   14.927 ms  mem   872.4 MB
+factored  P=4  LH=true  N=20000   m2l    0.362 ms  step   52.378 ms  mem   134.2 MB
+factored_perclass P=4  LH=true  N=20000   m2l  124.008 ms  step  179.814 ms  mem   134.2 MB
+concat    P=8  LH=false N=20000   m2l    3.162 ms  step   30.526 ms  mem   973.1 MB
+factored  P=8  LH=false N=20000   m2l    2.531 ms  step  127.274 ms  mem   167.8 MB
+factored_perclass P=8  LH=false N=20000   m2l  110.182 ms  step  236.450 ms  mem   167.8 MB
+concat    P=8  LH=true  N=20000   m2l    6.714 ms  step   41.077 ms  mem  2516.6 MB
+factored  P=8  LH=true  N=20000   m2l    6.191 ms  step  129.794 ms  mem   268.4 MB
+factored_perclass P=8  LH=true  N=20000   m2l  300.677 ms  step  422.327 ms  mem   268.4 MB
+concat    P=12 LH=false N=20000   m2l    8.997 ms  step  100.903 ms  mem  2013.3 MB
+factored  P=12 LH=false N=20000   m2l    6.734 ms  step  176.105 ms  mem   268.4 MB
+factored_perclass P=12 LH=false N=20000   m2l  153.903 ms  step  327.930 ms  mem   268.4 MB
+concat    P=12 LH=true  N=20000   m2l   17.871 ms  step  123.476 ms  mem  5066.7 MB
+factored  P=12 LH=true  N=20000   m2l   15.259 ms  step  196.168 ms  mem   469.8 MB
+factored_perclass P=12 LH=true  N=20000   m2l  343.287 ms  step  543.887 ms  mem   469.8 MB
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/factored_resident_m2l_cuda/cuda_m13h-1-1_20260717-220914.csv
+BENCH_EXIT=0

@@ -1,0 +1,103 @@
+\documentclass[border=8pt,varwidth=190mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 3 --- The 019 tuning gains stage by stage, what is left between M2L and the roofline, and what the 023 step costs}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=47mm, height=46mm,
+  group style={group size=2 by 2, horizontal sep=16mm, vertical sep=12mm},
+  ymode=log,
+  fmbaraxis,
+]
+
+% --- (a) per-stage device time --------------------------------------------
+\nextgroupplot[title={(a) device stage time}, ylabel={time (ms)},
+               xtick={1,2,3,4,5}, xticklabels={B2M,M2M,M2L,L2L,L2B},
+               ymin=0.5, ymax=6000, legend pos=north west, legend columns=1]
+\addplot[fmbars, fill=fmSone] table[x=stage_index, y=baseline_022_ms, col sep=comma] {tables/fig03a_stages.csv};
+\addlegendentry{022 baseline}
+\addplot[fmbars, fill=fmStwo] table[x=stage_index, y=post_abd_ms, col sep=comma] {tables/fig03a_stages.csv};
+\addlegendentry{after 019 A+B+D}
+\addplot[fmbars, fill=fmSthree] table[x=stage_index, y=post_e_ms, col sep=comma] {tables/fig03a_stages.csv};
+\addlegendentry{after 019 E (final)}
+\draw[fmruleline] (axis cs:0.4,10) -- (axis cs:5.6,10);
+\node[anchor=south east, font=\tiny, color=fmCritical] at (rel axis cs:0.99,0.35)
+  {$\approx$10\,ms bandwidth roofline};
+
+% --- (b) 019 evaluation beside one-shot setup; not the 023 recurring loop ---
+\nextgroupplot[title={(b) 019 execution and setup costs}, ylabel={time (s)},
+               xtick={1,2,3}, xticklabels={device\\exec, host list\\build, state\\build},
+               xticklabel style={align=center, font=\tiny},
+               ymin=0.05, ymax=12]
+\addplot[fmbars, fill=fmSone] table[x=phase_index, y=baseline_022_s, col sep=comma] {tables/fig03b_lifecycle.csv};
+\addplot[fmbars, fill=fmStwo] table[x=phase_index, y=post_abd_s, col sep=comma] {tables/fig03b_lifecycle.csv};
+\addplot[fmbars, fill=fmSthree] table[x=phase_index, y=post_e_s, col sep=comma] {tables/fig03b_lifecycle.csv};
+
+% --- (c) 023 one-shot setup vs the recurring step it enables ---------------
+\nextgroupplot[title={(c) 023 one-shot setup vs recurring step}, ylabel={time (s)},
+               xtick={1,2}, xticklabels={$n=10^4$, $n=10^5$},
+               xticklabel style={font=\tiny}, ymin=0.01, ymax=800,
+               legend pos=north west, legend columns=2]
+\addplot[fmbars, fill=fmSone] table[x=n_index, y=cpu_construct_s, col sep=comma] {tables/fig03d_oneshot_vs_recurring.csv};
+\addlegendentry{CPU construct}
+\addplot[fmbars, fill=fmStwo] table[x=n_index, y=cpu_step_s, col sep=comma] {tables/fig03d_oneshot_vs_recurring.csv};
+\addlegendentry{CPU step}
+\addplot[fmbars, fill=fmSthree] table[x=n_index, y=gpu_construct_s, col sep=comma] {tables/fig03d_oneshot_vs_recurring.csv};
+\addlegendentry{GPU construct}
+\addplot[fmbars, fill=fmSfour] table[x=n_index, y=gpu_step_s, col sep=comma] {tables/fig03d_oneshot_vs_recurring.csv};
+\addlegendentry{GPU step}
+\node[anchor=west, font=\tiny, color=fmCritical, align=left]
+  at (axis cs:1.09,23.7) {23.7\,s: CUDA JIT,\\not setup cost};
+
+% --- (d) 023 resident step split ------------------------------------------
+\nextgroupplot[title={(d) 023 resident step split}, ylabel={time (s)},
+               xtick={1,2,3}, xticklabels={update, lifecycle, finalize},
+               xticklabel style={font=\tiny}, ymin=5e-4, ymax=0.5,
+               legend pos=north west, legend columns=1]
+\addplot[fmbars, fill=fmSone] table[x=phase_index, y=n10000_s, col sep=comma] {tables/fig03c_step_split.csv};
+\addlegendentry{$n=10^4$}
+\addplot[fmbars, fill=fmStwo] table[x=phase_index, y=n100000_s, col sep=comma] {tables/fig03c_step_split.csv};
+\addlegendentry{$n=10^5$}
+
+\end{groupplot}
+\end{tikzpicture}
+
+\fmnote{\textbf{Machine / regime:} \texttt{m13h-1-1}, NVIDIA H200, CUDA 12.8, Julia 1.11.7. Panels (a,b):
+$n=10^5$, $\ell=4$, $P=4$, \texttt{ConstantPAnalyticStencil(4,1e-4)}, concat chunk $2^{17}$.
+Panels (c,d): task 023 production-integration radix path, $P=4$, $\ell=4$, Julia \texttt{threads=8}.
+\textbf{Data:} \texttt{operator\_performance\_tuning/cuda\_022\_baseline.csv},
+\texttt{m13h-1-1/cuda\_019\_phase\{ABD,E\}\_throughput.csv},
+\texttt{production\_integration/benchmark\_023\_m13h-1-1\_20260714-233159.csv}
+(tables \texttt{fig03a\_*}, \texttt{fig03b\_*}, \texttt{fig03d\_*} for panel (c),
+\texttt{fig03c\_*} for panel (d)).
+\textbf{Reads as:} M2L fell $1698\to66$\,ms ($\approx25\times$) and M2M/L2L $\approx150\to8$\,ms
+($\approx19\times$), taking the whole device lifecycle $1.863\to0.116$\,s ($\approx16\times$). M2L is now
+$\approx6\times$ above the memory-bandwidth roofline, down from $\approx100\times$. The largest remaining
+device stage is L2B at 50\,ms, which the tuning did not touch --- and which is not a far-field operator at
+all: L2B evaluates the \emph{nearfield} direct pairs as well as the local expansions, so most of that bar is
+$O(N^2)$-within-the-complement work that no operator strategy can remove. In the pre-023
+reconstruct-every-call workflow, the 0.35\,s host list build and 0.62\,s state build would have dominated
+the 0.116\,s device evaluation. Panel (d) shows the actual 023 recurring step: device-side update replaces
+those builds, so neither setup bar belongs in the recurring loop. Panel (c) prices the remaining one-shot
+cost against the step it enables: on the GPU the representative cache construction is 0.126\,s
+($n=10^5$) against a 0.086\,s step, so device residency pays for itself within about two steps, while on
+the CPU an 0.41\,s construction sits in front of a 24.6\,s step that is not worth taking at all
+(Fig.\ 8).
+\textbf{Caveats:} the 022 ``baseline'' stage times are \emph{single-shot} while both post-tuning columns
+are min-of-3, so the $\approx25\times$ M2L figure mixes timing methods. The post-E B2M bar (14\,ms vs
+1.4\,ms before) is measurement noise, not a regression --- task 019 recorded B2M jitter of 8--26\,ms across
+sweep rows, and the other two chunk widths in the same phase-E sweep read 1.4\,ms. Panel (c)'s GPU
+construction bar at $n=10^4$ (23.7\,s) is \emph{not} a setup cost: that case runs first in the 023 script, so
+it absorbs one-time CUDA kernel compilation --- the same host reads 0.126\,s at $n=10^5$ and
+\texttt{m13h-2-1} reads 24.7\,s then 0.030\,s for the same pair. Read the $n=10^5$ bar as the
+representative construction cost. \textbf{Scope:} panel
+(b)'s device exec and the step bars of panels (c,d) are complete \texttt{fmm!} evaluations --- far field \emph{and}
+nearfield, the latter inside L2B --- so they are end-to-end influence, not a far-field-only subset; task 024
+validates the same pipeline against an all-bodies \texttt{direct!} reference. The chunk width itself
+changes the lifecycle minimum by at most $\approx6\%$; $2^{17}$ was kept for least scratch, not because it
+was fastest.}
+
+\end{document}

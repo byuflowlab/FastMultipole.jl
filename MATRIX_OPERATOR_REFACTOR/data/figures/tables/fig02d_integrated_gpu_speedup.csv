@@ -1,0 +1,5 @@
+# 024 case_rankings, uniform Float64 P=4; best eligible CPU resident recurring step at BLAS=1 divided by best eligible H200 resident recurring step, matched by n
+n,best_resident_phi,best_resident_lh
+150,0.7247456934312362,0.8881893050888289
+2000,9.045345664966176,8.362749009033315
+20000,201.80911031579024,168.06239871036814

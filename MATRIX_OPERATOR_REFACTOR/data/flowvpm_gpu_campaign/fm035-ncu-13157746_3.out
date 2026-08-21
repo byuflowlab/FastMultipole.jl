@@ -1,0 +1,5 @@
+==PROF== Connected to process 110268 (/vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/bin/julia)
+NCU_READY case=wake n=1000000 tf=Float64 literature_P=5 expansion_order=4 ell=6 q=6 rho_t=3.668 direct_pairs=401888
+==ERROR== ERR_NVGPUCTRPERM - The user does not have permission to access NVIDIA GPU Performance Counters on the target device 0. For instructions on enabling permissions and to get more information see https://developer.nvidia.com/ERR_NVGPUCTRPERM
+NCU_DONE
+==PROF== Disconnected from process 110268

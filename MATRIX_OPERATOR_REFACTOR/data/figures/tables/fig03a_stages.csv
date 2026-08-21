@@ -1,0 +1,7 @@
+# 019/022, m13h-1-1 H200, n=1e5 ell=4 P=4 constp concat chunk=2^17; stage order = B2M/M2M/M2L/L2L/L2B; baseline is single-shot, post-* are min-of-3
+stage_index,baseline_022_ms,post_abd_ms,post_e_ms
+1,1.441,1.416536,13.9924
+2,152.29999999999998,167.9116,8.046996
+3,1698,66.99518,65.99735
+4,150.2,172.3921,8.021024
+5,50.61,49.99791,49.999759999999995

@@ -1,0 +1,5 @@
+# 024 case_rankings, cpu; geometric mean of recurring-step time normalized to the per-case best strategy (1.0 = winner). Strategies infeasible in a case are omitted from that case's mean.
+P,concat_rel,factored_rel,precomputed_y_rel,dense_rel
+4,1.8063375139928464,1.75927133820487,1.2513523740471453,1
+8,4.0809503716508875,3.495630946673215,1.7248704768523822,1.0381600597447471
+12,3.419046043572277,2.743224706472095,1.2977350187273644,1.072034511748179

@@ -1,0 +1,153 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-58eda106-52b7-5445-c10a-8f75fb83db2f)
+=== 033 reference integrity ===
+direct_reference_cube_n1000.csv: OK
+direct_reference_cube_n3162.csv: OK
+direct_reference_cube_n10000.csv: OK
+direct_reference_cube_n31623.csv: OK
+direct_reference_cube_n100000.csv: OK
+direct_reference_cube_n316228.csv: OK
+direct_reference_cube_n1000000.csv: OK
+direct_reference_wake_n1000.csv: OK
+direct_reference_wake_n3162.csv: OK
+direct_reference_wake_n10000.csv: OK
+direct_reference_wake_n31623.csv: OK
+direct_reference_wake_n100000.csv: OK
+direct_reference_wake_n316228.csv: OK
+direct_reference_wake_n1000000.csv: OK
+direct_reference_rotor_n100000.csv: OK
+direct_reference_rotor_n1000000.csv: OK
+direct_reference_rotor_n10000.csv: OK
+=== 037f cheapened-g/h screen ===
+Precompiling FLOWVPM...
+   5557.8 ms  ✓ FLOWVPM
+  1 dependency successfully precompiled in 11 seconds. 120 already precompiled.
+Precompiling FLOWVPMCUDAExt...
+   7244.9 ms  ✓ FLOWVPM → FLOWVPMCUDAExt
+  1 dependency successfully precompiled in 12 seconds. 189 already precompiled.
+=== 035 GPU tuning sweep: 48 configs (0 already done), reps=15, out=/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm037f_screen.csv
+node=m13h-1-1 gpu=NVIDIA H200 julia=1.11.7 cuda=12.8.0
+[build] cube n=100000 (1.1s), reference direct_reference_cube_n100000.csv ok
+[ok] f37f_cu5f_anchor: uj=11.306 ms (refresh=0.703 eval=10.89 finalize=0.056) u=6.8060e-04 gate=true J=3.8824e-03
+[ok] f37f_cu5f_reduced: uj=11.333 ms (refresh=0.331 eval=10.933 finalize=0.057) u=6.8060e-04 gate=true J=3.8824e-03
+[ok] f37f_cu5f_lut: uj=10.951 ms (refresh=0.316 eval=10.538 finalize=0.055) u=6.8045e-04 gate=true J=3.8823e-03
+[ok] f37f_cu5d_anchor: uj=20.97 ms (refresh=0.332 eval=20.551 finalize=0.064) u=6.8059e-04 gate=true J=3.8824e-03
+[ok] f37f_cu5d_reduced: uj=20.747 ms (refresh=0.325 eval=20.314 finalize=0.063) u=6.8059e-04 gate=true J=3.8824e-03
+[ok] f37f_cu5d_fp32: uj=19.633 ms (refresh=0.321 eval=19.243 finalize=0.063) u=6.8059e-04 gate=true J=3.8824e-03
+[ok] f37f_cu5d_rfp32: uj=19.622 ms (refresh=0.327 eval=19.198 finalize=0.063) u=6.8058e-04 gate=true J=3.8824e-03
+[ok] f37f_cu5d_lut: uj=19.906 ms (refresh=0.321 eval=19.827 finalize=0.063) u=6.8046e-04 gate=true J=3.8823e-03
+[build] cube n=1000000 (0.3s), reference direct_reference_cube_n1000000.csv ok
+[ok] f37f_cu6f_anchor: uj=102.211 ms (refresh=0.894 eval=100.369 finalize=0.562) u=7.0782e-04 gate=true J=3.8519e-03
+[ok] f37f_cu6f_reduced: uj=101.802 ms (refresh=0.887 eval=100.021 finalize=0.562) u=7.0781e-04 gate=true J=3.8519e-03
+[ok] f37f_cu6f_lut: uj=95.148 ms (refresh=0.903 eval=93.318 finalize=0.564) u=7.0789e-04 gate=true J=3.8518e-03
+[ok] f37f_cu6d_anchor: uj=207.515 ms (refresh=1.039 eval=205.372 finalize=0.846) u=7.0780e-04 gate=true J=3.8518e-03
+[ok] f37f_cu6d_reduced: uj=203.91 ms (refresh=1.043 eval=201.705 finalize=0.849) u=7.0780e-04 gate=true J=3.8518e-03
+[ok] f37f_cu6d_fp32: uj=188.228 ms (refresh=1.031 eval=186.097 finalize=0.849) u=7.0780e-04 gate=true J=3.8518e-03
+[ok] f37f_cu6d_rfp32: uj=187.892 ms (refresh=1.028 eval=185.683 finalize=0.847) u=7.0780e-04 gate=true J=3.8518e-03
+[ok] f37f_cu6d_lut: uj=191.012 ms (refresh=1.025 eval=188.774 finalize=0.847) u=7.0788e-04 gate=true J=3.8517e-03
+[build] wake n=100000 (0.0s), reference direct_reference_wake_n100000.csv ok
+[ok] f37f_wa5f_anchor: uj=7.841 ms (refresh=0.326 eval=7.421 finalize=0.055) u=3.2988e-04 gate=true J=2.4548e-03
+[ok] f37f_wa5f_reduced: uj=7.811 ms (refresh=0.326 eval=7.369 finalize=0.056) u=3.2988e-04 gate=true J=2.4548e-03
+[ok] f37f_wa5f_lut: uj=7.549 ms (refresh=0.333 eval=7.126 finalize=0.055) u=3.2995e-04 gate=true J=2.4547e-03
+[ok] f37f_wa5d_anchor: uj=14.425 ms (refresh=0.334 eval=13.998 finalize=0.064) u=3.2992e-04 gate=true J=2.4548e-03
+[ok] f37f_wa5d_reduced: uj=14.207 ms (refresh=0.336 eval=13.78 finalize=0.063) u=3.2992e-04 gate=true J=2.4548e-03
+[ok] f37f_wa5d_fp32: uj=13.378 ms (refresh=0.341 eval=12.925 finalize=0.063) u=3.2991e-04 gate=true J=2.4548e-03
+[ok] f37f_wa5d_rfp32: uj=13.351 ms (refresh=0.336 eval=12.913 finalize=0.064) u=3.2991e-04 gate=true J=2.4548e-03
+[ok] f37f_wa5d_lut: uj=14.013 ms (refresh=0.336 eval=13.582 finalize=0.063) u=3.2999e-04 gate=true J=2.4547e-03
+[build] wake n=1000000 (0.3s), reference direct_reference_wake_n1000000.csv ok
+[ok] f37f_wa6f_anchor: uj=83.558 ms (refresh=1.011 eval=81.656 finalize=0.563) u=2.9893e-04 gate=true J=2.8695e-03
+[ok] f37f_wa6f_reduced: uj=83.156 ms (refresh=1.027 eval=81.27 finalize=0.562) u=2.9893e-04 gate=true J=2.8695e-03
+[ok] f37f_wa6f_lut: uj=79.993 ms (refresh=1.001 eval=78.05 finalize=0.561) u=2.9894e-04 gate=true J=2.8695e-03
+[ok] f37f_wa6d_anchor: uj=178.823 ms (refresh=1.167 eval=176.535 finalize=0.855) u=2.9898e-04 gate=true J=2.8695e-03
+[ok] f37f_wa6d_reduced: uj=176.902 ms (refresh=1.155 eval=174.504 finalize=0.851) u=2.9898e-04 gate=true J=2.8695e-03
+[ok] f37f_wa6d_fp32: uj=166.45 ms (refresh=1.144 eval=163.967 finalize=0.851) u=2.9897e-04 gate=true J=2.8695e-03
+[ok] f37f_wa6d_rfp32: uj=166.228 ms (refresh=1.147 eval=164.156 finalize=0.85) u=2.9897e-04 gate=true J=2.8695e-03
+[ok] f37f_wa6d_lut: uj=173.861 ms (refresh=1.145 eval=171.512 finalize=0.849) u=2.9899e-04 gate=true J=2.8694e-03
+[build] rotor n=100000 (0.3s), reference direct_reference_rotor_n100000.csv ok
+[ok] f37f_ro5f_anchor: uj=12.269 ms (refresh=0.457 eval=11.816 finalize=0.051) u=4.4068e-04 gate=true J=5.0832e-05
+[ok] f37f_ro5f_reduced: uj=12.612 ms (refresh=0.454 eval=12.161 finalize=0.051) u=4.4068e-04 gate=true J=5.0782e-05
+[ok] f37f_ro5f_lut: uj=12.582 ms (refresh=0.436 eval=11.943 finalize=0.051) u=4.4064e-04 gate=true J=5.1765e-05
+[ok] f37f_ro5d_anchor: uj=23.21 ms (refresh=0.46 eval=22.02 finalize=0.064) u=4.3689e-04 gate=true J=5.0860e-05
+[ok] f37f_ro5d_reduced: uj=23.301 ms (refresh=0.462 eval=22.58 finalize=0.063) u=4.3689e-04 gate=true J=5.0816e-05
+[ok] f37f_ro5d_fp32: uj=23.816 ms (refresh=0.469 eval=22.374 finalize=0.062) u=4.3689e-04 gate=true J=5.0898e-05
+[ok] f37f_ro5d_rfp32: uj=24.557 ms (refresh=0.458 eval=23.798 finalize=0.063) u=4.3689e-04 gate=true J=5.0847e-05
+[ok] f37f_ro5d_lut: uj=23.648 ms (refresh=0.469 eval=23.137 finalize=0.063) u=4.3685e-04 gate=true J=5.1837e-05
+[build] rotor n=1000000 (0.3s), reference direct_reference_rotor_n1000000.csv ok
+[ok] f37f_ro6f_anchor: uj=240.636 ms (refresh=1.278 eval=236.791 finalize=0.397) u=6.9387e-04 gate=true J=4.6688e-05
+[ok] f37f_ro6f_reduced: uj=238.361 ms (refresh=1.254 eval=233.466 finalize=0.398) u=6.9388e-04 gate=true J=4.6647e-05
+[ok] f37f_ro6f_lut: uj=247.879 ms (refresh=1.268 eval=244.025 finalize=0.397) u=6.9389e-04 gate=true J=4.8125e-05
+[ok] f37f_ro6d_anchor: uj=478.532 ms (refresh=1.383 eval=470.122 finalize=0.715) u=8.6378e-05 gate=true J=4.2937e-05
+[ok] f37f_ro6d_reduced: uj=473.71 ms (refresh=1.37 eval=473.093 finalize=0.719) u=8.6355e-05 gate=true J=4.2890e-05
+[ok] f37f_ro6d_fp32: uj=471.236 ms (refresh=1.367 eval=469.428 finalize=0.718) u=8.6396e-05 gate=true J=4.2959e-05
+[ok] f37f_ro6d_rfp32: uj=495.973 ms (refresh=1.366 eval=490.498 finalize=0.72) u=8.6369e-05 gate=true J=4.2905e-05
+[ok] f37f_ro6d_lut: uj=493.025 ms (refresh=1.345 eval=484.334 finalize=0.707) u=8.6837e-05 gate=true J=4.3917e-05
+035 sweep complete
+=== 037f error-decomposition oracle ===
+[exact] cube n=100000 samples=512 2.69s Ucheck=1.465e-15 Jcheck=2.587e-15
+[row] f37fd_cu5_shipped cube n=100000 Float32 U cutoff=5.558e-04 fmm=4.052e-04 total=6.806e-04 bound=9.610e-04
+[row] f37fd_cu5_shipped cube n=100000 Float64 U cutoff=5.558e-04 fmm=4.052e-04 total=6.806e-04 bound=9.610e-04
+[row] f37fd_cu5_reduced cube n=100000 Float32 U cutoff=5.558e-04 fmm=4.052e-04 total=6.806e-04 bound=9.610e-04
+[row] f37fd_cu5_reduced cube n=100000 Float64 U cutoff=5.558e-04 fmm=4.052e-04 total=6.806e-04 bound=9.610e-04
+[row] f37fd_cu5_fp32 cube n=100000 Float32 U cutoff=5.558e-04 fmm=4.052e-04 total=6.806e-04 bound=9.610e-04
+[row] f37fd_cu5_fp32 cube n=100000 Float64 U cutoff=5.558e-04 fmm=4.052e-04 total=6.806e-04 bound=9.610e-04
+[row] f37fd_cu5_rfp32 cube n=100000 Float32 U cutoff=5.558e-04 fmm=4.052e-04 total=6.806e-04 bound=9.610e-04
+[row] f37fd_cu5_rfp32 cube n=100000 Float64 U cutoff=5.558e-04 fmm=4.052e-04 total=6.806e-04 bound=9.610e-04
+[row] f37fd_cu5_lut cube n=100000 Float32 U cutoff=5.558e-04 fmm=4.050e-04 total=6.805e-04 bound=9.609e-04
+[row] f37fd_cu5_lut cube n=100000 Float64 U cutoff=5.558e-04 fmm=4.050e-04 total=6.805e-04 bound=9.608e-04
+[exact] cube n=1000000 samples=512 22.96s Ucheck=2.073e-15 Jcheck=2.951e-15
+[row] f37fd_cu6_shipped cube n=1000000 Float32 U cutoff=5.144e-04 fmm=4.733e-04 total=7.078e-04 bound=9.877e-04
+[row] f37fd_cu6_shipped cube n=1000000 Float64 U cutoff=5.144e-04 fmm=4.732e-04 total=7.078e-04 bound=9.876e-04
+[row] f37fd_cu6_reduced cube n=1000000 Float32 U cutoff=5.144e-04 fmm=4.732e-04 total=7.078e-04 bound=9.876e-04
+[row] f37fd_cu6_reduced cube n=1000000 Float64 U cutoff=5.144e-04 fmm=4.732e-04 total=7.078e-04 bound=9.876e-04
+[row] f37fd_cu6_fp32 cube n=1000000 Float32 U cutoff=5.144e-04 fmm=4.733e-04 total=7.078e-04 bound=9.876e-04
+[row] f37fd_cu6_fp32 cube n=1000000 Float64 U cutoff=5.144e-04 fmm=4.732e-04 total=7.078e-04 bound=9.876e-04
+[row] f37fd_cu6_rfp32 cube n=1000000 Float32 U cutoff=5.144e-04 fmm=4.733e-04 total=7.078e-04 bound=9.877e-04
+[row] f37fd_cu6_rfp32 cube n=1000000 Float64 U cutoff=5.144e-04 fmm=4.732e-04 total=7.078e-04 bound=9.876e-04
+[row] f37fd_cu6_lut cube n=1000000 Float32 U cutoff=5.144e-04 fmm=4.734e-04 total=7.079e-04 bound=9.878e-04
+[row] f37fd_cu6_lut cube n=1000000 Float64 U cutoff=5.144e-04 fmm=4.733e-04 total=7.079e-04 bound=9.877e-04
+[exact] wake n=100000 samples=512 2.25s Ucheck=1.599e-16 Jcheck=2.693e-16
+[row] f37fd_wa5_shipped wake n=100000 Float32 U cutoff=1.048e-04 fmm=2.890e-04 total=3.299e-04 bound=3.939e-04
+[row] f37fd_wa5_shipped wake n=100000 Float64 U cutoff=1.048e-04 fmm=2.890e-04 total=3.299e-04 bound=3.939e-04
+[row] f37fd_wa5_reduced wake n=100000 Float32 U cutoff=1.048e-04 fmm=2.890e-04 total=3.299e-04 bound=3.939e-04
+[row] f37fd_wa5_reduced wake n=100000 Float64 U cutoff=1.048e-04 fmm=2.890e-04 total=3.299e-04 bound=3.939e-04
+[row] f37fd_wa5_fp32 wake n=100000 Float32 U cutoff=1.048e-04 fmm=2.890e-04 total=3.299e-04 bound=3.939e-04
+[row] f37fd_wa5_fp32 wake n=100000 Float64 U cutoff=1.048e-04 fmm=2.890e-04 total=3.299e-04 bound=3.939e-04
+[row] f37fd_wa5_rfp32 wake n=100000 Float32 U cutoff=1.048e-04 fmm=2.890e-04 total=3.299e-04 bound=3.939e-04
+[row] f37fd_wa5_rfp32 wake n=100000 Float64 U cutoff=1.048e-04 fmm=2.890e-04 total=3.299e-04 bound=3.939e-04
+[row] f37fd_wa5_lut wake n=100000 Float32 U cutoff=1.048e-04 fmm=2.891e-04 total=3.300e-04 bound=3.939e-04
+[row] f37fd_wa5_lut wake n=100000 Float64 U cutoff=1.048e-04 fmm=2.891e-04 total=3.300e-04 bound=3.939e-04
+[exact] wake n=1000000 samples=512 22.68s Ucheck=1.646e-16 Jcheck=2.670e-16
+[row] f37fd_wa6_shipped wake n=1000000 Float32 U cutoff=3.614e-05 fmm=2.888e-04 total=2.989e-04 bound=3.250e-04
+[row] f37fd_wa6_shipped wake n=1000000 Float64 U cutoff=3.614e-05 fmm=2.889e-04 total=2.990e-04 bound=3.250e-04
+[row] f37fd_wa6_reduced wake n=1000000 Float32 U cutoff=3.614e-05 fmm=2.888e-04 total=2.989e-04 bound=3.250e-04
+[row] f37fd_wa6_reduced wake n=1000000 Float64 U cutoff=3.614e-05 fmm=2.889e-04 total=2.990e-04 bound=3.250e-04
+[row] f37fd_wa6_fp32 wake n=1000000 Float32 U cutoff=3.614e-05 fmm=2.889e-04 total=2.989e-04 bound=3.250e-04
+[row] f37fd_wa6_fp32 wake n=1000000 Float64 U cutoff=3.614e-05 fmm=2.889e-04 total=2.990e-04 bound=3.250e-04
+[row] f37fd_wa6_rfp32 wake n=1000000 Float32 U cutoff=3.614e-05 fmm=2.888e-04 total=2.989e-04 bound=3.250e-04
+[row] f37fd_wa6_rfp32 wake n=1000000 Float64 U cutoff=3.614e-05 fmm=2.889e-04 total=2.990e-04 bound=3.250e-04
+[row] f37fd_wa6_lut wake n=1000000 Float32 U cutoff=3.614e-05 fmm=2.889e-04 total=2.989e-04 bound=3.250e-04
+[row] f37fd_wa6_lut wake n=1000000 Float64 U cutoff=3.614e-05 fmm=2.889e-04 total=2.990e-04 bound=3.250e-04
+[exact] rotor n=100000 samples=512 2.20s Ucheck=6.148e-16 Jcheck=3.562e-15
+[row] f37fd_ro5_shipped rotor n=100000 Float32 U cutoff=4.431e-05 fmm=4.420e-04 total=4.407e-04 bound=4.863e-04
+[row] f37fd_ro5_shipped rotor n=100000 Float64 U cutoff=4.431e-05 fmm=4.381e-04 total=4.369e-04 bound=4.824e-04
+[row] f37fd_ro5_reduced rotor n=100000 Float32 U cutoff=4.431e-05 fmm=4.420e-04 total=4.407e-04 bound=4.863e-04
+[row] f37fd_ro5_reduced rotor n=100000 Float64 U cutoff=4.431e-05 fmm=4.381e-04 total=4.369e-04 bound=4.824e-04
+[row] f37fd_ro5_fp32 rotor n=100000 Float32 U cutoff=4.431e-05 fmm=4.420e-04 total=4.407e-04 bound=4.863e-04
+[row] f37fd_ro5_fp32 rotor n=100000 Float64 U cutoff=4.431e-05 fmm=4.381e-04 total=4.369e-04 bound=4.824e-04
+[row] f37fd_ro5_rfp32 rotor n=100000 Float32 U cutoff=4.431e-05 fmm=4.420e-04 total=4.407e-04 bound=4.863e-04
+[row] f37fd_ro5_rfp32 rotor n=100000 Float64 U cutoff=4.431e-05 fmm=4.381e-04 total=4.369e-04 bound=4.824e-04
+[row] f37fd_ro5_lut rotor n=100000 Float32 U cutoff=4.431e-05 fmm=4.419e-04 total=4.406e-04 bound=4.862e-04
+[row] f37fd_ro5_lut rotor n=100000 Float64 U cutoff=4.431e-05 fmm=4.380e-04 total=4.368e-04 bound=4.823e-04
+[exact] rotor n=1000000 samples=512 22.33s Ucheck=7.046e-16 Jcheck=1.542e-15
+[row] f37fd_ro6_shipped rotor n=1000000 Float32 U cutoff=4.543e-05 fmm=6.942e-04 total=6.939e-04 bound=7.396e-04
+[row] f37fd_ro6_shipped rotor n=1000000 Float64 U cutoff=4.543e-05 fmm=7.475e-05 total=8.638e-05 bound=1.202e-04
+[row] f37fd_ro6_reduced rotor n=1000000 Float32 U cutoff=4.543e-05 fmm=6.942e-04 total=6.939e-04 bound=7.396e-04
+[row] f37fd_ro6_reduced rotor n=1000000 Float64 U cutoff=4.543e-05 fmm=7.475e-05 total=8.635e-05 bound=1.202e-04
+[row] f37fd_ro6_fp32 rotor n=1000000 Float32 U cutoff=4.543e-05 fmm=6.942e-04 total=6.939e-04 bound=7.397e-04
+[row] f37fd_ro6_fp32 rotor n=1000000 Float64 U cutoff=4.543e-05 fmm=7.475e-05 total=8.640e-05 bound=1.202e-04
+[row] f37fd_ro6_rfp32 rotor n=1000000 Float32 U cutoff=4.543e-05 fmm=6.942e-04 total=6.939e-04 bound=7.396e-04
+[row] f37fd_ro6_rfp32 rotor n=1000000 Float64 U cutoff=4.543e-05 fmm=7.475e-05 total=8.637e-05 bound=1.202e-04
+[row] f37fd_ro6_lut rotor n=1000000 Float32 U cutoff=4.543e-05 fmm=6.942e-04 total=6.939e-04 bound=7.396e-04
+[row] f37fd_ro6_lut rotor n=1000000 Float64 U cutoff=4.543e-05 fmm=7.471e-05 total=8.684e-05 bound=1.201e-04
+035 error decomposition complete: /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm037f_decomposition.csv
+fm037ef stage f complete

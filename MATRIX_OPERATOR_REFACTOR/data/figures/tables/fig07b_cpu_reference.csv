@@ -1,0 +1,9 @@
+# 008c dense_vs_loop blas1, m13h-1-1, Float64 P=20; best (min over batch) single-thread CPU dense per-expansion time, replicated at every batch width so it plots as a reference rule
+batch,m2lz_best_cpu_dense_ns,axisswap_best_cpu_dense_ns
+1,261.6609,734.1141
+8,261.6609,734.1141
+64,261.6609,734.1141
+512,261.6609,734.1141
+4096,261.6609,734.1141
+32768,261.6609,734.1141
+262144,261.6609,734.1141

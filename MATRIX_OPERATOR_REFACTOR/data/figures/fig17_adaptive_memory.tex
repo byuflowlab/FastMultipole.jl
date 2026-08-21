@@ -1,0 +1,48 @@
+% fig17 (041a): device memory (bytes in use after construction, H200,
+% n = 1e6, Float64, dense M2L) vs geometry parameter — uniform depth ell
+% (orange, squares) against adaptive K_max (blue, circles; x = K plotted on
+% the same log axis; K and ell are different knobs, the panels compare the
+% MEMORY RANGE each machinery spans across its useful settings).  The
+% uniform grid's capacity memory grows ~8x per depth level (dense node_at
+% Sigma 8^ell table + per-cell capacity), while the adaptive tree's
+% occupancy-sized capacity stays in a narrow band.  Missing points are
+% depths that failed to construct (capacity/OOM) — recorded as fail rows in
+% the CSV of record and quoted in the report.
+% Data: fig17_adaptive_memory/*.csv from fm041a_gpu_widen.csv (H200 job
+% 13184013).
+% Compile: pdflatex fig17_adaptive_memory.tex
+\documentclass[tikz]{standalone}
+\input{fmfigstyle}
+\begin{document}
+\begin{tikzpicture}
+\begin{groupplot}[
+    group style={group size=3 by 1, horizontal sep=13mm},
+    fmbase,
+    width=48mm, height=50mm,
+    xmode=log, ymode=log,
+    log ticks with fixed point,
+    xlabel={$\ell$ (uniform) / $K_{\max}$ (adaptive)},
+]
+\nextgroupplot[title={unitcube}, ylabel={device memory [GB]},
+    legend to name=figseventeenlegend, legend columns=2,
+    legend style={draw=fmAxis, fill=white}]
+\addplot[color=fmStwo, mark=square*, line width=1.1pt]
+    table[col sep=comma, x=param, y=mem_gb]{fig17_adaptive_memory/unitcube_uniform.csv};
+\addlegendentry{uniform (x = depth $\ell$)}
+\addplot[color=fmSone, mark=*, line width=1.1pt]
+    table[col sep=comma, x=param, y=mem_gb]{fig17_adaptive_memory/unitcube_adaptive.csv};
+\addlegendentry{adaptive (x = $K_{\max}$)}
+\nextgroupplot[title={wake}]
+\addplot[color=fmStwo, mark=square*, line width=1.1pt]
+    table[col sep=comma, x=param, y=mem_gb]{fig17_adaptive_memory/wake_uniform.csv};
+\addplot[color=fmSone, mark=*, line width=1.1pt]
+    table[col sep=comma, x=param, y=mem_gb]{fig17_adaptive_memory/wake_adaptive.csv};
+\nextgroupplot[title={multiscale100}]
+\addplot[color=fmStwo, mark=square*, line width=1.1pt]
+    table[col sep=comma, x=param, y=mem_gb]{fig17_adaptive_memory/multiscale100_uniform.csv};
+\addplot[color=fmSone, mark=*, line width=1.1pt]
+    table[col sep=comma, x=param, y=mem_gb]{fig17_adaptive_memory/multiscale100_adaptive.csv};
+\end{groupplot}
+\node[anchor=north, yshift=-9mm] at (group c2r1.south) {\pgfplotslegendfromname{figseventeenlegend}};
+\end{tikzpicture}
+\end{document}

@@ -1,0 +1,16 @@
+comparison,near_radius2,ell,n_or_dense_cells,occupancy_basis,route_basis,near_count,phase_v_count,union_count,crossover_cells,class_reduction,route_reduction,occupied_leaf_cells,occupied_cells_levels_0_to_ell,note
+constant,3,0,0,analytic,not_applicable,27,189,316,216.0,NaN,NaN,NaN,,hierarchical linear-work crossover C=8|V|/7
+constant,4,0,0,analytic,not_applicable,33,231,418,264.0,NaN,NaN,NaN,,hierarchical linear-work crossover C=8|V|/7
+constant,5,0,0,analytic,not_applicable,57,399,682,456.0,NaN,NaN,NaN,,hierarchical linear-work crossover C=8|V|/7
+constant,6,0,0,analytic,not_applicable,81,567,850,648.0,NaN,NaN,NaN,,hierarchical linear-work crossover C=8|V|/7
+constant,8,0,0,analytic,not_applicable,93,651,982,744.0,NaN,NaN,NaN,,hierarchical linear-work crossover C=8|V|/7
+constant,9,0,0,analytic,not_applicable,123,861,1252,984.0,NaN,NaN,NaN,,hierarchical linear-work crossover C=8|V|/7
+constant,10,0,0,analytic,not_applicable,147,1029,1516,1176.0,NaN,NaN,NaN,,hierarchical linear-work crossover C=8|V|/7
+constant,11,0,0,analytic,not_applicable,171,1197,1684,1368.0,NaN,NaN,NaN,,hierarchical linear-work crossover C=8|V|/7
+constant,12,0,0,analytic,not_applicable,179,1253,1740,1432.0,NaN,NaN,NaN,,hierarchical linear-work crossover C=8|V|/7
+flat_vs_hierarchical,12,5,32768,fully_occupied_dense_lattice,exact,179,1253,1740,1432.0,35.90057471264368,31.11403657120175,32768,1;8;64;512;4096;32768,occupancy-independent dense-lattice anchor
+flat_vs_hierarchical,12,6,262144,fully_occupied_dense_lattice,exact,179,1253,1740,1432.0,235.4257471264368,213.0696110887368,262144,1;8;64;512;4096;32768;262144,occupancy-independent dense-lattice anchor
+flat_vs_hierarchical,12,7,2097152,fully_occupied_dense_lattice,exact,179,1253,1740,1432.0,1588.2371647509578,1579.0473183288323,2097152,1;8;64;512;4096;32768;262144;2097152,occupancy-independent dense-lattice anchor
+campaign_audit,12,5,31623,measured_leaf_occupancy_reconstructed_seed24025,routes_uniform_expectation_not_measured,179,1253,1740,1432.0,35.90057471264368,27.14256426632703,20104,1;8;64;512;4095;20104,024b CSV lacks occupancy/routes; preliminary ratios are projections
+campaign_audit,12,6,316228,measured_leaf_occupancy_reconstructed_seed24025,routes_uniform_expectation_not_measured,179,1253,1740,1432.0,235.4257471264368,190.83129162696423,181129,1;8;64;512;4096;32760;181129,024b CSV lacks occupancy/routes; preliminary ratios are projections
+campaign_audit,12,7,1000000,measured_leaf_occupancy_reconstructed_seed24025,routes_uniform_expectation_not_measured,179,1253,1740,1432.0,1588.2371647509578,955.2188832042276,786961,1;8;64;512;4096;32768;252494;786961,024b CSV lacks occupancy/routes; preliminary ratios are projections

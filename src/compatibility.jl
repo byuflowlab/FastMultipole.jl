@@ -1,5 +1,59 @@
 #------- functions that should be overloaded for each user-defined system for use in the FMM -------#
 
+"""
+    residency(system)
+
+Return whether a system's canonical FastMultipole buffers live on the host or on
+the active device. Systems are host-resident by default. Device-backed systems
+may opt into CUDA device-native materialization by overloading this method to
+return [`DeviceResident()`](@ref).
+"""
+residency(system) = HostResident()
+
+"""
+    body_type(system)
+
+Return the element type used to form multipole expansions from `system` on the
+radix/resident path (task 032), e.g. `Point{Source}` (default) or
+`Point{Vortex}`. The returned value is the element *type* itself, matching the
+`body_to_multipole!(Point{Vortex}, system, args...)` convention of the legacy
+path. All source systems sharing one `RadixFMMCache` must return the same body
+type; `Point{Vortex}` requires `has_vector_potential(system) == true` (the
+Lamb-Helmholtz χ channel), which is checked at cache construction.
+"""
+body_type(system) = Point{Source}
+
+"""
+    direct_kernel(system)
+
+Return the nearfield direct-interaction kernel functor used for `system` on the
+radix/resident path (task 032 stage 2). Defaults follow [`body_type`](@ref):
+`SingularSource()` for `Point{Source}` and `SingularVortex()` for
+`Point{Vortex}`. Overload to select [`RegularizedVortex`](@ref) (regularized
+Biot-Savart, `gaussianerf`) or a custom kernel. All source systems sharing one
+`RadixFMMCache` must return equal kernels; the functor must be `isbits` and, for
+`device=true` caches, GPU-compilable. It is stamped into the cache options at
+construction, so the pair kernels specialize on it at compile time (one kernel
+instantiation per functor type, no runtime branch in the pair loop).
+
+Custom kernels subtype `AbstractDirectKernel` and implement (with
+`kernel = direct_kernel(system)`):
+
+- `_direct_pair_ug(kernel, dx, dy, dz, r2, source_bodies, j)` returning
+  `(u, gx, gy, gz)`, and
+- `_direct_pair_ugh(kernel, dx, dy, dz, r2, source_bodies, j)` returning
+  `(u, gx, gy, gz, h1, ..., h9)` (hessian in column-major 3×3 order), and
+- `_emits_potential(kernel)::Bool` — whether `u` is meaningful (row 1 written).
+
+Here `dx, dy, dz = target - source`, `r2 = dx^2+dy^2+dz^2 > 0` (self/coincident
+pairs are skipped by the caller), and `source_bodies[:, j]` is the packed source
+column (`[x, y, z, radius, strength..., extras...]`), giving the kernel access
+to per-source extra states such as a smoothing radius. This flat-argument form
+deviates from the spec §5 column-view signature so the same code compiles as a
+CUDA device function without constructing a view per pair.
+"""
+direct_kernel(system) = _default_direct_kernel(body_type(system))
+
 #--- buffer functions ---#
 
 """
@@ -328,6 +382,27 @@ function buffer_to_target!(target_systems::Tuple, target_tree::Tree, derivatives
     buffer_to_target!(target_systems, target_tree.buffers, derivatives_switches, target_tree.sort_index_list)
 end
 
+"""
+    buffer_to_target!(target_system, target_buffer, derivatives_switch, sort_index, ...)
+
+Deliver an evaluation's results from the **framework-owned** output buffer to
+the consumer's own state. Called by the framework at the end of every
+evaluation; rows are switch-relative (`scalar_potential_index`,
+`gradient_range`, `hessian_range` of the `DerivativesSwitch`), and the call
+must be steady-state allocation-free.
+
+**Delivery semantics**: the buffer always holds the **total influence of this
+evaluation** — the framework zeroes its accumulators each step. Whether the
+consumer overwrites its state or accumulates into it (`.=` vs `.+=`) inside
+this call is the consumer's choice; both are correct (a time stepper typically
+overwrites, FLOWVPM-style resets accumulate).
+
+Host systems get this behavior for free by overloading
+[`buffer_to_target_system!`](@ref); `DeviceResident` systems overload
+`buffer_to_target!(system, device_output_buffer, derivatives_switch,
+sort_index)` for their device buffer type and consume it with device-to-device
+operations.
+"""
 function buffer_to_target!(target_systems::Tuple, target_buffers, derivatives_switches, sort_index_list=Tuple(1:get_n_bodies(system) for system in target_systems), buffer_index_list=Tuple(1:get_n_bodies(system) for system in target_systems))
     for (target_system, target_buffer, derivatives_switch, sort_index, buffer_index) in zip(target_systems, target_buffers, derivatives_switches, sort_index_list, buffer_index_list)
         buffer_to_target!(target_system, target_buffer, derivatives_switch, sort_index, buffer_index)
@@ -461,6 +536,20 @@ function target_to_buffer_multithread!(buffer::Matrix, system, sort_index=1:get_
     end
 end
 
+"""
+    source_to_buffer!(buffer, system, sort_index=1:get_n_bodies(system))
+
+Pack `system`'s live bodies into the **framework-owned** packed source buffer:
+column `i` holds body `sort_index[i]` as `[x, y, z, radius,
+strength (rows 5:4+strength_dims), extras...]`. Called by the framework every
+evaluation (and by [`recenter!`](@ref) when deriving bounds); the consumer
+never allocates or retains the buffer, and the call must be steady-state
+allocation-free. Host systems get this behavior for free by overloading
+[`source_system_to_buffer!`](@ref); `DeviceResident` systems overload this
+method for their device buffer type (the framework passes a view of the valid
+column prefix of a persistent device buffer, with the identity `sort_index`)
+and fill it with device-to-device operations.
+"""
 function source_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     for (buffer, system, sort_index) in zip(buffers, systems, sort_index_list)
         source_to_buffer!(buffer, system, sort_index)

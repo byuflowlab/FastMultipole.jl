@@ -1,0 +1,8 @@
+# 019b crossover_stage tiny_parent, m12-1-7 EPYC 7763, Float64, routes=3096, lamb_helmholtz=false; microseconds per routed expansion. Kept separate from isolated per-column timings because harness scope differs.
+P,recurrence_blas1_us,concat_blas1_us,concat_blas64_us
+1,2.384698,0.31301070000000003,0.3116447
+2,2.640676,0.7113627,0.7156008
+3,2.992141,1.255535,1.500453
+4,3.606523,2.064875,2.487362
+6,5.674499,4.519312,5.586415
+8,9.824166,8.501011,24.868840000000002

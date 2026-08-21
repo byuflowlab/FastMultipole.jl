@@ -1,0 +1,1305 @@
+const RADIX_PRODUCTION_NORMALIZATION = 1 / (4 * π)
+
+@inline _stencil_production_factor(::ConstantPStencilConfig{<:Any,<:Any,:analytic}) = 1
+@inline _stencil_production_factor(::ConstantPStencilConfig{<:Any,<:Any,:production}) = RADIX_PRODUCTION_NORMALIZATION
+
+@inline _stencil_lamb_helmholtz(::ConstantPStencilConfig{<:Any,LH,<:Any}) where {LH} = LH
+
+function constant_p_stencil_bound(P::Integer, offset::SVector{3,<:Integer}, source_strength, cell_half_width)
+    TF = promote_type(typeof(source_strength), typeof(cell_half_width), Float64)
+    dnorm = norm(SVector{3,TF}(offset[1], offset[2], offset[3]))
+    c = 2 * dnorm / sqrt(TF(3))
+    c > TF(2) || return TF(Inf)
+    rho = TF(cell_half_width) * sqrt(TF(3))
+    bound = 2 * TF(source_strength) / (rho * (c - TF(2))) * (1 / (c - TF(1)))^(Int(P) + 1)
+    return isfinite(bound) ? bound : TF(Inf)
+end
+
+function constant_p_stencil_bound(grid::RadixGrid, config::ConstantPStencilConfig,
+        offset::SVector{3,<:Integer})
+    B_phi = constant_p_stencil_bound(
+        config.P_phi, offset, config.source_strength, radix_cell_half_width(grid),
+    )
+    if _stencil_lamb_helmholtz(config)
+        B_chi = constant_p_stencil_bound(
+            config.P_phi + 1, offset, config.chi_strength, radix_cell_half_width(grid),
+        )
+        R = norm(radix_displacement(grid, offset))
+        return _stencil_production_factor(config) * (B_phi + (1 + 2R) * B_chi)
+    else
+        return _stencil_production_factor(config) * B_phi
+    end
+end
+
+@inline constant_p_stencil_accepts(grid::RadixGrid, config::ConstantPStencilConfig,
+        offset::SVector{3,<:Integer}) =
+    constant_p_stencil_bound(grid, config, offset) <= config.epsilon
+
+function accepted_radix_stencil(grid::RadixGrid, config::ConstantPStencilConfig)
+    G = radix_resolution(grid)
+    offsets = SVector{3,Int}[]
+    for k in -(G - 1):(G - 1), j in -(G - 1):(G - 1), i in -(G - 1):(G - 1)
+        offset = SVector{3,Int}(i, j, k)
+        constant_p_stencil_accepts(grid, config, offset) && push!(offsets, offset)
+    end
+    return offsets
+end
+
+"""
+    radix_implicit_stencil(grid, config)
+
+Build the [`RadixImplicitStencil`](@ref) for a constant-`P` policy: one pass over the
+bounded `(2G-1)^3` offset box classifies every offset as accepted (M2L) or rejected
+(direct near/self complement), and one O(cells) pass fills the dense coord -> cell
+occupancy map. Together these determine pair membership procedurally — membership
+for any offset class is `cell_at[coord(target) - offset] != 0` — without a cells^2
+complement scan. Callers that request a [`RadixInteractionList`](@ref) still
+materialize the matching target/source routes and direct pairs.
+"""
+function radix_implicit_stencil(grid::RadixGrid, config::ConstantPStencilConfig)
+    G = radix_resolution(grid)
+    accepted, rejected = classify_radix_stencil_offsets(grid, config)
+    cell_at = zeros(Int32, G, G, G)
+    refresh_cell_at!(cell_at, grid.cell_keys, length(grid.cell_keys), grid.ell)
+    return RadixImplicitStencil(accepted, rejected, cell_at)
+end
+
+"""
+    classify_radix_stencil_offsets(grid, config)
+
+Classify every offset of the bounded `(2G-1)^3` box as accepted (M2L) or rejected
+(direct near/self complement) for a constant-`P` policy. The classification depends
+only on the grid geometry (`h0`, `ell`) and the config — never on occupancy — so a
+fixed-box cache can compute it once at construction.
+"""
+classify_radix_stencil_offsets(grid::RadixGrid, config::ConstantPStencilConfig) =
+    classify_radix_stencil_offsets(grid.h0, grid.ell, config)
+
+function classify_radix_stencil_offsets(h0::Real, ell::Integer,
+        config::ConstantPStencilConfig)
+    G = 1 << Int(ell)
+    accepted = SVector{3,Int}[]
+    rejected = SVector{3,Int}[]
+    for k in -(G - 1):(G - 1), j in -(G - 1):(G - 1), i in -(G - 1):(G - 1)
+        offset = SVector{3,Int}(i, j, k)
+        bound = constant_p_stencil_bound(h0, ell, config, offset)
+        bound <= config.epsilon ? push!(accepted, offset) : push!(rejected, offset)
+    end
+    sort!(accepted; by=o -> (o[3], o[2], o[1]))
+    return accepted, rejected
+end
+
+@inline _rigid_offset_order(o) = (o[3], o[2], o[1])
+@inline function _rigid_orbit_key(o)
+    a = abs(Int(o[1]))
+    b = abs(Int(o[2]))
+    c = abs(Int(o[3]))
+    hi = max(a, b, c)
+    lo = min(a, b, c)
+    return (hi, a + b + c - hi - lo, lo)
+end
+@inline _rigid_near(o, radius2::Int) =
+    o[1] * o[1] + o[2] * o[2] + o[3] * o[3] <= radius2
+@inline _rigid_phase_index(c1::Integer, c2::Integer, c3::Integer) =
+    1 + (Int(c1) & 1) + 2 * (Int(c2) & 1) + 4 * (Int(c3) & 1)
+
+"""
+    rigid_stencil_epsilon(P_phi, h0, ell, near_radius2; lamb_helmholtz=false, TF=Float64)
+
+Tolerance whose analytic constant-`P` classifier rejects **exactly** the rigid near
+set `{o : |o|^2 <= near_radius2}` at this box and depth — the accuracy contract
+[`HierarchicalRigidStencil`](@ref) verifies at construction.
+
+The bound depends on the offset only through `|o|`, and it is monotonically
+decreasing, so any tolerance strictly between the bound at the farthest near offset
+and the bound at the nearest far offset separates the two sets exactly. For
+`near_radius2 = 3` the bound is intrinsically infinite inside the near set (the
+classic FMM case, `c <= 2` in the Gumerov bound), so any tolerance at or above the
+nearest far offset's bound works.
+"""
+function rigid_stencil_epsilon(P_phi::Integer, h0::Real, ell::Integer,
+        near_radius2::Integer; lamb_helmholtz::Bool=false, TF::Type=Float64)
+    q = _validate_rigid_near_radius2(near_radius2, "rigid stencil")
+    probe = ConstantPStencilConfig(P_phi, one(TF); lamb_helmholtz)
+    # Enumerate representatives of the farthest occupied near shell and the
+    # nearest nonempty far shell.  Not every integer is a sum of three squares
+    # (q=7 is redundant with q=6), hence this cannot safely assume q + 1.
+    extent = isqrt(q)
+    near_shell = SVector{3,Int}[]
+    for z in -extent:extent, y in -extent:extent, x in -extent:extent
+        x*x + y*y + z*z == q && push!(near_shell, SVector(x, y, z))
+    end
+    isempty(near_shell) && error("supported rigid radius q=$q has no lattice shell")
+    far_q = q + 1
+    far_shell = SVector{3,Int}[]
+    while isempty(far_shell)
+        far_extent = isqrt(far_q)
+        for z in -far_extent:far_extent, y in -far_extent:far_extent,
+                x in -far_extent:far_extent
+            x*x + y*y + z*z == far_q && push!(far_shell, SVector(x, y, z))
+        end
+        isempty(far_shell) && (far_q += 1)
+    end
+    near_far = (first(near_shell), first(far_shell))
+    upper = constant_p_stencil_bound(TF(h0), ell, probe, near_far[1])
+    lower = constant_p_stencil_bound(TF(h0), ell, probe, near_far[2])
+    isfinite(lower) || throw(ArgumentError(
+        "no finite constant-P tolerance separates the rigid near set at " *
+        "P_phi=$P_phi, ell=$ell, near_radius2=$near_radius2"))
+    return isfinite(upper) ? (upper + lower) / 2 : 2 * lower
+end
+
+"""
+    RigidHierarchicalTables(near_radius2)
+
+Enumerate the level-invariant source-major V-list from task 025.  This is
+construction-time work and contains no occupancy-dependent state.
+"""
+function RigidHierarchicalTables(near_radius2::Integer)
+    q = _validate_rigid_near_radius2(near_radius2, "rigid hierarchical")
+    near_extent = isqrt(q)
+    near_offsets = SVector{3,Int}[]
+    for z in -near_extent:near_extent, y in -near_extent:near_extent,
+            x in -near_extent:near_extent
+        o = SVector{3,Int}(x, y, z)
+        _rigid_near(o, q) && push!(near_offsets, o)
+    end
+    sort!(near_offsets; by=_rigid_offset_order)
+
+    # If a parent offset is near, each child coordinate is bounded by twice
+    # the parent extent plus its phase bit.
+    extent = 2isqrt(q) + 1
+    by_phase = [SVector{3,Int}[] for _ in 1:8]
+    union_offsets = Set{SVector{3,Int}}()
+    for phase in 0:7
+        ux = phase & 1
+        uy = (phase >> 1) & 1
+        uz = (phase >> 2) & 1
+        phase_offsets = by_phase[phase + 1]
+        for z in -extent:extent, y in -extent:extent, x in -extent:extent
+            o = SVector{3,Int}(x, y, z)
+            _rigid_near(o, q) && continue
+            parent = SVector{3,Int}(
+                fld(ux + x, 2), fld(uy + y, 2), fld(uz + z, 2))
+            _rigid_near(parent, q) || continue
+            push!(phase_offsets, o)
+            push!(union_offsets, o)
+        end
+        sort!(phase_offsets; by=_rigid_offset_order)
+    end
+    push_offsets = sort!(collect(union_offsets); by=_rigid_offset_order)
+    offset_id = Dict(o => Int32(i) for (i, o) in enumerate(push_offsets))
+    phase_index = Int32[]
+    starts = Vector{Int}(undef, 9)
+    class_of = zeros(Int32, 8, length(push_offsets))
+    for phase in 1:8
+        starts[phase] = length(phase_index) + 1
+        for o in by_phase[phase]
+            k = offset_id[o]
+            push!(phase_index, k)
+            class_of[phase, k] = k
+        end
+    end
+    starts[9] = length(phase_index) + 1
+    return RigidHierarchicalTables(near_offsets, push_offsets, Tuple(starts),
+        phase_index, class_of)
+end
+
+# Scheduled transition table: children outside q_child are emitted when their
+# parent lies inside q_parent. For q_parent == q_child this is exactly the
+# production fixed-radius V-list. Keeping this constructor internal avoids a new
+# public geometry surface while making the exact-once transition explicit.
+function _rigid_transition_tables(q_parent::Integer, q_child::Integer)
+    qp = _validate_rigid_near_radius2(q_parent, "rigid parent transition")
+    qc = _validate_rigid_near_radius2(q_child, "rigid child transition")
+    qc <= qp || throw(ArgumentError(
+        "rigid transition requires q_child <= q_parent; got $qc > $qp"))
+    child_base = RigidHierarchicalTables(qc)
+    extent = 2isqrt(qp) + 1
+    by_phase = [SVector{3,Int}[] for _ in 1:8]
+    union_offsets = Set{SVector{3,Int}}()
+    for phase in 0:7
+        ux = phase & 1
+        uy = (phase >> 1) & 1
+        uz = (phase >> 2) & 1
+        phase_offsets = by_phase[phase + 1]
+        for z in -extent:extent, y in -extent:extent, x in -extent:extent
+            o = SVector{3,Int}(x, y, z)
+            _rigid_near(o, qc) && continue
+            parent = SVector{3,Int}(
+                fld(ux + x, 2), fld(uy + y, 2), fld(uz + z, 2))
+            _rigid_near(parent, qp) || continue
+            push!(phase_offsets, o)
+            push!(union_offsets, o)
+        end
+        sort!(phase_offsets; by=_rigid_offset_order)
+    end
+    push_offsets = sort!(collect(union_offsets); by=_rigid_offset_order)
+    offset_id = Dict(o => Int32(i) for (i, o) in enumerate(push_offsets))
+    phase_index = Int32[]
+    starts = Vector{Int}(undef, 9)
+    class_of = zeros(Int32, 8, length(push_offsets))
+    for phase in 1:8
+        starts[phase] = length(phase_index) + 1
+        for o in by_phase[phase]
+            k = offset_id[o]
+            push!(phase_index, k)
+            class_of[phase, k] = k
+        end
+    end
+    starts[9] = length(phase_index) + 1
+    return RigidHierarchicalTables(child_base.near_offsets, push_offsets,
+        Tuple(starts), phase_index, class_of)
+end
+
+# Per-axis cell counts of the root grid at `level` on the virtual-cube embedding
+# (task 037): an axis stops halving once it saturates, so the count is
+# 2^max(ell_a - ell + level, 0). Cubic axes give the usual 2^level per axis.
+@inline _radix_root_counts(ell_axes::SVector{3,Int}, ell::Int, level::Int) =
+    SVector{3,Int}(
+        1 << max(ell_axes[1] - ell + level, 0),
+        1 << max(ell_axes[2] - ell + level, 0),
+        1 << max(ell_axes[3] - ell + level, 0),
+    )
+
+# Count of the flat-top M2L offset classes at `level`: offsets between root-grid
+# cells (|o_a| <= N_a - 1) whose squared norm exceeds `q`.
+function _radix_flat_top_count(ell_axes::SVector{3,Int}, ell::Int, level::Int,
+        q::Int)
+    N = _radix_root_counts(ell_axes, ell, level)
+    count = 0
+    for z in -(N[3] - 1):(N[3] - 1), y in -(N[2] - 1):(N[2] - 1),
+            x in -(N[1] - 1):(N[1] - 1)
+        x * x + y * y + z * z > q && (count += 1)
+    end
+    return count
+end
+
+# Flat-top class-count cap (task 037 stage 3): matches the device window default,
+# so a single flat-top level is never wider than one device route window.
+const RADIX_FLAT_TOP_CLASS_CAP = 4096
+
+"""
+    _radix_root_level(ell_axes, ell, q) -> (R, L_allnear)
+
+Construction-time active-level trimming (task 037 stage 3): `R` is the flat-top
+root level of the hierarchy — node build and stage groups retain levels `R:ell`
+only. `L_allnear` is the largest level at which every root-grid offset lies in
+the rigid near ball `{o : |o|^2 <= q}`; passing the *leaf* near radius (the
+schedule minimum) keeps the trim conservative and schedule-independent, so the
+task-025 exact-once base case holds for any non-increasing level schedule.
+`R = max(ell - minimum(ell_axes), L_allnear)`, lowered while the flat-top class
+count at `R` exceeds `RADIX_FLAT_TOP_CLASS_CAP`; at `R == L_allnear` the
+flat-top table is empty and the hierarchy degenerates to the legacy schedule
+over levels `R+1:ell` (cubic grids: `R = L_allnear = 1`, i.e. exactly the
+production `2:ell` hierarchy).
+"""
+function _radix_root_level(ell_axes::SVector{3,Int}, ell::Int, q::Integer)
+    qi = Int(q)
+    L_allnear = 0
+    for L in 1:ell
+        N = _radix_root_counts(ell_axes, ell, L)
+        s = (N[1] - 1)^2 + (N[2] - 1)^2 + (N[3] - 1)^2
+        s <= qi ? (L_allnear = L) : break
+    end
+    R = max(ell - min(ell_axes[1], ell_axes[2], ell_axes[3]), L_allnear)
+    while R > L_allnear &&
+            _radix_flat_top_count(ell_axes, ell, R, qi) > RADIX_FLAT_TOP_CLASS_CAP
+        R -= 1
+    end
+    return R, L_allnear
+end
+
+# Flat-top table at the root level (task 037 stage 3): the degenerate transition
+# table with `q_parent = Inf` bounded by the root grid box — every offset between
+# root-grid cells outside the near ball is emitted, all 8 phases admitted. Shaped
+# like `_rigid_transition_tables` output so the scheduled-tables union and the
+# `level_class_of` mask mechanism consume it unchanged.
+function _rigid_flat_top_tables(q_top::Integer, root_counts::SVector{3,Int})
+    q = _validate_rigid_near_radius2(q_top, "rigid flat-top")
+    near_extent = isqrt(q)
+    near_offsets = SVector{3,Int}[]
+    for z in -near_extent:near_extent, y in -near_extent:near_extent,
+            x in -near_extent:near_extent
+        o = SVector{3,Int}(x, y, z)
+        _rigid_near(o, q) && push!(near_offsets, o)
+    end
+    sort!(near_offsets; by=_rigid_offset_order)
+    push_offsets = SVector{3,Int}[]
+    for z in -(root_counts[3] - 1):(root_counts[3] - 1),
+            y in -(root_counts[2] - 1):(root_counts[2] - 1),
+            x in -(root_counts[1] - 1):(root_counts[1] - 1)
+        o = SVector{3,Int}(x, y, z)
+        _rigid_near(o, q) && continue
+        push!(push_offsets, o)
+    end
+    sort!(push_offsets; by=_rigid_offset_order)
+    phase_index = Int32[]
+    starts = Vector{Int}(undef, 9)
+    class_of = zeros(Int32, 8, length(push_offsets))
+    for phase in 1:8
+        starts[phase] = length(phase_index) + 1
+        for (k, _) in enumerate(push_offsets)
+            push!(phase_index, Int32(k))
+            class_of[phase, k] = Int32(k)
+        end
+    end
+    starts[9] = length(phase_index) + 1
+    return RigidHierarchicalTables(near_offsets, push_offsets, Tuple(starts),
+        phase_index, class_of)
+end
+
+"""
+Build the shared offset union and per-level phase masks for an internal radius
+schedule. The leaf table supplies the direct list; every M2L level selects a
+complete rigid (and therefore complete cubic-symmetry-orbit) table. Uniform
+policies take this same path, which keeps scheduled and production geometry
+directly comparable.
+
+Task 037 stage 3: the active M2L levels are `first_m2l_level:ell`, where
+`first_m2l_level = R` when the flat-top table at the root level `R` is nonempty
+and `R + 1` otherwise (`R == L_allnear`, every root offset near). Cubic grids
+give `R = 1` with an empty flat-top, i.e. bitwise the legacy `2:ell` schedule.
+`policy.level_radii2` is accepted at either anchoring: the legacy length
+`ell - 1` (levels `2:ell`; entries above the active range are sliced off, which
+is the identity when `first_m2l_level == 2`) or the active length
+`ell - first_m2l_level + 1` (levels `first_m2l_level:ell`, coarse to fine).
+Returns `(tables, level_class_of, qs, root_level, first_m2l_level)`.
+"""
+_hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::Int) =
+    _hierarchical_scheduled_tables(policy, ell, SVector(ell, ell, ell))
+
+function _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::Int,
+        ell_axes::SVector{3,Int})
+    ell >= 2 || throw(ArgumentError(
+        "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
+    R, L_allnear = _radix_root_level(ell_axes, ell, policy.near_radius2)
+    first_m2l = R == L_allnear ? R + 1 : R
+    first_m2l <= ell || throw(ArgumentError(
+        "HierarchicalRigidStencil has no M2L level on this grid: every leaf " *
+        "offset is inside near_radius2=$(policy.near_radius2) at ell=$ell, " *
+        "ell_axes=$(Tuple(ell_axes)); use the flat ConstantPAnalyticStencil " *
+        "policy or a deeper grid"))
+    nlevels = ell - first_m2l + 1
+    raw = policy.level_radii2
+    qs = if isempty(raw)
+        fill(policy.near_radius2, nlevels)
+    elseif length(raw) == nlevels
+        collect(raw)
+    elseif length(raw) == ell - 1
+        # legacy 2:ell anchoring: keep each level's own entry, slice the trimmed
+        # coarse head (identity when first_m2l == 2)
+        collect(raw)[(first_m2l - 1):(ell - 1)]
+    else
+        throw(ArgumentError(
+            "hierarchical level schedule has $(length(raw)) entries, but ell=$ell " *
+            "with active M2L levels $first_m2l:$ell requires $nlevels entries " *
+            "(or the legacy $(ell - 1) entries anchored to levels 2:$ell)"))
+    end
+    all(qs[i + 1] <= qs[i] for i in 1:length(qs)-1) || throw(ArgumentError(
+        "hierarchical level schedule must be non-increasing with depth; got $(Tuple(qs))"))
+    isempty(qs) || last(qs) == policy.near_radius2 || throw(ArgumentError(
+        "hierarchical schedule leaf radius must equal near_radius2"))
+    if first_m2l == R + 1
+        # exact-once base case: every offset at the level above the first M2L
+        # level must lie inside the parent radius the topmost transition uses
+        N = _radix_root_counts(ell_axes, ell, R)
+        (N[1] - 1)^2 + (N[2] - 1)^2 + (N[3] - 1)^2 <= qs[1] || throw(AssertionError(
+            "trimmed hierarchy base case violated at root level $R"))
+    end
+
+    level_tables = [first_m2l + j - 1 == R ?
+                        _rigid_flat_top_tables(qs[j], _radix_root_counts(ell_axes, ell, R)) :
+                        _rigid_transition_tables(j == 1 ? qs[j] : qs[j - 1], qs[j])
+                    for j in eachindex(qs)]
+    leaf = RigidHierarchicalTables(last(qs))
+    push_offsets = sort!(collect(union((Set(t.push_offsets) for t in level_tables)...));
+        by=_rigid_offset_order)
+    offset_id = Dict(o => k for (k, o) in enumerate(push_offsets))
+    level_class_of = zeros(Int32, 8, length(push_offsets), ell + 1)
+    for (j, table) in enumerate(level_tables)
+        L = first_m2l + j - 1
+        for (oldk, o) in enumerate(table.push_offsets)
+            k = offset_id[o]
+            # Only membership is load-bearing; carrying the shared-union id
+            # rather than the per-level one aids host-side diagnostics.
+            @views level_class_of[:, k, L + 1] .=
+                ifelse.(table.class_of[:, oldk] .== 0, Int32(0), Int32(k))
+        end
+    end
+    # Legacy fields retain leaf semantics. Route construction uses the explicit
+    # level masks above; direct construction uses leaf.near_offsets.
+    leaf_class = zeros(Int32, 8, length(push_offsets))
+    leaf_map = Dict(o => k for (k, o) in enumerate(leaf.push_offsets))
+    for (k, o) in enumerate(push_offsets)
+        oldk = get(leaf_map, o, 0)
+        oldk == 0 || (@views leaf_class[:, k] .=
+            ifelse.(leaf.class_of[:, oldk] .== 0, Int32(0), Int32(k)))
+    end
+    tables = RigidHierarchicalTables(leaf.near_offsets, push_offsets,
+        leaf.phase_starts, leaf.phase_index, leaf_class)
+    return tables, level_class_of, qs, R, first_m2l
+end
+
+_verify_hierarchical_classifier!(h0, ell::Int, policy::HierarchicalRigidStencil,
+        tables::RigidHierarchicalTables) =
+    _verify_hierarchical_classifier!(h0, ell, policy, tables,
+        SVector(ell, ell, ell), 1, 2, Int[])
+
+function _verify_hierarchical_classifier!(h0, ell::Int,
+        policy::HierarchicalRigidStencil, tables::RigidHierarchicalTables,
+        ell_axes::SVector{3,Int}, root_level::Int, first_m2l_level::Int,
+        level_radii2::AbstractVector{<:Integer})
+    ell >= 2 || throw(ArgumentError(
+        "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
+    # Task 037 stage 3: root-level accuracy gate. Every flat-top offset `o`
+    # runs M2L at the root level `R`, whose cells are the leaf cells of the
+    # same box at depth `R` — so the exact level-true task-025 bound is the
+    # analytic classifier evaluated at `(h0, R)` (this is the `2^(ell-L)`
+    # rescaling of the leaf bound, with the Lamb-Helmholtz displacement scaled
+    # consistently). The gate: every emitted flat-top offset satisfies the
+    # accuracy contract `bound_R(o) <= epsilon`.
+    if first_m2l_level == root_level
+        N = _radix_root_counts(ell_axes, ell, root_level)
+        q_top = isempty(level_radii2) ? policy.near_radius2 : Int(level_radii2[1])
+        for z in -(N[3] - 1):(N[3] - 1), y in -(N[2] - 1):(N[2] - 1),
+                x in -(N[1] - 1):(N[1] - 1)
+            o = SVector{3,Int}(x, y, z)
+            _rigid_near(o, q_top) && continue
+            bound = constant_p_stencil_bound(h0, root_level, policy.config, o)
+            bound <= policy.config.epsilon || throw(ArgumentError(
+                "HierarchicalRigidStencil accuracy gate failed at the flat-top " *
+                "root level $root_level (ell=$ell): offset $(Tuple(o)) has " *
+                "level-true bound $bound > epsilon=" *
+                "$(policy.config.epsilon); choose a tolerance compatible with " *
+                "rigid_stencil_epsilon at this box"))
+        end
+    end
+    # The task-025 accepted/rejected boundary lies strictly inside the rigid
+    # push-union cube.  Evaluate the production analytic
+    # classifier on that complete cube without materializing the full
+    # `(2^(ell+1)-1)^3` flat route-class domain.
+    extent = 2isqrt(policy.near_radius2) + 1
+    actual = Set{SVector{3,Int}}()
+    for z in -extent:extent, y in -extent:extent, x in -extent:extent
+        o = SVector{3,Int}(x, y, z)
+        constant_p_stencil_bound(h0, ell, policy.config, o) <= policy.config.epsilon ||
+            push!(actual, o)
+    end
+    expected = Set(tables.near_offsets)
+    actual == expected && return nothing
+    missing = length(setdiff(expected, actual))
+    extra = length(setdiff(actual, expected))
+    throw(ArgumentError(
+        "HierarchicalRigidStencil accuracy gate failed at ell=$ell: the analytic " *
+        "classifier at epsilon=$(policy.config.epsilon) rejects " *
+        "$(length(actual)) offsets, but near_radius2=" *
+        "$(policy.near_radius2) requires exactly $(length(expected)) offsets " *
+        "(missing=$missing, extra=$extra). If you constructed this policy with " *
+        "an explicit tolerance, choose one compatible with " *
+        "rigid_stencil_epsilon(P, h0, ell, near_radius2) (it must scale with " *
+        "2^ell as derived in task 025). If the tolerance was machine-derived, " *
+        "the analytic bound at this (P, ell, box) cannot realize this rigid " *
+        "near set; try the other near_radius2 or pass " *
+        "policy=ConstantPAnalyticStencil(...) for the flat path."))
+end
+
+_hierarchical_class_metadata(tables::RigidHierarchicalTables, ell::Int) =
+    _hierarchical_class_metadata(tables, ell, 2)
+
+function _hierarchical_class_metadata(tables::RigidHierarchicalTables, ell::Int,
+        first_m2l_level::Int)
+    noffsets = length(tables.push_offsets)
+    nclasses = max(ell - first_m2l_level + 1, 0) * noffsets
+    class_level = Vector{Int32}(undef, nclasses)
+    class_offset = Matrix{Int32}(undef, 3, nclasses)
+    effective_offsets = Vector{SVector{3,Int}}(undef, nclasses)
+    c = 0
+    @inbounds for level in first_m2l_level:ell
+        scale = 1 << (ell - level)
+        for o in tables.push_offsets
+            c += 1
+            class_level[c] = Int32(level)
+            class_offset[1, c] = Int32(o[1])
+            class_offset[2, c] = Int32(o[2])
+            class_offset[3, c] = Int32(o[3])
+            # Existing resident plan builders take integer offsets at leaf
+            # reference width.  This exact binary rescaling gives level-true
+            # radii while preserving direction.
+            effective_offsets[c] = scale * o
+        end
+    end
+    return class_level, class_offset, effective_offsets
+end
+
+@inline function _hierarchical_node_lookup(occupancy::RadixLevelOccupancy,
+        grid::DeviceRadixGrid, level_offsets, level::Int, coord::SVector{3,Int})
+    _radix_coord_inbounds_at_level(coord, level) || return 0
+    if !isempty(occupancy.node_at)
+        G = 1 << level
+        linear = coord[1] + G * (coord[2] + G * coord[3])
+        return Int(occupancy.node_at[occupancy.level_base[level + 1] + linear + 1])
+    end
+    key = morton_key(coord, level)
+    lo = level_offsets[level + 1] + 1
+    hi = level_offsets[level + 2]
+    @inbounds while lo <= hi
+        mid = (lo + hi) >>> 1
+        mk = grid.node_keys[mid]
+        mk < key ? (lo = mid + 1) : (hi = mid - 1)
+    end
+    return lo <= level_offsets[level + 2] && grid.node_keys[lo] == key ? lo : 0
+end
+
+"""
+Generate one `(level, consecutive-offset-classes)` route window.  Routes are
+source-major inside each class and endpoints are flat node indices.
+"""
+@inline function build_hierarchical_routes_window!(route_levels, route_offsets,
+        route_targets, route_sources, route_class, ctx::HostHierarchicalM2LContext,
+        grid::DeviceRadixGrid, level::Integer, first_offset::Integer,
+        last_offset::Integer)
+    L = Int(level)
+    noffsets = length(ctx.tables.push_offsets)
+    1 <= first_offset <= last_offset <= noffsets ||
+        throw(ArgumentError("invalid hierarchical offset window $first_offset:$last_offset"))
+    first_source = ctx.level_offsets[L + 1] + 1
+    last_source = ctx.level_offsets[L + 2]
+    n_routes = 0
+    @inbounds for k in Int(first_offset):Int(last_offset)
+        o = ctx.tables.push_offsets[k]
+        global_class = (L - ctx.first_m2l_level) * noffsets + k
+        for source in first_source:last_source
+            phase = _rigid_phase_index(grid.node_coords[1, source],
+                grid.node_coords[2, source], grid.node_coords[3, source])
+            ctx.level_class_of[phase, k, L + 1] == 0 && continue
+            source_coord = SVector{3,Int}(grid.node_coords[1, source],
+                grid.node_coords[2, source], grid.node_coords[3, source])
+            target = _hierarchical_node_lookup(ctx.occupancy, grid,
+                ctx.level_offsets, L, source_coord + o)
+            target == 0 && continue
+            n_routes += 1
+            n_routes <= length(route_sources) || throw(AssertionError(
+                "hierarchical route window exceeded capacity $(length(route_sources)); " *
+                "increase window storage or reduce window_classes"))
+            route_levels[n_routes] = L
+            route_offsets[1, n_routes] = o[1]
+            route_offsets[2, n_routes] = o[2]
+            route_offsets[3, n_routes] = o[3]
+            route_targets[n_routes] = target
+            route_sources[n_routes] = source
+            route_class === nothing || (route_class[n_routes] = Int32(global_class))
+        end
+    end
+    return n_routes
+end
+
+function build_hierarchical_direct_pairs!(direct_targets, direct_sources,
+        ctx::HostHierarchicalM2LContext, grid::DeviceRadixGrid, n_cells::Integer;
+        nearfield::Bool=true, self_induced::Bool=true)
+    (nearfield || self_induced) || return 0
+    L = grid.ell
+    leaf_base = ctx.level_offsets[L + 1]
+    n_direct = 0
+    @inbounds for target_cell in 1:Int(n_cells)
+        target_node = leaf_base + target_cell
+        target_coord = SVector{3,Int}(grid.node_coords[1, target_node],
+            grid.node_coords[2, target_node], grid.node_coords[3, target_node])
+        for o in ctx.tables.near_offsets
+            isself = iszero(o[1]) && iszero(o[2]) && iszero(o[3])
+            (isself ? self_induced : nearfield) || continue
+            source_node = _hierarchical_node_lookup(ctx.occupancy, grid,
+                ctx.level_offsets, L, target_coord - o)
+            source_node == 0 && continue
+            n_direct += 1
+            n_direct <= length(direct_targets) || throw(AssertionError(
+                "hierarchical direct-pair buffer exceeded capacity"))
+            direct_targets[n_direct] = target_cell
+            direct_sources[n_direct] = source_node - leaf_base
+        end
+    end
+    return n_direct
+end
+
+# Grid-free constant-P bound from the fixed Morton domain (task 023): identical
+# arithmetic to the RadixGrid method, with cell_half_width = h0 / G and
+# displacement = offset * (2 h0 / G).
+function constant_p_stencil_bound(h0::Real, ell::Integer, config::ConstantPStencilConfig,
+        offset::SVector{3,<:Integer})
+    G = 1 << Int(ell)
+    cell_half_width = h0 / G
+    B_phi = constant_p_stencil_bound(
+        config.P_phi, offset, config.source_strength, cell_half_width,
+    )
+    if _stencil_lamb_helmholtz(config)
+        B_chi = constant_p_stencil_bound(
+            config.P_phi + 1, offset, config.chi_strength, cell_half_width,
+        )
+        Δ = (2 * h0) / G
+        TF = typeof(Δ)
+        R = norm(Δ * SVector{3,TF}(offset[1], offset[2], offset[3]))
+        return _stencil_production_factor(config) * (B_phi + (1 + 2R) * B_chi)
+    else
+        return _stencil_production_factor(config) * B_phi
+    end
+end
+
+"""
+    refresh_cell_at!(cell_at, cell_keys, n_cells, ell)
+
+Refill the dense coord -> occupied-cell map in place: zero it, then scatter the
+first `n_cells` Morton keys. Factored out of [`radix_implicit_stencil`](@ref) so
+the recurring update path (task 023) can refresh occupancy without reallocating.
+"""
+function refresh_cell_at!(cell_at::AbstractArray{Int32,3}, cell_keys, n_cells::Integer,
+        ell::Integer)
+    fill!(cell_at, Int32(0))
+    @inbounds for cell in 1:n_cells
+        coord = morton_decode(cell_keys[cell], ell)
+        cell_at[coord[1] + 1, coord[2] + 1, coord[3] + 1] = Int32(cell)
+    end
+    return cell_at
+end
+
+@inline function _radix_cell_at(cell_at::AbstractArray{Int32,3}, coord::SVector{3,<:Integer})
+    (0 <= coord[1] < size(cell_at, 1) && 0 <= coord[2] < size(cell_at, 2) &&
+        0 <= coord[3] < size(cell_at, 3)) || return 0
+    return Int(@inbounds cell_at[coord[1] + 1, coord[2] + 1, coord[3] + 1])
+end
+
+@inline _radix_cell_at(stencil::RadixImplicitStencil, coord::SVector{3,<:Integer}) =
+    _radix_cell_at(stencil.cell_at, coord)
+
+@inline _radix_cell_coords(grid::RadixGrid) =
+    SVector{3,Int}[radix_cell_coord(grid, cell) for cell in eachindex(grid.cell_keys)]
+
+@inline _chebyshev_norm(d::SVector{3,<:Integer}) =
+    max(abs(Int(d[1])), abs(Int(d[2])), abs(Int(d[3])))
+
+@inline _radix_is_leaf_direct(::ParentNeighborM2L, leaf_offset::SVector{3,<:Integer}) =
+    _chebyshev_norm(leaf_offset) <= 1
+
+@inline _radix_is_m2l(::ParentNeighborM2L, child_offset::SVector{3,<:Integer},
+        parent_offset::SVector{3,<:Integer}) =
+    _chebyshev_norm(parent_offset) <= 1 && _chebyshev_norm(child_offset) > 1
+
+const _RADIX_CHILD_PHASES = ntuple(i -> SVector{3,Int}(
+    (i - 1) & 0x1,
+    ((i - 1) >> 1) & 0x1,
+    ((i - 1) >> 2) & 0x1,
+), 8)
+
+const _RADIX_DIRECT_OFFSETS = let offsets = SVector{3,Int}[]
+    for k in -1:1, j in -1:1, i in -1:1
+        push!(offsets, SVector{3,Int}(i, j, k))
+    end
+    Tuple(offsets)
+end
+
+function _radix_parent_neighbor_m2l_candidates(target_phase::SVector{3,<:Integer})
+    target_child_coord = SVector{3,Int}(target_phase[1], target_phase[2], target_phase[3])
+    candidates = SVector{3,Int}[]
+    for k_parent in -1:1, j_parent in -1:1, i_parent in -1:1
+        parent_offset = SVector{3,Int}(i_parent, j_parent, k_parent)
+        for source_phase in _RADIX_CHILD_PHASES
+            source_child_coord = 2 * (-parent_offset) + source_phase
+            child_offset = target_child_coord - source_child_coord
+            if _radix_is_m2l(ParentNeighborM2L(), child_offset, parent_offset)
+                push!(candidates, child_offset)
+            end
+        end
+    end
+    sort!(candidates; by=o -> (o[3], o[2], o[1]))
+    return Tuple(candidates)
+end
+
+const _RADIX_PARENT_NEIGHBOR_M2L_CANDIDATES = ntuple(
+    i -> _radix_parent_neighbor_m2l_candidates(_RADIX_CHILD_PHASES[i]), 8,
+)
+
+@inline _radix_phase_index(phase::SVector{3,<:Integer}) =
+    Int(phase[1] + 2 * phase[2] + 4 * phase[3] + 1)
+
+@inline _radix_leaf_phase(coord::SVector{3,<:Integer}) =
+    SVector{3,Int}(coord[1] & 0x1, coord[2] & 0x1, coord[3] & 0x1)
+
+@inline _radix_m2l_candidates(::ParentNeighborM2L, target_phase::SVector{3,<:Integer}) =
+    _RADIX_PARENT_NEIGHBOR_M2L_CANDIDATES[_radix_phase_index(target_phase)]
+
+@inline _radix_direct_offsets(::ParentNeighborM2L) = _RADIX_DIRECT_OFFSETS
+
+@inline _radix_level_coord(leaf_coord::SVector{3,<:Integer}, leaf_level::Integer, level::Integer) =
+    SVector{3,Int}(
+        Int(leaf_coord[1]) >> (Int(leaf_level) - Int(level)),
+        Int(leaf_coord[2]) >> (Int(leaf_level) - Int(level)),
+        Int(leaf_coord[3]) >> (Int(leaf_level) - Int(level)),
+    )
+
+function _radix_ancestor_leaf_map(grid::RadixGrid)
+    map = Dict{Tuple{Int,SVector{3,Int}},Vector{Int}}()
+    for cell in eachindex(grid.cell_keys)
+        leaf_coord = radix_cell_coord(grid, cell)
+        for level in 0:grid.ell
+            coord = _radix_level_coord(leaf_coord, grid.ell, level)
+            push!(get!(() -> Int[], map, (level, coord)), cell)
+        end
+    end
+    return map
+end
+
+@inline _radix_coord_inbounds_at_level(coord::SVector{3,<:Integer}, level::Integer) = begin
+    G = 1 << Int(level)
+    0 <= coord[1] < G && 0 <= coord[2] < G && 0 <= coord[3] < G
+end
+
+foreach_radix_m2l_pair(f, strategy::RadixTraversalStrategy, grid::RadixGrid;
+        farfield::Bool=true) =
+    foreach_radix_m2l_pair(f, strategy, ParentNeighborM2L(), grid; farfield)
+
+foreach_radix_direct_pair(f, strategy::RadixTraversalStrategy, grid::RadixGrid;
+        nearfield::Bool=true, self_induced::Bool=true) =
+    foreach_radix_direct_pair(f, strategy, ParentNeighborM2L(), grid; nearfield, self_induced)
+
+build_radix_interaction_list(strategy::RadixTraversalStrategy, grid::RadixGrid;
+        farfield::Bool=true, nearfield::Bool=true, self_induced::Bool=true) =
+    build_radix_interaction_list(
+        strategy, ParentNeighborM2L(), grid; farfield, nearfield, self_induced,
+    )
+
+function foreach_radix_m2l_pair(f, strategy::RadixTraversalStrategy,
+        policy::RadixSeparationPolicy, grid::RadixGrid; farfield::Bool=true)
+    farfield || return nothing
+    return foreach_radix_m2l_route(strategy, policy, grid; farfield) do level, offset, target_cell, source_cell
+        f(offset, target_cell, source_cell)
+    end
+end
+
+function foreach_radix_m2l_route(f, strategy::RadixTraversalStrategy,
+        policy::RadixSeparationPolicy, grid::RadixGrid; farfield::Bool=true)
+    farfield || return nothing
+    return _foreach_radix_m2l_route(f, strategy, policy, grid)
+end
+
+foreach_radix_m2l_route(f, strategy::RadixTraversalStrategy, grid::RadixGrid;
+        farfield::Bool=true) =
+    foreach_radix_m2l_route(f, strategy, ParentNeighborM2L(), grid; farfield)
+
+function _foreach_radix_m2l_route(f, ::RadixTraversalStrategy,
+        policy::ParentNeighborM2L, grid::RadixGrid)
+    ancestor_leaf_cells = _radix_ancestor_leaf_map(grid)
+    for target_cell in eachindex(grid.cell_keys)
+        target_leaf_coord = radix_cell_coord(grid, target_cell)
+        for level in 1:grid.ell
+            target_coord = _radix_level_coord(target_leaf_coord, grid.ell, level)
+            target_phase = _radix_leaf_phase(target_coord)
+            for offset in _radix_m2l_candidates(policy, target_phase)
+                source_coord = target_coord - offset
+                _radix_coord_inbounds_at_level(source_coord, level) || continue
+                source_cells = get(ancestor_leaf_cells, (level, source_coord), nothing)
+                source_cells === nothing && continue
+                for source_cell in source_cells
+                    f(level, offset, target_cell, source_cell)
+                end
+            end
+        end
+    end
+    return nothing
+end
+
+# Constant-P M2L routes, classified by implicit lookup and emitted class-major (offset outer): for each
+# fixed accepted offset the member pairs are exactly the occupied (target, target-offset)
+# coordinate pairs, resolved by O(1) occupancy lookups.
+function _foreach_radix_m2l_route(f, ::RadixTraversalStrategy,
+        policy::ConstantPAnalyticStencil, grid::RadixGrid)
+    stencil = radix_implicit_stencil(grid, policy.config)
+    return _foreach_radix_m2l_route_implicit(f, stencil, _radix_cell_coords(grid), grid.ell)
+end
+
+function _foreach_radix_m2l_route_implicit(f, stencil::RadixImplicitStencil,
+        coords::Vector{SVector{3,Int}}, level::Integer)
+    for offset in stencil.accepted_offsets
+        for target_cell in eachindex(coords)
+            source_cell = _radix_cell_at(stencil, coords[target_cell] - offset)
+            source_cell == 0 && continue
+            f(level, offset, target_cell, source_cell)
+        end
+    end
+    return nothing
+end
+
+function foreach_radix_direct_pair(f, ::RadixTraversalStrategy, policy::ParentNeighborM2L,
+        grid::RadixGrid; nearfield::Bool=true, self_induced::Bool=true)
+    (nearfield || self_induced) || return nothing
+    for target_cell in eachindex(grid.cell_keys)
+        target_coord = radix_cell_coord(grid, target_cell)
+        for offset in _radix_direct_offsets(policy)
+            source_cell = radix_cell_index(grid, target_coord - offset)
+            source_cell == 0 && continue
+            if offset == SVector{3,Int}(0, 0, 0)
+                self_induced && f(offset, target_cell, source_cell)
+            else
+                nearfield && f(offset, target_cell, source_cell)
+            end
+        end
+    end
+    return nothing
+end
+
+# Constant-P direct near/self complement, classified by implicit lookup: every offset between
+# occupied cells lies in the bounded stencil box, so the complement of the accepted set
+# is exactly the (small) rejected-offset set. O(cells * |rejected|) occupancy lookups
+# replace the former O(cells^2) full pair scan.
+function foreach_radix_direct_pair(f, ::RadixTraversalStrategy, policy::ConstantPAnalyticStencil,
+        grid::RadixGrid; nearfield::Bool=true, self_induced::Bool=true)
+    (nearfield || self_induced) || return nothing
+    stencil = radix_implicit_stencil(grid, policy.config)
+    return _foreach_radix_direct_pair_implicit(
+        f, stencil, _radix_cell_coords(grid); nearfield, self_induced,
+    )
+end
+
+function _foreach_radix_direct_pair_implicit(f, stencil::RadixImplicitStencil,
+        coords::Vector{SVector{3,Int}}; nearfield::Bool=true, self_induced::Bool=true)
+    (nearfield || self_induced) || return nothing
+    for target_cell in eachindex(coords)
+        target_coord = coords[target_cell]
+        for offset in stencil.rejected_offsets
+            source_cell = _radix_cell_at(stencil, target_coord - offset)
+            source_cell == 0 && continue
+            if offset == SVector{3,Int}(0, 0, 0)
+                self_induced && f(offset, target_cell, source_cell)
+            else
+                nearfield && f(offset, target_cell, source_cell)
+            end
+        end
+    end
+    return nothing
+end
+
+# Constant-P list assembly from the implicit stencil classifier: one stencil build serves
+# both passes, while each accepted pair is still materialized into an offset batch — already
+# in the canonical (level, z, y, x) batch order, so no Dict and no final sort — and the
+# direct complement comes from the bounded rejected-offset set.
+function build_radix_interaction_list(::RadixTraversalStrategy,
+        policy::ConstantPAnalyticStencil, grid::RadixGrid; farfield::Bool=true,
+        nearfield::Bool=true, self_induced::Bool=true)
+    stencil = radix_implicit_stencil(grid, policy.config)
+    coords = _radix_cell_coords(grid)
+    ncells = length(coords)
+    batches = RadixM2LBatch{Int}[]
+    if farfield
+        sizehint!(batches, length(stencil.accepted_offsets))
+        for offset in stencil.accepted_offsets
+            # count first so each batch retains exactly its member count (the former
+            # ncells sizehint over-retained ~2 GB at n=1e5/ell=4; task 023)
+            npairs = 0
+            @inbounds for target_cell in 1:ncells
+                _radix_cell_at(stencil, coords[target_cell] - offset) == 0 || (npairs += 1)
+            end
+            npairs == 0 && continue
+            targets = Vector{Int}(undef, npairs)
+            sources = Vector{Int}(undef, npairs)
+            i = 0
+            @inbounds for target_cell in 1:ncells
+                source_cell = _radix_cell_at(stencil, coords[target_cell] - offset)
+                source_cell == 0 && continue
+                i += 1
+                targets[i] = target_cell
+                sources[i] = source_cell
+            end
+            push!(batches, RadixM2LBatch(grid.ell, offset, targets, sources))
+        end
+    end
+    ndirect = 0
+    _foreach_radix_direct_pair_implicit(stencil, coords; nearfield, self_induced) do offset, target_cell, source_cell
+        ndirect += 1
+    end
+    direct_pairs = Vector{SVector{2,Int}}(undef, ndirect)
+    i_direct = 0
+    _foreach_radix_direct_pair_implicit(stencil, coords; nearfield, self_induced) do offset, target_cell, source_cell
+        i_direct += 1
+        direct_pairs[i_direct] = SVector{2,Int}(target_cell, source_cell)
+    end
+    return RadixInteractionList{Int}(batches, direct_pairs)
+end
+
+"""
+    build_radix_routes!(route_levels, route_offsets, route_targets, route_sources,
+        route_class, direct_targets, direct_sources, accepted_offsets,
+        rejected_offsets, cell_at, coords, leaf_to_node, ell, n_cells;
+        farfield=true, nearfield=true, self_induced=true) -> (n_routes, n_direct)
+
+In-place constant-`P` route generation (task 023): writes the flattened M2L routes
+(offset-class-major, matching `build_radix_interaction_list` +
+`_flatten_radix_routes_host` elementwise) and the direct near/self pairs
+(target-major, matching `_foreach_radix_direct_pair_implicit` order) directly into
+preallocated flat arrays, so recurring time steps materialize no batch vectors.
+Route targets/sources are node indices (via `leaf_to_node`); direct pairs are leaf
+cell indices. `route_class[i]` receives the 1-based index of route `i`'s offset in
+`accepted_offsets` (pass `nothing` to skip). `coords[1:n_cells]` are the decoded
+cell coordinates. Returns the valid prefix lengths.
+"""
+function build_radix_routes!(route_levels, route_offsets, route_targets, route_sources,
+        route_class, direct_targets, direct_sources,
+        accepted_offsets, rejected_offsets, cell_at::AbstractArray{Int32,3},
+        coords, leaf_to_node, ell::Integer, n_cells::Integer;
+        farfield::Bool=true, nearfield::Bool=true, self_induced::Bool=true)
+    n_routes = 0
+    if farfield
+        @inbounds for (k, offset) in enumerate(accepted_offsets)
+            for target_cell in 1:n_cells
+                source_cell = _radix_cell_at(cell_at, coords[target_cell] - offset)
+                source_cell == 0 && continue
+                n_routes += 1
+                route_levels[n_routes] = ell
+                route_offsets[1, n_routes] = offset[1]
+                route_offsets[2, n_routes] = offset[2]
+                route_offsets[3, n_routes] = offset[3]
+                route_targets[n_routes] = leaf_to_node[target_cell]
+                route_sources[n_routes] = leaf_to_node[source_cell]
+                route_class === nothing || (route_class[n_routes] = Int32(k))
+            end
+        end
+    end
+    n_direct = 0
+    if nearfield || self_induced
+        @inbounds for target_cell in 1:n_cells
+            target_coord = coords[target_cell]
+            for offset in rejected_offsets
+                source_cell = _radix_cell_at(cell_at, target_coord - offset)
+                source_cell == 0 && continue
+                is_self = offset[1] == 0 && offset[2] == 0 && offset[3] == 0
+                (is_self ? self_induced : nearfield) || continue
+                n_direct += 1
+                direct_targets[n_direct] = target_cell
+                direct_sources[n_direct] = source_cell
+            end
+        end
+    end
+    return n_routes, n_direct
+end
+
+function build_radix_interaction_list(strategy::RadixTraversalStrategy,
+        policy::RadixSeparationPolicy, grid::RadixGrid; farfield::Bool=true,
+        nearfield::Bool=true, self_induced::Bool=true)
+    batches_by_route = Dict{Tuple{Int,SVector{3,Int}},RadixM2LBatch{Int}}()
+    if farfield
+        foreach_radix_m2l_route(strategy, policy, grid; farfield) do level, offset, target_cell, source_cell
+            route = (level, offset)
+            batch = get!(() -> RadixM2LBatch(level, offset, Int[], Int[]), batches_by_route, route)
+            push!(batch.targets, target_cell)
+            push!(batch.sources, source_cell)
+        end
+    end
+    direct_pairs = SVector{2,Int}[]
+    foreach_radix_direct_pair(strategy, policy, grid; nearfield, self_induced) do offset, target_cell, source_cell
+        push!(direct_pairs, SVector{2,Int}(target_cell, source_cell))
+    end
+    batches = collect(values(batches_by_route))
+    sort!(batches; by=batch -> (batch.level, batch.offset[3], batch.offset[2], batch.offset[1]))
+    return RadixInteractionList{Int}(batches, direct_pairs)
+end
+
+#------- adaptive octree U/V/W/X interaction lists (task 039) -------#
+#
+# Dual-tree recursion of theory/adaptive-radix-octree.md §2.2-§2.4 over an
+# AdaptiveRadixTree, with the §5.2 STICKY per-cell sigma demotion gate. V lists
+# come out in the existing hierarchical (level, offset) class format —
+# route_levels/route_offsets/route_targets/route_sources/route_class with the
+# production class numbering (L - first_m2l_level) * noffsets + k over the
+# task-025 RigidHierarchicalTables push union — additionally class-partitioned
+# by a CSR (class_starts) via an in-place counting sort, the layout the
+# windowed resident M2L strategies consume. U/W/X endpoints are flat adaptive
+# node indices (leaves live at multiple levels, so the uniform leaf-cell-index
+# direct convention does not apply).
+
+# Mixed-level near predicate (theory §2.1): per-axis clamp distance of the
+# finer cell's coordinate to the coarser cell's tile interval, measured on the
+# finer lattice.
+@inline function _adaptive_axis_clamp(ca::Int, la::Int, cb::Int, lb::Int)
+    k = lb - la
+    a0 = ca << k
+    a1 = ((ca + 1) << k) - 1
+    return cb < a0 ? a0 - cb : (cb > a1 ? cb - a1 : 0)
+end
+
+@inline function _adaptive_isnear(tree::AdaptiveRadixTree, ia::Int, ib::Int, q::Int)
+    la = Int(tree.node_levels[ia])
+    lb = Int(tree.node_levels[ib])
+    ax = Int(tree.node_coords[1, ia]); ay = Int(tree.node_coords[2, ia]); az = Int(tree.node_coords[3, ia])
+    bx = Int(tree.node_coords[1, ib]); by = Int(tree.node_coords[2, ib]); bz = Int(tree.node_coords[3, ib])
+    local dx::Int, dy::Int, dz::Int
+    if la == lb
+        dx = bx - ax; dy = by - ay; dz = bz - az
+    elseif la < lb
+        dx = _adaptive_axis_clamp(ax, la, bx, lb)
+        dy = _adaptive_axis_clamp(ay, la, by, lb)
+        dz = _adaptive_axis_clamp(az, la, bz, lb)
+    else
+        dx = _adaptive_axis_clamp(bx, lb, ax, la)
+        dy = _adaptive_axis_clamp(by, lb, ay, la)
+        dz = _adaptive_axis_clamp(bz, lb, az, la)
+    end
+    return dx * dx + dy * dy + dz * dz <= q
+end
+
+# Squared AABB gap between the two closed cell boxes in finest-lattice units
+# (Delta_min = 2 h0 / 2^ell_max); integer-exact.
+@inline function _adaptive_gap2_lattice(tree::AdaptiveRadixTree, ia::Int, ib::Int,
+        ell_max::Int)
+    la = Int(tree.node_levels[ia])
+    lb = Int(tree.node_levels[ib])
+    sa = 1 << (ell_max - la)
+    sb = 1 << (ell_max - lb)
+    g2 = 0
+    @inbounds for a in 1:3
+        alo = Int(tree.node_coords[a, ia]) * sa
+        blo = Int(tree.node_coords[a, ib]) * sb
+        g = max(alo - (blo + sb), blo - (alo + sa), 0)
+        g2 += g * g
+    end
+    return g2
+end
+
+@inline function _adaptive_pair_push(st::Vector{Int32}, ss::Vector{Int32},
+        sd::Vector{Bool}, sp::Int, cap::Int, a::Int, b::Int, dem::Bool)
+    sp += 1
+    sp <= cap || throw(AssertionError("adaptive dual-tree pair stack overflow"))
+    @inbounds begin
+        st[sp] = Int32(a)
+        ss[sp] = Int32(b)
+        sd[sp] = dem
+    end
+    return sp
+end
+
+"""
+    AdaptiveInteractionLists(tree::AdaptiveRadixTree)
+
+Capacity-sized U/V/W/X list container for `tree` (task 039). Geometry tables
+are the task-025 `RigidHierarchicalTables` at the tree's constant near radius,
+with the production class metadata (`_hierarchical_class_metadata`) over levels
+`2:ell_max` — no new operator tables (theory §2.4). Capacities follow theory
+§6.4 with hard occupancy caps; `AdaptiveTreePolicy` fields override them.
+Populate with [`build_adaptive_interaction_lists!`](@ref).
+"""
+function AdaptiveInteractionLists(tree::AdaptiveRadixTree)
+    p = tree.policy
+    q = p.near_radius2
+    ell_max = p.ell_max
+    tables = RigidHierarchicalTables(q)
+    noffsets = length(tables.push_offsets)
+    first_m2l_level = 2
+    level_class_of = zeros(Int32, 8, noffsets, ell_max + 1)
+    for L in first_m2l_level:ell_max
+        @views level_class_of[:, :, L + 1] .= tables.class_of
+    end
+    class_level, class_offset, effective_offsets =
+        _hierarchical_class_metadata(tables, ell_max, first_m2l_level)
+    nclasses = length(class_level)
+    reach = 2 * isqrt(q) + 1
+    lut = zeros(Int32, 2 * reach + 1, 2 * reach + 1, 2 * reach + 1)
+    for (k, o) in enumerate(tables.push_offsets)
+        lut[o[1] + reach + 1, o[2] + reach + 1, o[3] + reach + 1] = Int32(k)
+    end
+    push_max = maximum(tables.phase_starts[ph + 1] - tables.phase_starts[ph]
+        for ph in 1:8)
+    maxn = tree.max_n_bodies
+    node_cap = tree.node_capacity
+    leaf_cap = min(node_cap, maxn)
+    u_cap = p.u_capacity > 0 ? p.u_capacity :
+        8 * length(tables.near_offsets) * leaf_cap
+    v_cap = p.v_capacity > 0 ? p.v_capacity : push_max * min(node_cap, 4 * maxn)
+    wx_cap = p.wx_capacity > 0 ? p.wx_capacity : u_cap
+    stack_cap = 64 * (2 * ell_max + 2)
+    return AdaptiveInteractionLists(q, ell_max, first_m2l_level, noffsets, nclasses,
+        tables, level_class_of, class_level, class_offset, effective_offsets,
+        lut, reach,
+        u_cap, v_cap, wx_cap, stack_cap,
+        Vector{Int}(undef, v_cap), Matrix{Int}(undef, 3, v_cap),
+        Vector{Int}(undef, v_cap), Vector{Int}(undef, v_cap),
+        Vector{Int32}(undef, v_cap), zeros(Int, nclasses + 1),
+        Vector{Int32}(undef, v_cap), Vector{Int32}(undef, v_cap),
+        Vector{Int32}(undef, v_cap), zeros(Int, nclasses + 1),
+        Vector{Int}(undef, u_cap), Vector{Int}(undef, u_cap),
+        Vector{Int}(undef, wx_cap), Vector{Int}(undef, wx_cap),
+        Vector{Int}(undef, wx_cap), Vector{Int}(undef, wx_cap),
+        Vector{Int32}(undef, stack_cap), Vector{Int32}(undef, stack_cap),
+        Vector{Bool}(undef, stack_cap),
+        0, 0, 0, 0, 0, 0)
+end
+
+"""
+    build_adaptive_interaction_lists!(lists, tree)
+
+Regenerate the U/V/W/X lists in place from the current tree (theory §2.2 DTR,
+§5.2 sticky demotion when the tree's σ gate is armed). Zero allocation;
+capacity violations throw. Every emitted V pair is verified against the
+task-025 phase-table class set at emission time (near geometric parents +
+Chebyshev reach — the sticky-demotion invariant of theory §2.4); the V stream
+is then class-partitioned by an in-place counting sort. Returns `lists`.
+"""
+function build_adaptive_interaction_lists!(L::AdaptiveInteractionLists,
+        tree::AdaptiveRadixTree{TF}) where TF
+    p = tree.policy
+    (L.near_radius2 == p.near_radius2 && L.ell_max == p.ell_max) || throw(ArgumentError(
+        "AdaptiveInteractionLists geometry does not match the tree policy"))
+    tree.n_nodes > 0 || throw(ArgumentError(
+        "build_adaptive_interaction_lists! requires an updated tree"))
+    q = p.near_radius2
+    gate = tree.sigma_armed && p.rho_t > 0
+    rho_t = p.rho_t
+    ell_max = p.ell_max
+    noffsets = L.noffsets
+    reach = L.lut_reach
+    delta_min = 2 * Float64(tree.h0) / (1 << ell_max)
+    delta_min2 = delta_min * delta_min
+    n_u = 0; n_w = 0; n_x = 0; n_v = 0; n_dem = 0
+    st = L.stack_target; ss = L.stack_source; sd = L.stack_demoted
+    cap = L.pair_stack_capacity
+    sp = 1
+    @inbounds begin
+        st[1] = Int32(1); ss[1] = Int32(1); sd[1] = false
+    end
+    @inbounds while sp > 0
+        ia = Int(st[sp]); ib = Int(ss[sp]); dem = sd[sp]
+        sp -= 1
+        la = Int(tree.node_levels[ia])
+        lb = Int(tree.node_levels[ib])
+        near = dem || _adaptive_isnear(tree, ia, ib, q)
+        if !near && gate
+            # per-cell sigma gate on the SOURCE side (031a: rho = r / sigma_src);
+            # a failed pair is demoted STICKILY — its entire descendant pair set
+            # terminates in U (theory §5.2)
+            g2 = _adaptive_gap2_lattice(tree, ia, ib, ell_max)
+            cut = rho_t * Float64(tree.node_sigma_max[ib])
+            if delta_min2 * Float64(g2) < cut * cut
+                near = true
+                dem = true
+                n_dem += 1
+            end
+        end
+        leaf_a = tree.child_ranges[2, ia] == 0
+        leaf_b = tree.child_ranges[2, ib] == 0
+        if !near
+            if la == lb
+                ox = Int(tree.node_coords[1, ia]) - Int(tree.node_coords[1, ib])
+                oy = Int(tree.node_coords[2, ia]) - Int(tree.node_coords[2, ib])
+                oz = Int(tree.node_coords[3, ia]) - Int(tree.node_coords[3, ib])
+                k = (abs(ox) <= reach && abs(oy) <= reach && abs(oz) <= reach) ?
+                    Int(L.offset_lut[ox + reach + 1, oy + reach + 1, oz + reach + 1]) : 0
+                phase = _rigid_phase_index(tree.node_coords[1, ib],
+                    tree.node_coords[2, ib], tree.node_coords[3, ib])
+                (k != 0 && la >= L.first_m2l_level &&
+                        L.level_class_of[phase, k, la + 1] != 0) ||
+                    throw(AssertionError(
+                        "adaptive V pair at level $la offset ($ox,$oy,$oz) lies " *
+                        "outside the task-025 phase-table class set — the sticky " *
+                        "demotion invariant (theory §2.4/§5.2) is violated"))
+                n_v += 1
+                n_v <= L.v_capacity || throw(AssertionError(
+                    "adaptive V route capacity $(L.v_capacity) exceeded; raise " *
+                    "AdaptiveTreePolicy v_capacity"))
+                L.vstage_targets[n_v] = Int32(ia)
+                L.vstage_sources[n_v] = Int32(ib)
+                L.vstage_class[n_v] = Int32((la - L.first_m2l_level) * noffsets + k)
+            elseif la < lb
+                leaf_a || throw(AssertionError(
+                    "adaptive DTR invariant: the coarser member of a W pair must be a leaf"))
+                n_w += 1
+                n_w <= L.wx_capacity || throw(AssertionError(
+                    "adaptive W list capacity $(L.wx_capacity) exceeded; raise " *
+                    "AdaptiveTreePolicy wx_capacity"))
+                L.w_targets[n_w] = ia
+                L.w_sources[n_w] = ib
+            else
+                leaf_b || throw(AssertionError(
+                    "adaptive DTR invariant: the coarser member of an X pair must be a leaf"))
+                n_x += 1
+                n_x <= L.wx_capacity || throw(AssertionError(
+                    "adaptive X list capacity $(L.wx_capacity) exceeded; raise " *
+                    "AdaptiveTreePolicy wx_capacity"))
+                L.x_targets[n_x] = ia
+                L.x_sources[n_x] = ib
+            end
+        else
+            if leaf_a && leaf_b
+                n_u += 1
+                n_u <= L.u_capacity || throw(AssertionError(
+                    "adaptive U list capacity $(L.u_capacity) exceeded; raise " *
+                    "AdaptiveTreePolicy u_capacity"))
+                L.u_targets[n_u] = ia
+                L.u_sources[n_u] = ib
+            elseif la == lb
+                if leaf_a
+                    c0 = Int(tree.child_ranges[1, ib])
+                    for jb in c0:(c0 + Int(tree.child_ranges[2, ib]) - 1)
+                        sp = _adaptive_pair_push(st, ss, sd, sp, cap, ia, jb, dem)
+                    end
+                elseif leaf_b
+                    c0 = Int(tree.child_ranges[1, ia])
+                    for ja in c0:(c0 + Int(tree.child_ranges[2, ia]) - 1)
+                        sp = _adaptive_pair_push(st, ss, sd, sp, cap, ja, ib, dem)
+                    end
+                else
+                    a0 = Int(tree.child_ranges[1, ia])
+                    b0 = Int(tree.child_ranges[2, ia])
+                    c0 = Int(tree.child_ranges[1, ib])
+                    d0 = Int(tree.child_ranges[2, ib])
+                    for ja in a0:(a0 + b0 - 1), jb in c0:(c0 + d0 - 1)
+                        sp = _adaptive_pair_push(st, ss, sd, sp, cap, ja, jb, dem)
+                    end
+                end
+            elseif la < lb
+                leaf_a || throw(AssertionError(
+                    "adaptive DTR invariant: the coarser member of a mixed pair must be a leaf"))
+                c0 = Int(tree.child_ranges[1, ib])
+                for jb in c0:(c0 + Int(tree.child_ranges[2, ib]) - 1)
+                    sp = _adaptive_pair_push(st, ss, sd, sp, cap, ia, jb, dem)
+                end
+            else
+                leaf_b || throw(AssertionError(
+                    "adaptive DTR invariant: the coarser member of a mixed pair must be a leaf"))
+                c0 = Int(tree.child_ranges[1, ia])
+                for ja in c0:(c0 + Int(tree.child_ranges[2, ia]) - 1)
+                    sp = _adaptive_pair_push(st, ss, sd, sp, cap, ja, ib, dem)
+                end
+            end
+        end
+    end
+    # class-partition the V stream (counting sort by global class): routes of
+    # class c occupy class_starts[c]:class_starts[c + 1] - 1, level-major then
+    # canonical offset order — the batch layout the resident M2L strategies
+    # consume.
+    cc = L.class_counts
+    fill!(cc, 0)
+    @inbounds for i in 1:n_v
+        cc[Int(L.vstage_class[i]) + 1] += 1
+    end
+    L.class_starts[1] = 1
+    @inbounds for c in 1:L.nclasses
+        L.class_starts[c + 1] = L.class_starts[c] + cc[c + 1]
+    end
+    @inbounds for c in 1:L.nclasses
+        cc[c] = L.class_starts[c]
+    end
+    @inbounds for i in 1:n_v
+        c = Int(L.vstage_class[i])
+        pos = cc[c]
+        cc[c] = pos + 1
+        L.route_targets[pos] = Int(L.vstage_targets[i])
+        L.route_sources[pos] = Int(L.vstage_sources[i])
+        L.route_class[pos] = Int32(c)
+        L.route_levels[pos] = Int(L.class_level[c])
+        L.route_offsets[1, pos] = Int(L.class_offset[1, c])
+        L.route_offsets[2, pos] = Int(L.class_offset[2, c])
+        L.route_offsets[3, pos] = Int(L.class_offset[3, c])
+    end
+    L.n_routes = n_v
+    L.n_u = n_u
+    L.n_w = n_w
+    L.n_x = n_x
+    L.n_demoted = n_dem
+    L.step += 1
+    return L
+end

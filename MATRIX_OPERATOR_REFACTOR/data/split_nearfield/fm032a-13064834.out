@@ -1,0 +1,104 @@
+=== node: m13h-2-2
+GPU 0: NVIDIA H200 (UUID: GPU-be43866c-dddc-9ff1-285b-818f416148db)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== preflight: CUDA interface tests (032 stages 1-3) ===
+Test Summary:                           | Pass  Total     Time
+CUDA device-system interface (task 032) | 1246   1246  1m51.3s
+=== preflight: shipped lifecycle regression test ===
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  216    216  1m35.3s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.3s
+=== preflight: stage C binned-nearfield test (NEW) ===
+Test Summary:                                         | Pass  Total     Time
+CUDA binned nearfield pair stream (task 032a stage C) |  301    301  3m23.2s
+=== stage C mechanism-selection benchmark ===
+=== point a: n=100000 ell=3 q=16
+  sampled-direct reference (200 targets)... 0.9 s
+  regularized  unbinned           sub=0 p2q=0 F32: step 39.699 ms  nearfield 15.973 ms  u_rms 5.41e-04  hom(all/mixed/shell) NaN/NaN/NaN
+  partitioned  unbinned           sub=0 p2q=0 F32: step 37.378 ms  nearfield 13.883 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.825/0.671/NaN
+  partitioned  unbinned           sub=1 p2q=0 F32: step 37.282 ms  nearfield 13.498 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.887/0.788/NaN
+  partitioned  classsplit         sub=0 p2q=0 F32: step 29.069 ms  nearfield 13.376 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.825/0.671/NaN
+  partitioned  classsplit         sub=1 p2q=0 F32: step 29.009 ms  nearfield 12.998 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.887/0.788/NaN
+  partitioned  ballot             sub=0 p2q=0 F32: step 44.667 ms  nearfield 21.574 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.825/0.672/NaN
+  partitioned  ballot             sub=1 p2q=0 F32: step 43.091 ms  nearfield 19.526 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.887/0.788/NaN
+  partitioned  classsplit_ballot  sub=0 p2q=0 F32: step 28.808 ms  nearfield 19.711 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.825/0.672/NaN
+  partitioned  classsplit_ballot  sub=1 p2q=0 F32: step 26.994 ms  nearfield 17.717 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.887/0.788/NaN
+  twopass      unbinned           sub=0 p2q=0 F32: step 31.304 ms  nearfield 20.391 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.961/0.743/0.620
+  twopass      unbinned           sub=0 p2q=1 F32: step 33.861 ms  nearfield 24.828 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.961/0.743/0.619
+  twopass      classsplit         sub=0 p2q=0 F32: step 29.603 ms  nearfield 18.895 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.961/0.743/0.619
+  twopass      classsplit         sub=0 p2q=1 F32: step 32.349 ms  nearfield 23.320 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.961/0.743/0.619
+  regularized  unbinned           sub=0 p2q=0 F64: step 70.716 ms  nearfield 35.533 ms  u_rms 5.41e-04  hom(all/mixed/shell) NaN/NaN/NaN
+  partitioned  unbinned           sub=0 p2q=0 F64: step 64.084 ms  nearfield 29.059 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.825/0.671/NaN
+  partitioned  unbinned           sub=1 p2q=0 F64: step 63.087 ms  nearfield 28.196 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.887/0.788/NaN
+  partitioned  classsplit         sub=0 p2q=0 F64: step 40.074 ms  nearfield 27.332 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.826/0.672/NaN
+  partitioned  classsplit         sub=1 p2q=0 F64: step 40.046 ms  nearfield 26.475 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.887/0.788/NaN
+  partitioned  ballot             sub=0 p2q=0 F64: step 82.709 ms  nearfield 48.680 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.826/0.672/NaN
+  partitioned  ballot             sub=1 p2q=0 F64: step 78.519 ms  nearfield 44.018 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.887/0.788/NaN
+  partitioned  classsplit_ballot  sub=0 p2q=0 F64: step 54.575 ms  nearfield 43.554 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.826/0.672/NaN
+  partitioned  classsplit_ballot  sub=1 p2q=0 F64: step 49.997 ms  nearfield 38.869 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.887/0.788/NaN
+  twopass      unbinned           sub=0 p2q=0 F64: step 55.295 ms  nearfield 44.160 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.961/0.743/0.620
+  twopass      unbinned           sub=0 p2q=1 F64: step 59.522 ms  nearfield 48.728 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.961/0.743/0.620
+  twopass      classsplit         sub=0 p2q=0 F64: step 50.713 ms  nearfield 39.608 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.961/0.743/0.620
+  twopass      classsplit         sub=0 p2q=1 F64: step 55.006 ms  nearfield 44.200 ms  u_rms 5.41e-04  hom(all/mixed/shell) 0.961/0.743/0.619
+  wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_stagec_a_n100000_m13h-2-2_13064834.csv
+=== point b: n=1000000 ell=4 q=12
+  sampled-direct reference (200 targets)... 7.4 s
+  regularized  unbinned           sub=0 p2q=0 F32: step 311.417 ms  nearfield 205.704 ms  u_rms 1.49e-03  hom(all/mixed/shell) NaN/NaN/NaN
+  partitioned  unbinned           sub=0 p2q=0 F32: step 289.132 ms  nearfield 182.836 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.821/0.734/NaN
+  partitioned  unbinned           sub=1 p2q=0 F32: step 284.907 ms  nearfield 178.635 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.893/0.840/NaN
+  partitioned  classsplit         sub=0 p2q=0 F32: step 261.115 ms  nearfield 169.501 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.821/0.734/NaN
+  partitioned  classsplit         sub=1 p2q=0 F32: step 259.113 ms  nearfield 165.381 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.893/0.840/NaN
+  partitioned  ballot             sub=0 p2q=0 F32: step 357.090 ms  nearfield 254.478 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.821/0.734/NaN
+  partitioned  ballot             sub=1 p2q=0 F32: step 333.507 ms  nearfield 228.677 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.893/0.840/NaN
+  partitioned  classsplit_ballot  sub=0 p2q=0 F32: step 331.141 ms  nearfield 239.306 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.821/0.734/NaN
+  partitioned  classsplit_ballot  sub=1 p2q=0 F32: step 305.151 ms  nearfield 213.389 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.893/0.840/NaN
+  twopass      unbinned           sub=0 p2q=0 F32: step 371.619 ms  nearfield 269.392 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.964/0.787/0.703
+  twopass      unbinned           sub=0 p2q=1 F32: step 418.894 ms  nearfield 321.218 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.964/0.787/0.703
+  twopass      classsplit         sub=0 p2q=0 F32: step 329.885 ms  nearfield 236.052 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.964/0.787/0.703
+  twopass      classsplit         sub=0 p2q=1 F32: step 381.833 ms  nearfield 287.766 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.964/0.787/0.703
+  regularized  unbinned           sub=0 p2q=0 F64: step 626.213 ms  nearfield 472.293 ms  u_rms 1.49e-03  hom(all/mixed/shell) NaN/NaN/NaN
+  partitioned  unbinned           sub=0 p2q=0 F64: step 561.838 ms  nearfield 392.530 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.821/0.734/NaN
+  partitioned  unbinned           sub=1 p2q=0 F64: step 539.063 ms  nearfield 382.863 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.893/0.840/NaN
+  partitioned  classsplit         sub=0 p2q=0 F64: step 512.458 ms  nearfield 382.927 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.821/0.734/NaN
+  partitioned  classsplit         sub=1 p2q=0 F64: step 504.323 ms  nearfield 373.591 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.893/0.840/NaN
+  partitioned  ballot             sub=0 p2q=0 F64: step 720.190 ms  nearfield 572.065 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.821/0.734/NaN
+  partitioned  ballot             sub=1 p2q=0 F64: step 664.082 ms  nearfield 515.510 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.893/0.840/NaN
+  partitioned  classsplit_ballot  sub=0 p2q=0 F64: step 686.735 ms  nearfield 550.167 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.821/0.734/NaN
+  partitioned  classsplit_ballot  sub=1 p2q=0 F64: step 624.098 ms  nearfield 491.193 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.893/0.840/NaN
+  twopass      unbinned           sub=0 p2q=0 F64: step 774.684 ms  nearfield 614.934 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.964/0.787/0.703
+  twopass      unbinned           sub=0 p2q=1 F64: step 784.942 ms  nearfield 643.494 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.964/0.787/0.703
+  twopass      classsplit         sub=0 p2q=0 F64: step 698.317 ms  nearfield 566.559 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.964/0.787/0.703
+  twopass      classsplit         sub=0 p2q=1 F64: step 727.554 ms  nearfield 595.116 ms  u_rms 1.49e-03  hom(all/mixed/shell) 0.964/0.787/0.703
+  wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_stagec_b_n1000000_m13h-2-2_13064834.csv
+=== point c: n=200000 ell=4 q=20
+  sampled-direct reference (200 targets)... 1.4 s
+  regularized  unbinned           sub=0 p2q=0 F32: step 49.643 ms  nearfield 23.021 ms  u_rms 6.59e-04  hom(all/mixed/shell) NaN/NaN/NaN
+  partitioned  unbinned           sub=0 p2q=0 F32: step 48.782 ms  nearfield 22.083 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.781/0.690/NaN
+  partitioned  unbinned           sub=1 p2q=0 F32: step 48.350 ms  nearfield 21.760 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.813/0.735/NaN
+  partitioned  classsplit         sub=0 p2q=0 F32: step 42.768 ms  nearfield 20.502 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.781/0.690/NaN
+  partitioned  classsplit         sub=1 p2q=0 F32: step 42.769 ms  nearfield 20.240 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.813/0.735/NaN
+  partitioned  ballot             sub=0 p2q=0 F32: step 53.114 ms  nearfield 26.608 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.781/0.690/NaN
+  partitioned  ballot             sub=1 p2q=0 F32: step 52.121 ms  nearfield 25.607 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.813/0.735/NaN
+  partitioned  classsplit_ballot  sub=0 p2q=0 F32: step 48.376 ms  nearfield 26.154 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.781/0.690/NaN
+  partitioned  classsplit_ballot  sub=1 p2q=0 F32: step 47.170 ms  nearfield 25.119 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.813/0.735/NaN
+  twopass      unbinned           sub=0 p2q=0 F32: step 56.406 ms  nearfield 33.845 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.955/0.811/0.638
+  twopass      unbinned           sub=0 p2q=1 F32: step 61.449 ms  nearfield 39.364 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.955/0.811/0.637
+  twopass      classsplit         sub=0 p2q=0 F32: step 51.993 ms  nearfield 29.528 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.955/0.811/0.638
+  twopass      classsplit         sub=0 p2q=1 F32: step 57.115 ms  nearfield 35.052 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.955/0.811/0.638
+  regularized  unbinned           sub=0 p2q=0 F64: step 84.823 ms  nearfield 50.315 ms  u_rms 6.59e-04  hom(all/mixed/shell) NaN/NaN/NaN
+  partitioned  unbinned           sub=0 p2q=0 F64: step 80.001 ms  nearfield 45.645 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.781/0.690/NaN
+  partitioned  unbinned           sub=1 p2q=0 F64: step 79.364 ms  nearfield 44.831 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.813/0.735/NaN
+  partitioned  classsplit         sub=0 p2q=0 F64: step 69.170 ms  nearfield 41.725 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.781/0.690/NaN
+  partitioned  classsplit         sub=1 p2q=0 F64: step 68.389 ms  nearfield 41.059 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.813/0.735/NaN
+  partitioned  ballot             sub=0 p2q=0 F64: step 90.168 ms  nearfield 55.971 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.781/0.690/NaN
+  partitioned  ballot             sub=1 p2q=0 F64: step 87.793 ms  nearfield 53.736 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.813/0.735/NaN
+  partitioned  classsplit_ballot  sub=0 p2q=0 F64: step 81.694 ms  nearfield 54.587 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.781/0.690/NaN
+  partitioned  classsplit_ballot  sub=1 p2q=0 F64: step 79.895 ms  nearfield 52.224 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.813/0.735/NaN
+  twopass      unbinned           sub=0 p2q=0 F64: step 101.575 ms  nearfield 68.250 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.955/0.811/0.638
+  twopass      unbinned           sub=0 p2q=1 F64: step 103.345 ms  nearfield 71.652 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.955/0.811/0.638
+  twopass      classsplit         sub=0 p2q=0 F64: step 94.664 ms  nearfield 60.698 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.955/0.811/0.637
+  twopass      classsplit         sub=0 p2q=1 F64: step 97.004 ms  nearfield 64.070 ms  u_rms 6.59e-04  hom(all/mixed/shell) 0.955/0.812/0.638
+  wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/data/split_nearfield/cuda032a_stagec_c_n200000_m13h-2-2_13064834.csv
+cuda_032a_stagec_benchmark complete
+fm032a job complete

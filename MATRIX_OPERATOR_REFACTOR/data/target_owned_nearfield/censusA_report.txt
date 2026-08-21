@@ -1,0 +1,17 @@
+041e Stage A read-only census (2026-08-18)
+Continue rule: optimistic de-double-counted (1)+(2)+(3) >= 10% nearfield
+on a material case (rotor primary; nearfield share 92-96% per 041b => 5%
+complete-solve follows from ~>=5.4% nearfield).
+
+cube n=100000 K=64: OPT ceiling (1)+(2)+(3) de-double-counted = 35.7% (c1=27.4% c2=7.1% c3=1.6%)
+wake n=100000 K=256: OPT ceiling (1)+(2)+(3) de-double-counted = 55.9% (c1=52.6% c2=1.5% c3=1.9%)
+sigma_multiscale n=100000 K=64: OPT ceiling (1)+(2)+(3) de-double-counted = 50.6% (c1=46.7% c2=2.3% c3=1.7%)
+rotor n=100000 K=64: OPT ceiling (1)+(2)+(3) de-double-counted = 34.1% (c1=36.1% c2=6.1% c3=1.4%)
+rotor n=100000 K=256: OPT ceiling (1)+(2)+(3) de-double-counted = 10.6% (c1=10.0% c2=1.5% c3=0.4%)
+rotor n=1000000 K=64: OPT ceiling (1)+(2)+(3) de-double-counted = 32.7% (c1=36.1% c2=7.7% c3=1.2%)
+
+Notes: op model normalized to F_pair=130 regularized-pair flops;
+singular path bracket (0.4, 0.5, 0.6); per-edge lane overhead bracket (30.0, 50.0, 80.0);
+atomic-store-only lever excluded (028: 0.13%). c4 is a bytes-based
+bounded control, not additive with c1-c3. 1e6 occupancy evidence for
+cube/wake/multiscale lives in data/fm041a_leafpop.csv (041a).

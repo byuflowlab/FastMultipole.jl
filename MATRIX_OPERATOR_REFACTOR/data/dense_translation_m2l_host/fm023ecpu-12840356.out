@@ -1,0 +1,1762 @@
+=== task 023e environment
+node=m12-1-18 cpus=64 job=12840356 label=optimized
+Linux m12-1-18 5.14.0-570.120.1.el9_6.x86_64 #1 SMP PREEMPT_DYNAMIC Wed Jun 3 21:41:02 EDT 2026 x86_64 x86_64 x86_64 GNU/Linux
+CPU(s):                                  128
+On-line CPU(s) list:                     0-127
+Model name:                              AMD EPYC 7763 64-Core Processor
+Thread(s) per core:                      1
+Core(s) per socket:                      64
+Socket(s):                               2
+NUMA node0 CPU(s):                       0-15
+NUMA node1 CPU(s):                       16-31
+NUMA node2 CPU(s):                       32-47
+NUMA node3 CPU(s):                       48-63
+NUMA node4 CPU(s):                       64-79
+NUMA node5 CPU(s):                       80-95
+NUMA node6 CPU(s):                       96-111
+NUMA node7 CPU(s):                       112-127
+julia version 1.11.7
+git_commit=4d5ea4ee1f3a303e4df1dba19f8e160766ac65b1
+git_tree=37ea598b9100c7a617c334b60736e5f45114f9bd
+worktree=dirty
+=== focused 023e tests
+Test Summary:                     | Pass  Total   Time
+dense translation M2L (task 023e) |   50     50  54.1s
+Test Summary:                             | Pass  Total  Time
+dense translation M2L P=8 direct accuracy |    3      3  4.4s
+Test Summary:                             | Pass  Total  Time
+GEMM-native degree-major buffer roundtrip |   43     43  3.0s
+Test Summary:                                 | Pass  Total   Time
+resident_m2l_batch! parity vs task-016 oracle |  728    728  21.2s
+Test Summary:                                 | Pass  Total  Time
+resident_l2l_batch! parity vs task-016 oracle |  104    104  2.7s
+Test Summary:                                 | Pass  Total  Time
+resident_m2m_batch! parity vs task-016 oracle |   48     48  9.0s
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p4_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p8_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhfalse_p12_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p4_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p8_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float32_lhtrue_p12_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p4_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p8_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhfalse_p12_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p4_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p8_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas1_Float64_lhtrue_p12_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p4_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p8_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhfalse_p12_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p4_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p8_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float32_lhtrue_p12_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p4_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p8_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhfalse_p12_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p4_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p8_n20000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n150_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n150_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n150_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n150_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n150_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n150_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n150_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n150_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n2000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n2000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n2000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n2000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n2000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n2000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n2000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n2000_precomputed_y_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n20000_dense_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n20000_dense_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n20000_materialized_concat_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n20000_materialized_concat_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n20000_factored_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n20000_factored_20260720-055651.csv
+=== MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n20000_precomputed_y_20260720-055651.csv
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+MATRIX_OPERATOR_REFACTOR/data/dense_translation_m2l_host/optimized_host_m12-1-18_blas64_Float64_lhtrue_p12_n20000_precomputed_y_20260720-055651.csv

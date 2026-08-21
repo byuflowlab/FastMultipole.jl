@@ -1,0 +1,127 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-a92ec0ee-a588-ec50-5c0e-61536751caf1)
+=== 033 reference integrity ===
+direct_reference_cube_n1000.csv: OK
+direct_reference_cube_n3162.csv: OK
+direct_reference_cube_n10000.csv: OK
+direct_reference_cube_n31623.csv: OK
+direct_reference_cube_n100000.csv: OK
+direct_reference_cube_n316228.csv: OK
+direct_reference_cube_n1000000.csv: OK
+direct_reference_wake_n1000.csv: OK
+direct_reference_wake_n3162.csv: OK
+direct_reference_wake_n10000.csv: OK
+direct_reference_wake_n31623.csv: OK
+direct_reference_wake_n100000.csv: OK
+direct_reference_wake_n316228.csv: OK
+direct_reference_wake_n1000000.csv: OK
+=== 033 refcheck at shipped coupling defaults ===
+=== 034 reference comparison: device-resident radix FMM vs 033 checksummed sampled-direct references
+mode: DEVICE (CuArray-resident)
+cases: cube, wake  n: 10000, 100000  gate: Float64 u_rel_rms <= 0.001
+[cube n=10000] built (n_actual=10000, 0.1s); reference direct_reference_cube_n10000.csv samples=10000 sha256=6f94bc0b3e7507e39bca95eec46667fe8cdb1fa24edf2f83057b6169460b9f78
+[cube n=10000 Float64] u_rel_rms=0.0005541713643458659 u_abs_rms=2.1761681720027674e-6 u_max_err=7.648723968640845e-6 j_rel_rms=0.0028202334812779677 warm_solve_s=0.020585531
+[cube n=10000 Float32] u_rel_rms=0.0005541593375427469 u_abs_rms=2.1761209441092994e-6 u_max_err=7.648215285501276e-6 j_rel_rms=0.0028202242867347233 warm_solve_s=0.056269662
+[cube n=100000] built (n_actual=100000, 0.0s); reference direct_reference_cube_n100000.csv samples=512 sha256=82fe79cd3e2ae3078da9ab28ec386973ecd67d5f0fa353b245c1c6ba68bb4cbb
+[cube n=100000 Float64] u_rel_rms=0.0006805945242298977 u_abs_rms=1.4352734270968456e-6 u_max_err=4.0540483389421084e-6 j_rel_rms=0.003882401915305433 warm_solve_s=0.024075315
+[cube n=100000 Float32] u_rel_rms=0.0006805944780278931 u_abs_rms=1.435273329663635e-6 u_max_err=4.055127713489885e-6 j_rel_rms=0.003882396377704967 warm_solve_s=0.014556825
+[wake n=10000] built (n_actual=10000, 0.0s); reference direct_reference_wake_n10000.csv samples=10000 sha256=d1923057915d19c8c7f4cd0a1b33a0a53b484a551253e3eacaf12439b4011ed0
+[wake n=10000 Float64] u_rel_rms=0.0003448406858154127 u_abs_rms=9.382519766339792e-6 u_max_err=4.0032203197791207e-5 j_rel_rms=0.0017907259395389056 warm_solve_s=0.005283565
+[wake n=10000 Float32] u_rel_rms=0.00034479668321634973 u_abs_rms=9.381322531580493e-6 u_max_err=4.0033004477085994e-5 j_rel_rms=0.0017907015353931593 warm_solve_s=0.005012954
+[wake n=100000] built (n_actual=100000, 0.0s); reference direct_reference_wake_n100000.csv samples=512 sha256=3dd3f918317fa51fe684b1d6439baa27369a491638098a52c8086451ac8a2951
+[wake n=100000 Float64] u_rel_rms=0.00032992065090425393 u_abs_rms=1.0276671844312792e-5 u_max_err=5.359230471330512e-5 j_rel_rms=0.0024547827773391275 warm_solve_s=0.018351321
+[wake n=100000 Float32] u_rel_rms=0.00032988067355911387 u_abs_rms=1.0275426593201397e-5 u_max_err=5.3593033690134524e-5 j_rel_rms=0.002454773460636886 warm_solve_s=0.011896703
+
+case,n,precision,u_rel_rms,u_abs_rms,u_max_err,j_rel_rms,warm_solve_s
+cube,10000,Float64,0.0005541713643458659,2.1761681720027674e-6,7.648723968640845e-6,0.0028202334812779677,0.020585531
+cube,10000,Float32,0.0005541593375427469,2.1761209441092994e-6,7.648215285501276e-6,0.0028202242867347233,0.056269662
+cube,100000,Float64,0.0006805945242298977,1.4352734270968456e-6,4.0540483389421084e-6,0.003882401915305433,0.024075315
+cube,100000,Float32,0.0006805944780278931,1.435273329663635e-6,4.055127713489885e-6,0.003882396377704967,0.014556825
+wake,10000,Float64,0.0003448406858154127,9.382519766339792e-6,4.0032203197791207e-5,0.0017907259395389056,0.005283565
+wake,10000,Float32,0.00034479668321634973,9.381322531580493e-6,4.0033004477085994e-5,0.0017907015353931593,0.005012954
+wake,100000,Float64,0.00032992065090425393,1.0276671844312792e-5,5.359230471330512e-5,0.0024547827773391275,0.018351321
+wake,100000,Float32,0.00032988067355911387,1.0275426593201397e-5,5.3593033690134524e-5,0.002454773460636886,0.011896703
+
+034 reference-comparison gate PASSED (all Float64 u_rel_rms <= 0.001)
+=== 035 nsys production-timeline rider ===
+=== nsys case=cube tf=Float32
+NSYS_COUNTS case=cube n=1000000 tf=Float32 n_cells=21950 n_nodes=25279 n_routes=21920096 n_direct_routes=3414506 body_pairs=8059108290 min_cell=0 max_cell=82 mean_cell=30.52
+Capture range started in the application.
+Capture range ended in the application.
+Generating '/tmp/nsys-report-ede7.qdstrm'
+[1/1] [0%                          ] fm035_nsys_cube_Float32_13157931.nsys-repProcessing events...
+[1/1] [0%                          ] fm035_nsys_cube_Float32_13157931.nsys-rep[1/1] [===============65%          ] fm035_nsys_cube_Float32_13157931.nsys-rep[1/1] [========================100%] fm035_nsys_cube_Float32_13157931.nsys-rep[1/1] [========================100%] fm035_nsys_cube_Float32_13157931.nsys-rep
+NSYS_DONE
+Generated:
+    /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float32_13157931.nsys-rep
+Generating SQLite file /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float32_13157931.sqlite from /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float32_13157931.nsys-rep
+Processing [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float32_13157931.sqlite] with [/vapps/rhel9/x86_64/cudatoolkit/12.8.1/nsight-systems-2024.6.2/host-linux-x64/reports/cuda_gpu_kern_sum.py] to [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float32_13157931_cuda_gpu_kern_sum.csv]... PROCESSED
+
+Processing [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float32_13157931.sqlite] with [/vapps/rhel9/x86_64/cudatoolkit/12.8.1/nsight-systems-2024.6.2/host-linux-x64/reports/cuda_gpu_trace.py] to [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float32_13157931_cuda_gpu_trace.csv]... PROCESSED
+
+=== nsys case=wake tf=Float32
+NSYS_COUNTS case=wake n=1000000 tf=Float32 n_cells=6048 n_nodes=7169 n_routes=2269736 n_direct_routes=401888 body_pairs=13415775910 min_cell=0 max_cell=261 mean_cell=3.81
+Capture range started in the application.
+Capture range ended in the application.
+Generating '/tmp/nsys-report-132f.qdstrm'
+[1/1] [0%                          ] fm035_nsys_wake_Float32_13157931.nsys-repProcessing events...
+[1/1] [0%                          ] fm035_nsys_wake_Float32_13157931.nsys-rep[1/1] [11%                         ] fm035_nsys_wake_Float32_13157931.nsys-rep[1/1] [===22%                      ] fm035_nsys_wake_Float32_13157931.nsys-rep[1/1] [=============58%            ] fm035_nsys_wake_Float32_13157931.nsys-rep[1/1] [=======================93%  ] fm035_nsys_wake_Float32_13157931.nsys-rep[1/1] [0%                          ] fm035_nsys_wake_Float32_13157931.nsys-rep[1/1] [===============65%          ] fm035_nsys_wake_Float32_13157931.nsys-rep[1/1] [========================100%] fm035_nsys_wake_Float32_13157931.nsys-rep[1/1] [========================100%] fm035_nsys_wake_Float32_13157931.nsys-rep
+NSYS_DONE
+Generated:
+    /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float32_13157931.nsys-rep
+Generating SQLite file /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float32_13157931.sqlite from /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float32_13157931.nsys-rep
+Processing [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float32_13157931.sqlite] with [/vapps/rhel9/x86_64/cudatoolkit/12.8.1/nsight-systems-2024.6.2/host-linux-x64/reports/cuda_gpu_kern_sum.py] to [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float32_13157931_cuda_gpu_kern_sum.csv]... PROCESSED
+
+Processing [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float32_13157931.sqlite] with [/vapps/rhel9/x86_64/cudatoolkit/12.8.1/nsight-systems-2024.6.2/host-linux-x64/reports/cuda_gpu_trace.py] to [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float32_13157931_cuda_gpu_trace.csv]... PROCESSED
+
+=== nsys case=cube tf=Float64
+NSYS_COUNTS case=cube n=1000000 tf=Float64 n_cells=21950 n_nodes=25279 n_routes=21920096 n_direct_routes=3414506 body_pairs=8059110648 min_cell=0 max_cell=82 mean_cell=30.52
+Capture range started in the application.
+Capture range ended in the application.
+Generating '/tmp/nsys-report-076f.qdstrm'
+[1/1] [0%                          ] fm035_nsys_cube_Float64_13157931.nsys-repProcessing events...
+[1/1] [0%                          ] fm035_nsys_cube_Float64_13157931.nsys-rep[1/1] [11%                         ] fm035_nsys_cube_Float64_13157931.nsys-rep[1/1] [===22%                      ] fm035_nsys_cube_Float64_13157931.nsys-rep[1/1] [=============58%            ] fm035_nsys_cube_Float64_13157931.nsys-rep[1/1] [=======================93%  ] fm035_nsys_cube_Float64_13157931.nsys-rep[1/1] [0%                          ] fm035_nsys_cube_Float64_13157931.nsys-rep[1/1] [==============64%           ] fm035_nsys_cube_Float64_13157931.nsys-rep[1/1] [===============65%          ] fm035_nsys_cube_Float64_13157931.nsys-rep[1/1] [========================100%] fm035_nsys_cube_Float64_13157931.nsys-rep[1/1] [========================100%] fm035_nsys_cube_Float64_13157931.nsys-rep
+NSYS_DONE
+Generated:
+    /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float64_13157931.nsys-rep
+Generating SQLite file /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float64_13157931.sqlite from /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float64_13157931.nsys-rep
+Processing [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float64_13157931.sqlite] with [/vapps/rhel9/x86_64/cudatoolkit/12.8.1/nsight-systems-2024.6.2/host-linux-x64/reports/cuda_gpu_kern_sum.py] to [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float64_13157931_cuda_gpu_kern_sum.csv]... PROCESSED
+
+Processing [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float64_13157931.sqlite] with [/vapps/rhel9/x86_64/cudatoolkit/12.8.1/nsight-systems-2024.6.2/host-linux-x64/reports/cuda_gpu_trace.py] to [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_cube_Float64_13157931_cuda_gpu_trace.csv]... PROCESSED
+
+=== nsys case=wake tf=Float64
+NSYS_COUNTS case=wake n=1000000 tf=Float64 n_cells=6048 n_nodes=7169 n_routes=2269736 n_direct_routes=401888 body_pairs=13415784610 min_cell=0 max_cell=261 mean_cell=3.81
+Capture range started in the application.
+Capture range ended in the application.
+Generating '/tmp/nsys-report-824e.qdstrm'
+[1/1] [0%                          ] fm035_nsys_wake_Float64_13157931.nsys-repProcessing events...
+[1/1] [0%                          ] fm035_nsys_wake_Float64_13157931.nsys-rep[1/1] [11%                         ] fm035_nsys_wake_Float64_13157931.nsys-rep[1/1] [===22%                      ] fm035_nsys_wake_Float64_13157931.nsys-rep[1/1] [=============58%            ] fm035_nsys_wake_Float64_13157931.nsys-rep[1/1] [=======================93%  ] fm035_nsys_wake_Float64_13157931.nsys-rep[1/1] [0%                          ] fm035_nsys_wake_Float64_13157931.nsys-rep[1/1] [===============65%          ] fm035_nsys_wake_Float64_13157931.nsys-rep[1/1] [========================100%] fm035_nsys_wake_Float64_13157931.nsys-rep[1/1] [========================100%] fm035_nsys_wake_Float64_13157931.nsys-rep
+NSYS_DONE
+Generated:
+    /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float64_13157931.nsys-rep
+Generating SQLite file /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float64_13157931.sqlite from /home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float64_13157931.nsys-rep
+Processing [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float64_13157931.sqlite] with [/vapps/rhel9/x86_64/cudatoolkit/12.8.1/nsight-systems-2024.6.2/host-linux-x64/reports/cuda_gpu_kern_sum.py] to [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float64_13157931_cuda_gpu_kern_sum.csv]... PROCESSED
+
+Processing [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float64_13157931.sqlite] with [/vapps/rhel9/x86_64/cudatoolkit/12.8.1/nsight-systems-2024.6.2/host-linux-x64/reports/cuda_gpu_trace.py] to [/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_nsys_wake_Float64_13157931_cuda_gpu_trace.csv]... PROCESSED
+
+=== 035 tuning sweep ===
+=== 035 GPU tuning sweep: 16 configs (16 already done), reps=15, out=/home/rander39/FastMultipole-034/MATRIX_OPERATOR_REFACTOR/data/flowvpm_gpu_campaign/fm035_cycle3d.csv
+node=m13h-1-1 gpu=NVIDIA H200 julia=1.11.7 cuda=12.8.0
+[skip] cy3d_c5_p4_anchor_f32
+[skip] cy3d_c5_p5_auto_f32
+[skip] cy3d_c6_p4_anchor_f32
+[skip] cy3d_c6_p5_auto_f32
+[skip] cy3d_w5_p4_anchor_f32
+[skip] cy3d_w5_p5_auto_f32
+[skip] cy3d_w6_p4_anchor_f32
+[skip] cy3d_w6_p5_auto_f32
+[skip] cy3d_c5_p4_anchor_f64
+[skip] cy3d_c5_p5_auto_f64
+[skip] cy3d_c6_p4_anchor_f64
+[skip] cy3d_c6_p5_auto_f64
+[skip] cy3d_w5_p4_anchor_f64
+[skip] cy3d_w5_p5_auto_f64
+[skip] cy3d_w6_p4_anchor_f64
+[skip] cy3d_w6_p5_auto_f64
+035 sweep complete
+fm035 job complete

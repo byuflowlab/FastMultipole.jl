@@ -1,0 +1,8 @@
+# 041c census report
+
+041c multilevel nearfield shells  
+phase0=CONTINUE: rotor prior whole-leaf ceiling 0.627 exceeds 0.20  
+phase1=CONTINUE: ideal promoted fractions reach 0.559; wake maximum is 0.000506  
+phase2=KILL: every aggregate analytic route cost exceeds direct fallback before launch, refresh, metadata, or serial-tail charges  
+verdict=NO-GO  
+threads=4  

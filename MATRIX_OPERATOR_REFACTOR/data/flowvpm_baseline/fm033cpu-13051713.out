@@ -1,0 +1,348 @@
+=== task 033 CPU environment
+node=m12-1-29 cpus=64 job=13051713
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           48 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  128
+On-line CPU(s) list:                     0-127
+Vendor ID:                               AuthenticAMD
+Model name:                              AMD EPYC 7763 64-Core Processor
+CPU family:                              25
+Model:                                   1
+Thread(s) per core:                      1
+Core(s) per socket:                      64
+Socket(s):                               2
+Stepping:                                1
+BogoMIPS:                                4890.86
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 invpcid cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin brs arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold v_vmsave_vmload vgif v_spec_ctrl umip pku ospke vaes vpclmulqdq rdpid overflow_recov succor smca debug_swap
+Virtualization:                          AMD-V
+L1d cache:                               4 MiB (128 instances)
+L1i cache:                               4 MiB (128 instances)
+L2 cache:                                64 MiB (128 instances)
+L3 cache:                                512 MiB (16 instances)
+NUMA node(s):                            8
+NUMA node0 CPU(s):                       0-15
+NUMA node1 CPU(s):                       16-31
+NUMA node2 CPU(s):                       32-47
+NUMA node3 CPU(s):                       48-63
+NUMA node4 CPU(s):                       64-79
+NUMA node5 CPU(s):                       80-95
+NUMA node6 CPU(s):                       96-111
+NUMA node7 CPU(s):                       112-127
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Mitigation; Safe RET
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Vulnerable: No microcode
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+julia version 1.11.7
+Precompiling Pkg...
+    686.5 ms  ✓ Zlib_jll
+    735.5 ms  ✓ Logging
+    764.7 ms  ✓ UUIDs
+    715.3 ms  ✓ MbedTLS_jll
+    653.1 ms  ✓ MozillaCACerts_jll
+    821.5 ms  ✓ NetworkOptions
+    640.1 ms  ✓ nghttp2_jll
+    689.5 ms  ✓ Base64
+    678.6 ms  ✓ p7zip_jll
+    548.8 ms  ✓ LibSSH2_jll
+   1588.4 ms  ✓ Unicode
+   1388.3 ms  ✓ ArgTools
+    543.6 ms  ✓ LibCURL_jll
+    574.5 ms  ✓ LibGit2_jll
+    579.7 ms  ✓ Printf
+    774.8 ms  ✓ Tar
+    850.4 ms  ✓ LibCURL
+   2703.8 ms  ✓ Markdown
+   2312.0 ms  ✓ Dates
+   2543.6 ms  ✓ LibGit2
+    695.1 ms  ✓ TOML
+   2746.8 ms  ✓ Downloads
+  38961.2 ms  ✓ Pkg
+  23 dependencies successfully precompiled in 45 seconds
+Status `~/fm033env/Project.toml`
+  [6a4e32cb] EllipticFunctions v2.0.1
+  [6e19019d] FLOWVPM v4.0.4 `../FastMultipole-033/FLOWVPM_baseline`
+  [ce07d0d3] FastMultipole v2.0.4
+  [19dc6840] HCubature v1.8.0
+⌅ [f2b01f46] Roots v2.3.0
+Info Packages marked with ⌅ have new versions available but compatibility constraints restrict them from upgrading. To see why use `status --outdated`
+Precompiling FastMultipole...
+    754.4 ms  ✓ CodecZlib
+   1052.9 ms  ✓ Preferences
+    743.5 ms  ✓ PrecompileTools
+   1270.1 ms  ✓ JLLWrappers
+    942.4 ms  ✓ Libiconv_jll
+   1097.6 ms  ✓ XML2_jll
+   1300.2 ms  ✓ LightXML
+   1556.5 ms  ✓ WriteVTK
+   6726.9 ms  ✓ StaticArrays
+   1373.0 ms  ✓ FillArrays → FillArraysStaticArraysExt
+   3868.2 ms  ✓ FastMultipole
+  11 dependencies successfully precompiled in 16 seconds. 10 already precompiled.
+FastMultipole version: 2.0.4
+=== generating 033 direct references
+Precompiling Roots...
+    939.3 ms  ✓ CommonSolve
+    776.0 ms  ✓ InverseFunctions → InverseFunctionsDatesExt
+   2241.3 ms  ✓ Accessors
+    903.1 ms  ✓ Accessors → LinearAlgebraExt
+   3429.3 ms  ✓ Roots
+  5 dependencies successfully precompiled in 9 seconds. 9 already precompiled.
+Precompiling HCubature...
+    714.0 ms  ✓ Compat
+   1467.0 ms  ✓ InteractiveUtils
+    546.4 ms  ✓ Compat → CompatLinearAlgebraExt
+   2321.4 ms  ✓ DataStructures
+   1412.0 ms  ✓ QuadGK
+   2807.9 ms  ✓ HCubature
+  6 dependencies successfully precompiled in 9 seconds. 13 already precompiled.
+Precompiling ConstructionBaseStaticArraysExt...
+    797.1 ms  ✓ ConstructionBase → ConstructionBaseStaticArraysExt
+  1 dependency successfully precompiled in 2 seconds. 10 already precompiled.
+Precompiling StaticArraysExt...
+    985.4 ms  ✓ Accessors → StaticArraysExt
+  1 dependency successfully precompiled in 2 seconds. 18 already precompiled.
+Precompiling EllipticFunctions...
+   1042.6 ms  ✓ IOCapture
+   1140.3 ms  ✓ PCRE2_jll
+   1957.1 ms  ✓ Serialization
+   1557.5 ms  ✓ CompilerSupportLibraries_jll
+   1449.9 ms  ✓ MarkdownAST
+   1091.7 ms  ✓ StructUtils
+   2123.9 ms  ✓ OpenLibm_jll
+    843.1 ms  ✓ OpenSSL_jll
+    822.1 ms  ✓ Expat_jll
+    900.9 ms  ✓ Git_LFS_jll
+    827.5 ms  ✓ OpenSpecFun_jll
+    999.2 ms  ✓ OpenSSH_jll
+   1049.4 ms  ✓ Git_jll
+   1934.0 ms  ✓ RegistryInstances
+    978.6 ms  ✓ Git
+   2762.7 ms  ✓ Test
+   2938.7 ms  ✓ SpecialFunctions
+   5347.4 ms  ✓ Parsers
+   8047.0 ms  ✓ StyledStrings
+   3106.0 ms  ✓ JSON
+  32274.1 ms  ✓ REPL
+   5925.3 ms  ✓ Pkg → REPLExt
+  21515.7 ms  ✓ Documenter
+   1249.8 ms  ✓ EllipticFunctions
+  24 dependencies successfully precompiled in 70 seconds. 36 already precompiled.
+Precompiling FLOWVPM...
+   2755.0 ms  ✓ IntegerMathUtils
+   2293.4 ms  ✓ Mmap
+   2518.2 ms  ✓ Requires
+   2332.6 ms  ✓ Accessors → TestExt
+   2447.1 ms  ✓ StructUtils → StructUtilsStaticArraysCoreExt
+   2494.3 ms  ✓ InverseFunctions → InverseFunctionsTestExt
+   2113.4 ms  ✓ MPIPreferences
+   1625.8 ms  ✓ dlfcn_win32_jll
+   1510.6 ms  ✓ Xorg_libpciaccess_jll
+   1524.7 ms  ✓ libaec_jll
+   1714.9 ms  ✓ s2n_tls_jll
+   1941.3 ms  ✓ aws_c_common_jll
+   1791.2 ms  ✓ LazyArtifacts
+   2207.3 ms  ✓ MicrosoftMPI_jll
+    969.5 ms  ✓ Primes
+    981.4 ms  ✓ Hwloc_jll
+   2516.6 ms  ✓ TestEnv
+    850.1 ms  ✓ aws_c_cal_jll
+   1677.0 ms  ✓ aws_c_compression_jll
+   1716.3 ms  ✓ MPItrampoline_jll
+   1919.4 ms  ✓ aws_checksums_jll
+   1855.6 ms  ✓ aws_c_sdkutils_jll
+   1347.8 ms  ✓ MPICH_jll
+   1675.9 ms  ✓ MPIABI_jll
+   1722.9 ms  ✓ OpenMPI_jll
+   1841.8 ms  ✓ aws_c_io_jll
+    993.5 ms  ✓ aws_c_http_jll
+   1604.7 ms  ✓ mpif_jll
+   1114.8 ms  ✓ aws_c_auth_jll
+   1147.3 ms  ✓ aws_c_s3_jll
+   2092.1 ms  ✓ HDF5_jll
+   6552.4 ms  ✓ HDF5
+   5486.1 ms  ✓ FLOWVPM
+  33 dependencies successfully precompiled in 27 seconds. 91 already precompiled.
+=== 033 reference generation on m12-1-29 with 1 threads
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n1000.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n3162.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n10000.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n31623.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n100000.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n316228.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n1000000.csv
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_ring_n1000.csv (n_actual=891 samples=891 build=5.0s direct=1.82s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_ring_n3162.csv (n_actual=4125 samples=4125 build=0.05s direct=0.63s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_ring_n10000.csv (n_actual=11368 samples=512 build=0.1s direct=0.2s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_ring_n31623.csv (n_actual=24138 samples=512 build=0.19s direct=0.4s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_ring_n100000.csv (n_actual=111825 samples=512 build=0.9s direct=1.7s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_ring_n316228.csv (n_actual=306495 samples=512 build=2.1s direct=4.55s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_ring_n1000000.csv (n_actual=985986 samples=512 build=6.47s direct=14.14s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_checksums.sha256
+direct_reference_cube_n1000.csv: OK
+direct_reference_cube_n3162.csv: OK
+direct_reference_cube_n10000.csv: OK
+direct_reference_cube_n31623.csv: OK
+direct_reference_cube_n100000.csv: OK
+direct_reference_cube_n316228.csv: OK
+direct_reference_cube_n1000000.csv: OK
+direct_reference_ring_n1000.csv: OK
+direct_reference_ring_n3162.csv: OK
+direct_reference_ring_n10000.csv: OK
+direct_reference_ring_n31623.csv: OK
+direct_reference_ring_n100000.csv: OK
+direct_reference_ring_n316228.csv: OK
+direct_reference_ring_n1000000.csv: OK
+=== skip completed cube cpu1 n=1000
+=== skip completed cube cpu64 n=1000
+=== ring threads=1 n=1000 profile=0
+=== 033 benchmark case=ring n=1000 mode=cpu1 host=m12-1-29
+built n_actual=891 sigma=0.10000000000000002 in 2.51s
+t_uj = 0.0313, 0.03109, 0.03094, 0.03115, 0.03101
+accuracy: u_rel_rms=1.0649456793683785e-15 j_rel_rms=1.2255016494510072e-15
+t_step = 0.1241, 0.1243, 0.1247
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== ring threads=64 n=1000 profile=0
+=== 033 benchmark case=ring n=1000 mode=cpu64 host=m12-1-29
+built n_actual=891 sigma=0.10000000000000002 in 2.56s
+t_uj = 0.03195, 0.03112, 0.03107, 0.03102, 0.03091
+accuracy: u_rel_rms=1.0649456793683785e-15 j_rel_rms=1.2255016494510072e-15
+t_step = 0.1245, 0.1243, 0.1242
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== skip completed cube cpu1 n=3162
+=== skip completed cube cpu64 n=3162
+=== ring threads=1 n=3162 profile=0
+=== 033 benchmark case=ring n=3162 mode=cpu1 host=m12-1-29
+built n_actual=4125 sigma=0.06000000000000001 in 2.56s
+t_uj = 0.2763, 0.2778, 0.276, 0.2767, 0.2764
+accuracy: u_rel_rms=0.00044545216601339107 j_rel_rms=0.0007023641860062933
+t_step = 1.1, 1.099, 1.108
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== ring threads=64 n=3162 profile=0
+=== 033 benchmark case=ring n=3162 mode=cpu64 host=m12-1-29
+built n_actual=4125 sigma=0.06000000000000001 in 2.58s
+t_uj = 0.2784, 0.2755, 0.2764, 0.2764, 0.2771
+accuracy: u_rel_rms=0.00044545216601339107 j_rel_rms=0.0007023641860062933
+t_step = 1.119, 1.112, 1.12
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== skip completed cube cpu1 n=10000
+=== skip completed cube cpu64 n=10000
+=== ring threads=1 n=10000 profile=0
+=== 033 benchmark case=ring n=10000 mode=cpu1 host=m12-1-29
+built n_actual=11368 sigma=0.042857142857142864 in 2.6s
+t_uj = 1.202, 1.2, 1.2, 1.203, 1.241
+accuracy: u_rel_rms=0.0006951576588699849 j_rel_rms=0.0020481491334305223
+t_step = 4.833, 4.858, 4.841
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== ring threads=64 n=10000 profile=0
+=== 033 benchmark case=ring n=10000 mode=cpu64 host=m12-1-29
+built n_actual=11368 sigma=0.042857142857142864 in 2.63s
+t_uj = 0.06014, 0.06098, 0.04962, 0.0577, 0.05378
+accuracy: u_rel_rms=0.0006951576588699849 j_rel_rms=0.0020481491334305223
+t_step = 0.2505, 0.234, 0.2218
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== skip completed cube cpu1 n=31623
+=== skip completed cube cpu64 n=31623
+=== ring threads=1 n=31623 profile=0
+=== 033 benchmark case=ring n=31623 mode=cpu1 host=m12-1-29
+built n_actual=24138 sigma=0.03333333333333334 in 2.77s
+t_uj = 4.251, 4.223, 4.262, 4.218, 4.228
+accuracy: u_rel_rms=0.0009882876503665757 j_rel_rms=0.0029474700645982957
+t_step = 16.7, 16.69, 16.69
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== ring threads=64 n=31623 profile=0
+=== 033 benchmark case=ring n=31623 mode=cpu64 host=m12-1-29
+built n_actual=24138 sigma=0.03333333333333334 in 2.7s
+t_uj = 0.1488, 0.1449, 0.1676, 0.1733, 0.1668
+accuracy: u_rel_rms=0.0009882876503665757 j_rel_rms=0.0029474700645982957
+t_step = 0.5871, 0.5226, 0.6026
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== skip completed cube cpu1 n=100000
+=== skip completed cube cpu64 n=100000
+=== ring threads=1 n=100000 profile=1
+=== 033 benchmark case=ring n=100000 mode=cpu1 host=m12-1-29
+built n_actual=111825 sigma=0.020000000000000004 in 3.37s
+t_uj = 47.13, 47.22, 47.26, 47.07, 48.64
+accuracy: u_rel_rms=0.001776091973381593 j_rel_rms=0.008302538942923538
+t_step = 187.9, 187.9, 187.8
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/profile_ring_n100000_cpu1.txt
+=== ring threads=64 n=100000 profile=1
+=== 033 benchmark case=ring n=100000 mode=cpu64 host=m12-1-29
+built n_actual=111825 sigma=0.020000000000000004 in 3.33s
+t_uj = 1.054, 1.278, 1.731, 1.46, 1.223
+accuracy: u_rel_rms=0.001776091973381593 j_rel_rms=0.008302538942923538
+t_step = 5.085, 5.012, 5.06
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/profile_ring_n100000_cpu64.txt
+=== cube threads=1 n=316228 profile=0
+=== 033 benchmark case=cube n=316228 mode=cpu1 host=m12-1-29
+built n_actual=316228 sigma=0.02935597811208742 in 0.23s
+t_uj = 422.3, 422.2, 422.3
+accuracy: u_rel_rms=0.053459308103548514 j_rel_rms=0.08788063991864678
+t_step = 1680.0, 1680.0
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== cube threads=64 n=316228 profile=0
+=== 033 benchmark case=cube n=316228 mode=cpu64 host=m12-1-29
+built n_actual=316228 sigma=0.02935597811208742 in 0.23s
+t_uj = 10.41, 8.53, 10.87
+accuracy: u_rel_rms=0.053459308103548514 j_rel_rms=0.08788063991864678
+t_step = 45.27, 40.53
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== ring threads=1 n=316228 profile=0
+=== 033 benchmark case=ring n=316228 mode=cpu1 host=m12-1-29
+built n_actual=306495 sigma=0.014285714285714287 in 4.66s
+t_uj = 199.5, 199.9, 199.6
+accuracy: u_rel_rms=0.0022845107011750412 j_rel_rms=0.012224208822742588
+t_step = 790.8, 791.2
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== ring threads=64 n=316228 profile=0
+=== 033 benchmark case=ring n=316228 mode=cpu64 host=m12-1-29
+built n_actual=306495 sigma=0.014285714285714287 in 4.67s
+t_uj = 4.058, 5.158, 5.061
+accuracy: u_rel_rms=0.0022845107011750412 j_rel_rms=0.012224208822742588
+t_step = 20.11, 19.64
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== cube threads=64 n=1000000 profile=0
+=== 033 benchmark case=cube n=1000000 mode=cpu64 host=m12-1-29
+built n_actual=1000000 sigma=0.020000000000000004 in 0.52s
+t_uj = 57.71, 34.42, 55.98
+accuracy: u_rel_rms=0.0674876290682611 j_rel_rms=0.08545808702869434
+t_step = 183.3, 195.7
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== ring threads=64 n=1000000 profile=0
+=== 033 benchmark case=ring n=1000000 mode=cpu64 host=m12-1-29
+built n_actual=985986 sigma=0.009677419354838712 in 9.19s
+t_uj = 20.18, 27.04, 21.54
+accuracy: u_rel_rms=0.0028177119668257805 j_rel_rms=0.019070018167694124
+t_step = 95.87, 95.62
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== cube threads=1 n=1000000 profile=0
+=== 033 benchmark case=cube n=1000000 mode=cpu1 host=m12-1-29
+built n_actual=1000000 sigma=0.020000000000000004 in 0.49s
+t_uj = 1777.0, 1771.0, 1777.0
+accuracy: u_rel_rms=0.0674876290682611 j_rel_rms=0.08545808702869434
+t_step = 7062.0, 7070.0
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== ring threads=1 n=1000000 profile=0
+=== 033 benchmark case=ring n=1000000 mode=cpu1 host=m12-1-29
+built n_actual=985986 sigma=0.009677419354838712 in 9.13s
+t_uj = 985.9, 981.9, 985.7
+accuracy: u_rel_rms=0.0028177119668257805 j_rel_rms=0.019070018167694124
+t_step = 3928.0, 3928.0
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-1-29_13051713.csv
+=== task 033 complete

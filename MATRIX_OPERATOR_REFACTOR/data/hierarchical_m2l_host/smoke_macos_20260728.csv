@@ -1,0 +1,2 @@
+policy,strategy,n,ell,P,blas_threads,window_classes,cells,nodes,routes,routes_per_level,direct_pairs,nclasses,construction_ms,m2l_ms,step_ms,m2l_alloc_bytes,step_alloc_bytes,occupancy_bytes,resident_bytes,expansion_host_copies,route_uploads,operator_uploads
+hierarchical_12,concat,80,3,4,8,8,75,126,3732,0;0;356;3376,1123,3480,1728.191042,15.565208,17.59575,11792,287696,2340,1871336,0,0,0

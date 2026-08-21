@@ -1,0 +1,2 @@
+seed,case_source,tree_source,list_source,painter_source,production_painter,near_radius2,K_max,n
+41003,adaptive_octree_verify.jl seeded constructors,adaptive_octree_verify.jl,adaptive_octree_verify.jl,adaptive_octree_verify.jl:check_exact_once,test/adaptive_octree_test.jl:_adt_exact_once_bad PASS 57790/57790,5,32,2048

@@ -1,0 +1,59 @@
+% fig18 (041a): accuracy-cost frontier at n = 1e6 (H200, Float64, dense
+% M2L) — resident step time vs sampled-direct velocity rel-RMS error, wake
+% and multiscale100.  Curves: expansion order P in {2,3,4,6,8} at fixed
+% geometry (adaptive K = 64 blue; uniform ell = 6 orange, ell = 7 gray).
+% Scatter marks: the P = 4 geometry sweep (all K / all ell of the widened
+% grid) for both machineries.  The red dashed rule is the phase 1e-3
+% velocity gate: every comparison quoted in the 041a report sits left of it,
+% and both machineries move along comparable frontiers — i.e. the timing
+% comparisons are at matched, stated accuracy rather than bought with error.
+% Data: fig18_adaptive_accuracy_cost/*.csv from fm041a_pweep.csv +
+% fm041a_gpu_widen.csv (H200 job 13184013, same process).
+% Compile: pdflatex fig18_adaptive_accuracy_cost.tex
+\documentclass[tikz]{standalone}
+\input{fmfigstyle}
+\begin{document}
+\begin{tikzpicture}
+\begin{groupplot}[
+    group style={group size=2 by 1, horizontal sep=15mm},
+    fmbase,
+    width=62mm, height=56mm,
+    xmode=log, ymode=log,
+    xlabel={sampled-direct velocity rel.\ RMS error},
+]
+\nextgroupplot[title={wake}, ylabel={resident step time [ms]},
+    legend to name=figeighteenlegend, legend columns=3,
+    legend style={draw=fmAxis, fill=white}]
+\addplot[color=fmSone, mark=*, line width=1.1pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/wake_adaptive_k64.csv};
+\addlegendentry{adaptive $K{=}64$, $P{=}2..8$}
+\addplot[color=fmStwo, mark=square*, line width=1.1pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/wake_uniform_l6.csv};
+\addlegendentry{uniform $\ell{=}6$, $P{=}2..8$}
+\addplot[color=fmMuted, mark=triangle*, line width=0.9pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/wake_uniform_l7.csv};
+\addlegendentry{uniform $\ell{=}7$, $P{=}2..8$}
+\addplot[only marks, color=fmSone, mark=o, mark size=2.6pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/wake_geom_adaptive.csv};
+\addlegendentry{adaptive $P{=}4$, $K$ sweep}
+\addplot[only marks, color=fmStwo, mark=square, mark size=2.6pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/wake_geom_uniform.csv};
+\addlegendentry{uniform $P{=}4$, $\ell$ sweep}
+\addplot[fmrule] coordinates {(1e-3, 2) (1e-3, 200000)};
+\addlegendentry{1e-3 velocity gate}
+\nextgroupplot[title={multiscale100}]
+\addplot[color=fmSone, mark=*, line width=1.1pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/multiscale100_adaptive_k64.csv};
+\addplot[color=fmStwo, mark=square*, line width=1.1pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/multiscale100_uniform_l6.csv};
+\addplot[color=fmMuted, mark=triangle*, line width=0.9pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/multiscale100_uniform_l7.csv};
+\addplot[only marks, color=fmSone, mark=o, mark size=2.6pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/multiscale100_geom_adaptive.csv};
+\addplot[only marks, color=fmStwo, mark=square, mark size=2.6pt]
+    table[col sep=comma, x=vel_rel_rms, y=t_step_ms]{fig18_adaptive_accuracy_cost/multiscale100_geom_uniform.csv};
+\addplot[fmrule] coordinates {(1e-3, 2) (1e-3, 200000)};
+\end{groupplot}
+\node[anchor=north, yshift=-9mm] at (group c1r1.south east) {\pgfplotslegendfromname{figeighteenlegend}};
+\end{tikzpicture}
+\end{document}

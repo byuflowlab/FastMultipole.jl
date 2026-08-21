@@ -1,0 +1,314 @@
+=== task 033 CPU environment
+node=m12-2-18 cpus=64 job=13058428
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           48 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  128
+On-line CPU(s) list:                     0-127
+Vendor ID:                               AuthenticAMD
+Model name:                              AMD EPYC 7763 64-Core Processor
+CPU family:                              25
+Model:                                   1
+Thread(s) per core:                      1
+Core(s) per socket:                      64
+Socket(s):                               2
+Stepping:                                1
+BogoMIPS:                                4890.42
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf rapl pni pclmulqdq monitor ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand lahf_lm cmp_legacy svm extapic cr8_legacy abm sse4a misalignsse 3dnowprefetch osvw ibs skinit wdt tce topoext perfctr_core perfctr_nb bpext perfctr_llc mwaitx cpb cat_l3 cdp_l3 hw_pstate ssbd mba ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 invpcid cqm rdt_a rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 xsaves cqm_llc cqm_occup_llc cqm_mbm_total cqm_mbm_local clzero irperf xsaveerptr rdpru wbnoinvd amd_ppin brs arat npt lbrv svm_lock nrip_save tsc_scale vmcb_clean flushbyasid decodeassists pausefilter pfthreshold v_vmsave_vmload vgif v_spec_ctrl umip pku ospke vaes vpclmulqdq rdpid overflow_recov succor smca debug_swap
+Virtualization:                          AMD-V
+L1d cache:                               4 MiB (128 instances)
+L1i cache:                               4 MiB (128 instances)
+L2 cache:                                64 MiB (128 instances)
+L3 cache:                                512 MiB (16 instances)
+NUMA node(s):                            8
+NUMA node0 CPU(s):                       0-15
+NUMA node1 CPU(s):                       16-31
+NUMA node2 CPU(s):                       32-47
+NUMA node3 CPU(s):                       48-63
+NUMA node4 CPU(s):                       64-79
+NUMA node5 CPU(s):                       80-95
+NUMA node6 CPU(s):                       96-111
+NUMA node7 CPU(s):                       112-127
+Vulnerability Gather data sampling:      Not affected
+Vulnerability Indirect target selection: Not affected
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Not affected
+Vulnerability Spec rstack overflow:      Mitigation; Safe RET
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP disabled; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Vulnerable: No microcode
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Mitigation; IBPB before exit to userspace
+julia version 1.11.7
+Precompiling Pkg...
+    767.5 ms  ✓ Logging
+    937.3 ms  ✓ Unicode
+    776.0 ms  ✓ Zlib_jll
+    784.6 ms  ✓ MbedTLS_jll
+    710.4 ms  ✓ MozillaCACerts_jll
+    914.1 ms  ✓ NetworkOptions
+    689.6 ms  ✓ nghttp2_jll
+    779.3 ms  ✓ Base64
+    724.4 ms  ✓ p7zip_jll
+   1044.6 ms  ✓ UUIDs
+   1404.4 ms  ✓ ArgTools
+    595.6 ms  ✓ LibSSH2_jll
+    631.7 ms  ✓ Printf
+    566.4 ms  ✓ LibCURL_jll
+    599.5 ms  ✓ LibGit2_jll
+    796.0 ms  ✓ Tar
+    876.1 ms  ✓ LibCURL
+   2683.0 ms  ✓ Markdown
+   2257.5 ms  ✓ Dates
+    690.1 ms  ✓ TOML
+   2641.6 ms  ✓ LibGit2
+   2850.6 ms  ✓ Downloads
+  38333.6 ms  ✓ Pkg
+  23 dependencies successfully precompiled in 45 seconds
+Status `~/fm033env/Project.toml`
+  [6a4e32cb] EllipticFunctions v2.0.1
+  [6e19019d] FLOWVPM v4.0.4 `../FastMultipole-033/FLOWVPM_baseline`
+  [ce07d0d3] FastMultipole v2.0.4
+  [19dc6840] HCubature v1.8.0
+⌅ [f2b01f46] Roots v2.3.0
+Info Packages marked with ⌅ have new versions available but compatibility constraints restrict them from upgrading. To see why use `status --outdated`
+Precompiling FastMultipole...
+    740.4 ms  ✓ CodecZlib
+    952.5 ms  ✓ Preferences
+   1181.5 ms  ✓ PrecompileTools
+   2259.7 ms  ✓ JLLWrappers
+    874.9 ms  ✓ Libiconv_jll
+   1049.6 ms  ✓ XML2_jll
+   1151.4 ms  ✓ LightXML
+   1729.3 ms  ✓ WriteVTK
+   6433.1 ms  ✓ StaticArrays
+   1271.7 ms  ✓ FillArrays → FillArraysStaticArraysExt
+   4027.7 ms  ✓ FastMultipole
+  11 dependencies successfully precompiled in 16 seconds. 10 already precompiled.
+FastMultipole version: 2.0.4
+=== generating 033 direct references
+Precompiling FLOWVPM...
+   4596.1 ms  ✓ IntegerMathUtils
+   4463.7 ms  ✓ OpenLibm_jll
+   4255.5 ms  ✓ CommonSolve
+   3920.2 ms  ✓ CompilerSupportLibraries_jll
+   3834.1 ms  ✓ Mmap
+   3228.9 ms  ✓ PCRE2_jll
+   3024.8 ms  ✓ Requires
+   4934.6 ms  ✓ Serialization
+   2651.8 ms  ✓ Compat
+   3995.3 ms  ✓ IOCapture
+   4446.9 ms  ✓ MarkdownAST
+   3889.4 ms  ✓ InverseFunctions → InverseFunctionsDatesExt
+   3595.4 ms  ✓ StructUtils
+   2854.5 ms  ✓ MPIPreferences
+   4594.5 ms  ✓ InteractiveUtils
+   1239.6 ms  ✓ aws_c_common_jll
+   1443.5 ms  ✓ Primes
+   1425.9 ms  ✓ OpenSSL_jll
+   1436.8 ms  ✓ Xorg_libpciaccess_jll
+   1437.1 ms  ✓ Compat → CompatLinearAlgebraExt
+   2291.8 ms  ✓ Expat_jll
+   2051.4 ms  ✓ libaec_jll
+   2605.2 ms  ✓ dlfcn_win32_jll
+   1191.4 ms  ✓ aws_c_cal_jll
+   1315.6 ms  ✓ aws_checksums_jll
+    987.8 ms  ✓ Git_LFS_jll
+   3016.5 ms  ✓ MicrosoftMPI_jll
+   2910.0 ms  ✓ OpenSpecFun_jll
+   2239.2 ms  ✓ TestEnv
+   1014.3 ms  ✓ StructUtils → StructUtilsStaticArraysCoreExt
+   2501.9 ms  ✓ Accessors
+   1184.4 ms  ✓ aws_c_sdkutils_jll
+   3087.9 ms  ✓ s2n_tls_jll
+   1407.2 ms  ✓ Git_jll
+   9331.5 ms  ✓ StyledStrings
+   3298.4 ms  ✓ RegistryInstances
+   1277.7 ms  ✓ OpenSSH_jll
+   1318.7 ms  ✓ ConstructionBase → ConstructionBaseStaticArraysExt
+   1387.0 ms  ✓ Hwloc_jll
+   1395.0 ms  ✓ aws_c_compression_jll
+   3225.1 ms  ✓ LazyArtifacts
+   1234.6 ms  ✓ Accessors → LinearAlgebraExt
+   1767.3 ms  ✓ Accessors → StaticArraysExt
+   1692.5 ms  ✓ aws_c_io_jll
+   1373.2 ms  ✓ Git
+   3637.0 ms  ✓ Test
+   6123.1 ms  ✓ Parsers
+   1589.4 ms  ✓ MPICH_jll
+   3207.3 ms  ✓ SpecialFunctions
+   3625.3 ms  ✓ DataStructures
+    950.3 ms  ✓ InverseFunctions → InverseFunctionsTestExt
+   2024.7 ms  ✓ MPItrampoline_jll
+   2097.0 ms  ✓ MPIABI_jll
+   2103.8 ms  ✓ OpenMPI_jll
+   1263.2 ms  ✓ aws_c_http_jll
+   1304.9 ms  ✓ aws_c_auth_jll
+   1571.0 ms  ✓ QuadGK
+   2010.7 ms  ✓ mpif_jll
+   3281.0 ms  ✓ JSON
+   1433.8 ms  ✓ aws_c_s3_jll
+   3139.8 ms  ✓ HCubature
+   2332.7 ms  ✓ HDF5_jll
+   6883.8 ms  ✓ Accessors → TestExt
+   8993.7 ms  ✓ Roots
+   6888.4 ms  ✓ HDF5
+  32773.5 ms  ✓ REPL
+   6350.8 ms  ✓ Pkg → REPLExt
+  22392.1 ms  ✓ Documenter
+   1283.1 ms  ✓ EllipticFunctions
+   7538.3 ms  ✓ FLOWVPM
+  70 dependencies successfully precompiled in 84 seconds. 54 already precompiled.
+=== 033 reference generation on m12-2-18 with 1 threads
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n1000.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n3162.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n10000.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n31623.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n100000.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n316228.csv
+skip existing /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_cube_n1000000.csv
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_wake_n1000.csv (n_actual=1000 samples=1000 build=1.43s direct=2.42s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_wake_n3162.csv (n_actual=3162 samples=3162 build=0.0s direct=0.53s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_wake_n10000.csv (n_actual=10000 samples=10000 build=0.0s direct=4.84s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_wake_n31623.csv (n_actual=31623 samples=512 build=0.01s direct=0.71s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_wake_n100000.csv (n_actual=100000 samples=512 build=0.03s direct=2.06s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_wake_n316228.csv (n_actual=316228 samples=512 build=0.1s direct=6.24s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_wake_n1000000.csv (n_actual=1000000 samples=512 build=0.39s direct=18.61s)
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/references/direct_reference_checksums.sha256
+direct_reference_cube_n1000.csv: OK
+direct_reference_cube_n3162.csv: OK
+direct_reference_cube_n10000.csv: OK
+direct_reference_cube_n31623.csv: OK
+direct_reference_cube_n100000.csv: OK
+direct_reference_cube_n316228.csv: OK
+direct_reference_cube_n1000000.csv: OK
+direct_reference_wake_n1000.csv: OK
+direct_reference_wake_n3162.csv: OK
+direct_reference_wake_n10000.csv: OK
+direct_reference_wake_n31623.csv: OK
+direct_reference_wake_n100000.csv: OK
+direct_reference_wake_n316228.csv: OK
+direct_reference_wake_n1000000.csv: OK
+=== skip completed cube cpu1 n=1000
+=== skip completed cube cpu64 n=1000
+=== wake threads=1 n=1000 profile=0
+=== 033 benchmark case=wake n=1000 mode=cpu1 host=m12-2-18
+built n_actual=1000 sigma=0.31553675693018224 in 0.1s
+t_uj = 0.05276, 0.0525, 0.0525, 0.05249, 0.05247
+accuracy: u_rel_rms=1.140249104801386e-15 j_rel_rms=1.1384864750054531e-15
+t_step = 0.2096, 0.2102, 0.2096
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== wake threads=64 n=1000 profile=0
+=== 033 benchmark case=wake n=1000 mode=cpu64 host=m12-2-18
+built n_actual=1000 sigma=0.31553675693018224 in 0.1s
+t_uj = 0.05227, 0.05235, 0.05214, 0.05231, 0.05242
+accuracy: u_rel_rms=1.140249104801386e-15 j_rel_rms=1.1384864750054531e-15
+t_step = 0.2112, 0.2107, 0.2112
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== skip completed cube cpu1 n=3162
+=== skip completed cube cpu64 n=3162
+=== wake threads=1 n=3162 profile=0
+=== 033 benchmark case=wake n=3162 mode=cpu1 host=m12-2-18
+built n_actual=3162 sigma=0.21497898217140785 in 0.1s
+t_uj = 0.4032, 0.4026, 0.4026, 0.4009, 0.4029
+accuracy: u_rel_rms=0.003481614011427276 j_rel_rms=0.007365904523215198
+t_step = 1.606, 1.6, 1.606
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== wake threads=64 n=3162 profile=0
+=== 033 benchmark case=wake n=3162 mode=cpu64 host=m12-2-18
+built n_actual=3162 sigma=0.21497898217140785 in 0.1s
+t_uj = 0.4054, 0.4043, 0.4146, 0.4043, 0.4033
+accuracy: u_rel_rms=0.003481614011427276 j_rel_rms=0.007365904523215198
+t_step = 1.616, 1.618, 1.618
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== skip completed cube cpu1 n=10000
+=== skip completed cube cpu64 n=10000
+=== wake threads=1 n=10000 profile=0
+=== 033 benchmark case=wake n=10000 mode=cpu1 host=m12-2-18
+built n_actual=10000 sigma=0.14645918875615235 in 0.1s
+t_uj = 2.855, 2.848, 2.851, 2.889, 2.854
+accuracy: u_rel_rms=0.0083212402595942 j_rel_rms=0.023183200032911074
+t_step = 11.39, 11.43, 11.37
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== wake threads=64 n=10000 profile=0
+=== 033 benchmark case=wake n=10000 mode=cpu64 host=m12-2-18
+built n_actual=10000 sigma=0.14645918875615235 in 0.1s
+t_uj = 0.09492, 0.07642, 0.07906, 0.07933, 0.07908
+accuracy: u_rel_rms=0.0083212402595942 j_rel_rms=0.023183200032911074
+t_step = 0.3273, 0.3524, 0.3475
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== skip completed cube cpu1 n=31623
+=== skip completed cube cpu64 n=31623
+=== wake threads=1 n=31623 profile=0
+=== 033 benchmark case=wake n=31623 mode=cpu1 host=m12-2-18
+built n_actual=31623 sigma=0.09978124877340214 in 0.11s
+t_uj = 19.5, 19.52, 19.46, 19.47, 19.48
+accuracy: u_rel_rms=0.015636587976913696 j_rel_rms=0.05161800824764132
+t_step = 77.68, 77.71, 77.68
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== wake threads=64 n=31623 profile=0
+=== 033 benchmark case=wake n=31623 mode=cpu64 host=m12-2-18
+built n_actual=31623 sigma=0.09978124877340214 in 0.13s
+t_uj = 0.4094, 0.4196, 0.4034, 0.4012, 0.4388
+accuracy: u_rel_rms=0.015636587976913696 j_rel_rms=0.05161800824764132
+t_step = 1.685, 1.78, 1.648
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== skip completed cube cpu1 n=100000
+=== skip completed cube cpu64 n=100000
+=== wake threads=1 n=100000 profile=1
+=== 033 benchmark case=wake n=100000 mode=cpu1 host=m12-2-18
+built n_actual=100000 sigma=0.0679803335110543 in 0.19s
+t_uj = 102.0, 102.2, 102.1, 102.1, 102.4
+accuracy: u_rel_rms=0.03174495799416095 j_rel_rms=0.14605570009078983
+t_step = 407.1, 407.5, 407.4
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/profile_wake_n100000_cpu1.txt
+=== wake threads=64 n=100000 profile=1
+=== 033 benchmark case=wake n=100000 mode=cpu64 host=m12-2-18
+built n_actual=100000 sigma=0.0679803335110543 in 0.15s
+t_uj = 2.344, 2.069, 2.616, 2.351, 2.319
+accuracy: u_rel_rms=0.03174495799416095 j_rel_rms=0.14605570009078983
+t_step = 9.927, 9.247, 8.843
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+wrote /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/profile_wake_n100000_cpu64.txt
+=== skip completed cube cpu1 n=316228
+=== skip completed cube cpu64 n=316228
+=== wake threads=1 n=316228 profile=0
+=== 033 benchmark case=wake n=316228 mode=cpu1 host=m12-2-18
+built n_actual=316228 sigma=0.04631445065000738 in 0.28s
+t_uj = 505.7, 506.2, 506.1
+accuracy: u_rel_rms=0.05027126155823788 j_rel_rms=0.26242533221741116
+t_step = 2014.0, 2014.0
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== wake threads=64 n=316228 profile=0
+=== 033 benchmark case=wake n=316228 mode=cpu64 host=m12-2-18
+built n_actual=316228 sigma=0.04631445065000738 in 0.23s
+t_uj = 8.497, 8.833, 8.533
+accuracy: u_rel_rms=0.05027126155823788 j_rel_rms=0.26242533221741116
+t_step = 34.46, 37.19
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== skip completed cube cpu64 n=1000000
+=== wake threads=64 n=1000000 profile=0
+=== 033 benchmark case=wake n=1000000 mode=cpu64 host=m12-2-18
+built n_actual=1000000 sigma=0.03155367569301822 in 0.46s
+t_uj = 31.55, 32.3, 30.96
+accuracy: u_rel_rms=0.06390986136104658 j_rel_rms=0.46014921522155494
+t_step = 126.9, 123.4
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== skip completed cube cpu1 n=1000000
+=== wake threads=1 n=1000000 profile=0
+=== 033 benchmark case=wake n=1000000 mode=cpu1 host=m12-2-18
+built n_actual=1000000 sigma=0.03155367569301822 in 0.55s
+t_uj = 1845.0, 1852.0, 1852.0
+accuracy: u_rel_rms=0.06390986136104658 j_rel_rms=0.46014921522155494
+t_step = 7544.0, 7502.0
+appended row to /home/rander39/FastMultipole-033/MATRIX_OPERATOR_REFACTOR/data/flowvpm_baseline/cpu_m12-2-18_13058428.csv
+=== task 033 complete

@@ -1,0 +1,122 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== CUDA.jl precompile/versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_lifecycle_test.jl
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  205    205  1m30.6s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.1s
+LIFECYCLE_TEST_EXIT=0
+=== test/cuda_radix_integration_test.jl (023b factored sections)
+ERROR: LoadError: Some tests did not pass: 194 passed, 0 failed, 1 errored, 0 broken.
+in expression starting at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:12
+CUDA radix fmm! integration (task 023): Error During Test at /home/rander39/FastMultipole-023/test/cuda_radix_integration_test.jl:12
+  Got exception outside of a @test
+  MethodError: _assert_factored_input_physical(::FlatCoefficientBuffer{Float64, CuArray{Float64, 2, CUDACore.DeviceMemory}, CompressedComplexBasis, false}) is ambiguous.
+  
+  Candidates:
+    _assert_factored_input_physical(source::FlatCoefficientBuffer{TF, <:AnyCuArray, B, LH}) where {TF, B, LH}
+      @ FastMultipole ~/FastMultipole-023/src/translate_batched_cuda.jl:1487
+    _assert_factored_input_physical(source::FlatCoefficientBuffer)
+      @ FastMultipole ~/FastMultipole-023/src/rotate_batched.jl:1011
+  
+  Possible fix, define
+    _assert_factored_input_physical(::FlatCoefficientBuffer{TF, A, B, LH} where A<:(AnyCuArray)) where {TF, B<:AbstractOperatorBasis, LH}
+  
+  Stacktrace:
+   [1] _launch_cuda_resident_operator_pipeline!(state::DeviceResidentRadixState{Float64, CompressedComplexBasis, false})
+     @ FastMultipole ~/FastMultipole-023/src/translate_batched_cuda.jl:1776
+   [2] run_cuda_radix_lifecycle!(state::DeviceResidentRadixState{Float64, CompressedComplexBasis, false})
+     @ FastMultipole ~/FastMultipole-023/src/translate_batched_cuda.jl:1950
+   [3] _radix_cache_device_step!(cache::RadixFMMCache{Float64, false}, targets::Tuple{Gravitational{Float64}}, switches::Tuple{DerivativesSwitch{true, true, false, 0, 2}})
+     @ FastMultipole ~/FastMultipole-023/src/translate_batched_cuda.jl:2713
+   [4] fmm!(target_systems::Gravitational{Float64}, source_systems::Gravitational{Float64}, cache::RadixFMMCache{Float64, false}; scalar_potential::Bool, gradient::Bool, hessian::Bool, lamb_helmholtz::Nothing)
+     @ FastMultipole ~/FastMultipole-023/src/fmm.jl:891
+   [5] fmm!
+     @ ~/FastMultipole-023/src/fmm.jl:870 [inlined]
+   [6] #fmm!#337
+     @ ~/FastMultipole-023/src/fmm.jl:868 [inlined]
+   [7] macro expansion
+     @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:292 [inlined]
+   [8] macro expansion
+     @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+   [9] top-level scope
+     @ ~/FastMultipole-023/test/cuda_radix_integration_test.jl:13
+Test Summary:                          | Pass  Error  Total     Time
+CUDA radix fmm! integration (task 023) |  194      1    195  1m43.1s
+INTEGRATION_TEST_EXIT=1
+=== benchmark_023b_factored_cuda.jl
+concat    P=4  LH=false N=150     m2l    0.269 ms  step    4.356 ms  mem   134.2 MB
+factored  P=4  LH=false N=150     m2l   30.487 ms  step   76.052 ms  mem    33.6 MB
+concat    P=4  LH=true  N=150     m2l    0.546 ms  step    6.047 ms  mem   167.8 MB
+factored  P=4  LH=true  N=150     m2l   66.617 ms  step  110.887 ms  mem    33.6 MB
+concat    P=8  LH=false N=150     m2l    0.287 ms  step    4.879 ms  mem   167.8 MB
+factored  P=8  LH=false N=150     m2l   82.755 ms  step  194.189 ms  mem    67.1 MB
+concat    P=8  LH=true  N=150     m2l    0.618 ms  step    6.680 ms  mem   436.2 MB
+factored  P=8  LH=true  N=150     m2l  252.142 ms  step  367.478 ms  mem   100.7 MB
+concat    P=12 LH=false N=150     m2l    0.654 ms  step    6.896 ms  mem   369.1 MB
+factored  P=12 LH=false N=150     m2l  119.047 ms  step  269.368 ms  mem   100.7 MB
+concat    P=12 LH=true  N=150     m2l    1.152 ms  step    8.892 ms  mem   906.0 MB
+factored  P=12 LH=true  N=150     m2l  244.260 ms  step  407.356 ms  mem   167.8 MB
+concat    P=4  LH=false N=2000    m2l    0.260 ms  step    4.274 ms  mem   335.5 MB
+factored  P=4  LH=false N=2000    m2l   50.948 ms  step  104.785 ms  mem    67.1 MB
+concat    P=4  LH=true  N=2000    m2l    0.545 ms  step    6.258 ms  mem   872.4 MB
+factored  P=4  LH=true  N=2000    m2l  123.725 ms  step  178.508 ms  mem    67.1 MB
+concat    P=8  LH=false N=2000    m2l    2.933 ms  step    8.539 ms  mem   973.1 MB
+factored  P=8  LH=false N=2000    m2l  110.269 ms  step  236.540 ms  mem   134.2 MB
+concat    P=8  LH=true  N=2000    m2l    6.471 ms  step   14.406 ms  mem  2516.6 MB
+factored  P=8  LH=true  N=2000    m2l  297.701 ms  step  415.463 ms  mem   167.8 MB
+concat    P=12 LH=false N=2000    m2l    8.684 ms  step   25.948 ms  mem  2013.3 MB
+factored  P=12 LH=false N=2000    m2l  153.658 ms  step  308.187 ms  mem   167.8 MB
+concat    P=12 LH=true  N=2000    m2l   16.371 ms  step   35.483 ms  mem  5033.2 MB
+factored  P=12 LH=true  N=2000    m2l  361.418 ms  step  505.969 ms  mem   234.9 MB
+concat    P=4  LH=false N=20000   m2l    0.257 ms  step   10.792 ms  mem   335.5 MB
+factored  P=4  LH=false N=20000   m2l   51.574 ms  step  105.832 ms  mem    67.1 MB
+concat    P=4  LH=true  N=20000   m2l    0.547 ms  step   14.912 ms  mem   872.4 MB
+factored  P=4  LH=true  N=20000   m2l  124.437 ms  step  182.113 ms  mem    67.1 MB
+concat    P=8  LH=false N=20000   m2l    3.165 ms  step   30.512 ms  mem   973.1 MB
+factored  P=8  LH=false N=20000   m2l  110.367 ms  step  239.761 ms  mem   134.2 MB
+concat    P=8  LH=true  N=20000   m2l    6.716 ms  step   40.956 ms  mem  2516.6 MB
+factored  P=8  LH=true  N=20000   m2l  290.829 ms  step  419.988 ms  mem   167.8 MB
+concat    P=12 LH=false N=20000   m2l    8.997 ms  step  100.829 ms  mem  2013.3 MB
+factored  P=12 LH=false N=20000   m2l  154.486 ms  step  335.381 ms  mem   167.8 MB
+concat    P=12 LH=true  N=20000   m2l   17.888 ms  step  123.355 ms  mem  5066.7 MB
+factored  P=12 LH=true  N=20000   m2l  362.294 ms  step  543.311 ms  mem   234.9 MB
+wrote /home/rander39/FastMultipole-023/MATRIX_OPERATOR_REFACTOR/scripts/../data/factored_resident_m2l_cuda/cuda_m13h-1-1_20260717-213754.csv
+BENCH_EXIT=0

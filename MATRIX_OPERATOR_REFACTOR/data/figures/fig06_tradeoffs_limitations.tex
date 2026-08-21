@@ -1,0 +1,117 @@
+\documentclass[border=8pt,varwidth=175mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 6 --- What the speedups cost: the $\chi$ channel, multi-thread BLAS, construction, and accuracy}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=66mm, height=44mm,
+  group style={group size=2 by 2, horizontal sep=16mm, vertical sep=17mm},
+]
+
+% --- (a) Lamb-Helmholtz cost multiplier -----------------------------------
+\nextgroupplot[title={(a) Lamb--Helmholtz cost multiplier}, xlabel={expansion order $P$},
+               ylabel={LH step / $\varphi$-only step}, xmin=3, xmax=13, xtick={4,8,12},
+               ymin=1, ymax=3.1, legend pos=north west, legend columns=2]
+\addplot[fmA] table[x=P, y=concat_ratio, col sep=comma] {tables/fig06a_lh_ratio_cpu.csv};
+\addlegendentry{concat, CPU}
+\addplot[fmB] table[x=P, y=factored_ratio, col sep=comma] {tables/fig06a_lh_ratio_cpu.csv};
+\addlegendentry{factored, CPU}
+\addplot[fmC] table[x=P, y=precomputed_y_ratio, col sep=comma] {tables/fig06a_lh_ratio_cpu.csv};
+\addlegendentry{precomp.-$y$, CPU}
+\addplot[fmD] table[x=P, y=dense_ratio, col sep=comma] {tables/fig06a_lh_ratio_cpu.csv};
+\addlegendentry{dense, CPU}
+\addplot[fmA, fmalt] table[x=P, y=concat_ratio, col sep=comma] {tables/fig06a_lh_ratio_gpu.csv};
+\addlegendentry{concat, H200}
+\addplot[fmD, fmalt] table[x=P, y=dense_ratio, col sep=comma] {tables/fig06a_lh_ratio_gpu.csv};
+\addlegendentry{dense, H200}
+
+% --- (b) multi-thread BLAS degradation ------------------------------------
+\nextgroupplot[title={(b) 64-thread BLAS vs single-thread BLAS}, xlabel={expansion order $P$},
+               ylabel={BLAS-1 time / BLAS-64 time}, xmin=0.6, xmax=8.5,
+               xtick={1,2,3,4,6,8}, ymode=log, ymin=0.2, ymax=3.5,
+               ytick={0.25,0.5,1,2}, legend pos=south west, legend columns=1]
+\addplot[fmrule] coordinates {(0.6,1) (8.5,1)};
+\addplot[fmA] table[x=P, y=tinyparent_phi, col sep=comma] {tables/fig06b_blas_degradation.csv};
+\addlegendentry{tiny, $\varphi$}
+\addplot[fmA, fmalt] table[x=P, y=tinyparent_lh, col sep=comma] {tables/fig06b_blas_degradation.csv};
+\addlegendentry{tiny, LH}
+\addplot[fmB] table[x=P, y=smallconstp_phi, col sep=comma] {tables/fig06b_blas_degradation.csv};
+\addlegendentry{small, $\varphi$}
+\addplot[fmC] table[x=P, y=mediumconstp_phi, col sep=comma] {tables/fig06b_blas_degradation.csv};
+\addlegendentry{medium, $\varphi$}
+\node[anchor=north west, font=\tiny, color=fmCritical, align=left]
+  at (rel axis cs:0.03,0.97) {below 1: the 64-thread\\BLAS is the slower one};
+
+% --- (c) construction amortization ---------------------------------------
+\nextgroupplot[title={(c) dense construction break-even}, xlabel={expansion order $P$},
+               ylabel={recurring steps to amortize}, xmin=3, xmax=13, xtick={4,8,12},
+               ymode=log, ymin=1, ymax=2e7,
+               legend style={at={(0.5,-0.32)}, anchor=north, legend columns=2, draw=fmAxis}]
+\addplot[fmA] table[x=P, y=cpu_min, col sep=comma] {tables/fig06c_break_even.csv};
+\addlegendentry{CPU, best case}
+\addplot[fmA, fmalt] table[x=P, y=cpu_max, col sep=comma] {tables/fig06c_break_even.csv};
+\addlegendentry{CPU, worst case}
+\addplot[fmB] table[x=P, y=gpu_min, col sep=comma] {tables/fig06c_break_even.csv};
+\addlegendentry{H200, best case}
+\addplot[fmB, fmalt] table[x=P, y=gpu_max, col sep=comma] {tables/fig06c_break_even.csv};
+\addlegendentry{H200, worst case}
+
+% --- (d) accuracy vs cost ------------------------------------------------
+\nextgroupplot[title={(d) accuracy vs cost (H200)}, xlabel={complete recurring step (ms)},
+               ylabel={max direct potential error}, xmode=log, ymode=log,
+               every axis plot/.append style={only marks, mark size=1.9pt},
+               ymin=3e-12, ymax=3e-5,
+               ytick={1e-11,1e-10,1e-9,1e-8,1e-7,1e-6,1e-5},
+               yticklabels={$10^{-11}$,$10^{-10}$,$10^{-9}$,$10^{-8}$,$10^{-7}$,$10^{-6}$,$10^{-5}$},
+               legend style={at={(0.5,-0.32)}, anchor=north, legend columns=3, draw=fmAxis}]
+\addplot[fmA] table[x=step_ms, y=error, col sep=comma] {tables/fig06d_potential_float64_p4.csv};
+\addlegendentry{F64 $P{=}4$}
+\addplot[fmB] table[x=step_ms, y=error, col sep=comma] {tables/fig06d_potential_float64_p8.csv};
+\addlegendentry{F64 $P{=}8$}
+\addplot[fmC] table[x=step_ms, y=error, col sep=comma] {tables/fig06d_potential_float64_p12.csv};
+\addlegendentry{F64 $P{=}12$}
+\addplot[fmA, fmalt] table[x=step_ms, y=error, col sep=comma] {tables/fig06d_potential_float32_p4.csv};
+\addlegendentry{F32 $P{=}4$}
+\addplot[fmB, fmalt] table[x=step_ms, y=error, col sep=comma] {tables/fig06d_potential_float32_p8.csv};
+\addlegendentry{F32 $P{=}8$}
+\addplot[fmC, fmalt] table[x=step_ms, y=error, col sep=comma] {tables/fig06d_potential_float32_p12.csv};
+\addlegendentry{F32 $P{=}12$}
+
+\end{groupplot}
+\end{tikzpicture}
+
+\vspace{5mm}
+
+\fmnote{\textbf{Machines / regimes:} (a,c,d) task 024 --- CPU \texttt{m12-2-17} EPYC 7763 (BLAS 1 and 64,
+\texttt{julia\_threads=1}), GPU \texttt{m13h-1-1} H200. (b) task 019b, \texttt{m12-1-7} EPYC 7763, whole-slab
+concat host stage, Float64.
+\textbf{Data:} \texttt{operator\_ab\_benchmark/summary/\{case\_rankings,construction\_amortization\}.csv},
+\texttt{operator\_ab\_benchmark/raw/cuda\_*.csv},
+\texttt{smallp\_fallback\_layout/m12-1-7/crossover\_stage\_blas\{1,64\}.csv}
+(tables \texttt{fig06a\_*} \dots \texttt{fig06d\_*}).
+\textbf{Reads as:} carrying the Lamb--Helmholtz $\chi$ channel costs 1.3$\times$ at $P=4$ rising to
+2.1--2.8$\times$ at $P=12$, and it is the axis that most often flips the strategy choice in Fig.\ 5. Handing the
+operators a 64-thread BLAS \emph{loses} up to 3--4$\times$ at small route counts, which is why the standing rule
+is to pin BLAS to one thread inside the operators rather than to add a fallback path. The dense strategy's
+construction amortizes in 4--220 steps across the measured large-$n$ CPU cases
+(4--35 for uniform Float64, 6--109 for clustered Float64, and 52--220 for uniform Float32), but needs
+$5\times10^2$--$7\times10^5$ steps on the H200 --- the reason precomputed-$y$ is the recommended GPU default
+despite dense winning many individual steps.
+\textbf{Scope:} (a,c,d) use the complete recurring \texttt{fmm!} step, far field \emph{and} nearfield (the
+latter inside L2B); panel (b) is the far-field M2L host stage alone. Because the constant-$P$ stencil promotes
+more pairs to the far field as $P$ grows, the nearfield share of (a,c,d) shrinks with $P$ --- at $n=20000$ the
+direct-pair count falls from 227\,632 at $P=4$ to 39\,496 at $P=12$ --- so the two costs trade against each
+other along the $P$ axis.
+\textbf{Caveats:} \emph{panel (d) is not an accuracy-vs-tolerance study.} Every 024 case ran a single fixed
+\texttt{ConstantPAnalyticStencil} tolerance, so the only accuracy axis available is Float32 vs Float64 at
+each $P$; the spread along $x$ within one series is the four strategies and the three problem sizes, not an
+accuracy knob. No stencil-tolerance sweep exists anywhere in the project's data --- tolerance-vs-cost remains
+unmeasured and is carried to the 019a review as a limitation. In (c), $P=12$ has no GPU point because dense is
+not a steady-state winner against precomputed-$y$ there; the CPU worst case at each $P$ is dominated by the
+$n=150$ cases (up to 18\,930 steps). Panel (b) gaps at $P\in\{1,3,6,8\}$ for the medium configuration are
+unrun points.}
+
+\end{document}

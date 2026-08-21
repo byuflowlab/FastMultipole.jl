@@ -1,0 +1,2 @@
+seed,case_source,tree_source,rate_source,n,K_max,threads
+41003,adaptive_octree_verify.jl seeded constructors (041c-identical),adaptive_octree_verify.jl,data/multilevel_nearfield_shells/cost_calibration.csv,2048,32,4

@@ -23,8 +23,8 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.6'
-          - '1.10'
+          - '1.11'
+          - '1'
         os:
           - ubuntu-latest
           - macOS-latest
@@ -70,4 +70,3 @@ jobs:
           using FastMultipole
           DocMeta.setdocmeta!(FastMultipole, :DocTestSetup, :(using FastMultipole); recursive=true)
           doctest(FastMultipole)
-

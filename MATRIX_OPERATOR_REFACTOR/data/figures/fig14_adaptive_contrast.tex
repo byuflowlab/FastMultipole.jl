@@ -1,0 +1,45 @@
+% fig14 (041a): end-to-end resident step time vs cluster density contrast
+% (multiscale field, n = 1e6, H200, Float64, dense M2L, P = 4).  The uniform
+% grid's cost blows up with contrast at every fixed depth (the fat-cell
+% O(K^2) nearfield concentrates in the cluster; deeper ell trades it for
+% route/refresh cost), while the adaptive octree (K_max = 64) stays flat:
+% popmax = K_max by construction.  Per-depth uniform curves are thin gray;
+% the orange envelope is the best gate-passing uniform depth per contrast.
+% Data: fig14_adaptive_contrast/*.csv from fm041a_gpu_contrast.csv
+% (H200 job 13184014; same-job anchors).  Series identity = color + mark +
+% dash + legend, never color alone.
+% Compile: pdflatex fig14_adaptive_contrast.tex
+\documentclass[tikz]{standalone}
+\input{fmfigstyle}
+\begin{document}
+\begin{tikzpicture}
+\begin{axis}[
+    fmbase,
+    width=95mm, height=62mm,
+    xlabel={cluster density contrast $c$},
+    ylabel={resident step time [ms]},
+    xmode=log, ymode=log,
+    log ticks with fixed point,
+    legend pos=north west,
+]
+\addplot[color=fmMuted, mark=triangle, mark size=1.6pt, densely dotted, line width=0.7pt]
+    table[col sep=comma, x=contrast, y=t_step_ms]{fig14_adaptive_contrast/uniform_4.csv};
+\addlegendentry{uniform $\ell{=}4$}
+\addplot[color=fmMuted, mark=square, mark size=1.6pt, dashed, line width=0.7pt]
+    table[col sep=comma, x=contrast, y=t_step_ms]{fig14_adaptive_contrast/uniform_5.csv};
+\addlegendentry{uniform $\ell{=}5$}
+\addplot[color=fmMuted, mark=o, mark size=1.6pt, dashdotted, line width=0.7pt]
+    table[col sep=comma, x=contrast, y=t_step_ms]{fig14_adaptive_contrast/uniform_6.csv};
+\addlegendentry{uniform $\ell{=}6$}
+\addplot[color=fmMuted, mark=diamond, mark size=1.6pt, densely dashdotted, line width=0.7pt]
+    table[col sep=comma, x=contrast, y=t_step_ms]{fig14_adaptive_contrast/uniform_7.csv};
+\addlegendentry{uniform $\ell{=}7$}
+\addplot[color=fmStwo, mark=square*, line width=1.2pt]
+    table[col sep=comma, x=contrast, y=t_step_ms]{fig14_adaptive_contrast/uniform_best.csv};
+\addlegendentry{best uniform depth}
+\addplot[color=fmSone, mark=*, line width=1.2pt]
+    table[col sep=comma, x=contrast, y=t_step_ms]{fig14_adaptive_contrast/adaptive_64.csv};
+\addlegendentry{adaptive $K_{\max}{=}64$}
+\end{axis}
+\end{tikzpicture}
+\end{document}

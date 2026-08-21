@@ -103,3 +103,4 @@ All passes have single-thread and multi-thread variants.
 - **`Cache` pattern**: Pass a `Cache` object to `fmm!` across time steps to avoid repeated allocation. Use `tune_fmm(...)` once at startup to find optimal parameters.
 - **MAC methods**: `Barba` (classic: `(r_src + r_tgt)^2 / dist^2 < θ²`) and `SelfTuning` (adaptive, based on actual leaf sizes).
 - **Error bounds for dynamic P**: `UnequalSpheres`, `PowerAbsolutePotential`, `RotatedCoefficientsAbsoluteGradient`, `DehnenAbsoluteGradient` — different accuracy/cost tradeoffs.
+

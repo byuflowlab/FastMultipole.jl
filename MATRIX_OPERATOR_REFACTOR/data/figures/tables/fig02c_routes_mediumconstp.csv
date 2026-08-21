@@ -1,0 +1,4 @@
+# 019b crossover_stage_blas1, m12-1-7 EPYC 7763, Float64, config=medium_constp; per-route recurrence / whole-slab concat against the measured route count over every P this config ran. Route count is non-monotonic in P, so this is a scatter, not a curve. Where two P values share a route count (small_constp P=2 and P=3 both report 144290) the better speedup is kept.
+routes,phi,lh
+11433838,1.8512223790820275,1.0114717527772712
+12177052,4.446205720812268,1.8153117988892569

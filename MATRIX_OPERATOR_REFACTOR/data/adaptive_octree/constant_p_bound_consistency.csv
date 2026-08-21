@@ -1,0 +1,6 @@
+q,P,offset,norm2,B_minimal_separated,B_note
+3,4,"(0, 0, -2)",4,1.9391619218952396,worst_admissible_V_and_WX_offset
+3,8,"(0, 0, -2)",4,0.6596647835483023,worst_admissible_V_and_WX_offset
+12,4,"(0, -2, -3)",13,0.0033701739490053506,worst_admissible_V_and_WX_offset
+12,8,"(0, -2, -3)",13,3.365683078042493e-5,worst_admissible_V_and_WX_offset
+all,4_and_8,-,-,-,bound_monotone_decreasing_in_norm=true

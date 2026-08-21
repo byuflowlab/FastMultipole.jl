@@ -1,0 +1,22 @@
+041f sigma-adaptive multilevel smooth nearfield census
+date=2026-08-18  smoke=false  rotor=true
+
+cube n=1000000: count-gate=true (zcLB 2.53 vs 0.9*near 11.10); full-gate near=true comp=true; nom 6.66/near 12.33 ms
+wake n=1000000: count-gate=true (zcLB 1.96 vs 0.9*near 8.30); full-gate near=true comp=true; nom 5.85/near 9.22 ms
+sigma_multiscale n=1000000: count-gate=false (zcLB 3567.27 vs 0.9*near 11.54); full-gate near=false comp=false; nom 5297.26/near 12.82 ms
+rotor n=100000: count-gate=false (zcLB 133.54 vs 0.9*near 4.41); full-gate near=false comp=false; nom 213.48/near 4.90 ms
+rotor n=1000000: count-gate=false (zcLB 2557.00 vs 0.9*near 20.97); full-gate near=false comp=false; nom 3826.29/near 23.30 ms
+
+note: in cost_model.csv the fft_ms/kmul_ms columns are informational for
+  solver=msm rows; the msm core cost is the msm-specific term inside total_ms.
+oracle rows: 28
+oracle-verdict: uniform,conv=53.2/62.2(>=8:true),abs_min=2.79e-07(<=1e-3:true),ml_vs_vic=1.00(<=2:true)
+oracle-verdict: hetero18x,conv=91.6/84.1(>=8:true),abs_min=2.96e-07(<=1e-3:true),ml_vs_vic=NaN(<=2:true)
+oracle-verdict: boundary,conv=193.4/61.3(>=8:true),abs_min=5.90e-07(<=1e-3:true),ml_vs_vic=NaN(<=2:true)
+oracle-verdict: filament,conv=55.7/60.6(>=8:true),abs_min=5.07e-07(<=1e-3:true),ml_vs_vic=1.00(<=2:true)
+oracle-verdict: island_distinct,conv=47.2/60.2(>=8:true),abs_min=4.07e-07(<=1e-3:true),ml_vs_vic=NaN(<=2:true)
+oracle-verdict: extreme_ladder,conv=98.1/118.1(>=8:true),abs_min=4.51e-06(<=1e-3:true),ml_vs_vic=NaN(<=2:true)
+hybrid: FMM-retained banded hybrid is structurally additive —
+  the direct complement inflates every cutoff to rho_t*sigma^(c) >= rho_t*sigma
+  (same kernel cost per pair, strictly more pairs) and the meshed bands add on
+  top; see hybrid.csv pair_inflation_mean for the measured inflation.

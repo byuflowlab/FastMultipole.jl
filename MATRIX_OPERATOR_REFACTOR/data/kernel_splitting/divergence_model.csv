@@ -1,0 +1,5 @@
+n,ell,beta,eps,f_regularized,p_homogeneous_warp,classes_direct,classes_entirely_inside,classes_mixed,cost_binned_q15,cost_unbinned_q15,cost_unbinned_warpweighted_q15,cost_reg_everywhere_q15,unbinned_over_reg_everywhere_weighted,unbinned_beats_reg_everywhere
+1000000,3,2.0,1e-03,0.0105,7.127e-01,179,0,179,456332.6,978906.2,605159.0,629296.9,0.9616,1
+1000000,4,2.0,1e-03,0.0842,5.987e-02,179,0,179,58652.0,122363.3,118438.9,78662.1,1.5057,0
+1000000,5,2.0,1e-03,0.3101,6.948e-06,389,19,370,17273.2,33239.7,33239.6,21368.4,1.5555,0
+1000000,6,2.0,1e-03,0.5247,1.135e-09,1839,389,1450,10960.2,19642.6,19642.6,12627.4,1.5556,0

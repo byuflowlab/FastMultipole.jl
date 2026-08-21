@@ -1,0 +1,189 @@
+=== node: m13h-1-2
+GPU 0: NVIDIA H200 (UUID: GPU-6c234441-e274-d234-8829-8e63f5294292)
+GPU 1: NVIDIA H200 (UUID: GPU-7b68266f-12d3-576e-3222-b4f7d14301c0)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== nvidia-smi power/clock record
+    Performance State                                  : P0
+    Clocks Event Reasons
+        Applications Clocks Setting                    : Not Active
+    Clocks Event Reasons Counters
+        Current Power Limit                            : 700.00 W
+        Requested Power Limit                          : 700.00 W
+        Default Power Limit                            : 700.00 W
+        Min Power Limit                                : 200.00 W
+        Max Power Limit                                : 700.00 W
+        Current Power Limit                            : N/A
+        Requested Power Limit                          : N/A
+        Default Power Limit                            : N/A
+        Min Power Limit                                : N/A
+        Max Power Limit                                : N/A
+        SM                                             : 345 MHz
+        Memory                                         : 3201 MHz
+    Applications Clocks
+        Memory                                         : 3201 MHz
+    Default Applications Clocks
+        Memory                                         : 3201 MHz
+        Memory                                         : N/A
+        SM                                             : 1980 MHz
+        Memory                                         : 3201 MHz
+    Performance State                                  : P0
+    Clocks Event Reasons
+        Applications Clocks Setting                    : Not Active
+    Clocks Event Reasons Counters
+        Current Power Limit                            : 700.00 W
+        Requested Power Limit                          : 700.00 W
+        Default Power Limit                            : 700.00 W
+        Min Power Limit                                : 200.00 W
+        Max Power Limit                                : 700.00 W
+        Current Power Limit                            : N/A
+        Requested Power Limit                          : N/A
+        Default Power Limit                            : N/A
+        Min Power Limit                                : N/A
+        Max Power Limit                                : N/A
+        SM                                             : 345 MHz
+        Memory                                         : 3201 MHz
+    Applications Clocks
+        Memory                                         : 3201 MHz
+    Default Applications Clocks
+        Memory                                         : 3201 MHz
+        Memory                                         : N/A
+        SM                                             : 1980 MHz
+        Memory                                         : 3201 MHz
+=== nvidia-smi topology (2 GPUs)
+	[4mGPU0	GPU1	CPU Affinity	NUMA Affinity	GPU NUMA ID[0m
+GPU0	 X 	NV18	52,54,56,58	0		N/A
+GPU1	NV18	 X 	52,54,56,58	0		N/A
+
+Legend:
+
+  X    = Self
+  SYS  = Connection traversing PCIe as well as the SMP interconnect between NUMA nodes (e.g., QPI/UPI)
+  NODE = Connection traversing PCIe as well as the interconnect between PCIe Host Bridges within a NUMA node
+  PHB  = Connection traversing PCIe as well as a PCIe Host Bridge (typically the CPU)
+  PXB  = Connection traversing multiple PCIe bridges (without traversing the PCIe Host Bridge)
+  PIX  = Connection traversing at most a single PCIe bridge
+  NV#  = Connection traversing a bonded set of # NVLinks
+=== source manifest
+SOURCE_MANIFEST=71aab1fa9045715b
+=== CUDA.jl versioninfo
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.9.41, artifact installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.2.1
+- GPUArrays: 11.5.8
+- GPUCompiler: 1.23.0
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.0+1
+- CUDA_Compiler_jll: 0.4.4+1
+- CUDA_Runtime_jll: 0.23.0+1
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+
+2 devices:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+  1: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.8
+=== test/cuda_radix_graph_test.jl (single-GPU graph machinery)
+Test Summary:                                             | Pass  Total     Time
+cached-window + graph lifecycle parity (task 029 cycle 1) |  112    112  1m20.9s
+Test Summary:                                           | Pass  Total  Time
+tensor16 parity under cached windows (task 029 cycle 1) |    4      4  2.5s
+Test Summary:                                   | Pass  Total  Time
+occupancy-epoch invalidation (task 029 cycle 1) |    8      8  1.6s
+Test Summary:                                                  | Pass  Total  Time
+transfer counters flat across graphed steps (task 029 cycle 1) |    6      6  0.4s
+Test Summary:                                            | Pass  Total  Time
+profile_stages fallback under caching (task 029 cycle 1) |    5      5  0.5s
+GRAPH_TEST_EXIT=0
+=== test/cuda_radix_twogpu_test.jl (P2 distributed gates)
+[p2test] case TF=Float64 fmt=off P=3: single reference
+[p2test] dual setup
+[p2test] record graphs (solo)
+[p2test] concurrent replay steps
+[p2test] convection lockstep steps
+[p2test] case TF=Float64 fmt=off P=4: single reference
+[p2test] dual setup
+[p2test] record graphs (solo)
+[p2test] concurrent replay steps
+[p2test] convection lockstep steps
+[p2test] case TF=Float32 fmt=fp16 P=3: single reference
+[p2test] dual setup
+[p2test] record graphs (solo)
+[p2test] concurrent replay steps
+[p2test] convection lockstep steps
+Test Summary:                                 | Pass  Total     Time
+two-GPU work-list decomposition (task 029 P2) |   54     54  1m27.1s
+TWOGPU_TEST_EXIT=0
+PREFLIGHT_EXIT=0
+=== 024b reference integrity (n=1e6)
+direct_reference_n1000.csv: OK
+direct_reference_n3162.csv: OK
+direct_reference_n10000.csv: OK
+direct_reference_n31623.csv: OK
+direct_reference_n100000.csv: OK
+direct_reference_n316228.csv: OK
+direct_reference_n1000000.csv: OK
+REFERENCE_GATE_EXIT=0
+=== P2 two-GPU verdict measurement
+P2 manifest=71aab1fa9045715b job=13066057 node=m13h-1-2 julia=1.11.7 cuda=12.8.0 devices=2
+  device 0: NVIDIA H200
+  device 1: NVIDIA H200
+reference: 024b_csv checksum=ec967629907c6e730d2389886b9f8e865fbec35c3a831d8c7220cdfad6e511bc samples=512
+cross-device copy dir1: 8.0 MB in 0.241 ms => 33.2 GB/s
+cross-device copy dir2: 8.0 MB in 0.251 ms => 31.9 GB/s
+
+=== phase 1: single-GPU reference (device 0, stock defaults)
+single-GPU verdict: 4.863 ms [4.666, 5.158]  err 1.02999e-03
+
+=== phase 2: dual-GPU setup (mirrored sources, partitioned targets)
+GPU0: construction 253 ms, persistent 2.250 GB, owned cells 1:16384, bodies 1:499784, routes 7938720, direct 1014904
+GPU1: construction 5961 ms, persistent 2.410 GB, owned cells 16385:32768, bodies 499785:1000000, routes 7938720, direct 1014904
+slice coverage gate (per-level window + pair slices tile the work lists): PASS  list sizes=[1896, 119784, 1226184, 6590856, 1014904]
+graph captured per GPU: Bool[1, 1]
+
+=== phase 3: step-0 sampled accuracy (union output)
+GPU0: err_grad_rel_rms 1.03019e-03  err_pot_rel_rms 3.00485e-05  err_grad_max 3.37695e-04
+GPU1: err_grad_rel_rms 1.03019e-03  err_pot_rel_rms 3.00485e-05  err_grad_max 3.37695e-04
+mirrored gradient lockstep (bitwise): PASS
+
+=== phase 4: verdict loop (REPS=25 complete steps)
+
+2-GPU verdict: 4.791 ms [4.640, 5.052]
+GPU0: refresh 0.526  graph 2.914  exchange-copy 0.902  finalize+euler(dev) 0.252  gpu-wall 4.775  barrier 0.026  fin-host 1.219 ms
+GPU1: refresh 0.516  graph 2.906  exchange-copy 0.900  finalize+euler(dev) 0.256  gpu-wall 4.775  barrier 0.000  fin-host 1.218 ms
+comm+orchestration (wall - max compute): 1.003 ms   [gate <= 0.4 ms]
+  of which exchange copies 0.905 ms, task spawn/join 0.017 ms, imbalance 0.017 ms
+parallel efficiency: 50.7% vs in-job single (4.863), 48.6% vs 4.657 record   [gate >= 75%]
+host alloc per pair step: 3314656 bytes; refilters: 0/0
+
+=== phase 5: 5-step convection re-check
+post-convection: err_grad_rel_rms 1.02816e-03  lockstep PASS
+recurring transfer counters flat: PASS
+
+=== P2 GATES: comm+orch 1.003 ms FAIL (<=0.4); efficiency vs record 48.6% FAIL (>=75%)
+accuracy gate: PASS (<=1.19e-3)
+wrote /home/rander39/FastMultipole-029p2/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029p2_sched6_5_4_4_fp16_n1000000_m13h-1-2_13066057.csv
+wrote /home/rander39/FastMultipole-029p2/MATRIX_OPERATOR_REFACTOR/data/performance_high_score_1m_1ms/cuda029p2_sched6_5_4_4_fp16_n1000000_m13h-1-2_13066057.csv.walls.csv
+P2_EXIT_OK
+P2_BENCH_EXIT=0
+P2_EXIT=0

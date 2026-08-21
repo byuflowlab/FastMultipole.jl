@@ -1,0 +1,46 @@
+\documentclass[border=8pt,varwidth=190mm]{standalone}
+\input{fmfigstyle.tex}
+\begin{document}
+
+\fmtitle{Fig.\ 9 --- Task 035: shipped-default U/J-solve time across the optimization cycles (H200, gate-passing rows only)}
+
+\begin{tikzpicture}
+\begin{groupplot}[
+  fmbase,
+  width=78mm, height=52mm,
+  group style={group size=2 by 1, horizontal sep=16mm},
+  ymode=log,
+  fmbaraxis,
+  xtick={1,2,3,4},
+  xticklabels={cube $10^5$, cube $10^6$, wake $10^5$, wake $10^6$},
+  xticklabel style={font=\tiny},
+  ylabel={U/J solve (ms)},
+]
+
+% --- (a) Float32 -----------------------------------------------------------
+\nextgroupplot[title={(a) Float32}, ymin=5, ymax=700,
+               legend to name=fm35ladderlegend, legend columns=4]
+\addplot[fmbars, fill=fmSone] table[x=point_index, y=shipped034, col sep=comma] {tables/fig09_ladder_f32.csv};
+\addlegendentry{shipped 034 coupling}
+\addplot[fmbars, fill=fmStwo] table[x=point_index, y=cycle1, col sep=comma] {tables/fig09_ladder_f32.csv};
+\addlegendentry{cycle 1: dense+partitioned+auto}
+\addplot[fmbars, fill=fmSthree] table[x=point_index, y=cycle2, col sep=comma] {tables/fig09_ladder_f32.csv};
+\addlegendentry{cycle 2: block-per-cell B2M}
+\addplot[fmbars, fill=fmSfour] table[x=point_index, y=cycle3, col sep=comma] {tables/fig09_ladder_f32.csv};
+\addlegendentry{cycle 3D: P5 / $\rho_t{=}3.668$}
+
+% --- (b) Float64 -----------------------------------------------------------
+% F64 at n=1e6 was first measured under the cycle-2 defaults inside the 3D
+% confirmation job; earlier bars are absent by design (nan), not zero.
+\nextgroupplot[title={(b) Float64}, ymin=5, ymax=700]
+\addplot[fmbars, fill=fmSone, unbounded coords=discard] table[x=point_index, y=shipped034, col sep=comma] {tables/fig09_ladder_f64.csv};
+\addplot[fmbars, fill=fmStwo, unbounded coords=discard] table[x=point_index, y=cycle1, col sep=comma] {tables/fig09_ladder_f64.csv};
+\addplot[fmbars, fill=fmSthree, unbounded coords=discard] table[x=point_index, y=cycle2, col sep=comma] {tables/fig09_ladder_f64.csv};
+\addplot[fmbars, fill=fmSfour, unbounded coords=discard] table[x=point_index, y=cycle3, col sep=comma] {tables/fig09_ladder_f64.csv};
+
+\end{groupplot}
+\node[anchor=south] at ($(group c1r1.north east)!0.5!(group c2r1.north west) + (0,10mm)$)
+  {\pgfplotslegendfromname{fm35ladderlegend}};
+\end{tikzpicture}
+
+\end{document}
