@@ -5,7 +5,10 @@
 # transfer accounting for the resident radix operator path.
 
 const CUDA = Base.require(Base.PkgId(Base.UUID("052768ef-5323-5732-b1bb-66c8b64840ba"), "CUDA"))
-const CUDABFloat16 = CUDA.CUDACore.BFloat16
+# BFloat16 lives in CUDACore on CUDA.jl >= 6.2 and comes from BFloat16s.jl on
+# the 5.8 line (which task 052 uses to coexist with PrettyTables-2 geo stacks).
+const CUDABFloat16 = isdefined(CUDA, :CUDACore) ? CUDA.CUDACore.BFloat16 :
+    Base.require(Base.PkgId(Base.UUID("ab4f0b2a-ad5b-11e8-123f-65d77653426b"), "BFloat16s")).BFloat16
 
 # Device intrinsics used bare inside the kernels below; without these bindings
 # they are undefined globals in FastMultipole and every kernel infers to Any.
