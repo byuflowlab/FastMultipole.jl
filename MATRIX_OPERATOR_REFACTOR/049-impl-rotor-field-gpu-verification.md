@@ -152,3 +152,11 @@ per-step optimization of the n=3.7e4/6.8e4 rotor cases and plans its own
 standalone zlib-VTP parser (`041h:42-50`). p018_L1_ov3 (210k) is a third,
 larger case not in 041h. Cite 041h results as soft inputs if available; do
 not duplicate its scope.
+
+## Stage 0 pre-gate result (2026-08-21)
+
+**PASS.** `p018_L1_ov3_wake1_particles.710.vtp` header carries all nine
+loader-required point-data arrays (gamma, sigma, vol, circulation, velocity,
+vorticity, C, SFS, velocity_gradient) plus Points/connectivity/offsets;
+`NumberOfPoints="210056"` confirmed (matches the recorded n). XML PolyData,
+zlib-compressed appended data, header_type UInt64 — as recorded at staging.
