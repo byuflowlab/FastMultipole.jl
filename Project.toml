@@ -12,7 +12,7 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 
 [compat]
-CUDA = "6.2.0"
+CUDA = "5.8, 6"  # 5.8 = last pre-CUDATools line (no PrettyTables 3 pin); needed to coexist with FLOWPanel geo-stack envs (052)
 ForwardDiff = "1.0.1"
 LegendrePolynomials = "0.4"
 SpecialFunctions = "2.5.1"
