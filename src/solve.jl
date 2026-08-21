@@ -735,7 +735,41 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
         sweep_order,
         leaf_colors,
         leaves_by_color,
+        Ref(false),
     )
+end
+
+"""
+    transform_solver!(solver::FastGaussSeidel, target_systems::Tuple, R, t)
+
+Update a `FastGaussSeidel` solver for a RIGID motion `x -> R*x + t` of its
+(co-moving) systems, so the solver can be reused across timesteps instead of
+being rebuilt: both trees are transformed with [`transform_tree!`](@ref)
+(interaction lists are exactly invariant) and the target buffer
+positions/metadata — written only at construction; `solve!` refreshes source
+buffers and target INFLUENCE rows per call, never target positions — are
+refreshed from the moved `target_systems`. Call AFTER the systems have moved.
+
+Without this, `solve!` on a moved system silently forms far-field expansions
+about construction-time branch centers: bodies leave their branches as
+rotation accumulates and the multipole acceptance criterion that justified
+the interaction lists no longer holds — error grows with rotation angle.
+
+The dense self/nonself influence matrices stay untouched: their
+scalar-potential rows depend only on relative geometry, which rigid motion
+preserves exactly. Their GRADIENT rows are direction-carrying and do NOT
+rotate with the body, so once a solver has been transformed, `solve!` with
+`gradient=true` refuses loudly (scalar-potential solves remain exact).
+"""
+function transform_solver!(solver::FastGaussSeidel, target_systems::Tuple, R, t)
+    transform_tree!(solver.source_tree, R, t)
+    solver.target_tree === solver.source_tree ||
+        transform_tree!(solver.target_tree, R, t)
+    switches = DerivativesSwitch(true, true, true, target_systems)
+    target_to_buffer!(solver.target_tree.buffers, target_systems,
+        solver.target_tree.sort_index_list, switches)
+    solver.transformed[] = true
+    return solver
 end
 
 function reset!(v::Vector{TF}) where TF<:Number
@@ -1053,6 +1087,19 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
     rlx=1.0, reverse_pass=false, verbose=true, final_update=true,
     callback=nothing
 ) where {TF,N}
+
+    #--- refuse direction-carrying outputs on a transformed solver ---#
+
+    # the dense influence matrices embed build-time gradient rows, which do
+    # not rotate with the body (see transform_solver!)
+    if solver.transformed[] &&
+            (any(to_vector(gradient, N)) || any(to_vector(hessian, N)))
+        throw(ArgumentError("this FastGaussSeidel solver has been rigidly " *
+            "transformed (transform_solver!): its dense influence matrices " *
+            "embed build-time gradient/hessian rows, which do not rotate " *
+            "with the body — only scalar_potential solves are valid. " *
+            "Rebuild the solver for gradient solves under rigid motion."))
+    end
 
     #--- derivatives switches ---#
 

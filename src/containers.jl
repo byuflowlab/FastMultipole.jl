@@ -316,6 +316,10 @@ struct FastGaussSeidel{TF,Nsys,TIL,TLC} <: AbstractSolver
     sweep_order::Symbol                   # :lexicographic (default) or :colored
     leaf_colors::Vector{Int}              # color id per leaf (empty when lexicographic)
     leaves_by_color::Vector{Vector{Int}}  # ascending leaf ids per color
+    # set by transform_solver! (rigid-motion tree reuse): once true, solves
+    # requesting gradient outputs refuse — the dense influence matrices embed
+    # build-time gradient rows, which do not rotate with the body
+    transformed::Base.RefValue{Bool}
 end
 
 #--- memory cache ---#

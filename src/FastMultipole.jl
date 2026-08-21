@@ -156,7 +156,7 @@ export NearfieldInfluenceCache, nearfield_matvec!, build_nearfield_cache!, estim
 
 include("extra_farfield.jl")
 
-export FastGaussSeidel, JacobiPreconditioner
+export FastGaussSeidel, JacobiPreconditioner, transform_solver!
 
 #------- PRECALCULATIONS -------#
 
