@@ -148,6 +148,12 @@ function _cuda_allocate_adaptive_context(::Type{TF}, policy::AdaptiveTreePolicy,
         nothing, -1, -1,
         0, 0, 0, 0, 0, 0, 0, 0,
         false, zeros(UInt64, 8), 0,
+        # 041e target-owned U CSR: sized only when a fused shape is selected
+        # at construction (the shape Ref is graph/construction-baked anyway)
+        CUDA.zeros(Int32, CUDA_NEARFIELD_SHAPE[] === :pairs ? 0 : leaf_cap + 1),
+        CUDA.zeros(Int32, CUDA_NEARFIELD_SHAPE[] === :pairs ? 0 : u_cap),
+        CUDA.zeros(Int32, CUDA_NEARFIELD_SHAPE[] === :pairs ? 0 : maxn),
+        -1,
     )
 end
 
@@ -1211,6 +1217,96 @@ function _cuda_adaptive_partition_v!(actx, n_v::Int)
     return nothing
 end
 
+#------- 041e: target-owned U CSR (fused nearfield shapes) -------#
+
+function _adt_cuda_body_leaf_kernel!(body_leaf, cell_ranges, n_leaves)
+    l = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    l > n_leaves && return nothing
+    @inbounds begin
+        first = cell_ranges[1, l]
+        last = first + cell_ranges[2, l] - 1
+        i = first
+        while i <= last
+            body_leaf[i] = Int32(l)
+            i += 1
+        end
+    end
+    return nothing
+end
+
+function _adt_cuda_usort_keys_kernel!(keys, direct_targets, n_u)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > n_u && return nothing
+    @inbounds keys[i] = (UInt64(direct_targets[i]) << 32) | UInt64(i)
+    return nothing
+end
+
+function _adt_cuda_ucsr_gather_kernel!(u_csr_sources, usort_ix, direct_sources, n_u)
+    p = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    p > n_u && return nothing
+    @inbounds u_csr_sources[p] = Int32(direct_sources[Int(usort_ix[p])])
+    return nothing
+end
+
+function _adt_cuda_ucsr_offsets_kernel!(u_csr_offsets, usort_ix, direct_targets, n_u)
+    p = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    p > n_u && return nothing
+    @inbounds begin
+        t = Int(direct_targets[Int(usort_ix[p])])
+        tprev = p == 1 ? 0 : Int(direct_targets[Int(usort_ix[p - 1])])
+        # boundary fill: every slot in (tprev, t] starts at CSR position p
+        # (covers empty leaves between occupied ones); slots above the last
+        # occupied target keep the n_u + 1 prefill
+        s = tprev + 1
+        while s <= t
+            u_csr_offsets[s] = Int32(p)
+            s += 1
+        end
+    end
+    return nothing
+end
+
+# Deterministic target-major U CSR from the slot-mapped U list (the DTR
+# emission order is frontier-major, NOT target-major, so a stable
+# (target-slot, index) key sort is required — mirroring the V partition).
+# Occupancy-epoch work only; reuses the V sort scratch (capacity-asserted),
+# allocates nothing, transfers nothing.
+function _cuda_adaptive_build_u_csr!(actx::DeviceAdaptiveCUDAContext,
+        direct_targets, direct_sources, n_u::Int)
+    offs = actx.u_csr_offsets::CUDA.CuVector{Int32}
+    length(offs) > 0 || return nothing      # fused shapes not armed at construction
+    nl = actx.n_leaves
+    nl + 1 <= length(offs) || throw(AssertionError(
+        "041e U-CSR offsets capacity exceeded"))
+    fill!(view(offs, 1:(nl + 1)), Int32(n_u + 1))
+    if n_u > 0
+        n_u <= length(actx.vsort_keys::CUDA.CuVector{UInt64}) || throw(AssertionError(
+            "041e U-CSR reuses the V sort scratch; n_u=$n_u exceeds v_capacity"))
+        threads = 256
+        blocks = cld(n_u, threads)
+        CUDA.@cuda threads=threads blocks=blocks _adt_cuda_usort_keys_kernel!(
+            actx.vsort_keys::CUDA.CuVector{UInt64}, direct_targets, n_u)
+        ixv = view(actx.vsort_ix::CUDA.CuVector{Int}, 1:n_u)
+        _cuda_sortperm_into!(ixv, view(actx.vsort_keys::CUDA.CuVector{UInt64}, 1:n_u))
+        CUDA.@cuda threads=threads blocks=blocks _adt_cuda_ucsr_gather_kernel!(
+            actx.u_csr_sources::CUDA.CuVector{Int32},
+            actx.vsort_ix::CUDA.CuVector{Int}, direct_sources, n_u)
+        CUDA.@cuda threads=threads blocks=blocks _adt_cuda_ucsr_offsets_kernel!(
+            offs, actx.vsort_ix::CUDA.CuVector{Int}, direct_targets, n_u)
+    end
+    # body -> leaf-slot map for the dense body-packed shape (leaf-major body
+    # order makes this a per-leaf range fill; grid cell_ranges are the
+    # leaf-slot ranges used by every nearfield kernel)
+    if nl > 0
+        grid = actx.grid::DeviceRadixGrid
+        CUDA.@cuda threads=256 blocks=cld(nl, 256) _adt_cuda_body_leaf_kernel!(
+            actx.u_csr_body_leaf::CUDA.CuVector{Int32},
+            grid.cell_ranges::CUDA.CuMatrix{Int}, nl)
+    end
+    actx.u_csr_built_epoch = actx.epoch_id
+    return nothing
+end
+
 #------- U endpoints -> leaf cell slots -------#
 
 function _adt_cuda_u_slots_kernel!(direct_targets, direct_sources, u_targets,
@@ -1368,6 +1464,10 @@ function _cuda_refresh_adaptive_lists!(actx::DeviceAdaptiveCUDAContext,
         "the sticky demotion invariant (theory §2.4/§5.2) is violated"))
     hf[2] == Int32(0) || throw(AssertionError(
         "adaptive device U-list endpoints must be leaves"))
+    # 041e: rebuild the target-owned U CSR whenever its buffers were armed at
+    # construction (no-op zero-length otherwise); direct_targets/sources are
+    # leaf slots after the mapping kernel above
+    _cuda_adaptive_build_u_csr!(actx, direct_targets, direct_sources, n_u)
     profile && (CUDA.synchronize(); actx.stage_ns[7] = time_ns() - t0)
     return nothing
 end

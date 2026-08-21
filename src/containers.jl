@@ -2503,6 +2503,18 @@ mutable struct DeviceAdaptiveCUDAContext
     profile_stages::Bool
     stage_ns::Vector{UInt64}    # refresh sub-stages (sort/build/balance/finalize/dtr/csr/groups)
     step::Int
+    # task 041e: target-owned U CSR for the fused nearfield shapes.
+    # Allocated (u_capacity-sized) only when CUDA_NEARFIELD_SHAPE[] !== :pairs
+    # at construction (zero-length otherwise, so the default path pays no
+    # memory); rebuilt on occupancy epochs from the slot-mapped U list by a
+    # deterministic (target-slot, emission-index) key sort reusing the V
+    # partition scratch. `u_csr_offsets[l]` is the first CSR edge of leaf slot
+    # `l` (offsets[n_leaves + 1] == n_u + 1); `u_csr_sources` holds source
+    # leaf slots in CSR order.
+    u_csr_offsets::Any          # CuVector{Int32} (leaf_capacity + 1)
+    u_csr_sources::Any          # CuVector{Int32} (u_capacity or 0)
+    u_csr_body_leaf::Any        # CuVector{Int32} (max bodies or 0): body -> leaf slot
+    u_csr_built_epoch::Int      # epoch id of the last CSR build (-1 = never)
 end
 
 function RadixStepCounts(source_bodies, cell_ranges, multipoles::FlatCoefficientBuffer,

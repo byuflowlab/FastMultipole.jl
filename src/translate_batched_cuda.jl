@@ -1953,6 +1953,260 @@ function _cuda_direct_pairs_functor_kernel!(kernel, output, source_bodies,
     return nothing
 end
 
+#------- 041e: target-owned fused nearfield kernels -------#
+#
+# Both shapes consume the target-major U CSR built on occupancy epochs by
+# `_cuda_adaptive_build_u_csr!` (tree_batched_cuda.jl): `u_csr_offsets[l]` is
+# the first CSR edge of target leaf slot `l`, `u_csr_sources[e]` the source
+# leaf slot of edge `e`.  Grid-strides over target leaf slots; every leaf has
+# exactly one CTA owner, and each target body is retired once (atomic adds —
+# see the CUDA_NEARFIELD_SHAPE comment for why plain stores are not safe).
+# Pair math, predicate, and g/h modes are the shipped `_direct_pair_ug/_ugh`
+# functor path unchanged.
+
+function _cuda_direct_pairs_fused_cta_kernel!(kernel, output, source_bodies,
+        cell_ranges, u_csr_offsets, u_csr_sources, n_leaves, ::Val{HS},
+        ghv::Val=Val(:shipped)) where HS
+    T = eltype(output)
+    ep = _emits_potential(kernel)
+    leaf = Int(blockIdx().x)
+    @inbounds while leaf <= n_leaves
+        tfirst = cell_ranges[1, leaf]
+        tlast = tfirst + cell_ranges[2, leaf] - 1
+        estart = Int(u_csr_offsets[leaf])
+        eend = Int(u_csr_offsets[leaf + 1]) - 1
+        i = tfirst + Int(threadIdx().x) - 1
+        while i <= tlast && eend >= estart
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            u = zero(T)
+            gx = zero(T); gy = zero(T); gz = zero(T)
+            h1 = zero(T); h2 = zero(T); h3 = zero(T)
+            h4 = zero(T); h5 = zero(T); h6 = zero(T)
+            h7 = zero(T); h8 = zero(T); h9 = zero(T)
+            for e in estart:eend
+                sc = Int(u_csr_sources[e])
+                sfirst = cell_ranges[1, sc]
+                slast = sfirst + cell_ranges[2, sc] - 1
+                for j in sfirst:slast
+                    i == j && continue
+                    dx = xi - source_bodies[1, j]
+                    dy = yi - source_bodies[2, j]
+                    dz = zi - source_bodies[3, j]
+                    r2 = dx * dx + dy * dy + dz * dz
+                    if r2 > zero(r2)
+                        invr = _cuda_fast_rsqrt(r2)
+                        if HS
+                            du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                                _direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
+                                    source_bodies, j, ghv)
+                            u += du
+                            gx += dgx; gy += dgy; gz += dgz
+                            h1 += dh1; h2 += dh2; h3 += dh3
+                            h4 += dh4; h5 += dh5; h6 += dh6
+                            h7 += dh7; h8 += dh8; h9 += dh9
+                        else
+                            du, dgx, dgy, dgz = _direct_pair_ug(kernel, dx, dy,
+                                dz, r2, invr, source_bodies, j, ghv)
+                            u += du
+                            gx += dgx; gy += dgy; gz += dgz
+                        end
+                    end
+                end
+            end
+            ep && (CUDA.@atomic output[1, i] += u)
+            CUDA.@atomic output[2, i] += gx
+            CUDA.@atomic output[3, i] += gy
+            CUDA.@atomic output[4, i] += gz
+            if HS
+                CUDA.@atomic output[5, i] += h1
+                CUDA.@atomic output[6, i] += h2
+                CUDA.@atomic output[7, i] += h3
+                CUDA.@atomic output[8, i] += h4
+                CUDA.@atomic output[9, i] += h5
+                CUDA.@atomic output[10, i] += h6
+                CUDA.@atomic output[11, i] += h7
+                CUDA.@atomic output[12, i] += h8
+                CUDA.@atomic output[13, i] += h9
+            end
+            i += Int(blockDim().x)
+        end
+        leaf += Int(gridDim().x)
+    end
+    return nothing
+end
+
+function _cuda_direct_pairs_fused_packed_kernel!(kernel, output, source_bodies,
+        cell_ranges, u_csr_offsets, u_csr_sources, body_leaf, n_bodies, ::Val{HS},
+        ghv::Val=Val(:shipped)) where HS
+    T = eltype(output)
+    ep = _emits_potential(kernel)
+    i = Int((blockIdx().x - 1) * blockDim().x + threadIdx().x)
+    stride = Int(gridDim().x) * Int(blockDim().x)
+    @inbounds while i <= n_bodies
+        leaf = Int(body_leaf[i])
+        if leaf > 0
+            estart = Int(u_csr_offsets[leaf])
+            eend = Int(u_csr_offsets[leaf + 1]) - 1
+            if eend >= estart
+                xi = source_bodies[1, i]
+                yi = source_bodies[2, i]
+                zi = source_bodies[3, i]
+                u = zero(T)
+                gx = zero(T); gy = zero(T); gz = zero(T)
+                h1 = zero(T); h2 = zero(T); h3 = zero(T)
+                h4 = zero(T); h5 = zero(T); h6 = zero(T)
+                h7 = zero(T); h8 = zero(T); h9 = zero(T)
+                for e in estart:eend
+                    sc = Int(u_csr_sources[e])
+                    sfirst = cell_ranges[1, sc]
+                    slast = sfirst + cell_ranges[2, sc] - 1
+                    for j in sfirst:slast
+                        i == j && continue
+                        dx = xi - source_bodies[1, j]
+                        dy = yi - source_bodies[2, j]
+                        dz = zi - source_bodies[3, j]
+                        r2 = dx * dx + dy * dy + dz * dz
+                        if r2 > zero(r2)
+                            invr = _cuda_fast_rsqrt(r2)
+                            if HS
+                                du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                                    _direct_pair_ugh(kernel, dx, dy, dz, r2,
+                                        invr, source_bodies, j, ghv)
+                                u += du
+                                gx += dgx; gy += dgy; gz += dgz
+                                h1 += dh1; h2 += dh2; h3 += dh3
+                                h4 += dh4; h5 += dh5; h6 += dh6
+                                h7 += dh7; h8 += dh8; h9 += dh9
+                            else
+                                du, dgx, dgy, dgz = _direct_pair_ug(kernel, dx,
+                                    dy, dz, r2, invr, source_bodies, j, ghv)
+                                u += du
+                                gx += dgx; gy += dgy; gz += dgz
+                            end
+                        end
+                    end
+                end
+                ep && (CUDA.@atomic output[1, i] += u)
+                CUDA.@atomic output[2, i] += gx
+                CUDA.@atomic output[3, i] += gy
+                CUDA.@atomic output[4, i] += gz
+                if HS
+                    CUDA.@atomic output[5, i] += h1
+                    CUDA.@atomic output[6, i] += h2
+                    CUDA.@atomic output[7, i] += h3
+                    CUDA.@atomic output[8, i] += h4
+                    CUDA.@atomic output[9, i] += h5
+                    CUDA.@atomic output[10, i] += h6
+                    CUDA.@atomic output[11, i] += h7
+                    CUDA.@atomic output[12, i] += h8
+                    CUDA.@atomic output[13, i] += h9
+                end
+            end
+        end
+        i += stride
+    end
+    return nothing
+end
+
+@inline function _nf_warp_reduce(v)
+    v += CUDA.shfl_down_sync(CUDA.FULL_MASK, v, 16)
+    v += CUDA.shfl_down_sync(CUDA.FULL_MASK, v, 8)
+    v += CUDA.shfl_down_sync(CUDA.FULL_MASK, v, 4)
+    v += CUDA.shfl_down_sync(CUDA.FULL_MASK, v, 2)
+    v += CUDA.shfl_down_sync(CUDA.FULL_MASK, v, 1)
+    return v
+end
+
+function _cuda_direct_pairs_fused_srclanes_kernel!(kernel, output, source_bodies,
+        cell_ranges, u_csr_offsets, u_csr_sources, n_leaves, ::Val{HS},
+        ghv::Val=Val(:shipped)) where HS
+    T = eltype(output)
+    ep = _emits_potential(kernel)
+    lane = (threadIdx().x - Int32(1)) % Int32(32)
+    warps_per_block = blockDim().x ÷ Int32(32)
+    warp_in_block = (threadIdx().x - Int32(1)) ÷ Int32(32)
+    leaf = Int(blockIdx().x)
+    @inbounds while leaf <= n_leaves
+        tfirst = cell_ranges[1, leaf]
+        tlast = tfirst + cell_ranges[2, leaf] - 1
+        estart = Int(u_csr_offsets[leaf])
+        eend = Int(u_csr_offsets[leaf + 1]) - 1
+        i = tfirst + Int(warp_in_block)
+        while i <= tlast && eend >= estart
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            u = zero(T)
+            gx = zero(T); gy = zero(T); gz = zero(T)
+            h1 = zero(T); h2 = zero(T); h3 = zero(T)
+            h4 = zero(T); h5 = zero(T); h6 = zero(T)
+            h7 = zero(T); h8 = zero(T); h9 = zero(T)
+            for e in estart:eend
+                sc = Int(u_csr_sources[e])
+                sfirst = cell_ranges[1, sc]
+                slast = sfirst + cell_ranges[2, sc] - 1
+                j = sfirst + Int(lane)
+                while j <= slast
+                    if i != j
+                        dx = xi - source_bodies[1, j]
+                        dy = yi - source_bodies[2, j]
+                        dz = zi - source_bodies[3, j]
+                        r2 = dx * dx + dy * dy + dz * dz
+                        if r2 > zero(r2)
+                            invr = _cuda_fast_rsqrt(r2)
+                            if HS
+                                du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                                    _direct_pair_ugh(kernel, dx, dy, dz, r2,
+                                        invr, source_bodies, j, ghv)
+                                u += du
+                                gx += dgx; gy += dgy; gz += dgz
+                                h1 += dh1; h2 += dh2; h3 += dh3
+                                h4 += dh4; h5 += dh5; h6 += dh6
+                                h7 += dh7; h8 += dh8; h9 += dh9
+                            else
+                                du, dgx, dgy, dgz = _direct_pair_ug(kernel, dx,
+                                    dy, dz, r2, invr, source_bodies, j, ghv)
+                                u += du
+                                gx += dgx; gy += dgy; gz += dgz
+                            end
+                        end
+                    end
+                    j += 32
+                end
+            end
+            u = _nf_warp_reduce(u)
+            gx = _nf_warp_reduce(gx); gy = _nf_warp_reduce(gy); gz = _nf_warp_reduce(gz)
+            if HS
+                h1 = _nf_warp_reduce(h1); h2 = _nf_warp_reduce(h2); h3 = _nf_warp_reduce(h3)
+                h4 = _nf_warp_reduce(h4); h5 = _nf_warp_reduce(h5); h6 = _nf_warp_reduce(h6)
+                h7 = _nf_warp_reduce(h7); h8 = _nf_warp_reduce(h8); h9 = _nf_warp_reduce(h9)
+            end
+            if lane == Int32(0)
+                ep && (CUDA.@atomic output[1, i] += u)
+                CUDA.@atomic output[2, i] += gx
+                CUDA.@atomic output[3, i] += gy
+                CUDA.@atomic output[4, i] += gz
+                if HS
+                    CUDA.@atomic output[5, i] += h1
+                    CUDA.@atomic output[6, i] += h2
+                    CUDA.@atomic output[7, i] += h3
+                    CUDA.@atomic output[8, i] += h4
+                    CUDA.@atomic output[9, i] += h5
+                    CUDA.@atomic output[10, i] += h6
+                    CUDA.@atomic output[11, i] += h7
+                    CUDA.@atomic output[12, i] += h8
+                    CUDA.@atomic output[13, i] += h9
+                end
+            end
+            i += Int(warps_per_block)
+        end
+        leaf += Int(gridDim().x)
+    end
+    return nothing
+end
+
 #------- distance-binned nearfield pair stream (task 032a stage C, 031a §6.3) -------#
 #
 # An unbinned split kernel pays both branch paths on essentially every warp at
@@ -2007,6 +2261,38 @@ end
 # retained as a selectable mechanism, not a default. These Refs affect only
 # the split vortex kernels — the shipped nearfield default is unchanged.
 const CUDA_NEARFIELD_BINNING = Ref{Symbol}(:classsplit)
+
+# Task 041e: target-owned fused nearfield kernel shape (adaptive path only).
+#   :pairs           — the shipped warp-per-U-edge organization (default);
+#   :fused_cta       — shape 1: CTA per target leaf, thread-per-target lanes,
+#                      one fused traversal of the leaf's complete U-source
+#                      adjacency, single accumulator retirement per target;
+#   :fused_srclanes  — shape 4: CTA per target leaf, warp per target body,
+#                      lanes stride the concatenated CSR sources, 13-component
+#                      warp-shuffle reduction, single retirement per target;
+#   :fused_packed    — shape 2 (repacking): thread per target body over the
+#                      dense leaf-major body order (zero lane underfill by
+#                      construction; divergence only where a warp spans a
+#                      leaf boundary), fused CSR traversal of the body's own
+#                      leaf adjacency, single retirement per target.
+# Selection is read at construction (CSR buffers are sized only when a fused
+# shape is armed) and inside the lifecycle body (graph-baked at record time,
+# exactly like CUDA_NEARFIELD_BINNING above): flip only before cache
+# construction. Unsupported configurations (uniform hierarchical/flat caches,
+# unarmed CSR buffers) fall back to the shipped shapes automatically — they
+# never throw during a resident step. Final writes stay atomic adds because
+# the adaptive M2T kernel accumulates into `output` concurrently on the far
+# stream; the fused win retained is one retirement per target instead of one
+# per (edge, target). `:lut` g/h mode is not supported by the fused shapes.
+const CUDA_NEARFIELD_SHAPE = Ref{Symbol}(:pairs)
+const NEARFIELD_SHAPES = (:pairs, :fused_cta, :fused_srclanes, :fused_packed)
+# Regime selector (041e Stage C promotion gate 6): even when a fused shape is
+# selected, engage it only at or above this body count — the measured H200
+# win envelope is n=1e6-scale (rotor/cube/wake) with regressions at n=1e5,
+# and the crossover measurement sets this default.  Read at launch (graph-
+# baked per epoch like the shape Ref); below the threshold the shipped
+# organization runs (automatic fallback, never a throw).
+const CUDA_NEARFIELD_FUSED_MIN_BODIES = Ref{Int}(400_000)
 const CUDA_NEARFIELD_SUBSORT = Ref(true)
 # TwoPassVortex pass-2 deficit sweep kernel mode: shell-queue (ballot-compacted)
 # versus plain predicated evaluation of the (rho_c, rho_t] shell.
@@ -4687,6 +4973,22 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
         hctx isa DeviceHierarchicalM2LContext
     symmetric && isempty(hctx.symmetric_targets) && throw(ArgumentError(
         "symmetric nearfield must be selected before cache construction"))
+    # task 041e: target-owned fused nearfield shapes (adaptive path only; read
+    # here => graph-baked at record time; automatic shipped fallback when the
+    # configuration is unsupported — never throws during a resident step)
+    shape = CUDA_NEARFIELD_SHAPE[]
+    shape in NEARFIELD_SHAPES || throw(ArgumentError(
+        "CUDA_NEARFIELD_SHAPE must be one of $(NEARFIELD_SHAPES); got $shape"))
+    if shape !== :pairs
+        actx = state.interaction_list
+        if actx isa DeviceAdaptiveCUDAContext &&
+                _radix_count_len(actx.u_csr_sources) > 0 &&
+                actx.u_csr_built_epoch == actx.epoch_id &&
+                state.counts.n_bodies >= CUDA_NEARFIELD_FUSED_MIN_BODIES[]
+            _launch_cuda_fused_nearfield!(state, actx, shape, hsv, threads)
+            return state
+        end
+    end
     # task 032a stage C: split vortex kernels route through the binned pair
     # stream when the cache carries the nearfield bin context (hierarchical
     # policy); flat-policy caches fall back to the unbinned functor kernel
@@ -4722,6 +5024,47 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
                 state.direct_targets, state.direct_sources, npairs, hsv, ghv,
                 nothing)
         end
+    end
+    return state
+end
+
+# 041e: function barrier over the Any-typed adaptive U-CSR arrays; recurring
+# launches are device kernels on the current stream (capture-safe, zero
+# allocation, no transfers).  n_leaves is epoch-stable, so baking it into a
+# captured graph is safe (the graph is recaptured on occupancy epochs).
+function _launch_cuda_fused_nearfield!(state::DeviceResidentRadixState,
+        actx::DeviceAdaptiveCUDAContext, shape::Symbol, hsv, threads::Int)
+    dk = state.options.direct_kernel
+    ghm = CUDA_NEARFIELD_GH_MODE[]
+    ghm in NEARFIELD_GH_MODES || throw(ArgumentError(
+        "CUDA_NEARFIELD_GH_MODE must be one of $(NEARFIELD_GH_MODES); got $ghm"))
+    ghm === :lut && throw(ArgumentError(
+        "the 041e fused nearfield shapes do not support " *
+        "CUDA_NEARFIELD_GH_MODE = :lut (no shared-memory g/h table); select " *
+        ":pairs or a non-lut g/h mode"))
+    ghv = Val(ghm)
+    nl = actx.n_leaves
+    nl == 0 && return state
+    offs = actx.u_csr_offsets::CUDA.CuVector{Int32}
+    srcs = actx.u_csr_sources::CUDA.CuVector{Int32}
+    blocks = min(nl, DIRECT_CUDA_MAX_BLOCKS[])
+    if shape === :fused_packed
+        nb = state.counts.n_bodies
+        if nb > 0
+            pblocks = min(cld(nb, threads), DIRECT_CUDA_MAX_BLOCKS[])
+            CUDA.@cuda threads=threads blocks=pblocks _cuda_direct_pairs_fused_packed_kernel!(
+                dk, state.output, state.source_bodies, state.cell_ranges,
+                offs, srcs, actx.u_csr_body_leaf::CUDA.CuVector{Int32}, nb,
+                hsv, ghv)
+        end
+    elseif shape === :fused_srclanes
+        CUDA.@cuda threads=threads blocks=blocks _cuda_direct_pairs_fused_srclanes_kernel!(
+            dk, state.output, state.source_bodies, state.cell_ranges,
+            offs, srcs, nl, hsv, ghv)
+    else    # :fused_cta (the shape Ref was validated by the caller)
+        CUDA.@cuda threads=threads blocks=blocks _cuda_direct_pairs_fused_cta_kernel!(
+            dk, state.output, state.source_bodies, state.cell_ranges,
+            offs, srcs, nl, hsv, ghv)
     end
     return state
 end
