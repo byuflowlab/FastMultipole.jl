@@ -153,3 +153,51 @@ device, hard-required under `FASTMULTIPOLE_REQUIRE_CUDA_TESTS=1`). 5 files,
 lines, all knobs via env vars); launcher
 `examples/run_dji9443_hover_ct_hpc.slurm.sh` (`p018_*` case matrix at
 :355-410).
+
+## Merge log (2026-08-20 execution)
+
+Pre-merge safety: tags `pre-046-matrix-ops` (tmp3 FastMultipole `c4c61ce`→`3505fb4`),
+`pre-046-flowpanel-20260817` (`d714544`), `pre-046-gpu-full` (tmp3 FLOWVPM),
+`pre-046-flowpanel` (`16f8ef7`). Cross-clone `tmp3` remotes added + fetched
+(clones are object-disjoint as recorded).
+
+Pre-merge commits to tmp3 `matrix-ops`: `c4c61ce` (previously-uncommitted
+041e fused-nearfield U CSR surface + test — same hazard as the 026 refactor
+surface) and `3505fb4` (untracked 041b–041k artifacts + phase staging docs),
+so the merge carries the full approved surface.
+
+**FastMultipole:** `matrix-ops` (176 commits) merged into
+`flowpanel-20260817` (12 ahead, incl. 3 new transform_* commits beyond the
+staged snapshot). Only 2 conflicts: `src/FastMultipole.jl` export/loader
+block (union of both sides) and `CLAUDE.md` (one-blank-line delta; took
+matrix-ops). The fmm!/tree/FmmPlan hotspots auto-merged textually. Full test
+suite green (562k+ assertions, both sides' testsets; only benign macOS
+no-CUDA notices). Untracked `FUTURE_IMPROVEMENTS.md` set aside as
+`FUTURE_IMPROVEMENTS.local.md`. Fast-forwarded `flowpanel-20260817` →
+`6c88183` per user direction (2026-08-20).
+
+**FLOWVPM:** `gpu-full` merged into `flowpanel`. 11 conflict hunks / 6
+files; resolution posture = flowpanel's newer physics/API as base, gpu-full
+GPU machinery grafted on (details in merge commit `903771d`). Notables:
+UJ_fmm keeps flowpanel's vorticity-via-extra_outputs CPU path with gpu-full's
+CuArray dispatch to UJ_fmm_gpu! in front; legacy `nearfield_device`
+forwarding removed (documented nearfield-dropping hazard); include order =
+fmm, fmm_radix, merging, splitting. First test run: 58/66 — all 8 failures
+one root cause: gpu-full-added functions still using pre-migration
+J[1:3]-as-zeta storage. Follow-up commit `bc9b9a6` completed the
+dedicated-vorticity (VORTICITY_INDEX 13:15) migration repo-wide per user
+direction (zeta_direct_multithreaded, _corespreading_reset_broadcast!, ext
+gpu_zeta_direct!, gpu parity test); audited that all remaining J[1:3]
+consumers legitimately want the velocity gradient (relaxation curl,
+stretching, get_W2/W3, h5 writer, Estr). Suite then fully green.
+Fast-forwarded `flowpanel` → `bc9b9a6` per user direction. Untracked
+`CLAUDE.md` set aside as `CLAUDE.local.md` (differs from merged one).
+
+**FLOWPanel suite vs merged stack:** 16/18; the 2 failures
+(`radius_inflation formulas`) are in the user's uncommitted FLOWPanel WIP
+(FilamentRegularization enum machinery, dirty tree; test file drifted
+mid-run) — not merge-caused. GPU-device test tiers (Part B) deferred to the
+cluster (no CUDA on this machine); they gate `047`/`048` work anyway.
+
+Open: 018 CPU smoke result; Stage 4 user checkpoint (retire tmp3 vs
+re-point).
