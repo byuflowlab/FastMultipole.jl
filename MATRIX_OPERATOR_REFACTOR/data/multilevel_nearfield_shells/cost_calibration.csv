@@ -1,0 +1,5 @@
+case,direct_ns_per_body_pair,m2l_ns_per_route,m2t_ns_per_route,s2l_ns_per_route,relative_uncertainty,source_record,note
+cube,0.00672,0.4519,79.65,560.47,0.25,fm041a_gpu_stages.csv+fm041a_gpu_widen.csv,optimistic_existing_batched_rate;excludes_virtual_refresh_and_new_launches
+wake,0.009813,0.4363,44.62,137.18,0.25,fm041a_gpu_stages.csv+fm041a_gpu_widen.csv,optimistic_existing_batched_rate;excludes_virtual_refresh_and_new_launches
+multiscale,0.008641,0.5812,42.88,150.09,0.25,fm041a_gpu_stages.csv+fm041a_gpu_widen.csv,optimistic_existing_batched_rate;excludes_virtual_refresh_and_new_launches
+sigma_multiscale,0.008641,0.5812,42.88,150.09,0.35,fm041a_gpu_stages.csv+fm041a_gpu_widen.csv,optimistic_existing_batched_rate;excludes_virtual_refresh_and_new_launches

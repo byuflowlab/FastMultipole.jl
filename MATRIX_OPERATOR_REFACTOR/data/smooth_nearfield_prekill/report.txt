@@ -1,0 +1,7 @@
+041d part 1: smooth-basis P2M/M2P pre-kill census
+break-even cluster size (best case, p=2): 28 sources vs K_max=32 cap
+selector promotions across all case/policy/depth rows: NONE
+coarsened/merged-cluster selector promotions: NONE
+coarsened max economic ratio |S|/n_break over admissible candidates: 4.357
+verdict=NO-GO (tested census; universal linear-basis closure NOT claimed): see theory/sigma-adaptive-smooth-nearfield.md
+threads=4

@@ -1,0 +1,9 @@
+case,n,zerocoupling_opt_ms,total_opt_ms,total_nom_ms,total_pess_ms,near_baseline_ms,count_gate,full_near_gate,full_complete_gate,decision
+cube,100000,NA,NA,NA,NA,NA,NA,NA,NA,direct_fallback
+cube,1000000,2.526,3.281,6.656,15.545,12.329,true,true,true,adopt
+wake,100000,NA,NA,NA,NA,NA,NA,NA,NA,direct_fallback
+wake,1000000,1.957,2.703,5.845,14.194,9.218,true,true,true,adopt
+sigma_multiscale,100000,NA,NA,NA,NA,NA,NA,NA,NA,direct_fallback
+sigma_multiscale,1000000,3567.267,3708.563,5297.258,9068.337,12.825,false,false,false,direct_fallback
+rotor,100000,133.538,144.652,213.475,380.495,4.900,false,false,false,direct_fallback
+rotor,1000000,2556.998,2666.567,3826.293,6589.459,23.300,false,false,false,direct_fallback

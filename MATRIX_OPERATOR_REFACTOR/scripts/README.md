@@ -72,3 +72,22 @@ job log and CSVs back into `data/hierarchical_m2l_cuda/`.
 independently (warmed M2L stage and warmed full lifecycle), as the task-027
 mandatory old-versus-new gate requires; each metric must satisfy the same
 >5% flag / >10% block / geomean <= 1.00 policy, and both must pass.
+
+# Task 041k — brute-force direct UJ(+SFS) ceiling
+
+`fm041k_direct_bruteforce.jl` is a standalone (CUDA + stdlib) driver measuring
+how large an N a single H200 can brute-force under 10 s: naive all-pairs O(N²)
+evaluation of the FLOWVPM `gaussianerf` workload, N = 1e2 upward by
+half-decades, per series {uj, ujsfs} × {naive, tiled} × {F64, F32(+rsqrt)}.
+The `ujsfs` series is the stack's first fused direct+SFS evaluation (041b §1.2
+factorized identity: UJ pass + O(N) T_q(Γ_q) + fused ζ pass for Ω/Q). Pair
+math is transcribed from FLOWVPM with file/line provenance;
+`fm041k_erf_vendored.jl` is a verbatim copy of FLOWVPM's GPU-safe erf so CPU
+reference and kernels bit-match in both precisions. Writes incremental
+`sweep.csv` and gated `accuracy.csv` (F64 max rel err ≤ 1e-11 vs threaded CPU
+reference, plus the reordered-vs-pairwise Estr identity cross-check). Without
+a functional GPU it runs the CPU/identity self-test only.
+
+`fm041k_submit_gpu.sh` is the H200 Slurm script (copy outside the snapshot,
+then sbatch); `fetch_041k.sh <jobid>` pulls the job log and CSVs back into
+`data/direct_bruteforce_ceiling/`.

@@ -1,0 +1,15 @@
+key,value
+task,041b
+construction_source,actual fm033 DJI-9443 rotor n=1000000 ell=6
+snapshot_seed,1137754
+candidate_halton_start,701
+training_halton_start,901
+heldout_halton_start,1201
+candidate_sample_count,216
+validation_target_count,64
+training_source_count,48
+heldout_source_count,24
+strength_directions,3
+sigma_bins,1;6;18 times actual per-cell sigma/h
+velocity_tolerance,2.5e-4
+uj_screen_tolerance,1e-3

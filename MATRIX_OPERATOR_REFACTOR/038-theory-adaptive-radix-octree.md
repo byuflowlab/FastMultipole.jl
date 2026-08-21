@@ -2,10 +2,8 @@
 
 ## Status and Entry Gate
 
-**DONE `2026-08-14` (overnight campaign lead agent); first clear-context
-review returned CHANGES REQUIRED (19:27 MDT decision-log entry); the
-blocker is fixed (sticky demotion, see Review Correction below); awaiting
-fresh clear-context re-approval.**
+**DONE and clear-context APPROVED `2026-08-14`; the first review's blocker
+was fixed by sticky demotion (see Review Correction and Re-Approval below).**
 
 Entry gate: `035` must complete its profiling campaign and `036` (Integration
 Phase milestone review) and `037` (rectangular grid) must be complete and

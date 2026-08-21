@@ -1,0 +1,20 @@
+key,value
+registration,see script header (predeclared 2026-08-18)
+cases,cube|wake|sigma_multiscale|rotor
+k_winners,cube:64|wake:256|sigma_multiscale:64|rotor:64
+n_grid,100000|1000000
+precisions,Float32|Float64
+P,4 (+ P=8 contract rows: cube n=1e5 Float64)
+shapes,pairs|fused_cta|fused_srclanes
+near_radius2,5
+ell_max,10
+case_seeds,cube:39101|wake:39102|multiscale:39103
+sigma_multiscale_str_seed,41503
+sigma_multiscale_sigma_seed,41504 (log-uniform 1e-4..1e-2)
+rotor,fm033_rotor_foreach jittered (FM033 seeds)
+targets,200 seeded (seed 41201)
+timing,warm3; median5 sync wall (life/serial/update); median7 CUDA.@elapsed isolated nearfield (graph+overlap off)
+strategies,grav:dense(64;8)|vortex:concat LH RegularizedVortex sigma_row=8
+job,13193465
+julia,1.11.7
+date,2026-08-18

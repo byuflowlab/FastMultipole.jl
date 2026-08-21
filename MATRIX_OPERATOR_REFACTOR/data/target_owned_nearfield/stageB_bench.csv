@@ -1,0 +1,200 @@
+job,case,n,K,precision,P,shape,status,fused_engaged,t_cold_s,mem_gb,t_near_ms,t_life_ms,t_life_serial_ms,t_update_ms,vel_rel_rms,n_leaves,n_u,route_uploads,operator_uploads,expansion_host_copies,route_flat,operator_flat
+13193465,cube,100000,64,Float32,4,pairs,ok,false,40.799,2.242,0.3245,1.636,1.938,1.438,4.634e-04,4096,199480,2,4,0,true,true
+13193465,cube,100000,64,Float32,4,fused_cta,ok,true,1.523,2.062,0.6221,1.688,2.249,1.449,4.634e-04,4096,199480,2,4,0,true,true
+13193465,cube,100000,64,Float32,4,fused_srclanes,ok,true,1.073,2.062,0.6647,1.919,2.275,1.394,4.634e-04,4096,199480,2,4,0,true,true
+13193465,cube,100000,64,Float64,4,pairs,ok,false,10.193,2.156,0.7003,2.241,2.441,1.593,4.634e-04,4096,199480,2,4,0,true,true
+13193465,cube,100000,64,Float64,4,fused_cta,ok,true,0.124,2.125,1.1961,2.376,2.937,1.531,4.634e-04,4096,199480,2,4,0,true,true
+13193465,cube,100000,64,Float64,4,fused_srclanes,ok,true,0.119,2.125,1.0142,2.429,2.74,1.565,4.634e-04,4096,199480,2,4,0,true,true
+13193465,cube,1000000,64,Float32,4,pairs,ok,false,1.706,4.844,4.4225,11.641,11.906,6.793,3.580e-04,32686,1725270,2,4,0,true,true
+13193465,cube,1000000,64,Float32,4,fused_cta,ok,true,1.65,4.844,4.9426,11.755,12.397,7.065,3.580e-04,32686,1725270,2,4,0,true,true
+13193465,cube,1000000,64,Float32,4,fused_srclanes,ok,true,1.634,4.875,7.5124,14.581,15.012,8.659,3.580e-04,32686,1725270,2,4,0,true,true
+13193465,cube,1000000,64,Float64,4,pairs,ok,false,0.313,5.156,12.3139,21.678,22.086,9.077,3.579e-04,32686,1725270,2,4,0,true,true
+13193465,cube,1000000,64,Float64,4,fused_cta,ok,true,0.309,5.188,11.2997,20.085,21.102,8.802,3.579e-04,32686,1725270,2,4,0,true,true
+13193465,cube,1000000,64,Float64,4,fused_srclanes,ok,true,0.3,5.188,12.144,21.38,21.967,8.848,3.579e-04,32686,1725270,2,4,0,true,true
+13193465,wake,100000,256,Float32,4,pairs,ok,false,1.228,1.906,0.8795,2.68,3.236,1.453,5.621e-04,1225,52195,2,4,0,true,true
+13193465,wake,100000,256,Float32,4,fused_cta,ok,true,1.188,1.906,2.1129,3.043,4.425,1.407,5.621e-04,1225,52195,2,4,0,true,true
+13193465,wake,100000,256,Float32,4,fused_srclanes,ok,true,1.19,1.906,2.4197,3.568,4.7,1.414,5.621e-04,1225,52195,2,4,0,true,true
+13193465,wake,100000,256,Float64,4,pairs,ok,false,0.112,2.0,1.797,6.323,6.857,1.525,5.621e-04,1225,52195,2,4,0,true,true
+13193465,wake,100000,256,Float64,4,fused_cta,ok,true,0.125,2.0,4.3919,6.766,9.443,1.519,5.621e-04,1225,52195,2,4,0,true,true
+13193465,wake,100000,256,Float64,4,fused_srclanes,ok,true,0.112,2.0,3.7412,7.352,8.819,1.571,5.621e-04,1225,52195,2,4,0,true,true
+13193465,wake,1000000,256,Float32,4,pairs,ok,false,2.299,2.875,11.1377,18.934,19.461,9.475,6.887e-04,8227,413111,2,4,0,true,true
+13193465,wake,1000000,256,Float32,4,fused_cta,ok,true,1.401,2.875,13.2203,20.087,21.493,8.431,6.887e-04,8227,413111,2,4,0,true,true
+13193465,wake,1000000,256,Float32,4,fused_srclanes,ok,true,1.639,2.875,16.4203,23.472,24.865,7.955,6.887e-04,8227,413111,2,4,0,true,true
+13193465,wake,1000000,256,Float64,4,pairs,ok,false,0.242,3.094,24.878,38.791,39.529,9.733,6.892e-04,8227,413111,2,4,0,true,true
+13193465,wake,1000000,256,Float64,4,fused_cta,ok,true,0.258,3.094,27.8973,40.312,42.54,9.333,6.892e-04,8227,413111,2,4,0,true,true
+13193465,wake,1000000,256,Float64,4,fused_srclanes,ok,true,0.268,3.094,29.1742,41.543,43.976,9.665,6.892e-04,8227,413111,2,4,0,true,true
+13193465,sigma_multiscale,100000,64,Float32,4,pairs,ok,false,4.418,2.625,3.1588,29.062,28.877,2.465,3.930e-04,5817,729830,2,4,0,true,true
+13193465,sigma_multiscale,100000,64,Float32,4,fused_cta,ok,true,0.076,2.625,6.8539,29.3,32.521,2.449,3.930e-04,5817,729830,2,4,0,true,true
+13193465,sigma_multiscale,100000,64,Float32,4,fused_srclanes,ok,true,0.074,2.625,6.0807,29.35,31.825,2.429,3.930e-04,5817,729830,2,4,0,true,true
+13193465,sigma_multiscale,100000,64,Float64,4,pairs,ok,false,3.939,3.281,5.1786,35.006,34.229,2.514,3.924e-04,5817,729830,2,4,0,true,true
+13193465,sigma_multiscale,100000,64,Float64,4,fused_cta,ok,true,0.073,3.281,11.3952,35.019,40.573,2.505,3.924e-04,5817,729830,2,4,0,true,true
+13193465,sigma_multiscale,100000,64,Float64,4,fused_srclanes,ok,true,0.073,3.281,9.8209,35.881,38.962,2.495,3.924e-04,5817,729830,2,4,0,true,true
+13193465,sigma_multiscale,1000000,64,Float32,4,pairs,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193465,sigma_multiscale,1000000,64,Float32,4,fused_cta,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193465,sigma_multiscale,1000000,64,Float32,4,fused_srclanes,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193465,sigma_multiscale,1000000,64,Float64,4,pairs,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193465,sigma_multiscale,1000000,64,Float64,4,fused_cta,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193465,sigma_multiscale,1000000,64,Float64,4,fused_srclanes,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193465,rotor,100000,64,Float32,4,pairs,ok,false,0.072,2.625,0.2977,12.745,13.004,2.995,1.430e-03,3536,43572,2,4,0,true,true
+13193465,rotor,100000,64,Float32,4,fused_cta,ok,true,0.071,2.625,0.4693,12.598,13.011,2.884,1.430e-03,3536,43572,2,4,0,true,true
+13193465,rotor,100000,64,Float32,4,fused_srclanes,ok,true,0.071,2.625,0.4325,12.656,12.989,2.842,1.430e-03,3536,43572,2,4,0,true,true
+13193465,rotor,100000,64,Float64,4,pairs,ok,false,0.068,3.281,0.4593,12.203,12.548,2.867,1.432e-03,3536,43572,2,4,0,true,true
+13193465,rotor,100000,64,Float64,4,fused_cta,ok,true,0.069,3.281,0.7505,12.713,12.883,2.858,1.432e-03,3536,43572,2,4,0,true,true
+13193465,rotor,100000,64,Float64,4,fused_srclanes,ok,true,0.069,3.281,0.7792,12.576,12.877,2.95,1.432e-03,3536,43572,2,4,0,true,true
+13193465,rotor,1000000,64,Float32,4,pairs,ok,false,0.56,5.781,2.6782,26.831,26.974,16.691,8.500e-04,24201,184621,2,4,0,true,true
+13193465,rotor,1000000,64,Float32,4,fused_cta,ok,true,0.299,5.844,2.489,26.805,26.816,17.154,8.500e-04,24201,184621,2,4,0,true,true
+13193465,rotor,1000000,64,Float32,4,fused_srclanes,ok,true,0.281,5.844,3.2271,27.528,27.559,16.48,8.500e-04,24201,184621,2,4,0,true,true
+13193465,rotor,1000000,64,Float64,4,pairs,ok,false,0.289,6.938,4.2013,34.792,34.649,18.078,5.468e-04,24199,184605,2,4,0,true,true
+13193465,rotor,1000000,64,Float64,4,fused_cta,ok,true,0.338,6.969,4.3377,35.088,34.803,17.253,5.468e-04,24199,184605,2,4,0,true,true
+13193465,rotor,1000000,64,Float64,4,fused_srclanes,ok,true,0.301,7.0,6.0343,36.721,36.451,16.277,5.468e-04,24199,184605,2,4,0,true,true
+13193465,cube,100000,64,Float64,8,pairs,ok,false,0.982,2.531,0.6973,8.962,9.088,1.559,1.218e-05,4096,199480,2,4,0,true,true
+13193465,cube,100000,64,Float64,8,fused_cta,ok,true,0.977,2.531,1.1979,8.996,9.541,1.515,1.218e-05,4096,199480,2,4,0,true,true
+13193465,cube,100000,64,Float64,8,fused_srclanes,ok,true,0.977,2.531,1.018,9.067,9.384,1.503,1.218e-05,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float32,4,pairs,ok,false,40.678,2.242,0.3265,1.639,1.926,1.439,4.634e-04,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float32,4,fused_cta,ok,true,1.552,2.062,0.5965,1.688,2.203,1.361,4.634e-04,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float32,4,fused_srclanes,ok,true,1.093,2.062,0.6748,1.923,2.279,1.37,4.634e-04,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float32,4,fused_packed,ok,true,1.062,2.062,0.4033,1.607,2.028,1.386,4.634e-04,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float64,4,pairs,ok,false,10.194,2.156,0.7005,2.24,2.42,1.602,4.634e-04,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float64,4,fused_cta,ok,true,0.141,2.125,1.1944,2.368,2.94,1.469,4.634e-04,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float64,4,fused_srclanes,ok,true,0.119,2.125,1.0409,2.42,2.715,1.481,4.634e-04,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float64,4,fused_packed,ok,true,0.118,2.125,0.7647,2.123,2.464,1.468,4.634e-04,4096,199480,2,4,0,true,true
+13193492,cube,1000000,64,Float32,4,pairs,ok,false,1.773,4.812,4.4249,11.65,11.93,9.074,3.580e-04,32686,1725270,2,4,0,true,true
+13193492,cube,1000000,64,Float32,4,fused_cta,ok,true,1.605,4.875,4.9079,11.757,12.371,7.468,3.580e-04,32686,1725270,2,4,0,true,true
+13193492,cube,1000000,64,Float32,4,fused_srclanes,ok,true,1.632,4.875,7.5215,14.583,14.982,6.963,3.580e-04,32686,1725270,2,4,0,true,true
+13193492,cube,1000000,64,Float32,4,fused_packed,ok,true,1.653,4.875,3.2476,10.383,10.733,8.416,3.580e-04,32686,1725270,2,4,0,true,true
+13193492,cube,1000000,64,Float64,4,pairs,ok,false,0.308,5.156,12.3148,21.685,22.135,9.468,3.579e-04,32686,1725270,2,4,0,true,true
+13193492,cube,1000000,64,Float64,4,fused_cta,ok,true,0.301,5.188,11.2992,20.094,21.17,9.232,3.579e-04,32686,1725270,2,4,0,true,true
+13193492,cube,1000000,64,Float64,4,fused_srclanes,ok,true,0.319,5.188,12.1428,21.397,21.944,9.588,3.579e-04,32686,1725270,2,4,0,true,true
+13193492,cube,1000000,64,Float64,4,fused_packed,ok,true,0.293,5.188,6.4953,15.786,16.294,11.274,3.579e-04,32686,1725270,2,4,0,true,true
+13193492,wake,100000,256,Float32,4,pairs,ok,false,1.227,1.906,0.8766,2.675,3.178,1.459,5.621e-04,1225,52195,2,4,0,true,true
+13193492,wake,100000,256,Float32,4,fused_cta,ok,true,1.225,1.906,2.2036,3.033,4.452,1.41,5.621e-04,1225,52195,2,4,0,true,true
+13193492,wake,100000,256,Float32,4,fused_srclanes,ok,true,1.19,1.906,2.4283,3.578,4.78,1.455,5.621e-04,1225,52195,2,4,0,true,true
+13193492,wake,100000,256,Float32,4,fused_packed,ok,true,1.205,1.906,1.3501,2.891,3.703,1.452,5.621e-04,1225,52195,2,4,0,true,true
+13193492,wake,100000,256,Float64,4,pairs,ok,false,0.112,2.0,1.7857,6.476,7.107,1.522,5.621e-04,1225,52195,2,4,0,true,true
+13193492,wake,100000,256,Float64,4,fused_cta,ok,true,0.126,2.0,4.4196,6.929,9.586,1.542,5.621e-04,1225,52195,2,4,0,true,true
+13193492,wake,100000,256,Float64,4,fused_srclanes,ok,true,0.112,2.0,3.6816,7.56,8.838,1.528,5.621e-04,1225,52195,2,4,0,true,true
+13193492,wake,100000,256,Float64,4,fused_packed,ok,true,0.112,2.0,2.654,6.759,7.929,1.539,5.621e-04,1225,52195,2,4,0,true,true
+13193492,wake,1000000,256,Float32,4,pairs,ok,false,1.955,2.875,11.1137,18.905,19.48,7.538,6.887e-04,8227,413111,2,4,0,true,true
+13193492,wake,1000000,256,Float32,4,fused_cta,ok,true,1.633,2.875,13.2253,20.027,21.571,7.793,6.887e-04,8227,413111,2,4,0,true,true
+13193492,wake,1000000,256,Float32,4,fused_srclanes,ok,true,1.35,2.875,16.4986,23.481,24.897,7.55,6.887e-04,8227,413111,2,4,0,true,true
+13193492,wake,1000000,256,Float32,4,fused_packed,ok,true,1.37,2.875,11.1146,18.314,19.407,8.07,6.887e-04,8227,413111,2,4,0,true,true
+13193492,wake,1000000,256,Float64,4,pairs,ok,false,0.245,3.094,24.9013,38.785,39.55,12.239,6.892e-04,8227,413111,2,4,0,true,true
+13193492,wake,1000000,256,Float64,4,fused_cta,ok,true,0.242,3.094,27.7474,40.232,42.63,9.864,6.892e-04,8227,413111,2,4,0,true,true
+13193492,wake,1000000,256,Float64,4,fused_srclanes,ok,true,0.253,3.094,29.1406,41.476,43.831,10.433,6.892e-04,8227,413111,2,4,0,true,true
+13193492,wake,1000000,256,Float64,4,fused_packed,ok,true,0.242,3.094,22.4705,35.529,37.381,12.147,6.892e-04,8227,413111,2,4,0,true,true
+13193492,sigma_multiscale,100000,64,Float32,4,pairs,ok,false,4.534,2.625,3.1601,29.16,28.912,2.484,3.930e-04,5817,729830,2,4,0,true,true
+13193492,sigma_multiscale,100000,64,Float32,4,fused_cta,ok,true,0.088,2.625,6.9771,29.292,32.538,2.343,3.930e-04,5817,729830,2,4,0,true,true
+13193492,sigma_multiscale,100000,64,Float32,4,fused_srclanes,ok,true,0.076,2.625,6.2404,29.336,31.73,2.402,3.930e-04,5817,729830,2,4,0,true,true
+13193492,sigma_multiscale,100000,64,Float32,4,fused_packed,ok,true,0.079,2.625,6.3463,28.563,32.021,2.449,3.930e-04,5817,729830,2,4,0,true,true
+13193492,sigma_multiscale,100000,64,Float64,4,pairs,ok,false,3.889,3.281,5.1517,34.973,34.202,2.52,3.924e-04,5817,729830,2,4,0,true,true
+13193492,sigma_multiscale,100000,64,Float64,4,fused_cta,ok,true,0.071,3.281,11.3311,34.845,40.524,2.416,3.924e-04,5817,729830,2,4,0,true,true
+13193492,sigma_multiscale,100000,64,Float64,4,fused_srclanes,ok,true,0.074,3.281,9.6843,35.797,38.668,2.453,3.924e-04,5817,729830,2,4,0,true,true
+13193492,sigma_multiscale,100000,64,Float64,4,fused_packed,ok,true,0.072,3.281,10.7707,33.544,39.75,2.436,3.924e-04,5817,729830,2,4,0,true,true
+13193492,sigma_multiscale,1000000,64,Float32,4,pairs,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193492,sigma_multiscale,1000000,64,Float32,4,fused_cta,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193492,sigma_multiscale,1000000,64,Float32,4,fused_srclanes,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193492,sigma_multiscale,1000000,64,Float32,4,fused_packed,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193492,sigma_multiscale,1000000,64,Float64,4,pairs,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193492,sigma_multiscale,1000000,64,Float64,4,fused_cta,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193492,sigma_multiscale,1000000,64,Float64,4,fused_srclanes,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193492,sigma_multiscale,1000000,64,Float64,4,fused_packed,fail:AssertionError AssertionError: adaptive device DTR frontier capacity 31506000 exceeded,,,,,,,,,,,,,,,
+13193492,rotor,100000,64,Float32,4,pairs,ok,false,0.073,2.625,0.2968,12.438,12.633,2.837,1.430e-03,3536,43572,2,4,0,true,true
+13193492,rotor,100000,64,Float32,4,fused_cta,ok,true,0.071,2.625,0.4682,12.371,12.815,2.857,1.430e-03,3536,43572,2,4,0,true,true
+13193492,rotor,100000,64,Float32,4,fused_srclanes,ok,true,0.069,2.625,0.4397,12.377,13.279,2.791,1.430e-03,3536,43572,2,4,0,true,true
+13193492,rotor,100000,64,Float32,4,fused_packed,ok,true,0.069,2.625,0.462,12.377,12.81,2.767,1.430e-03,3536,43572,2,4,0,true,true
+13193492,rotor,100000,64,Float64,4,pairs,ok,false,0.079,3.281,0.4565,12.173,12.478,2.982,1.432e-03,3536,43572,2,4,0,true,true
+13193492,rotor,100000,64,Float64,4,fused_cta,ok,true,0.069,3.281,0.7632,12.649,12.731,2.901,1.432e-03,3536,43572,2,4,0,true,true
+13193492,rotor,100000,64,Float64,4,fused_srclanes,ok,true,0.068,3.281,0.7736,12.545,12.767,2.927,1.432e-03,3536,43572,2,4,0,true,true
+13193492,rotor,100000,64,Float64,4,fused_packed,ok,true,0.068,3.281,0.7584,12.531,12.741,2.832,1.432e-03,3536,43572,2,4,0,true,true
+13193492,rotor,1000000,64,Float32,4,pairs,ok,false,0.531,5.781,2.6498,26.85,27.023,13.806,8.500e-04,24201,184621,2,4,0,true,true
+13193492,rotor,1000000,64,Float32,4,fused_cta,ok,true,0.272,5.875,2.4862,26.794,26.788,14.673,8.500e-04,24201,184621,2,4,0,true,true
+13193492,rotor,1000000,64,Float32,4,fused_srclanes,ok,true,0.273,5.844,3.2586,27.486,27.489,15.441,8.500e-04,24201,184621,2,4,0,true,true
+13193492,rotor,1000000,64,Float32,4,fused_packed,ok,true,0.25,5.875,2.0186,26.32,26.345,16.255,8.500e-04,24201,184621,2,4,0,true,true
+13193492,rotor,1000000,64,Float64,4,pairs,ok,false,0.331,6.938,4.1926,34.794,34.681,14.997,5.468e-04,24199,184605,2,4,0,true,true
+13193492,rotor,1000000,64,Float64,4,fused_cta,ok,true,0.278,7.0,4.3234,35.042,34.777,18.169,5.468e-04,24199,184605,2,4,0,true,true
+13193492,rotor,1000000,64,Float64,4,fused_srclanes,ok,true,0.304,7.0,5.9971,36.742,36.494,18.286,5.468e-04,24199,184605,2,4,0,true,true
+13193492,rotor,1000000,64,Float64,4,fused_packed,ok,true,0.263,7.0,3.2206,33.883,33.577,17.965,5.468e-04,24199,184605,2,4,0,true,true
+13193492,cube,100000,64,Float64,8,pairs,ok,false,0.975,2.531,0.6977,8.957,9.072,1.49,1.218e-05,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float64,8,fused_cta,ok,true,0.971,2.531,1.2198,9.015,9.55,1.479,1.218e-05,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float64,8,fused_srclanes,ok,true,0.971,2.531,1.0204,9.067,9.369,1.492,1.218e-05,4096,199480,2,4,0,true,true
+13193492,cube,100000,64,Float64,8,fused_packed,ok,true,0.98,2.531,0.7471,8.709,9.146,1.502,1.218e-05,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float32,4,pairs,ok,false,41.07,2.242,0.3263,1.638,1.958,1.489,4.634e-04,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float32,4,fused_cta,ok,true,1.603,2.062,0.6154,1.697,2.218,1.437,4.634e-04,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float32,4,fused_srclanes,ok,true,1.087,2.062,0.6676,1.922,2.295,1.459,4.634e-04,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float32,4,fused_packed,ok,true,1.123,2.062,0.4021,1.604,2.015,1.401,4.634e-04,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float64,4,pairs,ok,false,10.189,2.156,0.6979,2.242,2.421,1.589,4.634e-04,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float64,4,fused_cta,ok,true,0.125,2.125,1.2346,2.37,2.933,1.559,4.634e-04,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float64,4,fused_srclanes,ok,true,0.122,2.125,1.0147,2.427,2.736,1.552,4.634e-04,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float64,4,fused_packed,ok,true,0.122,2.125,0.7602,2.113,2.48,1.58,4.634e-04,4096,199480,2,4,0,true,true
+13193508,cube,1000000,64,Float32,4,pairs,ok,false,1.737,4.812,4.4305,11.644,11.912,7.552,3.580e-04,32686,1725270,2,4,0,true,true
+13193508,cube,1000000,64,Float32,4,fused_cta,ok,true,1.626,4.875,4.9396,11.76,12.4,7.293,3.580e-04,32686,1725270,2,4,0,true,true
+13193508,cube,1000000,64,Float32,4,fused_srclanes,ok,true,1.646,4.875,7.4955,14.566,14.969,7.303,3.580e-04,32686,1725270,2,4,0,true,true
+13193508,cube,1000000,64,Float32,4,fused_packed,ok,true,1.679,4.875,3.2533,10.375,10.746,7.475,3.580e-04,32686,1725270,2,4,0,true,true
+13193508,cube,1000000,64,Float64,4,pairs,ok,false,0.317,5.156,12.318,21.676,22.14,10.074,3.579e-04,32686,1725270,2,4,0,true,true
+13193508,cube,1000000,64,Float64,4,fused_cta,ok,true,0.338,5.188,11.2522,20.085,21.1,8.911,3.579e-04,32686,1725270,2,4,0,true,true
+13193508,cube,1000000,64,Float64,4,fused_srclanes,ok,true,0.323,5.188,12.1209,21.398,21.977,12.339,3.579e-04,32686,1725270,2,4,0,true,true
+13193508,cube,1000000,64,Float64,4,fused_packed,ok,true,0.317,5.188,6.5528,15.792,16.354,12.07,3.579e-04,32686,1725270,2,4,0,true,true
+13193508,wake,100000,256,Float32,4,pairs,ok,false,1.236,1.906,0.885,2.68,3.19,1.466,5.621e-04,1225,52195,2,4,0,true,true
+13193508,wake,100000,256,Float32,4,fused_cta,ok,true,1.193,1.906,2.1656,2.996,4.383,1.453,5.621e-04,1225,52195,2,4,0,true,true
+13193508,wake,100000,256,Float32,4,fused_srclanes,ok,true,1.209,1.906,2.4248,3.544,4.721,1.499,5.621e-04,1225,52195,2,4,0,true,true
+13193508,wake,100000,256,Float32,4,fused_packed,ok,true,1.223,1.906,1.3423,2.87,3.66,1.485,5.621e-04,1225,52195,2,4,0,true,true
+13193508,wake,100000,256,Float64,4,pairs,ok,false,0.113,2.0,1.7875,6.274,6.812,1.563,5.621e-04,1225,52195,2,4,0,true,true
+13193508,wake,100000,256,Float64,4,fused_cta,ok,true,0.113,2.0,4.4335,6.767,9.524,1.554,5.621e-04,1225,52195,2,4,0,true,true
+13193508,wake,100000,256,Float64,4,fused_srclanes,ok,true,0.113,2.0,3.682,7.318,8.733,1.585,5.621e-04,1225,52195,2,4,0,true,true
+13193508,wake,100000,256,Float64,4,fused_packed,ok,true,0.112,2.0,2.6617,6.217,7.752,1.549,5.621e-04,1225,52195,2,4,0,true,true
+13193508,wake,1000000,256,Float32,4,pairs,ok,false,1.979,2.875,11.0949,18.953,19.507,9.583,6.887e-04,8227,413111,2,4,0,true,true
+13193508,wake,1000000,256,Float32,4,fused_cta,ok,true,1.683,2.875,13.1807,20.051,21.559,8.301,6.887e-04,8227,413111,2,4,0,true,true
+13193508,wake,1000000,256,Float32,4,fused_srclanes,ok,true,1.39,2.875,16.4787,23.465,24.797,9.6,6.887e-04,8227,413111,2,4,0,true,true
+13193508,wake,1000000,256,Float32,4,fused_packed,ok,true,1.389,2.875,11.0067,18.319,19.464,10.324,6.887e-04,8227,413111,2,4,0,true,true
+13193508,wake,1000000,256,Float64,4,pairs,ok,false,0.254,3.094,24.9033,38.766,39.601,12.074,6.892e-04,8227,413111,2,4,0,true,true
+13193508,wake,1000000,256,Float64,4,fused_cta,ok,true,0.272,3.094,27.7502,40.253,42.43,9.999,6.892e-04,8227,413111,2,4,0,true,true
+13193508,wake,1000000,256,Float64,4,fused_srclanes,ok,true,0.262,3.094,29.2159,41.581,43.913,10.074,6.892e-04,8227,413111,2,4,0,true,true
+13193508,wake,1000000,256,Float64,4,fused_packed,ok,true,0.263,3.094,22.6436,35.446,37.243,9.651,6.892e-04,8227,413111,2,4,0,true,true
+13193508,sigma_multiscale,100000,64,Float32,4,pairs,ok,false,4.513,2.875,3.1552,29.094,28.861,2.392,3.930e-04,5817,729830,2,4,0,true,true
+13193508,sigma_multiscale,100000,64,Float32,4,fused_cta,ok,true,0.08,2.875,6.91,29.312,32.811,2.377,3.930e-04,5817,729830,2,4,0,true,true
+13193508,sigma_multiscale,100000,64,Float32,4,fused_srclanes,ok,true,0.084,2.875,6.1092,29.311,31.899,2.422,3.930e-04,5817,729830,2,4,0,true,true
+13193508,sigma_multiscale,100000,64,Float32,4,fused_packed,ok,true,0.076,2.875,6.2889,28.557,32.012,2.442,3.930e-04,5817,729830,2,4,0,true,true
+13193508,sigma_multiscale,100000,64,Float64,4,pairs,ok,false,3.914,3.531,5.1615,34.988,34.221,2.524,3.924e-04,5817,729830,2,4,0,true,true
+13193508,sigma_multiscale,100000,64,Float64,4,fused_cta,ok,true,0.074,3.531,11.4513,35.077,40.405,2.521,3.924e-04,5817,729830,2,4,0,true,true
+13193508,sigma_multiscale,100000,64,Float64,4,fused_srclanes,ok,true,0.074,3.531,9.9555,36.014,38.672,2.474,3.924e-04,5817,729830,2,4,0,true,true
+13193508,sigma_multiscale,100000,64,Float64,4,fused_packed,ok,true,0.081,3.531,10.8219,33.643,40.296,2.478,3.924e-04,5817,729830,2,4,0,true,true
+13193508,sigma_multiscale,1000000,64,Float32,4,pairs,fail:AssertionError AssertionError: adaptive device U list capacity 15122880 exceeded; raise AdaptiveTreePolicy u_capacity,,,,,,,,,,,,,,,
+13193508,sigma_multiscale,1000000,64,Float32,4,fused_cta,fail:AssertionError AssertionError: adaptive device U list capacity 15122880 exceeded; raise AdaptiveTreePolicy u_capacity,,,,,,,,,,,,,,,
+13193508,sigma_multiscale,1000000,64,Float32,4,fused_srclanes,fail:AssertionError AssertionError: adaptive device U list capacity 15122880 exceeded; raise AdaptiveTreePolicy u_capacity,,,,,,,,,,,,,,,
+13193508,sigma_multiscale,1000000,64,Float32,4,fused_packed,fail:AssertionError AssertionError: adaptive device U list capacity 15122880 exceeded; raise AdaptiveTreePolicy u_capacity,,,,,,,,,,,,,,,
+13193508,sigma_multiscale,1000000,64,Float64,4,pairs,fail:AssertionError AssertionError: adaptive device U list capacity 15122880 exceeded; raise AdaptiveTreePolicy u_capacity,,,,,,,,,,,,,,,
+13193508,sigma_multiscale,1000000,64,Float64,4,fused_cta,fail:AssertionError AssertionError: adaptive device U list capacity 15122880 exceeded; raise AdaptiveTreePolicy u_capacity,,,,,,,,,,,,,,,
+13193508,sigma_multiscale,1000000,64,Float64,4,fused_srclanes,fail:AssertionError AssertionError: adaptive device U list capacity 15122880 exceeded; raise AdaptiveTreePolicy u_capacity,,,,,,,,,,,,,,,
+13193508,sigma_multiscale,1000000,64,Float64,4,fused_packed,fail:AssertionError AssertionError: adaptive device U list capacity 15122880 exceeded; raise AdaptiveTreePolicy u_capacity,,,,,,,,,,,,,,,
+13193508,rotor,100000,64,Float32,4,pairs,ok,false,0.073,2.875,0.293,12.537,12.994,3.0,1.430e-03,3536,43572,2,4,0,true,true
+13193508,rotor,100000,64,Float32,4,fused_cta,ok,true,0.072,2.875,0.4669,12.379,13.061,2.951,1.430e-03,3536,43572,2,4,0,true,true
+13193508,rotor,100000,64,Float32,4,fused_srclanes,ok,true,0.072,2.875,0.4348,12.437,13.081,2.977,1.430e-03,3536,43572,2,4,0,true,true
+13193508,rotor,100000,64,Float32,4,fused_packed,ok,true,0.071,2.875,0.4622,12.412,13.105,2.87,1.430e-03,3536,43572,2,4,0,true,true
+13193508,rotor,100000,64,Float64,4,pairs,ok,false,0.069,3.531,0.4591,12.153,12.449,2.864,1.432e-03,3536,43572,2,4,0,true,true
+13193508,rotor,100000,64,Float64,4,fused_cta,ok,true,0.069,3.531,0.7672,12.698,12.79,2.887,1.432e-03,3536,43572,2,4,0,true,true
+13193508,rotor,100000,64,Float64,4,fused_srclanes,ok,true,0.069,3.531,0.7696,12.565,12.81,2.885,1.432e-03,3536,43572,2,4,0,true,true
+13193508,rotor,100000,64,Float64,4,fused_packed,ok,true,0.069,3.531,0.7542,12.568,12.823,2.861,1.432e-03,3536,43572,2,4,0,true,true
+13193508,rotor,1000000,64,Float32,4,pairs,ok,false,0.484,8.25,2.6618,26.882,27.059,14.645,8.500e-04,24201,184621,2,4,0,true,true
+13193508,rotor,1000000,64,Float32,4,fused_cta,ok,true,0.281,8.344,2.4857,26.796,26.776,13.436,8.500e-04,24201,184621,2,4,0,true,true
+13193508,rotor,1000000,64,Float32,4,fused_srclanes,ok,true,0.272,8.312,3.2855,27.573,27.689,16.371,8.500e-04,24201,184621,2,4,0,true,true
+13193508,rotor,1000000,64,Float32,4,fused_packed,ok,true,0.265,8.344,2.0185,26.335,26.298,14.71,8.500e-04,24201,184621,2,4,0,true,true
+13193508,rotor,1000000,64,Float64,4,pairs,ok,false,0.273,9.406,4.2111,34.759,34.624,18.516,5.468e-04,24199,184605,2,4,0,true,true
+13193508,rotor,1000000,64,Float64,4,fused_cta,ok,true,0.295,9.469,4.3493,35.072,34.803,18.268,5.468e-04,24199,184605,2,4,0,true,true
+13193508,rotor,1000000,64,Float64,4,fused_srclanes,ok,true,0.282,9.469,6.0912,36.838,36.4,17.59,5.468e-04,24199,184605,2,4,0,true,true
+13193508,rotor,1000000,64,Float64,4,fused_packed,ok,true,0.312,9.469,3.1774,33.874,33.774,18.333,5.468e-04,24199,184605,2,4,0,true,true
+13193508,cube,100000,64,Float64,8,pairs,ok,false,0.97,2.531,0.6964,8.955,9.075,1.588,1.218e-05,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float64,8,fused_cta,ok,true,0.964,2.531,1.2071,9.037,9.586,1.593,1.218e-05,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float64,8,fused_srclanes,ok,true,0.964,2.531,1.0241,9.125,9.414,1.64,1.218e-05,4096,199480,2,4,0,true,true
+13193508,cube,100000,64,Float64,8,fused_packed,ok,true,0.964,2.531,0.7482,8.755,9.128,1.499,1.218e-05,4096,199480,2,4,0,true,true
+13193508,cube,316228,64,Float32,4,pairs,ok,false,1.264,2.688,1.0636,22.285,22.491,2.871,3.958e-04,24158,1285478,2,4,0,true,true
+13193508,cube,316228,64,Float32,4,fused_packed,ok,true,1.282,2.688,0.8101,21.888,22.245,2.857,3.958e-04,24158,1285478,2,4,0,true,true
+13193508,cube,316228,64,Float64,4,pairs,ok,false,0.164,2.844,2.9121,41.602,41.802,3.523,3.958e-04,24158,1285478,2,4,0,true,true
+13193508,cube,316228,64,Float64,4,fused_packed,ok,true,0.165,2.844,1.5267,39.757,40.337,3.478,3.958e-04,24158,1285478,2,4,0,true,true
+13193508,wake,316228,256,Float32,4,pairs,ok,false,1.288,2.062,1.8572,16.468,16.86,3.305,6.073e-04,6473,320591,2,4,0,true,true
+13193508,wake,316228,256,Float32,4,fused_packed,ok,true,1.317,2.062,2.1534,16.189,17.237,3.339,6.073e-04,6473,320591,2,4,0,true,true
+13193508,wake,316228,256,Float64,4,pairs,ok,false,0.144,2.188,4.3367,35.151,35.427,3.775,6.074e-04,6473,320591,2,4,0,true,true
+13193508,wake,316228,256,Float64,4,fused_packed,ok,true,0.131,2.188,4.218,34.173,35.531,3.917,6.074e-04,6473,320591,2,4,0,true,true
+13193508,rotor,316228,64,Float32,4,pairs,ok,false,0.113,4.156,0.5591,14.7,14.722,5.786,8.702e-04,10667,82177,2,4,0,true,true
+13193508,rotor,316228,64,Float32,4,fused_packed,ok,true,0.098,4.188,0.5317,14.82,14.702,5.701,8.702e-04,10667,82177,2,4,0,true,true
+13193508,rotor,316228,64,Float64,4,pairs,ok,false,0.101,4.938,0.8616,17.619,17.507,5.98,8.545e-04,10667,82169,2,4,0,true,true
+13193508,rotor,316228,64,Float64,4,fused_packed,ok,true,0.106,4.969,0.8037,18.124,17.523,8.128,8.545e-04,10667,82169,2,4,0,true,true

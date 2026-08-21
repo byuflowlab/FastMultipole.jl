@@ -1,0 +1,9 @@
+case,n,gamma,res,block,bins,solver,M_ext,total_opt_ms,total_nom_ms,total_pess_ms,zerocoupling_opt_ms,near_baseline_ms,complete_baseline_ms,uncertainty
+cube,100000,1.4142,nom,64,1,amrfft,0,1.1766,2.1944,4.6664,0.4602,NA,NA,NA
+cube,1000000,2.0000,nom,128,1,amrfft,0,3.2815,6.6559,15.5448,2.5264,12.329,30.677,0.25
+wake,100000,2.0000,nom,64,1,amrfft,0,1.1928,2.2170,4.7041,0.4749,NA,NA,NA
+wake,1000000,1.4142,nom,128,1,amrfft,0,2.7026,5.8454,14.1940,1.9573,9.218,62.790,0.25
+sigma_multiscale,100000,2.0000,nom,128,8,amrfft,0,457.4061,652.6731,1116.0390,439.6864,NA,NA,NA
+sigma_multiscale,1000000,2.0000,nom,128,8,amrfft,0,3708.5632,5297.2577,9068.3367,3567.2675,12.825,59.350,0.35
+rotor,100000,1.4142,nom,128,8,amrfft,1,144.6519,213.4753,380.4946,133.5385,4.900,6.990,0.35
+rotor,1000000,2.0000,nom,128,8,amrfft,3,2666.5668,3826.2927,6589.4594,2556.9977,23.300,33.300,0.35

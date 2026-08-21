@@ -889,4 +889,6 @@ function main()
     return allpass
 end
 
-exit(main() ? 0 : 1)
+if abspath(PROGRAM_FILE) == @__FILE__
+    exit(main() ? 0 : 1)
+end

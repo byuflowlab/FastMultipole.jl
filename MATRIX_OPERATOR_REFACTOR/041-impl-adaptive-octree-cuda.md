@@ -2,7 +2,7 @@
 
 ## Status and Entry Gate
 
-**Proposed follow-on item; not started.**
+**DONE and clear-context APPROVED `2026-08-15`.**
 
 Entry gate: `038`, `039`, and `040` complete and approved.
 

@@ -1,0 +1,5 @@
+case,n,age_scale,level_drift_fraction
+rotor,100000,0.50,0.1878
+rotor,100000,2.00,0.2582
+rotor,1000000,0.50,0.1878
+rotor,1000000,2.00,0.2582

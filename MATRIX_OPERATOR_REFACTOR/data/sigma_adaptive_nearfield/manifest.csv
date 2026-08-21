@@ -1,0 +1,9 @@
+key,value
+registration,see script header (predeclared design space + brackets + budget)
+seed_base,41003/41004/41006/41007-41010 + fm033 rotor seeds
+smoke,false
+have_rotor,true
+threads,4
+anchors,037d fm037d_cost_tables + 041a fm041a_gpu_stages + 037b rotor 33.3ms
+baseline_convention,lifecycle graph-overlap + warm-epoch refresh (041a); rotor=037b eval
+julia,1.12.5

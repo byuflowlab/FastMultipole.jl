@@ -1,0 +1,17 @@
+case,p,n_coeff,c_eval_per_target_ns,c_direct_ns,break_even_cluster_sources,K_max_cap,possible_at_K32
+cube,2,10,0.4978,0.006720,74.1,32,false
+cube,4,35,1.7423,0.006720,259.3,32,false
+cube,6,84,4.1816,0.006720,622.3,32,false
+cube,8,165,8.2139,0.006720,1222.3,32,false
+multiscale,2,10,0.2680,0.008641,31.0,32,true
+multiscale,4,35,0.9380,0.008641,108.6,32,false
+multiscale,6,84,2.2512,0.008641,260.5,32,false
+multiscale,8,165,4.4220,0.008641,511.7,32,false
+sigma_multiscale,2,10,0.2680,0.008641,31.0,32,true
+sigma_multiscale,4,35,0.9380,0.008641,108.6,32,false
+sigma_multiscale,6,84,2.2512,0.008641,260.5,32,false
+sigma_multiscale,8,165,4.4220,0.008641,511.7,32,false
+wake,2,10,0.2789,0.009813,28.4,32,true
+wake,4,35,0.9761,0.009813,99.5,32,false
+wake,6,84,2.3426,0.009813,238.7,32,false
+wake,8,165,4.6014,0.009813,468.9,32,false

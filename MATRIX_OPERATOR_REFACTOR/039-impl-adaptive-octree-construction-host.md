@@ -2,7 +2,7 @@
 
 ## Status and Entry Gate
 
-**DONE 2026-08-14 (overnight lead agent); pending clear-context approval.**
+**DONE and clear-context APPROVED `2026-08-14`.**
 
 Entry gate: `038` complete and approved — satisfied 2026-08-14 19:38 MDT
 (commits `04f6c3c`/`5f57db4`/`86c4951`).

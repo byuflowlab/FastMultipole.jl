@@ -1,0 +1,25 @@
+case,n,cut_level,s_cut,pair_inflation_mean,band_mesh_ms,near_baseline_ms,note
+cube,100000,1,8.617739e-02,8.000,0.6309,NaN,additive: direct >= baseline x pair-inflation; bands add on top
+cube,1000000,1,4.000000e-02,8.000,3.4580,12.3290,additive: direct >= baseline x pair-inflation; bands add on top
+wake,100000,1,1.357294e-01,8.000,0.4833,NaN,additive: direct >= baseline x pair-inflation; bands add on top
+wake,1000000,1,6.300000e-02,8.000,2.5394,9.2180,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,100000,1,3.447096e-03,4.500,832.7743,NaN,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,100000,2,6.894191e-03,32.500,970.0228,NaN,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,100000,3,1.378838e-02,256.500,995.0008,NaN,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,100000,4,2.757676e-02,2048.500,1000.5068,NaN,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,100000,5,5.515353e-02,16387.094,1003.1011,NaN,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,1000000,1,1.600000e-03,4.500,7701.9116,12.8250,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,1000000,2,3.200000e-03,32.500,8781.0945,12.8250,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,1000000,3,6.400000e-03,256.500,8954.0077,12.8250,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,1000000,4,1.280000e-02,2048.500,8982.2327,12.8250,additive: direct >= baseline x pair-inflation; bands add on top
+sigma_multiscale,1000000,5,2.560000e-02,16387.094,8997.8912,12.8250,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,100000,1,3.464609e-04,1.252,23.4101,4.9000,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,100000,2,6.929219e-04,3.908,79.2158,4.9000,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,100000,3,1.385844e-03,24.591,152.9606,4.9000,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,100000,4,2.771687e-03,188.558,225.2573,4.9000,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,100000,5,5.543375e-03,1493.927,241.6123,4.9000,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,1000000,1,3.464672e-05,1.252,233.8501,23.3000,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,1000000,2,6.929343e-05,3.908,798.5178,23.3000,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,1000000,3,1.385869e-04,24.591,1531.6809,23.3000,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,1000000,4,2.771737e-04,188.555,2431.8074,23.3000,additive: direct >= baseline x pair-inflation; bands add on top
+rotor,1000000,5,5.543475e-04,1493.900,2942.6844,23.3000,additive: direct >= baseline x pair-inflation; bands add on top

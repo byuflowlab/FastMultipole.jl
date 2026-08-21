@@ -2,7 +2,7 @@
 
 ## Status and Entry Gate
 
-**DONE (2026-08-14, overnight campaign). Awaiting clear-context approval.**
+**DONE and clear-context APPROVED `2026-08-15`.**
 Completion notes at the end of this file.
 
 Entry gate: `038` and `039` complete and approved. (Met: 038 approved 19:38

@@ -2,7 +2,7 @@
 
 ## Status and Entry Gate
 
-**DONE 2026-08-17 (lead agent; awaiting clear-context approval).**
+**DONE and clear-context APPROVED `2026-08-17`.**
 Completion notes, data provenance, and verification notes at the end of
 this file; report of record at `data/adaptive_octree/report.md`; figures
 `fig14`–`fig20` in `data/figures/` (all compile with pdflatex, verified

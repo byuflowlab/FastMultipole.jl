@@ -1,0 +1,15 @@
+fig14 c=1.0: adaptive 320.687 ms vs best-uniform 106.09 ms -> 0.33x
+fig14 c=100.0: adaptive 126.91 ms vs best-uniform 212.513 ms -> 1.67x
+fig14 c=1000.0: adaptive 120.823 ms vs best-uniform 254.765 ms -> 2.11x
+fig15 unitcube GPU n=1e6: adaptive best 95.899 ms (param=64) vs uniform best 92.298 ms (ell=5) -> 0.96x
+fig15 unitcube host n=1e6: adaptive best 28778.61 ms (param=64) vs uniform best 27535.14 ms (ell=5) -> 0.96x
+fig15 wake GPU n=1e6: adaptive best 113.391 ms (param=256) vs uniform best 96.609 ms (ell=7) -> 0.85x
+fig15 wake host n=1e6: adaptive best 23621.91 ms (param=32) vs uniform best 21323.4 ms (ell=7) -> 0.9x
+fig15 multiscale100 GPU n=1e6: adaptive best 132.359 ms (param=64) vs uniform best 246.347 ms (ell=7) -> 1.86x
+fig15 multiscale100 host n=1e6: adaptive best 26718.46 ms (param=64) vs uniform best 79911.15 ms (ell=7) -> 2.99x
+fig20 FAIL row: spread=100.0 uniform param=5: fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil
+fig20 FAIL row: spread=100.0 uniform param=6: fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil
+fig20 FAIL row: spread=300.0 uniform param=3: fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil
+fig20 FAIL row: spread=300.0 uniform param=4: fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil
+fig20 FAIL row: spread=300.0 uniform param=5: fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil
+fig20 FAIL row: spread=300.0 uniform param=6: fail:ArgumentError ArgumentError: regularized nearfield near-set adequacy failed: the direct stencil

@@ -592,6 +592,141 @@ change requires explicit user approval. They do not gate `038` or each other,
 but they are implemented as one coordinated effort because they touch
 adjacent nearfield surfaces.
 
+Row `041b` was added by user direction on `2026-08-15`. It closes two
+nearfield questions with the cheapest evidence first: whether reducing the
+U/J output surface can materially reduce complete solve cost while preserving
+all FLOWVPM consumers (including SFS), and whether strategic-target sampling
+plus interpolation can economically replace any remaining direct work. It is
+a measurement/theory row only. The existing `035`, `037d`--`037f`, and `041`
+records supply its A0 and Stage-0 inputs; a production implementation is
+permitted only as a separately reviewed successor if the registered rank,
+accuracy, and complete-solve gates pass.
+
+Row `041c` was added by user direction on `2026-08-15` from the `041b`
+strategic-target discussion. It tests a more analytic alternative: treat each
+current terminal U-list pair as a multilevel refinement queue, peel newly
+admissible source/target subpairs into M2L/M2T/S2L shells at successively finer
+levels, and leave only the irreducible nearest-neighbor complement to direct
+P2P. This is not a second adaptive-tree implementation and must state its
+increment over `038`--`041`: it refines *inside the residual terminal U-list*,
+including virtual subleaves or target filtering where useful. The first row is
+proof/census only; production work requires a separately reviewed successor.
+
+Row `041d` was added by user direction on `2026-08-17` from the `041c` NO-GO
+discussion. It closes or funds the remaining smooth-representation nearfield
+alternatives: (1) a registered census pre-kill of regularized-basis P2M/M2P
+substitution of residual direct pairs (the "regularized solid harmonics"
+proposal), reusing the `041c` machinery and calibration — the `041b` rank
+probe does not bound this regime because it ran at `sigma/h ~ 1e-3` where
+regularization is inert; and (2) a paper cost estimate of a sigma-adaptive
+multilevel smooth representation (AMR-VIC / multilevel summation) for the
+sigma-heterogeneous rotor regime that `037d`'s global-mesh verdict could not
+serve. Theory/measurement row only; it does not gate `042`, and any
+successor (derivation or implementation) requires separate user staging.
+
+Row `041e` was staged by user direction on `2026-08-17` to attempt the most
+promising remaining direct-kernel redesign: replace independent warp-per-U-edge
+execution with a target-owned fused traversal of each target leaf's complete
+U-neighbor adjacency. The hypothesis is reuse and work-shape improvement, not
+the already-falsified atomic-only lever. It preserves the shipped kernel and
+exact U list and is off by default through measurement.
+
+Row `041f` was staged by user direction on `2026-08-17` to resolve 041d's one
+remaining open nearfield architecture: replace the placeholder
+cost band for sigma-adaptive AMR-VIC / multilevel summation with an actual
+level/patch/halo census on the deterministic rotor snapshot, a complete
+Gaussian level-decomposition and U/J error budget, exact-once ownership, and
+a bounded AMR-FFT-versus-MSM optimizer. It is theory/measurement only;
+production work requires a separately staged successor. A
+`2026-08-17` review amendment (recorded in the task file, binding) adds the
+uniform-sigma unified-solver verdict (does the adaptive mesh subsume the
+funded 037d global VIC, so a future successor stages one mesh implementation,
+not two)
+and a mandatory priced FMM-retained banded-hybrid configuration (keep the
+shipped singular far field and U/V routing; mesh only the sigma-affected
+bands).
+
+Row `041g` was staged by user direction on `2026-08-17`. It closes the one
+untested harmonic gap left by `041c`: the shipped sigma demotion is
+whole-pair, and `041c` barred M2L on demoted lineages while measuring the
+rotor's whole-leaf pure-singular ceiling at 58.7–62.7% — on proxies, never on
+the actual rotor sigma field. `041g` derives a predictive singular-M2L
+admissibility criterion from the kernel-difference (regularization-tail)
+bound already in 031a §4 plus the constant-P truncation bound, generalizes it
+via dimensionless collapse variables (leaf width in sigma units
+`K^{1/3}/beta`, neighborhood-local sigma spread; validated against a
+registered parametric sweep over overlap, spread, and sigma correlation
+length), and censuses sigma-class M2L re-admission (class-filtered
+multipoles, predeclared logarithmic bins) on the actual rotor snapshot with
+the existing calibration. Deliverable even on NO-GO: the admissibility map —
+when singular M2L works for the regularized problem and when it cannot. On
+gate pass it proposes the per-class demotion interaction list as a
+separately staged successor. Theory/measurement only.
+
+Row `041h` was staged by user direction on `2026-08-18`. It moves from
+synthetic reconstructions to a REAL simulated rotor wake: the final-step
+particle fields of the FLOWPanel `rotor_hover` simulations
+(`../../FLOWPanel.jl/data/`, n = 67,745 primary / 37,165 secondary, with
+mid-run steps for a true refresh/epoch-persistence measurement), and asks
+what the full per-step cost can be driven to on ONE H200 using the whole
+038–041e toolbox (adaptive octree, sticky demotion, per-n geometry tuning,
+graph capture, 037f g/h, the 041e fused nearfield + selector). At this
+n ≈ 4–7e4 scale the problem is latency/refresh-floor-dominated, not
+throughput-dominated; the row must also deliver a modeled (not implemented)
+8-H200 estimate grounded in the 029 floors, including the break-even n.
+Production tuning changes are opt-in and individually user-gated (035
+convention).
+
+Rows `041i` and `041j` were staged by user direction on `2026-08-18`, from
+the sigma-contamination discussion of that date. The user hypothesized that
+large-particle sigma contaminates the multipole representation (expansions
+approximate singular `1/r`, not the regularized kernel actually evaluated),
+inflating the direct list and under-utilizing expansions. The session's
+evidence review found the hypothesis contradicted for the rotor (`041g`
+zero sigma demotions; 58.7–62.7% of rotor direct pairs purely geometric;
+leaf-local sigma spread ~1.01; adaptive nearfield only ~10% of lifecycle)
+but identified two unmeasured channels: the `041g` census ran at `q=12`,
+not the shipped `near_radius2=5`/`rho_t=4.789` operating point (a 2.24x
+tighter margin where rotor `ell=7` leaves would demote), and the sigma
+split-veto/depth-cap channel (`src/tree_batched.jl:802-813`) was never
+censused. `041i` closes both cheaply. `041j` benchmarks a
+kernel-independent FMM (PVFMM, the strongest maintained open-source KIFMM;
+no maintained GPU KIFMM exists) as an external CPU baseline: it documents
+the work required to host the regularized `gaussianerf` kernel (all KIFMMs
+use the same singular-far/regularized-P2P split we ship), empirically tests
+the user's regularized-check-surface accuracy hypothesis against the 031a
+basis-independent bound, and delivers a written per-stage GPU-limitations
+prediction. `041j` does not gate `042` (external-comparison row, `037d`
+convention). Neither row is started; `041h` remains the first unblocked
+implementation row.
+
+Row `041k` was staged by user direction on `2026-08-20`: measure how far
+sheer hardware power carries a naive O(N²) direct evaluation on a single
+H200 — N from `1e2` by half-decades until median wall time exceeds 10 s —
+for the realistic FLOWVPM workload (regularized `gaussianerf` U/J, and
+U/J plus SFS via the `041b` §1.2 factorized identity), in F64 and F32 with
+established levers (`rsqrt`, shared-memory tiling). Direct evaluation
+carries no polynomial/multipole approximation (exact up to rounding), so
+the row also anchors the brute-force/FMM crossover and builds the first
+fused direct+SFS kernel in the stack (today `sfs=true` is a hard error on
+the GPU path), pricing SFS enablement with data. Standalone benchmark row
+(`scripts/`, `data/` only); does not gate `042`.
+
+**042 scope override (user direction `2026-08-20`).** The adaptive milestone
+review covers only `038`–`041a`. Rows `041b`–`041j` neither gate nor belong to
+that review; `041k` is independently reviewed and also does not gate it. This
+override supersedes the earlier staging notes that placed some of those rows
+before `042`.
+
+Row `042a` was added by user direction on `2026-08-20` from the `042`
+milestone's highest-value GPU follow-on. It optimizes the adaptive X-list S2L
+execution shape—target-major grouping, source/target reuse, reduced atomic
+retirement, and a bounded `P=4` specialization—without changing the tree,
+interaction list, operator mathematics, or accuracy budget. Same-job H200
+stage and complete-step gates decide promotion; it must finish and be approved
+before the partitioned multi-GPU phase derives against the final single-GPU
+lifecycle.
+
 | Done | Approved | Task | Summary | Blocking |
 | --- | --- | --- | --- | --- |
 | [x] | [x] | `037a-nearfield-followup-plan.md` | Rectangular-grid and nearfield follow-up to `037`: center automatically snapped rectangular bounds, measure cubic/rectangular lattice parity, select the smallest accuracy-safe regularization cutoff with an exact tail/FMM error decomposition, and screen the existing two-pass correction at smaller primary stencils. H200 evidence gates any default change. **Done `2026-08-13`:** centered rectangular is only 0.3-1.2% faster; accuracy requires P6 for the tested two-pass geometry. Exact AABB pruning removes 56-65% of correction candidates and cuts the `n=1e6` two-pass solve 12.9%, but it remains 4.6% slower there and 39% slower at `n=1e5`; no default change or further uniform-grid cycle. | `037` |
@@ -605,9 +740,102 @@ adjacent nearfield surfaces.
 | [x] | [x] | `040-impl-adaptive-octree-lifecycle-host.md` | Run the full host resident lifecycle on the adaptive tree: V-list M2L through the unchanged resident strategies and operator tables, M2M/L2L over adaptive ancestor levels, new M2T/S2L kernels (φ+χ, `008h` order rule) for W/X, U-list direct through the existing nearfield kernels. Accuracy gates (velocity RMS ≤ 1e-3, `P=4` and `P=8`, both precisions) on cube, wake, and multi-scale cases; uniform-limit lifecycle parity. | `038`, `039` |
 | [x] | [x] | `041-impl-adaptive-octree-cuda.md` | Mirror the adaptive octree on the CUDA device-resident lifecycle: device construction/refresh as flag/scan/compact kernels, sorted-Morton binary-search occupancy lookup replacing the dense `Σ8^L` table (record whether it also lifts the uniform path's `ell ≤ 8` cap), device M2T/S2L, occupancy-epoch caching over the adaptive leaf set, `023` counter and zero-allocation parity, and H200 before/after per-stage measurements vs the uniform-depth path on all three cases. | `038`, `039`, `040` |
 | [x] | [x] | `041a-benchmark-adaptive-vs-uniform-figures.md` | Publishable benchmark report and figures: old uniform grid vs new adaptive octree on uniform and non-uniform fields (cube, wake, multi-scale contrast sweep, σ-heterogeneous variant), time and memory, host and H200, every row at stated sampled-direct accuracy under the 1e-3 gate. Figures (TikZ/pgfplots + CSV, extending the `024a` set) must show the old approach's failure mechanism (fat-cell/forced-shallow costs, capacity memory) and the new approach's measured gains. Benchmark/analysis row: `scripts/`, `data/`, figures only. | `040`, `041` |
-| [ ] | [ ] | `042-milestone-review-adaptive-octree.md` | Milestone Review for the adaptive octree arc: exact-once and balance evidence, operator-table-reuse audit, M2T/S2L accuracy, performance verdict and default-selection recommendation audited against the `041a` figures, contract compliance (capacity, counters, refresh, `recenter!`), and consumer/API exposure decision. | `038`, `039`, `040`, `041`, `041a` |
+| [x] | [x] | `041b-nearfield-output-strategic-target-feasibility.md` | Audit the true FLOWVPM U/J/SFS output requirement; analytically pre-kill uneconomic output-width policies; prove the factorized-SFS identity; and run arithmetic plus offline SVD/QDEIM screens to decide whether strategic-target interpolation has a niche beyond VIC and the adaptive U-list. Measurement/theory artifacts only; no production changes. | `035`, `037d`, `037e`, `037f`, `041` |
+| [x] | [x] | `041c-theory-multilevel-nearfield-shells.md` | Derive and census a multilevel residual-nearfield traversal: recursively refine current terminal U-list pairs, route newly expansion- and regularization-admissible subpairs to same-level M2L or cross-level M2T/S2L shells, and evaluate only the terminal complement by direct P2P. Prove exact-once coverage and use existing snapshots/timings for a route-only promotion model before any production code. **Done `2026-08-17`: NO-GO — ideal promotion exists on cube/multiscale, but virtual rectangles are below measured expansion-route crossovers; conservative selector falls back to direct everywhere.** | `025`, `037e`, `038`, `041`, `041b` |
+| [x] | [x] | `041d-theory-smooth-nearfield-alternatives.md` | Registered census pre-kill of regularized-basis P2M/M2P nearfield substitution (any linear basis, bracketing admissibility policies, `041c`-identical cases and calibration) plus a paper cost estimate of sigma-adaptive multilevel smooth representation for the sigma-heterogeneous regime. **Done `2026-08-17`: part 1 NO-GO — break-even needs 28–1222-source clusters vs an admissibility cap of ~7 inside the sigma floor, zero conservative promotions, selector chooses direct on all rows; part 2 OPEN — `N_mesh ~ 0.75n` independent of sigma spread, no sign flip in the priced band, derivation row recommended before any implementation.** Does not gate `042`. | `037d`, `041b`, `041c` |
+| [x] | [x] | `041e-impl-target-owned-fused-nearfield.md` | Reorganize the shipped partitioned U/J direct kernel around exclusive target-leaf ownership: target CSR over the exact U list, fused traversal of all source neighbors, shared source tiling, target reuse, reduced ragged edge tails, and one final target write. Same-job H200 A/B against the 037f-enabled baseline; off by default; exact-once, accuracy, graph, capacity, zero-allocation, and <=3% fallback gates. | `035`, `037e`, `037f`, `041` |
+| [x] | [x] | `041f-theory-sigma-adaptive-smooth-nearfield.md` | Replace 041d's placeholder AMR overhead with a deterministic real-rotor level/patch/halo census and full Gaussian multilevel U/J derivation; compare patch-local free-space AMR FFTs against multilevel summation, prove exact-once ownership, price refresh/capacity/fragmentation on the complete critical path, and render GO/REGIME-ONLY/NO-GO before any production implementation. Review amendment `2026-08-17`: also render the uniform-sigma unified-solver verdict vs 037d global VIC, and price an FMM-retained banded hybrid. | `037d`, `038`, `041a`, `041d` |
+| [x] | [x] | `041g-theory-singular-m2l-admissibility.md` | Derive a predictive singular-M2L admissibility criterion for the regularized problem (constant-P truncation + 031a kernel-difference tail bound, evaluable from refresh-time statistics), verify the dimensionless collapse (`K^{1/3}/beta` leaf-width-in-sigma, neighborhood-local sigma spread) on a registered overlap/spread/correlation sweep, and census sigma-class M2L re-admission of whole-pair-demoted work (class-filtered multipoles, log bins `{1,2,4,8}`) on the actual rotor snapshot with existing calibration and exact-once class-partition oracle. **Done `2026-08-18`: NO-GO — both registered rotor counts have zero sigma demotions; the reduced collapse map fails; and the existing scalar bound does not certify delivered U/J with live phi/chi budgets.** | `025`, `031a`, `037e`, `038`, `041`, `041a`, `041c` |
+| [ ] | [ ] | `041h-impl-real-rotor-simulation-fullstep.md` | Optimize the complete per-step U/J cost on the real FLOWPanel `rotor_hover` wake snapshots (n = 67,745 / 37,165 + mid-run steps) on a single H200: deterministic VTP snapshot extraction with committed provenance, sigma/occupancy census, pre-registered uniform-vs-adaptive baseline matrix, profiled optimization cycles (refresh amortization, per-n geometry, strategy mix, launch floors, bounded 041e re-check) with user-gated production changes, and a modeled 8-GPU estimate with break-even n. | `030`, `037f`, `041`, `041a`, `041e` |
+| [ ] | [ ] | `041i-census-sigma-closure.md` | Close the sigma-contamination question at the shipped operating point: re-run the `041g` demotion census at `near_radius2=5`/`rho_t=4.789` (with a `q=12` reproduction control) and census the never-measured sigma split-veto/depth-cap channel (gate-on vs gate-off trees: depth, leaf occupancy, `u_pairs` delta), on rotor/cube/wake; H200 timing spot-check only if the pair delta exceeds 1%. Verdict: signed statement of what sigma costs (pairs, ms) at the shipped defaults. Measurement row: `scripts/`, `data/` only. | `041g`, `041a` |
+| [ ] | [ ] | `041j-benchmark-kifmm-external-baseline.md` | Benchmark PVFMM (kernel-independent equivalent-density FMM; no maintained GPU KIFMM exists) as an external CPU baseline on the registered rotor/cube/wake snapshots at the 1e-3 gate: build + Julia bindings on a cluster CPU node, gaussianerf U/J via singular Biot-Savart far field + per-particle-sigma regularized P2P (documenting exactly what custom kernel work is required), the regularized-check-surface P2M experiment vs the 031a basis-independent bound, CPU timings vs `033`/`035`, and a written per-stage GPU-limitations prediction. Does **not** gate `042`. | `041a`, `033` |
+| [x] | [x] | `041k-benchmark-direct-bruteforce-ceiling.md` | Brute-force ceiling: naive all-pairs O(N²) direct evaluation of the realistic FLOWVPM workload (`gaussianerf` U/J, and U/J+SFS via the `041b` factorized identity — the stack's first fused direct+SFS kernel) on one H200, N from `1e2` by half-decades until median > 10 s, per {uj, ujsfs} × {naive, tiled} × {F64, F32(+`rsqrt`)}; exactness gated against a Float64 CPU reference (direct has no multipole approximation); reports largest-N-under-10s frontier, marginal SFS-fusion cost, and the brute-force/FMM crossover vs 041-series timings. **Done `2026-08-20` (job 13246033): F64 gate passed at ≤4e-15 (FLOWVPM cross-check ~1e-14); 10-s frontier ~1.4e6 particles (uj/f32/tiled; ~1.24e6 with fused SFS, ~0.7–0.9e6 F64) at a transcendental-bound 2.0e11 pairs/s; fused SFS costs only +26–31% over U/J; against the measured `041a` fig15 best-uniform FMM curve the crossover is n ≈ 4–5e3 (FMM 5× faster at 1e4, 62× at 1e6), so brute force is an exactness reference above that, not a performance alternative. Amendment (job 13246522): `opt` variant (far-field singular switch + fast intrinsics + 2-target blocking) gates-clean at 1.6–1.7× F32 — frontier ~1.8e6, 3.3e11 pairs/s FMA-bound, crossover only moves to ~5.5e3.** Does **not** gate `042`. | — |
+| [x] | [ ] | `042-milestone-review-adaptive-octree.md` | Milestone Review for the adaptive octree arc (`038`–`041a`, per the `2026-08-20` user scope override excluding `041b`–`041j`): exact-once and balance evidence, operator-table reuse, M2T/S2L accuracy and Lamb–Helmholtz coverage, performance/reporting audit, default and uniform-depth-cap decisions, lifecycle contracts, deferred dual-grid disposition, and consumer/API documentation requirements. **Done `2026-08-20`: adaptive remains opt-in—recommended for clustered/multiscale density, severe σ heterogeneity, or memory-constrained deep grids; uniform remains default for uniform/small-n/sparse-wake regimes. Do not lift the uniform `ell<=8` cap without a concrete consumer. Close the dual-grid candidate. Adaptive S2L tuning is staged as `042a`; the remaining follow-on is an evidence-based policy/K selector plus documentation.** | `038`, `039`, `040`, `041`, `041a` |
+| [ ] | [ ] | `042a-impl-adaptive-s2l-cuda-optimization.md` | Optimize adaptive CUDA X-list S2L without changing interaction coverage or mathematics: target-major grouping, source/target reuse, reduced atomic retirement, and a bounded `P=4` specialization; preserve scalar/LH, F32/F64, `P=4/8`, graph, capacity, counter, and zero-allocation contracts. Same-job H200 promotion requires >=25% lower S2L time and >=3% lower complete adaptive step on the `n=1e6` F64 wake with <=3% fallback regressions elsewhere. | `042` |
 
 This phase does not reopen the Theory, Implementation, or Integration gates.
+
+## Production Integration Phase
+
+Staged by user direction on `2026-08-20`, gated on `042` (approved
+`2026-08-20`) and placed BEFORE the Multi-GPU Scaling Phase. Objective: use
+this project's matrix-ops machinery to accelerate the FLOWPanel item-018
+campaign (`../../FLOWPanel.jl/BRAINSTORM/INDEX.md`). The 023 profiling of an
+018 production step (2026-08-20) found 170–230 s/step on 64 cores, per-step
+cost ~linear in particle count, and **~75% of a production step spent in the
+Dynamic-SFS estimator `Estr_fmm!` near-field walk** — the single largest
+lever.
+
+**Budget arithmetic.** The stated stretch target — 30 revolutions in under
+1 hour — means 1080 steps in <1 h, i.e. **≤3.3 s/step average, a 52–70×
+speedup over today**. The CPU body-pass floor alone (~36 s,
+kerneloffset-radius-bound) breaks that budget, so reaching it requires
+accelerating BOTH the particle side (GPU UJ+SFS — the 75% lever; `041k`
+measured fused SFS at only +26–31% over a U/J pass) AND the panel passes
+(a GPU panel kernel, or a drastically cheaper panel-pass configuration).
+The user's fallback resource envelope — 1×GPU + 64 CPU threads — bounds
+achievable time rather than guaranteeing the 1 h mark. **Escape hatch:** if
+`052`'s measured wall time misses <1 h, its verdict may pull specific
+Phase-Q levers (`054`/`055`) forward as an addendum rather than waiting for
+the `053` milestone — the budget is tight enough that stranding the known
+1.6–1.7× nearfield levers behind a phase boundary is not acceptable.
+
+**Ordering rationale.** The branch merges (`046`) come FIRST so that all
+subsequent GPU work (hardening, SFS, coupling) lands directly on the
+branches FLOWPanel consumes — avoiding building on the tmp3 clone and then
+pushing every diff through a 174-commit merge — and so the riskiest task is
+retired first. `047` and `048` then run in parallel (both block only on
+`046`).
+
+**Conventions and checkpoints.** Production changes require explicit user
+checkpoints (the `035` convention); FLOWVPM's CLAUDE.md constraints apply to
+work on that repo. The consolidated user checkpoints for this phase: repo
+layout after the merges (retire tmp3 vs re-point; in `046`), the residency
+default (`049`), and any default-behavior change (`053` review). `041h`
+stays in the Adaptive phase as its first unblocked row; this phase does not
+duplicate it and cites its results as soft inputs, not gates.
+
+| Done | Approved | Task | Summary | Blocking |
+| --- | --- | --- | --- | --- |
+| [ ] | [ ] | `046-impl-branch-unification.md` | The merges (user direction), front-loaded: fetch tmp3 FastMultipole `matrix-ops` into `projects/FastMultipole` and merge into **`flowpanel-20260817`** (174 commits vs 9; conflict hotspots: fmm!/tree internals vs FmmPlan/NearfieldInfluenceCache/autotune-perturb — the doc carries the 9-commit list); fetch tmp3 FLOWVPM `gpu-full` into `projects/FLOWVPM.jl` and merge into **`flowpanel`** (23 vs 10; flowpanel's `9fd25e6` Estr_fmm! source/target selection is load-bearing for 018). Safety protocol: tag/backup both sides of each merge, perform the merge on a scratch branch, and fast-forward the real branch only after the test gate passes. Gates: FastMultipole, FLOWVPM, FLOWPanel test suites green post-merge; the 018 driver still runs CPU-only unchanged (short smoke, not a campaign); user checkpoint on repo layout (retire tmp3 vs re-point). | `042` |
+| [ ] | [ ] | `047-impl-production-settings-hardening.md` | Consolidate + robustify the GPU production surface (on the unified branch): the ~25 process-global `Ref` tunables get validated, documented behind one consolidated settings surface, and either made per-cache (`CUDARadixLifecycleOptions`/`AdaptiveTreePolicy`) or construction-time-locked with loud errors on late flips (today they silently keep the old mechanism, `translate_batched_cuda.jl:2247-2252`) — plus a regression test that a post-construction flag flip errors loudly; Future Dispatch Cleanup Notes items (`allow_host_bodies`, `nearfield_device::Bool`, `target::Bool` tree-role arg, route-selection flags → dispatch-on-object); generalization/robustness sweeps (F32/F64 × adaptive/uniform × P=4/P=8 parity — the P=4 test rule; capacity/out-of-box error paths; recenter contract); full FastMultipole suite green. No new performance work. | `046` |
+| [ ] | [ ] | `048-impl-gpu-sfs-enablement.md` | Device SFS: implement the fused ζ pass (`041b` §1.2 identity Ω/Q; E=T_p(Ω)−Q) in the radix nearfield lifecycle + FLOWVPM adapter; remove the `sfs=true` hard error (`FLOWVPM_fmm_radix.jl:499`). Bakes in the `041k` evidence (fused SFS = +26–31% of U/J on all-pairs; ζ needs completed J → separate pass after U/J; self-pair cancels exactly; ζ skippable beyond saturation cutoff) and the 023 motivation (~75% of an 018 step is Estr_fmm!). Estr over the U-list (not all-pairs) with atomics is the open cost question — measure. Write the ζ kernel **lever-ready**: reuse the existing singular/regularized partition so the `041k` transcendental/register-blocking levers (`054`) drop in without restructuring. Gates: parity vs CPU `Estr_direct!`/`Estr_fmm!` at 1e-3 (F64 tighter), P=4+P=8, both precisions, counters/zero-alloc contracts, FLOWVPM `runtests_gpu_fmm` extended. Runs in parallel with `047` (both block only on `046`). | `046` |
+| [ ] | [ ] | `049-impl-rotor-field-gpu-verification.md` | The user's named verification: load `~/p018_L1_ov3_paraview/` step-710..719 snapshots (**n = 210,056**; loader = `FLOWPanel_warmstart.jl:238` `_load_panel_particle_wake_vtk!`, or `041h`'s standalone zlib-VTP extractor; only steps 710–719 exist on disk — don't walk the .pvd; **pre-gate, runnable any time after `046`: verify the p018 VTPs carry all nine loader-required fields**, since the loader throws on any missing) and verify on H200: UJ without SFS, UJ with SFS (`048`), and a full `nextstep` timestep. Deliverable includes a **per-pass time budget table against the 3.3 s/step target** (vs `041a` anchors and the 170–230 s CPU baseline) so the binding constraint is visible before `050` scopes the panel work. Includes the residency-tradeoff measurement: device-resident step (fix `nextstep`'s scalar U_prev loop, `FLOWVPM_particlefield.jl:504-517`; host callbacks stay host) vs upload-per-step (~30 MB ≈ few ms H2D); **default recommendation = upload-per-step unless resident wins by >15% of step time**; user checkpoint on which ships as default. | `047`, `048` |
+| [ ] | [ ] | `050-theory-panel-multisystem-scoping.md` | Decision row (user: "check if system-on-system looks significantly easier before doing it"). Options, priced with recorded facts: (A) lift the radix v1 `targets===sources` restriction (`translate_batched_resident.jl:1735-1743`; `target_bodies` aliased at `translate_batched_cuda.jl:5447`) to support distinct target sets incl. panel centers/probes; (B) individual system-on-system GPU evaluations mapped onto FLOWPanel's existing 3-pass structure (`FLOWPanel_simulate.jl:673-712`) — **a-priori favorite: least invasive, the CPU path already runs separate passes**; choose A only if B's measured pass overhead is material; (C) hybrid: particles on GPU, panel passes on 64-thread CPU (bounded by the ~36 s body-pass floor → cannot reach 30 rev/h; states what it CAN reach). Also scopes the panel GPU kernel itself (FLOWPanel `direct!` overload `FLOWPanel_abstractbody.jl:1260`; element types constant source/doublet tris + vortex rings/sheets/filaments) and where FmmPlan/NearfieldInfluenceCache fit. Verdict names the `051` implementation shape. | `046`, `049` |
+| [ ] | [ ] | `051-impl-panel-particle-gpu-coupling.md` | Implement the `050` verdict: panel↔particle GPU coupling (panel GPU direct kernel, or system-on-system passes, or hybrid), wired through FLOWPanel's `influence!`/`FastMultipoleBackend`. Fallback resource envelope per user: 1×GPU + 64 CPU threads. Gates: pass-by-pass parity vs CPU at the 018 operating point, no regression on FLOWPanel CPU tests, harness respects the step-head gotcha (maneuver!/update_TE! before influence eval). | `050` |
+| [ ] | [ ] | `052-impl-flowpanel-018-driver-gpu.md` | End-to-end: latest 018 driver (`examples/rotor_hover_pressure_comparison.jl` via the slurm case matrix) on GPU+CPU; correctness gate = CT/Γ(r/R) agreement vs a CPU reference arm over a settle window; performance deliverable = **30 revolutions in <1 h if achievable, else the measured feasible wall time** with a per-pass breakdown showing what binds; monitors/paraview output intact. If <1 h is missed, the verdict names which `054`/`055` levers to pull forward (phase-prose escape hatch). | `049`, `051` |
+| [ ] | [ ] | `053-milestone-review-production-integration.md` | Milestone review of `046`–`052` (contracts, defaults changed only with user approval, test suites in all three repos, the 018 speedup verdict, punch list for the Peak Efficiency Phase). | `046`, `047`, `048`, `049`, `050`, `051`, `052` |
+
+This phase does not reopen any earlier gate.
+
+## Peak Efficiency Phase
+
+Staged by user direction on `2026-08-20`, after the Production Integration
+Phase and still BEFORE the Multi-GPU Scaling Phase: implement as many small
+optimizations as possible to bring the single-GPU code as near peak hardware
+efficiency as possible before scaling out.
+
+**Efficiency-gap analysis (2026-08-20 discussion).** The FMM's effective
+efficiency sits **~10× below the brute-force kernel's measured 38%-of-peak**
+(`041k`: 3.3e11 pairs/s FP32 FMA-bound with the opt levers). The losses live
+in M2L scatter/gather, small memory-bound GEMMs, the ~50 µs/window launch
+floors (`027`), the ~0.87 ms per-GPU control floor (`028`/`029`), and
+refresh — **NOT in P2P**, which is already partitioned
+singular/regularized + `037f` fp32 + `041e` target-owned CSR. The governing
+cost model is T(K) ≈ αKN + βN/K + floors with the GPU optimum at K=256
+(`027`): **every kernel cheapening must be followed by leaf-size retuning to
+harvest** — cheapening α lets the autotuner raise K*. `028`'s finding that
+leaf M2L is load-bound, not atomic-bound, directs the scatter/gather effort
+to the load side.
+
+| Done | Approved | Task | Summary | Blocking |
+| --- | --- | --- | --- | --- |
+| [ ] | [ ] | `054-impl-nearfield-opt-lever-port.md` | Port the `041k` opt levers into the production partitioned U-list kernels (both UJ and the `048` ζ/SFS pass, which was written lever-ready): far-field singular switch + fast/libdevice transcendentals for the regularized remainder, 2–4-target register blocking, then autotune/leaf-size re-sweep to move K*. Same-job A/B on the 018 operating point + standard cases; `037f`-style promotion gate (≥5% end-to-end on a material case, ≤3% regression elsewhere, 1e-3 accuracy, P=4 both precisions). `041k` measured ceilings recorded in the doc (3.3e11 pairs/s ≈ 38% FP32 FMA peak; 1.6–1.7× from these levers on all-pairs F32; F64 opt inert below n≈3e4). | `053` |
+| [ ] | [ ] | `055-impl-scatter-gather-efficiency.md` | The scatter/gather program: exclusive-ownership (gather) accumulation for M2L-accumulate and L2B; read-side densification of ragged M2L gathers beyond the `023d` precomputed-y tables; deeper whole-pass fusion + graph consolidation to shave the ~50 µs windows and ~0.87 ms control floor; `028` finding (leaf M2L load-bound, not atomic-bound) directs effort to the load side; bounded persistent-mega-kernel spike (explicitly time-boxed, kill if it fights graph capture). Each lever same-job A/B'd, individually promoted/rejected. | `053`, `054` |
+| [ ] | [ ] | `056-benchmark-roofline-accounting.md` | Per-stage roofline accounting on H200 (achieved vs attainable flops/bandwidth per stage at n = 1e5/2.1e5/1e6 + the 018 operating point), the "fraction of peak" scoreboard before/after `054`–`055`, re-run of the `052` driver to record the end-to-end delta, and a written statement of what remains (with est. ceilings) feeding `043`'s multi-GPU targets. | `054`, `055` |
+| [ ] | [ ] | `057-milestone-review-peak-efficiency.md` | Milestone review of `054`–`056`; hands the single-GPU baseline to the Multi-GPU phase. | `054`, `055`, `056` |
+
+This phase does not reopen any earlier gate.
 
 ## Multi-GPU Scaling Phase
 
@@ -632,15 +860,16 @@ goal additionally requires shaving the per-GPU launch floor. `029`'s
 accuracy, recurring-cost, and independent-reproduction rules carry over
 unchanged.
 
-The phase is gated behind the Adaptive Octree Phase (`042`) by user
-direction ("after the adaptive tree and other improvements"): the adaptive
+The phase is gated behind the Adaptive Octree Phase and its S2L optimization
+follow-on (`042a`) by user direction ("after the adaptive tree and other
+improvements"): the adaptive
 octree changes tree construction, occupancy lookup, and list generation —
 the very surfaces a partitioned tree must split — so partitioning is derived
 once against the final tree machinery rather than twice.
 
 | Done | Approved | Task | Summary | Blocking |
 | --- | --- | --- | --- | --- |
-| [ ] | [ ] | `043-theory-partitioned-multigpu-decomposition.md` | Derive the partitioned-tree decomposition: costed ownership, split-level scheme, per-level halo sets with exact-once coverage proof, migration policy, graph-capture/comm plan reusing the validated `029` P2 exchange, and a measured-floor-calibrated cost model. Kill-switch acceptance gate: modeled 8-GPU step `<= 2 ms` with an identified path to `<= 1 ms`, else recommend not proceeding. Derivation row: `theory/`, `scripts/`, `data/` only. | `042` |
+| [ ] | [ ] | `043-theory-partitioned-multigpu-decomposition.md` | Derive the partitioned-tree decomposition: costed ownership, split-level scheme, per-level halo sets with exact-once coverage proof, migration policy, graph-capture/comm plan reusing the validated `029` P2 exchange, and a measured-floor-calibrated cost model. Kill-switch acceptance gate: modeled 8-GPU step `<= 2 ms` with an identified path to `<= 1 ms`, else recommend not proceeding. Derivation row: `theory/`, `scripts/`, `data/` only. | `042a`, `053`, `057` |
 | [ ] | [ ] | `044-impl-partitioned-multigpu-lifecycle.md` | Implement the `043` design at 2 GPUs on the device-resident lifecycle: partitioned refresh/upward/downward with graph-captured per-level halo exchange, body halos, epoch-based ownership migration, distributed correctness gates extending `test/cuda_radix_twogpu_test.jl`. Gate: 2-GPU efficiency `>= 75%` vs the then-current single-GPU record at unchanged accuracy. | `043` |
 | [ ] | [ ] | `045-benchmark-multigpu-highscore.md` | Scale to 4/8 GPUs: scaling ladder, per-GPU launch-floor reduction as a measured lever if the `<= 1 ms` goal demands it, independent reproduction, final leaderboard and verdict (`<= 1 ms` goal / `<= 2 ms` win), results recorded as `019a`/`029` addendum notes. | `044` |
 
