@@ -2,6 +2,15 @@ const DEBUG_COUNTER = [0]
 
 #------- tree constructor -------#
 
+# Role-dispatched public boundary. The Bool methods below remain as compatibility
+# shims for downstream callers while production construction uses these tags.
+Tree(systems::Tuple, ::TargetTree, switches, TF=get_type(systems); kwargs...) =
+    Tree(systems, true, switches, TF; kwargs...)
+Tree(systems::Tuple, ::SourceTree, switches, TF=get_type(systems); kwargs...) =
+    Tree(systems, false, switches, TF; kwargs...)
+Tree(system, role::TreeRole, switches, TF=numtype(system); optargs...) =
+    Tree((system,), role, switches isa Tuple ? switches : (switches,), TF; optargs...)
+
 function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buffers=allocate_buffers(systems, target, TF, switches), small_buffers = allocate_small_buffers(systems, TF, switches; target), expansion_order=7, leaf_size=default_leaf_size(systems), n_divisions=20, shrink=false, recenter=false, allocation_safety_factor=1.0, estimate_cost=false, read_cost_file=false, write_cost_file=false, interaction_list_method=SelfTuning())
 
     # ensure `systems` isn't empty; otherwise return an empty tree
@@ -27,7 +36,7 @@ function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buff
 
         # initial octree generation uses cubic cells
         bmax = max(max(bx,by),bz)
-        radius = sqrt(bmax*bmax*3.0)
+        radius = sqrt(3 * bmax * bmax)
         box = SVector{3}(bmax, bmax, bmax)
 
         # prepare to divide
@@ -294,7 +303,7 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems), switche
 
         # initial octree generation uses cubic cells
         bmax = max(max(bx,by),bz)
-        radius = sqrt(bmax*bmax*3.0)
+        radius = sqrt(3 * bmax * bmax)
         box = SVector{3}(bmax, bmax, bmax)
 
         # prepare to divide
@@ -501,8 +510,8 @@ function child_branches!(branches, buffers, sort_index, small_buffers, sort_inde
         parent_branch = branches[i_parent]
         if parent_branch.n_branches > 0
             # radius of the child branches
-            child_radius = parent_branch.radius * 0.5
-            child_box = parent_branch.box * 0.5
+            child_radius = parent_branch.radius / 2
+            child_box = parent_branch.box / 2
 
             # count bodies per octant
             max_body_radius = census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
@@ -571,8 +580,8 @@ function child_branches_multithread_parents!(branches, buffers, sort_index, smal
             parent_branch = branches[i_parent]
             if parent_branch.n_branches > 0
                 # radius of the child branches
-                child_radius = parent_branch.radius * 0.5
-                child_box = parent_branch.box * 0.5
+                child_radius = parent_branch.radius / 2
+                child_box = parent_branch.box / 2
                 
                 # count bodies per octant
                 # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
@@ -667,8 +676,8 @@ function child_branches_multithread_bodies!(branches, buffers, sort_index, small
         parent_branch = branches[i_parent]
         if parent_branch.n_branches > 0
             # radius of the child branches
-            child_radius = parent_branch.radius * 0.5
-            child_box = parent_branch.box * 0.5
+            child_radius = parent_branch.radius / 2
+            child_box = parent_branch.box / 2
 
             # count bodies per octant
             max_body_radius = census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
@@ -700,8 +709,8 @@ function child_branches_level!(branches, buffers, sort_index, small_buffers, sor
         parent_branch = branches[i_parent]
         if parent_branch.n_branches > 0
             # radius of the child branches
-            child_radius = parent_branch.radius * 0.5
-            child_box = parent_branch.box * 0.5
+            child_radius = parent_branch.radius / 2
+            child_box = parent_branch.box / 2
 
             # count bodies per octant
             max_body_radius = census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
@@ -1412,7 +1421,7 @@ end
 end
 
 @inline function get_center_box(x_min, x_max, y_min, y_max, z_min, z_max)
-    center = SVector{3}((x_max+x_min)*0.5, (y_max+y_min)*0.5, (z_max+z_min)*0.5)
+    center = SVector{3}((x_max+x_min)/2, (y_max+y_min)/2, (z_max+z_min)/2)
     bounding_box = SVector{3}(x_max-center[1], y_max-center[2], z_max-center[3])
     dx, dy, dz = bounding_box
     return center, bounding_box
@@ -1453,7 +1462,7 @@ end
     x_min, x_max, y_min, y_max, z_min, z_max = max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, branches, child_index)
 
     # find center
-    center = SVector{3}((x_min+x_max)*0.5, (y_min+y_max)*0.5, (z_min+z_max)*0.5)
+    center = SVector{3}((x_min+x_max)/2, (y_min+y_max)/2, (z_min+z_max)/2)
     bounding_box = SVector{3}(x_max - center[1], y_max - center[2], z_max - center[3])
 
     return center, bounding_box
