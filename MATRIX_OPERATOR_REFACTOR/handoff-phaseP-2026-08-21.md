@@ -11,17 +11,26 @@ validated), `~/fm052env` (FLOWPanel geo stack + CUDA 5.8.5, see D10 + below).
 
 - **046 Done** — merges landed both branches, suites green, 018 CPU smoke
   116 steps, tmp3 retired. (D1–D3)
-- **047 Done** — settings surface `src/radix_settings.jl` (31 tunables,
-  lock classes), construction-lock verified on device (late flip errors
-  loudly, job 13247683 stage 4). Dispatch-cleanup refactors DEFERRED to 053
-  punch list (D4).
-- **048 Done** — device SFS in the radix lifecycle; H200 mechanical parity
-  1e-15 F64; SFS delivered accuracy is J-error-bound with field-dependent
-  amplification (D5, D7) — production knob is J accuracy, not the ζ pass.
-- **049 Done** — p018 210k field on H200 (job 13247848): UJ 3.4e-4 PASS;
-  SFS marginal 0.3 ms; device-resident RK3 step 0.199 s = 6% of the 3.3
-  s/step budget; residency measurement ⇒ RECOMMEND device-resident
-  (transfers 35% of step) — **default = open user checkpoint**. U_prev
+- **047 approved after fresh remediation review** — settings surface
+  `src/radix_settings.jl` (31 tunables, lock classes), construction-lock
+  verified on device (late flip errors loudly, job 13247683 stage 4), atomic
+  FLOWVPM grouped overrides, and typed tree/nearfield/route dispatch policies.
+  D11 supersedes D4's dispatch deferral; no dispatch-cleanup punch item remains.
+- **048 remediated locally; incomplete and unapproved** — `sfs=false` now
+  bypasses TG/ζ execution and packed row 9 restores CPU static source/target
+  semantics. Job 13294119's full host candidate matrix passes delivered CPU
+  Estr (F64 ≤5e-4; F32 ≤1e-3) and mechanical gates; it stopped only on
+  obsolete `@test_broken` unexpected passes, now corrected. No corrected-path
+  device/timing run exists. D12–D13 supersede D5–D7's acceptance and
+  invalidates the old 0.3 ms “marginal SFS” interpretation: both old arms ran
+  ζ, so it measured delivery overhead.
+- **049 historical run only; corrected acceptance rerun pending** — p018 210k
+  field on H200 (job 13247848): UJ 3.4e-4 PASS; the old 0.3 ms difference is
+  delivery overhead because both arms ran ζ, not marginal SFS cost;
+  the 0.199 s RK3 datum is historical only because its SFS timing boundary was
+  invalid; the arithmetic residency estimate is superseded by the pending
+  true same-job A/B and explicit user decision — **default = open user
+  checkpoint**. U_prev
   broadcast fix landed in FLOWVPM. Also fixed: FLOWVPM ext
   `gpu_interaction!` absolute r2>1e-6 cutoff (dropped sub-mm pairs, 2.6e-4
   — D9).
@@ -65,8 +74,9 @@ failures remain theirs (test-file drift observed mid-run 2026-08-20).
 CUDA ≥6.2 → CUDATools → PrettyTables 3, unsatisfiable with FLOWPanel's geo
 pins (PrettyTables 2.x); env stacking fails (CUDATools' precompile workload
 uses PT3 API); julia 1.12.6 barred (device-step segfault, job 13058191).
-Working recipe: fm052env = FLOWPanel stack + **CUDA 5.8.5** + VSPGeom/GeoIO
-(driver-level imports); FastMultipole CUDA compat widened to "5.8, 6";
+Working recipe: fm052env = FLOWPanel stack + **CUDA 5.8.5** + VSPGeom;
+GeoIO has been removed from the dependency/import path. FastMultipole CUDA
+compat widened to "5.8, 6";
 version-adaptive BFloat16 binding at translate_batched_cuda.jl:8. CUDA 5.8
 device stack validated so far only by stage A rectangular parity — stage B
 (radix UJ+SFS in the GPU arm) is its first full-radix exercise; if it
@@ -76,11 +86,11 @@ per stage (fm048env for radix-only jobs still works on 6.3).
 ## Open user checkpoints (phase prose consolidated)
 
 1. Row approvals: 046, 047, 048, 049, 050 (+051/052 when ticked).
-2. Residency default (049 recommends device-resident; nothing flipped).
+2. Residency default (049 must present corrected same-job A/B; user decides).
 3. FLOWPanel seam review/commit (above).
 4. 052 CT/Γ acceptance + whether to pull the solve-GPU lever forward.
-5. 053 punch list already carries: dispatch cleanup (D4), SFS accuracy
-   watch (D5/D7 — like-for-like at 052's CT gate), 049 sampled-reference
+5. 053 punch list already carries: SFS accuracy watch (D5/D7 — like-for-like
+   at 052's CT gate), 049 sampled-reference
    discrepancy RESOLVED (eps2 fix, D9).
 
 ## Local artifacts

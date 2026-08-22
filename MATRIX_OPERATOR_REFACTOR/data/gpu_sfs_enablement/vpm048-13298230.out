@@ -1,0 +1,936 @@
+=== node: m13h-2-1
+GPU 0: NVIDIA H200 (UUID: GPU-938f2839-ddc0-8c8d-6fd4-70f56a4e4a54)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== stage 1: FastMultipole device tests (unified branch) ===
+Test Summary:                           | Pass  Total     Time
+CUDA device-system interface (task 032) | 1333   1333  2m33.1s
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  227    227  2m09.7s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.4s
+┌ Info: SFS host pass mechanical parity [P=4]
+└   mech = 1.9518221730269553e-16
+┌ Info: SFS host pass vs exact-J brute force [P=4]
+└   phys = 0.00021711093602543683
+┌ Info: SFS host pass mechanical parity [P=8]
+└   mech = 2.613537963144864e-16
+┌ Info: SFS host pass vs exact-J brute force [P=8]
+└   phys = 1.8779064226622e-5
+Test Summary:                              | Pass  Total   Time
+device-system interface stage 1 (task 032) |  930    930  33.3s
+Test Summary:                                  | Pass  Total  Time
+direct-kernel functor trait stage 2 (task 032) |   22     22  6.4s
+Test Summary:                             | Pass  Total  Time
+partitioned nearfield stage A (task 032a) |  827    827  5.1s
+Test Summary:                          | Pass  Total  Time
+two-pass nearfield stage B (task 032a) | 1248   1248  7.0s
+Test Summary:                                   | Pass  Total  Time
+stage 3 (task 032): recenter!, deprecated hooks |   21     21  1.3s
+Test Summary:                                    |  Pass  Total  Time
+binned nearfield pair stream stage C (task 032a) | 32367  32367  3.4s
+Test Summary:                   | Pass  Total  Time
+cheapened g/h modes (task 037f) |  840    840  0.9s
+Test Summary:                                                   | Pass  Total  Time
+shipped nearfield defaults (task 032a Checkpoint D, 2026-08-07) |    9      9  0.2s
+Test Summary:            | Pass  Total  Time
+SFS host pass (task 048) |   20     20  2.3s
+Test Summary:                | Pass  Total   Time
+radix settings surface (047) |  108    108  11.0s
+=== stage 2: FLOWVPM direct-sum GPU regression (runtests_gpu.jl) ===
+Precompiling FLOWVPM...
+   8109.5 ms  ✓ FLOWVPM
+  1 dependency successfully precompiled in 17 seconds. 120 already precompiled.
+Precompiling FLOWVPMCUDAExt...
+   8288.8 ms  ✓ FLOWVPM → FLOWVPMCUDAExt
+  1 dependency successfully precompiled in 17 seconds. 193 already precompiled.
+Test Summary:                                                 | Pass  Total   Time
+GPU direct-sum kernels (gpu_direct!/zeta_direct/Estr_direct!) |   48     48  32.4s
+Test Summary:                                                      | Pass  Total  Time
+add_particle builds a GPU-backed field directly (no CPU bulk-copy) |   84     84  5.2s
+=== stage 3: radix FMM coupling tests (host + device, incl. 048 SFS) ===
+Test Summary:                                  | Pass  Total   Time
+nextstep U_prev: loop vs broadcast equivalence |    6      6  11.1s
+┌ Info: host radix coupling [cube n=4000]
+│   err.u_rel_rms = 0.0007084256921606173
+└   err.j_rel_rms = 0.0031163571360493412
+┌ Info: host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00018513720455427522
+└   err.j_rel_rms = 0.0007817825183657797
+Test Summary:                               | Pass  Total   Time
+radix FMM coupling (host path) vs UJ_direct |   12     12  22.5s
+┌ Info: 035 settings [partitioned + concat]
+│   err.u_rel_rms = 0.00018513720455427522
+└   err.j_rel_rms = 0.0007817825183657782
+┌ Info: 035 settings [partitioned + precomputed_y]
+│   err.u_rel_rms = 0.00018513720455427566
+└   err.j_rel_rms = 0.0007817825183657796
+┌ Info: 035 settings [regularized + dense]
+│   err.u_rel_rms = 1.7000097172254492e-5
+└   err.j_rel_rms = 9.027079202669643e-5
+Test Summary:                                            | Pass  Total   Time
+radix FMM coupling: task-035 tuning settings (host path) |   99     99  10.3s
+Test Summary:                          | Pass  Total  Time
+radix FMM coupling: automatic recenter |    2      2  1.8s
+┌ Info: rectangular host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00017406940901323466
+└   err.j_rel_rms = 0.0007536144058241078
+Test Summary:                                                | Pass  Total  Time
+radix FMM coupling: rectangular bounds (task 037, host path) |   30     30  2.0s
+Test Summary:                                        | Pass  Total  Time
+radix FMM coupling: automatic recenter (rectangular) |    5      5  0.8s
+Test Summary:                                       | Pass  Total  Time
+radix FMM coupling: loud unsupported configurations |    4      4  1.7s
+┌ Info: SFS host radix [cube n=1500 P=4 Float64 rho_t=4.211]
+│   e_mech = 2.6396993793135704e-9
+│   e_direct = 0.00040929795446622387
+│   e_fmm = 0.0004092979544662178
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 0.0002136399834221702
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=4 Float64 rho_t=4.789]
+│   e_mech = 2.6395673012187247e-9
+│   e_direct = 0.00015973091478043572
+│   e_fmm = 0.000159730914780217
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 6.395227723838381e-5
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=8 Float64 rho_t=4.211]
+│   e_mech = 2.639470871040456e-9
+│   e_direct = 0.0003882851759370884
+│   e_fmm = 0.0003882851759371453
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 0.00020814715673364253
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=8 Float64 rho_t=4.789]
+│   e_mech = 2.639338806001938e-9
+│   e_direct = 9.18434420544306e-5
+│   e_fmm = 9.184344205432099e-5
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 4.186259900494014e-5
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=4 Float32 rho_t=4.211]
+│   e_mech = 4.0881713876786536e-7
+│   e_direct = 0.00040945947448331433
+│   e_fmm = 0.0004094590773786664
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 0.00021364144667308698
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=4 Float32 rho_t=4.789]
+│   e_mech = 4.015424546576685e-7
+│   e_direct = 0.00015981604478226675
+│   e_fmm = 0.00015982133802181934
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 6.39637219657888e-5
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=8 Float32 rho_t=4.211]
+│   e_mech = 4.081828937535331e-7
+│   e_direct = 0.00038842036204236484
+│   e_fmm = 0.0003884101558132454
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 0.0002081491409499077
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=8 Float32 rho_t=4.789]
+│   e_mech = 4.042286113011428e-7
+│   e_direct = 9.203165009844163e-5
+│   e_fmm = 9.199961259997846e-5
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 4.187843715580052e-5
+└   strict_gate = 0.001
+┌ Info: SFS host radix classic scheme [cube n=1500 P=4]
+│   e_mech_c = 3.038177224874355e-9
+│   e_classic = 0.003251851321969033
+└   j_rel_c = 0.0019469053142683916
+Test Summary:                                | Pass  Total     Time
+radix FMM coupling: SFS host path (task 048) |   63     63  5m25.0s
+┌ Info: device radix FMM [cube n=20000 Float64]
+│   err.u_rel_rms = 0.0006881716449687954
+└   err.j_rel_rms = 0.003330046161081469
+┌ Info: device radix FMM [cube n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 384
+┌ Info: device radix FMM [cube n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.044096994
+┌ Info: device radix FMM [wake n=20000 Float64]
+│   err.u_rel_rms = 0.0003704695127551337
+└   err.j_rel_rms = 0.002077601910781859
+┌ Info: device radix FMM [wake n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 400
+┌ Info: device radix FMM [wake n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.004703894
+┌ Info: device radix FMM [cube n=20000 Float32]
+│   err.u_rel_rms = 0.0006881724197355471
+└   err.j_rel_rms = 0.0033300259490697728
+┌ Info: device radix FMM [cube n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 272
+┌ Info: device radix FMM [cube n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003386402
+┌ Info: device radix FMM [wake n=20000 Float32]
+│   err.u_rel_rms = 0.0003704886236829026
+└   err.j_rel_rms = 0.002077605650553872
+┌ Info: device radix FMM [wake n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 288
+┌ Info: device radix FMM [wake n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003183211
+Test Summary:                                   | Pass  Total     Time
+device-resident radix FMM: static U/J vs direct |   36     36  1m37.0s
+┌ Info: device radix FMM dynamic run (wake n=2000, 5 RK3 steps)
+│   pos_err = 5.411056194955244e-8
+│   err.u_rel_rms = 0.00020514792233221872
+└   err.j_rel_rms = 0.0008654759941476157
+Test Summary:                                         | Pass  Total  Time
+device-resident radix FMM: multi-step RK3 dynamic run |    4      4  8.5s
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.211]
+│   err.u_rel_rms = 0.00037059614039546674
+│   err.j_rel_rms = 0.002000364983724379
+│   e_sfs = 0.0043473939666973825
+│   e_kernel = 1.056752890644808e-15
+└   e_trunc = 2.1222378183396576e-6
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255
+  Expression: e_sfs <= strict_gate
+   Evaluated: 0.0043473939666973825 <= 0.0005
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 100496 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 122880 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 384 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 384 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float64 rho_t=4.211]
+│   e_replay = 6.269393254504566e-5
+└   err_replay.j_rel_rms = 0.10983606758923302
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.211]
+│   err.u_rel_rms = 0.0003705978766108338
+│   err.j_rel_rms = 0.002000362651842207
+│   e_sfs = 0.004347317530076798
+│   e_kernel = 5.462656446636063e-7
+└   e_trunc = 2.181070677220662e-6
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255
+  Expression: e_sfs <= strict_gate
+   Evaluated: 0.004347317530076798 <= 0.001
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 98624 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 119120 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 272 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 272 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float32 rho_t=4.211]
+│   e_replay = 6.269312294162135e-5
+└   err_replay.j_rel_rms = 0.10983608608548708
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.211]
+│   err.u_rel_rms = 6.980645175420714e-5
+│   err.j_rel_rms = 0.0003176401242174923
+│   e_sfs = 0.0006331650441571529
+│   e_kernel = 1.0475516593820765e-15
+└   e_trunc = 2.1219656642996533e-6
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255
+  Expression: e_sfs <= strict_gate
+   Evaluated: 0.0006331650441571529 <= 0.0005
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 100496 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 122880 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 384 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 384 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float64 rho_t=4.211]
+│   e_replay = 9.130897009185814e-6
+└   err_replay.j_rel_rms = 0.10980869138073852
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.211]
+│   err.u_rel_rms = 6.981745939027358e-5
+│   err.j_rel_rms = 0.00031763823070907134
+│   e_sfs = 0.0006330567715094116
+│   e_kernel = 5.498083977681151e-7
+└   e_trunc = 2.1816423283626138e-6
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 98624 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 119120 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 272 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 272 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float32 rho_t=4.211]
+│   e_replay = 9.128799557602576e-6
+└   err_replay.j_rel_rms = 0.10980870445039574
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.789]
+│   err.u_rel_rms = 0.0001742248978202754
+│   err.j_rel_rms = 0.0009282787644288192
+│   e_sfs = 0.0019617775137933946
+│   e_kernel = 1.1596604336041484e-15
+└   e_trunc = 3.070089823264279e-8
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255
+  Expression: e_sfs <= strict_gate
+   Evaluated: 0.0019617775137933946 <= 0.0005
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 100496 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 122880 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 384 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 384 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float64 rho_t=4.789]
+│   e_replay = 2.8290867600293625e-5
+└   err_replay.j_rel_rms = 0.10978624343917358
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.789]
+│   err.u_rel_rms = 0.00017422513404612115
+│   err.j_rel_rms = 0.0009282825303217083
+│   e_sfs = 0.0019617393720682583
+│   e_kernel = 5.58294066288157e-7
+└   e_trunc = 5.126833599263488e-7
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255
+  Expression: e_sfs <= strict_gate
+   Evaluated: 0.0019617393720682583 <= 0.001
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 98624 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 119120 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 272 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 272 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float32 rho_t=4.789]
+│   e_replay = 2.828998487565893e-5
+└   err_replay.j_rel_rms = 0.10978623698929346
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.789]
+│   err.u_rel_rms = 3.376320771431167e-5
+│   err.j_rel_rms = 4.9517271507865067e-5
+│   e_sfs = 0.00010039846301671803
+│   e_kernel = 1.1555777035103527e-15
+└   e_trunc = 3.068541189784559e-8
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 100496 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 122880 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 384 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 384 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float64 rho_t=4.789]
+│   e_replay = 1.4478500260648172e-6
+└   err_replay.j_rel_rms = 0.10980483670299021
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.789]
+│   err.u_rel_rms = 3.3768561514225476e-5
+│   err.j_rel_rms = 4.9548597117577985e-5
+│   e_sfs = 0.00010033999568788485
+│   e_kernel = 5.57368434372257e-7
+└   e_trunc = 5.155651688280329e-7
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 98624 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 119120 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 272 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 272 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float32 rho_t=4.789]
+│   e_replay = 1.4469052389514067e-6
+└   err_replay.j_rel_rms = 0.10980483631255515
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.211]
+│   err.u_rel_rms = 0.00028309906700858253
+│   err.j_rel_rms = 0.0018395489842277808
+│   e_sfs = 0.029171563789639268
+│   e_kernel = 3.7859613737388254e-15
+└   e_trunc = 8.66768123888478e-7
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255
+  Expression: e_sfs <= strict_gate
+   Evaluated: 0.029171563789639268 <= 0.0005
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 107168
+│   host_alloc_sfs = 129552
+│   device_alloc_base = 400
+└   device_alloc_sfs = 400
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 107168 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 129552 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 400 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 400 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [wake n=20000 P=4 Float64 rho_t=4.211]
+│   e_replay = 0.0003135526370614055
+└   err_replay.j_rel_rms = 0.09195616776772117
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.789]
+│   err.u_rel_rms = 0.00019011346593975417
+│   err.j_rel_rms = 0.0012166980160136637
+│   e_sfs = 0.01705108399578047
+│   e_kernel = 4.0896663747369006e-15
+└   e_trunc = 2.0340386147416962e-10
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255
+  Expression: e_sfs <= strict_gate
+   Evaluated: 0.01705108399578047 <= 0.0005
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:255 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 107168
+│   host_alloc_sfs = 129552
+│   device_alloc_base = 400
+└   device_alloc_sfs = 400
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276
+  Expression: host_alloc_base <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 107168 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:276 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277
+  Expression: host_alloc_sfs <= FMM048_HOST_ALLOC_BUDGET
+   Evaluated: 129552 <= 4096
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:277 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278
+  Expression: device_alloc_base == 0
+   Evaluated: 400 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:278 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+device-resident radix FMM: SFS device pass (task 048): Test Failed at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279
+  Expression: device_alloc_sfs == 0
+   Evaluated: 400 == 0
+
+Stacktrace:
+ [1] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:680 [inlined]
+ [2] macro expansion
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:279 [inlined]
+ [3] macro expansion
+   @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+ [4] top-level scope
+   @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+┌ Info: device radix SFS replay parity [wake n=20000 P=4 Float64 rho_t=4.789]
+│   e_replay = 0.00018327479425464966
+└   err_replay.j_rel_rms = 0.09197631395235968
+Test Summary:                                         | Pass  Fail  Total     Time
+device-resident radix FMM: SFS device pass (task 048) |  193    47    240  2m58.8s
+ERROR: LoadError: Some tests did not pass: 193 passed, 47 failed, 0 errored, 0 broken.
+in expression starting at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:153
+in expression starting at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm.jl:162

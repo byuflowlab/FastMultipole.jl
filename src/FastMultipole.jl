@@ -108,6 +108,7 @@ export RigidHierarchicalTables, RadixLevelOccupancy
 export RigidImplicitStencil, SparseOffsetIntersection, BlockedOccupancyBitsets, LazyMaterializedBatches
 export RadixM2LBatch, RadixInteractionList
 export Residency, HostResident, DeviceResident, residency
+export TreeRole, SourceTree, TargetTree, NearfieldExecution, HostNearfield, DeviceNearfield
 export AbstractDirectKernel, SingularSource, SingularVortex, RegularizedVortex,
     PartitionedVortex, TwoPassVortex, direct_kernel
 export AbstractRectangularKernel, RectangularGaussianErfVortex,
@@ -118,6 +119,7 @@ export AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M
 export AbstractResidentM2LStrategy, DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L, PrecomputedFactoredYM2L
 export constant_p_stencil_bound, constant_p_stencil_accepts, accepted_radix_stencil
 export foreach_radix_m2l_pair, foreach_radix_m2l_route, foreach_radix_direct_pair, build_radix_interaction_list
+export RadixRouteSelection
 export unsort!, resort!, unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
 export transform_tree!, transform_plan!
 export AbstractOperatorBasis, CompressedComplexBasis, RealSolidHarmonicBasis
@@ -132,7 +134,7 @@ export copy_cuda_radix_output!, finalize_cuda_radix_output!, take_cuda_radix_out
 export host_radix_state, run_host_radix_lifecycle!, host_resident_radix_grid
 export finalize_radix_output!
 export RadixFMMCache, update_radix_state!
-export radix_settings, radix_setting, set_radix_setting!, radix_setting_lock,
+export radix_settings, radix_setting, set_radix_setting!, set_radix_settings!, radix_setting_lock,
     snapshot_locked_radix_settings, verify_locked_radix_settings
 export AdaptiveTreePolicy, AdaptiveRadixTree, AdaptiveInteractionLists,
     update_adaptive_tree!, build_adaptive_interaction_lists!,

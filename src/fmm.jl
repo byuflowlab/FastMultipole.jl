@@ -1058,8 +1058,8 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     leaf_size_target = to_vector(isnothing(leaf_size_target) ? minimum(leaf_size_source) : leaf_size_target, length(target_systems))
 
     # create trees
-    t_target_tree = @elapsed target_tree = Tree(target_systems, true, derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
-    t_source_tree = @elapsed source_tree = Tree(source_systems, false, derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
+    t_target_tree = @elapsed target_tree = Tree(target_systems, TargetTree(), derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
+    t_source_tree = @elapsed source_tree = Tree(source_systems, SourceTree(), derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
 
     # println("Tree construction times: target = $t_target_tree, source = $t_source_tree")
     # error()
@@ -1157,8 +1157,8 @@ function FmmPlan(target_systems::Tuple, source_systems::Tuple;
     leaf_size_source = to_vector(leaf_size_source, length(source_systems))
     leaf_size_target = to_vector(isnothing(leaf_size_target) ? minimum(leaf_size_source) : leaf_size_target, length(target_systems))
 
-    target_tree = Tree(target_systems, true, derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
-    source_tree = Tree(source_systems, false, derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
+    target_tree = Tree(target_systems, TargetTree(), derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
+    source_tree = Tree(source_systems, SourceTree(), derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
 
     m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
     m2l_list = sort_by_target(m2l_list, target_tree.branches)
@@ -1307,7 +1307,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     upward_pass::Bool=true, horizontal_pass::Bool=true, downward_pass::Bool=true,
     horizontal_pass_verbose::Bool=false,
     reset_target_tree::Bool=true, reset_source_tree::Bool=true,
-    nearfield_device::Bool=false,
+    nearfield_execution::NearfieldExecution=HostNearfield(),
+    nearfield_device::Union{Nothing,Bool}=nothing,
     nearfield::Bool=true,
     tune=false, update_target_systems=true, multipole_acceptance=0.5,
     t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
@@ -1380,6 +1381,11 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
     if n_target_bodies > 0 && n_source_bodies > 0
 
+        # `nearfield_device` is a compatibility keyword. New code selects a
+        # concrete execution policy and the branch below dispatches through it.
+        nf_execution = nearfield_device === nothing ? nearfield_execution :
+            (nearfield_device ? DeviceNearfield() : HostNearfield())
+
         # check that lamb_helmholtz and ScalarPotential are not both true
         warn_scalar_potential_with_lh(derivatives_switches, lamb_helmholtz)
 
@@ -1418,12 +1424,12 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
         error_success = true
 
         # begin FMM
-        if nearfield_device # use GPU
+        if _device_nearfield(nf_execution)
             if has_direct_conditioning(direct_conditioning)
-                throw(ArgumentError("direct_conditioning is only supported for CPU nearfield; use nearfield_device=false"))
+                throw(ArgumentError("direct_conditioning is only supported with HostNearfield()"))
             end
             if nearfield_cache_provided || tune_nearfield_cache
-                throw(ArgumentError("nearfield_cache/tune_nearfield_cache are only supported for CPU nearfield; use nearfield_device=false"))
+                throw(ArgumentError("nearfield_cache/tune_nearfield_cache are only supported with HostNearfield()"))
             end
 
             # allow nearfield_device! to be called concurrently with upward and horizontal passes

@@ -2,7 +2,7 @@
 
 ## Status and entry gate
 
-**Staged `2026-08-20` (user direction). Not started.**
+**Completed `2026-08-20`; review remediation recorded `2026-08-21`.**
 
 Entry gate: `042` complete and approved (granted `2026-08-20`). First row of
 the Production Integration Phase; front-loaded by design so that every
@@ -26,9 +26,11 @@ phase before any new code is written on top of it.
 
 ## Objective
 
-Both merges completed on the projects-side branches, with all three repos'
-test suites green, the 018 driver still running CPU-only unchanged, and the
-user's repo-layout decision recorded.
+Both merges completed on the projects-side branches with no merge-caused test
+regressions, the 018 driver still running through its CPU-only path, and the
+user's repo-layout decision recorded. A dirty-tree failure is not called a
+green suite: it must be isolated from the merge and followed by a green run
+before approval.
 
 ## Method
 
@@ -68,7 +70,8 @@ unify).
 
 ### Stage 3 — test gate + smoke
 
-- FastMultipole, FLOWVPM, and FLOWPanel test suites green post-merge (FLOWVPM
+- FastMultipole, FLOWVPM, and FLOWPanel test suites show no merge-caused
+  regressions post-merge (FLOWVPM
   incl. `runtests_gpu_fmm.jl` Part A host-side; device parts on the cluster
   if convenient, else recorded as deferred to `047`/`048` gates).
 - The 018 driver (`examples/rotor_hover_pressure_comparison.jl`) still runs
@@ -85,22 +88,25 @@ at the unified branches. Record the decision here.
 
 - Both merges landed on the real branches only after green test gates on the
   scratch branches.
-- 018 CPU smoke unchanged (no behavior drift).
+- 018 CPU smoke executes the unchanged CPU-only driver path without errors.
+  Physical-sanity output is a smoke gate, not numerical pre/post parity unless
+  a durable pre-merge reference is recorded.
 - User checkpoint on repo layout answered and recorded.
 
 ## Artifacts
 
 - Merge commits + pre-merge tags in both projects-side repos.
 - A merge log section appended to this doc: fetch/merge commands, the
-  9-commit list, conflicts encountered and how each was resolved, test
+  complete projects-side commit list, conflicts encountered and how each was resolved, test
   outcomes.
 
 ## Verification
 
 - `git log` shows both merge commits with the expected parents; pre-merge
   tags exist on both sides of each merge.
-- All three test suites green on the merged branches; 018 CPU smoke output
-  matches pre-merge behavior.
+- All three test suites green on the merged branches, or any dirty-tree failure
+  is explicitly isolated from the merge and followed by a green verification;
+  018 CPU smoke executes the CPU-only path without errors.
 
 ## Recorded context (2026-08-20 staging)
 
@@ -155,6 +161,47 @@ lines, all knobs via env vars); launcher
 :355-410).
 
 ## Merge log (2026-08-20 execution)
+
+Reconstructed commands (the tmp3 directories were retired after SHA
+verification, so their former absolute paths are intentionally not retained):
+
+```sh
+# FastMultipole projects clone
+git remote add tmp3 <retired-tmp3-FastMultipole-path>
+git fetch tmp3 matrix-ops
+git tag pre-046-flowpanel-20260817 d7145440
+git tag pre-046-matrix-ops 3505fb44
+git switch -c merge-046-fastmultipole d7145440
+git merge --no-ff 3505fb44
+# merge commit 6c881834; flowpanel-20260817 fast-forwarded after tests
+
+# FLOWVPM projects clone
+git remote add tmp3 <retired-tmp3-FLOWVPM-path>
+git fetch tmp3 gpu-full
+git tag pre-046-flowpanel 16f8ef76
+git tag pre-046-gpu-full c2e84009
+git switch -c merge-046-flowvpm 16f8ef76
+git merge --no-ff c2e84009
+# merge commit 903771dd; flowpanel fast-forwarded after tests
+```
+
+The staged “9 commits” grew before execution. The complete projects-side
+FastMultipole first-parent list merged against matrix-ops was:
+
+1. `5adde3bd` callback kwarg for FastGaussSeidel;
+2. `64e06ca7` FGS multithread race fix;
+3. `a9b734ad` LU caching;
+4. `b3cf4ad9` reusable `FmmPlan`;
+5. `752c5259` colored parallel FGS sweeps;
+6. `72d3f3d8` `NearfieldInfluenceCache`;
+7. `02f071c2` nearfield-cache integration;
+8. `0ef4e83d` cache estimate/build-time guard;
+9. `204188ae` cached-nearfield `tune=true`;
+10. `1ec0af9d` cache-aware leaf-size retune;
+11. `645cc96c` autotune perturbation mode;
+12. `eea944d0` rigid `transform_tree!`;
+13. `087bf4aa` rigid `transform_plan!`;
+14. `d7145440` rigid `transform_solver!` and staleness fix.
 
 Pre-merge safety: tags `pre-046-matrix-ops` (tmp3 FastMultipole `c4c61ce`→`3505fb4`),
 `pre-046-flowpanel-20260817` (`d714544`), `pre-046-gpu-full` (tmp3 FLOWVPM),
@@ -215,3 +262,25 @@ copied (they pinned dev-paths to tmp3). tmp3 directory removed. 018 CPU
 smoke: 116/467 steps error-free on the merged stack before deliberate stop
 (the 467 = freestream-schedule revs; ~20 s/step, sensible CF/CM monitors) —
 gate PASS. Details: `decisions-phaseP-2026-08-20.md` D1–D3.
+
+## Review remediation verification (2026-08-21)
+
+- Merge topology rechecked: FastMultipole `6c881834` has parents
+  `d7145440`/`3505fb44`; FLOWVPM `903771dd` has parents
+  `16f8ef76`/`c2e84009`. All four `pre-046-*` tags exist and point into the
+  corresponding histories; `9fd25e6` remains an ancestor of unified FLOWVPM.
+- The historical FLOWPanel result remains recorded honestly as 16/18 rather
+  than “green.” Its two radius-inflation failures were in concurrent WIP.
+  After that WIP stabilized, the same merged stack was exercised locally on
+  Julia 1.12.5: all package-test groups through the solver, instrumentation,
+  wake, postprocess, simulation, Kutta, warmstart, and replay surfaces passed;
+  two missing direct test dependencies (`Random`, then `TOML`) were exposed and
+  declared; the remaining example/analytical tail then passed. The tracked
+  Gmsh topology suite passes 28/28 after the GeoIO removal follow-up.
+- The 018 smoke claim is intentionally limited to the preserved evidence: 116
+  error-free CPU-only steps with converged solves and physically sensible
+  monitors before deliberate termination. No pre-merge numeric reference was
+  preserved, so this document no longer claims numerical pre/post parity.
+- The merge-log artifact now contains the reproducible fetch/merge skeleton
+  and the complete actual side-commit list. No merge or user-WIP history was
+  rewritten during remediation.

@@ -1,0 +1,49 @@
+provenance,backend,case,p,precision,metric,value,gate,status,notes
+local_2026-08-21,host,cube,4,Float64,mechanical_rel_rms,2.6392978490298755e-9,1e-6,PASS,same delivered radix J
+local_2026-08-21,host,cube,8,Float64,mechanical_rel_rms,2.639069158656973e-9,1e-6,PASS,same delivered radix J
+local_2026-08-21,host,cube,4,Float32,mechanical_rel_rms,4.05301997535892e-7,1e-4,PASS,same delivered radix J
+local_2026-08-21,host,cube,8,Float32,mechanical_rel_rms,4.18954654579092e-7,1e-4,PASS,same delivered radix J
+local_2026-08-21,host,cube,4,Float64,estr_direct_rel_rms,0.003755438927115099,NA,HISTORICAL_DEFAULT,pre-candidate default cutoff
+local_2026-08-21,host,cube,8,Float64,estr_direct_rel_rms,0.0037378329342775112,NA,HISTORICAL_DEFAULT,pre-candidate default cutoff
+local_2026-08-21,host,cube,4,Float32,estr_direct_rel_rms,0.0037552417869286016,NA,HISTORICAL_DEFAULT,pre-candidate default cutoff
+local_2026-08-21,host,cube,8,Float32,estr_direct_rel_rms,0.0037376230562586794,NA,HISTORICAL_DEFAULT,pre-candidate default cutoff
+local_2026-08-21,host,cube,4,Float64,estr_fmm_rel_rms,0.0037554389271149714,NA,HISTORICAL_DEFAULT,pre-candidate default cutoff
+local_2026-08-21,host,cube,8,Float64,estr_fmm_rel_rms,0.0037378329342773924,NA,HISTORICAL_DEFAULT,pre-candidate default cutoff
+local_2026-08-21,host,cube,4,Float32,estr_fmm_rel_rms,0.0037554244069154595,NA,HISTORICAL_DEFAULT,Float64 CPU reference; pre-candidate default cutoff
+local_2026-08-21,host,cube,8,Float32,estr_fmm_rel_rms,0.0037378055189173985,NA,HISTORICAL_DEFAULT,Float64 CPU reference; pre-candidate default cutoff
+h200_job_13247540,device,cube,4,Float64,mechanical_rel_rms,1e-15,NA,HISTORICAL_PRE_REMEDIATION,old graph-baked always-on SFS path
+h200_job_13247540,device,cube,4,Float32,mechanical_rel_rms,5.5e-7,NA,HISTORICAL_PRE_REMEDIATION,old graph-baked always-on SFS path
+h200_job_13247540,device,wake,4,Float64,delivered_physics_rel_rms,0.029342,0.001,FAILED_HISTORICAL,old path and J-scaled gate substitution
+h200_job_13247848,device,p018,4,Float64,reported_marginal_s,0.000273957,NA,INVALIDATED,both timing arms executed TG+zeta; difference is delivery overhead
+h200_job_13294119,host,cube_rho4.211,4,Float64,estr_direct_rel_rms,0.00040929795446622387,0.0005,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.789,4,Float64,estr_direct_rel_rms,0.00015973091478043572,0.0005,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.211,8,Float64,estr_direct_rel_rms,0.0003882851759370884,0.0005,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.789,8,Float64,estr_direct_rel_rms,0.0000918434420544306,0.0005,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.211,4,Float32,estr_direct_rel_rms,0.00040945947448331433,0.001,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.789,4,Float32,estr_direct_rel_rms,0.00015981604478226675,0.001,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.211,8,Float32,estr_direct_rel_rms,0.00038842036204236484,0.001,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.789,8,Float32,estr_direct_rel_rms,0.00009203165009844163,0.001,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.211,4,Float64,estr_fmm_rel_rms,0.0004092979544662178,0.0005,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.789,4,Float64,estr_fmm_rel_rms,0.000159730914780217,0.0005,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.211,8,Float64,estr_fmm_rel_rms,0.0003882851759371453,0.0005,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.789,8,Float64,estr_fmm_rel_rms,0.00009184344205432099,0.0005,PASS,informative early-stop job
+h200_job_13294119,host,cube_rho4.211,4,Float32,estr_fmm_rel_rms,0.0004094590773786664,0.001,PASS,Float64 CPU reference
+h200_job_13294119,host,cube_rho4.789,4,Float32,estr_fmm_rel_rms,0.00015982133802181934,0.001,PASS,Float64 CPU reference
+h200_job_13294119,host,cube_rho4.211,8,Float32,estr_fmm_rel_rms,0.0003884101558132454,0.001,PASS,Float64 CPU reference
+h200_job_13294119,host,cube_rho4.789,8,Float32,estr_fmm_rel_rms,0.00009199961259997846,0.001,PASS,Float64 CPU reference
+h200_job_13294119,host,cube_rho4.211,4,Float64,mechanical_rel_rms,2.6396993793135704e-9,1e-6,PASS,same delivered radix J
+h200_job_13294119,host,cube_rho4.789,4,Float64,mechanical_rel_rms,2.6395673012187247e-9,1e-6,PASS,same delivered radix J
+h200_job_13294119,host,cube_rho4.211,8,Float64,mechanical_rel_rms,2.639470871040456e-9,1e-6,PASS,same delivered radix J
+h200_job_13294119,host,cube_rho4.789,8,Float64,mechanical_rel_rms,2.639338806001938e-9,1e-6,PASS,same delivered radix J
+h200_job_13294119,host,cube_rho4.211,4,Float32,mechanical_rel_rms,4.0881713876786536e-7,1e-4,PASS,same delivered radix J
+h200_job_13294119,host,cube_rho4.789,4,Float32,mechanical_rel_rms,4.015424546576685e-7,1e-4,PASS,same delivered radix J
+h200_job_13294119,host,cube_rho4.211,8,Float32,mechanical_rel_rms,4.081828937535331e-7,1e-4,PASS,same delivered radix J
+h200_job_13294119,host,cube_rho4.789,8,Float32,mechanical_rel_rms,4.042286113011428e-7,1e-4,PASS,same delivered radix J
+h200_job_13294119,host,cube_rho4.211,4,Float64,j_rel_rms,0.0002136399834221702,NA,INFO,delivered J vs direct
+h200_job_13294119,host,cube_rho4.789,4,Float64,j_rel_rms,0.00006395227723838381,NA,INFO,delivered J vs direct
+h200_job_13294119,host,cube_rho4.211,8,Float64,j_rel_rms,0.00020814715673364253,NA,INFO,delivered J vs direct
+h200_job_13294119,host,cube_rho4.789,8,Float64,j_rel_rms,0.00004186259900494014,NA,INFO,delivered J vs direct
+h200_job_13294119,host,cube_rho4.211,4,Float32,j_rel_rms,0.00021364144667308698,NA,INFO,delivered J vs direct
+h200_job_13294119,host,cube_rho4.789,4,Float32,j_rel_rms,0.0000639637219657888,NA,INFO,delivered J vs direct
+h200_job_13294119,host,cube_rho4.211,8,Float32,j_rel_rms,0.0002081491409499077,NA,INFO,delivered J vs direct
+h200_job_13294119,host,cube_rho4.789,8,Float32,j_rel_rms,0.00004187843715580052,NA,INFO,delivered J vs direct

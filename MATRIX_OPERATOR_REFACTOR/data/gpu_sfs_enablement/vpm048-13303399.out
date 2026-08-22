@@ -1,0 +1,1567 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-8156c75c-bae4-2773-8c60-afad0cf9d059)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== stage 1: FastMultipole device tests (unified branch) ===
+Test Summary:                           | Pass  Total     Time
+CUDA device-system interface (task 032) | 1333   1333  2m37.5s
+Test Summary:                        | Pass  Total     Time
+CUDA radix lifecycle gate (task 022) |  227    227  2m11.5s
+Test Summary:                                                  | Pass  Total  Time
+ConcatenatedFixedZM2L host parity (task 022 throughput repair) |   37     37  7.4s
+┌ Info: SFS host pass mechanical parity [P=4]
+└   mech = 1.9518221730269553e-16
+┌ Info: SFS host pass vs exact-J brute force [P=4]
+└   phys = 0.00021711093602543683
+┌ Info: SFS host pass mechanical parity [P=8]
+└   mech = 2.613537963144864e-16
+┌ Info: SFS host pass vs exact-J brute force [P=8]
+└   phys = 1.8779064226622e-5
+Test Summary:                              | Pass  Total   Time
+device-system interface stage 1 (task 032) |  930    930  33.7s
+Test Summary:                                  | Pass  Total  Time
+direct-kernel functor trait stage 2 (task 032) |   22     22  6.5s
+Test Summary:                             | Pass  Total  Time
+partitioned nearfield stage A (task 032a) |  827    827  5.3s
+Test Summary:                          | Pass  Total  Time
+two-pass nearfield stage B (task 032a) | 1248   1248  7.1s
+Test Summary:                                   | Pass  Total  Time
+stage 3 (task 032): recenter!, deprecated hooks |   21     21  1.3s
+Test Summary:                                    |  Pass  Total  Time
+binned nearfield pair stream stage C (task 032a) | 32367  32367  3.5s
+Test Summary:                   | Pass  Total  Time
+cheapened g/h modes (task 037f) |  840    840  0.9s
+Test Summary:                                                   | Pass  Total  Time
+shipped nearfield defaults (task 032a Checkpoint D, 2026-08-07) |    9      9  0.2s
+Test Summary:            | Pass  Total  Time
+SFS host pass (task 048) |   20     20  2.4s
+Test Summary:                | Pass  Total   Time
+radix settings surface (047) |  108    108  11.4s
+=== stage 2: FLOWVPM direct-sum GPU regression (runtests_gpu.jl) ===
+Test Summary:                                                 | Pass  Total   Time
+GPU direct-sum kernels (gpu_direct!/zeta_direct/Estr_direct!) |   48     48  33.0s
+Test Summary:                                                      | Pass  Total  Time
+add_particle builds a GPU-backed field directly (no CPU bulk-copy) |   84     84  5.7s
+=== stage 3: radix FMM coupling tests (host + device, incl. 048 SFS) ===
+Test Summary:                                  | Pass  Total   Time
+nextstep U_prev: loop vs broadcast equivalence |    6      6  11.4s
+┌ Info: host radix coupling [cube n=4000]
+│   err.u_rel_rms = 0.0007084256921606173
+└   err.j_rel_rms = 0.0031163571360493412
+┌ Info: host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00018513720455427522
+└   err.j_rel_rms = 0.0007817825183657797
+Test Summary:                               | Pass  Total   Time
+radix FMM coupling (host path) vs UJ_direct |   12     12  23.1s
+┌ Info: 035 settings [partitioned + concat]
+│   err.u_rel_rms = 0.00018513720455427522
+└   err.j_rel_rms = 0.0007817825183657782
+┌ Info: 035 settings [partitioned + precomputed_y]
+│   err.u_rel_rms = 0.00018513720455427566
+└   err.j_rel_rms = 0.0007817825183657796
+┌ Info: 035 settings [regularized + dense]
+│   err.u_rel_rms = 1.7000097172254492e-5
+└   err.j_rel_rms = 9.027079202669643e-5
+Test Summary:                                            | Pass  Total   Time
+radix FMM coupling: task-035 tuning settings (host path) |   99     99  10.6s
+Test Summary:                          | Pass  Total  Time
+radix FMM coupling: automatic recenter |    2      2  1.7s
+┌ Info: rectangular host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00017406940901323466
+└   err.j_rel_rms = 0.0007536144058241078
+Test Summary:                                                | Pass  Total  Time
+radix FMM coupling: rectangular bounds (task 037, host path) |   30     30  2.0s
+Test Summary:                                        | Pass  Total  Time
+radix FMM coupling: automatic recenter (rectangular) |    5      5  0.7s
+Test Summary:                                       | Pass  Total  Time
+radix FMM coupling: loud unsupported configurations |    4      4  1.8s
+┌ Info: SFS host radix [cube n=1500 P=4 Float64 rho_t=4.211]
+│   e_mech = 2.6396993793135704e-9
+│   e_direct = 0.00040929795446622387
+│   e_fmm = 0.0004092979544662178
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 0.0002136399834221702
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=4 Float64 rho_t=4.789]
+│   e_mech = 2.6395673012187247e-9
+│   e_direct = 0.00015973091478043572
+│   e_fmm = 0.000159730914780217
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 6.395227723838381e-5
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=8 Float64 rho_t=4.211]
+│   e_mech = 2.639470871040456e-9
+│   e_direct = 0.0003882851759370884
+│   e_fmm = 0.0003882851759371453
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 0.00020814715673364253
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=8 Float64 rho_t=4.789]
+│   e_mech = 2.639338806001938e-9
+│   e_direct = 9.18434420544306e-5
+│   e_fmm = 9.184344205432099e-5
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 4.186259900494014e-5
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=4 Float32 rho_t=4.211]
+│   e_mech = 4.0881713876786536e-7
+│   e_direct = 0.00040945947448331433
+│   e_fmm = 0.0004094590773786664
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 0.00021364144667308698
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=4 Float32 rho_t=4.789]
+│   e_mech = 4.015424546576685e-7
+│   e_direct = 0.00015981604478226675
+│   e_fmm = 0.00015982133802181934
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 6.39637219657888e-5
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=8 Float32 rho_t=4.211]
+│   e_mech = 4.081828937535331e-7
+│   e_direct = 0.00038842036204236484
+│   e_fmm = 0.0003884101558132454
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 0.0002081491409499077
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=8 Float32 rho_t=4.789]
+│   e_mech = 4.042286113011428e-7
+│   e_direct = 9.203165009844163e-5
+│   e_fmm = 9.199961259997846e-5
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 4.187843715580052e-5
+└   strict_gate = 0.001
+┌ Info: SFS host radix classic scheme [cube n=1500 P=4]
+│   e_mech_c = 3.038177224874355e-9
+│   e_classic = 0.003251851321969033
+└   j_rel_c = 0.0019469053142683916
+Test Summary:                                | Pass  Total     Time
+radix FMM coupling: SFS host path (task 048) |   63     63  5m23.9s
+┌ Info: device radix FMM [cube n=20000 Float64]
+│   err.u_rel_rms = 0.0006881716449687955
+└   err.j_rel_rms = 0.003330046161081471
+┌ Info: device radix FMM [cube n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 384
+┌ Info: device radix FMM [cube n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.043932904
+┌ Info: device radix FMM [wake n=20000 Float64]
+│   err.u_rel_rms = 0.00037046951275513453
+└   err.j_rel_rms = 0.0020776019107818606
+┌ Info: device radix FMM [wake n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 400
+┌ Info: device radix FMM [wake n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.004605113
+┌ Info: device radix FMM [cube n=20000 Float32]
+│   err.u_rel_rms = 0.0006881712860827102
+└   err.j_rel_rms = 0.00333002531065639
+┌ Info: device radix FMM [cube n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 272
+┌ Info: device radix FMM [cube n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003383458
+┌ Info: device radix FMM [wake n=20000 Float32]
+│   err.u_rel_rms = 0.0003704882764570047
+└   err.j_rel_rms = 0.0020776055839194225
+┌ Info: device radix FMM [wake n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 288
+┌ Info: device radix FMM [wake n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003237372
+Test Summary:                                   | Pass  Total     Time
+device-resident radix FMM: static U/J vs direct |   36     36  1m38.9s
+┌ Info: device radix FMM dynamic run (wake n=2000, 5 RK3 steps)
+│   pos_err = 5.411056194955244e-8
+│   err.u_rel_rms = 0.00020514792233221842
+└   err.j_rel_rms = 0.0008654759941476158
+Test Summary:                                         | Pass  Total  Time
+device-resident radix FMM: multi-step RK3 dynamic run |    4      4  8.7s
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.211]
+│   err.u_rel_rms = 0.0003706056987668662
+│   err.j_rel_rms = 0.0020005156179238367
+│   e_sfs = 0.004347393966697365
+│   e_kernel = 1.054641691853832e-15
+└   e_trunc = 2.122237818337524e-6
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float64 rho_t=4.211]
+│   e_replay = 0.004347393966697365
+│   err_replay.u_rel_rms = 0.00037060569876686596
+└   err_replay.j_rel_rms = 0.002000515617923836
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=4 Float64 rho_t=4.211]
+└   replay_body_parity = 5.738958039748438e-17
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.211]
+│   err.u_rel_rms = 0.00037060629792194584
+│   err.j_rel_rms = 0.0020005127057231478
+│   e_sfs = 0.004347334796660326
+│   e_kernel = 5.476852562320503e-7
+└   e_trunc = 2.18476217195754e-6
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float32 rho_t=4.211]
+│   e_replay = 0.004347347013652864
+│   err_replay.u_rel_rms = 0.00037060563427853825
+└   err_replay.j_rel_rms = 0.002000512241502016
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=4 Float32 rho_t=4.211]
+└   replay_body_parity = 2.566627100884553e-7
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.211]
+│   err.u_rel_rms = 6.980716452733455e-5
+│   err.j_rel_rms = 0.00031764424169999613
+│   e_sfs = 0.000633165044157146
+│   e_kernel = 1.0474529223265892e-15
+└   e_trunc = 2.121965664299998e-6
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float64 rho_t=4.211]
+│   e_replay = 0.0006331650441571376
+│   err_replay.u_rel_rms = 6.980716452733208e-5
+└   err_replay.j_rel_rms = 0.00031764424169999575
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=8 Float64 rho_t=4.211]
+└   replay_body_parity = 5.87486714991722e-17
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.211]
+│   err.u_rel_rms = 6.981745201757761e-5
+│   err.j_rel_rms = 0.0003176433281087694
+│   e_sfs = 0.0006330409341983312
+│   e_kernel = 5.492074650526564e-7
+└   e_trunc = 2.181804866476214e-6
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float32 rho_t=4.211]
+│   e_replay = 0.0006330427030710133
+│   err_replay.u_rel_rms = 6.981809985966435e-5
+└   err_replay.j_rel_rms = 0.0003176437804080908
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=8 Float32 rho_t=4.211]
+└   replay_body_parity = 2.575889034829497e-7
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.789]
+│   err.u_rel_rms = 0.0001742310024590506
+│   err.j_rel_rms = 0.0009283334113651347
+│   e_sfs = 0.0019617775137933968
+│   e_kernel = 1.15738095208581e-15
+└   e_trunc = 3.0700898233984446e-8
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float64 rho_t=4.789]
+│   e_replay = 0.001961777513793407
+│   err_replay.u_rel_rms = 0.00017423100245905014
+└   err_replay.j_rel_rms = 0.000928333411365135
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=4 Float64 rho_t=4.789]
+└   replay_body_parity = 4.8799277328192757e-17
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.789]
+│   err.u_rel_rms = 0.0001742288575541957
+│   err.j_rel_rms = 0.000928335175467507
+│   e_sfs = 0.001961723713550203
+│   e_kernel = 5.599578486488857e-7
+└   e_trunc = 5.144289211243155e-7
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float32 rho_t=4.789]
+│   e_replay = 0.001961742475855743
+│   err_replay.u_rel_rms = 0.00017423017872111253
+└   err_replay.j_rel_rms = 0.0009283365825352979
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=4 Float32 rho_t=4.789]
+└   replay_body_parity = 2.9809401673475677e-7
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.789]
+│   err.u_rel_rms = 3.3763114812841195e-5
+│   err.j_rel_rms = 4.951728612723704e-5
+│   e_sfs = 0.00010039846301671123
+│   e_kernel = 1.1532051586321652e-15
+└   e_trunc = 3.068541189941132e-8
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float64 rho_t=4.789]
+│   e_replay = 0.00010039846301672463
+│   err_replay.u_rel_rms = 3.376311481284135e-5
+└   err_replay.j_rel_rms = 4.951728612723664e-5
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=8 Float64 rho_t=4.789]
+└   replay_body_parity = 5.322422575630381e-17
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.789]
+│   err.u_rel_rms = 3.376962975155473e-5
+│   err.j_rel_rms = 4.9548054268497865e-5
+│   e_sfs = 0.00010032840278847712
+│   e_kernel = 5.58683448175097e-7
+└   e_trunc = 5.144289261858212e-7
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float32 rho_t=4.789]
+│   e_replay = 0.00010032193746543166
+│   err_replay.u_rel_rms = 3.376909886582387e-5
+└   err_replay.j_rel_rms = 4.954771187696936e-5
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=8 Float32 rho_t=4.789]
+└   replay_body_parity = 2.9956797801182124e-7
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.211]
+│   err.u_rel_rms = 0.0002830737899975256
+│   err.j_rel_rms = 0.0018394957172648114
+│   e_sfs = 0.02917156378963927
+│   e_kernel = 3.7959523418109e-15
+└   e_trunc = 8.667681238896946e-7
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 107168
+│   host_alloc_sfs = 129552
+│   device_alloc_base = 400
+└   device_alloc_sfs = 400
+┌ Info: device radix SFS replay parity [wake n=20000 P=4 Float64 rho_t=4.211]
+│   e_replay = 0.029171563789639254
+│   err_replay.u_rel_rms = 0.00028307378999752557
+└   err_replay.j_rel_rms = 0.0018394957172648118
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [wake n=20000 P=4 Float64 rho_t=4.211]
+└   replay_body_parity = 3.647922499246392e-17
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.789]
+│   err.u_rel_rms = 0.00019010739427351581
+│   err.j_rel_rms = 0.0012167195598569737
+│   e_sfs = 0.017051083995780474
+│   e_kernel = 4.073902991663523e-15
+└   e_trunc = 2.0340386751241764e-10
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 107168
+│   host_alloc_sfs = 129552
+│   device_alloc_base = 400
+└   device_alloc_sfs = 400
+┌ Info: device radix SFS replay parity [wake n=20000 P=4 Float64 rho_t=4.789]
+│   e_replay = 0.01705108399578048
+│   err_replay.u_rel_rms = 0.00019010739427351508
+└   err_replay.j_rel_rms = 0.0012167195598569733
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [wake n=20000 P=4 Float64 rho_t=4.789]
+└   replay_body_parity = 4.871045485900702e-17
+Test Summary:                                         | Pass  Total     Time
+device-resident radix FMM: SFS device pass (task 048) |  300    300  2m59.1s
+┌ Info: device radix SFS strict point [cube n=1500 P=4 Float64 rho_t=4.211]
+│   err.u_rel_rms = 4.6693342991921217e-5
+│   err.j_rel_rms = 0.0002136401613571803
+│   e_first = 0.00040931805449541034
+│   e_warm = 0.00040931805449541636
+│   strict_gate = 0.0005
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=4 Float64 rho_t=4.789]
+│   err.u_rel_rms = 2.8571591358615394e-5
+│   err.j_rel_rms = 6.395261758495044e-5
+│   e_first = 0.0001597348904954148
+│   e_warm = 0.00015973489049541146
+│   strict_gate = 0.0005
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=8 Float64 rho_t=4.211]
+│   err.u_rel_rms = 4.6236399351880696e-5
+│   err.j_rel_rms = 0.00020814742784169046
+│   e_first = 0.00038830553318443045
+│   e_warm = 0.0003883055331844309
+│   strict_gate = 0.0005
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=8 Float64 rho_t=4.789]
+│   err.u_rel_rms = 2.7873539758103575e-5
+│   err.j_rel_rms = 4.1863505729990494e-5
+│   e_first = 9.184693720019015e-5
+│   e_warm = 9.184693720018843e-5
+│   strict_gate = 0.0005
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=4 Float32 rho_t=4.211]
+│   err.u_rel_rms = 4.6707948389727386e-5
+│   err.j_rel_rms = 0.0002136627530088093
+│   e_first = 0.00040952262279286643
+│   e_warm = 0.0004095680472596738
+│   strict_gate = 0.001
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=4 Float32 rho_t=4.789]
+│   err.u_rel_rms = 2.8576456017306082e-5
+│   err.j_rel_rms = 6.395967099772628e-5
+│   e_first = 0.0001598509496169414
+│   e_warm = 0.00015988405053317208
+│   strict_gate = 0.001
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=8 Float32 rho_t=4.211]
+│   err.u_rel_rms = 4.6250208782028795e-5
+│   err.j_rel_rms = 0.00020817401280259591
+│   e_first = 0.00038855896795812696
+│   e_warm = 0.0003885618386701919
+│   strict_gate = 0.001
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=8 Float32 rho_t=4.789]
+│   err.u_rel_rms = 2.788326930573215e-5
+│   err.j_rel_rms = 4.188109837020182e-5
+│   e_first = 9.194485370651501e-5
+│   e_warm = 9.194407902830159e-5
+│   strict_gate = 0.001
+└   graph_live = true
+Test Summary:                                                 | Pass  Total     Time
+device-resident radix SFS: strict tail-budget operating point |   24     24  4m01.2s
+stage3_raw_log=/home/rander39/FLOWVPM-046/fm048_device_tests_13303399.log
+stage3_raw_log_sha256=d45111dbf484322146366ba7d7aa80ce63a349e4c428791e2e92abfe20fafe9c
+=== stage 4: corrected 048 synchronized A/B matrix ===
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = [1.19995836556002, 1.19995836556002, 1.19995836556002], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   n = 20000
+│   a = 0.005442494
+│   b = 0.006492531
+│   marginal = 0.0010500370000000002
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = [1.19995836556002, 1.19995836556002, 1.19995836556002], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   n = 20000
+│   a = 0.006194647
+│   b = 0.00751718
+│   marginal = 0.0013225329999999999
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.211
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(8, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = [1.19995836556002, 1.19995836556002, 1.19995836556002], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.211
+│   n = 20000
+│   a = 0.00858115
+│   b = 0.009627618
+│   marginal = 0.001046468
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(8, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = [1.19995836556002, 1.19995836556002, 1.19995836556002], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   n = 20000
+│   a = 0.009601069
+│   b = 0.010911675
+│   marginal = 0.0013106059999999989
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.211
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = Float32[1.199981, 1.199981, 1.199981], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.211
+│   n = 20000
+│   a = 0.003381514
+│   b = 0.0039382
+│   marginal = 0.0005566860000000002
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.789
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = Float32[1.199981, 1.199981, 1.199981], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.789
+│   n = 20000
+│   a = 0.003752211
+│   b = 0.004424243
+│   marginal = 0.0006720319999999995
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.211
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(8, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = Float32[1.199981, 1.199981, 1.199981], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.211
+│   n = 20000
+│   a = 0.008838855
+│   b = 0.009404283
+│   marginal = 0.0005654279999999998
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.789
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(8, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = Float32[1.199981, 1.199981, 1.199981], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.789
+│   n = 20000
+│   a = 0.009751585
+│   b = 0.010403723
+│   marginal = 0.000652138
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   n = 210056
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 4, ell_axes = [4, 4, 4], box_extent = [0.5190211120926624, 0.5190211120926624, 0.5190211120926624], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   n = 210056
+│   a = 0.063101145
+│   b = 0.090732855
+│   marginal = 0.027631710000000004
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   n = 210056
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 4, ell_axes = [4, 4, 4], box_extent = [0.5190211120926624, 0.5190211120926624, 0.5190211120926624], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   n = 210056
+│   a = 0.063988401
+│   b = 0.091979761
+│   marginal = 0.027991359999999993
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+FM048_AB_CSV=/home/rander39/FLOWVPM-046/fm048_ab_13303399.csv
+exact_command=FM048_P018_BIN=/home/rander39/FLOWVPM-046/data/fm048/p018_710_particles.bin FM048_AB_CSV=/home/rander39/FLOWVPM-046/fm048_ab_13303399.csv julia --project=/home/rander39/fm048env scripts/fm048_ab_benchmark.jl
+julia=julia version 1.11.7
+cuda_module= Currently Loaded Modules:   1) lmod            4) miniforge3/25.3.1-0          7) glibc/2.34-k45r4mc   2) defaultenv/10   5) cuda/12.8.1-zkkfiog          8) julia/1.11.7-6bmogfl   3) python/3.12     6) gcc-runtime/13.2.0-g4hc7ev     
+device=NVIDIA H200, GPU-8156c75c-bae4-2773-8c60-afad0cf9d059, 580.159.04
+flowvpm_sha=rsync-no-git
+fastmultipole_sha=rsync-no-git
+flowvpm_tree_sha256=c3f15957da200446e3205593bcbb3edb34245674418d114ac46051e72d1fc93d
+fastmultipole_tree_sha256=9e8f25993fac6458c2c4b2be8ba62e41c4c8d69f7998d458c9fbd60233afdf58
+stage3_raw_log=/home/rander39/FLOWVPM-046/fm048_device_tests_13303399.log
+stage3_raw_log_sha256=d45111dbf484322146366ba7d7aa80ce63a349e4c428791e2e92abfe20fafe9c
+flowvpm_project_sha256=aadd375eb74cf2126db9025d0cb6c76282901de22df9d13f81870e09c75951d9
+fastmultipole_project_sha256=f18903a9edc2938236181e1ddddd1540fa42e97a14329f7b8e4d5d05e7ae51e2
+manifest_sha256=c3848caf9e6012dffbb05fdec20e6cad1a2f45642388b8ae980614f5994e12db
+p018_snapshot=/home/rander39/FLOWVPM-046/data/fm048/p018_710_particles.bin
+p018_snapshot_sha256=0d913634de780b026649445a7a71e3e76c64ef5716c513636dc1998afd7155ab
+pkg_status_begin
+Status `~/fm048env/Manifest.toml`
+  [a4c015fc] ANSIColoredPrinters v0.0.1
+  [621f4979] AbstractFFTs v1.5.0
+  [1520ce14] AbstractTrees v0.4.5
+  [7d9f7c33] Accessors v0.1.45
+  [79e6a3ab] Adapt v4.7.0
+  [a9b6321e] Atomix v1.1.3
+  [ab4f0b2a] BFloat16s v0.6.1
+  [fbb218c0] BSON v0.3.9
+  [fa961155] CEnum v0.5.0
+  [052768ef] CUDA v6.3.0
+  [bd0ed864] CUDACore v6.3.0
+  [9ec180c6] CUDATools v6.3.0
+  [1af6417a] CUDA_Runtime_Discovery v2.1.0
+  [9e67e8f6] CUPTI v6.3.0
+⌃ [944b1d66] CodecZlib v0.7.8
+  [861a8166] Combinatorics v1.1.0
+  [38540f10] CommonSolve v0.2.13
+  [34da2185] Compat v4.18.1
+  [9db33cc3] CompilerCaching v0.4.2
+  [a33af91c] CompositionsBase v0.1.2
+  [187b0558] ConstructionBase v1.6.0
+  [a8cc5b0e] Crayons v4.2.0
+  [9a962f9c] DataAPI v1.16.0
+⌃ [864edb3b] DataStructures v0.18.22
+  [e2d170a0] DataValueInterfaces v1.0.0
+  [ffbed154] DocStringExtensions v0.9.5
+  [e30172f5] Documenter v1.17.0
+  [6a4e32cb] EllipticFunctions v2.0.1
+  [e2ba6199] ExprTools v0.1.11
+  [6e19019d] FLOWVPM v4.1.0 `~/FLOWVPM-046`
+  [ce07d0d3] FastMultipole v2.3.0 `~/FastMultipole-046`
+  [1a297f60] FillArrays v1.17.0
+⌃ [0c68f7d7] GPUArrays v11.5.12
+  [46192b85] GPUArraysCore v0.2.0
+⌃ [61eb1bfa] GPUCompiler v2.2.1
+  [096a3bc2] GPUToolbox v3.0.0
+  [d7ba0133] Git v1.5.0
+  [19dc6840] HCubature v1.8.0
+  [f67ccb44] HDF5 v0.17.3
+  [076d061b] HashArrayMappedTries v0.2.0
+  [b5f81e59] IOCapture v1.0.0
+  [18e54dd8] IntegerMathUtils v0.1.4
+  [3587e190] InverseFunctions v0.1.17
+  [92d709cd] IrrationalConstants v0.2.6
+  [82899510] IteratorInterfaceExtensions v1.0.0
+  [692b3bcd] JLLWrappers v1.8.0
+⌃ [682c06a0] JSON v1.7.0
+  [63c18a36] KernelAbstractions v0.9.42
+  [929cbde3] LLVM v9.13.0
+  [8b046642] LLVMLoopInfo v1.0.0
+  [b964fa9f] LaTeXStrings v1.4.1
+  [0e77f7df] LazilyInitializedFields v1.3.0
+  [9c8b4983] LightXML v0.9.3
+  [2ab3a3ac] LogExpFunctions v1.0.1
+  [3da0fdf6] MPIPreferences v0.1.12
+  [1914dd2f] MacroTools v0.5.16
+  [d0879d2d] MarkdownAST v0.1.3
+  [611af6d1] NVML v6.3.0
+  [5da4648a] NVTX v1.0.3
+⌅ [bac558e1] OrderedCollections v1.8.2
+  [69de0a69] Parsers v2.8.7
+⌅ [aea7be01] PrecompileTools v1.2.1
+  [21216c6a] Preferences v1.5.2
+  [08abe8d2] PrettyTables v3.4.8
+  [27ebfcd6] Primes v0.5.7
+  [1fd47b50] QuadGK v2.11.3
+  [74087812] Random123 v1.7.1
+  [e6cf234a] RandomNumbers v1.6.0
+  [189a3867] Reexport v1.2.2
+  [2792f1a3] RegistryInstances v0.1.0
+  [ae029012] Requires v1.3.1
+⌃ [f2b01f46] Roots v2.3.0
+  [7e506255] ScopedValues v1.6.2
+⌃ [276daf66] SpecialFunctions v2.8.3
+  [90137ffa] StaticArrays v1.9.19
+  [1e83bf80] StaticArraysCore v1.4.4
+  [10745b16] Statistics v1.11.1
+  [892a3eda] StringManipulation v0.5.0
+⌃ [ec057cc2] StructUtils v2.8.3
+  [3783bdb8] TableTraits v1.0.1
+  [bd369af6] Tables v1.13.0
+  [1e6cf692] TestEnv v1.103.6
+  [e689c965] Tracy v0.1.6
+  [3bb67fe8] TranscodingStreams v0.11.3
+  [013be700] UnsafeAtomics v0.3.2
+  [4004b06d] VTKBase v1.0.1
+  [64499a7a] WriteVTK v1.22.0
+  [182d3088] cuBLAS v6.3.0
+  [533571aa] cuFFT v6.3.0
+  [20fd9a0b] cuRAND v6.3.0
+  [887afef0] cuSOLVER v6.3.0
+  [b26da814] cuSPARSE v6.3.0
+  [d1e2174e] CUDA_Compiler_jll v0.5.1+0
+  [4ee394cb] CUDA_Driver_jll v13.3.1+0
+  [76a88914] CUDA_Runtime_jll v0.24.1+0
+⌃ [2e619515] Expat_jll v2.8.2+0
+  [020c3dae] Git_LFS_jll v3.7.1+0
+  [f8c6e375] Git_jll v2.55.0+0
+⌅ [0234f1f7] HDF5_jll v2.0.1+0
+⌃ [e33a78d0] Hwloc_jll v2.12.1+0
+  [9c1d0b0a] JuliaNVTXCallbacks_jll v0.2.1+0
+  [dad2f222] LLVMExtra_jll v0.0.46+0
+  [ad6e5548] LibTracyClient_jll v0.13.1+0
+  [94ce4f54] Libiconv_jll v1.18.0+0
+⌃ [7cb0a576] MPICH_jll v4.3.2+0
+  [f1f71cc9] MPItrampoline_jll v5.5.6+0
+  [9237b28f] MicrosoftMPI_jll v10.1.4+3
+  [ef6e0fe3] NVPTX_LLVM_Backend_jll v22.1.7+1
+  [e98f9f5b] NVTX_jll v3.2.2+0
+  [fe0851c0] OpenMPI_jll v5.0.11+0
+⌃ [9bd350c2] OpenSSH_jll v10.4.1+0
+  [458c3c95] OpenSSL_jll v3.5.7+0
+  [efe28fd5] OpenSpecFun_jll v0.5.6+0
+  [02c8fc9c] XML2_jll v2.15.3+0
+⌅ [2b3700d1] aws_c_auth_jll v0.9.6+0
+  [70f11efc] aws_c_cal_jll v0.9.13+0
+  [73048d1d] aws_c_common_jll v0.12.6+0
+  [73a04cd5] aws_c_compression_jll v0.3.2+0
+  [3254fc65] aws_c_http_jll v0.10.13+0
+  [13c41daa] aws_c_io_jll v0.26.3+0
+⌅ [bd1f34fb] aws_c_s3_jll v0.11.5+0
+  [1282aa60] aws_c_sdkutils_jll v0.2.4+1
+  [b2a88e68] aws_checksums_jll v0.2.10+0
+  [1e29f10c] demumble_jll v1.3.0+0
+  [c4b69c83] dlfcn_win32_jll v1.4.2+0
+  [477f73a3] libaec_jll v1.1.7+0
+  [cddc5d3d] s2n_tls_jll v1.7.3+0
+  [8b5cbfcf] tree_sitter_gcn_jll v0.1.0+0
+  [44208993] tree_sitter_llvm_jll v1.1.0+0
+  [71e3f6e6] tree_sitter_ptx_jll v0.1.0+0
+  [f0e86581] tree_sitter_spirv_jll v0.1.0+0
+  [0dad84c5] ArgTools v1.1.2
+  [56f22d72] Artifacts v1.11.0
+  [2a0f44e3] Base64 v1.11.0
+  [ade2ca70] Dates v1.11.0
+  [f43a241f] Downloads v1.6.0
+  [7b1f6079] FileWatching v1.11.0
+  [b77e0a4c] InteractiveUtils v1.11.0
+  [4af54fe1] LazyArtifacts v1.11.0
+  [b27032c2] LibCURL v0.6.4
+  [76f85450] LibGit2 v1.11.0
+  [8f399da3] Libdl v1.11.0
+  [37e2e46d] LinearAlgebra v1.11.0
+  [56ddb016] Logging v1.11.0
+  [d6f4376e] Markdown v1.11.0
+  [a63ad114] Mmap v1.11.0
+  [ca575930] NetworkOptions v1.2.0
+  [44cfe95a] Pkg v1.11.0
+  [de0858da] Printf v1.11.0
+  [3fa0cd96] REPL v1.11.0
+  [9a3f8284] Random v1.11.0
+  [ea8e919c] SHA v0.7.0
+  [9e88b42a] Serialization v1.11.0
+  [6462fe0b] Sockets v1.11.0
+  [2f01184e] SparseArrays v1.11.0
+  [f489334b] StyledStrings v1.11.0
+  [fa267f1f] TOML v1.0.3
+  [a4e569a6] Tar v1.10.0
+  [8dfed614] Test v1.11.0
+  [cf7118a7] UUIDs v1.11.0
+  [4ec0a83e] Unicode v1.11.0
+  [e66e0078] CompilerSupportLibraries_jll v1.1.1+0
+  [deac9b47] LibCURL_jll v8.6.0+0
+  [e37daf67] LibGit2_jll v1.7.2+0
+  [29816b5a] LibSSH2_jll v1.11.0+1
+  [c8ffd9c3] MbedTLS_jll v2.28.6+0
+  [14a3606d] MozillaCACerts_jll v2023.12.12
+  [4536629a] OpenBLAS_jll v0.3.27+1
+  [05823500] OpenLibm_jll v0.8.5+0
+  [efcefdf7] PCRE2_jll v10.42.0+1
+  [bea87d4a] SuiteSparse_jll v7.7.0+0
+  [83775a58] Zlib_jll v1.2.13+1
+  [8e850b90] libblastrampoline_jll v5.11.0+0
+  [8e850ede] nghttp2_jll v1.59.0+0
+  [3f19e933] p7zip_jll v17.4.0+2
+Info Packages marked with ⌃ and ⌅ have new versions available. Those with ⌃ may be upgradable, but those with ⌅ are restricted by compatibility constraints from upgrading. To see why use `status --outdated -m`
+pkg_status_end
+raw_log=/home/rander39/FLOWVPM-046/fm048_ab_13303399.log
+raw_log_sha256=212ce68f9bacc870ae84eeaff587475662d8e60e11be69d1a211edb35d1bf20f
+csv=/home/rander39/FLOWVPM-046/fm048_ab_13303399.csv
+csv_sha256=c2f188928e11afcfa95a3ff733e6b35508eda733468132ad1ddbdf12dc589da3
+=== stage 4b: 048 accuracy/efficiency tuning sweep (user-directed 2026-08-22) ===
+┌ Info: fm048 sweep phase 1: cube grid
+│   N = 20000
+│   REPS = 9
+│   SEED = 48048
+│   PS = (4, 6, 8)
+│   RHOS = (4.211, 4.789)
+└   QS = (0, 14, 17, 20)
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 53824
+│   e_u = 0.000336127435269729
+│   e_j = 0.0019086713440098822
+│   e_j_warm = 0.0019086713440098822
+│   e_sfs_first = 0.003961124191502321
+│   e_sfs_warm = 0.003961124191502323
+│   t_uj = 0.005417807
+│   t_ujsfs = 0.006459871
+└   replay_drift = 1.734723475976807e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   q = 14
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 0.00017234118825720348
+│   e_j = 0.0009592954687506848
+│   e_j_warm = 0.0009592954687506851
+│   e_sfs_first = 0.0020052785615556367
+│   e_sfs_warm = 0.0020052785615556376
+│   t_uj = 0.00601796
+│   t_ujsfs = 0.007342937
+└   replay_drift = 8.673617379884035e-19
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   q = 17
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 80896
+│   e_u = 0.0001319287599668405
+│   e_j = 0.0007294520214708899
+│   e_j_warm = 0.0007294520214708897
+│   e_sfs_first = 0.0015062026491617884
+│   e_sfs_warm = 0.0015062026491617902
+│   t_uj = 0.006130225
+│   t_ujsfs = 0.007648305
+└   replay_drift = 1.734723475976807e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   q = 20
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 96808
+│   e_u = 9.602338434517245e-5
+│   e_j = 0.0005076357183768451
+│   e_j_warm = 0.0005076357183768451
+│   e_sfs_first = 0.0010448783764704123
+│   e_sfs_warm = 0.001044878376470415
+│   t_uj = 0.00630981
+│   t_ujsfs = 0.008073503
+└   replay_drift = 2.6020852139652106e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 0.00016255377501805487
+│   e_j = 0.0009076013323639957
+│   e_j_warm = 0.0009076013323639958
+│   e_sfs_first = 0.001920210394356834
+│   e_sfs_warm = 0.0019202103943568385
+│   t_uj = 0.006189633
+│   t_ujsfs = 0.007500908
+└   replay_drift = 4.553649124439119e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   q = 14
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 0.00016255377501805468
+│   e_j = 0.0009076013323639958
+│   e_j_warm = 0.0009076013323639958
+│   e_sfs_first = 0.001920210394356825
+│   e_sfs_warm = 0.0019202103943568357
+│   t_uj = 0.006186187
+│   t_ujsfs = 0.007485151
+└   replay_drift = 1.0625181290357943e-17
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   q = 17
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 80896
+│   e_u = 0.00011841150888236053
+│   e_j = 0.0006597198770741534
+│   e_j_warm = 0.0006597198770741533
+│   e_sfs_first = 0.0013941473423589358
+│   e_sfs_warm = 0.0013941473423589293
+│   t_uj = 0.006346005
+│   t_ujsfs = 0.007857242
+└   replay_drift = 6.5052130349130266e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   q = 20
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 96808
+│   e_u = 7.672939823019297e-5
+│   e_j = 0.00040260373945624544
+│   e_j_warm = 0.0004026037394562457
+│   e_sfs_first = 0.0008660004902830737
+│   e_sfs_warm = 0.0008660004902830802
+│   t_uj = 0.006493198
+│   t_ujsfs = 0.008279047
+└   replay_drift = 6.5052130349130266e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.211
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 53824
+│   e_u = 6.677227942756949e-5
+│   e_j = 0.00033524776475118935
+│   e_j_warm = 0.00033524776475118946
+│   e_sfs_first = 0.0006428357952709427
+│   e_sfs_warm = 0.0006428357952709418
+│   t_uj = 0.004959582
+│   t_ujsfs = 0.005993559
+└   replay_drift = 8.673617379884035e-19
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.211
+│   q = 14
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 6.512941341406934e-5
+│   e_j = 0.00031462048118131343
+│   e_j_warm = 0.00031462048118131343
+│   e_sfs_first = 0.0005953934398782492
+│   e_sfs_warm = 0.0005953934398782321
+│   t_uj = 0.005265568
+│   t_ujsfs = 0.006584749
+└   replay_drift = 1.713039432527097e-17
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.211
+│   q = 17
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 80896
+│   e_u = 6.50057825359614e-5
+│   e_j = 0.00031279666898097625
+│   e_j_warm = 0.00031279666898097625
+│   e_sfs_first = 0.00058813328454232
+│   e_sfs_warm = 0.0005881332845423171
+│   t_uj = 0.005437053
+│   t_ujsfs = 0.006944933
+└   replay_drift = 2.8189256484623115e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.211
+│   q = 20
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 96808
+│   e_u = 6.492864924149389e-5
+│   e_j = 0.0003116450631974128
+│   e_j_warm = 0.0003116450631974126
+│   e_sfs_first = 0.0005855458676346158
+│   e_sfs_warm = 0.00058554586763462
+│   t_uj = 0.005643794
+│   t_ujsfs = 0.007423043
+└   replay_drift = 4.228388472693467e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.789
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 3.14220783896856e-5
+│   e_j = 6.582098591862178e-5
+│   e_j_warm = 6.582098591862188e-5
+│   e_sfs_first = 0.00013594106663319366
+│   e_sfs_warm = 0.00013594106663318857
+│   t_uj = 0.005534452
+│   t_ujsfs = 0.006837101
+└   replay_drift = 5.095750210681871e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.789
+│   q = 14
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 3.142207838968625e-5
+│   e_j = 6.582098591862211e-5
+│   e_j_warm = 6.582098591862178e-5
+│   e_sfs_first = 0.00013594106663319507
+│   e_sfs_warm = 0.00013594106663319703
+│   t_uj = 0.005545558
+│   t_ujsfs = 0.006843439
+└   replay_drift = 1.951563910473908e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.789
+│   q = 17
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 80896
+│   e_u = 3.108998298421794e-5
+│   e_j = 5.619250712190799e-5
+│   e_j_warm = 5.619250712190842e-5
+│   e_sfs_first = 0.00011346054427286586
+│   e_sfs_warm = 0.00011346054427288128
+│   t_uj = 0.005603699
+│   t_ujsfs = 0.007114562
+└   replay_drift = 1.54227759036063e-17
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.789
+│   q = 20
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 96808
+│   e_u = 3.090734133629989e-5
+│   e_j = 5.019308118705929e-5
+│   e_j_warm = 5.0193081187059366e-5
+│   e_sfs_first = 0.00010021237662869447
+│   e_sfs_warm = 0.00010021237662869222
+│   t_uj = 0.005802107
+│   t_ujsfs = 0.007584578
+└   replay_drift = 2.2497195079074217e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.211
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 53824
+│   e_u = 6.488943740674709e-5
+│   e_j = 0.00031131396326005166
+│   e_j_warm = 0.0003113139632600522
+│   e_sfs_first = 0.0005837252198009548
+│   e_sfs_warm = 0.0005837252198009462
+│   t_uj = 0.008707372
+│   t_ujsfs = 0.009747338
+└   replay_drift = 8.565197162635485e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.211
+│   q = 14
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 6.48818640959528e-5
+│   e_j = 0.00031119239282081717
+│   e_j_warm = 0.0003111923928208174
+│   e_sfs_first = 0.0005841186654596339
+│   e_sfs_warm = 0.0005841186654596274
+│   t_uj = 0.009182595
+│   t_ujsfs = 0.010514254
+└   replay_drift = 6.5052130349130266e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.211
+│   q = 17
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 80896
+│   e_u = 6.488208546441504e-5
+│   e_j = 0.0003111839861285067
+│   e_j_warm = 0.0003111839861285064
+│   e_sfs_first = 0.0005839955911306047
+│   e_sfs_warm = 0.0005839955911306063
+│   t_uj = 0.009252955
+│   t_ujsfs = 0.010774923
+└   replay_drift = 1.6263032587282567e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.211
+│   q = 20
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 96808
+│   e_u = 6.488159502700887e-5
+│   e_j = 0.00031118216947769914
+│   e_j_warm = 0.0003111821694776994
+│   e_sfs_first = 0.0005838577703581406
+│   e_sfs_warm = 0.0005838577703581458
+│   t_uj = 0.009350849
+│   t_ujsfs = 0.011132991
+└   replay_drift = 5.204170427930421e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 3.084455147756224e-5
+│   e_j = 4.764174031291042e-5
+│   e_j_warm = 4.7641740312910624e-5
+│   e_sfs_first = 9.357252654821562e-5
+│   e_sfs_warm = 9.357252654822087e-5
+│   t_uj = 0.00959978
+│   t_ujsfs = 0.010923013
+└   replay_drift = 5.244828009398628e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   q = 14
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 3.0844551477562046e-5
+│   e_j = 4.7641740312910394e-5
+│   e_j_warm = 4.7641740312910306e-5
+│   e_sfs_first = 9.357252654822762e-5
+│   e_sfs_warm = 9.357252654821363e-5
+│   t_uj = 0.009625261
+│   t_ujsfs = 0.01095026
+└   replay_drift = 1.3986208025063007e-17
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   q = 17
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 80896
+│   e_u = 3.084422173184965e-5
+│   e_j = 4.7593366393220136e-5
+│   e_j_warm = 4.759336639321978e-5
+│   e_sfs_first = 9.358828320335188e-5
+│   e_sfs_warm = 9.358828320334616e-5
+│   t_uj = 0.009393978
+│   t_ujsfs = 0.010930716
+└   replay_drift = 5.719166459861036e-18
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   q = 20
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 96808
+│   e_u = 3.08438881667625e-5
+│   e_j = 4.757924721385618e-5
+│   e_j_warm = 4.7579247213855906e-5
+│   e_sfs_first = 9.357515284528065e-5
+│   e_sfs_warm = 9.357515284528553e-5
+│   t_uj = 0.009512722
+│   t_ujsfs = 0.011289175
+└   replay_drift = 4.87890977618477e-18
+┌ Info: fm048 sweep frontier
+│   n_frontier = 7
+│   n_selected = 8
+│   configs =
+│    8-element Vector{@NamedTuple{P::Int64, rho_t::Float64, q::Int64}}:
+│     (P = 4, rho_t = 4.211, q = 0)
+└     ⋮
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.211
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 53824
+│   e_u = 0.0003088848710222938
+│   e_j = 0.0018128763587632855
+│   e_j_warm = 0.0018128767400019913
+│   e_sfs_first = 0.003857832667855792
+│   e_sfs_warm = 0.0038578513817499075
+│   t_uj = 0.003357575
+│   t_ujsfs = 0.003905121
+└   replay_drift = 1.8713894115330448e-8
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.789
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 0.0001485639867777097
+│   e_j = 0.0008678062954666457
+│   e_j_warm = 0.0008678071256597927
+│   e_sfs_first = 0.001822831980428382
+│   e_sfs_warm = 0.0018228417959727547
+│   t_uj = 0.003739678
+│   t_ujsfs = 0.004408941
+└   replay_drift = 9.815544372735949e-9
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.789
+│   q = 14
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 2.8533677728979334e-5
+│   e_j = 4.642927984732068e-5
+│   e_j_warm = 4.6429579848817865e-5
+│   e_sfs_first = 8.94504072684321e-5
+│   e_sfs_warm = 8.945313449431826e-5
+│   t_uj = 0.009755408
+│   t_ujsfs = 0.010427385
+└   replay_drift = 2.72722588614974e-9
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.789
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 2.8532411136605403e-5
+│   e_j = 4.643098329776318e-5
+│   e_j_warm = 4.6429899625056327e-5
+│   e_sfs_first = 8.945599884039314e-5
+│   e_sfs_warm = 8.944530210073517e-5
+│   t_uj = 0.009713661
+│   t_ujsfs = 0.010362394
+└   replay_drift = 1.0696739657974227e-8
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float32
+│   rho_t = 4.789
+│   q = 20
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 96808
+│   e_u = 2.8597265436408938e-5
+│   e_j = 4.8440343609600256e-5
+│   e_j_warm = 4.844076334283326e-5
+│   e_sfs_first = 9.501971486575705e-5
+│   e_sfs_warm = 9.501845797146097e-5
+│   t_uj = 0.005379431
+│   t_ujsfs = 0.006165277
+└   replay_drift = 1.2568942960803752e-9
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float32
+│   rho_t = 4.789
+│   q = 17
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 80896
+│   e_u = 2.8754118127491465e-5
+│   e_j = 5.413494751645112e-5
+│   e_j_warm = 5.4136401363913355e-5
+│   e_sfs_first = 0.00010953456632394369
+│   e_sfs_warm = 0.00010951606336756212
+│   t_uj = 0.005383243
+│   t_ujsfs = 0.006109456
+└   replay_drift = 1.8502956381565515e-8
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float32
+│   rho_t = 4.789
+│   q = 0
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 2.906456772691916e-5
+│   e_j = 6.329053872863592e-5
+│   e_j_warm = 6.329007664564781e-5
+│   e_sfs_first = 0.00013013557988520726
+│   e_sfs_warm = 0.0001301442498869539
+│   t_uj = 0.005272062
+│   t_ujsfs = 0.005936263
+└   replay_drift = 8.670001746646349e-9
+┌ Info: fm048 sweep config
+│   case = "cube"
+│   P = 6
+│   R = Float32
+│   rho_t = 4.211
+│   q = 14
+│   ell = 3
+│   n = 20000
+│   row.n_direct = 69664
+│   e_u = 6.159159654447259e-5
+│   e_j = 0.0003035610164172657
+│   e_j_warm = 0.0003035609495518995
+│   e_sfs_first = 0.0005670723651035515
+│   e_sfs_warm = 0.0005670787639565633
+│   t_uj = 0.005211753
+│   t_ujsfs = 0.00584851
+└   replay_drift = 6.3988530118021594e-9
+┌ Info: fm048 sweep phase 2: p018 arms
+│   n = 210056
+└   n_arms = 8
+┌ Info: fm048 sweep config
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   q = 0
+│   ell = 4
+│   n = 210056
+│   row.n_direct = 126778
+│   e_u = 0.00010882493524282139
+│   e_j = 0.0005803370121554655
+│   e_j_warm = 0.0005803370121554655
+│   e_sfs_first = 0.002797685665531487
+│   e_sfs_warm = 0.0027976856655314926
+│   t_uj = 0.062872816
+│   t_ujsfs = 0.090578756
+└   replay_drift = 5.637851296924623e-18
+┌ Info: fm048 sweep config
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   q = 0
+│   ell = 4
+│   n = 210056
+│   row.n_direct = 126778
+│   e_u = 0.00010851213045355128
+│   e_j = 0.0005534320380340762
+│   e_j_warm = 0.0005534320380340762
+│   e_sfs_first = 0.0027237584184227857
+│   e_sfs_warm = 0.0027237584184227888
+│   t_uj = 0.063815257
+│   t_ujsfs = 0.091170647
+└   replay_drift = 3.0357660829594124e-18
+┌ Info: fm048 sweep config
+│   case = "p018"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   q = 14
+│   ell = 4
+│   n = 210056
+│   row.n_direct = 167798
+│   e_u = 1.7207207898734064e-6
+│   e_j = 1.802966653646749e-5
+│   e_j_warm = 1.802966653646721e-5
+│   e_sfs_first = 5.8442177653323395e-5
+│   e_sfs_warm = 5.844217765332292e-5
+│   t_uj = 0.092830142
+│   t_ujsfs = 0.131551565
+└   replay_drift = 4.743384504624082e-19
+┌ Info: fm048 sweep config
+│   case = "p018"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   q = 0
+│   ell = 4
+│   n = 210056
+│   row.n_direct = 126778
+│   e_u = 1.7242596267299129e-6
+│   e_j = 1.8047351254169236e-5
+│   e_j_warm = 1.8047351254169805e-5
+│   e_sfs_first = 5.8858453487368755e-5
+│   e_sfs_warm = 5.8858453487366404e-5
+│   t_uj = 0.078206729
+│   t_ujsfs = 0.106221753
+└   replay_drift = 2.3513634615779377e-18
+┌ Info: fm048 sweep config
+│   case = "p018"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.789
+│   q = 20
+│   ell = 4
+│   n = 210056
+│   row.n_direct = 238850
+│   e_u = 1.8067460825625443e-6
+│   e_j = 1.8527435205780658e-5
+│   e_j_warm = 1.8527435205781183e-5
+│   e_sfs_first = 6.292249189245162e-5
+│   e_sfs_warm = 6.292249189244028e-5
+│   t_uj = 0.102521193
+│   t_ujsfs = 0.154897187
+└   replay_drift = 1.134346522962959e-17
+┌ Info: fm048 sweep config
+│   case = "p018"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.789
+│   q = 17
+│   ell = 4
+│   n = 210056
+│   row.n_direct = 196566
+│   e_u = 1.9895226782184537e-6
+│   e_j = 1.9449132362792147e-5
+│   e_j_warm = 1.944913236279298e-5
+│   e_sfs_first = 7.23638127660442e-5
+│   e_sfs_warm = 7.236381276602597e-5
+│   t_uj = 0.089562687
+│   t_ujsfs = 0.132865485
+└   replay_drift = 1.8228149024912543e-17
+┌ Info: fm048 sweep config
+│   case = "p018"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.789
+│   q = 0
+│   ell = 4
+│   n = 210056
+│   row.n_direct = 126778
+│   e_u = 3.6868687526304796e-6
+│   e_j = 2.9158113607989967e-5
+│   e_j_warm = 2.91581136079899e-5
+│   e_sfs_first = 0.00014644841086949414
+│   e_sfs_warm = 0.00014644841086949574
+│   t_uj = 0.065414591
+│   t_ujsfs = 0.093446732
+└   replay_drift = 1.599198204416119e-18
+┌ Info: fm048 sweep config
+│   case = "p018"
+│   P = 6
+│   R = Float64
+│   rho_t = 4.211
+│   q = 14
+│   ell = 4
+│   n = 210056
+│   row.n_direct = 167798
+│   e_u = 7.688948599297789e-6
+│   e_j = 0.00018213588388058365
+│   e_j_warm = 0.0001821358838805841
+│   e_sfs_first = 0.0006397015551056647
+│   e_sfs_warm = 0.0006397015551056503
+│   t_uj = 0.078073284
+│   t_ujsfs = 0.116647848
+└   replay_drift = 1.441988889405721e-17
+=== fm048 sweep gate report (strict delivered gate on the production field) ===
+p018 P=4 rho_t=4.211 q=derived: e_sfs=0.0027976856655314926 FAIL (gate 0.0005); cube e_sfs=0.003961124191502323, p018/cube ratio=0.7062857740066018, t_ujsfs=0.090578756s (cube 0.006459871s)
+p018 P=4 rho_t=4.789 q=derived: e_sfs=0.0027237584184227888 FAIL (gate 0.0005); cube e_sfs=0.0019202103943568385, p018/cube ratio=1.4184687398982097, t_ujsfs=0.091170647s (cube 0.007500908s)
+p018 P=8 rho_t=4.789 q=14: e_sfs=5.844217765332292e-5 PASS (gate 0.0005); cube e_sfs=9.357252654821363e-5, p018/cube ratio=0.6245655622348761, t_ujsfs=0.131551565s (cube 0.01095026s)
+p018 P=8 rho_t=4.789 q=derived: e_sfs=5.8858453487366404e-5 PASS (gate 0.0005); cube e_sfs=9.357252654822087e-5, p018/cube ratio=0.6290142594048136, t_ujsfs=0.106221753s (cube 0.010923013s)
+p018 P=6 rho_t=4.789 q=20: e_sfs=6.292249189244028e-5 PASS (gate 0.0005); cube e_sfs=0.00010021237662869222, p018/cube ratio=0.6278914242856574, t_ujsfs=0.154897187s (cube 0.007584578s)
+p018 P=6 rho_t=4.789 q=17: e_sfs=7.236381276602597e-5 PASS (gate 0.0005); cube e_sfs=0.00011346054427288128, p018/cube ratio=0.6377883451007028, t_ujsfs=0.132865485s (cube 0.007114562s)
+p018 P=6 rho_t=4.789 q=derived: e_sfs=0.00014644841086949574 PASS (gate 0.0005); cube e_sfs=0.00013594106663318857, p018/cube ratio=1.0772933779066134, t_ujsfs=0.093446732s (cube 0.006837101s)
+p018 P=6 rho_t=4.211 q=14: e_sfs=0.0006397015551056503 FAIL (gate 0.0005); cube e_sfs=0.0005953934398782321, p018/cube ratio=1.0744182119918553, t_ujsfs=0.116647848s (cube 0.006584749s)
+FM048_SWEEP_CSV=/home/rander39/FLOWVPM-046/fm048_sweep_13303399.csv
+exact_command=FM048_P018_BIN=/home/rander39/FLOWVPM-046/data/fm048/p018_710_particles.bin FM048_SWEEP_CSV=/home/rander39/FLOWVPM-046/fm048_sweep_13303399.csv julia --project=/home/rander39/fm048env scripts/fm048_tuning_sweep.jl
+raw_log=/home/rander39/FLOWVPM-046/fm048_sweep_13303399.log
+raw_log_sha256=3ab19c17e48c1d73d35c4b8f6bec55121cffbbea22f531e701d2078de6632e33
+csv=/home/rander39/FLOWVPM-046/fm048_sweep_13303399.csv
+csv_sha256=883a3e10419361135c8fdf5248ce404e97e73091f2d5071883fe6e50dad25169
+p018_snapshot=/home/rander39/FLOWVPM-046/data/fm048/p018_710_particles.bin
+p018_snapshot_sha256=0d913634de780b026649445a7a71e3e76c64ef5716c513636dc1998afd7155ab
+ab_provenance=/home/rander39/FLOWVPM-046/fm048_ab_13303399.provenance
+=== stage 5: 047 device construction-lock check ===
+Test Summary:                                          | Pass  Total     Time
+047 device construction-lock (late flip errors loudly) |    4      4  1m00.1s
+fm048 device settings check complete
+vpm048 job complete

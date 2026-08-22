@@ -615,7 +615,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     # can diverge (source subdivision stops early at large body radii)
     TF = promote_type(numtype.(target_systems)...)
     switches = DerivativesSwitch(true, true, true, source_systems)
-    source_tree = Tree(source_systems, false, switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
+    source_tree = Tree(source_systems, SourceTree(), switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
     switches = DerivativesSwitch(true, true, true, target_systems)
     target_tree = Tree(source_tree, target_systems, switches; shrink, recenter)
     assert_shared_topology(target_tree, source_tree)

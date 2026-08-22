@@ -1,0 +1,27 @@
+=== node: m13h-1-2
+GPU 0: NVIDIA H200 (UUID: GPU-9baff29b-8c02-a58d-e132-e47ee1f1eca4)
+ERROR: LoadError: the radix/GPU FMM path uses parameters fixed at cache construction and does not support FMM autotuning. Construct the particle field with, e.g., FMM(; p=4, autotune_p=false, autotune_ncrit=false, autotune_reg_error=false, default_rho_over_sigma=1.0). Got autotune_p=true, autotune_ncrit=true, autotune_reg_error=true.
+Stacktrace:
+  [1] error(s::String)
+    @ Base ./error.jl:35
+  [2] _validate_radix_fmm_settings(pfield::FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.null_model)}, FLOWVPM.Kernel{typeof(FLOWVPM.zeta_gauserf), typeof(FLOWVPM.g_gauserf), typeof(FLOWVPM.dgdr_gauserf), typeof(FLOWVPM.g_dgdr_gauserf)}, typeof(FLOWVPM.UJ_fmm), typeof(FLOWVPM.rungekutta3), FLOWVPM.Relaxation{Float64, typeof(FLOWVPM.relax_correctedpedrizzetti), typeof(FLOWVPM.relax_filter_all)}, CuArray{Float64, 2, CUDACore.DeviceMemory}})
+    @ FLOWVPM ~/FLOWVPM-046/src/FLOWVPM_fmm_radix.jl:375
+  [3] _build_radix_fmm_cache(pfield::FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.null_model)}, FLOWVPM.Kernel{typeof(FLOWVPM.zeta_gauserf), typeof(FLOWVPM.g_gauserf), typeof(FLOWVPM.dgdr_gauserf), typeof(FLOWVPM.g_dgdr_gauserf)}, typeof(FLOWVPM.UJ_fmm), typeof(FLOWVPM.rungekutta3), FLOWVPM.Relaxation{Float64, typeof(FLOWVPM.relax_correctedpedrizzetti), typeof(FLOWVPM.relax_filter_all)}, CuArray{Float64, 2, CUDACore.DeviceMemory}}, settings::FLOWVPM.RadixFMMSettings)
+    @ FLOWVPM ~/FLOWVPM-046/src/FLOWVPM_fmm_radix.jl:507
+  [4] _radix_fmm_coupling!(pfield::FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.null_model)}, FLOWVPM.Kernel{typeof(FLOWVPM.zeta_gauserf), typeof(FLOWVPM.g_gauserf), typeof(FLOWVPM.dgdr_gauserf), typeof(FLOWVPM.g_dgdr_gauserf)}, typeof(FLOWVPM.UJ_fmm), typeof(FLOWVPM.rungekutta3), FLOWVPM.Relaxation{Float64, typeof(FLOWVPM.relax_correctedpedrizzetti), typeof(FLOWVPM.relax_filter_all)}, CuArray{Float64, 2, CUDACore.DeviceMemory}})
+    @ FLOWVPM ~/FLOWVPM-046/src/FLOWVPM_fmm_radix.jl:573
+  [5] _radix_fmm_evaluate!(pfield::FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.null_model)}, FLOWVPM.Kernel{typeof(FLOWVPM.zeta_gauserf), typeof(FLOWVPM.g_gauserf), typeof(FLOWVPM.dgdr_gauserf), typeof(FLOWVPM.g_dgdr_gauserf)}, typeof(FLOWVPM.UJ_fmm), typeof(FLOWVPM.rungekutta3), FLOWVPM.Relaxation{Float64, typeof(FLOWVPM.relax_correctedpedrizzetti), typeof(FLOWVPM.relax_filter_all)}, CuArray{Float64, 2, CUDACore.DeviceMemory}}; sfs::Bool)
+    @ FLOWVPM ~/FLOWVPM-046/src/FLOWVPM_fmm_radix.jl:594
+  [6] _radix_fmm_evaluate!
+    @ ~/FLOWVPM-046/src/FLOWVPM_fmm_radix.jl:593 [inlined]
+  [7] #UJ_fmm_gpu!#124
+    @ ~/FLOWVPM-046/src/FLOWVPM_fmm_radix.jl:635 [inlined]
+  [8] UJ_fmm_gpu!
+    @ ~/FLOWVPM-046/src/FLOWVPM_fmm_radix.jl:628 [inlined]
+  [9] #UJ_fmm#162
+    @ ~/FLOWVPM-046/src/FLOWVPM_UJ.jl:118 [inlined]
+ [10] run_arm(; statics::Bool, extracap::Bool, allocwrap::Bool, ref::FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.null_model)}, FLOWVPM.Kernel{typeof(FLOWVPM.zeta_gauserf), typeof(FLOWVPM.g_gauserf), typeof(FLOWVPM.dgdr_gauserf), typeof(FLOWVPM.g_dgdr_gauserf)}, typeof(FLOWVPM.UJ_fmm), typeof(FLOWVPM.rungekutta3), FLOWVPM.Relaxation{Float64, typeof(FLOWVPM.relax_correctedpedrizzetti), typeof(FLOWVPM.relax_filter_all)}, CuArray{Float64, 2, CUDACore.DeviceMemory}})
+    @ Main ~/FLOWVPM-046/scripts/fm048_replay_diag2.jl:86
+ [11] top-level scope
+    @ ~/FLOWVPM-046/scripts/fm048_replay_diag2.jl:120
+in expression starting at /home/rander39/FLOWVPM-046/scripts/fm048_replay_diag2.jl:117

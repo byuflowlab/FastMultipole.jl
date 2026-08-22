@@ -1,0 +1,160 @@
+Test Summary:                                  | Pass  Total   Time
+nextstep U_prev: loop vs broadcast equivalence |    6      6  11.0s
+┌ Info: host radix coupling [cube n=4000]
+│   err.u_rel_rms = 0.0007084256921606173
+└   err.j_rel_rms = 0.0031163571360493412
+┌ Info: host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00018513720455427522
+└   err.j_rel_rms = 0.0007817825183657797
+Test Summary:                               | Pass  Total   Time
+radix FMM coupling (host path) vs UJ_direct |   12     12  22.3s
+┌ Info: 035 settings [partitioned + concat]
+│   err.u_rel_rms = 0.00018513720455427522
+└   err.j_rel_rms = 0.0007817825183657782
+┌ Info: 035 settings [partitioned + precomputed_y]
+│   err.u_rel_rms = 0.00018513720455427566
+└   err.j_rel_rms = 0.0007817825183657796
+┌ Info: 035 settings [regularized + dense]
+│   err.u_rel_rms = 1.7000097172254492e-5
+└   err.j_rel_rms = 9.027079202669643e-5
+Test Summary:                                            | Pass  Total   Time
+radix FMM coupling: task-035 tuning settings (host path) |   99     99  10.3s
+Test Summary:                          | Pass  Total  Time
+radix FMM coupling: automatic recenter |    2      2  1.7s
+┌ Info: rectangular host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00017406940901323466
+└   err.j_rel_rms = 0.0007536144058241078
+Test Summary:                                                | Pass  Total  Time
+radix FMM coupling: rectangular bounds (task 037, host path) |   30     30  2.0s
+Test Summary:                                        | Pass  Total  Time
+radix FMM coupling: automatic recenter (rectangular) |    5      5  0.7s
+Test Summary:                                       | Pass  Total  Time
+radix FMM coupling: loud unsupported configurations |    4      4  1.7s
+┌ Info: SFS host radix [cube n=1500 P=4 Float64 rho_t=4.211]
+│   e_mech = 2.6396993793135704e-9
+│   e_direct = 0.00040929795446622387
+│   e_fmm = 0.0004092979544662178
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 0.0002136399834221702
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=4 Float64 rho_t=4.789]
+│   e_mech = 2.6395673012187247e-9
+│   e_direct = 0.00015973091478043572
+│   e_fmm = 0.000159730914780217
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 6.395227723838381e-5
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=8 Float64 rho_t=4.211]
+│   e_mech = 2.639470871040456e-9
+│   e_direct = 0.0003882851759370884
+│   e_fmm = 0.0003882851759371453
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 0.00020814715673364253
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=8 Float64 rho_t=4.789]
+│   e_mech = 2.639338806001938e-9
+│   e_direct = 9.18434420544306e-5
+│   e_fmm = 9.184344205432099e-5
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 4.186259900494014e-5
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=4 Float32 rho_t=4.211]
+│   e_mech = 4.0881713876786536e-7
+│   e_direct = 0.00040945947448331433
+│   e_fmm = 0.0004094590773786664
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 0.00021364144667308698
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=4 Float32 rho_t=4.789]
+│   e_mech = 4.015424546576685e-7
+│   e_direct = 0.00015981604478226675
+│   e_fmm = 0.00015982133802181934
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 6.39637219657888e-5
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=8 Float32 rho_t=4.211]
+│   e_mech = 4.081828937535331e-7
+│   e_direct = 0.00038842036204236484
+│   e_fmm = 0.0003884101558132454
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 0.0002081491409499077
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=8 Float32 rho_t=4.789]
+│   e_mech = 4.042286113011428e-7
+│   e_direct = 9.203165009844163e-5
+│   e_fmm = 9.199961259997846e-5
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 4.187843715580052e-5
+└   strict_gate = 0.001
+┌ Info: SFS host radix classic scheme [cube n=1500 P=4]
+│   e_mech_c = 3.038177224874355e-9
+│   e_classic = 0.003251851321969033
+└   j_rel_c = 0.0019469053142683916
+Test Summary:                                | Pass  Total     Time
+radix FMM coupling: SFS host path (task 048) |   63     63  5m14.0s
+┌ Info: device radix FMM [cube n=20000 Float64]
+│   err.u_rel_rms = 0.0006881716449687945
+└   err.j_rel_rms = 0.0033300461610814734
+┌ Info: device radix FMM [cube n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 384
+┌ Info: device radix FMM [cube n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.043687399
+┌ Info: device radix FMM [wake n=20000 Float64]
+│   err.u_rel_rms = 0.000370469512755133
+└   err.j_rel_rms = 0.002077601910781859
+┌ Info: device radix FMM [wake n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 400
+┌ Info: device radix FMM [wake n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.004578874
+┌ Info: device radix FMM [cube n=20000 Float32]
+│   err.u_rel_rms = 0.0006881700399311489
+└   err.j_rel_rms = 0.0033300253178966794
+┌ Info: device radix FMM [cube n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 272
+┌ Info: device radix FMM [cube n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003408099
+┌ Info: device radix FMM [wake n=20000 Float32]
+│   err.u_rel_rms = 0.0003704892019502768
+└   err.j_rel_rms = 0.0020776051589139403
+┌ Info: device radix FMM [wake n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 288
+┌ Info: device radix FMM [wake n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003283702
+Test Summary:                                   | Pass  Total     Time
+device-resident radix FMM: static U/J vs direct |   36     36  1m35.4s
+┌ Info: device radix FMM dynamic run (wake n=2000, 5 RK3 steps)
+│   pos_err = 5.411056194955244e-8
+│   err.u_rel_rms = 0.00020514792233221823
+└   err.j_rel_rms = 0.000865475994147616
+Test Summary:                                         | Pass  Total  Time
+device-resident radix FMM: multi-step RK3 dynamic run |    4      4  8.4s
+device-resident radix FMM: SFS device pass (task 048): Error During Test at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:153
+  Got exception outside of a @test
+  MethodError: no method matching append!(::Array{Tuple{String, Int64, DataType, Int64, Float64}, 3}, ::Vector{Tuple{String, Int64, DataType, Int64, Float64}})
+  The function `append!` exists, but no method is defined for this combination of argument types.
+  
+  Closest candidates are:
+    append!(!Matched::BitVector, ::Any)
+     @ Base bitarray.jl:786
+    append!(!Matched::HDF5.VirtualLayout, ::Any)
+     @ HDF5 ~/.julia/packages/HDF5/8g5ny/src/virtual.jl:48
+    append!(!Matched::Vector{T}, ::Union{Tuple, AbstractVector{<:T}}) where T
+     @ Base array.jl:1321
+    ...
+  
+  Stacktrace:
+   [1] macro expansion
+     @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:159 [inlined]
+   [2] macro expansion
+     @ /vapps/rhel9/x86_64/spack/root/opt/spack/linux-rhel9-haswell/gcc-13.2.0/julia-1.11.7-6bmogflhr2w6mi2zerinukr2gpnpr2rs/juliaup/julia-1.11.7+0.x64.linux.gnu/share/julia/stdlib/v1.11/Test/src/Test.jl:1709 [inlined]
+   [3] top-level scope
+     @ ~/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:154
+   [4] include(fname::String)
+     @ Main ./sysimg.jl:38
+   [5] top-level scope
+     @ ~/FLOWVPM-046/test/runtests_gpu_fmm.jl:725
+Test Summary:                                         | Error  Total  Time
+device-resident radix FMM: SFS device pass (task 048) |     1      1  2.2s
+ERROR: LoadError: Some tests did not pass: 0 passed, 0 failed, 1 errored, 0 broken.
+in expression starting at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm_device.jl:153
+in expression starting at /home/rander39/FLOWVPM-046/test/runtests_gpu_fmm.jl:162

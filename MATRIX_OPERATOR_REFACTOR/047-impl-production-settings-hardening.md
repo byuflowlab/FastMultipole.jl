@@ -2,12 +2,18 @@
 
 ## Status and entry gate
 
-**Staged `2026-08-20` (user direction). Not started.**
+**Completed and independently approved `2026-08-21`.**
 
 Entry gate: `046` complete and approved (all work lands on the unified
 branches). Runs in parallel with `048` — both block only on `046`. No new
 performance work in this row: consolidation, validation, documentation,
 robustness only.
+
+Entry-gate audit: the first 047 implementation was performed while 046's
+Approved box was still open. That violated this row's entry gate even though
+the unification work itself was complete. The user approved 046 on
+`2026-08-21`; this remediation began only after that approval. The historical
+violation is recorded rather than retroactively erased.
 
 ## Motivation
 
@@ -140,3 +146,90 @@ candidates = `allow_host_bodies`, legacy `nearfield_device::Bool`,
 
 **P=4 test rule (standing):** all future tests must cover P=4;
 direct-accuracy tolerances gate on P=8, use same-P parity checks at P=4.
+
+## Implementation and review remediation (`2026-08-21`)
+
+The consolidated surface is `src/radix_settings.jl`. Production code now
+reads every registered setting through `radix_setting`; the backing `Ref`s
+are implementation storage, not a second read API. `set_radix_settings!`
+prevalidates and converts an entire `NamedTuple` before its first write and
+rolls back on an unexpected assignment failure. FLOWVPM constructs and
+semantically validates every field of the proposed `RadixFMMSettings` first,
+including schedule length against the side-effect-free, pfield-derived depth
+and rectangular active-level geometry,
+then applies the atomic GPU batch, then replaces the per-field registry entry
+and clears its cache. Thus an invalid local or GPU proposal performs none of
+those mutations; a regression test proves this with a populated live cache.
+
+`DENSE_CUDA_TILED_THREADS` now accepts only an `Int` warp multiple in
+`32:1024`; `Bool`, other `Integer` representations, nonmultiples, and values
+above the CUDA block limit are rejected. General integer validators also
+exclude `Bool` and values outside `Int` range.
+
+Dispatch cleanup is no longer deferred. Production tree construction uses
+`SourceTree()` / `TargetTree()` roles; the legacy nearfield path accepts
+`HostNearfield()` / `DeviceNearfield()`; recurring radix route generation
+uses the type-parameterized `RadixRouteSelection`. Boolean entry points remain
+compatibility shims for downstream callers, but are not the production
+selection mechanism. `allow_host_bodies` no longer exists in source; source
+residency is already selected through `HostResident` / `DeviceResident` and
+buffer traits.
+
+### Tunable classification and disposition
+
+| Tunable | Class | Disposition |
+| --- | --- | --- |
+| `RADIX_CUDA_COUNTING_SORT` | construction | validated API; snapshotted; accessor-only reads |
+| `RADIX_CUDA_COUNTING_SORT_MAX_ELL` | construction | validated nonnegative integer; snapshotted; accessor-only reads |
+| `CUDA_NEARFIELD_GH_MODE` | construction | validated enum; snapshotted; accessor-only reads |
+| `CUDA_NEARFIELD_BINNING` | construction | validated enum; snapshotted; accessor-only reads |
+| `CUDA_NEARFIELD_SHAPE` | construction | validated enum; snapshotted; accessor-only reads |
+| `CUDA_NEARFIELD_FUSED_MIN_BODIES` | construction | validated nonnegative integer; snapshotted; accessor-only reads |
+| `CUDA_NEARFIELD_SUBSORT` | runtime | validated Boolean; accessor-only reads |
+| `CUDA_TWOPASS_PASS2_QUEUED` | construction | validated Boolean; snapshotted; accessor-only reads |
+| `CUDA_TWOPASS_TARGET_AABB_PRUNE` | construction | validated Boolean; snapshotted; accessor-only reads |
+| `CUDA_NEARFIELD_PAIR_AABB` | construction | validated Boolean; snapshotted; accessor-only reads |
+| `CUDA_SYMMETRIC_NEARFIELD` | construction | validated Boolean; snapshotted; accessor-only reads |
+| `SYMMETRIC_CUDA_MAX_CELL_BODIES` | runtime | validated positive integer; accessor-only reads |
+| `DIRECT_CUDA_MAX_BLOCKS` | construction | validated positive integer; snapshotted; accessor-only reads |
+| `FACTORED_CUDA_WHOLE_PASS` | runtime | validated Boolean; accessor-only reads |
+| `FACTORED_CUDA_CHUNK` | construction | validated positive integer; snapshotted; accessor-only reads |
+| `PRECOMPUTED_CUDA_WHOLE_PASS` | runtime | validated Boolean; accessor-only reads |
+| `PRECOMPUTED_CUDA_CHUNK` | construction | validated positive integer; snapshotted; accessor-only reads |
+| `DENSE_CUDA_WHOLE_PASS` | construction | validated Boolean; snapshotted; accessor-only reads |
+| `DENSE_CUDA_CHUNK` | construction | validated positive integer; snapshotted; accessor-only reads |
+| `DENSE_CUDA_FUSED` | runtime | validated Boolean; accessor-only reads |
+| `DENSE_CUDA_FUSED_MAX_BLOCKS` | construction | validated positive integer; snapshotted; accessor-only reads |
+| `DENSE_CUDA_TILED` | construction | validated Boolean; snapshotted; accessor-only reads |
+| `DENSE_CUDA_TILED_MIN_ROUTES` | construction | validated nonnegative integer; snapshotted; accessor-only reads |
+| `DENSE_CUDA_TILED_THREADS` | construction | validated `Int` warp multiple in `32:1024`; snapshotted; accessor-only reads |
+| `DENSE_CUDA_TILED_MAX_BLOCKS` | construction | validated positive integer; snapshotted; accessor-only reads |
+| `DENSE_CUDA_TENSOR_FORMAT` | construction | validated enum; snapshotted; accessor-only reads |
+| `CUDA_CACHED_WINDOWS` | runtime | validated Boolean; accessor-only reads |
+| `CUDA_GRAPH_LIFECYCLE` | runtime | validated Boolean; accessor-only reads |
+| `CUDA_OVERLAP_NEARFIELD` | construction | validated Boolean; snapshotted; accessor-only reads |
+| `FACTORED_Y_GEMM_MIN_COLS` | runtime | validated nonnegative integer; accessor-only reads |
+| `FACTORED_Y_GEMM_MIN_DIM` | runtime | validated nonnegative integer; accessor-only reads |
+| `PRECOMPUTED_Y_GEMM_MIN_COLS` | runtime | validated nonnegative integer; accessor-only reads |
+
+No class-(c) move was required: the cache-shape and operator choices already
+live on `CUDARadixLifecycleOptions` / `AdaptiveTreePolicy`; the table entries
+are mechanism switches and thresholds shared by those constructors. No dead
+setting was identified.
+
+### Verification record
+
+- Focused settings and dispatch tests: 108/108 green.
+- Radix interaction traversal: 61,078/61,078 green.
+- FLOWVPM `test/runtests_gpu_fmm.jl`: all host testsets green; CUDA device
+  portion skipped because this macOS host has no CUDA device.
+- FLOWVPM semantic/transaction regression: the task-035 host testset is
+  99/99 green, including invalid kernel/strategy, geometry, precision,
+  bounds, padding, and accuracy proposals against a populated live cache.
+- Static gate: no `NAME[]` read for any registered tunable exists under
+  `src/` outside `src/radix_settings.jl`.
+- The previously recorded H200 sweep/job evidence remains valid for the
+  unchanged device mechanisms, but no new HPC job was run for remediation.
+- Full FastMultipole `Pkg.test()` passed on macOS (CUDA-only cases skipped by
+  their existing availability guards; one pre-existing broken threaded
+  `extra_farfield` test remained reported as broken, not failed).

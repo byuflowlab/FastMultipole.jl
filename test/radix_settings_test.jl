@@ -45,6 +45,7 @@ end
             @test radix_setting(:CUDA_NEARFIELD_GH_MODE) === :shipped
             @test_throws ArgumentError set_radix_setting!(:FACTORED_Y_GEMM_MIN_COLS, -1)
             @test_throws ArgumentError set_radix_setting!(:FACTORED_Y_GEMM_MIN_COLS, 1.5)
+            @test_throws ArgumentError set_radix_setting!(:FACTORED_Y_GEMM_MIN_COLS, true)
         finally
             set_radix_setting!(:CUDA_NEARFIELD_GH_MODE, old)
         end
@@ -53,6 +54,31 @@ end
             # CUDA-only settings are named but unreachable before lifecycle load
             @test_throws ArgumentError radix_setting(:CUDA_NEARFIELD_BINNING)
             @test_throws ArgumentError set_radix_setting!(:CUDA_NEARFIELD_BINNING, :unbinned)
+        end
+    end
+
+    @testset "atomic batch + CUDA thread validation" begin
+        old_gh = radix_setting(:CUDA_NEARFIELD_GH_MODE)
+        old_cols = radix_setting(:FACTORED_Y_GEMM_MIN_COLS)
+        @test_throws ArgumentError set_radix_settings!((;
+            CUDA_NEARFIELD_GH_MODE=:shipped,
+            FACTORED_Y_GEMM_MIN_COLS=-1,
+        ))
+        @test radix_setting(:CUDA_NEARFIELD_GH_MODE) === old_gh
+        @test radix_setting(:FACTORED_Y_GEMM_MIN_COLS) == old_cols
+        thread_validator = RADIX_SETTING_SPECS[:DENSE_CUDA_TILED_THREADS].validate
+        @test thread_validator(128) === nothing
+        @test_throws ArgumentError thread_validator(true)
+        @test_throws ArgumentError thread_validator(Int32(64))
+        @test_throws ArgumentError thread_validator(33)
+        @test_throws ArgumentError thread_validator(2048)
+        if isdefined(FastMultipole, :DENSE_CUDA_TILED_THREADS)
+            old_threads = radix_setting(:DENSE_CUDA_TILED_THREADS)
+            try
+                @test set_radix_setting!(:DENSE_CUDA_TILED_THREADS, 128) == 128
+            finally
+                set_radix_setting!(:DENSE_CUDA_TILED_THREADS, old_threads)
+            end
         end
     end
 
@@ -94,6 +120,16 @@ end
         cache = RadixFMMCache(sys; expansion_order=4, ell=2)
         @test cache.locked_settings isa Vector{Pair{Symbol,Any}}
         @test verify_locked_radix_settings(cache.locked_settings) === nothing
+
+        switches = (DerivativesSwitch(false, true, false, sys),)
+        source_tagged = Tree((sys,), SourceTree(), switches; leaf_size=SVector{1}(32))
+        target_tagged = Tree((sys,), TargetTree(), switches; leaf_size=SVector{1}(32))
+        @test source_tagged isa Tree
+        @test target_tagged isa Tree
+        @test Tree(sys, SourceTree(), switches[1]; leaf_size=SVector{1}(32)) isa Tree
+        @test Tree(sys, TargetTree(), switches[1]; leaf_size=SVector{1}(32)) isa Tree
+        @test FastMultipole._device_nearfield(HostNearfield()) === false
+        @test FastMultipole._device_nearfield(DeviceNearfield()) === true
     end
 
 end

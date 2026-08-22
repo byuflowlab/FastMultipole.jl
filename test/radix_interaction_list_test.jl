@@ -258,6 +258,11 @@ end
     # (no per-pair enumeration); its output must match the oracle pair sets and keep
     # the canonical (level, z, y, x) batch order with per-batch targets increasing.
     constant_list = build_radix_interaction_list(LazyMaterializedBatches(1), constant_policy, constant_grid)
+    tagged_list = build_radix_interaction_list(LazyMaterializedBatches(1),
+        constant_policy, constant_grid, RadixRouteSelection())
+    @test [(b.level, b.offset, b.targets, b.sources) for b in tagged_list.m2l_batches] ==
+        [(b.level, b.offset, b.targets, b.sources) for b in constant_list.m2l_batches]
+    @test tagged_list.direct_pairs == constant_list.direct_pairs
     listed_m2l = Set{Tuple{Int,SVector{3,Int},Int,Int}}()
     for batch in constant_list.m2l_batches
         @test length(batch.targets) == length(batch.sources)

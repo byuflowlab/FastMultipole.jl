@@ -1,0 +1,390 @@
+Test Summary:                                  | Pass  Total   Time
+nextstep U_prev: loop vs broadcast equivalence |    6      6  11.4s
+┌ Info: host radix coupling [cube n=4000]
+│   err.u_rel_rms = 0.0007084256921606173
+└   err.j_rel_rms = 0.0031163571360493412
+┌ Info: host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00018513720455427522
+└   err.j_rel_rms = 0.0007817825183657797
+Test Summary:                               | Pass  Total   Time
+radix FMM coupling (host path) vs UJ_direct |   12     12  23.1s
+┌ Info: 035 settings [partitioned + concat]
+│   err.u_rel_rms = 0.00018513720455427522
+└   err.j_rel_rms = 0.0007817825183657782
+┌ Info: 035 settings [partitioned + precomputed_y]
+│   err.u_rel_rms = 0.00018513720455427566
+└   err.j_rel_rms = 0.0007817825183657796
+┌ Info: 035 settings [regularized + dense]
+│   err.u_rel_rms = 1.7000097172254492e-5
+└   err.j_rel_rms = 9.027079202669643e-5
+Test Summary:                                            | Pass  Total   Time
+radix FMM coupling: task-035 tuning settings (host path) |   99     99  10.6s
+Test Summary:                          | Pass  Total  Time
+radix FMM coupling: automatic recenter |    2      2  1.7s
+┌ Info: rectangular host radix coupling [wake n=1500]
+│   err.u_rel_rms = 0.00017406940901323466
+└   err.j_rel_rms = 0.0007536144058241078
+Test Summary:                                                | Pass  Total  Time
+radix FMM coupling: rectangular bounds (task 037, host path) |   30     30  2.0s
+Test Summary:                                        | Pass  Total  Time
+radix FMM coupling: automatic recenter (rectangular) |    5      5  0.7s
+Test Summary:                                       | Pass  Total  Time
+radix FMM coupling: loud unsupported configurations |    4      4  1.8s
+┌ Info: SFS host radix [cube n=1500 P=4 Float64 rho_t=4.211]
+│   e_mech = 2.6396993793135704e-9
+│   e_direct = 0.00040929795446622387
+│   e_fmm = 0.0004092979544662178
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 0.0002136399834221702
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=4 Float64 rho_t=4.789]
+│   e_mech = 2.6395673012187247e-9
+│   e_direct = 0.00015973091478043572
+│   e_fmm = 0.000159730914780217
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 6.395227723838381e-5
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=8 Float64 rho_t=4.211]
+│   e_mech = 2.639470871040456e-9
+│   e_direct = 0.0003882851759370884
+│   e_fmm = 0.0003882851759371453
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 0.00020814715673364253
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=8 Float64 rho_t=4.789]
+│   e_mech = 2.639338806001938e-9
+│   e_direct = 9.18434420544306e-5
+│   e_fmm = 9.184344205432099e-5
+│   e_sanity = 4.00271755567765e-15
+│   j_rel = 4.186259900494014e-5
+└   strict_gate = 0.0005
+┌ Info: SFS host radix [cube n=1500 P=4 Float32 rho_t=4.211]
+│   e_mech = 4.0881713876786536e-7
+│   e_direct = 0.00040945947448331433
+│   e_fmm = 0.0004094590773786664
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 0.00021364144667308698
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=4 Float32 rho_t=4.789]
+│   e_mech = 4.015424546576685e-7
+│   e_direct = 0.00015981604478226675
+│   e_fmm = 0.00015982133802181934
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 6.39637219657888e-5
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=8 Float32 rho_t=4.211]
+│   e_mech = 4.081828937535331e-7
+│   e_direct = 0.00038842036204236484
+│   e_fmm = 0.0003884101558132454
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 0.0002081491409499077
+└   strict_gate = 0.001
+┌ Info: SFS host radix [cube n=1500 P=8 Float32 rho_t=4.789]
+│   e_mech = 4.042286113011428e-7
+│   e_direct = 9.203165009844163e-5
+│   e_fmm = 9.199961259997846e-5
+│   e_sanity = 2.757518610998588e-6
+│   j_rel = 4.187843715580052e-5
+└   strict_gate = 0.001
+┌ Info: SFS host radix classic scheme [cube n=1500 P=4]
+│   e_mech_c = 3.038177224874355e-9
+│   e_classic = 0.003251851321969033
+└   j_rel_c = 0.0019469053142683916
+Test Summary:                                | Pass  Total     Time
+radix FMM coupling: SFS host path (task 048) |   63     63  5m23.9s
+┌ Info: device radix FMM [cube n=20000 Float64]
+│   err.u_rel_rms = 0.0006881716449687955
+└   err.j_rel_rms = 0.003330046161081471
+┌ Info: device radix FMM [cube n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 384
+┌ Info: device radix FMM [cube n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.043932904
+┌ Info: device radix FMM [wake n=20000 Float64]
+│   err.u_rel_rms = 0.00037046951275513453
+└   err.j_rel_rms = 0.0020776019107818606
+┌ Info: device radix FMM [wake n=20000 Float64] steady-state device alloc (bytes)
+└   alloc = 400
+┌ Info: device radix FMM [wake n=20000 Float64] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.004605113
+┌ Info: device radix FMM [cube n=20000 Float32]
+│   err.u_rel_rms = 0.0006881712860827102
+└   err.j_rel_rms = 0.00333002531065639
+┌ Info: device radix FMM [cube n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 272
+┌ Info: device radix FMM [cube n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003383458
+┌ Info: device radix FMM [wake n=20000 Float32]
+│   err.u_rel_rms = 0.0003704882764570047
+└   err.j_rel_rms = 0.0020776055839194225
+┌ Info: device radix FMM [wake n=20000 Float32] steady-state device alloc (bytes)
+└   alloc = 288
+┌ Info: device radix FMM [wake n=20000 Float32] warm U/J solve wall time (s), sanity only
+└   t_solve = 0.003237372
+Test Summary:                                   | Pass  Total     Time
+device-resident radix FMM: static U/J vs direct |   36     36  1m38.9s
+┌ Info: device radix FMM dynamic run (wake n=2000, 5 RK3 steps)
+│   pos_err = 5.411056194955244e-8
+│   err.u_rel_rms = 0.00020514792233221842
+└   err.j_rel_rms = 0.0008654759941476158
+Test Summary:                                         | Pass  Total  Time
+device-resident radix FMM: multi-step RK3 dynamic run |    4      4  8.7s
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.211]
+│   err.u_rel_rms = 0.0003706056987668662
+│   err.j_rel_rms = 0.0020005156179238367
+│   e_sfs = 0.004347393966697365
+│   e_kernel = 1.054641691853832e-15
+└   e_trunc = 2.122237818337524e-6
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float64 rho_t=4.211]
+│   e_replay = 0.004347393966697365
+│   err_replay.u_rel_rms = 0.00037060569876686596
+└   err_replay.j_rel_rms = 0.002000515617923836
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=4 Float64 rho_t=4.211]
+└   replay_body_parity = 5.738958039748438e-17
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.211]
+│   err.u_rel_rms = 0.00037060629792194584
+│   err.j_rel_rms = 0.0020005127057231478
+│   e_sfs = 0.004347334796660326
+│   e_kernel = 5.476852562320503e-7
+└   e_trunc = 2.18476217195754e-6
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float32 rho_t=4.211]
+│   e_replay = 0.004347347013652864
+│   err_replay.u_rel_rms = 0.00037060563427853825
+└   err_replay.j_rel_rms = 0.002000512241502016
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=4 Float32 rho_t=4.211]
+└   replay_body_parity = 2.566627100884553e-7
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.211]
+│   err.u_rel_rms = 6.980716452733455e-5
+│   err.j_rel_rms = 0.00031764424169999613
+│   e_sfs = 0.000633165044157146
+│   e_kernel = 1.0474529223265892e-15
+└   e_trunc = 2.121965664299998e-6
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float64 rho_t=4.211]
+│   e_replay = 0.0006331650441571376
+│   err_replay.u_rel_rms = 6.980716452733208e-5
+└   err_replay.j_rel_rms = 0.00031764424169999575
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=8 Float64 rho_t=4.211]
+└   replay_body_parity = 5.87486714991722e-17
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.211]
+│   err.u_rel_rms = 6.981745201757761e-5
+│   err.j_rel_rms = 0.0003176433281087694
+│   e_sfs = 0.0006330409341983312
+│   e_kernel = 5.492074650526564e-7
+└   e_trunc = 2.181804866476214e-6
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float32 rho_t=4.211]
+│   e_replay = 0.0006330427030710133
+│   err_replay.u_rel_rms = 6.981809985966435e-5
+└   err_replay.j_rel_rms = 0.0003176437804080908
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=8 Float32 rho_t=4.211]
+└   replay_body_parity = 2.575889034829497e-7
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.789]
+│   err.u_rel_rms = 0.0001742310024590506
+│   err.j_rel_rms = 0.0009283334113651347
+│   e_sfs = 0.0019617775137933968
+│   e_kernel = 1.15738095208581e-15
+└   e_trunc = 3.0700898233984446e-8
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float64 rho_t=4.789]
+│   e_replay = 0.001961777513793407
+│   err_replay.u_rel_rms = 0.00017423100245905014
+└   err_replay.j_rel_rms = 0.000928333411365135
+┌ Info: device radix SFS [cube n=20000 P=4 Float64 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=4 Float64 rho_t=4.789]
+└   replay_body_parity = 4.8799277328192757e-17
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.789]
+│   err.u_rel_rms = 0.0001742288575541957
+│   err.j_rel_rms = 0.000928335175467507
+│   e_sfs = 0.001961723713550203
+│   e_kernel = 5.599578486488857e-7
+└   e_trunc = 5.144289211243155e-7
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+┌ Info: device radix SFS replay parity [cube n=20000 P=4 Float32 rho_t=4.789]
+│   e_replay = 0.001961742475855743
+│   err_replay.u_rel_rms = 0.00017423017872111253
+└   err_replay.j_rel_rms = 0.0009283365825352979
+┌ Info: device radix SFS [cube n=20000 P=4 Float32 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=4 Float32 rho_t=4.789]
+└   replay_body_parity = 2.9809401673475677e-7
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.789]
+│   err.u_rel_rms = 3.3763114812841195e-5
+│   err.j_rel_rms = 4.951728612723704e-5
+│   e_sfs = 0.00010039846301671123
+│   e_kernel = 1.1532051586321652e-15
+└   e_trunc = 3.068541189941132e-8
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 100496
+│   host_alloc_sfs = 122880
+│   device_alloc_base = 384
+└   device_alloc_sfs = 384
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float64 rho_t=4.789]
+│   e_replay = 0.00010039846301672463
+│   err_replay.u_rel_rms = 3.376311481284135e-5
+└   err_replay.j_rel_rms = 4.951728612723664e-5
+┌ Info: device radix SFS [cube n=20000 P=8 Float64 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=8 Float64 rho_t=4.789]
+└   replay_body_parity = 5.322422575630381e-17
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.789]
+│   err.u_rel_rms = 3.376962975155473e-5
+│   err.j_rel_rms = 4.9548054268497865e-5
+│   e_sfs = 0.00010032840278847712
+│   e_kernel = 5.58683448175097e-7
+└   e_trunc = 5.144289261858212e-7
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 98624
+│   host_alloc_sfs = 119120
+│   device_alloc_base = 272
+└   device_alloc_sfs = 272
+┌ Info: device radix SFS replay parity [cube n=20000 P=8 Float32 rho_t=4.789]
+│   e_replay = 0.00010032193746543166
+│   err_replay.u_rel_rms = 3.376909886582387e-5
+└   err_replay.j_rel_rms = 4.954771187696936e-5
+┌ Info: device radix SFS [cube n=20000 P=8 Float32 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [cube n=20000 P=8 Float32 rho_t=4.789]
+└   replay_body_parity = 2.9956797801182124e-7
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.211]
+│   err.u_rel_rms = 0.0002830737899975256
+│   err.j_rel_rms = 0.0018394957172648114
+│   e_sfs = 0.02917156378963927
+│   e_kernel = 3.7959523418109e-15
+└   e_trunc = 8.667681238896946e-7
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.211] steady-state allocations (bytes)
+│   host_alloc_base = 107168
+│   host_alloc_sfs = 129552
+│   device_alloc_base = 400
+└   device_alloc_sfs = 400
+┌ Info: device radix SFS replay parity [wake n=20000 P=4 Float64 rho_t=4.211]
+│   e_replay = 0.029171563789639254
+│   err_replay.u_rel_rms = 0.00028307378999752557
+└   err_replay.j_rel_rms = 0.0018394957172648118
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.211] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [wake n=20000 P=4 Float64 rho_t=4.211]
+└   replay_body_parity = 3.647922499246392e-17
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.789]
+│   err.u_rel_rms = 0.00019010739427351581
+│   err.j_rel_rms = 0.0012167195598569737
+│   e_sfs = 0.017051083995780474
+│   e_kernel = 4.073902991663523e-15
+└   e_trunc = 2.0340386751241764e-10
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.789] steady-state allocations (bytes)
+│   host_alloc_base = 107168
+│   host_alloc_sfs = 129552
+│   device_alloc_base = 400
+└   device_alloc_sfs = 400
+┌ Info: device radix SFS replay parity [wake n=20000 P=4 Float64 rho_t=4.789]
+│   e_replay = 0.01705108399578048
+│   err_replay.u_rel_rms = 0.00019010739427351508
+└   err_replay.j_rel_rms = 0.0012167195598569733
+┌ Info: device radix SFS [wake n=20000 P=4 Float64 rho_t=4.789] lifecycle-layer allocations (bytes)
+│   lifecycle_host = 1488
+└   lifecycle_dev = 0
+┌ Info: device radix SFS replay-vs-body parity [wake n=20000 P=4 Float64 rho_t=4.789]
+└   replay_body_parity = 4.871045485900702e-17
+Test Summary:                                         | Pass  Total     Time
+device-resident radix FMM: SFS device pass (task 048) |  300    300  2m59.1s
+┌ Info: device radix SFS strict point [cube n=1500 P=4 Float64 rho_t=4.211]
+│   err.u_rel_rms = 4.6693342991921217e-5
+│   err.j_rel_rms = 0.0002136401613571803
+│   e_first = 0.00040931805449541034
+│   e_warm = 0.00040931805449541636
+│   strict_gate = 0.0005
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=4 Float64 rho_t=4.789]
+│   err.u_rel_rms = 2.8571591358615394e-5
+│   err.j_rel_rms = 6.395261758495044e-5
+│   e_first = 0.0001597348904954148
+│   e_warm = 0.00015973489049541146
+│   strict_gate = 0.0005
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=8 Float64 rho_t=4.211]
+│   err.u_rel_rms = 4.6236399351880696e-5
+│   err.j_rel_rms = 0.00020814742784169046
+│   e_first = 0.00038830553318443045
+│   e_warm = 0.0003883055331844309
+│   strict_gate = 0.0005
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=8 Float64 rho_t=4.789]
+│   err.u_rel_rms = 2.7873539758103575e-5
+│   err.j_rel_rms = 4.1863505729990494e-5
+│   e_first = 9.184693720019015e-5
+│   e_warm = 9.184693720018843e-5
+│   strict_gate = 0.0005
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=4 Float32 rho_t=4.211]
+│   err.u_rel_rms = 4.6707948389727386e-5
+│   err.j_rel_rms = 0.0002136627530088093
+│   e_first = 0.00040952262279286643
+│   e_warm = 0.0004095680472596738
+│   strict_gate = 0.001
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=4 Float32 rho_t=4.789]
+│   err.u_rel_rms = 2.8576456017306082e-5
+│   err.j_rel_rms = 6.395967099772628e-5
+│   e_first = 0.0001598509496169414
+│   e_warm = 0.00015988405053317208
+│   strict_gate = 0.001
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=8 Float32 rho_t=4.211]
+│   err.u_rel_rms = 4.6250208782028795e-5
+│   err.j_rel_rms = 0.00020817401280259591
+│   e_first = 0.00038855896795812696
+│   e_warm = 0.0003885618386701919
+│   strict_gate = 0.001
+└   graph_live = true
+┌ Info: device radix SFS strict point [cube n=1500 P=8 Float32 rho_t=4.789]
+│   err.u_rel_rms = 2.788326930573215e-5
+│   err.j_rel_rms = 4.188109837020182e-5
+│   e_first = 9.194485370651501e-5
+│   e_warm = 9.194407902830159e-5
+│   strict_gate = 0.001
+└   graph_live = true
+Test Summary:                                                 | Pass  Total     Time
+device-resident radix SFS: strict tail-budget operating point |   24     24  4m01.2s

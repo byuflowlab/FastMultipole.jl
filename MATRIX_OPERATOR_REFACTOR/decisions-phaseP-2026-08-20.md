@@ -141,10 +141,11 @@ the knob is J accuracy (gh mode / P / MAC), not the SFS pass.
 
 ## D8 (2026-08-21) — 049 results + 050 verdict (autonomous)
 
-049 (H200 job 13247848, p018 210k field): UJ parity 3.4e-4 PASS; SFS
-marginal cost 0.3 ms; device-resident RK3 step 0.199 s = 6% of the 3.3 s
-target; residency measurement says transfers = 35% of step ⇒ RECOMMEND
-device-resident (default unchanged — user checkpoint open). Flags: SFS
+049 historical evidence (H200 job 13247848, p018 210k field): UJ parity
+3.4e-4 PASS and device-resident RK3 step 0.199 s. Its 0.3 ms SFS marginal
+cost and arithmetic 35% residency estimate are superseded; neither selects a
+default. A corrected true same-job A/B will be presented for explicit user
+choice. Flags: SFS
 0.666 vs exact-J reference (J-error-bound; like-for-like test deferred to
 052's CT gate), CPU/GPU direct cross-check 2.6e-4 (follow-up before 051
 parity gates).
@@ -215,3 +216,97 @@ confirmed PrettyTables 2.4 and CUDA/CUDATools load together (cross-major
 PrettyTables exposure limited to cosmetic printing paths on both sides).
 Alternative CUDA 5.8.5 single-env also resolves and is recorded as fallback
 if stacking misbehaves on the compute node.
+
+## D11 (2026-08-21) — 047 review remediation supersedes D4's deferral
+
+A fresh review rejected 047's completion claim. Findings: work had crossed
+the still-open 046 approval gate; D4 had unilaterally deferred dispatch
+cleanup despite the original requirement; production reads still bypassed
+the consolidated surface; FLOWVPM's sequential GPU writes were non-atomic;
+and `DENSE_CUDA_TILED_THREADS` admitted `Bool` and invalid block shapes.
+
+046 is now explicitly approved. 047 remediation closes the implementation
+findings: all registered production reads use `radix_setting`; atomic
+`set_radix_settings!` backs FLOWVPM's all-or-nothing wrapper; CUDA tiled
+threads require an `Int` warp multiple in `32:1024`; and typed tree-role,
+nearfield-execution, and radix-route policies are used at production
+boundaries (legacy Boolean forms remain compatibility shims). The absent
+`allow_host_bodies` flag was verified gone; residency already dispatches via
+residency/buffer traits. D4's dispatch deferral is therefore superseded, not
+carried to 053. 047 remains unapproved pending a separate fresh review.
+
+## D12 (2026-08-21) — 048 review remediation supersedes D5–D7 acceptance
+
+A clear-context review rejected 048's completion claim. An SFS-armed cache
+ran TG + the full ζ pair pass even for `sfs=false`; only delivery was gated.
+Therefore the old non-SFS regression was not a non-SFS run, and 049's
+0.273957 ms difference between U/J and U/J+SFS measured delivery overhead
+while both arms executed ζ. It is not a valid marginal SFS cost.
+
+The corrected device step launches SFS only after U/J and only when requested.
+This deliberately removes SFS from the U/J graph so the default path has zero
+SFS work. FLOWVPM now packs a non-static mask in source row 9; both host and
+CUDA ζ loops skip static sources and targets, matching CPU `Estr_direct!` and
+`Estr_fmm!`. Tests now define the complete P=4/P=8 × F32/F64 matrix and assert
+that SFS accumulator buffers are unchanged by `sfs=false`.
+
+At this D12 checkpoint the required CPU Estr gate was explicitly exposed
+rather than replaced by mechanical/J-scaled parity; the then-default-cutoff
+values were ≈3.74–3.76e-3. D13 and job 13294119 subsequently supersede that
+host-accuracy status with passing conservative candidates. The changed CUDA
+launch, counters, allocations, full device matrix, and true marginal cost
+remain unverified, so 048 remains incomplete/unapproved. Detailed results:
+`data/gpu_sfs_enablement/048_results.csv`.
+
+## D13 (2026-08-21) — 048 conservative rho candidates (user decision)
+
+Do not promote an RMS-derived cutoff or change the default yet. Carry the two
+conservative per-pair candidates through the remainder of 048 and the real
+p018 production check: `rho_t=4.211` (velocity per-pair 1e-3) and
+`rho_t=4.789` (Jacobian per-pair). The synthetic accuracy/device matrix covers
+both over P=4/P=8 × F32/F64; the expensive real p018 arm covers both at its
+production P=4/F64 settings. Promotion waits for those accuracy, timing, and
+production results.
+
+Job 13294119 resolved the host-accuracy part: every candidate/order/precision
+row passes the corrected theoretical delivered gates (`5e-4` F64 = epsilon/2
+tail budget; `1e-3` F32). F64 spans `9.18434e-5`–`4.09298e-4`; F32 spans
+`9.20317e-5`–`4.09459e-4`. The job's early stop was only obsolete
+`@test_broken` unexpected-pass handling, not a failed gate. Device and p018
+timing stages did not run and remain required.
+
+## D14 (2026-08-22) — 048 production SFS settings selected (user decision)
+
+From the H200 job 13303399 sweep (strict 5e-4 F64 delivered-E_str gate on
+the p018 210k production field; `fm048_sweep_13303399.csv`), the user
+selected **P=6, rho_t=4.789, derived near shell** as the production
+operating point: p018 e_sfs 1.46e-4 (3.4x gate margin), e_u 3.69e-6,
+t_ujsfs 93.4 ms vs the failing P4 baseline's 90.6 ms (+3%). This resolves
+D13's deferred promotion: `RadixFMMSettings.expansion_order` default 4 → 6
+and `_PARTITIONED_RHO_T_DEFAULT` 3.668 → 4.789 in
+`FLOWVPM.jl/src/FLOWVPM_fmm_radix.jl` (default-assertion tests updated in
+`test/runtests_gpu_fmm.jl`). The change post-dates job 13303399; its
+device evidence pinned settings explicitly, and the few default-using
+testsets only gain accuracy margin. Regression coverage of the new
+defaults rides in the next H200 job (049 acceptance). Cube-vs-p018
+caveat recorded in the 048 doc: the cube grid ranks configs correctly but
+is not a quantitative proxy (p018/cube e_sfs ratio 0.62–1.42); p018 arms
+remain the gate of record.
+
+## D15 (2026-08-22) — 049 residency mode + run acceptance (user decision)
+
+From H200 job 13305555's true same-job interleaved A/B at the production
+point (P=6, rho_t=4.789, F64, snapshots 710–719), the user selected
+**upload-per-step** as the shipping residency mode: resident median
+0.2940 s/step vs upload 0.3060 s/step (+12 ms, +4.1%), parity 150/150 at
+1e-11. Rationale: compatibility with monitors that trim particles or
+otherwise modify body states between steps — upload mode re-reads host
+state every step, so external mutation of the particle field between steps
+is always honored. No code default changed: residency follows the field's
+array type (`fmm.residency`, `FLOWVPM_fmm_radix.jl:51-52`); production
+callers construct Array-backed fields. The user also accepted the job
+13305555 artifacts despite 49 harness-gate FAILs, all root-caused to
+harness-side gate misapplication (wrong layer / wrong operating point /
+below-noise-floor F32 gate / bitwise-vs-error-bounded replay), with
+wrapper-layer allocation and error-bounded replay measurement deferred to
+`053` (see the 049 doc's Results 2026-08-22 section for the full rationale).

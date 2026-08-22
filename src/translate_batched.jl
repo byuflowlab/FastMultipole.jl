@@ -1628,8 +1628,8 @@ end
 function _factored_y_degree_major_auto!(out_slab, in_slab, Ublocks, Vblocks,
         thetas, scratch_re, scratch_im, scratch_tmp, P::Integer, ncols::Integer)
     n_cols = Int(ncols)
-    use_gemm = n_cols >= FACTORED_Y_GEMM_MIN_COLS[]
-    min_dim = FACTORED_Y_GEMM_MIN_DIM[]
+    use_gemm = n_cols >= radix_setting(:FACTORED_Y_GEMM_MIN_COLS)
+    min_dim = radix_setting(:FACTORED_Y_GEMM_MIN_DIM)
     @inbounds for n in 0:P
         d = 2n + 1
         Ure, Uim = Ublocks[n + 1]
@@ -3472,7 +3472,7 @@ end
 const PRECOMPUTED_Y_GEMM_MIN_COLS = Ref(16)
 
 function _precomputed_y_degree_major!(out, input, blocks, P::Int, ncols::Int)
-    use_gemm = ncols >= PRECOMPUTED_Y_GEMM_MIN_COLS[]
+    use_gemm = ncols >= radix_setting(:PRECOMPUTED_Y_GEMM_MIN_COLS)
     @inbounds for n in 0:P
         rows = degree_row_range(n)
         M = blocks[n + 1]

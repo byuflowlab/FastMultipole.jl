@@ -171,7 +171,7 @@ end
 const RADIX_CUDA_COUNTING_SORT = Ref(true)
 const RADIX_CUDA_COUNTING_SORT_MAX_ELL = Ref(6)
 @inline _cuda_counting_sort_enabled(ell::Int) =
-    RADIX_CUDA_COUNTING_SORT[] && ell <= RADIX_CUDA_COUNTING_SORT_MAX_ELL[]
+    radix_setting(:RADIX_CUDA_COUNTING_SORT) && ell <= radix_setting(:RADIX_CUDA_COUNTING_SORT_MAX_ELL)
 
 # The histogram is sized at construction from `_cuda_counting_sort_enabled`, so a
 # step must also confirm the buffer it is about to scatter through actually spans
@@ -2216,7 +2216,7 @@ end
 # the shipped operating points (`031a` §6.3: modeled 1.56x SLOWER than the
 # regularized-everywhere baseline at ell >= 4), so the split vortex kernels
 # (`PartitionedVortex`, `TwoPassVortex` pass 1) get a measured menu of stream
-# mechanisms selected by `CUDA_NEARFIELD_BINNING[]`:
+# mechanisms selected by `radix_setting(:CUDA_NEARFIELD_BINNING)`:
 #
 #   :unbinned          — the plain predicated functor kernel (the §6.3 negative
 #                        control; also the fallback on flat-policy caches, which
@@ -2238,7 +2238,7 @@ end
 #   :classsplit_ballot — (c) for the pure buckets plus (b) for the mixed one.
 #
 # Mechanism (a) — within-cell sub-Morton body ordering — is orthogonal and
-# toggled by `CUDA_NEARFIELD_SUBSORT[]`: the update composes a per-cell
+# toggled by `radix_setting(:CUDA_NEARFIELD_SUBSORT)`: the update composes a per-cell
 # sub-key sort into `grid.perm` before packing, so warp lanes (consecutive
 # target bodies) span a compact spatial sub-block and the ρ predicate becomes
 # lane-coherent when cells are much larger than a warp.
@@ -3796,7 +3796,7 @@ end
 # be) per-column parameterized, so processing routes in wide chunks with
 # per-column class indirection collapses launches to ~7 per channel per chunk.
 # The per-class path is retained as the separately testable reference
-# (FACTORED_CUDA_WHOLE_PASS[] = false).
+# (radix_setting(:FACTORED_CUDA_WHOLE_PASS) = false).
 const FACTORED_CUDA_WHOLE_PASS = Ref(true)
 const FACTORED_CUDA_CHUNK = Ref(1 << 14)
 
@@ -3887,7 +3887,7 @@ end
 # in r, scaled per column like the concat plan), and chunk-width stage slabs.
 function _cuda_factored_whole_pass_setup!(plan::ResidentM2LFactoredPlan, ::Type{TF},
         basis_info::OperatorBasisInfo{B,LH}) where {TF,B,LH}
-    W = max(min(FACTORED_CUDA_CHUNK[], length(plan.route_class)), 1)
+    W = max(min(radix_setting(:FACTORED_CUDA_CHUNK), length(plan.route_class)), 1)
     P_phi = basis_info.orders.P_phi
     P_active = basis_info.orders.P_active
     ndof_phi = degree_major_dof(P_phi)
@@ -3981,7 +3981,7 @@ function _launch_resident_m2l_factored_plan!(state::DeviceResidentRadixState{TF,
         ws::ResidentOperatorWorkspace{TF,B,LH},
         plan::ResidentM2LFactoredPlan{<:CUDA.AnyCuArray}) where {TF,B,LH}
     wp = plan.whole_pass[]
-    if wp !== nothing && FACTORED_CUDA_WHOLE_PASS[]
+    if wp !== nothing && radix_setting(:FACTORED_CUDA_WHOLE_PASS)
         return _launch_resident_m2l_factored_whole!(state, ws, plan, wp::NamedTuple)
     end
     fill!(state.locals.phi, zero(TF))
@@ -4097,7 +4097,7 @@ end
 # stage needs no phase scratch, so the slab set matches the host stage names.
 function _cuda_precomputed_y_whole_pass_setup!(plan::ResidentM2LPrecomputedYPlan,
         ::Type{TF}, basis_info::OperatorBasisInfo{B,LH}) where {TF,B,LH}
-    W = max(min(PRECOMPUTED_CUDA_CHUNK[], length(plan.route_class)), 1)
+    W = max(min(radix_setting(:PRECOMPUTED_CUDA_CHUNK), length(plan.route_class)), 1)
     P_phi = basis_info.orders.P_phi
     P_active = basis_info.orders.P_active
     ndof_phi = degree_major_dof(P_phi)
@@ -4213,7 +4213,7 @@ function _launch_resident_m2l_precomputed_y_plan!(
     wp = plan.whole_pass[]
     wp isa NamedTuple || throw(ArgumentError(
         "CUDA precomputed-y M2L requires the whole-pass scratch bundle"))
-    if PRECOMPUTED_CUDA_WHOLE_PASS[]
+    if radix_setting(:PRECOMPUTED_CUDA_WHOLE_PASS)
         return _launch_resident_m2l_precomputed_y_whole!(state, ws, plan, wp;
             clear_locals)
     end
@@ -4263,11 +4263,11 @@ end
 #
 # The scatter is atomic because multiple source routes may target the same local
 # column. Three independently selectable drivers: the fused per-route kernel
-# (DENSE_CUDA_FUSED[], gather/matvec/scatter in one launch, no slabs or cuBLAS)
+# (radix_setting(:DENSE_CUDA_FUSED), gather/matvec/scatter in one launch, no slabs or cuBLAS)
 # and two GEMM drivers sharing the gather/scatter kernels and the chunk-width
 # slabs — the whole-pass driver (default) gathers/scatters once per route chunk
 # with per-class GEMMs over the chunk, and the per-class reference driver
-# (DENSE_CUDA_WHOLE_PASS[] = false) gathers/GEMMs/scatters per class, matching
+# (radix_setting(:DENSE_CUDA_WHOLE_PASS) = false) gathers/GEMMs/scatters per class, matching
 # the host _launch_resident_m2l_dense_plan! stage boundaries. Dense classes each
 # carry a full dense operator, so unlike factored/precomputed-y there is no
 # flatten-and-per-column trick; the GEMM stays genuinely O(D^2 * width) per class.
@@ -4628,7 +4628,7 @@ function _launch_resident_m2l_dense_whole!(state::DeviceResidentRadixState{TF,B,
     return state
 end
 
-# Per-class reference driver (DENSE_CUDA_WHOLE_PASS[] = false): gather/GEMM/scatter
+# Per-class reference driver (radix_setting(:DENSE_CUDA_WHOLE_PASS) = false): gather/GEMM/scatter
 # per class, sub-chunked at the slab width so any class occupancy is supported.
 # Mirrors the host _launch_resident_m2l_dense_plan! stage boundaries.
 function _launch_resident_m2l_dense_perclass!(state::DeviceResidentRadixState{TF,B,LH},
@@ -4668,11 +4668,11 @@ end
 function _launch_resident_m2l_dense_plan!(state::DeviceResidentRadixState{TF,B,LH},
         ws::ResidentOperatorWorkspace{TF,B,LH},
         plan::ResidentM2LDenseCUDAPlan) where {TF,B,LH}
-    DENSE_CUDA_FUSED[] && return _launch_resident_m2l_dense_fused!(state, ws, plan)
+    radix_setting(:DENSE_CUDA_FUSED) && return _launch_resident_m2l_dense_fused!(state, ws, plan)
     wp = plan.whole_pass[]
     wp isa NamedTuple || throw(ArgumentError(
         "CUDA dense M2L requires the whole-pass scratch bundle"))
-    if DENSE_CUDA_WHOLE_PASS[]
+    if radix_setting(:DENSE_CUDA_WHOLE_PASS)
         return _launch_resident_m2l_dense_whole!(state, ws, plan, wp)
     end
     return _launch_resident_m2l_dense_perclass!(state, ws, plan, wp)
@@ -4696,7 +4696,7 @@ function _dense_cuda_lifecycle_footprint(::Type{TF}, basis_info::OperatorBasisIn
     # host-shared operator/slab/route-metadata payload accounting (device slabs are
     # 2 x D x chunk, matching the host apply-slab formula with apply_width = chunk)
     base = _dense_m2l_footprint(TF, basis_info, nclasses, route_capacity, chunk, D)
-    tensor_cached = DENSE_CUDA_TENSOR_FORMAT[] in (:fp16, :bf16)
+    tensor_cached = radix_setting(:DENSE_CUDA_TENSOR_FORMAT) in (:fp16, :bf16)
     tensor_operator_bytes = TF === Float32 && !LH && D == 16 && tensor_cached ?
         _dense_sum_checked((
             _dense_checked_mul(_dense_checked_mul(nclasses, D * D,
@@ -4739,7 +4739,7 @@ function _dense_cuda_lifecycle_footprint(::Type{TF}, basis_info::OperatorBasisIn
         _dense_checked_mul(10, max_nodes, "per-node grid arrays"),
         _dense_checked_mul(8, max_cells, "per-cell grid arrays"),
         _dense_checked_mul(6, route_capacity, "route index arrays"),
-        _dense_checked_mul(CUDA_SYMMETRIC_NEARFIELD[] && !LH ? 6 : 4,
+        _dense_checked_mul(radix_setting(:CUDA_SYMMETRIC_NEARFIELD) && !LH ? 6 : 4,
             direct_capacity, "direct/symmetric index arrays"),
         g3, hierarchical_occupancy_words, hierarchical_window_words),
         "dense CUDA other-scratch words")
@@ -4817,10 +4817,10 @@ function _build_cuda_dense_m2l_plan(::Type{TF}, basis_info::OperatorBasisInfo{B,
     @inbounds for i in eachindex(accepted_offsets)
         class_capacities[i] = _dense_m2l_capacity(accepted_offsets[i], nroutes, ncells, G)
     end
-    W = max(min(DENSE_CUDA_CHUNK[], nroutes), 1)
+    W = max(min(radix_setting(:DENSE_CUDA_CHUNK), nroutes), 1)
 
     payload = _dense_m2l_footprint(TF, basis_info, nclasses, nroutes, W, D)
-    tensor_format = DENSE_CUDA_TENSOR_FORMAT[]
+    tensor_format = radix_setting(:DENSE_CUDA_TENSOR_FORMAT)
     tensor_supported = TF === Float32 && !LH && D == 16 &&
         tensor_format in (:fp16, :bf16)
     tensor_operator_bytes = tensor_supported ?
@@ -4972,14 +4972,14 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
     dk = state.options.direct_kernel
     # the symmetric Newton-pair trick assumes the same-source/target scalar
     # singular kernel; every other functor takes the generic pair kernel
-    symmetric = CUDA_SYMMETRIC_NEARFIELD[] && !LH && dk isa SingularSource &&
+    symmetric = radix_setting(:CUDA_SYMMETRIC_NEARFIELD) && !LH && dk isa SingularSource &&
         hctx isa DeviceHierarchicalM2LContext
     symmetric && isempty(hctx.symmetric_targets) && throw(ArgumentError(
         "symmetric nearfield must be selected before cache construction"))
     # task 041e: target-owned fused nearfield shapes (adaptive path only; read
     # here => graph-baked at record time; automatic shipped fallback when the
     # configuration is unsupported — never throws during a resident step)
-    shape = CUDA_NEARFIELD_SHAPE[]
+    shape = radix_setting(:CUDA_NEARFIELD_SHAPE)
     shape in NEARFIELD_SHAPES || throw(ArgumentError(
         "CUDA_NEARFIELD_SHAPE must be one of $(NEARFIELD_SHAPES); got $shape"))
     if shape !== :pairs
@@ -4987,7 +4987,7 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
         if actx isa DeviceAdaptiveCUDAContext &&
                 _radix_count_len(actx.u_csr_sources) > 0 &&
                 actx.u_csr_built_epoch == actx.epoch_id &&
-                state.counts.n_bodies >= CUDA_NEARFIELD_FUSED_MIN_BODIES[]
+                state.counts.n_bodies >= radix_setting(:CUDA_NEARFIELD_FUSED_MIN_BODIES)
             _launch_cuda_fused_nearfield!(state, actx, shape, hsv, threads)
             return state
         end
@@ -5005,7 +5005,7 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
     # (read here, i.e. baked into a captured graph at record time — flip only
     # before cache construction); :lut needs the construction-built table on
     # the hierarchical bin context, which this path does not carry
-    ghm = CUDA_NEARFIELD_GH_MODE[]
+    ghm = radix_setting(:CUDA_NEARFIELD_GH_MODE)
     ghm in NEARFIELD_GH_MODES || throw(ArgumentError(
         "CUDA_NEARFIELD_GH_MODE must be one of $(NEARFIELD_GH_MODES); got $ghm"))
     ghm === :lut && dk isa AbstractRegularizedVortex && throw(ArgumentError(
@@ -5015,7 +5015,7 @@ function _launch_cuda_nearfield_kernel!(state::DeviceResidentRadixState{TF,B,LH}
     ghv = Val(ghm === :lut ? :shipped : ghm)
     npairs = symmetric ? hctx.n_symmetric_pairs : state.counts.n_direct
     # warp-per-pair (task 028 lever 1): 4 warps per 128-thread block
-    direct_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+    direct_blocks = min(cld(npairs, threads ÷ 32), radix_setting(:DIRECT_CUDA_MAX_BLOCKS))
     if direct_blocks > 0
         if symmetric
             CUDA.@cuda threads=threads blocks=direct_blocks _cuda_symmetric_pairs_output_kernel!(
@@ -5038,7 +5038,7 @@ end
 function _launch_cuda_fused_nearfield!(state::DeviceResidentRadixState,
         actx::DeviceAdaptiveCUDAContext, shape::Symbol, hsv, threads::Int)
     dk = state.options.direct_kernel
-    ghm = CUDA_NEARFIELD_GH_MODE[]
+    ghm = radix_setting(:CUDA_NEARFIELD_GH_MODE)
     ghm in NEARFIELD_GH_MODES || throw(ArgumentError(
         "CUDA_NEARFIELD_GH_MODE must be one of $(NEARFIELD_GH_MODES); got $ghm"))
     ghm === :lut && throw(ArgumentError(
@@ -5050,11 +5050,11 @@ function _launch_cuda_fused_nearfield!(state::DeviceResidentRadixState,
     nl == 0 && return state
     offs = actx.u_csr_offsets::CUDA.CuVector{Int32}
     srcs = actx.u_csr_sources::CUDA.CuVector{Int32}
-    blocks = min(nl, DIRECT_CUDA_MAX_BLOCKS[])
+    blocks = min(nl, radix_setting(:DIRECT_CUDA_MAX_BLOCKS))
     if shape === :fused_packed
         nb = state.counts.n_bodies
         if nb > 0
-            pblocks = min(cld(nb, threads), DIRECT_CUDA_MAX_BLOCKS[])
+            pblocks = min(cld(nb, threads), radix_setting(:DIRECT_CUDA_MAX_BLOCKS))
             CUDA.@cuda threads=threads blocks=pblocks _cuda_direct_pairs_fused_packed_kernel!(
                 dk, state.output, state.source_bodies, state.cell_ranges,
                 offs, srcs, actx.u_csr_body_leaf::CUDA.CuVector{Int32}, nb,
@@ -5091,14 +5091,14 @@ function _launch_cuda_split_nearfield_typed!(state::DeviceResidentRadixState{TF,
         tp_gap2, gh_lut) where {TF,B,LH}
     npairs = state.counts.n_direct
     n_cells = state.counts.n_cells
-    mode = CUDA_NEARFIELD_BINNING[]
+    mode = radix_setting(:CUDA_NEARFIELD_BINNING)
     mode in (:unbinned, :classsplit, :ballot, :classsplit_ballot) ||
         throw(ArgumentError(
             "CUDA_NEARFIELD_BINNING must be :unbinned, :classsplit, :ballot, " *
             "or :classsplit_ballot; got $mode"))
     # task 037f: cheapened g/h mode (read inside the lifecycle body -> baked
     # into a captured graph at record time, like the binning Refs above)
-    ghm = CUDA_NEARFIELD_GH_MODE[]
+    ghm = radix_setting(:CUDA_NEARFIELD_GH_MODE)
     ghm in NEARFIELD_GH_MODES || throw(ArgumentError(
         "CUDA_NEARFIELD_GH_MODE must be one of $(NEARFIELD_GH_MODES); got $ghm"))
     ghv = Val(ghm)
@@ -5113,7 +5113,7 @@ function _launch_cuda_split_nearfield_typed!(state::DeviceResidentRadixState{TF,
         CUDA.@cuda threads=256 blocks=1 _cuda_nf_scalars_kernel!(
             nf_scalars, cell_sigma_max, n_cells, dk.rho_t)
     end
-    direct_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+    direct_blocks = min(cld(npairs, threads ÷ 32), radix_setting(:DIRECT_CUDA_MAX_BLOCKS))
     if direct_blocks > 0
         if classsplit
             fill!(bin_counts, Int32(0))
@@ -5143,8 +5143,8 @@ function _launch_cuda_split_nearfield_typed!(state::DeviceResidentRadixState{TF,
                     dk, state.output, state.source_bodies, state.cell_ranges,
                     bin_targets, bin_sources, bin_counts, Int32(3), 2 * cap, 0,
                     cell_coords, cell_sigma_max, h_leaf, nfctx.x_min,
-                    hsv, Val(CUDA_NEARFIELD_PAIR_AABB[]), nothing, ghv, gh_lut)
-            elseif CUDA_NEARFIELD_PAIR_AABB[]
+                    hsv, Val(radix_setting(:CUDA_NEARFIELD_PAIR_AABB)), nothing, ghv, gh_lut)
+            elseif radix_setting(:CUDA_NEARFIELD_PAIR_AABB)
                 CUDA.@cuda threads=threads blocks=direct_blocks _cuda_direct_pairs_mixed_aabb_kernel!(
                     dk, state.output, state.source_bodies, state.cell_ranges,
                     bin_targets, bin_sources, bin_counts, Int32(3), 2 * cap,
@@ -5173,13 +5173,13 @@ function _launch_cuda_split_nearfield_typed!(state::DeviceResidentRadixState{TF,
     end
     if twopass && n_cells > 0 && nfctx.twopass_K > 0
         total = n_cells * nfctx.twopass_K
-        blocks2 = min(cld(total, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+        blocks2 = min(cld(total, threads ÷ 32), radix_setting(:DIRECT_CUDA_MAX_BLOCKS))
         CUDA.@cuda threads=threads blocks=blocks2 _cuda_twopass_deficit_kernel!(
             dk, state.output, state.source_bodies, state.cell_ranges, cell_coords,
             cell_sigma_max, cell_sigma_min, state.grid.cell_keys, n_cells,
             tp_offsets, tp_gap2, nfctx.twopass_K, nf_scalars, state.grid.ell,
-            h_leaf, nfctx.x_min, hsv, Val(CUDA_TWOPASS_PASS2_QUEUED[]),
-            Val(CUDA_TWOPASS_TARGET_AABB_PRUNE[]), Val(true), nothing)
+            h_leaf, nfctx.x_min, hsv, Val(radix_setting(:CUDA_TWOPASS_PASS2_QUEUED)),
+            Val(radix_setting(:CUDA_TWOPASS_TARGET_AABB_PRUNE)), Val(true), nothing)
     end
     return state
 end
@@ -5229,7 +5229,7 @@ function cuda_nearfield_homogeneity(state::DeviceResidentRadixState{TF};
         throw(ArgumentError("stream must be :all or :mixed; got $stream"))
     end
     if n > 0
-        blocks = min(cld(n, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+        blocks = min(cld(n, threads ÷ 32), radix_setting(:DIRECT_CUDA_MAX_BLOCKS))
         CUDA.@cuda threads=threads blocks=blocks _cuda_nearfield_divergence_kernel!(
             diag, state.source_bodies, state.cell_ranges, tgts, srcs, base, n,
             dk.sigma_row, cutoff)
@@ -5274,14 +5274,14 @@ function cuda_twopass_shell_homogeneity(state::DeviceResidentRadixState{TF}) whe
         CUDA.@cuda threads=256 blocks=1 _cuda_nf_scalars_kernel!(
             nfctx.nf_scalars, nfctx.cell_sigma_max, n_cells, dk.rho_t)
         total = n_cells * nfctx.twopass_K
-        blocks2 = min(cld(total, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+        blocks2 = min(cld(total, threads ÷ 32), radix_setting(:DIRECT_CUDA_MAX_BLOCKS))
         CUDA.@cuda threads=threads blocks=blocks2 _cuda_twopass_deficit_kernel!(
             dk, state.output, state.source_bodies, state.cell_ranges,
             nfctx.cell_coords, nfctx.cell_sigma_max, nfctx.cell_sigma_min,
             state.grid.cell_keys, n_cells, nfctx.twopass_offsets,
             nfctx.twopass_gap2, nfctx.twopass_K, nfctx.nf_scalars,
             state.grid.ell, TF(nfctx.h_leaf), nfctx.x_min, hsv, Val(false),
-            Val(CUDA_TWOPASS_TARGET_AABB_PRUNE[]), Val(false), diag)
+            Val(radix_setting(:CUDA_TWOPASS_TARGET_AABB_PRUNE)), Val(false), diag)
     end
     CUDA.synchronize()
     result = _nf_homogeneity_result(diag)
@@ -5331,7 +5331,7 @@ function cuda_nearfield_pair_aabb_stats(state::DeviceResidentRadixState{TF}) whe
         counts = Array(nfctx.bin_counts)
         nmixed = Int(counts[3])
         if nmixed > 0
-            blocks = min(cld(nmixed, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+            blocks = min(cld(nmixed, threads ÷ 32), radix_setting(:DIRECT_CUDA_MAX_BLOCKS))
             CUDA.@cuda threads=threads blocks=blocks _cuda_direct_pairs_mixed_aabb_kernel!(
                 dk, state.output, state.source_bodies, state.cell_ranges,
                 nfctx.bin_targets, nfctx.bin_sources, nfctx.bin_counts,
@@ -5595,16 +5595,11 @@ end
 function _cuda_lifecycle_body!(state::DeviceResidentRadixState)
     # cycle 3: launch fill+nearfield on the side stream before B2M so it runs
     # concurrently with the whole far-field chain; L2B joins on the event
-    nearfield_done = CUDA_OVERLAP_NEARFIELD[] ?
+    nearfield_done = radix_setting(:CUDA_OVERLAP_NEARFIELD) ?
         _launch_cuda_nearfield_async!(state) : nothing
     _launch_cuda_b2m!(state)
     _assert_cuda_resident_stage!(state, :b2m)
     _launch_cuda_resident_operator_pipeline!(state; nearfield_done)
-    # task 048: SFS pass on the default stream — U/J is complete here (L2B was
-    # launched after waiting on the nearfield-done event). No-op unless the
-    # cache was built with sfs=true. Launch bookkeeping only (no sync, no
-    # allocation, no D2H), so graph capture records it with the body.
-    _launch_cuda_sfs!(state)
     return state
 end
 
@@ -5614,7 +5609,7 @@ end
 # symmetric-pair compaction (its pair count varies with per-cell body counts),
 # and no stage profiling (which synchronizes between levels).
 function _cuda_graph_eligible(state::DeviceResidentRadixState)
-    CUDA_GRAPH_LIFECYCLE[] && CUDA_CACHED_WINDOWS[] || return false
+    radix_setting(:CUDA_GRAPH_LIFECYCLE) && radix_setting(:CUDA_CACHED_WINDOWS) || return false
     hctx = state.interaction_list
     hctx isa DeviceHierarchicalM2LContext || return false
     # typemin sentinel: a previous capture attempt hit a capture-illegal
@@ -5764,9 +5759,10 @@ end
 # math/comment block there): (a) thread-per-body TG precompute T = op(J)Γ +
 # accumulator zeroing, (b) warp-per-pair ζ sweep over the FULL direct pair
 # list (clone of `_cuda_direct_pairs_functor_kernel!`'s loop skeleton; self
-# pair i == j skipped, matching the host mirror), both launched inside the
-# lifecycle body (graph-captured: persistent buffers only, no allocation, no
-# sync, no D2H); (c) E-formation + scatter OUTSIDE the graph in
+# pair i == j skipped, matching the host mirror). The pair pass is launched
+# only for an evaluation that requests `sfs=true`, after the U/J lifecycle
+# (and any U/J graph replay) has completed. It uses persistent buffers and has
+# no allocation, synchronization, or D2H. E-formation + scatter happen in
 # `finalize_cuda_radix_sfs_output!`, mirroring `finalize_cuda_radix_output!`.
 # The transposed-scheme flag is baked at construction (Val at launch).
 
@@ -5795,7 +5791,7 @@ function _cuda_sfs_tg_kernel!(tg, om, q, output, source_bodies,
 end
 
 function _cuda_sfs_zeta_pairs_kernel!(om, q, tg, source_bodies, cell_ranges,
-        direct_targets, direct_sources, npairs, rc2, K1)
+        direct_targets, direct_sources, npairs, rc2, K1, active_row)
     T = eltype(om)
     half = T(0.5)
     lane = (threadIdx().x - Int32(1)) % Int32(32)
@@ -5812,6 +5808,10 @@ function _cuda_sfs_zeta_pairs_kernel!(om, q, tg, source_bodies, cell_ranges,
         slast = sfirst + cell_ranges[2, source_cell] - 1
         i = tfirst + lane
         while i <= tlast
+            if active_row != 0 && iszero(source_bodies[active_row, i])
+                i += 32
+                continue
+            end
             xi = source_bodies[1, i]
             yi = source_bodies[2, i]
             zi = source_bodies[3, i]
@@ -5819,6 +5819,7 @@ function _cuda_sfs_zeta_pairs_kernel!(om, q, tg, source_bodies, cell_ranges,
             q1 = zero(T); q2 = zero(T); q3 = zero(T)
             for j in sfirst:slast
                 i == j && continue
+                active_row != 0 && iszero(source_bodies[active_row, j]) && continue
                 dx = xi - source_bodies[1, j]
                 dy = yi - source_bodies[2, j]
                 dz = zi - source_bodies[3, j]
@@ -5848,21 +5849,21 @@ function _cuda_sfs_zeta_pairs_kernel!(om, q, tg, source_bodies, cell_ranges,
     return nothing
 end
 
-# in-graph launcher: no-op unless the cache was armed with sfs=true
+# Per-evaluation launcher: the caller invokes this only for `sfs=true`.
 function _launch_cuda_sfs!(state::DeviceResidentRadixState{TF}) where TF
     sfs = state.sfs
     sfs === nothing && return state
     size(state.output, 1) >= 13 || throw(AssertionError(
         "the SFS pass requires the 13-row (hessian) output"))
     _launch_cuda_sfs_typed!(state, sfs.tg, sfs.om, sfs.q,
-        sfs.transposed ? Val(true) : Val(false))
+        sfs.transposed ? Val(true) : Val(false), sfs.active_row)
     return state
 end
 
 # function barrier over the Any-typed sfs NamedTuple
 function _launch_cuda_sfs_typed!(state::DeviceResidentRadixState{TF},
         tg::CUDA.CuMatrix{TF}, om::CUDA.CuMatrix{TF}, q::CUDA.CuMatrix{TF},
-        tv::Val) where TF
+        tv::Val, active_row::Int) where TF
     threads = 128
     n = state.counts.n_bodies
     tg_blocks = cld(n, threads)
@@ -5872,12 +5873,12 @@ function _launch_cuda_sfs_typed!(state::DeviceResidentRadixState{TF},
     npairs = state.counts.n_direct
     # warp-per-pair, grid-stride (the `_cuda_direct_pairs_functor_kernel!`
     # launch shape)
-    pair_blocks = min(cld(npairs, threads ÷ 32), DIRECT_CUDA_MAX_BLOCKS[])
+    pair_blocks = min(cld(npairs, threads ÷ 32), radix_setting(:DIRECT_CUDA_MAX_BLOCKS))
     if pair_blocks > 0
         CUDA.@cuda threads=threads blocks=pair_blocks _cuda_sfs_zeta_pairs_kernel!(
             om, q, tg, state.source_bodies, state.cell_ranges,
             state.direct_targets, state.direct_sources, npairs,
-            _sfs_saturation_rc2(TF), TF(_SFS_ZETA_K1))
+            _sfs_saturation_rc2(TF), TF(_SFS_ZETA_K1), active_row)
     end
     return state
 end
@@ -6319,8 +6320,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         hierarchical_level_radii2::Vector{Int}=Int[],
         max_level_nodes::Int=0, hessian::Bool=false,
         # task 048: SFS device pass — persistent 3 x capacity accumulators plus
-        # the FLOWVPM transposed-scheme flag baked into the kernels/graph
-        sfs::Bool=false, sfs_transposed::Bool=true,
+        # the FLOWVPM transposed-scheme flag and optional packed active-mask row
+        sfs::Bool=false, sfs_transposed::Bool=true, sfs_active_row::Int=0,
         # rectangular geometry contract (task 037 stage 2): per-axis leaf depths
         # and physical extents; cubic callers keep the virtual-cube defaults
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
@@ -6356,7 +6357,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
     # _build_cuda_dense_m2l_plan; here the complete estimated lifecycle footprint
     # must fit within CUDA.free_memory() minus the reserved headroom.
     if options.m2l_strategy isa DenseTranslationM2L
-        chunk = max(min(DENSE_CUDA_CHUNK[], route_capacity), 1)
+        chunk = max(min(radix_setting(:DENSE_CUDA_CHUNK), route_capacity), 1)
         body_cols = sum(data_per_body, sources)
         dense_cuda_footprint = _dense_cuda_lifecycle_footprint(TF, basis_info,
             length(plan_offsets), route_capacity, direct_capacity, maxn, max_cells,
@@ -6454,7 +6455,8 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
     # its launches entirely)
     sfs_device_ctx = sfs ?
         (; tg=CUDA.zeros(TF, 3, maxn), om=CUDA.zeros(TF, 3, maxn),
-           q=CUDA.zeros(TF, 3, maxn), transposed=sfs_transposed) : nothing
+           q=CUDA.zeros(TF, 3, maxn), transposed=sfs_transposed,
+           active_row=sfs_active_row) : nothing
     ctx = (;
         multipoles, locals, workspace, invariant, counters, grid,
         counts=RadixStepCounts(0, 0, 0, 0, 0),
@@ -6567,7 +6569,7 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         adaptive_actx, adaptive_state = _cuda_allocate_adaptive_lifecycle(TF,
             basis_info, options, adaptive_policy::AdaptiveTreePolicy, x_min, h0,
             maxn, dpb_adaptive > 0 ? dpb_adaptive : dpb, hessian,
-            ctx.invariant, counters, ctx; sfs, sfs_transposed)
+            ctx.invariant, counters, ctx; sfs, sfs_transposed, sfs_active_row)
     end
     cache = RadixFMMCache{TF,LH}(
         P, ell, x_min, h0, ell_axes, box_extent, root_level, maxn, true, hessian,
@@ -6700,7 +6702,7 @@ function _cuda_update_radix_grid_in_place!(ctx, cache::RadixFMMCache{TF}, n::Int
     # persistent arrays remain valid. The compare costs one kernel plus one
     # pinned 4-byte D2H, replacing ~40 launches, several device scans, and two
     # blocking downloads on the steady occupancy-static step.
-    track_epoch = length(ctx.epoch_cell_keys) > 0 && CUDA_CACHED_WINDOWS[]
+    track_epoch = length(ctx.epoch_cell_keys) > 0 && radix_setting(:CUDA_CACHED_WINDOWS)
     occ_changed = true
     if track_epoch && ctx.epoch_have[] && ctx.epoch_prev_n[] == n &&
             ctx.epoch_prev_n_cells[] == n_cells
@@ -6803,7 +6805,7 @@ steps; `route_uploads`/`operator_uploads` stay constant after construction,
 `body_uploads` grows by one per host-resident system, and `metadata_downloads`
 grows by three (perm/system/index mirrors) per step with host-resident targets.
 
-Task 029 cycle 1: on hierarchical caches with `CUDA_CACHED_WINDOWS[]` (the
+Task 029 cycle 1: on hierarchical caches with `radix_setting(:CUDA_CACHED_WINDOWS)` (the
 default), the node metadata, occupancy lookup, direct pairs, operator-group
 edges, and the cached M2L route windows are regenerated only when the occupied
 leaf-cell set changed since the previous step (they are pure functions of that
@@ -6846,7 +6848,7 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
     # 032a stage C mechanism (a): optional within-cell sub-Morton ordering,
     # composed into the perm before packing (device kernels only; the sorted
     # cell keys, cell ranges, and node metadata are unaffected)
-    if CUDA_NEARFIELD_SUBSORT[] &&
+    if radix_setting(:CUDA_NEARFIELD_SUBSORT) &&
             cache.options.direct_kernel isa Union{PartitionedVortex,TwoPassVortex}
         _cuda_nearfield_subsort!(ctx, cache, n, n_cells)
     end
@@ -6932,9 +6934,9 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
             # oversized-cell fallback selection reads per-cell body counts, so
             # the symmetric compaction refreshes every step
             _cuda_compact_symmetric_pairs!(ctx, hctx, grid.cell_ranges, n_direct,
-                SYMMETRIC_CUDA_MAX_CELL_BODIES[])
+                radix_setting(:SYMMETRIC_CUDA_MAX_CELL_BODIES))
         end
-        if CUDA_CACHED_WINDOWS[] && !hctx.win_valid && _cuda_windows_cacheable(hctx)
+        if radix_setting(:CUDA_CACHED_WINDOWS) && !hctx.win_valid && _cuda_windows_cacheable(hctx)
             t_stage = profiling ? (CUDA.synchronize(); time_ns()) : UInt64(0)
             _cuda_hier_cache_windows!(ctx, hctx, grid)
             profiling && (CUDA.synchronize();
@@ -7003,12 +7005,15 @@ function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switche
         run_cuda_adaptive_radix_lifecycle!(state,
             cache.adaptive_tree::DeviceAdaptiveCUDAContext)
     end
+    # SFS is a per-evaluation option, not merely a cache capability. Keep it
+    # outside the U/J graph so an sfs-armed cache executes no TG/ζ kernels on
+    # the (default) sfs=false path. Stream order guarantees completed J here.
+    sfs && _launch_cuda_sfs!(state)
     finalize_cuda_radix_output!(state, targets; derivatives_switches=switches,
         host_output_staging=cache.device_ctx.host_output,
         target_buffers=_radix_cache_target_buffers!(cache, switches),
         device_target_buffers=cache.device_ctx.device_target_buffers)
-    # task 048: SFS delivery — the SFS kernels always run inside an sfs-armed
-    # cache's lifecycle body (graph-baked); the per-call flag gates delivery
+    # task 048: the per-call flag gates both the SFS launch above and delivery
     sfs && finalize_cuda_radix_sfs_output!(state, targets;
         host_sfs_staging=cache.device_ctx.host_sfs_staging,
         sfs_target_buffers=_radix_cache_sfs_buffers!(cache, targets),
@@ -7386,7 +7391,7 @@ end
 # additionally consume per-window class starts/counts and stay on the
 # generate-and-apply-per-window path.
 _cuda_windows_cacheable(hctx::DeviceHierarchicalM2LContext) =
-    hctx.apply_plan isa ResidentM2LDenseCUDAPlan && DENSE_CUDA_FUSED[]
+    hctx.apply_plan isa ResidentM2LDenseCUDAPlan && radix_setting(:DENSE_CUDA_FUSED)
 
 # Grow the cached-window arrays to `needed`, preserving the first `cursor`
 # entries. Growth happens only inside epoch regeneration (never on the
@@ -7487,7 +7492,7 @@ function _cuda_hier_refresh_precomputed_y_window!(plan::ResidentM2LPrecomputedYP
         "hierarchical precomputed-y M2L window classes $lo:$hi do not partition " *
         "the window's $n_routes routes (summed $total)"))
     starts[hi + 1] = cursor
-    if !PRECOMPUTED_CUDA_WHOLE_PASS[]
+    if !radix_setting(:PRECOMPUTED_CUDA_WHOLE_PASS)
         # the per-class reference driver scans every class, so the starts outside
         # the active window must stay monotone around it
         @inbounds for k in 1:(lo - 1)
@@ -7525,7 +7530,7 @@ function _cuda_hier_refresh_dense_window!(plan::ResidentM2LDenseCUDAPlan,
         "hierarchical dense M2L window classes $lo:$hi do not partition the " *
         "window's $n_routes routes (summed $total)"))
     starts[hi + 1] = cursor
-    if !DENSE_CUDA_FUSED[]
+    if !radix_setting(:DENSE_CUDA_FUSED)
         @inbounds for k in 1:(lo - 1)
             starts[k] = 1
         end
@@ -7843,7 +7848,7 @@ function _cuda_hier_dense_apply_routes!(state::DeviceResidentRadixState{TF,B,LH}
     n_routes == 0 && return state
     lcol = L - hctx.first_m2l_level + 1
     D = plan.ndof
-    tensor_format = DENSE_CUDA_TENSOR_FORMAT[]
+    tensor_format = radix_setting(:DENSE_CUDA_TENSOR_FORMAT)
     if tensor_format !== :off && TF === Float32 && !LH && D == 16
         tensor_format in (:fp16, :bf16) || throw(ArgumentError(
             "DENSE_CUDA_TENSOR_FORMAT must be :off, :fp16, or :bf16"))
@@ -7851,7 +7856,7 @@ function _cuda_hier_dense_apply_routes!(state::DeviceResidentRadixState{TF,B,LH}
             plan.tensor_bf16_operators
         isempty(ops_low) && throw(ArgumentError(
             "tensor M2L operator cache is unavailable for this configuration"))
-        blocks = min(cld(n_routes, 16), DENSE_CUDA_TILED_MAX_BLOCKS[])
+        blocks = min(cld(n_routes, 16), radix_setting(:DENSE_CUDA_TILED_MAX_BLOCKS))
         shmem = 256 * sizeof(eltype(ops_low)) + 256 * sizeof(Float32)
         CUDA.@cuda threads=32 blocks=blocks shmem=shmem _cuda_hier_dense_tensor16_kernel!(
             state.locals.phi, plan.operators, ops_low, plan.tensor_input_scale,
@@ -7864,14 +7869,14 @@ function _cuda_hier_dense_apply_routes!(state::DeviceResidentRadixState{TF,B,LH}
     # D x D class tile plus one multipole column per warp.  Launch controls
     # are internal Refs so complete-verdict A/Bs can be run without adding
     # public cache/API surface.
-    tiled_threads = DENSE_CUDA_TILED_THREADS[]
+    tiled_threads = radix_setting(:DENSE_CUDA_TILED_THREADS)
     32 <= tiled_threads <= 1024 && tiled_threads % 32 == 0 ||
         throw(ArgumentError("DENSE_CUDA_TILED_THREADS must be a warp multiple in 32:1024"))
-    tiled_cap = DENSE_CUDA_TILED_MAX_BLOCKS[]
+    tiled_cap = radix_setting(:DENSE_CUDA_TILED_MAX_BLOCKS)
     tiled_cap > 0 || throw(ArgumentError("DENSE_CUDA_TILED_MAX_BLOCKS must be positive"))
     tiled_warps = tiled_threads ÷ 32
     tiled_shmem = (D * D + tiled_warps * D) * sizeof(TF)
-    if DENSE_CUDA_TILED[] && n_routes >= DENSE_CUDA_TILED_MIN_ROUTES[] &&
+    if radix_setting(:DENSE_CUDA_TILED) && n_routes >= radix_setting(:DENSE_CUDA_TILED_MIN_ROUTES) &&
             tiled_shmem <= 48 * 1024
         blocks = min(cld(n_routes, tiled_warps), tiled_cap)
         CUDA.@cuda threads=tiled_threads blocks=blocks shmem=tiled_shmem _cuda_hier_dense_tiled_kernel!(
@@ -7884,7 +7889,7 @@ function _cuda_hier_dense_apply_routes!(state::DeviceResidentRadixState{TF,B,LH}
     end
     threads = min(256, cld(D, 32) * 32)
     shmem = D * sizeof(TF)
-    blocks = min(n_routes, DENSE_CUDA_FUSED_MAX_BLOCKS[])
+    blocks = min(n_routes, radix_setting(:DENSE_CUDA_FUSED_MAX_BLOCKS))
     CUDA.@cuda threads=threads blocks=blocks shmem=shmem _cuda_hier_dense_fused_kernel!(
         state.locals.phi, state.locals.chi, plan.operators, route_class,
         route_sources, route_targets, state.multipoles.phi,
@@ -7900,7 +7905,7 @@ function _cuda_hier_dense_apply_window!(state::DeviceResidentRadixState{TF,B,LH}
     n_routes = state.counts.n_routes
     n_routes == 0 && return state
     lcol = L - hctx.first_m2l_level + 1
-    if DENSE_CUDA_FUSED[]
+    if radix_setting(:DENSE_CUDA_FUSED)
         return _cuda_hier_dense_apply_routes!(state, ws, plan, hctx, L,
             plan.route_class, state.route_sources, state.route_targets, n_routes)
     end
@@ -7960,7 +7965,7 @@ function _launch_cuda_hierarchical_m2l!(state::DeviceResidentRadixState{TF,B,LH}
     # cache when it is valid — per-level applies only, no per-step generation.
     # The benchmark-only replay controls always take the windowed path.
     if replay_levels === nothing && replay_orbit === nothing &&
-            CUDA_CACHED_WINDOWS[] && hctx.win_valid && _cuda_windows_cacheable(hctx)
+            radix_setting(:CUDA_CACHED_WINDOWS) && hctx.win_valid && _cuda_windows_cacheable(hctx)
         return _launch_cuda_hierarchical_m2l_cached!(state, hctx; clear_locals)
     end
     clear_locals && fill!(state.locals.phi, zero(TF))
@@ -8155,7 +8160,7 @@ function _build_cuda_hierarchical_context(::Type{TF}, basis_info::OperatorBasisI
         (Matrix{TF}(undef, 0, 0), Matrix{TF}(undef, 0, 0))
     source_scale = CUDA.CuArray{TF}(host_source_scale)
     target_scale = CUDA.CuArray{TF}(host_target_scale)
-    symmetric_capacity = CUDA_SYMMETRIC_NEARFIELD[] && !LH ? direct_capacity : 0
+    symmetric_capacity = radix_setting(:CUDA_SYMMETRIC_NEARFIELD) && !LH ? direct_capacity : 0
     return DeviceHierarchicalM2LContext(
         tables, level_radii2, class_level, class_offset, effective_offsets, plan,
         K, ell, first_m2l_level, noffsets,
@@ -8706,7 +8711,7 @@ end
 
 function _cuda_adaptive_lifecycle_body!(state::DeviceResidentRadixState,
         actx::DeviceAdaptiveCUDAContext)
-    nearfield_done = CUDA_OVERLAP_NEARFIELD[] ?
+    nearfield_done = radix_setting(:CUDA_OVERLAP_NEARFIELD) ?
         _launch_cuda_nearfield_async!(state) : nothing
     _launch_cuda_b2m!(state)
     _assert_cuda_resident_stage!(state, :b2m)
@@ -8727,9 +8732,6 @@ function _cuda_adaptive_lifecycle_body!(state::DeviceResidentRadixState,
     end
     _launch_cuda_adaptive_m2t!(state, actx)
     _assert_cuda_resident_stage!(state, :l2b)
-    # task 048: SFS pass after M2T so J carries every far-field contribution;
-    # same stream-ordering/capture contract as the uniform body
-    _launch_cuda_sfs!(state)
     return state
 end
 
@@ -8740,11 +8742,11 @@ end
 # exactly as on the uniform path.
 function _cuda_adaptive_graph_eligible(state::DeviceResidentRadixState,
         actx::DeviceAdaptiveCUDAContext)
-    CUDA_GRAPH_LIFECYCLE[] || return false
+    radix_setting(:CUDA_GRAPH_LIFECYCLE) || return false
     actx.graph_warm_epoch == typemin(Int) && return false
     ws = state.scratch
     ws isa ResidentOperatorWorkspace || return false
-    ws.m2l_concat isa ResidentM2LDenseCUDAPlan && DENSE_CUDA_FUSED[] || return false
+    ws.m2l_concat isa ResidentM2LDenseCUDAPlan && radix_setting(:DENSE_CUDA_FUSED) || return false
     actx.profile_stages && return false
     DEBUG[] && return false
     return true
@@ -8801,7 +8803,8 @@ function _cuda_allocate_adaptive_lifecycle(::Type{TF},
         policy::AdaptiveTreePolicy, x_min::SVector{3,TF}, h0::TF, maxn::Int,
         dpb::Int, hessian::Bool, invariant::OperatorInvariantCache,
         counters::CUDARadixTransferCounters, ctx;
-        sfs::Bool=false, sfs_transposed::Bool=true) where {TF,B,LH}
+        sfs::Bool=false, sfs_transposed::Bool=true,
+        sfs_active_row::Int=0) where {TF,B,LH}
     actx = _cuda_allocate_adaptive_context(TF, policy, maxn, x_min, h0, counters)
     # alias the ordinal-indexed body maps filled by the shared position collector
     grid = actx.grid::DeviceRadixGrid
@@ -8867,7 +8870,8 @@ function _cuda_allocate_adaptive_lifecycle(::Type{TF},
     # sort differs from the uniform grid's, so slabs are not shared)
     sfs_device_ctx = sfs ?
         (; tg=CUDA.zeros(TF, 3, maxn), om=CUDA.zeros(TF, 3, maxn),
-           q=CUDA.zeros(TF, 3, maxn), transposed=sfs_transposed) : nothing
+           q=CUDA.zeros(TF, 3, maxn), transposed=sfs_transposed,
+           active_row=sfs_active_row) : nothing
     state = DeviceResidentRadixState{TF,CompressedComplexBasis,LH}(
         grid, actx, source_bodies, source_bodies,
         grid.perm, grid.body_system, grid.body_index,

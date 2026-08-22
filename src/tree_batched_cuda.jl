@@ -150,9 +150,9 @@ function _cuda_allocate_adaptive_context(::Type{TF}, policy::AdaptiveTreePolicy,
         false, zeros(UInt64, 8), 0,
         # 041e target-owned U CSR: sized only when a fused shape is selected
         # at construction (the shape Ref is graph/construction-baked anyway)
-        CUDA.zeros(Int32, CUDA_NEARFIELD_SHAPE[] === :pairs ? 0 : leaf_cap + 1),
-        CUDA.zeros(Int32, CUDA_NEARFIELD_SHAPE[] === :pairs ? 0 : u_cap),
-        CUDA.zeros(Int32, CUDA_NEARFIELD_SHAPE[] === :pairs ? 0 : maxn),
+        CUDA.zeros(Int32, radix_setting(:CUDA_NEARFIELD_SHAPE) === :pairs ? 0 : leaf_cap + 1),
+        CUDA.zeros(Int32, radix_setting(:CUDA_NEARFIELD_SHAPE) === :pairs ? 0 : u_cap),
+        CUDA.zeros(Int32, radix_setting(:CUDA_NEARFIELD_SHAPE) === :pairs ? 0 : maxn),
         -1,
     )
 end

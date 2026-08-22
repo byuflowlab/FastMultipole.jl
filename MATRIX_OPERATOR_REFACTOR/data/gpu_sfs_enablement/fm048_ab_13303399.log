@@ -1,0 +1,211 @@
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = [1.19995836556002, 1.19995836556002, 1.19995836556002], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   n = 20000
+│   a = 0.005442494
+│   b = 0.006492531
+│   marginal = 0.0010500370000000002
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = [1.19995836556002, 1.19995836556002, 1.19995836556002], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   n = 20000
+│   a = 0.006194647
+│   b = 0.00751718
+│   marginal = 0.0013225329999999999
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.211
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(8, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = [1.19995836556002, 1.19995836556002, 1.19995836556002], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.211
+│   n = 20000
+│   a = 0.00858115
+│   b = 0.009627618
+│   marginal = 0.001046468
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(8, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = [1.19995836556002, 1.19995836556002, 1.19995836556002], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 8
+│   R = Float64
+│   rho_t = 4.789
+│   n = 20000
+│   a = 0.009601069
+│   b = 0.010911675
+│   marginal = 0.0013106059999999989
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.211
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = Float32[1.199981, 1.199981, 1.199981], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.211
+│   n = 20000
+│   a = 0.003381514
+│   b = 0.0039382
+│   marginal = 0.0005566860000000002
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.789
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = Float32[1.199981, 1.199981, 1.199981], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 4
+│   R = Float32
+│   rho_t = 4.789
+│   n = 20000
+│   a = 0.003752211
+│   b = 0.004424243
+│   marginal = 0.0006720319999999995
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.211
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(8, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = Float32[1.199981, 1.199981, 1.199981], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.211
+│   n = 20000
+│   a = 0.008838855
+│   b = 0.009404283
+│   marginal = 0.0005654279999999998
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.789
+│   n = 20000
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(8, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 3, ell_axes = [3, 3, 3], box_extent = Float32[1.199981, 1.199981, 1.199981], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "cube"
+│   P = 8
+│   R = Float32
+│   rho_t = 4.789
+│   n = 20000
+│   a = 0.009751585
+│   b = 0.010403723
+│   marginal = 0.000652138
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   n = 210056
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.211, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 4, ell_axes = [4, 4, 4], box_extent = [0.5190211120926624, 0.5190211120926624, 0.5190211120926624], direct_kernel = FastMultipole.PartitionedVortex(8, 4.211), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.211
+│   n = 210056
+│   a = 0.063101145
+│   b = 0.090732855
+│   marginal = 0.027631710000000004
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+┌ Info: fm048 resolved configuration
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   n = 210056
+│   SEED = 48048
+│   REPS = 9
+│   settings = FLOWVPM.RadixFMMSettings(4, nothing, 6, nothing, 0.1, nothing, false, nothing, :partitioned, 4.789, nothing, :dense, nothing, 1.03)
+└   cache = (ell = 4, ell_axes = [4, 4, 4], box_extent = [0.5190211120926624, 0.5190211120926624, 0.5190211120926624], direct_kernel = FastMultipole.PartitionedVortex(8, 4.789), m2l_strategy = FastMultipole.DenseTranslationM2L(4294967296, 0, 0, 1073741824))
+┌ Info: fm048 synchronized A/B
+│   case = "p018"
+│   P = 4
+│   R = Float64
+│   rho_t = 4.789
+│   n = 210056
+│   a = 0.063988401
+│   b = 0.091979761
+│   marginal = 0.027991359999999993
+│   tuj = 9-element Vector{Float64}: …
+└   tsfs = 9-element Vector{Float64}: …
+FM048_AB_CSV=/home/rander39/FLOWVPM-046/fm048_ab_13303399.csv

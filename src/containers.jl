@@ -1956,6 +1956,18 @@ struct HostResident <: Residency end
 
 struct DeviceResident <: Residency end
 
+"Role policy for tree construction; replaces ambiguous source/target booleans."
+abstract type TreeRole end
+struct SourceTree <: TreeRole end
+struct TargetTree <: TreeRole end
+
+"Execution policy for the legacy FMM nearfield path."
+abstract type NearfieldExecution end
+struct HostNearfield <: NearfieldExecution end
+struct DeviceNearfield <: NearfieldExecution end
+_device_nearfield(::HostNearfield) = false
+_device_nearfield(::DeviceNearfield) = true
+
 #------- nearfield direct-kernel functors (task 032 stage 2) -------#
 #
 # The resident nearfield pair kernels are generic over an isbits functor selected
@@ -2374,7 +2386,7 @@ mutable struct RadixFMMCache{TF,LH}
     locked_settings::Any
     # task 048: SFS (subfilter-scale vortex-stretching) capability, chosen at
     # construction like `hessian` (requires hessian=true). `sfs_transposed`
-    # bakes the FLOWVPM transposed-scheme convention into the kernels/graph;
+    # bakes the FLOWVPM transposed-scheme convention into the kernels;
     # `sfs_target_buffers` lazily caches per-system 3-row host scatter buffers
     # (device caches keep theirs in device_ctx.device_sfs_buffers).
     sfs::Bool
@@ -2542,7 +2554,7 @@ mutable struct DeviceAdaptiveCUDAContext
     stage_ns::Vector{UInt64}    # refresh sub-stages (sort/build/balance/finalize/dtr/csr/groups)
     step::Int
     # task 041e: target-owned U CSR for the fused nearfield shapes.
-    # Allocated (u_capacity-sized) only when CUDA_NEARFIELD_SHAPE[] !== :pairs
+    # Allocated (u_capacity-sized) only when CUDA_NEARFIELD_SHAPE is not :pairs.
     # at construction (zero-length otherwise, so the default path pays no
     # memory); rebuilt on occupancy epochs from the slot-mapped U list by a
     # deterministic (target-slot, emission-index) key sort reusing the V

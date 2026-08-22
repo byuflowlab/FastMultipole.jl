@@ -1095,7 +1095,7 @@ end
 
 # Validated host-side mode (the host reference path maps :lut -> :shipped)
 function _validated_host_gh_mode()
-    m = CUDA_NEARFIELD_GH_MODE[]
+    m = radix_setting(:CUDA_NEARFIELD_GH_MODE)
     m in NEARFIELD_GH_MODES || throw(ArgumentError(
         "CUDA_NEARFIELD_GH_MODE must be one of $(NEARFIELD_GH_MODES); got $m"))
     return m === :lut ? :shipped : m
@@ -1752,9 +1752,10 @@ const _SFS_ZETA_K1 = 0.06349363593424097  # (2π)^(-3/2)
 @inline _sfs_saturation_rc2(::Type{Float64}) = 81.0
 
 # persistent host accumulators (3 x capacity each) + the baked scheme flag
-_host_sfs_context(::Type{TF}, maxn::Int, transposed::Bool) where TF =
+_host_sfs_context(::Type{TF}, maxn::Int, transposed::Bool,
+        active_row::Int=0) where TF =
     (; tg=zeros(TF, 3, maxn), om=zeros(TF, 3, maxn), q=zeros(TF, 3, maxn),
-       transposed)
+       transposed, active_row)
 
 @inline function _sfs_apply_op(J5, J6, J7, J8, J9, J10, J11, J12, J13,
         v1, v2, v3, transposed::Bool)
@@ -1787,7 +1788,8 @@ function _host_sfs_tg_and_zero!(tg, om, q, output::AbstractMatrix{TF},
 end
 
 function _host_sfs_zeta_pairs!(om::AbstractMatrix{TF}, q, tg, source_bodies,
-        cell_ranges, direct_targets, direct_sources, n_direct::Int) where TF
+        cell_ranges, direct_targets, direct_sources, n_direct::Int,
+        active_row::Int=0) where TF
     rc2 = _sfs_saturation_rc2(TF)
     K1 = TF(_SFS_ZETA_K1)
     half = TF(0.5)
@@ -1799,6 +1801,7 @@ function _host_sfs_zeta_pairs!(om::AbstractMatrix{TF}, q, tg, source_bodies,
         sfirst = cell_ranges[1, source_cell]
         scount = cell_ranges[2, source_cell]
         for i in tfirst:(tfirst + tcount - 1)
+            active_row != 0 && iszero(source_bodies[active_row, i]) && continue
             xi = source_bodies[1, i]
             yi = source_bodies[2, i]
             zi = source_bodies[3, i]
@@ -1806,6 +1809,7 @@ function _host_sfs_zeta_pairs!(om::AbstractMatrix{TF}, q, tg, source_bodies,
             q1 = zero(TF); q2 = zero(TF); q3 = zero(TF)
             for j in sfirst:(sfirst + scount - 1)
                 i == j && continue
+                active_row != 0 && iszero(source_bodies[active_row, j]) && continue
                 dx = xi - source_bodies[1, j]
                 dy = yi - source_bodies[2, j]
                 dz = zi - source_bodies[3, j]
@@ -1848,7 +1852,7 @@ function _run_host_radix_sfs!(state::DeviceResidentRadixState)
         state.source_bodies, sfs.transposed, n)
     _host_sfs_zeta_pairs!(sfs.om, sfs.q, sfs.tg, state.source_bodies,
         state.cell_ranges, state.direct_targets, state.direct_sources,
-        state.counts.n_direct)
+        state.counts.n_direct, sfs.active_row)
     return state
 end
 
@@ -2425,6 +2429,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         hessian::Bool=false,
         sfs::Bool=false,
         sfs_transposed::Bool=true,
+        sfs_active_row::Integer=0,
         device::Bool=false,
         options::Union{Nothing,CUDARadixLifecycleOptions}=nothing,
         stencil_epsilon::Union{Nothing,Real}=nothing,
@@ -2448,6 +2453,11 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
                 "sigma in packed row 8; data_per_body must be >= 8 " *
                 "(got $(data_per_body(system)) for $(typeof(system)))"))
         end
+        sfs_active_row >= 0 || throw(ArgumentError(
+            "sfs_active_row must be zero (all bodies active) or a positive packed row"))
+        sfs_active_row == 0 ||
+            all(data_per_body(system) >= sfs_active_row for system in sources) ||
+            throw(ArgumentError("sfs_active_row=$sfs_active_row exceeds data_per_body for an SFS source system"))
     end
     LH = lamb_helmholtz === nothing ? has_vector_potential(sources) : Bool(lamb_helmholtz)
     # B2M element resolution (task 032): one shared body type per cache, checked
@@ -2668,7 +2678,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             route_capacity, direct_capacity, basis_info, Val(LH);
             hierarchical_tables, class_level, class_offset,
             hierarchical_level_class_of, hierarchical_level_radii2,
-            max_level_nodes, hessian, sfs, sfs_transposed, ell_axes, box_extent,
+            max_level_nodes, hessian, sfs, sfs_transposed,
+            sfs_active_row=Int(sfs_active_row), ell_axes, box_extent,
             root_level, first_m2l_level,
             adaptive_policy=adaptive, dpb_adaptive=dpb)
         cache.built = true
@@ -2730,7 +2741,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         first_m2l_level,
         zeros(Int, Int(ell) + 2), 0, zeros(Int, Int(ell) + 1), 0,
         false, zeros(UInt64, 5), zeros(UInt64, Int(ell) + 1)) : nothing
-    sfs_ctx = sfs ? _host_sfs_context(TF, maxn, sfs_transposed) : nothing
+    sfs_ctx = sfs ? _host_sfs_context(TF, maxn, sfs_transposed,
+        Int(sfs_active_row)) : nothing
     state = DeviceResidentRadixState{TF,CompressedComplexBasis,LH}(
         grid, hierarchical_ctx, source_bodies, source_bodies,
         grid.perm, grid.body_system, grid.body_index,
@@ -2756,7 +2768,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     adaptive_state = adaptive === nothing ? nothing :
         _allocate_adaptive_resident_lifecycle(TF, basis_info, options,
             adaptive_tree, adaptive_lists, invariant, dpb, maxn, hessian;
-            sfs_ctx=sfs ? _host_sfs_context(TF, maxn, sfs_transposed) : nothing)
+            sfs_ctx=sfs ? _host_sfs_context(TF, maxn, sfs_transposed,
+                Int(sfs_active_row)) : nothing)
     cache = RadixFMMCache{TF,LH}(
         P, Int(ell), x_min, h0, ell_axes, box_extent, root_level, maxn, device,
         hessian, options, stencil_policy,
@@ -3154,7 +3167,7 @@ function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where 
             state.route_sources, plan === nothing ? nothing : plan.route_class,
             state.direct_targets, state.direct_sources,
             cache.accepted_offsets, cache.rejected_offsets, cache.cell_at, cache.coords,
-            grid.leaf_to_node, grid.ell, n_cells,
+            grid.leaf_to_node, grid.ell, n_cells, RadixRouteSelection(),
         )
     end
 

@@ -1,0 +1,59 @@
+CUDA toolchain: 
+- runtime 12.8.0, local installation
+- driver 580.159.4 for 13.0
+- compiler 12.8.93, local installation
+
+CUDA libraries: 
+- cuBLAS: 12.8.4
+- cuSPARSE: 12.5.8
+- cuSOLVER: 11.7.3
+- cuFFT: 11.3.3
+- cuRAND: 10.3.9
+- CUPTI: 2025.1.1 (API 12.8.0)
+- NVML: 13.0.0+580.159.4
+
+Julia packages: 
+- CUDACore: 6.3.0
+- GPUArrays: 11.5.12
+- GPUCompiler: 2.2.1
+- KernelAbstractions: 0.9.42
+- CUDA_Driver_jll: 13.3.1+0
+- CUDA_Compiler_jll: 0.5.1+0
+- CUDA_Runtime_jll: 0.24.1+0
+- CUDA_Runtime_Discovery: 2.1.0
+- NVPTX_LLVM_Backend_jll: 22.1.7+1
+
+Toolchain:
+- Julia: 1.11.7
+- LLVM: 16.0.6
+
+Preferences:
+- CUDA_Runtime_jll.local: true
+- CUDA_Compiler_jll.local: true
+
+1 device:
+  0: NVIDIA H200 (sm_90, 139.797 GiB / 140.401 GiB available)
+     compiles to sm_90a / PTX 8.7
+[call1 warm/uncaptured] u_rel=0.0003361274352697297 j_rel=0.0019086713440098825 graph_exec=false eligible=true
+[call2 record+launch] u_rel=0.0003361274352697304 j_rel=0.0019086713440098825 graph_exec=true graph_epoch_ok=true
+[record vs warm] perm_stable=false
+[record vs warm] output per-row relrms: [3.779874146992075e-16, 0.01989013484634099, 0.018966925486927345, 0.017949791905511835, 0.028157632126825524, 0.04317456118437243, 0.04293322766491643, 0.04481079533336596, 0.027783155775252946, 0.03927939844951417, 0.04560785263119706, 0.03707800708398958, 0.026487688507073944]
+[record vs warm] output U-block(2:4)=0.01886285017475803 J-block(5:13)=0.039953625685713215
+[record vs warm] multipoles phi=3.305049331632689e-16 chi=1.709719753333547e-16
+[record vs warm] locals    phi=3.5354827765941135e-16 chi=3.178164981245694e-16
+[call3 replay] u_rel=0.0003361274352697303 j_rel=0.001908671344009882 same_exec=true
+[replay vs warm] perm_stable=false
+[replay vs warm] output per-row relrms: [3.9136160407557455e-16, 0.01953428648257172, 0.019337477360429272, 0.019251990934815364, 0.028712137403618092, 0.044169583628197256, 0.04511967580025068, 0.046403900025577906, 0.02908889932269075, 0.041015352148282634, 0.04744494539534663, 0.03819207142895027, 0.028840587685448827]
+[replay vs warm] output U-block(2:4)=0.019360509423386723 J-block(5:13)=0.0415009404502691
+[replay vs warm] multipoles phi=2.9151993205765573e-16 chi=1.653811598372678e-16
+[replay vs warm] locals    phi=3.605866319217774e-16 chi=3.099209442629103e-16
+[call4 replay] replay-vs-replay bit-consistent=false (relrms=0.03866281729969005)
+[graph OFF, launch-sequence body] u_rel=0.0003361274352697307 j_rel=0.0019086713440098825
+[graphoff vs warm] perm_stable=false
+[graphoff vs warm] output per-row relrms: [4.0299163538413046e-16, 0.021492582625764596, 0.019049696748889115, 0.018421783329725508, 0.02796599677901419, 0.04421934549261547, 0.04474581030650088, 0.04452192082758633, 0.028838550433632735, 0.03999856953993629, 0.04664845158284227, 0.03828048734545296, 0.027883316608668933]
+[graphoff vs warm] output U-block(2:4)=0.019531492017112233 J-block(5:13)=0.04086115048422419
+[graphoff vs warm] multipoles phi=2.8974209158417555e-16 chi=1.8490784471452628e-16
+[graphoff vs warm] locals    phi=3.7213663267154045e-16 chi=3.0580887889095144e-16
+[graph back ON, replay] u_rel=0.0003361274352697292 j_rel=0.0019086713440098825 matches_prior_replay=false
+[replay, sfs=true shape] u_rel=0.00033612743526973 j_rel=0.0019086713440098825
+fm048 replay diagnostic complete

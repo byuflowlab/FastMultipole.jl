@@ -5,10 +5,14 @@
 
 ## What the 049 budget table changed
 
-The particle side (wake U/J + SFS, the "75% lever") measures **0.199 s/step
-device-resident at n=210k** — 6.0% of the 3.3 s/step target, with SFS
-marginal cost 0.3 ms. The binding constraint is therefore entirely the
-panel-involving passes: the ~36 s CPU body-pass floor
+The historical production arm (wake U/J + SFS) observed 0.199 s/step
+device-resident at n=210k. The old 0.3 ms
+UJ/UJ+SFS difference is invalid as marginal cost: both arms executed ζ, so it
+measured delivery overhead. Corrected same-state p018 A/B is pending for
+rho_t=4.211 and 4.789. Until that rerun, neither the corrected particle budget
+nor the binding pass is established. Independently, the measured ~36 s CPU
+body-pass floor and ~16–21 s solve share establish that panel-involving passes
+must move off the CPU:
 (kerneloffset-radius-bound) plus the ~16–21 s solve share. Any option that
 leaves a panel pass on the CPU at production shape misses the target.
 
@@ -89,7 +93,8 @@ these sizes and budgets).
    side (panel solve bookkeeping); the GPU rectangular kernels sit beside
    them, not inside the radix framework. RadixFMMCache remains
    particles-only (targets===sources), untouched.
-5. Estr stays on the 048 radix SFS path (measured ~free).
+5. Estr stays on the 048 radix SFS path; its corrected marginal cost is pending
+   and must not be described as free.
 
 ## Watch items carried to 051/052
 
@@ -98,6 +103,6 @@ these sizes and budgets).
   itself J-approximate — like-for-like comparison happens there).
 - The 049 CPU-vs-GPU direct cross-check discrepancy (2.6e-4) — resolve
   before it can contaminate 051 parity gates.
-- Residency: device-resident recommended (35% transfer share) — user
-  checkpoint open; 051's coupling should assume device-resident particles
-  with per-pass D2H only where FLOWPanel's CPU orchestration needs values.
+- Residency: no recommendation yet. Present the corrected same-job A/B and
+  ask the user which mode should ship; 051 must support either choice until
+  that checkpoint is answered.

@@ -1,0 +1,198 @@
+exact_command=FM048_P018_BIN=/home/rander39/FLOWVPM-046/data/fm048/p018_710_particles.bin FM048_AB_CSV=/home/rander39/FLOWVPM-046/fm048_ab_13303399.csv julia --project=/home/rander39/fm048env scripts/fm048_ab_benchmark.jl
+julia=julia version 1.11.7
+cuda_module= Currently Loaded Modules:   1) lmod            4) miniforge3/25.3.1-0          7) glibc/2.34-k45r4mc   2) defaultenv/10   5) cuda/12.8.1-zkkfiog          8) julia/1.11.7-6bmogfl   3) python/3.12     6) gcc-runtime/13.2.0-g4hc7ev     
+device=NVIDIA H200, GPU-8156c75c-bae4-2773-8c60-afad0cf9d059, 580.159.04
+flowvpm_sha=rsync-no-git
+fastmultipole_sha=rsync-no-git
+flowvpm_tree_sha256=c3f15957da200446e3205593bcbb3edb34245674418d114ac46051e72d1fc93d
+fastmultipole_tree_sha256=9e8f25993fac6458c2c4b2be8ba62e41c4c8d69f7998d458c9fbd60233afdf58
+stage3_raw_log=/home/rander39/FLOWVPM-046/fm048_device_tests_13303399.log
+stage3_raw_log_sha256=d45111dbf484322146366ba7d7aa80ce63a349e4c428791e2e92abfe20fafe9c
+flowvpm_project_sha256=aadd375eb74cf2126db9025d0cb6c76282901de22df9d13f81870e09c75951d9
+fastmultipole_project_sha256=f18903a9edc2938236181e1ddddd1540fa42e97a14329f7b8e4d5d05e7ae51e2
+manifest_sha256=c3848caf9e6012dffbb05fdec20e6cad1a2f45642388b8ae980614f5994e12db
+p018_snapshot=/home/rander39/FLOWVPM-046/data/fm048/p018_710_particles.bin
+p018_snapshot_sha256=0d913634de780b026649445a7a71e3e76c64ef5716c513636dc1998afd7155ab
+pkg_status_begin
+Status `~/fm048env/Manifest.toml`
+  [a4c015fc] ANSIColoredPrinters v0.0.1
+  [621f4979] AbstractFFTs v1.5.0
+  [1520ce14] AbstractTrees v0.4.5
+  [7d9f7c33] Accessors v0.1.45
+  [79e6a3ab] Adapt v4.7.0
+  [a9b6321e] Atomix v1.1.3
+  [ab4f0b2a] BFloat16s v0.6.1
+  [fbb218c0] BSON v0.3.9
+  [fa961155] CEnum v0.5.0
+  [052768ef] CUDA v6.3.0
+  [bd0ed864] CUDACore v6.3.0
+  [9ec180c6] CUDATools v6.3.0
+  [1af6417a] CUDA_Runtime_Discovery v2.1.0
+  [9e67e8f6] CUPTI v6.3.0
+⌃ [944b1d66] CodecZlib v0.7.8
+  [861a8166] Combinatorics v1.1.0
+  [38540f10] CommonSolve v0.2.13
+  [34da2185] Compat v4.18.1
+  [9db33cc3] CompilerCaching v0.4.2
+  [a33af91c] CompositionsBase v0.1.2
+  [187b0558] ConstructionBase v1.6.0
+  [a8cc5b0e] Crayons v4.2.0
+  [9a962f9c] DataAPI v1.16.0
+⌃ [864edb3b] DataStructures v0.18.22
+  [e2d170a0] DataValueInterfaces v1.0.0
+  [ffbed154] DocStringExtensions v0.9.5
+  [e30172f5] Documenter v1.17.0
+  [6a4e32cb] EllipticFunctions v2.0.1
+  [e2ba6199] ExprTools v0.1.11
+  [6e19019d] FLOWVPM v4.1.0 `~/FLOWVPM-046`
+  [ce07d0d3] FastMultipole v2.3.0 `~/FastMultipole-046`
+  [1a297f60] FillArrays v1.17.0
+⌃ [0c68f7d7] GPUArrays v11.5.12
+  [46192b85] GPUArraysCore v0.2.0
+⌃ [61eb1bfa] GPUCompiler v2.2.1
+  [096a3bc2] GPUToolbox v3.0.0
+  [d7ba0133] Git v1.5.0
+  [19dc6840] HCubature v1.8.0
+  [f67ccb44] HDF5 v0.17.3
+  [076d061b] HashArrayMappedTries v0.2.0
+  [b5f81e59] IOCapture v1.0.0
+  [18e54dd8] IntegerMathUtils v0.1.4
+  [3587e190] InverseFunctions v0.1.17
+  [92d709cd] IrrationalConstants v0.2.6
+  [82899510] IteratorInterfaceExtensions v1.0.0
+  [692b3bcd] JLLWrappers v1.8.0
+⌃ [682c06a0] JSON v1.7.0
+  [63c18a36] KernelAbstractions v0.9.42
+  [929cbde3] LLVM v9.13.0
+  [8b046642] LLVMLoopInfo v1.0.0
+  [b964fa9f] LaTeXStrings v1.4.1
+  [0e77f7df] LazilyInitializedFields v1.3.0
+  [9c8b4983] LightXML v0.9.3
+  [2ab3a3ac] LogExpFunctions v1.0.1
+  [3da0fdf6] MPIPreferences v0.1.12
+  [1914dd2f] MacroTools v0.5.16
+  [d0879d2d] MarkdownAST v0.1.3
+  [611af6d1] NVML v6.3.0
+  [5da4648a] NVTX v1.0.3
+⌅ [bac558e1] OrderedCollections v1.8.2
+  [69de0a69] Parsers v2.8.7
+⌅ [aea7be01] PrecompileTools v1.2.1
+  [21216c6a] Preferences v1.5.2
+  [08abe8d2] PrettyTables v3.4.8
+  [27ebfcd6] Primes v0.5.7
+  [1fd47b50] QuadGK v2.11.3
+  [74087812] Random123 v1.7.1
+  [e6cf234a] RandomNumbers v1.6.0
+  [189a3867] Reexport v1.2.2
+  [2792f1a3] RegistryInstances v0.1.0
+  [ae029012] Requires v1.3.1
+⌃ [f2b01f46] Roots v2.3.0
+  [7e506255] ScopedValues v1.6.2
+⌃ [276daf66] SpecialFunctions v2.8.3
+  [90137ffa] StaticArrays v1.9.19
+  [1e83bf80] StaticArraysCore v1.4.4
+  [10745b16] Statistics v1.11.1
+  [892a3eda] StringManipulation v0.5.0
+⌃ [ec057cc2] StructUtils v2.8.3
+  [3783bdb8] TableTraits v1.0.1
+  [bd369af6] Tables v1.13.0
+  [1e6cf692] TestEnv v1.103.6
+  [e689c965] Tracy v0.1.6
+  [3bb67fe8] TranscodingStreams v0.11.3
+  [013be700] UnsafeAtomics v0.3.2
+  [4004b06d] VTKBase v1.0.1
+  [64499a7a] WriteVTK v1.22.0
+  [182d3088] cuBLAS v6.3.0
+  [533571aa] cuFFT v6.3.0
+  [20fd9a0b] cuRAND v6.3.0
+  [887afef0] cuSOLVER v6.3.0
+  [b26da814] cuSPARSE v6.3.0
+  [d1e2174e] CUDA_Compiler_jll v0.5.1+0
+  [4ee394cb] CUDA_Driver_jll v13.3.1+0
+  [76a88914] CUDA_Runtime_jll v0.24.1+0
+⌃ [2e619515] Expat_jll v2.8.2+0
+  [020c3dae] Git_LFS_jll v3.7.1+0
+  [f8c6e375] Git_jll v2.55.0+0
+⌅ [0234f1f7] HDF5_jll v2.0.1+0
+⌃ [e33a78d0] Hwloc_jll v2.12.1+0
+  [9c1d0b0a] JuliaNVTXCallbacks_jll v0.2.1+0
+  [dad2f222] LLVMExtra_jll v0.0.46+0
+  [ad6e5548] LibTracyClient_jll v0.13.1+0
+  [94ce4f54] Libiconv_jll v1.18.0+0
+⌃ [7cb0a576] MPICH_jll v4.3.2+0
+  [f1f71cc9] MPItrampoline_jll v5.5.6+0
+  [9237b28f] MicrosoftMPI_jll v10.1.4+3
+  [ef6e0fe3] NVPTX_LLVM_Backend_jll v22.1.7+1
+  [e98f9f5b] NVTX_jll v3.2.2+0
+  [fe0851c0] OpenMPI_jll v5.0.11+0
+⌃ [9bd350c2] OpenSSH_jll v10.4.1+0
+  [458c3c95] OpenSSL_jll v3.5.7+0
+  [efe28fd5] OpenSpecFun_jll v0.5.6+0
+  [02c8fc9c] XML2_jll v2.15.3+0
+⌅ [2b3700d1] aws_c_auth_jll v0.9.6+0
+  [70f11efc] aws_c_cal_jll v0.9.13+0
+  [73048d1d] aws_c_common_jll v0.12.6+0
+  [73a04cd5] aws_c_compression_jll v0.3.2+0
+  [3254fc65] aws_c_http_jll v0.10.13+0
+  [13c41daa] aws_c_io_jll v0.26.3+0
+⌅ [bd1f34fb] aws_c_s3_jll v0.11.5+0
+  [1282aa60] aws_c_sdkutils_jll v0.2.4+1
+  [b2a88e68] aws_checksums_jll v0.2.10+0
+  [1e29f10c] demumble_jll v1.3.0+0
+  [c4b69c83] dlfcn_win32_jll v1.4.2+0
+  [477f73a3] libaec_jll v1.1.7+0
+  [cddc5d3d] s2n_tls_jll v1.7.3+0
+  [8b5cbfcf] tree_sitter_gcn_jll v0.1.0+0
+  [44208993] tree_sitter_llvm_jll v1.1.0+0
+  [71e3f6e6] tree_sitter_ptx_jll v0.1.0+0
+  [f0e86581] tree_sitter_spirv_jll v0.1.0+0
+  [0dad84c5] ArgTools v1.1.2
+  [56f22d72] Artifacts v1.11.0
+  [2a0f44e3] Base64 v1.11.0
+  [ade2ca70] Dates v1.11.0
+  [f43a241f] Downloads v1.6.0
+  [7b1f6079] FileWatching v1.11.0
+  [b77e0a4c] InteractiveUtils v1.11.0
+  [4af54fe1] LazyArtifacts v1.11.0
+  [b27032c2] LibCURL v0.6.4
+  [76f85450] LibGit2 v1.11.0
+  [8f399da3] Libdl v1.11.0
+  [37e2e46d] LinearAlgebra v1.11.0
+  [56ddb016] Logging v1.11.0
+  [d6f4376e] Markdown v1.11.0
+  [a63ad114] Mmap v1.11.0
+  [ca575930] NetworkOptions v1.2.0
+  [44cfe95a] Pkg v1.11.0
+  [de0858da] Printf v1.11.0
+  [3fa0cd96] REPL v1.11.0
+  [9a3f8284] Random v1.11.0
+  [ea8e919c] SHA v0.7.0
+  [9e88b42a] Serialization v1.11.0
+  [6462fe0b] Sockets v1.11.0
+  [2f01184e] SparseArrays v1.11.0
+  [f489334b] StyledStrings v1.11.0
+  [fa267f1f] TOML v1.0.3
+  [a4e569a6] Tar v1.10.0
+  [8dfed614] Test v1.11.0
+  [cf7118a7] UUIDs v1.11.0
+  [4ec0a83e] Unicode v1.11.0
+  [e66e0078] CompilerSupportLibraries_jll v1.1.1+0
+  [deac9b47] LibCURL_jll v8.6.0+0
+  [e37daf67] LibGit2_jll v1.7.2+0
+  [29816b5a] LibSSH2_jll v1.11.0+1
+  [c8ffd9c3] MbedTLS_jll v2.28.6+0
+  [14a3606d] MozillaCACerts_jll v2023.12.12
+  [4536629a] OpenBLAS_jll v0.3.27+1
+  [05823500] OpenLibm_jll v0.8.5+0
+  [efcefdf7] PCRE2_jll v10.42.0+1
+  [bea87d4a] SuiteSparse_jll v7.7.0+0
+  [83775a58] Zlib_jll v1.2.13+1
+  [8e850b90] libblastrampoline_jll v5.11.0+0
+  [8e850ede] nghttp2_jll v1.59.0+0
+  [3f19e933] p7zip_jll v17.4.0+2
+Info Packages marked with ⌃ and ⌅ have new versions available. Those with ⌃ may be upgradable, but those with ⌅ are restricted by compatibility constraints from upgrading. To see why use `status --outdated -m`
+pkg_status_end
+raw_log=/home/rander39/FLOWVPM-046/fm048_ab_13303399.log
+raw_log_sha256=212ce68f9bacc870ae84eeaff587475662d8e60e11be69d1a211edb35d1bf20f
+csv=/home/rander39/FLOWVPM-046/fm048_ab_13303399.csv
+csv_sha256=c2f188928e11afcfa95a3ff733e6b35508eda733468132ad1ddbdf12dc589da3

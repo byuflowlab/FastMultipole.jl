@@ -939,6 +939,10 @@ cell indices. `route_class[i]` receives the 1-based index of route `i`'s offset 
 `accepted_offsets` (pass `nothing` to skip). `coords[1:n_cells]` are the decoded
 cell coordinates. Returns the valid prefix lengths.
 """
+struct RadixRouteSelection{F,N,S} end
+RadixRouteSelection(; farfield::Bool=true, nearfield::Bool=true, self_induced::Bool=true) =
+    RadixRouteSelection{farfield,nearfield,self_induced}()
+
 function build_radix_routes!(route_levels, route_offsets, route_targets, route_sources,
         route_class, direct_targets, direct_sources,
         accepted_offsets, rejected_offsets, cell_at::AbstractArray{Int32,3},
@@ -978,6 +982,22 @@ function build_radix_routes!(route_levels, route_offsets, route_targets, route_s
     end
     return n_routes, n_direct
 end
+
+function build_radix_routes!(route_levels, route_offsets, route_targets, route_sources,
+        route_class, direct_targets, direct_sources, accepted_offsets,
+        rejected_offsets, cell_at, coords, leaf_to_node, ell, n_cells,
+        ::RadixRouteSelection{F,N,S}) where {F,N,S}
+    return build_radix_routes!(route_levels, route_offsets, route_targets,
+        route_sources, route_class, direct_targets, direct_sources,
+        accepted_offsets, rejected_offsets, cell_at, coords, leaf_to_node, ell,
+        n_cells; farfield=F, nearfield=N, self_induced=S)
+end
+
+build_radix_interaction_list(strategy::RadixTraversalStrategy,
+        policy::RadixSeparationPolicy, grid::RadixGrid,
+        ::RadixRouteSelection{F,N,S}) where {F,N,S} =
+    build_radix_interaction_list(strategy, policy, grid;
+        farfield=F, nearfield=N, self_induced=S)
 
 function build_radix_interaction_list(strategy::RadixTraversalStrategy,
         policy::RadixSeparationPolicy, grid::RadixGrid; farfield::Bool=true,

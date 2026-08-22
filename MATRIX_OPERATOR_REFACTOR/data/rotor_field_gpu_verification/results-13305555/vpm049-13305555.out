@@ -1,0 +1,22 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-942a2d09-ae6b-96c8-3185-03b8cafaafcd)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== fm049 rotor field GPU verification ===
+Precompiling FLOWVPM...
+   6441.1 ms  ✓ FastMultipole
+   6950.7 ms  ✓ FLOWVPM
+  2 dependencies successfully precompiled in 20 seconds. 119 already precompiled.
+Precompiling FLOWVPMCUDAExt...
+   7578.7 ms  ✓ FLOWVPM → FLOWVPMCUDAExt
+  1 dependency successfully precompiled in 13 seconds. 193 already precompiled.
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+fatal: not a git repository (or any parent up to mount point /home)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+ERROR: LoadError: fm049 completed all rows with failed gates: Float32 direct_u_integrity failed: 6.13906153117952e-5 | Float32 direct_j_integrity failed: 0.0001488165189457011 | accuracy j_rel_rms failed for Float64 P4 rho=4.211: 0.0005803370121554658 > 0.0005 | accuracy sfs_rel_rms failed for Float64 P4 rho=4.211: 0.0027976856655314913 > 0.0005 | contract host_alloc_uj_bytes failed for Float64 P4 rho=4.211 | contract host_alloc_ujsfs_bytes failed for Float64 P4 rho=4.211 | contract device_alloc_uj_bytes failed for Float64 P4 rho=4.211 | contract device_alloc_ujsfs_bytes failed for Float64 P4 rho=4.211 | contract replay_bitwise_equal failed for Float64 P4 rho=4.211 | accuracy j_rel_rms failed for Float64 P4 rho=4.789: 0.0005534320380340763 > 0.0005 | accuracy sfs_rel_rms failed for Float64 P4 rho=4.789: 0.0027237584184227853 > 0.0005 | contract host_alloc_uj_bytes failed for Float64 P4 rho=4.789 | contract host_alloc_ujsfs_bytes failed for Float64 P4 rho=4.789 | contract device_alloc_uj_bytes failed for Float64 P4 rho=4.789 | contract device_alloc_ujsfs_bytes failed for Float64 P4 rho=4.789 | contract replay_bitwise_equal failed for Float64 P4 rho=4.789 | accuracy sfs_rel_rms failed for Float64 P8 rho=4.211: 0.0006371065472776038 > 0.0005 | contract host_alloc_uj_bytes failed for Float64 P8 rho=4.211 | contract host_alloc_ujsfs_bytes failed for Float64 P8 rho=4.211 | contract device_alloc_uj_bytes failed for Float64 P8 rho=4.211 | contract device_alloc_ujsfs_bytes failed for Float64 P8 rho=4.211 | contract replay_bitwise_equal failed for Float64 P8 rho=4.211 | contract host_alloc_uj_bytes failed for Float64 P8 rho=4.789 | contract host_alloc_ujsfs_bytes failed for Float64 P8 rho=4.789 | contract device_alloc_uj_bytes failed for Float64 P8 rho=4.789 | contract device_alloc_ujsfs_bytes failed for Float64 P8 rho=4.789 | contract replay_bitwise_equal failed for Float64 P8 rho=4.789 | accuracy sfs_rel_rms failed for Float32 P4 rho=4.211: 0.0027976973492200635 > 0.001 | contract host_alloc_uj_bytes failed for Float32 P4 rho=4.211 | contract host_alloc_ujsfs_bytes failed for Float32 P4 rho=4.211 | contract device_alloc_uj_bytes failed for Float32 P4 rho=4.211 | contract device_alloc_ujsfs_bytes failed for Float32 P4 rho=4.211 | contract replay_bitwise_equal failed for Float32 P4 rho=4.211 | accuracy sfs_rel_rms failed for Float32 P4 rho=4.789: 0.0027237125971582505 > 0.001 | contract host_alloc_uj_bytes failed for Float32 P4 rho=4.789 | contract host_alloc_ujsfs_bytes failed for Float32 P4 rho=4.789 | contract device_alloc_uj_bytes failed for Float32 P4 rho=4.789 | contract device_alloc_ujsfs_bytes failed for Float32 P4 rho=4.789 | contract replay_bitwise_equal failed for Float32 P4 rho=4.789 | contract host_alloc_uj_bytes failed for Float32 P8 rho=4.211 | contract host_alloc_ujsfs_bytes failed for Float32 P8 rho=4.211 | contract device_alloc_uj_bytes failed for Float32 P8 rho=4.211 | contract device_alloc_ujsfs_bytes failed for Float32 P8 rho=4.211 | contract replay_bitwise_equal failed for Float32 P8 rho=4.211 | contract host_alloc_uj_bytes failed for Float32 P8 rho=4.789 | contract host_alloc_ujsfs_bytes failed for Float32 P8 rho=4.789 | contract device_alloc_uj_bytes failed for Float32 P8 rho=4.789 | contract device_alloc_ujsfs_bytes failed for Float32 P8 rho=4.789 | contract replay_bitwise_equal failed for Float32 P8 rho=4.789
+Stacktrace:
+ [1] error(s::String)
+   @ Base ./error.jl:35
+ [2] top-level scope
+   @ ~/FLOWVPM-046/scripts/fm049_rotor_verify.jl:340
+in expression starting at /home/rander39/FLOWVPM-046/scripts/fm049_rotor_verify.jl:340

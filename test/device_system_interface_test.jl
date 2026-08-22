@@ -1220,9 +1220,14 @@ _sfs048_relrms(A, B) = sqrt(sum(abs2, A .- B) / max(sum(abs2, B), eps()))
             sfs=true)
         @test _sfs048_relrms(_SFS048_CAPTURE[objectid(ssys)], E_radix) < 1e-13
         # sfs=false evaluations on an sfs-armed cache skip delivery entirely
+        sfs_ctx = cache.state.sfs
+        om_before = copy(sfs_ctx.om)
+        q_before = copy(sfs_ctx.q)
         delete!(_SFS048_CAPTURE, objectid(ssys))
         fmm!(ssys, cache; scalar_potential=false, gradient=true, hessian=true)
         @test !haskey(_SFS048_CAPTURE, objectid(ssys))
+        @test sfs_ctx.om == om_before
+        @test sfs_ctx.q == q_before
     end
 
     #--- classic (transposed=false) scheme ---#

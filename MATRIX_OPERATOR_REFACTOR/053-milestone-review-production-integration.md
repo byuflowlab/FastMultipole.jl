@@ -28,7 +28,14 @@ Review checklist:
 1. **Contracts** — counters (`body_uploads=0`, `expansion_host_copies=0`),
    zero per-step allocation, capacity/out-of-box behavior, explicit
    `recenter!`, P=4 test rule — verified on the unified branches with SFS
-   and panel coupling active.
+   and panel coupling active. **Deferred from `049` (D15, 2026-08-22):**
+   measure the allocation contract at the lifecycle layer (host <= 4096 B,
+   device == 0 inside `run_cuda_radix_lifecycle!`) rather than through the
+   `vpm.UJ_fmm` wrapper (wrapper measured 105–130 KB host / 2.7–3.8 KB
+   device in job 13305555, dominated by kwarg overhead and the
+   domain/sigma-guard GPU reductions), and apply the 048 error-bounded
+   replay gates (<=1.5x first-call error; parity 1e-10 F64 / 1e-4 F32)
+   through the wrapper path in place of 049's over-strict bitwise check.
 2. **Defaults** — enumerate every default-behavior change made in
    `046`–`052`; confirm each has explicit user approval (residency default
    from `049`, any settings-surface defaults from `047`, any driver
@@ -68,8 +75,9 @@ body-pass floor made panel-side acceleration mandatory; escape hatch
 allowed `052` to pull `054`/`055` levers forward.
 
 **User checkpoints that must show approvals:** repo layout after the merges
-(`046`); residency default (`049`, recommendation was upload-per-step
-unless resident wins >15%); any default-behavior change (this review).
+(`046`); residency default (`049`, chosen by the user after the corrected true
+same-job A/B; no automatic percentage threshold); any default-behavior change
+(this review).
 
 **Contract source:** integration-api-spec.md (signed 2026-08-04) — counters,
 zero per-step alloc, 9-component hessian, cache-lifetime-fixed `n_systems`,

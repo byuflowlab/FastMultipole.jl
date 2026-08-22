@@ -33,8 +33,12 @@ struct RadixSettingSpec
 end
 
 _rs_bool(v) = v isa Bool ? nothing : throw(ArgumentError("expected Bool, got $(typeof(v))"))
-_rs_posint(v) = (v isa Integer && v >= 1) ? nothing : throw(ArgumentError("expected Integer >= 1, got $(repr(v))"))
-_rs_nonnegint(v) = (v isa Integer && v >= 0) ? nothing : throw(ArgumentError("expected Integer >= 0, got $(repr(v))"))
+_rs_posint(v) = (v isa Integer && !(v isa Bool) && v >= 1 && v <= typemax(Int)) ? nothing :
+    throw(ArgumentError("expected a non-Bool Integer in 1:$(typemax(Int)), got $(repr(v))"))
+_rs_nonnegint(v) = (v isa Integer && !(v isa Bool) && v >= 0 && v <= typemax(Int)) ? nothing :
+    throw(ArgumentError("expected a non-Bool Integer in 0:$(typemax(Int)), got $(repr(v))"))
+_rs_cuda_threads(v) = (v isa Int && 32 <= v <= 1024 && v % 32 == 0) ? nothing :
+    throw(ArgumentError("expected Int warp multiple in 32:1024, got $(repr(v))"))
 _rs_enum(vals) = v -> v in vals ? nothing : throw(ArgumentError("expected one of $(vals), got $(repr(v))"))
 
 const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
@@ -90,7 +94,7 @@ const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
         "Tiled variant of the fused dense kernel (captured)."),
     :DENSE_CUDA_TILED_MIN_ROUTES => RadixSettingSpec(:construction, _rs_nonnegint,
         "Route-count threshold for the tiled dense kernel (captured)."),
-    :DENSE_CUDA_TILED_THREADS => RadixSettingSpec(:construction, _rs_posint,
+    :DENSE_CUDA_TILED_THREADS => RadixSettingSpec(:construction, _rs_cuda_threads,
         "Block size of the tiled dense kernel (captured)."),
     :DENSE_CUDA_TILED_MAX_BLOCKS => RadixSettingSpec(:construction, _rs_posint,
         "Grid cap of the tiled dense kernel (captured)."),
@@ -158,6 +162,57 @@ function set_radix_setting!(name::Symbol, value)
         "radix setting $(repr(name)) is defined by the CUDA lifecycle, which is not loaded; call load_cuda_radix_lifecycle!() first"))
     r[] = value
     return value
+end
+
+"""
+    set_radix_settings!(settings::NamedTuple)
+
+Validate and apply a group of radix settings atomically. Every name, value,
+and lazy-load precondition is checked before the first write. If an unexpected
+assignment failure occurs, already-written settings are restored.
+"""
+function set_radix_settings!(settings::NamedTuple)
+    isempty(settings) && return settings
+    refs = Pair{Symbol,Base.RefValue}[]
+    converted = Pair{Symbol,Any}[]
+    old = Pair{Symbol,Any}[]
+    for (name, value) in pairs(settings)
+        haskey(RADIX_SETTING_SPECS, name) || throw(ArgumentError(
+            "unknown radix setting $(repr(name)); known: $(sort!(collect(keys(RADIX_SETTING_SPECS))))"))
+        spec = RADIX_SETTING_SPECS[name]
+        try
+            spec.validate(value)
+        catch err
+            err isa ArgumentError && throw(ArgumentError(
+                "invalid value for radix setting $(repr(name)): $(err.msg)"))
+            rethrow()
+        end
+        r = _radix_setting_ref(name)
+        r === nothing && throw(ArgumentError(
+            "radix setting $(repr(name)) is defined by the CUDA lifecycle, which is not loaded; call load_cuda_radix_lifecycle!() first"))
+        T = typeof(r[])
+        value_t = try
+            convert(T, value)
+        catch err
+            throw(ArgumentError("invalid value for radix setting $(repr(name)): cannot convert $(typeof(value)) to $T"))
+        end
+        push!(refs, name => r)
+        push!(converted, name => value_t)
+        push!(old, name => r[])
+    end
+    written = 0
+    try
+        for i in eachindex(refs)
+            refs[i].second[] = converted[i].second
+            written = i
+        end
+    catch
+        for i in 1:written
+            refs[i].second[] = old[i].second
+        end
+        rethrow()
+    end
+    return settings
 end
 
 "Lock class of a setting: `:construction` (baked at cache construction /
