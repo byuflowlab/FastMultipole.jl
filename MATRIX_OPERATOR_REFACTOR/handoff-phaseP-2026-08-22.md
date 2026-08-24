@@ -634,3 +634,34 @@ Authoritative detail: 051 doc session-11 + Stage-4 sections. Summary:
    / 10.81 GB. Levers if margin erodes: Float32 S, device gemv (052+).
 4. Remaining: commit set across FastMultipole / FLOWPanel.jl / FLOWVPM.jl
    (user pre-approved this session); lab-notebook entry still offered.
+
+## Update — 2026-08-24 eleventh session part 2 (context reset): 051 CLOSED, clear-context audit APPROVED, commits landed
+
+**Item 051 is CLOSED.** A fresh-context auditor independently verified the
+closure and returned **APPROVE with zero discrepancies**: sha256-checked
+the 13395348 artifacts, reproduced every number from the primary log/CSV
+(tuned 0.607 s / headroom 0.783 s / FITS; Stage-4 3.124 s vs 3.3 s =
+5.3% margin), confirmed the vacuity correction is honestly recorded, and
+verified every commit's file scope matches its stated list.
+
+**Commits landed** (user pre-approved):
+- FastMultipole `flowpanel-20260817`: `22376fea` (rect seam hardening +
+  on-plane snap + device testsets), `d8258a7d` (051 docs closure +
+  panel_particle_gpu_coupling artifacts + CLAUDE.md).
+- FLOWPanel.jl `fastmultipole`: `1159c8f` (on-plane snap), `8a48bc5`
+  (051 Stage-3 S matrix/seam + 021 Phase-3 lifecycle — interleaved in
+  the same files), `5272a5f` (fm051 harnesses + slurm drivers).
+- FLOWVPM.jl `flowpanel`: `9b5b7cd` (fm051 rect bench gates + run script).
+
+**Deliberately left uncommitted** (other items / clutter — do not treat
+as 051 residue): 736 MB `data/rotor_field_gpu_verification/p018_71x_particles.bin`;
+FLOWVPM 048/049/052 src+script changes; FLOWPanel 021 benchmark scripts,
+BRAINSTORM ledgers, `logs/slurm/`; root-level csv/bson/png/`stuff*.md`
+clutter in all repos.
+
+**Open items for the next session:**
+1. Lab-notebook entry (049/050 closures + 051 full arc) — STILL offered,
+   never drafted; needs user approval + verbosity choices before writing.
+2. 052+ deferred options recorded in the 051 doc: device-resident gemv
+   (HBM ⇒ ~10 ms), Float32 S (5.4 GB), pass-2 kernel work.
+3. Nothing else pending on 051.

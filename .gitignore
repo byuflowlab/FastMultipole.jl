@@ -53,3 +53,4 @@ MATRIX_OPERATOR_REFACTOR/data/figures/*.fls
 MATRIX_OPERATOR_REFACTOR/data/figures/*.fdb_latexmk
 MATRIX_OPERATOR_REFACTOR/data/figures/*.synctex.gz
 MATRIX_OPERATOR_REFACTOR/data/rotor_wake/rotor_snapshot_n*.bin
+*.bin
