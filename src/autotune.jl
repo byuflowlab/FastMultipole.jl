@@ -318,13 +318,38 @@ model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
 - `max_expansion_order=20`, `mac_step=0.05`, `mac_bounds=(0.25, 0.85)`,
   `leaf_factor=1.5`: neighborhood definition (`P ± 1`, `MAC ± mac_step`
   clamped, `leaf ×/÷ leaf_factor`)
-- `reps=2`: min-of-reps timing per candidate (tree build included, as in
-  production use)
+- `reps=2`: min-of-reps timing per candidate
+- `tree_amortization::Int=1`: how many `fmm!` applies share ONE tree +
+  interaction-list build in the workload being priced. The candidate cost is
+  `t_build / tree_amortization + t_apply`.
+    - `1` (default, legacy behavior): the tree is rebuilt for every apply, so
+      the build is timed inside each trial via the `Cache` path. This is the
+      correct objective for an unsteady run whose geometry moves every step.
+    - `n > 1`: a steady iterative solve that builds one [`FmmPlan`](@ref) and
+      reuses its trees/lists across `n` applies (what `FLOWPanel`'s solvers
+      do). Set it to the expected iteration count. The plan is built ONCE per
+      candidate, timed separately, and only its amortized share is charged.
+
+  This matters because tree and interaction-list construction get MORE
+  expensive as `leaf_size_source` shrinks, so charging a full build to every
+  apply adds a leaf-dependent penalty that biases the descent toward large
+  leaves. Measured (BRAINSTORM 021, 2026-08-24): at 42k panels the descent
+  stalled at leaf 45 because leaf 30 timed 1.4% WORSE under the `n=1`
+  objective, while a Krylov solve — which amortizes one build over ~57
+  applies — is ~15-20% FASTER at leaf 30.
+- `max_seconds=Inf`: wall-clock guard, checked between candidates. On expiry
+  the descent returns the best point found so far, warns, and reports
+  `timed_out=true` in the third return value. A timed-out descent must never
+  be read as a converged one.
 - `improve_tol=0.02`: relative improvement required to accept a move
 - `max_iters=20`: maximum accepted moves
 - `verbose=true`
 - `kwargs...`: forwarded to `fmm!` (must match the production call's
-  `scalar_potential`/`gradient`/`hessian` request)
+  `scalar_potential`/`gradient`/`hessian` request). Under
+  `tree_amortization > 1` the structural ones (derivative switches, `shrink`,
+  `recenter`, `leaf_size_target`, `interaction_list_method`, `farfield`,
+  `nearfield`, `self_induced`, `extra_outputs`, `metadata`) are routed to
+  `FmmPlan` and the rest to the per-apply `fmm!`.
 
 **Returns**
 
@@ -333,6 +358,7 @@ model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
 - `history::Vector{<:NamedTuple}`: every evaluated candidate with fields
   `(iter, expansion_order, multipole_acceptance, leaf_size_source, t,
   error_success, accepted)`
+- `info::NamedTuple`: `(timed_out, t_elapsed, n_candidates, t_best)`
 """
 function tune_fmm_perturb(target_systems, source_systems;
     expansion_order, multipole_acceptance, leaf_size_source,
@@ -340,17 +366,36 @@ function tune_fmm_perturb(target_systems, source_systems;
     max_expansion_order=20,
     mac_step=0.05, mac_bounds=(0.25, 0.85),
     leaf_factor=1.5,
-    reps=2, improve_tol=0.02, max_iters=20,
+    reps=2, tree_amortization::Int=1, max_seconds=Inf,
+    improve_tol=0.02, max_iters=20,
     verbose=true, kwargs...)
+
+    tree_amortization >= 1 || throw(ArgumentError(
+        "tree_amortization must be >= 1 (got $tree_amortization)"))
 
     target_systems = to_tuple(target_systems)
     source_systems = to_tuple(source_systems)
 
+    # kwargs routing for the amortized path: everything that shapes the trees
+    # or the interaction lists belongs to FmmPlan (which has no catch-all), the
+    # rest to the per-apply fmm!
+    plan_kwargs = (; (k => v for (k, v) in pairs(kwargs)
+                      if k in FMMPLAN_STRUCTURAL_KWARGS)...)
+    apply_kwargs = (; (k => v for (k, v) in pairs(kwargs)
+                       if !(k in FMMPLAN_STRUCTURAL_KWARGS))...)
+
     # preallocate cache with the same target buffer layout as the trials
-    _, cache, _ = fmm!(target_systems, source_systems;
-        expansion_order=1, leaf_size_source,
-        nearfield=false, farfield=false, self_induced=false,
-        kwargs..., tune=true, update_target_systems=false)
+    # (legacy tree_amortization==1 path only; the amortized path owns a plan
+    # per candidate, each carrying its own cache)
+    cache = if tree_amortization == 1
+        _, c, _ = fmm!(target_systems, source_systems;
+            expansion_order=1, leaf_size_source,
+            nearfield=false, farfield=false, self_induced=false,
+            kwargs..., tune=true, update_target_systems=false)
+        c
+    else
+        nothing
+    end
 
     scale_leaf(leaf::Integer, f) = max(1, round(Int, leaf * f))
     scale_leaf(leaf, f) = map(l -> max(1, round(Int, l * f)), leaf)
@@ -362,19 +407,41 @@ function tune_fmm_perturb(target_systems, source_systems;
         haskey(memo, k) && return memo[k]
         t_min = Inf
         success = true
-        for _ in 1:reps
-            t = @elapsed result = fmm!(target_systems, source_systems, cache;
+        if tree_amortization == 1
+            # trees + interaction lists are rebuilt inside every timed call
+            for _ in 1:reps
+                t = @elapsed result = fmm!(target_systems, source_systems, cache;
+                    expansion_order=P, leaf_size_source=leaf,
+                    multipole_acceptance=mac,
+                    error_tolerance, kwargs...,
+                    tune=true, update_target_systems=false)
+                success = result[8]
+                success || break
+                t_min = min(t_min, t)
+            end
+        else
+            # build once (timed), then time the applies that reuse it
+            t_build = @elapsed plan = FmmPlan(target_systems, source_systems;
                 expansion_order=P, leaf_size_source=leaf,
-                multipole_acceptance=mac,
-                error_tolerance, kwargs...,
-                tune=true, update_target_systems=false)
-            success = result[8]
-            success || break
-            t_min = min(t_min, t)
+                multipole_acceptance=mac, plan_kwargs...)
+            for _ in 1:reps
+                t = @elapsed result = fmm!(target_systems, source_systems, plan;
+                    error_tolerance, apply_kwargs...,
+                    tune=true, update_target_systems=false)
+                success = result[8]
+                success || break
+                t_min = min(t_min, t)
+            end
+            t_min += t_build / tree_amortization
+            plan = nothing
+            GC.gc()     # a plan owns a full Cache; only one should be live
         end
         memo[k] = (t_min, success)
         return memo[k]
     end
+
+    t_start = time()
+    timed_out = false
 
     P0, mac0, leaf0 = expansion_order, multipole_acceptance, leaf_size_source
     t0, ok = benchmark(P0, mac0, leaf0)
@@ -383,7 +450,8 @@ function tune_fmm_perturb(target_systems, source_systems;
     history = [(iter=0, expansion_order=P0, multipole_acceptance=mac0,
                 leaf_size_source=leaf0, t=t0, error_success=true, accepted=true)]
     verbose && println("\n#======= Begin FastMultipole.tune_fmm_perturb() =======#")
-    verbose && println("start: P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s")
+    verbose && println("start: P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s " *
+        "(reps=$reps, tree_amortization=$tree_amortization)")
 
     for iter in 1:max_iters
         neighbors = [
@@ -398,6 +466,12 @@ function tune_fmm_perturb(target_systems, source_systems;
         best = nothing
         for (P, mac, leaf) in neighbors
             key(P, mac, leaf) == key(P0, mac0, leaf0) && continue
+            # guard between candidates: an already-memoized point is free, so
+            # this only ever stops before a fresh (and possibly long) trial
+            if !haskey(memo, key(P, mac, leaf)) && time() - t_start > max_seconds
+                timed_out = true
+                break
+            end
             t, success = benchmark(P, mac, leaf)
             push!(history, (iter=iter, expansion_order=P, multipole_acceptance=mac,
                             leaf_size_source=leaf, t=t, error_success=success,
@@ -409,6 +483,7 @@ function tune_fmm_perturb(target_systems, source_systems;
                 best = (P, mac, leaf)
             end
         end
+        timed_out && break
         best === nothing && break
         P0, mac0, leaf0 = best
         t0, _ = benchmark(P0, mac0, leaf0)
@@ -418,11 +493,22 @@ function tune_fmm_perturb(target_systems, source_systems;
         verbose && println("  -> move to P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s")
     end
 
+    t_elapsed = time() - t_start
+    if timed_out
+        msg = "tune_fmm_perturb: max_seconds EXPIRED after " *
+              "$(round(t_elapsed; digits=1)) s (limit $max_seconds s) — the " *
+              "descent was CUT SHORT and the returned point is best-so-far, " *
+              "NOT a converged minimum"
+        @warn msg
+        verbose && println("  !! $msg")
+    end
     verbose && println("minimum: P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s " *
-        "($(length(memo)) distinct candidates)")
+        "($(length(memo)) distinct candidates, $(round(t_elapsed; digits=1)) s" *
+        (timed_out ? ", TIMED OUT" : "") * ")")
     verbose && println("\n#===============================================#\n")
 
     tuned_params = (leaf_size_source=leaf0, expansion_order=P0,
                     multipole_acceptance=mac0)
-    return tuned_params, history
+    info = (; timed_out, t_elapsed, n_candidates=length(memo), t_best=t0)
+    return tuned_params, history, info
 end

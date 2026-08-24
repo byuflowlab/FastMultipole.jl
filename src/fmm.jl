@@ -1135,6 +1135,19 @@ struct FmmPlan{TF,TTT<:Tree,TST<:Tree,TM,TD,TDS,TLS,TILM}
     nearfield_cache::Base.RefValue{Any}   # nothing, or a NearfieldInfluenceCache built from this plan's trees (see build_nearfield_cache!)
 end
 
+"""
+    FMMPLAN_STRUCTURAL_KWARGS
+
+Keyword names accepted by [`FmmPlan`](@ref) that shape the trees or the
+interaction lists (as opposed to a per-apply option). Used to split a caller's
+`kwargs...` between plan construction and the applies that reuse the plan;
+`FmmPlan` has no catch-all `optargs...`, so an unrecognized key is an error
+rather than a silent no-op. Keep in sync with the `FmmPlan` signature below.
+"""
+const FMMPLAN_STRUCTURAL_KWARGS = (:scalar_potential, :gradient, :hessian,
+    :extra_outputs, :metadata, :leaf_size_target, :shrink, :recenter,
+    :interaction_list_method, :farfield, :nearfield, :self_induced)
+
 function FmmPlan(target_systems::Tuple, source_systems::Tuple;
     scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing,
     leaf_size_target=nothing,
