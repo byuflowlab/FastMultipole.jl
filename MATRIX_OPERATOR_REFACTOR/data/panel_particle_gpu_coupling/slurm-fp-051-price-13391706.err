@@ -1,0 +1,12 @@
+
+The following have been reloaded with a version change:
+  1) gcc-runtime/13.2.0-j5cf6qt => gcc-runtime/13.2.0-g4hc7ev
+  2) julia/1.12.6-dnqrzwe => julia/1.11.7-6bmogfl
+
+Precompiling FLOWPanel...
+  21765.1 ms  ✓ FLOWPanel
+  1 dependency successfully precompiled in 46 seconds. 237 already precompiled.
+┌ Warning: PressureLaplace has no formulation that has passed all manufactured, steady, direct/FMM, and unsteady pitching-wing gates. Using :edge_difference as an unvalidated compatibility fallback; select gradient_mode explicitly for diagnostic or validation work.
+└ @ FLOWPanel ~/FLOWPanel-046/src/FLOWPanel_simulate_monitors.jl:656
+┌ Warning: PressureLaplace(acceleration_form=:lamb_vector) is deprecated and retained only as a diagnostic for one compatibility cycle. It lacks a complete ALE surface derivation; use acceleration_form=:material_derivative with :corrected_hessian, :edge_difference, or :surface_velocity.
+└ @ FLOWPanel ~/FLOWPanel-046/src/FLOWPanel_simulate_monitors.jl:668

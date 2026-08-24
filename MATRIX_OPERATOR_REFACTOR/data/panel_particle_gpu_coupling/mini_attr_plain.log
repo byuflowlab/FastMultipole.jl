@@ -1,0 +1,106 @@
+WARNING: Detected access to binding `Main.make_dirichlet_diamond_body` in a world prior to its definition world.
+  Julia 1.12 has introduced more strict world age semantics for global bindings.
+  !!! This code may malfunction under Revise.
+  !!! This code will error in future versions of Julia.
+Hint: Add an appropriate `invokelatest` around the access to this binding.
+To make this warning an error, and hence obtain a stack trace, use `julia --depwarn=error`.
+┌ Warning: fmm! called but either sources or targets are empty; foregoing calculation
+└ @ FastMultipole ~/Dropbox/research/projects/FastMultipole/src/fmm.jl:1642
+==============================================================================
+FM051 pass-by-pass CPU-vs-GPU influence parity
+==============================================================================
+  mode=mini  seam=host  threads=4  julia=1.12.5
+  gates: phase 1.0e-03 | pass1 tight 1.0e-11 (informational) | Estr 1.0e-10
+  FLOWPanel.FILAMENT_REGULARIZATION[] = GaussianRegularization  (recorded, not modified)
+
+  spinning up 4 step(s) with the seam OFF (building nontrivial wake state)...
+    step 0 done (19.32 s), np=0
+    step 1 done (1.54 s), np=26
+    step 2 done (0.00 s), np=52
+    step 3 done (0.00 s), np=78
+
+>>> parity step i_step=4  t=0.2
+    step head OK (all target state and first wake rows finite)
+    n_panels=48  n_particles=78  n_probe_targets=14  n_targets=3  n_wake_sources=2
+
+--- pass1_wake_influence eligibility ---
+  seam eligibility:
+    source 1  PanelWake                                      supported=true  packed_columns=6
+    source 2  ParticleField                                  supported=true  packed_columns=78
+    target 1  RigidWakeBody                                  supported=true  n=48
+    target 2  ProbeWrapper                                   supported=true  n=14
+    target 3  ParticleField                                  supported=true  n=78
+
+--- pass1_wake_influence ---
+  seam hits: 1 (cpu arm: 0)    wall: cpu 0.001 s | seam 0.687 s
+  body_velocity            n=48       worst rel = 5.108e-15 (target 34: |diff| 2.776e-17, |ref| 5.434e-03)
+                                    diff/scale = 1.218e-15 (scale 2.279e-02)  over-gate 0  divergent 0
+  body_velocity_gradient   n=48       worst rel = 1.596e-15 (target 42: |diff| 1.354e-17, |ref| 8.482e-03)
+                                    diff/scale = 1.272e-15 (scale 5.360e-02)  over-gate 0  divergent 0
+  particle_J               n=78       worst rel = 1.361e-15 (target 73: |diff| 2.850e-14, |ref| 2.094e+01)
+                                    diff/scale = 1.165e-15 (scale 2.446e+01)  over-gate 0  divergent 0
+  particle_U               n=78       worst rel = 3.191e-15 (target 17: |diff| 1.146e-16, |ref| 3.591e-02)
+                                    diff/scale = 8.302e-16 (scale 1.380e-01)  over-gate 0  divergent 0
+  probe_U                  n=14       worst rel = 1.043e-15 (target 12: |diff| 3.886e-16, |ref| 3.728e-01)
+                                    diff/scale = 9.234e-16 (scale 4.209e-01)  over-gate 0  divergent 0
+
+--- solve_formulation! (seam armed = host) ---
+  seam hits during solve: 0    wall: 0.001 s
+
+--- pass3_body_influence eligibility ---
+  seam eligibility:
+    source 1  RigidWakeBody                                  supported=true  packed_columns=72
+    target 1  RigidWakeBody                                  supported=true  n=48
+    target 2  ProbeWrapper                                   supported=true  n=14
+    target 3  ParticleField                                  supported=true  n=78
+
+--- pass3_body_influence ---
+  seam hits: 1 (cpu arm: 0)    wall: cpu 0.003 s | seam 0.001 s
+  body_velocity            n=48       worst rel = 2.184e-14 (target 32: |diff| 7.092e-17, |ref| 3.248e-03)
+                                    diff/scale = 7.957e-16 (scale 2.824e-01)  over-gate 0  divergent 0
+  body_velocity_gradient   n=48       worst rel = 2.076e-15 (target 33: |diff| 1.249e-15, |ref| 6.019e-01)
+                                    diff/scale = 4.763e-16 (scale 5.549e+00)  over-gate 0  divergent 0
+  particle_J               n=78       worst rel = 0.000e+00 (target 1: |diff| 0.000e+00, |ref| 0.000e+00)
+                                    diff/scale = 0.000e+00 (scale 0.000e+00)  over-gate 0  divergent 0
+  particle_U               n=78       worst rel = 1.862e-15 (target 51: |diff| 1.111e-16, |ref| 5.966e-02)
+                                    diff/scale = 6.224e-16 (scale 2.523e-01)  over-gate 0  divergent 0
+  probe_U                  n=14       worst rel = 2.217e-15 (target 5: |diff| 1.244e-16, |ref| 5.611e-02)
+                                    diff/scale = 5.085e-16 (scale 3.277e-01)  over-gate 0  divergent 0
+  (pass 3's 1e-3 gate is the real one: the seam evaluates ALL self-body
+   pairs at core_size_panel, while direct_conditioning flips the offset
+   only for NEARFIELD self-pair blocks -- documented deviation.)
+
+--- pass3_attribution: body_velocity three-way vs exact direct ---
+  seam vs exact          diff/scale = 7.957e-16   worst rel = 2.184e-14 (target 32: |diff| 7.092e-17, |ref| 3.248e-03)
+                         over-1e-3 0 / divergent 0 of 48   (class scale 2.824e-01)
+  cpu-fmm vs exact       diff/scale = 0.000e+00   worst rel = 0.000e+00 (target 1: |diff| 0.000e+00, |ref| 6.172e-02)
+                         over-1e-3 0 / divergent 0 of 48   (class scale 2.824e-01)
+  cpu-fmm vs seam        diff/scale = 7.957e-16   worst rel = 2.184e-14 (target 32: |diff| 7.092e-17, |ref| 3.248e-03)
+                         over-1e-3 0 / divergent 0 of 48   (class scale 2.824e-01)
+  verdict: seam matches exact direct; CPU fmm error is at the same (small) level -- no attribution needed
+  exact direct arm wall: 0.232 s (body targets only)
+
+--- SFS / Estr ---
+  SFS disabled on every particle field in this case -- no Estr rows to compare (class ABSENT).
+
+  seam restored to off (production default :off)
+
+==============================================================================
+GATES
+==============================================================================
+PASS pass1_wake_influence.seam_accepted             yes (1 influence! call(s) handled by the seam)
+PASS pass1_wake_influence.phase_gate_1e-3           achieved 5.108e-15   bound 1.000e-03
+PASS pass1_wake_influence.phase_diff_to_scale       achieved 1.272e-15   bound 1.000e-03   (INFORMATIONAL, not a gate)
+PASS pass1_wake_influence.tight_1e-11_points_kernel_F64 achieved 5.108e-15   bound 1.000e-11   (INFORMATIONAL, not a gate)
+PASS solve.seam_never_matches                       seam hit counter did not increment across the solve (0 hits)
+PASS pass3_body_influence.seam_accepted             yes (1 influence! call(s) handled by the seam)
+PASS pass3_body_influence.phase_gate_1e-3           achieved 2.184e-14   bound 1.000e-03
+PASS pass3_body_influence.phase_diff_to_scale       achieved 7.957e-16   bound 1.000e-03   (INFORMATIONAL, not a gate)
+PASS pass3_attribution.seam_vs_exact                achieved 7.957e-16   bound 1.000e-10   [seam vs exact DirectBackend, diff/scale (F64 summation-order headroom)]
+PASS pass3_attribution.cpu_fmm_vs_exact             achieved 0.000e+00   bound 1.000e-03   [measured legacy fmm! truncation on body self-influence -- a finding, not a defect gate]   (INFORMATIONAL, not a gate)
+PASS sfs.estr_1e-10                                 SKIPPED -- SFS disabled on all particle fields
+PASS sfs.seam_never_handles_estr                    SKIPPED -- SFS disabled on all particle fields
+==============================================================================
+OVERALL: PASS
+
+Wrote /Users/ryan/Dropbox/research/projects/FLOWPanel.jl/benchmark/results/fm051_pass_parity_mini.csv

@@ -1,0 +1,113 @@
+=== node: m12-3-3
+(CPU-only job: no GPU requested)
+FM051 Stage 3 solve pricing -- CPU
+  repo:/home/rander39/FLOWPanel-046  env:/home/rander39/fm051env  threads:64  host:m12-3-3  job:13310370
+  restart run:p018_cs_f1_l3p4  restart step:-1
+  started 2026-08-22 23:34:52
+BLAS threads: 64 (Julia threads: 64)
+Mesh: /home/rander39/FLOWPanel-046/src/../examples/data/dji9443_20260725_45_185_capped_captess4.msh
+  TE seeds (auto): blade1=[17743, 17559, 9191]  blade2=[8553, 8369, 1]
+Trailing edge traced: blade1 44 edges -> 40 after root clip at r/R 0.1 (blade root r/R 0.0095)
+Requested shedding root at |r/R| >= 0.1
+  shedding1 root midpoint r/R = -0.1110273971655543
+  shedding2 root midpoint r/R = 0.1110273971655543
+Sigma chord mode: shedding1 sigma/R range 0.0226-0.0829 (s* = 0.313, floor 0.0R binds at 0/41 stations)
+Sigma chord mode: shedding2 sigma/R range 0.0226-0.0829 (s* = 0.313, floor 0.0R binds at 0/41 stations)
+Das co-scaling mode: |Das|_j = 3.4 * sigma_j (= 1.064 * c_local; DAS_ETA_KINEMATIC ignored)
+  F1 curvature cap ACTIVE: theta_j <= beta = 0.6 rad (blade1: cap binds at 13 of 41 stations)
+  blade1 station table (r/R, c/R, sigma/R, |Das|/R, theta rad):
+    0.998 0.0723 0.0226 0.077 0.0771
+    0.9755 0.0933 0.0292 0.0993 0.1018
+    0.9531 0.0956 0.0299 0.1017 0.1067
+    0.9306 0.0982 0.0307 0.1045 0.1123
+    0.9082 0.1009 0.0316 0.1073 0.1182
+    0.8857 0.1042 0.0326 0.1109 0.1252
+    0.8633 0.1076 0.0337 0.1145 0.1326
+    0.8408 0.1105 0.0346 0.1176 0.1399
+    0.8184 0.1139 0.0356 0.1212 0.1481
+    0.7959 0.1181 0.037 0.1257 0.1579
+    0.7734 0.1224 0.0383 0.1302 0.1684
+    0.751 0.1266 0.0396 0.1347 0.1794
+    0.7285 0.1311 0.041 0.1396 0.1916
+    0.7061 0.1358 0.0425 0.1445 0.2047
+    0.6836 0.1397 0.0437 0.1487 0.2175
+    0.6612 0.1439 0.045 0.1531 0.2316
+    0.6387 0.1493 0.0467 0.1589 0.2488
+    0.6163 0.1549 0.0485 0.1648 0.2675
+    0.5938 0.1603 0.0502 0.1706 0.2873
+    0.5714 0.1658 0.0519 0.1764 0.3088
+    0.5489 0.1714 0.0537 0.1824 0.3324
+    0.5264 0.1772 0.0555 0.1886 0.3582
+    0.504 0.1831 0.0573 0.1948 0.3865
+    0.4815 0.1891 0.0592 0.2013 0.4179
+    0.4591 0.1954 0.0612 0.208 0.453
+    0.4366 0.2021 0.0633 0.2151 0.4926
+    0.4142 0.209 0.0654 0.2224 0.5369
+    0.3917 0.2159 0.0676 0.2298 0.5867
+    0.3693 0.223 0.0698 0.2216 0.6
+    0.3468 0.2303 0.0721 0.2081 0.6
+    0.3243 0.2393 0.0749 0.1946 0.6
+    0.3019 0.2488 0.0779 0.1811 0.6
+    0.2794 0.258 0.0807 0.1677 0.6
+    0.257 0.264 0.0826 0.1542 0.6
+    0.2345 0.2648 0.0829 0.1407 0.6
+    0.2121 0.26 0.0814 0.1272 0.6
+    0.1896 0.2492 0.078 0.1138 0.6
+    0.1672 0.2344 0.0734 0.1003 0.6
+    0.1447 0.2157 0.0675 0.0868 0.6
+    0.1223 0.1923 0.0602 0.0734 0.6
+    0.0998 0.168 0.0526 0.0599 0.6
+  theta_max (all blades) = 0.6 rad
+Handoff clearance (d_front = |Das| + (N-1)*|w x r|*dt, N=1):
+  sigma = 0.0047597 m  (sigma/R = 0.04, one-step tip travel = 0.020769 m)
+  shedding1: d/sigma min 1.497 at r/R 0.1; max 5.746 at r/R 0.392; median 3.613
+  shedding2: d/sigma min 1.497 at r/R 0.1; max 5.746 at r/R 0.392; median 3.613
+
+Rotor spin-up enabled: 1.5 nominal revs from 0.4×RPM to full RPM
+
+Freestream pulse (revs): ramp-up [0, 1.0] -> peak=5.0; hold [1.0, 2.5]; withdraw [2.5, 6.5] -> end=0.0; hover/settle [6.5, 28.5]
+Total run length: 28.5 revs (1080 steps), truncation depth=4.0R
+
+Begin rotor hover pressure comparison (1080 steps)...
+Mesh=45_185_ct4 file=dji9443_20260725_45_185_capped_captess4.msh formulation=velocity RPM=5400.0 NT=36 truncation_depth=4.0R nwakerows=1 das_refresh=false
+Particle diagnostics: PARTICLE_SHEDDING=sigma_overlap, CONVERSION=legacy, RUN_MONITORS=true, BODY_HESSIAN_TO_PARTICLES=false, PANEL_WAKE_HESSIAN_TO_PARTICLES=false, PANEL_WAKE_VELOCITY_TO_PARTICLES=true, PARTICLE_HESSIAN_SELF=true, PARTICLE_RELAX=true, DIAGNOSE_PARTICLE_GAMMA=false, DIAGNOSE_PARTICLE_INFLUENCE=false, diagnostic_vertical=(1.0, 0.0, 0.0), WAKE_HEALTH=true, WAKE_HEALTH_DTZ=false, WAKE_HEALTH_ATTRIBUTION=true, WAKE_INVENTORY=true, WAKE_EXPINT=false
+  restarting from step 1034 of run p018_cs_f1_l3p4
+		Current sigma growth: 1.0001953	Critical:1.0e9
+    setup_kinematic_replay: 0.1 s
+    setup_load_state: 1.5 s
+    setup_replay_end_of_step: 0.3 s
+
+FM051 solve pricing -- p018 full config, i_step=1035, threads=64
+  body solver 1: FLOWPanel.Backslash{Float64, LinearAlgebra.LU{Float64, Matrix{Float64}, Vector{Int64}}}
+  cold solve (JIT + first-touch): 30.379 s
+  warm solve 1/5: 11.428 s
+  warm solve 2/5: 8.316 s
+  warm solve 3/5: 7.336 s
+  warm solve 4/5: 7.285 s
+  warm solve 5/5: 8.865 s
+
+DECOMPOSITION
+  systems type:       Tuple{FLOWPanel.RigidWakeBody{Union{FLOWPanel.ConstantSource, FLOWPanel.VortexRing}, 2, Float64, true}}
+  systems_tuple types: FLOWPanel.RigidWakeBody{Union{FLOWPanel.ConstantSource, FLOWPanel.VortexRing}, 2, Float64, true}
+  inner solve!(body1): 7.401 s (repeat 7.254 s)
+  flat profile of one warm solve (top frames by count):
+ Count  Overhead File                                         Line Function
+ =====  ======== ====                                         ==== ========
+ 71747       792 @FLOWPanel/src/FLOWPanel_elements_fmm.jl      255 induced(target::StaticArraysCore.SVector{3, Float64}, source_system::FLOWPanel.RigidWakeBody{Union{FLOWPanel.ConstantSource,…
+ 79637         9 @FLOWPanel/src/FLOWPanel_elements_fmm.jl      243 induced
+ 79657         0 @FLOWPanel/src/FLOWPanel_abstractbody.jl     1326 _direct_body!(target_system::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesS…
+ 80059         0 @FastMultipole/src/fmm.jl                     125 execute_assignment!
+ 80059         4 @FLOWPanel/src/FLOWPanel_abstractbody.jl     1309 direct!(target_system::Matrix{Float64}, target_index::UnitRange{Int64}, derivatives_switch::FastMultipole.DerivativesSwitch{…
+ 80061         0 @Base/threadingconstructs.jl                  220 #1810#threadsfor_fun
+ 80061         0 @Base/threadingconstructs.jl                  253 (::FastMultipole.var"#1810#threadsfor_fun#416"{FastMultipole.var"#1810#threadsfor_fun#415#417"{Matrix{Float64}, Int64, Vecto…
+ 80061         0 @FastMultipole/src/fmm.jl                     186 macro expansion
+ 80115         0 @Base/threadingconstructs.jl                  154 (::Base.Threads.var"#1#2"{FastMultipole.var"#1913#threadsfor_fun#465"{FastMultipole.var"#1913#threadsfor_fun#462#466"{FastMu…
+Total snapshots: 139464. Utilization: 91% across all threads and tasks. Use the `groupby` kwarg to break down by thread and/or task.
+
+PRICE
+  warm solve median: 8.316 s   (min 7.285, max 11.428 over 5)
+  U-only headroom:   0.783 s   (3.3 − [0.373 + 0.124 + 2.02])
+VERDICT: CPU solve DOES NOT fit -- escalate per 051-plan Stage 3 (device matvec)
+Wrote /home/rander39/FLOWPanel-046/benchmark/results/fm051_solve_pricing.csv
+Finished (2026-08-22 23:39:54) with status 0.
+Results: benchmark/results/fm051_solve_pricing.csv

@@ -1,0 +1,37 @@
+FM051 pass-3 attribution debug -- nspan=40 nchord=20 (=> 3200 panels), fmm P=[4, 6, 10] mac=0.5 leaf=16, threads=4
+exact direct: 0.686 s for 3200^2 pairs (6.699e-08 s/pair)
+
+--- debug P=4 mac=0.5 leaf=16: body_velocity three-way vs exact direct ---
+  seam vs exact          diff/scale = 5.443e-15   worst rel = 5.777e-14 (target 2648: |diff| 2.674e-15, |ref| 4.629e-02)
+                         over-1e-3 0 / divergent 0 of 3200   (class scale 5.293e+01)
+  cpu-fmm vs exact       diff/scale = 8.875e-06   worst rel = 2.226e-03 (target 2648: |diff| 1.030e-04, |ref| 4.629e-02)
+                         over-1e-3 1 / divergent 0 of 3200   (class scale 5.293e+01)
+      offender target 2648     rel 2.226e-03  |diff| 1.030e-04  |ref| 4.629e-02
+  cpu-fmm vs seam        diff/scale = 8.875e-06   worst rel = 2.226e-03 (target 2648: |diff| 1.030e-04, |ref| 4.629e-02)
+                         over-1e-3 1 / divergent 0 of 3200   (class scale 5.293e+01)
+  verdict: seam matches exact direct; the parity-stage deviation is the CPU arm's fmm truncation error
+  walls: exact 0.686 s | cpu-fmm 1.416 s | seam 0.364 s (hits 1)
+
+--- debug P=6 mac=0.5 leaf=16: body_velocity three-way vs exact direct ---
+  seam vs exact          diff/scale = 5.443e-15   worst rel = 5.777e-14 (target 2648: |diff| 2.674e-15, |ref| 4.629e-02)
+                         over-1e-3 0 / divergent 0 of 3200   (class scale 5.293e+01)
+  cpu-fmm vs exact       diff/scale = 8.766e-07   worst rel = 7.575e-05 (target 2648: |diff| 3.506e-06, |ref| 4.629e-02)
+                         over-1e-3 0 / divergent 0 of 3200   (class scale 5.293e+01)
+  cpu-fmm vs seam        diff/scale = 8.766e-07   worst rel = 7.575e-05 (target 2648: |diff| 3.506e-06, |ref| 4.629e-02)
+                         over-1e-3 0 / divergent 0 of 3200   (class scale 5.293e+01)
+  verdict: seam matches exact direct; the parity-stage deviation is the CPU arm's fmm truncation error
+  walls: exact 0.686 s | cpu-fmm 1.468 s | seam 0.364 s (hits 1)
+
+--- debug P=10 mac=0.5 leaf=16: body_velocity three-way vs exact direct ---
+  seam vs exact          diff/scale = 5.443e-15   worst rel = 5.777e-14 (target 2648: |diff| 2.674e-15, |ref| 4.629e-02)
+                         over-1e-3 0 / divergent 0 of 3200   (class scale 5.293e+01)
+  cpu-fmm vs exact       diff/scale = 8.711e-09   worst rel = 3.468e-07 (target 2648: |diff| 1.605e-08, |ref| 4.629e-02)
+                         over-1e-3 0 / divergent 0 of 3200   (class scale 5.293e+01)
+  cpu-fmm vs seam        diff/scale = 8.711e-09   worst rel = 3.468e-07 (target 2648: |diff| 1.605e-08, |ref| 4.629e-02)
+                         over-1e-3 0 / divergent 0 of 3200   (class scale 5.293e+01)
+  verdict: seam matches exact direct; the parity-stage deviation is the CPU arm's fmm truncation error
+  walls: exact 0.686 s | cpu-fmm 1.442 s | seam 0.364 s (hits 1)
+
+p018 exact-arm extrapolation: 90.5 s at 4 threads (36752 panels; scales ~1/threads)
+
+DEBUG PASS: seam matches exact direct at every P

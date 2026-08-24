@@ -1,0 +1,73 @@
+Precompiling FLOWPanel...
+  11580.6 ms  ✓ LaTeXStrings
+  11488.5 ms  ✓ ExprTools
+  11140.3 ms  ✓ IntegerMathUtils
+  10753.6 ms  ✓ CommonSolve
+   9439.0 ms  ✓ CodecZlib
+   9035.5 ms  ✓ Crayons
+   9633.8 ms  ✓ FillArrays → FillArraysSparseArraysExt
+   9535.4 ms  ✓ StructUtils
+  14799.9 ms  ✓ Krylov
+   7214.8 ms  ✓ Hwloc_jll
+   7162.8 ms  ✓ Expat_jll
+   6912.3 ms  ✓ OpenSSH_jll
+   2497.7 ms  ✓ Primes
+   6841.4 ms  ✓ StringManipulation
+   3032.4 ms  ✓ TimerOutputs
+   1331.3 ms  ✓ StructUtils → StructUtilsTablesExt
+   1263.9 ms  ✓ StructUtils → StructUtilsStaticArraysCoreExt
+   1669.0 ms  ✓ Git_jll
+   5887.7 ms  ✓ SpecialFunctions
+   2618.3 ms  ✓ WriteVTK
+   5109.5 ms  ✓ Roots
+   3767.3 ms  ✓ ReadVTK
+   2571.7 ms  ✓ LinearOperators
+  10828.9 ms  ✓ StaticArrays
+  10772.5 ms  ✓ Parsers
+   4211.5 ms  ✓ MPICH_jll
+   4316.1 ms  ✓ Git
+   2000.5 ms  ✓ LinearOperators → LinearOperatorsChainRulesCoreExt
+   2338.9 ms  ✓ Roots → RootsUnitfulExt
+   2674.7 ms  ✓ Roots → RootsChainRulesCoreExt
+   2628.3 ms  ✓ StaticArrays → StaticArraysStatisticsExt
+   3320.1 ms  ✓ FLOWMath
+   3622.7 ms  ✓ StaticArrays → StaticArraysChainRulesCoreExt
+   2761.0 ms  ✓ Accessors → StaticArraysExt
+   1525.0 ms  ✓ InlineStrings → ParsersExt
+   3235.4 ms  ✓ ConstructionBase → ConstructionBaseStaticArraysExt
+   3437.8 ms  ✓ FillArrays → FillArraysStaticArraysExt
+   1932.8 ms  ✓ BangBang → BangBangStaticArraysExt
+   2884.1 ms  ✓ StructArrays → StructArraysStaticArraysExt
+   4180.5 ms  ✓ Rotations
+   1314.9 ms  ✓ WeakRefStrings
+   3641.5 ms  ✓ HCubature
+   7812.8 ms  ✓ ColorVectorSpace → SpecialFunctionsExt
+   8606.3 ms  ✓ SpecialFunctions → SpecialFunctionsChainRulesCoreExt
+   4232.8 ms  ✓ HDF5_jll
+   5244.9 ms  ✓ JSON
+   4771.7 ms  ✓ NearestNeighbors
+  11842.7 ms  ✓ ForwardDiff
+   2103.8 ms  ✓ Unitful → ForwardDiffExt
+   2476.8 ms  ✓ ForwardDiff → ForwardDiffStaticArraysExt
+   2871.3 ms  ✓ Roots → RootsForwardDiffExt
+  19614.1 ms  ✓ PrettyTables
+   9797.5 ms  ✓ HDF5
+  12352.8 ms  ✓ CSV
+  15045.2 ms  ✓ FastMultipole
+  10050.9 ms  ✓ Meshes
+  16151.0 ms  ✓ ReverseDiff
+  24393.8 ms  ✓ Documenter
+   1482.6 ms  ✓ EllipticFunctions
+   5868.9 ms  ✓ ImplicitAD
+   5697.3 ms  ✓ CCBlade
+  10655.4 ms  ✓ FLOWVPM
+  31033.1 ms  ✓ DataFrames
+   4998.2 ms  ✓ BangBang → BangBangDataFramesExt
+   4532.4 ms  ✓ Transducers → TransducersDataFramesExt
+   5891.4 ms  ✓ VSPGeom
+  24776.8 ms  ✓ FLOWPanel
+  67 dependencies successfully precompiled in 113 seconds. 171 already precompiled.
+┌ Warning: PressureLaplace has no formulation that has passed all manufactured, steady, direct/FMM, and unsteady pitching-wing gates. Using :edge_difference as an unvalidated compatibility fallback; select gradient_mode explicitly for diagnostic or validation work.
+└ @ FLOWPanel ~/FLOWPanel-046/src/FLOWPanel_simulate_monitors.jl:656
+┌ Warning: PressureLaplace(acceleration_form=:lamb_vector) is deprecated and retained only as a diagnostic for one compatibility cycle. It lacks a complete ALE surface derivation; use acceleration_form=:material_derivative with :corrected_hessian, :edge_difference, or :surface_velocity.
+└ @ FLOWPanel ~/FLOWPanel-046/src/FLOWPanel_simulate_monitors.jl:668

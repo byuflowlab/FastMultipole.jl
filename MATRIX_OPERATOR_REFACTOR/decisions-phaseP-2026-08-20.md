@@ -310,3 +310,23 @@ harness-side gate misapplication (wrong layer / wrong operating point /
 below-noise-floor F32 gate / bitwise-vs-error-bounded replay), with
 wrapper-layer allocation and error-bounded replay measurement deferred to
 `053` (see the 049 doc's Results 2026-08-22 section for the full rationale).
+
+## D16 (2026-08-22) — Gaussian filament regularization is the production default (user decision)
+
+The user ratified the previously-uncommitted BRAINSTORM-025 change in
+FLOWPanel `src/FLOWPanel_elements_fmm.jl:923`:
+`FILAMENT_REGULARIZATION = Ref(GaussianRegularization)` — the CPU-wide
+default bound-vortex filament family for every VortexRing user is
+**Gaussian (Lamb–Oseen)**, replacing legacy Vatistas n=2. Rationale (from
+the change's own comment / BRAINSTORM-025 phase_00): smooth kernel with the
+lowest peak velocity and peak gradient of the three families, and its
+radius inflation (~5 rc at tolerance) removes the Vatistas 37.6 rc
+pathology. This was flagged during the 051 Stage-0 audit as a silent
+production-numerics change needing an explicit decision; it is silent no
+longer. 051 parity is unaffected either way — the seam maps
+`FILAMENT_REGULARIZATION[]` into the rectangular functor's compile-time
+family, so CPU and GPU arms are always like-for-like (verified for all
+three families: open-filament parity U bitwise / H ≤3e-16,
+`data/panel_particle_gpu_coupling/rect_test_filament.log`).
+`set_filament_regularization!` remains the explicit opt-out back to
+`:vatistas` or `:compact`.

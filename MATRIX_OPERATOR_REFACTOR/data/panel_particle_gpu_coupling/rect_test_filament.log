@@ -1,0 +1,57 @@
+Precompiling packages...
+   3716.6 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 4 seconds. 20 already precompiled.
+[ Info: SpecialFunctions not available in this environment; skipping the cross-erf gates
+Precompiling packages...
+   3053.9 ms  ✓ FLOWVPM
+  1 dependency successfully precompiled in 4 seconds. 123 already precompiled.
+Precompiling packages...
+   9217.3 ms  ✓ FLOWPanel
+  1 dependency successfully precompiled in 10 seconds. 240 already precompiled.
+┌ Info: FLOWPanel parity (source+vortexring (018 body set))
+│   relerr_U = 2.991472255596876e-16
+└   relerr_H = 2.0616238490821938e-16
+┌ Info: FLOWPanel parity (source+doublet)
+│   relerr_U = 1.8529355764682655e-15
+└   relerr_H = 4.1901541005867355e-15
+┌ Info: FLOWPanel parity (constant source)
+│   relerr_U = 9.318574844484426e-16
+└   relerr_H = 1.5747068124388028e-15
+┌ Info: FLOWPanel parity (vatistas, source+vortexring)
+│   relerr_U = 2.9861608884735566e-16
+└   relerr_H = 1.860609533911777e-16
+┌ Info: FLOWPanel parity (vatistas, pure vortexring)
+│   relerr_U = 0.0
+└   relerr_H = 3.271290039532057e-17
+┌ Info: FLOWPanel parity (vatistas, open filament)
+│   relerr_U = 0.0
+└   relerr_H = 2.965462827540648e-16
+┌ Info: FLOWPanel parity (compact, source+vortexring)
+│   relerr_U = 8.160945766459194e-17
+└   relerr_H = 3.1997941561882855e-17
+┌ Info: FLOWPanel parity (compact, pure vortexring)
+│   relerr_U = 0.0
+└   relerr_H = 5.3196202373819966e-17
+┌ Info: FLOWPanel parity (compact, open filament)
+│   relerr_U = 0.0
+└   relerr_H = 5.758163466587945e-17
+┌ Info: FLOWPanel parity (gaussian, source+vortexring)
+│   relerr_U = 1.570312333230822e-16
+└   relerr_H = 1.2779455664295752e-16
+┌ Info: FLOWPanel parity (gaussian, pure vortexring)
+│   relerr_U = 0.0
+└   relerr_H = 6.32852271180243e-17
+┌ Info: FLOWPanel parity (gaussian, open filament)
+│   relerr_U = 0.0
+└   relerr_H = 1.5078632681890398e-17
+[ Info: CUDA not functional; skipping the device parity layer
+Test Summary:                     | Pass  Total  Time
+direct rectangular: point functor |    9      9  5.4s
+Test Summary:                                    | Pass  Total  Time
+direct rectangular: panel functor analytic gates |   17     17  1.3s
+Test Summary:                                  | Pass  Total   Time
+direct rectangular: panel functor vs FLOWPanel |   24     24  17.4s
+Test Summary:                           | Pass  Total  Time
+direct rectangular: argument validation |    7      7  0.1s
+Test Summary:                          | Total  Time
+direct rectangular: CUDA device parity |     0  0.0s

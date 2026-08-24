@@ -1,0 +1,154 @@
+Precompiling FLOWVPM...
+   6342.8 ms  ✓ FastMultipole
+   6973.9 ms  ✓ FLOWVPM
+  2 dependencies successfully precompiled in 18 seconds. 119 already precompiled.
+Precompiling FLOWVPMCUDAExt...
+   7464.5 ms  ✓ FLOWVPM → FLOWVPMCUDAExt
+  1 dependency successfully precompiled in 12 seconds. 193 already precompiled.
+┌ Info: snapshot loaded
+│   binpath = "/home/rander39/FLOWVPM-046/data/fm049/p018_710_particles.bin"
+└   np = 210056
+[ Info: PASS 1: particles -> 36752 panel centers
+┌ Info: pass1_f64_u
+│   u_err = 1.3134469005427082e-16
+│   j_err = NaN
+│   t_med = 0.124062325
+└   pass = true
+┌ Info: pass1_f64_uj
+│   u_err = 1.3134469005427082e-16
+│   j_err = 2.611027556168191e-16
+│   t_med = 0.208999089
+└   pass = true
+┌ Info: pass1_f32_u
+│   u_err = 2.8057037236303907e-5
+│   j_err = NaN
+│   t_med = 0.071378429
+└   pass = true
+┌ Info: pass1_f32_uj
+│   u_err = 2.8057037236303907e-5
+│   j_err = 4.494770743947759e-5
+│   t_med = 0.129488166
+└   pass = true
+[ Info: PASS 2: 36752 panels -> 210056 particle positions
+┌ Info: pass2_f64_u
+│   u_err = 4.5208006920310134e-15
+│   j_err = NaN
+│   t_med = 2.026034084
+└   pass = true
+┌ Info: pass2_f64_uj
+│   u_err = 4.520250924072312e-15
+│   j_err = 1.297938541736464e-15
+│   t_med = 3.653821861
+└   pass = true
+[ Info: PROFILE: pass-2 tag split + pass-1 occupancy probe
+┌ Info: profile_pass2_tag1_source_u
+└   t_med = 1.144135932
+┌ Info: profile_pass2_tag3_ring_u
+└   t_med = 0.956852032
+┌ Info: profile_pass2_tag1_source_uj
+└   t_med = 1.55829809
+┌ Info: profile_pass2_tag3_ring_uj
+└   t_med = 2.130139009
+┌ Info: profile_pass1_targets_x2_u
+└   t_med = 0.178057346
+┌ Info: profile_pass1_targets_x8_u
+└   t_med = 0.491247869
+[ Info: SpecialFunctions not available in this environment; skipping the cross-erf gates
+Precompiling FLOWPanel...
+  14727.5 ms  ✓ FLOWPanel
+  1 dependency successfully precompiled in 22 seconds. 237 already precompiled.
+┌ Info: FLOWPanel parity (source+vortexring (018 body set))
+│   relerr_U = 3.7968686321037273e-16
+└   relerr_H = 6.442574528381854e-17
+┌ Info: FLOWPanel parity (source+doublet)
+│   relerr_U = 5.05346066309528e-16
+└   relerr_H = 6.082481758916256e-16
+┌ Info: FLOWPanel parity (constant source)
+│   relerr_U = 1.3977862266726639e-15
+└   relerr_H = 5.12695241259145e-16
+┌ Info: FLOWPanel parity (vatistas, source+vortexring)
+│   relerr_U = 2.010101365212486e-16
+└   relerr_H = 1.860609533911777e-16
+┌ Info: FLOWPanel parity (vatistas, pure vortexring)
+│   relerr_U = 0.0
+└   relerr_H = 2.4534675296490426e-17
+┌ Info: FLOWPanel parity (vatistas, open filament)
+│   relerr_U = 0.0
+└   relerr_H = 2.965462827540648e-16
+┌ Info: FLOWPanel parity (compact, source+vortexring)
+│   relerr_U = 1.661240471410562e-16
+└   relerr_H = 6.399588312376571e-17
+┌ Info: FLOWPanel parity (compact, pure vortexring)
+│   relerr_U = 0.0
+└   relerr_H = 2.6598101186909983e-17
+┌ Info: FLOWPanel parity (compact, open filament)
+│   relerr_U = 0.0
+└   relerr_H = 5.758163466587945e-17
+┌ Info: FLOWPanel parity (gaussian, source+vortexring)
+│   relerr_U = 7.912901991670937e-17
+└   relerr_H = 1.277945566429575e-16
+┌ Info: FLOWPanel parity (gaussian, pure vortexring)
+│   relerr_U = 0.0
+└   relerr_H = 6.32852271180243e-17
+┌ Info: FLOWPanel parity (gaussian, open filament)
+│   relerr_U = 0.0
+└   relerr_H = 1.5078632681890398e-17
+WARNING: redefinition of constant FastMultipole.RADIX_CUDA_COUNTING_SORT. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.RADIX_CUDA_COUNTING_SORT_MAX_ELL. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_NEARFIELD_BINNING. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_NEARFIELD_SHAPE. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_NEARFIELD_FUSED_MIN_BODIES. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_NEARFIELD_SUBSORT. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_TWOPASS_PASS2_QUEUED. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_NEARFIELD_PAIR_AABB. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.FACTORED_CUDA_WHOLE_PASS. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.FACTORED_CUDA_CHUNK. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.PRECOMPUTED_CUDA_WHOLE_PASS. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.PRECOMPUTED_CUDA_CHUNK. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DENSE_CUDA_WHOLE_PASS. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DENSE_CUDA_CHUNK. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DENSE_CUDA_FUSED. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DENSE_CUDA_FUSED_MAX_BLOCKS. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DENSE_CUDA_TILED. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DENSE_CUDA_TILED_MIN_ROUTES. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DENSE_CUDA_TILED_THREADS. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DENSE_CUDA_TILED_MAX_BLOCKS. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DENSE_CUDA_TENSOR_FORMAT. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.DIRECT_CUDA_MAX_BLOCKS. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_SYMMETRIC_NEARFIELD. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.SYMMETRIC_CUDA_MAX_CELL_BODIES. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_CACHED_WINDOWS. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_GRAPH_LIFECYCLE. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole._CUDA_GEMM_SCALARS. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole.CUDA_OVERLAP_NEARFIELD. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole._NEARFIELD_STREAM. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole._NEARFIELD_BEGIN. This may fail, cause incorrect answers, or produce other errors.
+WARNING: redefinition of constant FastMultipole._NEARFIELD_DONE. This may fail, cause incorrect answers, or produce other errors.
+┌ Warning: PressureLaplace has no formulation that has passed all manufactured, steady, direct/FMM, and unsteady pitching-wing gates. Using :edge_difference as an unvalidated compatibility fallback; select gradient_mode explicitly for diagnostic or validation work.
+└ @ FLOWPanel ~/FLOWPanel-046/src/FLOWPanel_simulate_monitors.jl:656
+┌ Warning: PressureLaplace(acceleration_form=:lamb_vector) is deprecated and retained only as a diagnostic for one compatibility cycle. It lacks a complete ALE surface derivation; use acceleration_form=:material_derivative with :corrected_hessian, :edge_difference, or :surface_velocity.
+└ @ FLOWPanel ~/FLOWPanel-046/src/FLOWPanel_simulate_monitors.jl:668
+┌ Warning: Replacing docs for `FastMultipole._cuda_scratch_value_ok :: Tuple{Any}` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `FastMultipole.DENSE_CUDA_TENSOR_FORMAT :: Union{}` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `FastMultipole.cuda_nearfield_homogeneity :: Union{Tuple{FastMultipole.DeviceResidentRadixState{TF, B, LH, GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB, IC, SC, OPT} where {B, LH, GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB<:(FastMultipole.FlatCoefficientBuffer{TF, <:AbstractMatrix{TF}, B, LH}), IC, SC, OPT<:(FastMultipole.CUDARadixLifecycleOptions{TF})}}, Tuple{TF}} where TF` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `FastMultipole.cuda_twopass_shell_homogeneity :: Union{Tuple{FastMultipole.DeviceResidentRadixState{TF, B, LH, GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB, IC, SC, OPT} where {B, LH, GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB<:(FastMultipole.FlatCoefficientBuffer{TF, <:AbstractMatrix{TF}, B, LH}), IC, SC, OPT<:(FastMultipole.CUDARadixLifecycleOptions{TF})}}, Tuple{TF}} where TF` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `FastMultipole.cuda_nearfield_pair_aabb_stats :: Union{Tuple{FastMultipole.DeviceResidentRadixState{TF, B, LH, GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB, IC, SC, OPT} where {B, LH, GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB<:(FastMultipole.FlatCoefficientBuffer{TF, <:AbstractMatrix{TF}, B, LH}), IC, SC, OPT<:(FastMultipole.CUDARadixLifecycleOptions{TF})}}, Tuple{TF}} where TF` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `FastMultipole.finalize_cuda_radix_sfs_output! :: Union{Tuple{TF}, Tuple{FastMultipole.DeviceResidentRadixState{TF, B, LH, GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB, IC, SC, OPT} where {B, LH, GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB<:(FastMultipole.FlatCoefficientBuffer{TF, <:AbstractMatrix{TF}, B, LH}), IC, SC, OPT<:(FastMultipole.CUDARadixLifecycleOptions{TF})}, Any}} where TF` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `FastMultipole.update_cuda_radix_state! :: Union{Tuple{LH}, Tuple{TF}, Tuple{FastMultipole.RadixFMMCache{TF, LH}, Tuple}} where {TF, LH}` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `FastMultipole._launch_cuda_hierarchical_m2l! :: Union{Tuple{LH}, Tuple{B}, Tuple{TF}, Tuple{FastMultipole.DeviceResidentRadixState{TF, B, LH, GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB, IC, SC, OPT} where {GR, IL, FM, HBV, HRV, HFM, DIV, DIM, FB<:(FastMultipole.FlatCoefficientBuffer{TF, <:AbstractMatrix{TF}, B, LH}), IC, SC, OPT<:(FastMultipole.CUDARadixLifecycleOptions{TF})}, FastMultipole.DeviceHierarchicalM2LContext}} where {TF, B, LH}` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `FastMultipole._launch_cuda_hierarchical_m2l_replay! :: Tuple{FastMultipole.DeviceResidentRadixState}` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `FastMultipole.cuda_hierarchical_route_window! :: Tuple{FastMultipole.DeviceResidentRadixState, Integer, Integer, Integer}` in module `FastMultipole`
+└ @ Base.Docs docs/Docs.jl:243
+[ Info: FLOWPanel gpu influence: SFS-enabled particle self-influence needs fmm! Estr outputs; falling back to fmm! (Estr stays on the FLOWVPM radix path)
+┌ Warning: FMM radius inflation (0.005897977468151848) exceeds 10× the panel radius (2.0180581352460183e-5): core_size 0.001 is large relative to the panel size, so most interactions will be evaluated directly.
+└ @ FLOWPanel ~/FLOWPanel-046/src/FLOWPanel_abstractbody.jl:1202

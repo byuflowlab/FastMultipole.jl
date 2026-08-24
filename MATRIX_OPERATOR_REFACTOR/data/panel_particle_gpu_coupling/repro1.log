@@ -1,0 +1,21 @@
+┌ Warning: FMM radius inflation (0.005897977468151848) exceeds 10× the panel radius (2.0180581352466773e-5): core_size 0.001 is large relative to the panel size, so most interactions will be evaluated directly.
+└ @ FLOWPanel ~/Dropbox/research/projects/FLOWPanel.jl/src/FLOWPanel_abstractbody.jl:1202
+rotor: 36752 panels
+exact direct: 118.4 s
+host seam:    69.1 s (hits 1)
+cpu fmm:      49.9 s
+
+--- p018-body local (noshedding): body_velocity three-way vs exact direct ---
+  seam vs exact          diff/scale = 4.634e-18   worst rel = 8.539e-15 (target 18644: |diff| 2.835e-14, |ref| 3.321e+00)
+                         over-1e-3 0 / divergent 0 of 36752   (class scale 8.093e+05)
+  cpu-fmm vs exact       diff/scale = 2.760e-13   worst rel = 1.302e-08 (target 10763: |diff| 7.304e-08, |ref| 5.608e+00)
+                         over-1e-3 0 / divergent 0 of 36752   (class scale 8.093e+05)
+  cpu-fmm vs seam        diff/scale = 2.760e-13   worst rel = 1.302e-08 (target 10763: |diff| 7.304e-08, |ref| 5.608e+00)
+                         over-1e-3 0 / divergent 0 of 36752   (class scale 8.093e+05)
+  verdict: seam matches exact direct; the parity-stage deviation is the CPU arm's fmm truncation error
+worst host-seam-vs-exact offender control points:
+  target 18644    rel 8.539e-15 |diff| 2.835e-14  cp -0.00420 -0.00117  0.00063
+  target 23612    rel 4.215e-15 |diff| 6.632e-14  cp -0.00429 -0.03141 -0.00280
+  target 20291    rel 4.040e-15 |diff| 7.596e-14  cp -0.00170 -0.00741 -0.00088
+  target 2900     rel 3.869e-15 |diff| 1.375e-13  cp -0.00133  0.01281  0.01033
+  target 5198     rel 3.763e-15 |diff| 1.279e-13  cp -0.00076  0.03231  0.01233

@@ -1,0 +1,109 @@
+key,value
+mode,mini
+seam_mode,host
+threads,4
+julia_version,1.12.5
+filament_regularization,GaussianRegularization
+mini.include_final_filament,false
+mini.nspan,6
+mini.backend,"FLOWPanel.FastMultipoleBackend(10, 0.4, 100000)"
+parity_i_step,4
+n_panels,48
+n_particles,78
+n_probe_targets,14
+n_targets,3
+n_wake_sources,2
+target_types,RigidWakeBody|ProbeWrapper|ParticleField
+wake_source_types,PanelWake|ParticleField
+pass1_wake_influence.source1.type,"FLOWPanel.PanelWake{FLOWPanel.VortexRing, 1, Float64}"
+pass1_wake_influence.source1.supported,true
+pass1_wake_influence.source1.columns,6
+pass1_wake_influence.source2.type,"FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.null_model)}, FLOWVPM.Kernel{typeof(FLOWVPM.zeta_gauserf), typeof(FLOWVPM.g_gauserf), typeof(FLOWVPM.dgdr_gauserf), typeof(FLOWVPM.g_dgdr_gauserf)}, typeof(FLOWVPM.UJ_fmm), typeof(FLOWVPM.euler), FLOWVPM.Relaxation{Float64, typeof(FLOWVPM.relax_correctedpedrizzetti), typeof(FLOWVPM.relax_filter_all)}, Matrix{Float64}}"
+pass1_wake_influence.source2.supported,true
+pass1_wake_influence.source2.columns,78
+pass1_wake_influence.target1.type,"FLOWPanel.RigidWakeBody{Union{FLOWPanel.ConstantSource, FLOWPanel.VortexRing}, 2, Float64, true}"
+pass1_wake_influence.target1.supported,true
+pass1_wake_influence.target2.type,"FLOWPanel.ProbeWrapper{FLOWPanel.PanelWake{FLOWPanel.VortexRing, 1, Float64}}"
+pass1_wake_influence.target2.supported,true
+pass1_wake_influence.target3.type,"FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.null_model)}, FLOWVPM.Kernel{typeof(FLOWVPM.zeta_gauserf), typeof(FLOWVPM.g_gauserf), typeof(FLOWVPM.dgdr_gauserf), typeof(FLOWVPM.g_dgdr_gauserf)}, typeof(FLOWVPM.UJ_fmm), typeof(FLOWVPM.euler), FLOWVPM.Relaxation{Float64, typeof(FLOWVPM.relax_correctedpedrizzetti), typeof(FLOWVPM.relax_filter_all)}, Matrix{Float64}}"
+pass1_wake_influence.target3.supported,true
+pass1_wake_influence.hits_seam_arm,1
+pass1_wake_influence.hits_cpu_arm,0
+pass1_wake_influence.wall_cpu_s,0.000985334
+pass1_wake_influence.wall_seam_s,0.706255292
+pass1_wake_influence.seam_accepted,true
+pass1_wake_influence.body_velocity.n,48
+pass1_wake_influence.body_velocity.worst_rel,5.10781409168e-15
+pass1_wake_influence.body_velocity.worst_index,34
+pass1_wake_influence.body_velocity.class_scale,0.0227936082385
+pass1_wake_influence.body_velocity_gradient.n,48
+pass1_wake_influence.body_velocity_gradient.worst_rel,1.59589430343e-15
+pass1_wake_influence.body_velocity_gradient.worst_index,42
+pass1_wake_influence.body_velocity_gradient.class_scale,0.053600794484
+pass1_wake_influence.particle_J.n,78
+pass1_wake_influence.particle_J.worst_rel,1.36124302921e-15
+pass1_wake_influence.particle_J.worst_index,73
+pass1_wake_influence.particle_J.class_scale,24.462832263
+pass1_wake_influence.particle_U.n,78
+pass1_wake_influence.particle_U.worst_rel,3.19051782195e-15
+pass1_wake_influence.particle_U.worst_index,17
+pass1_wake_influence.particle_U.class_scale,0.137980006517
+pass1_wake_influence.probe_U.n,14
+pass1_wake_influence.probe_U.worst_rel,1.04250158819e-15
+pass1_wake_influence.probe_U.worst_index,12
+pass1_wake_influence.probe_U.class_scale,0.420872726609
+pass1_wake_influence.worst_rel_overall,5.10781409168e-15
+gate.pass1_wake_influence.phase_gate_1e-3.achieved,5.10781409168e-15
+gate.pass1_wake_influence.phase_gate_1e-3.bound,0.001
+gate.pass1_wake_influence.phase_gate_1e-3.pass,true
+gate.pass1_wake_influence.phase_gate_1e-3.informational,false
+gate.pass1_wake_influence.tight_1e-11_points_kernel_F64.achieved,5.10781409168e-15
+gate.pass1_wake_influence.tight_1e-11_points_kernel_F64.bound,1e-11
+gate.pass1_wake_influence.tight_1e-11_points_kernel_F64.pass,true
+gate.pass1_wake_influence.tight_1e-11_points_kernel_F64.informational,true
+solve.hits,0
+solve.wall_s,0.00125325
+gate.solve.seam_never_matches.pass,true
+pass3_body_influence.source1.type,"FLOWPanel.RigidWakeBody{Union{FLOWPanel.ConstantSource, FLOWPanel.VortexRing}, 2, Float64, true}"
+pass3_body_influence.source1.supported,true
+pass3_body_influence.source1.columns,72
+pass3_body_influence.target1.type,"FLOWPanel.RigidWakeBody{Union{FLOWPanel.ConstantSource, FLOWPanel.VortexRing}, 2, Float64, true}"
+pass3_body_influence.target1.supported,true
+pass3_body_influence.target2.type,"FLOWPanel.ProbeWrapper{FLOWPanel.PanelWake{FLOWPanel.VortexRing, 1, Float64}}"
+pass3_body_influence.target2.supported,true
+pass3_body_influence.target3.type,"FLOWVPM.ParticleField{Float64, FLOWVPM.ReformulatedVPM{Float64}, FLOWVPM.Inviscid{Float64}, typeof(FLOWVPM.nofreestream), FLOWVPM.NoSFS{Float64, typeof(FLOWVPM.null_model)}, FLOWVPM.Kernel{typeof(FLOWVPM.zeta_gauserf), typeof(FLOWVPM.g_gauserf), typeof(FLOWVPM.dgdr_gauserf), typeof(FLOWVPM.g_dgdr_gauserf)}, typeof(FLOWVPM.UJ_fmm), typeof(FLOWVPM.euler), FLOWVPM.Relaxation{Float64, typeof(FLOWVPM.relax_correctedpedrizzetti), typeof(FLOWVPM.relax_filter_all)}, Matrix{Float64}}"
+pass3_body_influence.target3.supported,true
+pass3_body_influence.hits_seam_arm,1
+pass3_body_influence.hits_cpu_arm,0
+pass3_body_influence.wall_cpu_s,0.002967167
+pass3_body_influence.wall_seam_s,0.000573292
+pass3_body_influence.seam_accepted,true
+pass3_body_influence.body_velocity.n,48
+pass3_body_influence.body_velocity.worst_rel,2.18354484988e-14
+pass3_body_influence.body_velocity.worst_index,32
+pass3_body_influence.body_velocity.class_scale,0.282445243274
+pass3_body_influence.body_velocity_gradient.n,48
+pass3_body_influence.body_velocity_gradient.worst_rel,2.07584506843e-15
+pass3_body_influence.body_velocity_gradient.worst_index,33
+pass3_body_influence.body_velocity_gradient.class_scale,5.5485780046
+pass3_body_influence.particle_J.n,78
+pass3_body_influence.particle_J.worst_rel,0
+pass3_body_influence.particle_J.worst_index,0
+pass3_body_influence.particle_J.class_scale,0
+pass3_body_influence.particle_U.n,78
+pass3_body_influence.particle_U.worst_rel,1.8617311197e-15
+pass3_body_influence.particle_U.worst_index,51
+pass3_body_influence.particle_U.class_scale,0.252278860005
+pass3_body_influence.probe_U.n,14
+pass3_body_influence.probe_U.worst_rel,2.21656686958e-15
+pass3_body_influence.probe_U.worst_index,5
+pass3_body_influence.probe_U.class_scale,0.327665691572
+pass3_body_influence.worst_rel_overall,2.18354484988e-14
+gate.pass3_body_influence.phase_gate_1e-3.achieved,2.18354484988e-14
+gate.pass3_body_influence.phase_gate_1e-3.bound,0.001
+gate.pass3_body_influence.phase_gate_1e-3.pass,true
+gate.pass3_body_influence.phase_gate_1e-3.informational,false
+sfs_enabled,false
+gate.sfs.estr_1e-10.skipped,SFS disabled on all particle fields
+gate.sfs.seam_never_handles_estr.skipped,SFS disabled on all particle fields
+overall_pass,true

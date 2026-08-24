@@ -104,3 +104,14 @@ All passes have single-thread and multi-thread variants.
 - **MAC methods**: `Barba` (classic: `(r_src + r_tgt)^2 / dist^2 < θ²`) and `SelfTuning` (adaptive, based on actual leaf sizes).
 - **Error bounds for dynamic P**: `UnequalSpheres`, `PowerAbsolutePotential`, `RotatedCoefficientsAbsoluteGradient`, `DehnenAbsoluteGradient` — different accuracy/cost tradeoffs.
 
+
+## Token Discipline
+
+- Delegate instead of doing inline: test/script runs → `julia-test-runner` agent; questions about `MATRIX_OPERATOR_REFACTOR/` docs → `refactor-docs-librarian` agent; re-checking a claimed result before reporting → `verifier` agent; lab-notebook drafts → `notebook-drafter` agent.
+- When spawning exploration subagents, choose the model by task: `haiku` for mechanical symbol/file searches, `sonnet` for conceptual exploration ("how does X work", "where does Y flow"), `opus` only when the question requires subtle cross-file reasoning. Always instruct the agent to return a brief synthesis plus an indexed `file:line` list, quoting no more than a few lines of code.
+- Any command with potentially long output: redirect to a scratchpad log (`cmd > log 2>&1`), then grep/tail the log. Never let raw test or build output into the main context.
+- Never read `MATRIX_OPERATOR_REFACTOR/data/**`, `*.csv`, or `*.bin` files directly; if their contents are needed, write a small script that prints a summary.
+
+## Cluster Jobs
+
+- Combine GPU HPC jobs where appropriate: queue wait on the H200 partition is often long, so when multiple GPU workloads are ready at the same time (e.g. device testsets + a benchmark + a parity harness), prefer staging them into ONE sbatch script (the `cuda_048_run.sh` multi-stage pattern) over submitting separate jobs — unless they need different envs/resources or a stage's outcome should gate whether the next is worth running.

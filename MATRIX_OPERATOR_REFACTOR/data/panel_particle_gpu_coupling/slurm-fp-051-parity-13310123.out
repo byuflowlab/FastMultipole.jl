@@ -1,0 +1,223 @@
+=== node: m13h-1-2
+GPU 0: NVIDIA H200 (UUID: GPU-9baff29b-8c02-a58d-e132-e47ee1f1eca4)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== stage 0: rect-kernel profile (FLOWVPM-046 bench, FM051_BENCH_PROFILE=1) ===
+------------------------------------------------------------------------
+PROFILE summary
+  pass2 tag split (U):   source-only 1.1441 s | ring-only 0.9569 s | combined 2.0260 s
+  pass2 tag split (U+J): source-only 1.5583 s | ring-only 2.1301 s | combined 3.6538 s
+  pass1 occupancy (U): x1 0.1241 s | x2 0.1781 s (1.44x) | x8 0.4912 s (3.96x)
+  (x8 scaling << 8x  =>  pass 1 is occupancy-bound at 36,752 targets;
+   near-linear scaling  =>  it is genuinely arithmetic-bound)
+========================================================================
+fm051 rectangular direct benchmark — p018 step 710, np=210056, panels=36752
+PASS 1 U-only  F64: 0.1241 s  (estimate 0.02-0.04 s -> SLOWER than band)
+PASS 1 U+J     F64: 0.2090 s
+PASS 1 U-only  F32: 0.0714 s   U+J F32: 0.1295 s
+PASS 2 U-only  F64: 2.0260 s  (estimate 0.4-2.0 s -> SLOWER than band)
+PASS 2 U+J     F64: 3.6538 s
+results written to fm051_results.csv
+fm051 driver complete
+=== stage 0c: FastMultipole rect device testsets (incl. on-surface p018-scale) ===
+Test Summary:                     | Pass  Total  Time
+direct rectangular: point functor |    9      9  6.9s
+Test Summary:                                    | Pass  Total  Time
+direct rectangular: panel functor analytic gates |   17     17  1.1s
+Test Summary:                                  | Pass  Total   Time
+direct rectangular: panel functor vs FLOWPanel |   24     24  35.2s
+Test Summary:                           | Pass  Total  Time
+direct rectangular: argument validation |    7      7  0.1s
+Test Summary:                          | Pass  Total     Time
+direct rectangular: CUDA device parity |  100    100  1m26.0s
+FM051 stage 2/3 pass parity -- mode full, seam cuda
+  repo:/home/rander39/FLOWPanel-046  env:/home/rander39/fm051env  threads:16  host:m13h-1-2  job:13310123
+  restart run:p018_cs_f1_l3p4  restart step:-1
+  mesh:45_185_ct4 formulation:velocity RPM:5400 NT:36 nwakerows:1 settle:22
+  started 2026-08-22 22:32:48
+==============================================================================
+FM051 pass-by-pass CPU-vs-GPU influence parity
+==============================================================================
+  mode=full  seam=cuda  threads=16  julia=1.11.7
+  gates: phase 1.0e-03 | pass1 tight 1.0e-11 (informational) | Estr 1.0e-10
+  FLOWPanel.FILAMENT_REGULARIZATION[] = GaussianRegularization  (recorded, not modified)
+BLAS threads: 16 (Julia threads: 16)
+Mesh: /home/rander39/FLOWPanel-046/src/../examples/data/dji9443_20260725_45_185_capped_captess4.msh
+  TE seeds (auto): blade1=[17743, 17559, 9191]  blade2=[8553, 8369, 1]
+Trailing edge traced: blade1 44 edges -> 40 after root clip at r/R 0.1 (blade root r/R 0.0095)
+Requested shedding root at |r/R| >= 0.1
+  shedding1 root midpoint r/R = -0.1110273971655543
+  shedding2 root midpoint r/R = 0.1110273971655543
+Sigma chord mode: shedding1 sigma/R range 0.0226-0.0829 (s* = 0.313, floor 0.0R binds at 0/41 stations)
+Sigma chord mode: shedding2 sigma/R range 0.0226-0.0829 (s* = 0.313, floor 0.0R binds at 0/41 stations)
+Das co-scaling mode: |Das|_j = 3.4 * sigma_j (= 1.064 * c_local; DAS_ETA_KINEMATIC ignored)
+  F1 curvature cap ACTIVE: theta_j <= beta = 0.6 rad (blade1: cap binds at 13 of 41 stations)
+  blade1 station table (r/R, c/R, sigma/R, |Das|/R, theta rad):
+    0.998 0.0723 0.0226 0.077 0.0771
+    0.9755 0.0933 0.0292 0.0993 0.1018
+    0.9531 0.0956 0.0299 0.1017 0.1067
+    0.9306 0.0982 0.0307 0.1045 0.1123
+    0.9082 0.1009 0.0316 0.1073 0.1182
+    0.8857 0.1042 0.0326 0.1109 0.1252
+    0.8633 0.1076 0.0337 0.1145 0.1326
+    0.8408 0.1105 0.0346 0.1176 0.1399
+    0.8184 0.1139 0.0356 0.1212 0.1481
+    0.7959 0.1181 0.037 0.1257 0.1579
+    0.7734 0.1224 0.0383 0.1302 0.1684
+    0.751 0.1266 0.0396 0.1347 0.1794
+    0.7285 0.1311 0.041 0.1396 0.1916
+    0.7061 0.1358 0.0425 0.1445 0.2047
+    0.6836 0.1397 0.0437 0.1487 0.2175
+    0.6612 0.1439 0.045 0.1531 0.2316
+    0.6387 0.1493 0.0467 0.1589 0.2488
+    0.6163 0.1549 0.0485 0.1648 0.2675
+    0.5938 0.1603 0.0502 0.1706 0.2873
+    0.5714 0.1658 0.0519 0.1764 0.3088
+    0.5489 0.1714 0.0537 0.1824 0.3324
+    0.5264 0.1772 0.0555 0.1886 0.3582
+    0.504 0.1831 0.0573 0.1948 0.3865
+    0.4815 0.1891 0.0592 0.2013 0.4179
+    0.4591 0.1954 0.0612 0.208 0.453
+    0.4366 0.2021 0.0633 0.2151 0.4926
+    0.4142 0.209 0.0654 0.2224 0.5369
+    0.3917 0.2159 0.0676 0.2298 0.5867
+    0.3693 0.223 0.0698 0.2216 0.6
+    0.3468 0.2303 0.0721 0.2081 0.6
+    0.3243 0.2393 0.0749 0.1946 0.6
+    0.3019 0.2488 0.0779 0.1811 0.6
+    0.2794 0.258 0.0807 0.1677 0.6
+    0.257 0.264 0.0826 0.1542 0.6
+    0.2345 0.2648 0.0829 0.1407 0.6
+    0.2121 0.26 0.0814 0.1272 0.6
+    0.1896 0.2492 0.078 0.1138 0.6
+    0.1672 0.2344 0.0734 0.1003 0.6
+    0.1447 0.2157 0.0675 0.0868 0.6
+    0.1223 0.1923 0.0602 0.0734 0.6
+    0.0998 0.168 0.0526 0.0599 0.6
+  theta_max (all blades) = 0.6 rad
+Handoff clearance (d_front = |Das| + (N-1)*|w x r|*dt, N=1):
+  sigma = 0.0047597 m  (sigma/R = 0.04, one-step tip travel = 0.020769 m)
+  shedding1: d/sigma min 1.497 at r/R 0.1; max 5.746 at r/R 0.392; median 3.613
+  shedding2: d/sigma min 1.497 at r/R 0.1; max 5.746 at r/R 0.392; median 3.613
+
+Rotor spin-up enabled: 1.5 nominal revs from 0.4×RPM to full RPM
+
+Freestream pulse (revs): ramp-up [0, 1.0] -> peak=5.0; hold [1.0, 2.5]; withdraw [2.5, 6.5] -> end=0.0; hover/settle [6.5, 28.5]
+Total run length: 28.5 revs (1080 steps), truncation depth=4.0R
+
+Begin rotor hover pressure comparison (1080 steps)...
+Mesh=45_185_ct4 file=dji9443_20260725_45_185_capped_captess4.msh formulation=velocity RPM=5400.0 NT=36 truncation_depth=4.0R nwakerows=1 das_refresh=false
+Particle diagnostics: PARTICLE_SHEDDING=sigma_overlap, CONVERSION=legacy, RUN_MONITORS=true, BODY_HESSIAN_TO_PARTICLES=false, PANEL_WAKE_HESSIAN_TO_PARTICLES=false, PANEL_WAKE_VELOCITY_TO_PARTICLES=true, PARTICLE_HESSIAN_SELF=true, PARTICLE_RELAX=true, DIAGNOSE_PARTICLE_GAMMA=false, DIAGNOSE_PARTICLE_INFLUENCE=false, diagnostic_vertical=(1.0, 0.0, 0.0), WAKE_HEALTH=true, WAKE_HEALTH_DTZ=false, WAKE_HEALTH_ATTRIBUTION=true, WAKE_INVENTORY=true, WAKE_EXPINT=false
+  restarting from step 1034 of run p018_cs_f1_l3p4
+		Current sigma growth: 1.0001953	Critical:1.0e9
+    setup_kinematic_replay: 0.1 s
+    setup_load_state: 1.5 s
+    setup_replay_end_of_step: 0.3 s
+
+>>> parity step i_step=1035  t=0.3194444444444444
+    step head OK (all target state and first wake rows finite)
+    n_panels=36752  n_particles=181307  n_probe_targets=164  n_targets=3  n_wake_sources=3
+
+--- pass1_wake_influence eligibility ---
+  seam eligibility:
+    source 1  PanelWake                                      supported=true  packed_columns=80
+    source 2  FilamentWrapper                                supported=true  packed_columns=80
+    source 3  ParticleField                                  supported=true  packed_columns=181307
+    target 1  RigidWakeBody                                  supported=true  n=36752
+    target 2  ProbeWrapper                                   supported=true  n=164
+    target 3  ParticleField                                  supported=true  n=181307
+
+--- pass1_wake_influence ---
+  seam hits: 1 (cpu arm: 0)    wall: cpu 154.813 s | seam 163.417 s
+  body_velocity            n=36752    worst rel = 4.995e-15 (target 17468: |diff| 1.421e-14, |ref| 2.845e+00)
+                                    diff/scale = 1.892e-15 (scale 7.516e+00)  over-gate 0  divergent 0
+  body_velocity_gradient   n=36752    worst rel = 0.000e+00 (target 1: |diff| 0.000e+00, |ref| 0.000e+00)
+                                    diff/scale = 0.000e+00 (scale 0.000e+00)  over-gate 0  divergent 0
+  particle_Estr            n=181307   worst rel = 1.185e+00 (target 122740: |diff| 3.059e+02, |ref| 2.580e+02)
+                                    diff/scale = 1.560e-02 (scale 2.854e+05)  over-gate 159364  divergent 10
+      offender target 122740   rel 1.185e+00  |diff| 3.059e+02  |ref| 2.580e+02
+      offender target 153872   rel 1.030e+00  |diff| 1.223e+02  |ref| 1.188e+02
+      offender target 58010    rel 8.986e-01  |diff| 1.846e+02  |ref| 2.054e+02
+      offender target 145765   rel 7.187e-01  |diff| 1.880e+02  |ref| 2.615e+02
+      offender target 85039    rel 6.644e-01  |diff| 1.213e+02  |ref| 1.826e+02
+  particle_J               n=181307   worst rel = 0.000e+00 (target 1: |diff| 0.000e+00, |ref| 7.023e+02)
+                                    diff/scale = 0.000e+00 (scale 2.162e+03)  over-gate 0  divergent 0
+  particle_U               n=181307   worst rel = 2.187e-04 (target 109355: |diff| 2.763e-05, |ref| 1.263e-01)
+                                    diff/scale = 3.103e-06 (scale 2.479e+01)  over-gate 0  divergent 0
+  probe_U                  n=164      worst rel = 1.459e-15 (target 9: |diff| 6.225e-15, |ref| 4.266e+00)
+                                    diff/scale = 7.915e-16 (scale 1.351e+01)  over-gate 0  divergent 0
+
+--- solve_formulation! (seam armed = cuda) ---
+  seam hits during solve: 0    wall: 54.948 s
+
+--- pass3_body_influence eligibility ---
+  seam eligibility:
+    source 1  RigidWakeBody                                  supported=true  packed_columns=37072
+    target 1  RigidWakeBody                                  supported=true  n=36752
+    target 2  ProbeWrapper                                   supported=true  n=164
+    target 3  ParticleField                                  supported=true  n=181307
+
+--- pass3_body_influence ---
+  seam hits: 1 (cpu arm: 0)    wall: cpu 70.230 s | seam 2.899 s
+  body_velocity            n=36752    worst rel = 5.897e-07 (target 15974: |diff| 2.408e-07, |ref| 4.084e-01)
+                                    diff/scale = 1.099e-10 (scale 2.620e+03)  over-gate 0  divergent 0
+  body_velocity_gradient   n=36752    worst rel = 0.000e+00 (target 1: |diff| 0.000e+00, |ref| 0.000e+00)
+                                    diff/scale = 0.000e+00 (scale 0.000e+00)  over-gate 0  divergent 0
+  particle_Estr            n=181307   worst rel = 0.000e+00 (target 1: |diff| 0.000e+00, |ref| 0.000e+00)
+                                    diff/scale = 0.000e+00 (scale 0.000e+00)  over-gate 0  divergent 0
+  particle_J               n=181307   worst rel = 0.000e+00 (target 1: |diff| 0.000e+00, |ref| 0.000e+00)
+                                    diff/scale = 0.000e+00 (scale 0.000e+00)  over-gate 0  divergent 0
+  particle_U               n=181307   worst rel = 9.964e-05 (target 177730: |diff| 5.555e-07, |ref| 5.575e-03)
+                                    diff/scale = 1.825e-05 (scale 1.769e+01)  over-gate 0  divergent 0
+  probe_U                  n=164      worst rel = 7.775e-06 (target 83: |diff| 1.360e-05, |ref| 1.749e+00)
+                                    diff/scale = 2.577e-06 (scale 5.275e+00)  over-gate 0  divergent 0
+  (pass 3's 1e-3 gate is the real one: the seam evaluates ALL self-body
+   pairs at core_size_panel, while direct_conditioning flips the offset
+   only for NEARFIELD self-pair blocks -- documented deviation.)
+
+--- pass3_attribution: body_velocity three-way vs exact direct ---
+  seam vs exact          diff/scale = 3.586e-14   worst rel = 1.293e-11 (target 17284: |diff| 3.591e-11, |ref| 2.778e+00)
+                         over-1e-3 0 / divergent 0 of 36752   (class scale 2.620e+03)
+  cpu-fmm vs exact       diff/scale = 1.099e-10   worst rel = 5.897e-07 (target 15974: |diff| 2.408e-07, |ref| 4.084e-01)
+                         over-1e-3 0 / divergent 0 of 36752   (class scale 2.620e+03)
+  cpu-fmm vs seam        diff/scale = 1.099e-10   worst rel = 5.897e-07 (target 15974: |diff| 2.408e-07, |ref| 4.084e-01)
+                         over-1e-3 0 / divergent 0 of 36752   (class scale 2.620e+03)
+  verdict: seam matches exact direct; the parity-stage deviation is the CPU arm's fmm truncation error
+  exact direct arm wall: 34.625 s (body targets only)
+  host-seam vs exact     diff/scale = 2.172e-14   worst rel = 8.141e-12 (target 10661)   [wall 185.950 s]
+  cuda-seam vs host-seam diff/scale = 3.584e-14   worst rel = 1.194e-11 (target 17284)
+  worst seam-vs-exact offender control points (x y z | normal):
+      target 17284    rel 1.293e-11  cp -0.005400 -0.025929 -0.115082  n -0.833  0.446 -0.328
+      target 35660    rel 1.186e-11  cp -0.005400  0.025929  0.115082  n -0.833 -0.446  0.328
+      target 10293    rel 7.908e-12  cp -0.002994 -0.007366 -0.070260  n  0.994 -0.096 -0.056
+      target 10661    rel 7.879e-12  cp -0.003277 -0.008470 -0.072731  n  0.993 -0.080 -0.086
+      target 31258    rel 7.587e-12  cp -0.004412  0.014859  0.086696  n  0.995  0.093  0.025
+
+--- SFS / Estr ---
+  particle_Estr: worst rel 1.185e+00 | diff/scale 1.560e-02 | divergent 10 of 181307 (5.52e-05)
+
+  seam restored to off (production default :off)
+
+==============================================================================
+GATES
+==============================================================================
+PASS pass1_wake_influence.seam_accepted             yes (1 influence! call(s) handled by the seam)
+PASS pass1_wake_influence.phase_gate_1e-3_diff_to_scale achieved 3.103e-06   bound 1.000e-03   [full mode: diff/class-scale; CPU arm is fmm-approximate]
+PASS pass1_wake_influence.pertarget_rel             achieved 2.187e-04   bound 1.000e-03   [full mode: per-target rel vs an fmm-approximate reference]   (INFORMATIONAL, not a gate)
+PASS pass1_wake_influence.tight_1e-11_points_kernel_F64 achieved 3.103e-06   bound 1.000e-11   (INFORMATIONAL, not a gate)
+PASS solve.seam_never_matches                       seam hit counter did not increment across the solve (0 hits)
+PASS pass3_body_influence.seam_accepted             yes (1 influence! call(s) handled by the seam)
+PASS pass3_body_influence.phase_gate_1e-3_diff_to_scale achieved 1.825e-05   bound 1.000e-03   [full mode: diff/class-scale; CPU arm is fmm-approximate]
+PASS pass3_body_influence.pertarget_rel             achieved 9.964e-05   bound 1.000e-03   [full mode: per-target rel vs an fmm-approximate reference]   (INFORMATIONAL, not a gate)
+PASS pass3_attribution.host_seam_vs_exact           achieved 2.172e-14   bound 1.000e-10   [attribution split: functor math (host rect vs exact direct)]   (INFORMATIONAL, not a gate)
+PASS pass3_attribution.cuda_vs_host_seam            achieved 3.584e-14   bound 1.000e-10   [attribution split: device numerics (cuda rect vs host rect)]   (INFORMATIONAL, not a gate)
+PASS pass3_attribution.seam_vs_exact                achieved 3.586e-14   bound 1.000e-10   [seam vs exact DirectBackend, diff/scale (F64 summation-order headroom)]
+PASS pass3_attribution.cpu_fmm_vs_exact             achieved 1.099e-10   bound 1.000e-03   [measured legacy fmm! truncation on body self-influence -- a finding, not a defect gate]   (INFORMATIONAL, not a gate)
+PASS sfs.seam_never_handles_estr                    seam accepted pass 1 (1 hit(s)); Estr came from the FLOWVPM radix path in both arms by construction (Estr_fmm!/UJ_fmm_gpu!)
+PASS sfs.estr_divergence_sparse                     achieved 5.516e-05   bound 1.000e-03   [full mode: fraction of particles with per-particle rel > 0.5 (dynamic-procedure clip flips under fmm-vs-exact inputs)]
+PASS sfs.estr_diff_to_scale                         achieved 1.560e-02   bound 1.000e-03   [full mode: clip flips at high-Estr particles can reach O(1)]   (INFORMATIONAL, not a gate)
+==============================================================================
+OVERALL: PASS
+
+Wrote /home/rander39/FLOWPanel-046/benchmark/results/fm051_pass_parity_full.csv
+Finished (2026-08-22 22:47:18) with status 0.
+Results: benchmark/results/fm051_pass_parity_full.csv

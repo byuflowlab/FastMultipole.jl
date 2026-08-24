@@ -106,3 +106,64 @@ these sizes and budgets).
 - Residency: no recommendation yet. Present the corrected same-job A/B and
   ask the user which mode should ship; 051 must support either choice until
   that checkpoint is answered.
+
+## Reconciliation against the delivered 049 budget — 2026-08-22
+
+The corrected particle budget now exists (H200 job 13305555,
+`data/rotor_field_gpu_verification/results-13305555/fm049_budget.csv`,
+production settings D14: P=6, rho_t=4.789; residency mode D15
+upload-per-step selected by the user). This section re-derives the B'
+arithmetic against it; nothing above is rewritten.
+
+**Delivered particle-side numbers (n ≈ 209.6k–210.1k, steps 710–719):**
+
+| Quantity | median | min | max |
+| --- | --- | --- | --- |
+| full_resident_rk3 (s/step) | 0.294 | 0.286 | 0.361 |
+| full_upload_rk3 = D15 selected (s/step) | 0.306 | 0.299 | 0.373 |
+| h2d_46xn / d2h_46xn (s) | ~0.0044 each | | |
+
+Internal consistency: 3 × ujsfs_complete (0.0939) + rk3_integrator_residual
+(0.0092) = 0.2910 = full_resident_rk3 at step 710 — the stage table sums.
+Stage detail per UJ+SFS eval (step 710): nearfield 0.0557, SFS 0.0281,
+m2l 0.0037, b2m 0.0043, l2b 0.0045, m2m/l2l/tree_refresh < 1 ms.
+
+**What the delivered budget confirms or changes in the B' pricing:**
+
+1. **Particle count assumption confirmed.** The 2.1e5 figure used for both
+   cross-pass pair counts matches the measured np (209.6k–210.1k), so
+   7.7e9 pairs stands for both rectangular passes.
+2. **Particle side is 9.3% of budget (worst step 11.3%).** D15
+   upload-per-step costs 0.306 s/step median (0.373 worst) against the
+   3.3 s target, leaving ≈ 2.9–3.0 s for the panel-involving passes. The
+   old 0.199 s figure (invalid marginal-cost arm) is superseded; the
+   corrected number is *larger* but still small — no B' conclusion moves.
+3. **B' total prices in with margin.** Pessimistic stack: 0.373 (particles,
+   worst step) + 0.04 (wake→panels) + 2.0 (panels→particles, 20× panel
+   multiplier) = 2.41 s ⇒ **0.89 s solve headroom ≈ 246 dense matvecs at
+   the ~3.6 ms HBM estimate**. Optimistic stack: 0.30 + 0.02 + 0.4 =
+   0.72 s ⇒ 2.58 s headroom. Even the pessimistic case leaves solve room
+   far above plausible FGS/Krylov iteration counts; the 051 solve
+   measurement remains the deciding gate but is no longer at risk of being
+   squeezed out by the particle side.
+4. **Estr/SFS marginal cost is now measured, not pending:** SFS is
+   0.0281 s per UJ+SFS eval (~0.084 s per RK3 step, 2.6% of budget) —
+   small but not free, as required by item 5 of the 051 shape.
+5. **Residency watch item resolved:** the user selected D15
+   (upload-per-step, +12 ms/step, +4.1%, parity 150/150 at 1e-11) for
+   compatibility with monitors that trim/modify particles between steps.
+   051 designs against D15 as the production mode; resident remains
+   available.
+
+**Effect on the verdict and the 051 shape: none.** B' stands as written;
+the four-stage 051 shape is unchanged. The delivered budget strengthens
+(C)'s rejection unchanged and removes the last pending input flagged in
+"What the 049 budget table changed" above.
+
+**Strategic note (user direction, 2026-08-22):** the multi-system radix
+generalization (option-A-like unified `fmm!` with heterogeneous
+source/target systems on the GPU) is a goal we intend to reach eventually,
+in this phase or phase Q. B' is tentatively adopted as the path — it is a
+step *toward* that generalization (rectangular targets≠sources kernels and
+a device panel `direct!` kernel are prerequisites A would need anyway),
+not a substitute that forecloses it.

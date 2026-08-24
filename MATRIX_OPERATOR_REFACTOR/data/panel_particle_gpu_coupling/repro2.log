@@ -1,0 +1,12 @@
+┌ Warning: FMM radius inflation (0.005897977468151848) exceeds 10× the panel radius (2.0180581352466773e-5): core_size 0.001 is large relative to the panel size, so most interactions will be evaluated directly.
+└ @ FLOWPanel ~/Dropbox/research/projects/FLOWPanel.jl/src/FLOWPanel_abstractbody.jl:1202
+shedding edges: blade1 40  blade2 40
+rotor: 36752 panels, 2 shedding sets
+exact direct: 120.0 s
+host seam:    68.2 s (hits 1)
+host-seam vs exact: diff/scale 1.438e-15  worst rel 5.615e-14 (target 15040, |diff| 5.629e-13, |ref| 1.003e+01)  over-gate 0 divergent 0
+  target 15040    rel 5.615e-14 |diff| 5.629e-13  cp -0.00553  0.10184  0.00556
+  target 9185     rel 4.397e-14 |diff| 3.529e-10  cp -0.00214  0.05908  0.01280
+  target 8817     rel 4.392e-14 |diff| 3.405e-10  cp -0.00187  0.05641  0.01324
+  target 7357     rel 4.054e-14 |diff| 3.370e-11  cp -0.00089  0.04750  0.01465
+  target 6983     rel 3.540e-14 |diff| 2.974e-10  cp -0.00047  0.04483  0.01539

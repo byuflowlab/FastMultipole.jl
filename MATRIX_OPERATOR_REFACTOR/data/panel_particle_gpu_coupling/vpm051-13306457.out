@@ -1,0 +1,71 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-58eda106-52b7-5445-c10a-8f75fb83db2f)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+=== fm051 device testsets (tile-boundary parity sweeps) ===
+Precompiling FastMultipole...
+   6451.1 ms  ✓ FastMultipole
+  1 dependency successfully precompiled in 7 seconds. 20 already precompiled.
+[ Info: SpecialFunctions not available in this environment; skipping the cross-erf gates
+Precompiling FLOWVPM...
+   6526.2 ms  ✓ FLOWVPM
+  1 dependency successfully precompiled in 11 seconds. 120 already precompiled.
+[ Info: FLOWPanel not available in this environment; skipping the FLOWPanel parity layer
+Precompiling FLOWVPMCUDAExt...
+   7416.9 ms  ✓ FLOWVPM → FLOWVPMCUDAExt
+  1 dependency successfully precompiled in 12 seconds. 193 already precompiled.
+Test Summary:                     | Pass  Total   Time
+direct rectangular: point functor |    9      9  17.8s
+Test Summary:                                    | Pass  Total  Time
+direct rectangular: panel functor analytic gates |   17     17  1.1s
+Test Summary:                                  | Total  Time
+direct rectangular: panel functor vs FLOWPanel |     0  0.0s
+Test Summary:                           | Pass  Total  Time
+direct rectangular: argument validation |    7      7  0.1s
+Test Summary:                          | Pass  Total   Time
+direct rectangular: CUDA device parity |   98     98  40.9s
+=== fm051 rectangular direct benchmark ===
+┌ Info: snapshot loaded
+│   binpath = "/home/rander39/FLOWVPM-046/data/fm049/p018_710_particles.bin"
+└   np = 210056
+[ Info: PASS 1: particles -> 36752 panel centers
+┌ Info: pass1_f64_u
+│   u_err = 1.3134469005427082e-16
+│   j_err = NaN
+│   t_med = 0.124043801
+└   pass = true
+┌ Info: pass1_f64_uj
+│   u_err = 1.3134469005427082e-16
+│   j_err = 2.611027556168191e-16
+│   t_med = 0.208791017
+└   pass = true
+┌ Info: pass1_f32_u
+│   u_err = 2.8057037236303907e-5
+│   j_err = NaN
+│   t_med = 0.071374332
+└   pass = true
+┌ Info: pass1_f32_uj
+│   u_err = 2.8057037236303907e-5
+│   j_err = 4.494770743947759e-5
+│   t_med = 0.129479379
+└   pass = true
+[ Info: PASS 2: 36752 panels -> 210056 particle positions
+┌ Info: pass2_f64_u
+│   u_err = 4.5208006920310134e-15
+│   j_err = NaN
+│   t_med = 2.01919798
+└   pass = true
+┌ Info: pass2_f64_uj
+│   u_err = 4.520250924072312e-15
+│   j_err = 1.297938541736464e-15
+│   t_med = 3.640321595
+└   pass = true
+========================================================================
+fm051 rectangular direct benchmark — p018 step 710, np=210056, panels=36752
+PASS 1 U-only  F64: 0.1240 s  (estimate 0.02-0.04 s -> SLOWER than band)
+PASS 1 U+J     F64: 0.2088 s
+PASS 1 U-only  F32: 0.0714 s   U+J F32: 0.1295 s
+PASS 2 U-only  F64: 2.0192 s  (estimate 0.4-2.0 s -> SLOWER than band)
+PASS 2 U+J     F64: 3.6403 s
+results written to fm051_results.csv
+fm051 driver complete
+vpm051 job complete

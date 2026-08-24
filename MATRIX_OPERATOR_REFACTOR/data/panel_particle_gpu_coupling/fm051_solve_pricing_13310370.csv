@@ -1,0 +1,13 @@
+key,value
+i_step,1035
+threads,64
+solver,FLOWPanel.Backslash{Float64, LinearAlgebra.LU{Float64, Matrix{Float64}, Vector{Int64}}}
+cold_s,30.37908002
+warm_1_s,11.428490138
+warm_2_s,8.315933367
+warm_3_s,7.335610912
+warm_4_s,7.284865771
+warm_5_s,8.86513596
+warm_median_s,8.315933367
+headroom_s,0.783
+fits_headroom,false

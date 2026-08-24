@@ -1,0 +1,153 @@
+=== node: m13h-1-1
+GPU 0: NVIDIA H200 (UUID: GPU-58eda106-52b7-5445-c10a-8f75fb83db2f)
+CUDA_HOME=/apps/cudatoolkit/12.8.1
+FM051 stage 2/3 pass parity -- mode full, seam cuda
+  repo:/home/rander39/FLOWPanel-046  env:/home/rander39/fm051env  threads:16  host:m13h-1-1  job:13306475
+  restart run:p018_cs_f1_l3p4  restart step:-1
+  mesh:45_185_ct4 formulation:velocity RPM:5400 NT:36 nwakerows:1 settle:22
+  started 2026-08-22 17:24:20
+==============================================================================
+FM051 pass-by-pass CPU-vs-GPU influence parity
+==============================================================================
+  mode=full  seam=cuda  threads=16  julia=1.11.7
+  gates: phase 1.0e-03 | pass1 tight 1.0e-11 (informational) | Estr 1.0e-10
+  FLOWPanel.FILAMENT_REGULARIZATION[] = GaussianRegularization  (recorded, not modified)
+BLAS threads: 16 (Julia threads: 16)
+Mesh: /home/rander39/FLOWPanel-046/src/../examples/data/dji9443_20260725_45_185_capped_captess4.msh
+  TE seeds (auto): blade1=[17743, 17559, 9191]  blade2=[8553, 8369, 1]
+Trailing edge traced: blade1 44 edges -> 40 after root clip at r/R 0.1 (blade root r/R 0.0095)
+Requested shedding root at |r/R| >= 0.1
+  shedding1 root midpoint r/R = -0.1110273971655543
+  shedding2 root midpoint r/R = 0.1110273971655543
+Sigma chord mode: shedding1 sigma/R range 0.0226-0.0829 (s* = 0.313, floor 0.0R binds at 0/41 stations)
+Sigma chord mode: shedding2 sigma/R range 0.0226-0.0829 (s* = 0.313, floor 0.0R binds at 0/41 stations)
+Das co-scaling mode: |Das|_j = 3.4 * sigma_j (= 1.064 * c_local; DAS_ETA_KINEMATIC ignored)
+  F1 curvature cap ACTIVE: theta_j <= beta = 0.6 rad (blade1: cap binds at 13 of 41 stations)
+  blade1 station table (r/R, c/R, sigma/R, |Das|/R, theta rad):
+    0.998 0.0723 0.0226 0.077 0.0771
+    0.9755 0.0933 0.0292 0.0993 0.1018
+    0.9531 0.0956 0.0299 0.1017 0.1067
+    0.9306 0.0982 0.0307 0.1045 0.1123
+    0.9082 0.1009 0.0316 0.1073 0.1182
+    0.8857 0.1042 0.0326 0.1109 0.1252
+    0.8633 0.1076 0.0337 0.1145 0.1326
+    0.8408 0.1105 0.0346 0.1176 0.1399
+    0.8184 0.1139 0.0356 0.1212 0.1481
+    0.7959 0.1181 0.037 0.1257 0.1579
+    0.7734 0.1224 0.0383 0.1302 0.1684
+    0.751 0.1266 0.0396 0.1347 0.1794
+    0.7285 0.1311 0.041 0.1396 0.1916
+    0.7061 0.1358 0.0425 0.1445 0.2047
+    0.6836 0.1397 0.0437 0.1487 0.2175
+    0.6612 0.1439 0.045 0.1531 0.2316
+    0.6387 0.1493 0.0467 0.1589 0.2488
+    0.6163 0.1549 0.0485 0.1648 0.2675
+    0.5938 0.1603 0.0502 0.1706 0.2873
+    0.5714 0.1658 0.0519 0.1764 0.3088
+    0.5489 0.1714 0.0537 0.1824 0.3324
+    0.5264 0.1772 0.0555 0.1886 0.3582
+    0.504 0.1831 0.0573 0.1948 0.3865
+    0.4815 0.1891 0.0592 0.2013 0.4179
+    0.4591 0.1954 0.0612 0.208 0.453
+    0.4366 0.2021 0.0633 0.2151 0.4926
+    0.4142 0.209 0.0654 0.2224 0.5369
+    0.3917 0.2159 0.0676 0.2298 0.5867
+    0.3693 0.223 0.0698 0.2216 0.6
+    0.3468 0.2303 0.0721 0.2081 0.6
+    0.3243 0.2393 0.0749 0.1946 0.6
+    0.3019 0.2488 0.0779 0.1811 0.6
+    0.2794 0.258 0.0807 0.1677 0.6
+    0.257 0.264 0.0826 0.1542 0.6
+    0.2345 0.2648 0.0829 0.1407 0.6
+    0.2121 0.26 0.0814 0.1272 0.6
+    0.1896 0.2492 0.078 0.1138 0.6
+    0.1672 0.2344 0.0734 0.1003 0.6
+    0.1447 0.2157 0.0675 0.0868 0.6
+    0.1223 0.1923 0.0602 0.0734 0.6
+    0.0998 0.168 0.0526 0.0599 0.6
+  theta_max (all blades) = 0.6 rad
+Handoff clearance (d_front = |Das| + (N-1)*|w x r|*dt, N=1):
+  sigma = 0.0047597 m  (sigma/R = 0.04, one-step tip travel = 0.020769 m)
+  shedding1: d/sigma min 1.497 at r/R 0.1; max 5.746 at r/R 0.392; median 3.613
+  shedding2: d/sigma min 1.497 at r/R 0.1; max 5.746 at r/R 0.392; median 3.613
+
+Rotor spin-up enabled: 1.5 nominal revs from 0.4×RPM to full RPM
+
+Freestream pulse (revs): ramp-up [0, 1.0] -> peak=5.0; hold [1.0, 2.5]; withdraw [2.5, 6.5] -> end=0.0; hover/settle [6.5, 28.5]
+Total run length: 28.5 revs (1080 steps), truncation depth=4.0R
+
+Begin rotor hover pressure comparison (1080 steps)...
+Mesh=45_185_ct4 file=dji9443_20260725_45_185_capped_captess4.msh formulation=velocity RPM=5400.0 NT=36 truncation_depth=4.0R nwakerows=1 das_refresh=false
+Particle diagnostics: PARTICLE_SHEDDING=sigma_overlap, CONVERSION=legacy, RUN_MONITORS=true, BODY_HESSIAN_TO_PARTICLES=false, PANEL_WAKE_HESSIAN_TO_PARTICLES=false, PANEL_WAKE_VELOCITY_TO_PARTICLES=true, PARTICLE_HESSIAN_SELF=true, PARTICLE_RELAX=true, DIAGNOSE_PARTICLE_GAMMA=false, DIAGNOSE_PARTICLE_INFLUENCE=false, diagnostic_vertical=(1.0, 0.0, 0.0), WAKE_HEALTH=true, WAKE_HEALTH_DTZ=false, WAKE_HEALTH_ATTRIBUTION=true, WAKE_INVENTORY=true, WAKE_EXPINT=false
+  restarting from step 1034 of run p018_cs_f1_l3p4
+		Current sigma growth: 1.0001953	Critical:1.0e9
+    setup_kinematic_replay: 0.1 s
+    setup_load_state: 1.6 s
+    setup_replay_end_of_step: 0.3 s
+
+>>> parity step i_step=1035  t=0.3194444444444444
+    step head OK (all target state and first wake rows finite)
+    n_panels=36752  n_particles=181307  n_probe_targets=164  n_targets=3  n_wake_sources=3
+
+--- pass1_wake_influence eligibility ---
+  seam eligibility:
+    source 1  PanelWake                                      supported=true  packed_columns=80
+    source 2  FilamentWrapper                                supported=true  packed_columns=80
+    source 3  ParticleField                                  supported=true  packed_columns=181307
+    target 1  RigidWakeBody                                  supported=true  n=36752
+    target 2  ProbeWrapper                                   supported=true  n=164
+    target 3  ParticleField                                  supported=true  n=181307
+
+--- pass1_wake_influence ---
+  seam hits: 1 (cpu arm: 0)    wall: cpu 154.173 s | seam 277.776 s
+  body_velocity            n=36752    worst per-target rel = 4.995e-15  (target 17468, class scale 7.516e+00)
+  body_velocity_gradient   n=36752    worst per-target rel = 0.000e+00  (target 0, class scale 0.000e+00)
+  particle_Estr            n=181307   worst per-target rel = 1.185e+00  (target 122740, class scale 2.854e+05)
+  particle_J               n=181307   worst per-target rel = 0.000e+00  (target 0, class scale 2.162e+03)
+  particle_U               n=181307   worst per-target rel = 2.187e-04  (target 109355, class scale 2.479e+01)
+  probe_U                  n=164      worst per-target rel = 1.459e-15  (target 9, class scale 1.351e+01)
+
+--- solve_formulation! (seam armed = cuda) ---
+  seam hits during solve: 0    wall: 41.990 s
+
+--- pass3_body_influence eligibility ---
+  seam eligibility:
+    source 1  RigidWakeBody                                  supported=true  packed_columns=37072
+    target 1  RigidWakeBody                                  supported=true  n=36752
+    target 2  ProbeWrapper                                   supported=true  n=164
+    target 3  ParticleField                                  supported=true  n=181307
+
+--- pass3_body_influence ---
+  seam hits: 1 (cpu arm: 0)    wall: cpu 57.549 s | seam 2.886 s
+  body_velocity            n=36752    worst per-target rel = 6.691e+00  (target 19431, class scale 2.620e+03)
+  body_velocity_gradient   n=36752    worst per-target rel = 0.000e+00  (target 0, class scale 0.000e+00)
+  particle_Estr            n=181307   worst per-target rel = 0.000e+00  (target 0, class scale 0.000e+00)
+  particle_J               n=181307   worst per-target rel = 0.000e+00  (target 0, class scale 0.000e+00)
+  particle_U               n=181307   worst per-target rel = 9.964e-05  (target 177730, class scale 1.769e+01)
+  probe_U                  n=164      worst per-target rel = 7.775e-06  (target 83, class scale 5.275e+00)
+  (pass 3's 1e-3 gate is the real one: the seam evaluates ALL self-body
+   pairs at kerneloffset_panel, while direct_conditioning flips the offset
+   only for NEARFIELD self-pair blocks -- documented deviation.)
+
+--- SFS / Estr ---
+  particle_Estr worst per-target rel = 1.185e+00
+
+  seam restored to off (production default :off)
+
+==============================================================================
+GATES
+==============================================================================
+PASS pass1_wake_influence.seam_accepted             yes (1 influence! call(s) handled by the seam)
+FAIL pass1_wake_influence.phase_gate_1e-3           achieved 1.185e+00   bound 1.000e-03
+PASS pass1_wake_influence.tight_1e-11_points_kernel_F64 achieved 1.185e+00   bound 1.000e-11   (INFORMATIONAL, not a gate)
+PASS solve.seam_never_matches                       seam hit counter did not increment across the solve (0 hits)
+PASS pass3_body_influence.seam_accepted             yes (1 influence! call(s) handled by the seam)
+FAIL pass3_body_influence.phase_gate_1e-3           achieved 6.691e+00   bound 1.000e-03
+PASS sfs.seam_never_handles_estr                    seam accepted pass 1 (1 hit(s)); Estr came from the FLOWVPM radix path in both arms by construction (Estr_fmm!/UJ_fmm_gpu!)
+FAIL sfs.estr_1e-10                                 achieved 1.185e+00   bound 1.000e-10   [loose bound: threading nondeterminism only]
+==============================================================================
+OVERALL: FAIL
+
+Wrote /home/rander39/FLOWPanel-046/benchmark/results/fm051_pass_parity_full.csv
+Finished (2026-08-22 17:37:22) with status 1.
+Results: benchmark/results/fm051_pass_parity_full.csv

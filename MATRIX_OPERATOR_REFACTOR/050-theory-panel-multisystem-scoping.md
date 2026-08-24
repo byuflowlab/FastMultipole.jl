@@ -120,3 +120,30 @@ influence 64.2% / body 25.3% / solve 9.3%; body pass floor ~36 s
 (kerneloffset-radius-bound); ~75% of step = `Estr_fmm!`; 36,752 panels
 (45_185_ct4 mesh), ~181k particles at maturity (342k on the 6R arm);
 NT=36 steps/rev; target ≤3.3 s/step.
+
+## Update — 2026-08-22: budget reconciliation done; verdict presented
+
+The one pending input (corrected 049 particle budget) is delivered (H200
+job 13305555, `data/rotor_field_gpu_verification/results-13305555/
+fm049_budget.csv`) and the B' arithmetic has been re-derived against it —
+see "Reconciliation against the delivered 049 budget — 2026-08-22" in
+`theory/panel-multisystem-scoping.md`. Summary: particle side (D15
+upload-per-step, user-selected) is 0.306 s/step median / 0.373 worst =
+9.3–11.3% of the 3.3 s budget; the 2.1e5 particle-count assumption behind
+both 7.7e9-pair cross passes is confirmed by the measured np; pessimistic
+B' stack (0.373 + 0.04 + 2.0) leaves 0.89 s solve headroom (~246 dense
+matvecs at ~3.6 ms); SFS marginal cost is now measured (0.028 s per
+UJ+SFS eval, ~2.6% of budget); the residency watch item is resolved (D15
+ships). **Verdict and 051 shape unchanged.** The verification gate
+("arithmetic checkable against the 049 budget table") is satisfied.
+
+User direction (2026-08-22): the multi-system radix generalization
+(option-A-like unified `fmm!`, heterogeneous sources/targets on GPU)
+remains an eventual goal (this phase or phase Q); **B' is tentatively
+adopted** as a step toward it, since its rectangular targets≠sources
+kernels and device panel `direct!` kernel are prerequisites A needs
+anyway. Formal approval of 050 pending user sign-off.
+
+**Update — 2026-08-22 (later): 050 APPROVED by the user.** Verdict B'
+stands with the reconciled numbers above; 051 is next per START_HERE.md
+(its own entry gate applies).
