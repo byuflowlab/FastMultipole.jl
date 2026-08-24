@@ -2,7 +2,16 @@
 
 ## Status and entry gate
 
-**Staged `2026-08-20` (user direction). Not started.**
+**CLOSED `2026-08-24` — approved (user pre-approval this session +
+clear-context audit APPROVE, zero discrepancies).** Verdict: the coupled
+panel–particle GPU step FITS the 3.3 s budget — B′ stack 0.373 + 0.124 +
+2.020 + 0.607 = 3.124 s (5.3% margin); body solve via opt-in
+source-potential matrix S on `Backslash` (tuned BLAS=8 gemv, job
+13395348). Commits: FastMultipole `22376fea`/`d8258a7d`/`b332bb05`,
+FLOWPanel `1159c8f`/`8a48bc5`/`5272a5f`, FLOWVPM `9b5b7cd`. Deferred to
+`052+`: device-resident gemv, Float32 S, pass-2 kernel work.
+
+Originally staged `2026-08-20` (user direction).
 
 Entry gate: `050` complete and approved — this row implements the `050`
 verdict's named shape; do not re-litigate the A/B/C decision here. Fallback
