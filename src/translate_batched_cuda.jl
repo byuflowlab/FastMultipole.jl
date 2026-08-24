@@ -9054,8 +9054,11 @@ function _cuda_rect_panels_kernel!(out, targets, sources, n_targets, n_sources,
             CUDA.sync_threads()
             if active
                 @inbounds for k in 1:min(_RECT_TILE_PANELS, n_sources - q0)
-                    tag = Int(sh[1, k])
-                    nv = Int(sh[2, k])
+                    # rows 1:2 are validated integral/in-range host-side by
+                    # _rect_check_args; unchecked truncation avoids the
+                    # InexactError trap path inside the pair loop
+                    tag = unsafe_trunc(Int, sh[1, k])
+                    nv = unsafe_trunc(Int, sh[2, k])
                     v1 = SVector{3,T}(sh[3, k], sh[4, k], sh[5, k])
                     v2 = SVector{3,T}(sh[6, k], sh[7, k], sh[8, k])
                     v3 = SVector{3,T}(sh[9, k], sh[10, k], sh[11, k])

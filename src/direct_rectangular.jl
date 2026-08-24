@@ -43,7 +43,7 @@ abstract type AbstractRectangularKernel end
     RectangularGaussianErfVortex()
 
 Rectangular pair kernel for gaussianerf-regularized vortex particles
-(FLOWVPM's default kernel), kerneloffset-free. Source row layout (7 rows):
+(FLOWVPM's default kernel), core_size-free. Source row layout (7 rows):
 
 | rows | content |
 |---|---|
@@ -54,8 +54,13 @@ Rectangular pair kernel for gaussianerf-regularized vortex particles
 Pair math transcribed from FLOWVPM's CPU reference `fmm.direct!` overload
 (FLOWVPM.jl/src/FLOWVPM_fmm.jl:144-218) with `g_dgdr_gauserf`
 (FLOWVPM_kernel.jl:54-57): exact match including the vendored fdlibm
-`custom_erf` (FLOWVPM_gpu_erf.jl), so host/device/CPU-FLOWVPM agree to
-roundoff. The only excluded pair is exact coincidence (`r2 == 0`), matching
+`custom_erf` (FLOWVPM_gpu_erf.jl). The HOST path is bitwise-identical to
+CPU-FLOWVPM (same summation order); the DEVICE path visits sources in the
+same order but differs by NVPTX FMA contraction and libdevice
+transcendentals (~1 ulp/pair, amplified near rho -> 0 by the cancellation in
+g), so gate device-vs-host F64 parity at ~1e-13 (U) / 1e-12 (J) relative for
+well-separated targets — never bitwise. The only excluded pair is exact
+coincidence (`r2 == 0`), matching
 the CPU semantics — NOT the absolute `eps2 = 1e-6` guard used by the FLOWVPM
 CUDA extension's `gpu_interaction!`.
 """
@@ -86,22 +91,32 @@ layout):
 | row | content |
 |---|---|
 | 1   | element tag: 1=ConstantSource, 2=ConstantDoublet, 3=VortexRing, 4=ConstantSource+VortexRing, 5=ConstantSource+ConstantDoublet |
-| 2   | vertex count nv (3 for tags 1/2/4/5; 3 or 4 for tag 3) |
+| 2   | vertex count nv (3 for tags 1/2/4/5; 2, 3, or 4 for tag 3 — nv == 2 is an OPEN bound-vortex filament v1→v2, no closing edge) |
 | 3:5 | vertex 1 |
 | 6:8 | vertex 2 |
 | 9:11| vertex 3 |
-| 12:14 | vertex 4 (ignored when nv == 3) |
+| 12:14 | vertex 4 (ignored when nv < 4) |
 | 15  | strength 1 (sigma for tags 1/4/5; mu for tag 2; Gamma for tag 3) |
 | 16  | strength 2 (Gamma for tag 4; mu for tag 5; ignored otherwise) |
-| 17  | kerneloffset (per-source regularization radius) |
+| 17  | core_size (per-source regularization radius) |
 
 Emits velocity (+gradient when armed), never the scalar potential (the 018
 passes request scalar_potential=false; see file header). Includes FLOWPanel's
 self-pair short-circuit (`_is_self_pair` / `_self_limit` velocity behavior,
 gradient zeroed) so targets sitting exactly on a panel centroid reproduce the
 CPU `direct!` surface limits. TE-wake attachments (`_induced_wake` for
-`RigidWakeBody` TE panels) are NOT evaluated here; pack each TE wake quad as
-an extra tag-3 ring source instead.
+`RigidWakeBody` TE panels) are NOT evaluated here; pack each TE wake
+attachment the way `_induced_wake` sums it — TWO tag-3 triangles
+`(v1,v2,vw1)` + `(vw1,v2,vw2)` per TE panel (a single tag-3 quad is
+equivalent only for VortexRing, via shared-edge cancellation — not for a
+doublet wake). Note the self-pair check also runs on such wake columns
+(FLOWPanel applies none there): for tags 2/3 the velocity is unchanged and
+only J is zeroed at exact centroid coincidence — a measure-zero divergence.
+Final-row wake filaments (`FilamentWrapper` `direct!`, FLOWPanel_wake.jl:2869)
+pack as tag-3 nv=2 open segments: one `_bound_vortex_velocity`/`_gradient`
+evaluation per column at `core_size` = the wake `core_size`, the exact sum
+the CPU path performs. The nv=2 self-pair check is inert by construction (the
+degenerate v1/v2/v2 "panel" has zero area, so the threshold is never met).
 """
 struct RectangularPanelInfluence <: AbstractRectangularKernel
     filament_reg::Int32
@@ -304,10 +319,15 @@ end
     return eip1, hip1, rip1, ei, hi, ri, ds, dx, dy, R_dot_s
 end
 
-# shared tan_term with the extension-singularity guard (elements_fmm.jl:446-461)
+# shared tan_term with the extension-singularity guard (elements_fmm.jl:446-461).
+# The on-plane clause fires on tRz == 0 alone: tRz is snapped to an exact zero
+# by _rect_tri_source_doublet whenever it is at roundoff scale, so all edges of
+# a panel take the same branch and the PV cannot flip with the sign of FMA
+# junk (device defect, job 13309929 stage 0c, 2026-08-22: den < 0 on 2 of 3
+# edges at a centroid makes atan(num, den) jump by ±π with the sign of num).
 @inline function _rect_solid_angle_tan(tRx::T, tRy, tRz, ei, hi, ri, eip1, hip1, rip1,
         ds, dx, dy, R_dot_s) where T
-    if (tRx == zero(T) && tRy == zero(T) && tRz == zero(T)) ||
+    if tRz == zero(T) ||
        abs(abs(R_dot_s) - ri*ds) <= T(1e-12) * ri * ds
         return zero(T)
     else
@@ -405,7 +425,7 @@ end
 # loop; final rotation back u <- -1/4pi R u, g <- -1/4pi R g R^T
 # (elements_fmm.jl:796-803). Per-strength-unit result (caller multiplies).
 @inline function _rect_tri_source_doublet(target::SVector{3,T}, v1::SVector{3,T},
-        v2::SVector{3,T}, v3::SVector{3,T}, kerneloffset::T,
+        v2::SVector{3,T}, v3::SVector{3,T}, core_size::T,
         ::Val{DOUBLET}, ::Val{GRAD}) where {T,DOUBLET,GRAD}
     nx, ny, nz = _rect_rotate_to_panel(v1, v2, v3)
     centroid = (v1 + v2 + v3) * T(0.3333333333333333)
@@ -422,13 +442,21 @@ end
     vx1 = nx[1]*w1[1] + nx[2]*w1[2] + nx[3]*w1[3]; vy1 = ny[1]*w1[1] + ny[2]*w1[2] + ny[3]*w1[3]
     vx2 = nx[1]*w2[1] + nx[2]*w2[2] + nx[3]*w2[3]; vy2 = ny[1]*w2[1] + ny[2]*w2[2] + ny[3]*w2[3]
     vx3 = nx[1]*w3[1] + nx[2]*w3[2] + nx[3]*w3[3]; vy3 = ny[1]*w3[1] + ny[2]*w3[2] + ny[3]*w3[3]
+    # on-plane snap: roundoff-scale tRz means the target IS on the panel plane;
+    # an exact zero routes every edge through _rect_solid_angle_tan's PV branch
+    # so the ±2π solid-angle side cannot follow the sign of FMA junk on device
+    # (mirrored in FLOWPanel _induced; junk ≤ ~1e-17·L vs genuine ≥ ~1e-8·L)
+    L2 = w1[1]*w1[1] + w1[2]*w1[2] + w1[3]*w1[3] +
+         w2[1]*w2[1] + w2[2]*w2[2] + w2[3]*w2[3] +
+         w3[1]*w3[1] + w3[2]*w3[2] + w3[3]*w3[3]
+    tRz = ifelse(tRz*tRz <= T(1e-24) * L2, zero(T), tRz)
     for i in 1:3
         vxa, vya, wa = i == 1 ? (vx1, vy1, w1) : (i == 2 ? (vx2, vy2, w2) : (vx3, vy3, w3))
         vxb, vyb, wb = i == 1 ? (vx2, vy2, w2) : (i == 2 ? (vx3, vy3, w3) : (vx1, vy1, w1))
         if DOUBLET
             # reg_term from the side's minimum distance (elements_fmm.jl:743-746)
             m_dist = _rect_minimum_distance(wa, wb, tc)
-            reg_term = _rect_regularize(m_dist, kerneloffset)
+            reg_term = _rect_regularize(m_dist, core_size)
             ue, ge = _rect_edge_doublet(tRx, tRy, tRz, vxa, vya, vxb, vyb, reg_term, Val(GRAD))
         else
             ue, ge = _rect_edge_source(tRx, tRy, tRz, vxa, vya, vxb, vyb, Val(GRAD))
@@ -558,13 +586,17 @@ end
 end
 
 # vortex-ring panel velocity/gradient (_induced for VortexRing,
-# elements_fmm.jl:811-861; VS/GS blocks). Per-unit-Gamma result.
+# elements_fmm.jl:811-861; VS/GS blocks). Per-unit-Gamma result. nv == 2 is an
+# OPEN filament: the single bound-vortex segment v1→v2 with no closing edge
+# (FilamentWrapper direct!, FLOWPanel_wake.jl:2874-2907 — a closed 2-ring
+# would sum v1→v2 + v2→v1 = 0).
 @inline function _rect_ring(target::SVector{3,T}, v1::SVector{3,T}, v2::SVector{3,T},
         v3::SVector{3,T}, v4::SVector{3,T}, nv::Int, core_size::T,
         ::Val{GRAD}, ::Val{REG}) where {T,GRAD,REG}
     u = zero(SVector{3,T})
     g = zero(SMatrix{3,3,T,9})
-    for i in 1:nv
+    nseg = nv == 2 ? 1 : nv
+    for i in 1:nseg
         va = i == 1 ? v1 : (i == 2 ? v2 : (i == 3 ? v3 : v4))
         ip1 = i < nv ? i + 1 : 1
         vb = ip1 == 1 ? v1 : (ip1 == 2 ? v2 : (ip1 == 3 ? v3 : v4))
@@ -604,19 +636,19 @@ end
 # pairs and zeroes the gradient there, matching `induced` (elements_fmm.jl:250-253).
 @inline function _rect_panel_pair(::RectangularPanelInfluence, target::SVector{3,T},
         tag::Int, nv::Int, v1::SVector{3,T}, v2::SVector{3,T}, v3::SVector{3,T},
-        v4::SVector{3,T}, s1::T, s2::T, kerneloffset::T, ::Val{GRAD},
+        v4::SVector{3,T}, s1::T, s2::T, core_size::T, ::Val{GRAD},
         ::Val{REG}=Val(1)) where {T,GRAD,REG}
     u = zero(SVector{3,T})
     g = zero(SMatrix{3,3,T,9})
     if tag == 1 || tag == 4 || tag == 5      # ConstantSource part
-        us, gs = _rect_tri_source_doublet(target, v1, v2, v3, kerneloffset,
+        us, gs = _rect_tri_source_doublet(target, v1, v2, v3, core_size,
             Val(false), Val(GRAD))
         u += s1 * us
         GRAD && (g += s1 * gs)
     end
     if tag == 2 || tag == 5                  # ConstantDoublet part
         mu = tag == 2 ? s1 : s2
-        ud, gd = _rect_tri_source_doublet(target, v1, v2, v3, kerneloffset,
+        ud, gd = _rect_tri_source_doublet(target, v1, v2, v3, core_size,
             Val(true), Val(GRAD))
         u += mu * ud
         GRAD && (g += mu * gd)
@@ -624,7 +656,7 @@ end
     if tag == 3 || tag == 4                  # VortexRing part
         gam = tag == 3 ? s1 : s2
         nvr = tag == 4 ? 3 : nv              # combined tag is a tri panel
-        ur, gr = _rect_ring(target, v1, v2, v3, v4, nvr, kerneloffset, Val(GRAD), Val(REG))
+        ur, gr = _rect_ring(target, v1, v2, v3, v4, nvr, core_size, Val(GRAD), Val(REG))
         u += gam * ur
         GRAD && (g += gam * gr)
     end
@@ -661,6 +693,43 @@ function _rect_check_args(out, targets, kernel, sources, gradient::Bool)
     size(out, 1) >= rect_output_rows(gradient) || throw(ArgumentError(
         "out must have at least $(rect_output_rows(gradient)) rows for " *
         "gradient=$gradient; got $(size(out, 1))"))
+    if kernel isa RectangularPanelInfluence
+        # the panel functor's absolute guards (1e-12-scaled extension-
+        # singularity / self-pair / series-limit thresholds) sit below
+        # eps(Float32), so sub-F64 precision silently disables them
+        eltype(out) === Float64 || throw(ArgumentError(
+            "RectangularPanelInfluence requires Float64 (its singularity " *
+            "guards are inert below Float64 resolution); got $(eltype(out))"))
+        _rect_validate_panel_sources(sources)
+    end
+    return nothing
+end
+
+# rows 1:2 feed unchecked Int truncation inside the device pair loop; a
+# mis-packed column would otherwise contribute silent zeros (bad tag) or trap
+# (non-integral). Broadcast+all works on Array and CuArray alike.
+function _rect_validate_panel_sources(sources::AbstractMatrix)
+    tags = view(sources, 1, :)
+    nvs = view(sources, 2, :)
+    ok = all(@. (tags == round(tags)) & (tags >= 1) & (tags <= 5) &
+                ((nvs == 3) | (nvs == 4) | ((nvs == 2) & (tags == 3))))
+    ok || throw(ArgumentError(
+        "RectangularPanelInfluence sources: row 1 must be an integral tag " *
+        "in 1:5 and row 2 a vertex count in {3, 4} ({2, 3, 4} for tag 3; " *
+        "nv == 2 is an open bound-vortex filament)"))
+    return nothing
+end
+
+# The host methods below have AbstractMatrix signatures, so a CuMatrix call
+# made BEFORE load_cuda_radix_lifecycle!() installs the CuMatrix methods
+# would land here and die inside Threads.@threads scalar indexing with an
+# opaque error. Fail with the actual fix instead.
+function _rect_assert_host(out, targets, sources)
+    (parent(out) isa Array && parent(targets) isa Array &&
+        parent(sources) isa Array) || throw(ArgumentError(
+        "direct_rectangular! host method called with non-host arrays " *
+        "($(typeof(out))); for GPU arrays call load_cuda_radix_lifecycle!() " *
+        "first (and pass out/targets/sources all on the same side)"))
     return nothing
 end
 
@@ -679,6 +748,7 @@ function direct_rectangular!(out::AbstractMatrix{T}, targets::AbstractMatrix{T},
         kernel::RectangularGaussianErfVortex, sources::AbstractMatrix{T};
         gradient::Bool=false) where T
     _rect_check_args(out, targets, kernel, sources, gradient)
+    _rect_assert_host(out, targets, sources)
     n_targets = size(targets, 2)
     n_sources = size(sources, 2)
     if gradient
@@ -723,6 +793,7 @@ function direct_rectangular!(out::AbstractMatrix{T}, targets::AbstractMatrix{T},
         kernel::RectangularPanelInfluence, sources::AbstractMatrix{T};
         gradient::Bool=false) where T
     _rect_check_args(out, targets, kernel, sources, gradient)
+    _rect_assert_host(out, targets, sources)
     n_targets = size(targets, 2)
     n_sources = size(sources, 2)
     regv = _rect_reg_val(kernel.filament_reg)

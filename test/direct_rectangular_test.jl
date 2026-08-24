@@ -283,6 +283,39 @@ end
         direct_rectangular!(og, tgtp, RectangularPanelInfluence(), rng3; gradient=false)
         @test isapprox(od, og; rtol=1e-6, atol=1e-10)
     end
+
+    # --- gate 4a: open filament (tag 3, nv=2), straight-segment analytic ---
+    # U at perpendicular distance d from the midpoint of a length-L segment:
+    # |U| = Gamma L / (4 pi d sqrt(d^2 + L^2/4)); Vatistas rc=1e-8 at d=0.5
+    # perturbs at O((rc/d)^4). Segment along +x, target at +y => U along +z.
+    L = 2.0; d = 0.5; gam = 1.3
+    fil = zeros(T, 17, 1)
+    _pack_panel!(fil, 1, 3, (SVector(-L/2, 0.0, 0.0), SVector(L/2, 0.0, 0.0)),
+        gam, 0.0, 1e-8)
+    tgtf = reshape(T[0.0, d, 0.0], 3, 1)
+    outfil = zeros(T, 3, 1)
+    direct_rectangular!(outfil, tgtf, RectangularPanelInfluence(), fil; gradient=false)
+    @test isapprox(outfil[3, 1], gam*L/(4pi*d*sqrt(d^2 + L^2/4)); rtol=1e-12)
+    @test abs(outfil[1, 1]) < 1e-14 && abs(outfil[2, 1]) < 1e-14
+
+    # --- gate 4b: closed tri ring == sum of its three open segments, all
+    # families (same segment functions, only the Gamma grouping differs) ---
+    rc = 0.05
+    vA = SVector(0.0, 0.0, 0.0); vB = SVector(1.0, 0.1, 0.0); vC = SVector(0.4, 0.9, 0.2)
+    ring3f = zeros(T, 17, 1)
+    _pack_panel!(ring3f, 1, 3, (vA, vB, vC), 0.77, 0.0, rc)
+    segs = zeros(T, 17, 3)
+    _pack_panel!(segs, 1, 3, (vA, vB), 0.77, 0.0, rc)
+    _pack_panel!(segs, 2, 3, (vB, vC), 0.77, 0.0, rc)
+    _pack_panel!(segs, 3, 3, (vC, vA), 0.77, 0.0, rc)
+    tgts4 = randn(3, 8) .* 0.8
+    for fam in (:vatistas, :compact, :gaussian)
+        kernf = RectangularPanelInfluence(fam)
+        o1 = zeros(T, 12, 8); o2 = zeros(T, 12, 8)
+        direct_rectangular!(o1, tgts4, kernf, ring3f; gradient=true)
+        direct_rectangular!(o2, tgts4, kernf, segs; gradient=true)
+        @test isapprox(o1, o2; rtol=1e-12, atol=1e-13)
+    end
 end
 
 @testset "direct rectangular: panel functor vs FLOWPanel" begin
@@ -336,7 +369,7 @@ end
 
         Random.seed!(151)
         nodes, cells = sphere_mesh(1.0, 5, 7)              # 56 tri panels
-        koff = 1e-3                                        # KERNELOFFSET_TARGETS scale
+        koff = 1e-3                                        # CORE_SIZE_TARGETS scale
         relerr(a, b) = maximum(abs.(a .- b)) / maximum(abs.(b))
 
         # 200 targets: shell around the body + a few centroids (self pairs)
@@ -352,7 +385,7 @@ end
                 ("source+doublet", Union{pnl.ConstantSource, pnl.ConstantDoublet}, 5, 2),
                 ("constant source", Union{pnl.ConstantSource}, 1, 1),
             )
-            body = pnl.NonLiftingBody{E}(copy(nodes), copy(cells); kerneloffset=koff)
+            body = pnl.NonLiftingBody{E}(copy(nodes), copy(cells); core_size=koff)
             body.strength .= randn(body.ncells, nk)
             # centroids for self-pair targets
             tgt_local = copy(tgt)
@@ -385,7 +418,7 @@ end
             for i in 1:n_tgt
                 target = SVector{3}(tgt_local[:, i])
                 for ic in 1:body.ncells
-                    _, U, H = pnl.induced(target, body, ic, switch; kerneloffset=koff)
+                    _, U, H = pnl.induced(target, body, ic, switch; core_size=koff)
                     ref[1:3, i] .+= U
                     for j in 1:3, k in 1:3
                         ref[3 + (j-1)*3 + k, i] += H[k, j]
@@ -411,7 +444,7 @@ end
                         ("source+vortexring", Union{pnl.ConstantSource, pnl.VortexRing}, 4, 2),
                         ("pure vortexring", pnl.VortexRing, 3, 1),
                     )
-                    body = pnl.NonLiftingBody{E}(copy(nodes), copy(cells); kerneloffset=koff)
+                    body = pnl.NonLiftingBody{E}(copy(nodes), copy(cells); core_size=koff)
                     body.strength .= randn(body.ncells, nk)
                     tgt_local = copy(tgt)
                     for (slot, ic) in enumerate((3, 20, 41))
@@ -437,7 +470,7 @@ end
                     for i in 1:n_tgt
                         target = SVector{3}(tgt_local[:, i])
                         for ic in 1:body.ncells
-                            _, U, H = pnl.induced(target, body, ic, switch; kerneloffset=koff)
+                            _, U, H = pnl.induced(target, body, ic, switch; core_size=koff)
                             ref[1:3, i] .+= U
                             for j in 1:3, k in 1:3
                                 ref[3 + (j-1)*3 + k, i] += H[k, j]
@@ -448,10 +481,265 @@ end
                     @test relerr(out[4:12, :], ref[4:12, :]) < 1e-12
                     @info "FLOWPanel parity ($fam, $label)" relerr_U=relerr(out[1:3, :], ref[1:3, :]) relerr_H=relerr(out[4:12, :], ref[4:12, :])
                 end
+
+                # open filament columns (tag 3, nv=2): the FilamentWrapper
+                # direct! sum (FLOWPanel_wake.jl:2874-2907) — one
+                # _bound_vortex_velocity/_gradient segment per column
+                nfil = 10
+                cs = 2e-2
+                filsrc = zeros(17, nfil)
+                fverts = Vector{NTuple{2,SVector{3,Float64}}}(undef, nfil)
+                fgam = randn(nfil)
+                for q in 1:nfil
+                    p1 = SVector{3}(randn(3))
+                    p2 = p1 + SVector{3}(0.3 .* randn(3))
+                    fverts[q] = (p1, p2)
+                    _pack_panel!(filsrc, q, 3, (p1, p2), fgam[q], 0.0, cs)
+                end
+                outfl = zeros(12, n_tgt)
+                direct_rectangular!(outfl, tgt, RectangularPanelInfluence(fam),
+                    filsrc; gradient=true)
+                reff = zeros(12, n_tgt)
+                famval = Val(pnl.FILAMENT_REGULARIZATION[])
+                for i in 1:n_tgt
+                    target = SVector{3}(tgt[:, i])
+                    for q in 1:nfil
+                        p1, p2 = fverts[q]
+                        U = pnl._bound_vortex_velocity(target - p1, target - p2,
+                            true, cs, famval) * fgam[q]
+                        G = pnl._bound_vortex_gradient(p1 - target, p2 - target,
+                            true, cs, famval) * fgam[q]
+                        reff[1:3, i] .+= U
+                        for j in 1:3, k in 1:3
+                            reff[3 + (j-1)*3 + k, i] += G[k, j]
+                        end
+                    end
+                end
+                @test relerr(outfl[1:3, :], reff[1:3, :]) < 1e-12
+                @test relerr(outfl[4:12, :], reff[4:12, :]) < 1e-12
+                @info "FLOWPanel parity ($fam, open filament)" relerr_U=relerr(outfl[1:3, :], reff[1:3, :]) relerr_H=relerr(outfl[4:12, :], reff[4:12, :])
             end
             pnl.set_filament_regularization!(fam0)
         else
             @info "loaded FLOWPanel lacks set_filament_regularization!; family parity limited to vatistas"
+        end
+    end
+end
+
+# packs a random tri (occasionally a quad or an nv=2 open filament for tag 3)
+# around a base point; keeps panels O(0.1)-sized so targets shifted +2 in x
+# are safely off every edge
+function _pack_random_panel!(A, q, base)
+    tag = rand(1:5)
+    r = rand()
+    nv = tag == 3 ? (r < 0.25 ? 2 : (r < 0.5 ? 4 : 3)) : 3
+    verts = ntuple(nv) do iv
+        SVector{3,Float64}(base .+ 0.15 .* randn(3))
+    end
+    _pack_panel!(A, q, tag, verts, 0.5 + rand(), 0.5 + rand(), 1e-3)
+    return A
+end
+
+@testset "direct rectangular: argument validation" begin
+    src = rand(7, 4) .- 0.5
+    src[7, :] .= 0.05
+    tgt = rand(3, 3)
+    # too-short out for gradient=true
+    @test_throws ArgumentError direct_rectangular!(zeros(3, 3), tgt,
+        RectangularGaussianErfVortex(), src; gradient=true)
+    # column mismatch
+    @test_throws ArgumentError direct_rectangular!(zeros(3, 2), tgt,
+        RectangularGaussianErfVortex(), src)
+    # panel functor: non-integral / out-of-range tag rows must throw, not
+    # silently contribute zero (they feed unchecked Int truncation on device)
+    psrc = zeros(17, 2)
+    _pack_panel!(psrc, 1, 1, (SVector(0.0, 0.0, 0.0), SVector(1.0, 0.0, 0.0),
+        SVector(0.0, 1.0, 0.0)), 1.0, 0.0, 1e-3)
+    _pack_panel!(psrc, 2, 1, (SVector(0.0, 0.0, 1.0), SVector(1.0, 0.0, 1.0),
+        SVector(0.0, 1.0, 1.0)), 1.0, 0.0, 1e-3)
+    out17 = zeros(12, 3)
+    direct_rectangular!(out17, tgt, RectangularPanelInfluence(), psrc)  # sane baseline
+    bad = copy(psrc); bad[1, 2] = 7.0
+    @test_throws ArgumentError direct_rectangular!(out17, tgt,
+        RectangularPanelInfluence(), bad)
+    bad = copy(psrc); bad[1, 2] = 1.5
+    @test_throws ArgumentError direct_rectangular!(out17, tgt,
+        RectangularPanelInfluence(), bad)
+    bad = copy(psrc); bad[2, 1] = 5.0
+    @test_throws ArgumentError direct_rectangular!(out17, tgt,
+        RectangularPanelInfluence(), bad)
+    # nv == 2 (open filament) is legal ONLY for tag 3
+    filok = copy(psrc); filok[1, 2] = 3.0; filok[2, 2] = 2.0
+    direct_rectangular!(out17, tgt, RectangularPanelInfluence(), filok)
+    bad = copy(psrc); bad[2, 2] = 2.0   # tag 1 with nv == 2
+    @test_throws ArgumentError direct_rectangular!(out17, tgt,
+        RectangularPanelInfluence(), bad)
+    # panel functor is F64-only: its absolute singularity guards are inert in F32
+    @test_throws ArgumentError direct_rectangular!(zeros(Float32, 12, 3),
+        Float32.(tgt), RectangularPanelInfluence(), Float32.(psrc))
+end
+
+@testset "direct rectangular: CUDA device parity" begin
+    cuda_ok = try
+        @eval import CUDA
+        CUDA.functional()
+    catch
+        false
+    end
+    if !cuda_ok
+        @info "CUDA not functional; skipping the device parity layer"
+    else
+        FMR.load_cuda_radix_lifecycle!() || error(
+            "CUDA is functional but load_cuda_radix_lifecycle!() failed")
+        Random.seed!(51151)
+        # worst per-target relative error: a single branch-flipped target must
+        # fail the gate rather than be diluted by a global norm
+        function per_target_relerr(a, b)
+            m = 0.0
+            for i in axes(b, 2)
+                nb = norm(view(b, :, i))
+                m = max(m, norm(view(a, :, i) .- view(b, :, i)) / max(nb, eps()))
+            end
+            return m
+        end
+
+        # --- points: tile-boundary sweep around _RECT_TILE_POINTS = 256 ---
+        # (last-partial-tile, single-tile, multi-tile, and 1-target edges).
+        # Targets sit 2 units off the source cloud: gates are the
+        # well-separated FMA/libdevice bounds, not the rho->0-amplified ones.
+        for n_src in (1, 127, 128, 129, 255, 256, 257, 512),
+                n_tgt in (1, 255, 256, 257)
+            src = rand(7, n_src) .- 0.5
+            src[7, :] .= 0.02 .+ 0.08 .* rand(n_src)
+            tgt = rand(3, n_tgt) .- 0.5
+            tgt[1, :] .+= 2.0
+            ref = zeros(12, n_tgt)
+            direct_rectangular!(ref, tgt, RectangularGaussianErfVortex(), src;
+                gradient=true)
+            d_out = CUDA.zeros(Float64, 12, n_tgt)
+            direct_rectangular!(d_out, CUDA.CuMatrix(tgt),
+                RectangularGaussianErfVortex(), CUDA.CuMatrix(src); gradient=true)
+            out = Array(d_out)
+            @test per_target_relerr(out[1:3, :], ref[1:3, :]) <= 1e-13
+            @test per_target_relerr(out[4:12, :], ref[4:12, :]) <= 1e-12
+        end
+
+        # --- points F32 (opt-in path) ---
+        let n_src = 300, n_tgt = 140
+            src = rand(Float32, 7, n_src) .- 0.5f0
+            src[7, :] .= 0.02f0 .+ 0.08f0 .* rand(Float32, n_src)
+            tgt = rand(Float32, 3, n_tgt) .- 0.5f0
+            tgt[1, :] .+= 2.0f0
+            ref = zeros(Float32, 12, n_tgt)
+            direct_rectangular!(ref, tgt, RectangularGaussianErfVortex(), src;
+                gradient=true)
+            d_out = CUDA.zeros(Float32, 12, n_tgt)
+            direct_rectangular!(d_out, CUDA.CuMatrix(tgt),
+                RectangularGaussianErfVortex(), CUDA.CuMatrix(src); gradient=true)
+            @test per_target_relerr(Array(d_out)[1:3, :], ref[1:3, :]) <= 1e-4
+        end
+
+        # --- panels: tile-boundary sweep around _RECT_TILE_PANELS = 128 ---
+        for n_src in (1, 127, 128, 129, 257), n_tgt in (1, 255, 257)
+            src = zeros(17, n_src)
+            for q in 1:n_src
+                _pack_random_panel!(src, q, randn(3) .* 0.3)
+            end
+            tgt = rand(3, n_tgt) .- 0.5
+            tgt[1, :] .+= 2.0
+            ref = zeros(12, n_tgt)
+            direct_rectangular!(ref, tgt, RectangularPanelInfluence(), src;
+                gradient=true)
+            d_out = CUDA.zeros(Float64, 12, n_tgt)
+            direct_rectangular!(d_out, CUDA.CuMatrix(tgt),
+                RectangularPanelInfluence(), CUDA.CuMatrix(src); gradient=true)
+            out = Array(d_out)
+            @test per_target_relerr(out[1:3, :], ref[1:3, :]) <= 1e-11
+            @test per_target_relerr(out[4:12, :], ref[4:12, :]) <= 1e-10
+        end
+
+        # --- panels: ON-SURFACE targets at p018 scale (job 13309844 regime) --
+        # The failing pass-3 seam config evaluates body self-influence: targets
+        # are control points ON the source sheet, so every pair near the target
+        # runs the near-singular branches (_rect_is_self_pair, edge PV limits,
+        # solid-angle sign) that the well-separated sweeps above never touch on
+        # device -- and device FMA contraction can flip guards that host math
+        # does not. Structured wavy sheet, tag-4 (source+ring) columns like the
+        # p018 packing, targets = centroids of a subsample + near-plane probes.
+        let nu = 96, nv = 192                # 2*95*191 = 36290 panels ~ p018 scale
+            xs = range(0.0, 1.0; length=nu)
+            ys = range(0.0, 2.0; length=nv)
+            zfun(x, y) = 0.05 * sin(3x) * cos(2y)
+            nid(i, j) = (j - 1) * nu + i
+            P = Matrix{Float64}(undef, 3, nu * nv)
+            for j in 1:nv, i in 1:nu
+                P[:, nid(i, j)] .= (xs[i], ys[j], zfun(xs[i], ys[j]))
+            end
+            tris = Vector{NTuple{3,Int}}()
+            for j in 1:nv-1, i in 1:nu-1
+                push!(tris, (nid(i, j), nid(i + 1, j), nid(i + 1, j + 1)))
+                push!(tris, (nid(i, j), nid(i + 1, j + 1), nid(i, j + 1)))
+            end
+            n_src = length(tris)
+            src = zeros(17, n_src)
+            rng_vals = [sin(0.7q) + 1.1 for q in 1:n_src]
+            for (q, (a, b, c)) in enumerate(tris)
+                src[1, q] = 4.0                       # tag 4: source + ring
+                src[2, q] = 3.0
+                src[3:5, q] .= P[:, a]
+                src[6:8, q] .= P[:, b]
+                src[9:11, q] .= P[:, c]
+                src[12:14, q] .= P[:, a]              # v4 unused for nv=3
+                src[15, q] = rng_vals[q]              # sigma
+                src[16, q] = sin(1.3q) + 0.2          # Gamma
+                src[17, q] = 1.19e-11                 # p018 core_size_panel
+            end
+            # targets: centroids of every 5th panel (on-surface, incl. exact
+            # self pairs) + the same points nudged 1e-8 off-plane
+            sel = 1:5:n_src
+            cps = Matrix{Float64}(undef, 3, length(sel))
+            for (t, q) in enumerate(sel)
+                a, b, c = tris[q]
+                cps[:, t] .= (P[:, a] .+ P[:, b] .+ P[:, c]) ./ 3
+            end
+            nudge = [1e-8 * sin(0.37 * (3 * (t - 1) + d)) for d in 1:3, t in 1:length(sel)]
+            tgt = hcat(cps, cps .+ nudge)
+            n_tgt = size(tgt, 2)
+            ref = zeros(12, n_tgt)
+            direct_rectangular!(ref, tgt, RectangularPanelInfluence(), src;
+                gradient=true)
+            d_out = CUDA.zeros(Float64, 12, n_tgt)
+            direct_rectangular!(d_out, CUDA.CuMatrix(tgt),
+                RectangularPanelInfluence(), CUDA.CuMatrix(src); gradient=true)
+            out = Array(d_out)
+            @test per_target_relerr(out[1:3, :], ref[1:3, :]) <= 1e-11
+            @test per_target_relerr(out[4:12, :], ref[4:12, :]) <= 1e-10
+        end
+
+        # --- device accumulate contract (+=): second call doubles ---
+        let
+            src = rand(7, 64) .- 0.5
+            src[7, :] .= 0.05
+            tgt = rand(3, 32) .+ 2.0
+            d_src = CUDA.CuMatrix(src)
+            d_tgt = CUDA.CuMatrix(tgt)
+            d_out = CUDA.zeros(Float64, 3, 32)
+            direct_rectangular!(d_out, d_tgt, RectangularGaussianErfVortex(), d_src)
+            once = Array(d_out)
+            direct_rectangular!(d_out, d_tgt, RectangularGaussianErfVortex(), d_src)
+            @test Array(d_out) ≈ 2 .* once rtol=1e-14
+        end
+
+        # --- degenerate sizes ---
+        let
+            d_src = CUDA.CuMatrix(rand(7, 8))
+            @test direct_rectangular!(CUDA.zeros(Float64, 3, 0),
+                CUDA.zeros(Float64, 3, 0), RectangularGaussianErfVortex(),
+                d_src) isa CUDA.CuMatrix
+            d_out = CUDA.zeros(Float64, 3, 5)
+            direct_rectangular!(d_out, CUDA.CuMatrix(rand(3, 5)),
+                RectangularGaussianErfVortex(), CUDA.zeros(Float64, 7, 0))
+            @test all(iszero, Array(d_out))
         end
     end
 end
