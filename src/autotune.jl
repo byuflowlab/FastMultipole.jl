@@ -337,8 +337,21 @@ model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
   stalled at leaf 45 because leaf 30 timed 1.4% WORSE under the `n=1`
   objective, while a Krylov solve — which amortizes one build over ~57
   applies — is ~15-20% FASTER at leaf 30.
-- `max_seconds=Inf`: wall-clock guard, checked between candidates. On expiry
-  the descent returns the best point found so far, warns, and reports
+- `abandon_factor=1.3`: early-abandonment threshold. A trial is stopped as soon
+  as its running min exceeds `abandon_factor x` the fastest COMPLETE,
+  error-satisfying candidate measured so far. Such a candidate can no longer be
+  accepted — acceptance requires `t < t0*(1 - improve_tol)` and the incumbent
+  `t0` is never below that best — so the remaining reps are wasted. With
+  `reps=5` this cuts a hopeless candidate from 5 trials to 1, and under
+  `tree_amortization > 1` it can skip the applies entirely when the amortized
+  build alone already loses. The threshold only tightens as the descent
+  improves, so an abandoned point stays rejected and its (over-estimated) time
+  is safe to memoize. Abandoned candidates never tighten the threshold
+  themselves, and are flagged `abandoned=true` in `history` — note that a
+  candidate abandoned at the build stage has NOT had its error tolerance
+  verified. `Inf` disables early abandonment.
+- `max_seconds=Inf`: absolute wall-clock backstop, checked between candidates.
+  On expiry the descent returns the best point found so far, warns, and reports
   `timed_out=true` in the third return value. A timed-out descent must never
   be read as a converged one.
 - `improve_tol=0.02`: relative improvement required to accept a move
@@ -357,8 +370,9 @@ model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
   multipole_acceptance)` at the cost minimum, splat-able into `fmm!`
 - `history::Vector{<:NamedTuple}`: every evaluated candidate with fields
   `(iter, expansion_order, multipole_acceptance, leaf_size_source, t,
-  error_success, accepted)`
-- `info::NamedTuple`: `(timed_out, t_elapsed, n_candidates, t_best)`
+  error_success, abandoned, accepted)`
+- `info::NamedTuple`: `(timed_out, t_elapsed, n_candidates, n_abandoned,
+  t_best)`
 """
 function tune_fmm_perturb(target_systems, source_systems;
     expansion_order, multipole_acceptance, leaf_size_source,
@@ -366,12 +380,14 @@ function tune_fmm_perturb(target_systems, source_systems;
     max_expansion_order=20,
     mac_step=0.05, mac_bounds=(0.25, 0.85),
     leaf_factor=1.5,
-    reps=2, tree_amortization::Int=1, max_seconds=Inf,
+    reps=2, tree_amortization::Int=1, max_seconds=Inf, abandon_factor=1.3,
     improve_tol=0.02, max_iters=20,
     verbose=true, kwargs...)
 
     tree_amortization >= 1 || throw(ArgumentError(
         "tree_amortization must be >= 1 (got $tree_amortization)"))
+    abandon_factor > 1 || throw(ArgumentError(
+        "abandon_factor must be > 1 (got $abandon_factor); use Inf to disable"))
 
     target_systems = to_tuple(target_systems)
     source_systems = to_tuple(source_systems)
@@ -401,12 +417,23 @@ function tune_fmm_perturb(target_systems, source_systems;
     scale_leaf(leaf, f) = map(l -> max(1, round(Int, l * f)), leaf)
     key(P, mac, leaf) = (P, round(mac; digits=3), leaf)
 
-    memo = Dict{Any, Tuple{Float64, Bool}}()
+    # fastest ERROR-SATISFYING, fully measured candidate so far. Any trial that
+    # climbs past `t_best_ok[] * abandon_factor` is stopped where it stands:
+    # it can no longer win, because acceptance needs t < t0*(1-improve_tol) and
+    # t0 is never below t_best_ok[]. The threshold only ever tightens, so an
+    # abandoned point stays rejected and its (over-estimated) time is safe to
+    # memoize. Costs nothing when reps==1; saves reps-1 trials per hopeless
+    # candidate otherwise, which is most of them once the descent gets going.
+    t_best_ok = Ref(Inf)
+
+    memo = Dict{Any, @NamedTuple{t::Float64, success::Bool, abandoned::Bool}}()
     function benchmark(P, mac, leaf)
         k = key(P, mac, leaf)
         haskey(memo, k) && return memo[k]
+        cutoff = t_best_ok[] * abandon_factor    # Inf until the first success
         t_min = Inf
         success = true
+        abandoned = false
         if tree_amortization == 1
             # trees + interaction lists are rebuilt inside every timed call
             for _ in 1:reps
@@ -418,25 +445,45 @@ function tune_fmm_perturb(target_systems, source_systems;
                 success = result[8]
                 success || break
                 t_min = min(t_min, t)
+                if t_min > cutoff
+                    abandoned = true
+                    break
+                end
             end
         else
             # build once (timed), then time the applies that reuse it
             t_build = @elapsed plan = FmmPlan(target_systems, source_systems;
                 expansion_order=P, leaf_size_source=leaf,
                 multipole_acceptance=mac, plan_kwargs...)
-            for _ in 1:reps
-                t = @elapsed result = fmm!(target_systems, source_systems, plan;
-                    error_tolerance, apply_kwargs...,
-                    tune=true, update_target_systems=false)
-                success = result[8]
-                success || break
-                t_min = min(t_min, t)
+            t_amort = t_build / tree_amortization
+            if t_amort > cutoff
+                # the amortized build alone already loses; skip the applies.
+                # error_success is left unverified — `abandoned` says so.
+                abandoned = true
+                t_min = t_amort
+            else
+                for _ in 1:reps
+                    t = @elapsed result = fmm!(target_systems, source_systems, plan;
+                        error_tolerance, apply_kwargs...,
+                        tune=true, update_target_systems=false)
+                    success = result[8]
+                    success || break
+                    t_min = min(t_min, t)
+                    if t_min + t_amort > cutoff
+                        abandoned = true
+                        break
+                    end
+                end
+                t_min += t_amort
             end
-            t_min += t_build / tree_amortization
             plan = nothing
             GC.gc()     # a plan owns a full Cache; only one should be live
         end
-        memo[k] = (t_min, success)
+        # only a COMPLETE, error-satisfying measurement may tighten the cutoff
+        if success && !abandoned
+            t_best_ok[] = min(t_best_ok[], t_min)
+        end
+        memo[k] = (; t=t_min, success, abandoned)
         return memo[k]
     end
 
@@ -444,14 +491,17 @@ function tune_fmm_perturb(target_systems, source_systems;
     timed_out = false
 
     P0, mac0, leaf0 = expansion_order, multipole_acceptance, leaf_size_source
-    t0, ok = benchmark(P0, mac0, leaf0)
-    ok || error("tune_fmm_perturb: the starting parameters do not satisfy error_tolerance")
+    r0 = benchmark(P0, mac0, leaf0)
+    t0 = r0.t
+    r0.success || error("tune_fmm_perturb: the starting parameters do not satisfy error_tolerance")
 
     history = [(iter=0, expansion_order=P0, multipole_acceptance=mac0,
-                leaf_size_source=leaf0, t=t0, error_success=true, accepted=true)]
+                leaf_size_source=leaf0, t=t0, error_success=true,
+                abandoned=false, accepted=true)]
     verbose && println("\n#======= Begin FastMultipole.tune_fmm_perturb() =======#")
     verbose && println("start: P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s " *
-        "(reps=$reps, tree_amortization=$tree_amortization)")
+        "(reps=$reps, tree_amortization=$tree_amortization, " *
+        "abandon_factor=$abandon_factor)")
 
     for iter in 1:max_iters
         neighbors = [
@@ -472,13 +522,17 @@ function tune_fmm_perturb(target_systems, source_systems;
                 timed_out = true
                 break
             end
-            t, success = benchmark(P, mac, leaf)
+            r = benchmark(P, mac, leaf)
+            t, success, abandoned = r.t, r.success, r.abandoned
             push!(history, (iter=iter, expansion_order=P, multipole_acceptance=mac,
                             leaf_size_source=leaf, t=t, error_success=success,
-                            accepted=false))
+                            abandoned=abandoned, accepted=false))
             verbose && println("  iter $iter: P=$P MAC=$mac leaf=$leaf " *
-                (success ? "t=$(round(t; digits=3)) s" : "REJECTED (error tolerance)"))
-            if success && t < best_t
+                (!success ? "REJECTED (error tolerance)" :
+                 abandoned ? "ABANDONED at t>$(round(t; digits=3)) s " *
+                             "(> $(abandon_factor)x best $(round(t_best_ok[]; digits=3)) s)" :
+                 "t=$(round(t; digits=3)) s"))
+            if success && !abandoned && t < best_t
                 best_t = t
                 best = (P, mac, leaf)
             end
@@ -486,10 +540,10 @@ function tune_fmm_perturb(target_systems, source_systems;
         timed_out && break
         best === nothing && break
         P0, mac0, leaf0 = best
-        t0, _ = benchmark(P0, mac0, leaf0)
+        t0 = benchmark(P0, mac0, leaf0).t
         push!(history, (iter=iter, expansion_order=P0, multipole_acceptance=mac0,
                         leaf_size_source=leaf0, t=t0, error_success=true,
-                        accepted=true))
+                        abandoned=false, accepted=true))
         verbose && println("  -> move to P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s")
     end
 
@@ -503,12 +557,16 @@ function tune_fmm_perturb(target_systems, source_systems;
         verbose && println("  !! $msg")
     end
     verbose && println("minimum: P=$P0 MAC=$mac0 leaf=$leaf0 t=$(round(t0; digits=3)) s " *
-        "($(length(memo)) distinct candidates, $(round(t_elapsed; digits=1)) s" *
+        "($(length(memo)) distinct candidates, " *
+        "$(count(v -> v.abandoned, values(memo))) abandoned early, " *
+        "$(round(t_elapsed; digits=1)) s" *
         (timed_out ? ", TIMED OUT" : "") * ")")
     verbose && println("\n#===============================================#\n")
 
     tuned_params = (leaf_size_source=leaf0, expansion_order=P0,
                     multipole_acceptance=mac0)
-    info = (; timed_out, t_elapsed, n_candidates=length(memo), t_best=t0)
+    n_abandoned = count(v -> v.abandoned, values(memo))
+    info = (; timed_out, t_elapsed, n_candidates=length(memo), n_abandoned,
+            t_best=t0)
     return tuned_params, history, info
 end
