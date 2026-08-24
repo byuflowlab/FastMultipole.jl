@@ -319,24 +319,31 @@ model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
   `leaf_factor=1.5`: neighborhood definition (`P ± 1`, `MAC ± mac_step`
   clamped, `leaf ×/÷ leaf_factor`)
 - `reps=2`: min-of-reps timing per candidate
-- `tree_amortization::Int=1`: how many `fmm!` applies share ONE tree +
+- `tree_amortization::Real=1`: how many `fmm!` applies share ONE tree +
   interaction-list build in the workload being priced. The candidate cost is
   `t_build / tree_amortization + t_apply`.
     - `1` (default, legacy behavior): the tree is rebuilt for every apply, so
       the build is timed inside each trial via the `Cache` path. This is the
-      correct objective for an unsteady run whose geometry moves every step.
-    - `n > 1`: a steady iterative solve that builds one [`FmmPlan`](@ref) and
-      reuses its trees/lists across `n` applies (what `FLOWPanel`'s solvers
-      do). Set it to the expected iteration count. The plan is built ONCE per
-      candidate, timed separately, and only its amortized share is charged.
+      correct objective whenever the geometry moves — e.g. tuning a particle
+      field, which must be re-treed every timestep.
+    - `Inf`: charge nothing for the build. Correct when the geometry is frozen
+      and one tree is reused indefinitely — the panels-on-panels operator in a
+      panel solve is built once a priori and reused across every iteration AND
+      every timestep, so its build is a one-off that should not influence the
+      choice of knobs at all (Ryan, BRAINSTORM 021, 2026-08-24).
+    - finite `n > 1`: in between — a build reused over exactly `n` applies.
+      Set it to the expected iteration count.
+
+  For any `tree_amortization != 1` the plan is built ONCE per candidate, timed
+  separately, and only its amortized share (zero, for `Inf`) is charged.
 
   This matters because tree and interaction-list construction get MORE
   expensive as `leaf_size_source` shrinks, so charging a full build to every
   apply adds a leaf-dependent penalty that biases the descent toward large
-  leaves. Measured (BRAINSTORM 021, 2026-08-24): at 42k panels the descent
+  leaves. Measured (BRAINSTORM 021, 2026-08-24) at R1, 8016 panels: the descent
   stalled at leaf 45 because leaf 30 timed 1.4% WORSE under the `n=1`
-  objective, while a Krylov solve — which amortizes one build over ~57
-  applies — is ~15-20% FASTER at leaf 30.
+  objective, while a Krylov solve — which reuses one build across every
+  iteration — is ~15-20% FASTER at leaf 30.
 - `abandon_factor=1.3`: early-abandonment threshold. A trial is stopped as soon
   as its running min exceeds `abandon_factor x` the fastest COMPLETE,
   error-satisfying candidate measured so far. Such a candidate can no longer be
@@ -380,7 +387,7 @@ function tune_fmm_perturb(target_systems, source_systems;
     max_expansion_order=20,
     mac_step=0.05, mac_bounds=(0.25, 0.85),
     leaf_factor=1.5,
-    reps=2, tree_amortization::Int=1, max_seconds=Inf, abandon_factor=1.3,
+    reps=2, tree_amortization::Real=1, max_seconds=Inf, abandon_factor=1.3,
     improve_tol=0.02, max_iters=20,
     verbose=true, kwargs...)
 
@@ -455,7 +462,7 @@ function tune_fmm_perturb(target_systems, source_systems;
             t_build = @elapsed plan = FmmPlan(target_systems, source_systems;
                 expansion_order=P, leaf_size_source=leaf,
                 multipole_acceptance=mac, plan_kwargs...)
-            t_amort = t_build / tree_amortization
+            t_amort = t_build / tree_amortization   # exactly 0.0 when Inf
             if t_amort > cutoff
                 # the amortized build alone already loses; skip the applies.
                 # error_success is left unverified — `abandoned` says so.
