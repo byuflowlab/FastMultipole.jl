@@ -1248,6 +1248,14 @@ _sfs048_relrms(A, B) = sqrt(sum(abs2, A .- B) / max(sum(abs2, B), eps()))
     E_mech_t = _sfs048_reference(csys, copy(base.potential[5:13, :]), true)
     @test _sfs048_relrms(E_mech_c, E_mech_t) > 1e-3
 
+    #--- recenter! preserves SFS arming (052 stage-d regression) ---#
+    FastMultipole.recenter!(ccache, csys; padding=0.05)
+    rec_sfs = ccache.state.sfs
+    @test rec_sfs !== nothing
+    @test !rec_sfs.transposed
+    fmm!(csys, ccache; scalar_potential=false, gradient=true, hessian=true,
+        sfs=true)   # would throw before the fix
+
     #--- validation error paths ---#
     base_e = generate_vortex(seed, 100)
     esys = SmoothedVortex(base_e, fill(0.02, 100))

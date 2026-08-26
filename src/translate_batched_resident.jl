@@ -3031,10 +3031,17 @@ function recenter!(cache::RadixFMMCache{TF,LH}, systems;
     end
     # Build the replacement first: any failure (empty system, body outside the
     # requested bounds, capacity) leaves the original cache untouched.
+    # the SFS configuration lives on the state, not the cache fields; dropping
+    # it here would strip sfs from the rebuilt cache and the next
+    # fmm!(...; sfs=true) evaluation throws (052 stage-d regression)
+    old_sfs = cache.state.sfs
     fresh = RadixFMMCache(systems_tuple, systems_tuple;
         expansion_order=cache.expansion_order, ell=cache.ell,
         max_n_bodies=cache.max_n_bodies, bounds=(x_min_new, L_new),
         lamb_helmholtz=LH, hessian=cache.hessian, device=cache.device,
+        sfs=old_sfs !== nothing,
+        sfs_transposed=old_sfs === nothing ? true : old_sfs.transposed,
+        sfs_active_row=old_sfs === nothing ? 0 : old_sfs.active_row,
         options=cache.options,
         policy=_recentered_policy(cache.policy, cache.expansion_order,
             maximum(L_new) / 2, cache.ell, TF, LH),
