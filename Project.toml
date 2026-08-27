@@ -10,6 +10,10 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
 [weakdeps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+
+[extensions]
+FastMultipoleKAExt = "KernelAbstractions"
 
 [compat]
 CUDA = "5.8, 6"  # CUDA 6.3 resolves with the GeoIO-free FLOWPanel stack; retain 5.8/6.2 until the H200 qualification gate passes.

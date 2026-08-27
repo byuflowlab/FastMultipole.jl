@@ -254,6 +254,17 @@ include("extra_farfield.jl")
 
 export FastGaussSeidel, JacobiPreconditioner, transform_solver!
 
+#------- KERNELABSTRACTIONS GPU SUPPORT -------#
+
+"""
+    ka_m2m_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
+
+KernelAbstractions-compatible M2M kernel. Loaded via FastMultipoleKAExt extension when KernelAbstractions is available.
+"""
+function ka_m2m_operator_batch! end
+
+export ka_m2m_operator_batch!
+
 #------- PRECALCULATIONS -------#
 
 # precompute y-axis rotation by π/2 matrices up to 20th order
