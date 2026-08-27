@@ -407,27 +407,29 @@ end
                 _pack_panel!(srcp, ic, tag, verts, s1, s2, koff)
             end
 
-            out = zeros(12, n_tgt)
+            out = zeros(13, n_tgt)
             direct_rectangular!(out, tgt_local, RectangularPanelInfluence(), srcp;
-                gradient=true)
+                gradient=true, scalar_potential=true)
 
             # FLOWPanel reference: the same sum FLOWPanel's direct! performs
             # (FLOWPanel_abstractbody.jl:1260), via the index-path `induced`
-            switch = FastMultipole.DerivativesSwitch(false, true, true)
-            ref = zeros(12, n_tgt)
+            switch = FastMultipole.DerivativesSwitch(true, true, true)
+            ref = zeros(13, n_tgt)
             for i in 1:n_tgt
                 target = SVector{3}(tgt_local[:, i])
                 for ic in 1:body.ncells
-                    _, U, H = pnl.induced(target, body, ic, switch; core_size=koff)
+                    phi, U, H = pnl.induced(target, body, ic, switch; core_size=koff)
                     ref[1:3, i] .+= U
                     for j in 1:3, k in 1:3
                         ref[3 + (j-1)*3 + k, i] += H[k, j]
                     end
+                    ref[13, i] += phi
                 end
             end
             @test relerr(out[1:3, :], ref[1:3, :]) < 1e-12
             @test relerr(out[4:12, :], ref[4:12, :]) < 1e-12
-            @info "FLOWPanel parity ($label)" relerr_U=relerr(out[1:3, :], ref[1:3, :]) relerr_H=relerr(out[4:12, :], ref[4:12, :])
+            @test relerr(out[13:13, :], ref[13:13, :]) < 1e-12
+            @info "FLOWPanel parity ($label)" relerr_U=relerr(out[1:3, :], ref[1:3, :]) relerr_H=relerr(out[4:12, :], ref[4:12, :]) relerr_phi=relerr(out[13:13, :], ref[13:13, :])
         end
 
         # --- filament-regularization families (051 stage 2): run the
@@ -656,6 +658,31 @@ end
             out = Array(d_out)
             @test per_target_relerr(out[1:3, :], ref[1:3, :]) <= 1e-11
             @test per_target_relerr(out[4:12, :], ref[4:12, :]) <= 1e-10
+        end
+
+        # Combined panel scalar-potential + velocity output used by the
+        # FLOWPanel block cross-influence route.
+        let n_src = 129, n_tgt = 257
+            src = zeros(17, n_src)
+            for q in 1:n_src
+                base = randn(3) .* 0.3
+                verts = (SVector{3}(base),
+                    SVector{3}(base .+ [0.12, 0.01, 0.0]),
+                    SVector{3}(base .+ [0.02, 0.11, 0.03]))
+                _pack_panel!(src, q, 5, verts, randn(), randn(), 1e-3)
+            end
+            tgt = rand(3, n_tgt)
+            tgt[1, :] .+= 2.0
+            ref = zeros(4, n_tgt)
+            direct_rectangular!(ref, tgt, RectangularPanelInfluence(), src;
+                scalar_potential=true)
+            d_out = CUDA.zeros(Float64, 4, n_tgt)
+            direct_rectangular!(d_out, CUDA.CuMatrix(tgt),
+                RectangularPanelInfluence(), CUDA.CuMatrix(src);
+                scalar_potential=true)
+            out = Array(d_out)
+            @test per_target_relerr(out[1:3, :], ref[1:3, :]) <= 1e-11
+            @test per_target_relerr(out[4:4, :], ref[4:4, :]) <= 1e-11
         end
 
         # --- panels: ON-SURFACE targets at p018 scale (job 13309844 regime) --

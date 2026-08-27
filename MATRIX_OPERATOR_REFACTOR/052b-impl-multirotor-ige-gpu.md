@@ -1,8 +1,10 @@
 # 052b — Multi-rotor + IGE GPU extension (FLOWPanel BRAINSTORM/022 Phase 6)
 
-**Status:** IN PROGRESS `2026-08-26` — Phase A.1 (shared pfield + warmstart
-fixes) running concurrently with 052/052a; A.2+ gated on the 052 verdict.
-Subtask checklist: `052b-plan-2026-08-26.md`. No jobs submitted.
+**Status:** IN PROGRESS `2026-08-27` — corrected hybrid/block-GS host path,
+rectangular scalar-potential kernel support, host GPU-route plumbing, and the
+particle/body overlap gate are verified; the convergence oracle, production
+telemetry/policy, and hard-fail CUDA/four-rotor gates remain open. Subtask
+checklist: `052b-plan-2026-08-26.md`. No jobs submitted.
 **Parent items:** extends `052` (single-rotor 018-driver GPU pipeline) and
 `052a` (GH200 verdict: discrete-memory path stays; no unified memory in the
 graph-captured step).
@@ -244,6 +246,173 @@ aborting the testset tail. After those two test-code fixes:
 **412/412**. The removed driver ground guard can now be re-evaluated
 per the checkpoint's instructions. Commits still pending Ryan's
 instruction.
+
+## Revised quad-rotor solver checkpoint — 2026-08-27
+
+This section supersedes every older resume/checkpoint state elsewhere in this
+document. The detailed development checkpoint is
+`052b-hybrid-implementation-checkpoint-2026-08-27.md`; the facts below also
+include work completed after that checkpoint. The revised 052b plan is **not
+complete** until every unchecked item in this section is implemented and
+verified.
+
+### Live-worktree rules and test environment
+
+- `../FLOWPanel.jl` is being modified concurrently by other agents. Never
+  stash, reset, commit, mass-copy, or overwrite whole live files. Before every
+  edit, re-read the target hunk and its live diff; use context-checked
+  `apply_patch` hunks only and preserve unrelated changes.
+- Never use more than four local threads. The known-good test convention uses
+  two threads and a writable temporary working directory because generated VTK
+  output cannot be written from the live FLOWPanel checkout:
+
+  ```bash
+  JULIA_DEPOT_PATH=/private/tmp/flowpanel-052b-depot:/Users/ryan/.julia \
+  JULIA_NUM_THREADS=2 julia \
+    --project=/Users/ryan/Dropbox/research/projects/FLOWPanel.jl \
+    -e 'cd(mktempdir()); include("/Users/ryan/Dropbox/research/projects/FLOWPanel.jl/test/TEST_FILE.jl")'
+  ```
+
+### Verified progress
+
+- [x] Merge the four formerly isolated test/doc hunks into live FLOWPanel:
+  `test/runtests_unit_solver.jl`, `test/runtests_unit_solver_history.jl`,
+  `test/formulation_test.jl`, and `docs/wake_solve_schemes.md`.
+- [x] Pass live parse checks and targeted `git diff --check`.
+- [x] Pass the required live host suites after the corrected tuple/block-GS
+  and `HybridWakePotential` work: solver initially 422/422, solver history
+  42/42, formulation all stages (Hybrid Stage 9b 14/14), simulation all
+  testsets, and warm-start all testsets.
+- [x] Audit reflected shared `Backslash` operators directly. Mirrored geometry
+  is **not** matrix-equivalent:
+  `norm(Gmirror-Gowner)/norm(Gowner) = 0.521796600164985`. Live
+  `src/FLOWPanel_solver.jl` rejects reflected sharing, and its unit test proves
+  both the mismatch and rejection. Proper rotation+translation sharing remains
+  equivalent at approximately `3.28e-16`.
+- [x] Extend the FastMultipole rectangular panel kernel with opt-in scalar
+  potential output in `src/direct_rectangular.jl` and
+  `src/translate_batched_cuda.jl`, with coverage in
+  `test/direct_rectangular_test.jl`. Existing U/J rows are unchanged;
+  potential is appended at row 4 without gradients or row 13 with gradients.
+  Host FLOWPanel errors were `7.34e-16` for source+vortex-ring,
+  `5.08e-16` for source+doublet, and `2.13e-15` for constant-source
+  potential. CUDA code and an opt-in CUDA parity test exist but are unverified
+  because this workstation has no functional NVIDIA CUDA.
+- [x] Extend live `src/FLOWPanel_gpu_influence.jl` with corrected block-cross
+  scalar-potential routing, block-cross velocity routing, panel-wake potential
+  routing, host/CUDA per-route hit counters, fallback counters,
+  `reset_gpu_influence_routes!()`, `gpu_influence_route_snapshot()`, and
+  `GPU_ALLOW_FALLBACK=false` enforcement for recognized required routes. The
+  expanded solver suite passed 428/428; host route tests demonstrated potential
+  and velocity parity at `rtol=1e-12`, nonzero route hits, and zero fallbacks.
+- [x] Add, wire, and host-test the overlap implementation at
+  `../FLOWPanel.jl/src/FLOWPanel_particle_body_overlap.jl`. It contains
+  `ParticleBodyOverlapPolicy`, `ParticleBodyOverlapReport`,
+  `ParticleBodyOverlapError`, shared-pfield deduplication, device-safe use of
+  `_wake_monitor_host_pfield`, triangle-BVH pruning, exact point-to-triangle
+  distance, and warn/error policy. The CUDA host-mirror-equivalence test is
+  implemented as an opt-in gate and remains pending NVIDIA execution.
+
+### Remaining implementation and acceptance checklist
+
+#### A. Particle/body overlap gate
+
+- [x] Inspect the complete new overlap file and run `Meta.parseall`; correct
+  defects with context-checked hunks.
+- [x] Add it to `src/FLOWPanel.jl` include order immediately after `gpu_wake`
+  and export the public policy/report/error/check APIs.
+- [x] Thread a default-off `particle_body_overlap_policy` keyword through both
+  `simulate!` and `_steady_aerodynamics!`.
+- [x] Invoke the gate after kinematics/`update_TE` and before wake influence.
+- [x] Add focused host distance/overlap tests, shared-pfield deduplication
+  tests, warn/error policy tests, and an opt-in CUDA host-mirror-equivalence
+  test; run the new suite from a writable temporary directory.
+
+Completed 2026-08-27: the focused host suite passed 30/30, the full simulation
+suite passed, and `formulation_test.jl` passed all stages (including Hybrid
+Stage 9b 14/14). The opt-in CUDA host-mirror-equivalence arm is implemented
+behind `FLOWPANEL_TEST_PARTICLE_BODY_OVERLAP_CUDA=true` but remains unexecuted
+on this workstation because it has no functional NVIDIA CUDA.
+
+#### B. Panel-wake-to-particle convergence oracle
+
+- [ ] Add a dedicated test, preferably
+  `test/runtests_unit_hybrid_convergence.jl`, reusing the stretched/static-sheet
+  conversion fixture in `test/runtests_unit_wake.jl` around lines 1283–1430.
+- [ ] Independently sweep spatial resolution `h`, particle sigma/core,
+  physical probe distance, and handoff location/attribution. Use
+  `overlap = sigma/h` so resolution can vary independently.
+- [ ] Compare converted retained-panel+particle velocity with the unconverted
+  `PanelWake` + `DirectBackend` oracle.
+- [ ] At formulation level compare `HybridWakePotential` with
+  `DirectWakePotential`: gauge-aligned `q_total`, source/doublet strengths,
+  Green residual, gauge defect, and normalized physical residual.
+- [ ] First emit diagnostics, then calibrate and document defensible thresholds
+  before hard-coding pass/fail limits.
+
+#### C. Production driver and telemetry
+
+- [ ] Re-audit the live diff of
+  `../FLOWPanel.jl/examples/rotor_hover_ground_effect.jl` immediately before
+  every hunk. Add `RHPC_FORMULATION=hybrid` and construct
+  `HybridWakePotential`; remove the current `NROTORS>1` velocity-only
+  restriction without weakening its replacement checks.
+- [ ] Production must pass `require_outer_convergence=true`.
+- [ ] Record `block_gs_status` using the exact semantic fields `iterations`,
+  `final_max_delta`, `dirichlet_residual`, `neumann_residual`,
+  `normalized_residual`, and `converged`. A separate post-solve audit must be
+  called `surrogate_dirichlet_residual`, never `dirichlet_residual`.
+- [ ] Persist hybrid Green/Hodge diagnostics, particle/body overlap report,
+  GPU-route counters, CT, CQ/torque, and per-rotor circulation. Restore the
+  multi-rotor circulation monitor rather than silently disabling it.
+- [ ] Produce a VTS-vs-hybrid comparison artifact from separate, identically
+  configured runs/snapshots; never march two mutating formulations through one
+  simulation state.
+- [ ] Add and pass production setup-only tests for all affected formulation,
+  rotor-count, and ground combinations.
+
+#### D. Production matrix-sharing policy
+
+- [ ] Audit the actual four-rotor handedness and orientations in the production
+  driver and assemble fresh direct matrices for every proposed sharing class.
+- [ ] Do not force `SHARE_ROTOR_OPERATOR=true`. Enable sharing only within a
+  class whose direct matrices prove parity. If there are two handedness
+  classes, use separate owners; otherwise disable sharing.
+
+#### E. CUDA target-output proof and GPU smoke
+
+- [ ] Update `examples/run_rotor_multi_ground_effect_gpu.slurm.sh` with staged,
+  short hard-fail smoke gates and route assertions before any full fixed
+  414-step/six-case acceptance launch. Recheck live and untracked files before
+  patching.
+- [ ] On the NVIDIA cluster, hard-assert `CUDA.functional()`; no silent skip.
+- [ ] Run FastMultipole `test/direct_rectangular_test.jl` on CUDA and a
+  dedicated CUDA target-output/pass parity gate.
+- [ ] Run short four-rotor OGE and IGE smokes long enough to shed particles.
+- [ ] Require nonzero `cuda_block_cross_potential` and
+  `cuda_block_cross_velocity`, with zero prohibited fallbacks.
+- [ ] Require every outer solve to converge in at most 50 sweeps at
+  `GS_TOL=1e-8`.
+- [ ] Require normalized rotor-potential and ground-tangency residuals no
+  larger than `1e-6`.
+- [ ] Only after all short gates pass, submit and verify the full six-case
+  acceptance matrix. No cluster CUDA/GPU verification has yet been completed.
+
+#### F. Final regression and handoff
+
+- [ ] Re-run live FLOWPanel solver, solver-history, formulation, simulation,
+  warm-start, and replay suites.
+- [ ] Re-run the FastMultipole rectangular-kernel suite, the new overlap suite,
+  the new convergence oracle, and production setup-only tests.
+- [ ] Re-run parse checks and targeted `git diff --check`, inspect all
+  cross-repository diffs for overlap with concurrent work, and preserve every
+  unrelated change.
+- [ ] Record cluster job IDs, logs, route snapshots, residual/convergence
+  summaries, overlap reports, CT/CQ/torque/circulation artifacts, and exact
+  revision/configuration metadata in this item before marking it complete.
+- [ ] Update the Phase-6 consumer checklist and `START_HERE.md` only with
+  verified results. Do not commit, deploy, or submit jobs without explicit
+  authorization.
 
 ## Context-reset checkpoint — 2026-08-26
 

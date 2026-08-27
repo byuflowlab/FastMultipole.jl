@@ -141,7 +141,9 @@ end
 
 rect_source_rows(::RectangularGaussianErfVortex) = 7
 rect_source_rows(::RectangularPanelInfluence) = 17
-rect_output_rows(gradient::Bool) = gradient ? 12 : 3
+rect_output_rows(gradient::Bool, scalar_potential::Bool=false) =
+    (gradient ? 12 : 3) + scalar_potential
+rect_potential_row(gradient::Bool) = gradient ? 13 : 4
 
 #------- vendored fdlibm erf (FLOWVPM.jl/src/FLOWVPM_gpu_erf.jl:159-191, 124-156) -------#
 # Vendored so the point kernel matches FLOWVPM's gaussianerf bit-for-bit on
@@ -472,6 +474,48 @@ end
     return u_out, g_out
 end
 
+# Scalar potential for one planar source/doublet triangle. This follows the
+# PS blocks of FLOWPanel's compute_source_dipole and uses the same on-plane
+# snap/solid-angle branch as the velocity kernel above.
+@inline function _rect_tri_potential(target::SVector{3,T}, v1::SVector{3,T},
+        v2::SVector{3,T}, v3::SVector{3,T}, ::Val{DOUBLET}) where {T,DOUBLET}
+    nx, ny, nz = _rect_rotate_to_panel(v1, v2, v3)
+    centroid = (v1 + v2 + v3) * T(0.3333333333333333)
+    tc = target - centroid
+    tRx = nx[1]*tc[1] + nx[2]*tc[2] + nx[3]*tc[3]
+    tRy = ny[1]*tc[1] + ny[2]*tc[2] + ny[3]*tc[3]
+    tRz = nz[1]*tc[1] + nz[2]*tc[2] + nz[3]*tc[3]
+    w1 = v1 - centroid
+    w2 = v2 - centroid
+    w3 = v3 - centroid
+    vx1 = nx[1]*w1[1] + nx[2]*w1[2] + nx[3]*w1[3]
+    vy1 = ny[1]*w1[1] + ny[2]*w1[2] + ny[3]*w1[3]
+    vx2 = nx[1]*w2[1] + nx[2]*w2[2] + nx[3]*w2[3]
+    vy2 = ny[1]*w2[1] + ny[2]*w2[2] + ny[3]*w2[3]
+    vx3 = nx[1]*w3[1] + nx[2]*w3[2] + nx[3]*w3[3]
+    vy3 = ny[1]*w3[1] + ny[2]*w3[2] + ny[3]*w3[3]
+    L2 = sum(abs2, w1) + sum(abs2, w2) + sum(abs2, w3)
+    tRz = ifelse(tRz*tRz <= T(1e-24) * L2, zero(T), tRz)
+    p = zero(T)
+    for i in 1:3
+        vxa, vya = i == 1 ? (vx1, vy1) : (i == 2 ? (vx2, vy2) : (vx3, vy3))
+        vxb, vyb = i == 1 ? (vx2, vy2) : (i == 2 ? (vx3, vy3) : (vx1, vy1))
+        eip1, hip1, rip1, ei, hi, ri, ds, dx, dy, R_dot_s =
+            _rect_edge_prelims(tRx, tRy, tRz, vxa, vya, vxb, vyb)
+        tan_term = _rect_solid_angle_tan(tRx, tRy, tRz, ei, hi, ri,
+            eip1, hip1, rip1, ds, dx, dy, R_dot_s)
+        if DOUBLET
+            p -= tan_term
+        else
+            num = max(eps(T), ri + rip1 - ds)
+            log_term = log(num / (ri + rip1 + ds))
+            p += ((tRx - vxa)*dy - (tRy - vya)*dx) / ds * log_term
+            p += tRz * tan_term
+        end
+    end
+    return -T(ONE_OVER_4π) * p
+end
+
 # Bound-vortex filament velocity, per-family regularization. Vatistas (REG=1)
 # is the HEAD kernel (elements_fmm.jl:867-898 @ 75b45c7); compact (REG=2) and
 # Gaussian (REG=3) are the working-tree families (branch fastmultipole,
@@ -680,9 +724,37 @@ end
     return u, g
 end
 
+@inline function _rect_panel_potential(target::SVector{3,T}, tag::Int, nv::Int,
+        v1::SVector{3,T}, v2::SVector{3,T}, v3::SVector{3,T},
+        s1::T, s2::T) where T
+    p = zero(T)
+    if tag == 1 || tag == 4 || tag == 5
+        p += s1 * _rect_tri_potential(target, v1, v2, v3, Val(false))
+    end
+    if tag == 2 || tag == 5
+        mu = tag == 2 ? s1 : s2
+        p += mu * _rect_tri_potential(target, v1, v2, v3, Val(true))
+    end
+    if tag == 3 || tag == 4
+        nv == 3 || return T(NaN)
+        gamma = tag == 3 ? s1 : s2
+        p += gamma * _rect_tri_potential(target, v1, v2, v3, Val(true))
+    end
+    control_point = (v1 + v2 + v3) * T(0.3333333333333333)
+    if _rect_is_self_pair(target, control_point, v1, v2, v3)
+        if tag == 2 || tag == 3
+            p = s1 * T(0.5)
+        elseif tag == 4 || tag == 5
+            p += s2 * T(0.5)
+        end
+    end
+    return p
+end
+
 #------- host implementation (threaded) -------#
 
-function _rect_check_args(out, targets, kernel, sources, gradient::Bool)
+function _rect_check_args(out, targets, kernel, sources, gradient::Bool,
+        scalar_potential::Bool=false)
     size(targets, 1) >= 3 || throw(ArgumentError(
         "targets must have at least 3 rows (position); got $(size(targets, 1))"))
     size(sources, 1) >= rect_source_rows(kernel) || throw(ArgumentError(
@@ -690,9 +762,14 @@ function _rect_check_args(out, targets, kernel, sources, gradient::Bool)
         "got $(size(sources, 1))"))
     size(out, 2) == size(targets, 2) || throw(ArgumentError(
         "out has $(size(out, 2)) columns but targets has $(size(targets, 2))"))
-    size(out, 1) >= rect_output_rows(gradient) || throw(ArgumentError(
-        "out must have at least $(rect_output_rows(gradient)) rows for " *
-        "gradient=$gradient; got $(size(out, 1))"))
+    size(out, 1) >= rect_output_rows(gradient, scalar_potential) ||
+        throw(ArgumentError(
+        "out must have at least $(rect_output_rows(gradient, scalar_potential)) " *
+        "rows for gradient=$gradient, scalar_potential=$scalar_potential; " *
+        "got $(size(out, 1))"))
+    scalar_potential && !(kernel isa RectangularPanelInfluence) &&
+        throw(ArgumentError("scalar potential is available only for " *
+            "RectangularPanelInfluence"))
     if kernel isa RectangularPanelInfluence
         # the panel functor's absolute guards (1e-12-scaled extension-
         # singularity / self-pair / series-limit thresholds) sit below
@@ -700,7 +777,7 @@ function _rect_check_args(out, targets, kernel, sources, gradient::Bool)
         eltype(out) === Float64 || throw(ArgumentError(
             "RectangularPanelInfluence requires Float64 (its singularity " *
             "guards are inert below Float64 resolution); got $(eltype(out))"))
-        _rect_validate_panel_sources(sources)
+        _rect_validate_panel_sources(sources; scalar_potential)
     end
     return nothing
 end
@@ -708,7 +785,8 @@ end
 # rows 1:2 feed unchecked Int truncation inside the device pair loop; a
 # mis-packed column would otherwise contribute silent zeros (bad tag) or trap
 # (non-integral). Broadcast+all works on Array and CuArray alike.
-function _rect_validate_panel_sources(sources::AbstractMatrix)
+function _rect_validate_panel_sources(sources::AbstractMatrix;
+        scalar_potential::Bool=false)
     tags = view(sources, 1, :)
     nvs = view(sources, 2, :)
     ok = all(@. (tags == round(tags)) & (tags >= 1) & (tags <= 5) &
@@ -717,6 +795,12 @@ function _rect_validate_panel_sources(sources::AbstractMatrix)
         "RectangularPanelInfluence sources: row 1 must be an integral tag " *
         "in 1:5 and row 2 a vertex count in {3, 4} ({2, 3, 4} for tag 3; " *
         "nv == 2 is an open bound-vortex filament)"))
+    if scalar_potential
+        potential_ok = all(@. !((tags == 3) & (nvs != 3)))
+        potential_ok || throw(ArgumentError(
+            "RectangularPanelInfluence scalar potential requires triangular " *
+            "VortexRing sources (tag 3, nv == 3)"))
+    end
     return nothing
 end
 
@@ -746,8 +830,8 @@ threaded over targets; CUDA methods (CuMatrix arguments) are installed by
 """
 function direct_rectangular!(out::AbstractMatrix{T}, targets::AbstractMatrix{T},
         kernel::RectangularGaussianErfVortex, sources::AbstractMatrix{T};
-        gradient::Bool=false) where T
-    _rect_check_args(out, targets, kernel, sources, gradient)
+        gradient::Bool=false, scalar_potential::Bool=false) where T
+    _rect_check_args(out, targets, kernel, sources, gradient, scalar_potential)
     _rect_assert_host(out, targets, sources)
     n_targets = size(targets, 2)
     n_sources = size(sources, 2)
@@ -791,16 +875,18 @@ end
 
 function direct_rectangular!(out::AbstractMatrix{T}, targets::AbstractMatrix{T},
         kernel::RectangularPanelInfluence, sources::AbstractMatrix{T};
-        gradient::Bool=false) where T
-    _rect_check_args(out, targets, kernel, sources, gradient)
+        gradient::Bool=false, scalar_potential::Bool=false) where T
+    _rect_check_args(out, targets, kernel, sources, gradient, scalar_potential)
     _rect_assert_host(out, targets, sources)
     n_targets = size(targets, 2)
     n_sources = size(sources, 2)
     regv = _rect_reg_val(kernel.filament_reg)
     if gradient
-        _rect_panels_host!(out, targets, sources, n_targets, n_sources, Val(true), regv)
+        _rect_panels_host!(out, targets, sources, n_targets, n_sources,
+            Val(true), Val(scalar_potential), regv)
     else
-        _rect_panels_host!(out, targets, sources, n_targets, n_sources, Val(false), regv)
+        _rect_panels_host!(out, targets, sources, n_targets, n_sources,
+            Val(false), Val(scalar_potential), regv)
     end
     return out
 end
@@ -821,13 +907,14 @@ end
 end
 
 function _rect_panels_host!(out, targets, sources, n_targets, n_sources,
-        ::Val{GRAD}, ::Val{REG}=Val(1)) where {GRAD,REG}
+        ::Val{GRAD}, ::Val{POT}, ::Val{REG}=Val(1)) where {GRAD,POT,REG}
     T = eltype(out)
     Threads.@threads :static for i in 1:n_targets
         @inbounds begin
             target = SVector{3,T}(targets[1, i], targets[2, i], targets[3, i])
             u = zero(SVector{3,T})
             g = zero(SMatrix{3,3,T,9})
+            p = zero(T)
             for q in 1:n_sources
                 tag, nv, v1, v2, v3, v4, s1, s2, koff =
                     _rect_load_panel_source(sources, q, T)
@@ -835,6 +922,8 @@ function _rect_panels_host!(out, targets, sources, n_targets, n_sources,
                     tag, nv, v1, v2, v3, v4, s1, s2, koff, Val(GRAD), Val(REG))
                 u += uq
                 GRAD && (g += gq)
+                POT && (p += _rect_panel_potential(target, tag, nv,
+                    v1, v2, v3, s1, s2))
             end
             out[1, i] += u[1]; out[2, i] += u[2]; out[3, i] += u[3]
             if GRAD
@@ -842,6 +931,7 @@ function _rect_panels_host!(out, targets, sources, n_targets, n_sources,
                     out[3 + (j-1)*3 + k, i] += g[k, j]
                 end
             end
+            POT && (out[rect_potential_row(GRAD), i] += p)
         end
     end
     return nothing

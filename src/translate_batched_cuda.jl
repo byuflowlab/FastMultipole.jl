@@ -9030,7 +9030,7 @@ function _cuda_rect_points_kernel!(out, targets, sources, n_targets, n_sources,
 end
 
 function _cuda_rect_panels_kernel!(out, targets, sources, n_targets, n_sources,
-        ::Val{GRAD}, ::Val{REG}=Val(1)) where {GRAD,REG}
+        ::Val{GRAD}, ::Val{POT}, ::Val{REG}=Val(1)) where {GRAD,POT,REG}
     T = eltype(out)
     tid = threadIdx().x
     sh = CUDA.CuStaticSharedArray(T, (17, _RECT_TILE_PANELS))
@@ -9046,6 +9046,7 @@ function _cuda_rect_panels_kernel!(out, targets, sources, n_targets, n_sources,
         end
         u = zero(SVector{3,T})
         g = zero(SMatrix{3,3,T,9})
+        p = zero(T)
         for t in 1:ntiles
             q0 = (t - 1) * _RECT_TILE_PANELS
             ql = q0 + tid
@@ -9075,6 +9076,10 @@ function _cuda_rect_panels_kernel!(out, targets, sources, n_targets, n_sources,
                     if GRAD
                         g += gq
                     end
+                    if POT
+                        p += _rect_panel_potential(target, tag, nv,
+                            v1, v2, v3, s1, s2)
+                    end
                 end
             end
             CUDA.sync_threads()
@@ -9087,6 +9092,7 @@ function _cuda_rect_panels_kernel!(out, targets, sources, n_targets, n_sources,
                         out[3 + (j-1)*3 + kk, i] += g[kk, j]
                     end
                 end
+                POT && (out[rect_potential_row(GRAD), i] += p)
             end
         end
         chunk += gridDim().x
@@ -9096,8 +9102,8 @@ end
 
 function direct_rectangular!(out::CUDA.CuMatrix{T}, targets::CUDA.CuMatrix{T},
         kernel::RectangularGaussianErfVortex, sources::CUDA.CuMatrix{T};
-        gradient::Bool=false) where T
-    _rect_check_args(out, targets, kernel, sources, gradient)
+        gradient::Bool=false, scalar_potential::Bool=false) where T
+    _rect_check_args(out, targets, kernel, sources, gradient, scalar_potential)
     n_targets = size(targets, 2)
     n_sources = size(sources, 2)
     n_targets == 0 && return out
@@ -9114,8 +9120,8 @@ end
 
 function direct_rectangular!(out::CUDA.CuMatrix{T}, targets::CUDA.CuMatrix{T},
         kernel::RectangularPanelInfluence, sources::CUDA.CuMatrix{T};
-        gradient::Bool=false) where T
-    _rect_check_args(out, targets, kernel, sources, gradient)
+        gradient::Bool=false, scalar_potential::Bool=false) where T
+    _rect_check_args(out, targets, kernel, sources, gradient, scalar_potential)
     n_targets = size(targets, 2)
     n_sources = size(sources, 2)
     n_targets == 0 && return out
@@ -9123,10 +9129,12 @@ function direct_rectangular!(out::CUDA.CuMatrix{T}, targets::CUDA.CuMatrix{T},
     regv = _rect_reg_val(kernel.filament_reg)
     if gradient
         CUDA.@cuda threads=_RECT_TILE_PANELS blocks=blocks _cuda_rect_panels_kernel!(
-            out, targets, sources, n_targets, n_sources, Val(true), regv)
+            out, targets, sources, n_targets, n_sources, Val(true),
+            Val(scalar_potential), regv)
     else
         CUDA.@cuda threads=_RECT_TILE_PANELS blocks=blocks _cuda_rect_panels_kernel!(
-            out, targets, sources, n_targets, n_sources, Val(false), regv)
+            out, targets, sources, n_targets, n_sources, Val(false),
+            Val(scalar_potential), regv)
     end
     return out
 end
