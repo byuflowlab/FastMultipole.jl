@@ -365,6 +365,11 @@ give `R = 1` with an empty flat-top, i.e. bitwise the legacy `2:ell` schedule.
 is the identity when `first_m2l_level == 2`) or the active length
 `ell - first_m2l_level + 1` (levels `first_m2l_level:ell`, coarse to fine).
 Returns `(tables, level_class_of, qs, root_level, first_m2l_level)`.
+
+Degenerate zero-M2L grids (every leaf offset inside the near ball, i.e.
+`first_m2l_level == ell + 1`) return an empty push union and an empty
+schedule — the cache then evaluates pure direct (task 052c). An explicit
+`level_radii2` on such a grid is an `ArgumentError`.
 """
 _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::Int) =
     _hierarchical_scheduled_tables(policy, ell, SVector(ell, ell, ell))
@@ -375,11 +380,26 @@ function _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::I
         "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
     R, L_allnear = _radix_root_level(ell_axes, ell, policy.near_radius2)
     first_m2l = R == L_allnear ? R + 1 : R
-    first_m2l <= ell || throw(ArgumentError(
-        "HierarchicalRigidStencil has no M2L level on this grid: every leaf " *
-        "offset is inside near_radius2=$(policy.near_radius2) at ell=$ell, " *
-        "ell_axes=$(Tuple(ell_axes)); use the flat ConstantPAnalyticStencil " *
-        "policy or a deeper grid"))
+    if first_m2l > ell
+        # Degenerate zero-M2L geometry (task 052c): every leaf offset on this
+        # grid lies inside the near ball, so no far pair exists at any level.
+        # Legitimate for fields small (or overlap-dense) enough that pure
+        # direct evaluation is the efficient answer: return an empty schedule
+        # — empty push union, zero active levels — and the lifecycle
+        # degenerates to nearfield-only (stage groups, route windows, and the
+        # per-level M2L loops are all empty; locals stay zero). An explicit
+        # level schedule cannot anchor to zero levels, so that stays an error.
+        isempty(policy.level_radii2) || throw(ArgumentError(
+            "HierarchicalRigidStencil has no M2L level on this grid (every " *
+            "leaf offset is inside near_radius2=$(policy.near_radius2) at " *
+            "ell=$ell, ell_axes=$(Tuple(ell_axes))): evaluation is pure " *
+            "direct, so level_radii2=$(Tuple(policy.level_radii2)) cannot " *
+            "apply; omit it"))
+        leaf = RigidHierarchicalTables(policy.near_radius2)
+        tables = RigidHierarchicalTables(leaf.near_offsets, SVector{3,Int}[],
+            ntuple(_ -> 1, 9), Int32[], zeros(Int32, 8, 0))
+        return tables, zeros(Int32, 8, 0, ell + 1), Int[], R, first_m2l
+    end
     nlevels = ell - first_m2l + 1
     raw = policy.level_radii2
     qs = if isempty(raw)

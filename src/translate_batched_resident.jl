@@ -2081,6 +2081,10 @@ _direct_kernel_geometry_gate!(cache::RadixFMMCache, ::AbstractDirectKernel,
 function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
         kernel::AbstractRegularizedVortex, source_bodies, n::Int)
     n > 0 || return nothing
+    # Zero-M2L degenerate cache (task 052c): with no accepted offset class the
+    # direct list covers every pair at every offset, so no pair can fall to
+    # the singular far field — the adequacy gate is vacuous.
+    isempty(cache.accepted_offsets) && return nothing
     # works for Matrix and CuMatrix alike (device reduction + scalar download)
     sigma_max = Float64(maximum(view(source_bodies, kernel.sigma_row, 1:n)))
     sigma_max > 0 || return nothing
@@ -2574,9 +2578,11 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     max_cells = _radix_level_node_capacity(Int(ell), ell_axes, Int(ell), maxn)
     max_nodes = sum(_radix_level_node_capacity(L, ell_axes, Int(ell), max_cells)
         for L in root_level:Int(ell))
+    # init=0 covers the zero-M2L degenerate hierarchy (first_m2l_level == ell+1,
+    # empty range — task 052c): no M2L level, so no per-level node bound needed.
     max_level_nodes = Int(ell) >= 2 ? maximum(
-        _radix_level_node_capacity(L, ell_axes, Int(ell), max_cells)
-        for L in (hierarchical ? first_m2l_level : 2):Int(ell)) : 0
+        (_radix_level_node_capacity(L, ell_axes, Int(ell), max_cells)
+         for L in (hierarchical ? first_m2l_level : 2):Int(ell)); init=0) : 0
     route_capacity = hierarchical ?
         min(min(stencil_policy.window_classes,
                 length(hierarchical_tables.push_offsets)) * max_level_nodes,

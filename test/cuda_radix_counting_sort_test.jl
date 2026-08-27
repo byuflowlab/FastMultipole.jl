@@ -67,13 +67,18 @@ const CSFM = FastMultipole
             objectid(grid.perm), objectid(grid.invperm))
 
         # `ca` was built with the knob off, so its histogram spans no key domain.
-        # Enabling the knob afterwards must fall back to the comparison sort
-        # rather than scatter `@inbounds` atomics through a length-1 array.
+        # 047/048 lock contract: enabling the knob after construction is a loud
+        # error (pre-lock this silently fell back to the comparison sort);
+        # running `ca` requires restoring the value it was built with.
         @test length(ca.device_ctx.counting_histogram) == 1
         @test !CSFM._cuda_counting_sort_ready(ca.device_ctx, ell)
         a.potential .= 0
         b.potential .= 0
-        fmm!(a, ca; scalar_potential=true, gradient=true)   # falls back
+        @test_throws r"construction-locked" fmm!(a, ca;
+            scalar_potential=true, gradient=true)
+        CSFM.RADIX_CUDA_COUNTING_SORT[] = false
+        fmm!(a, ca; scalar_potential=true, gradient=true)   # comparison sort
+        CSFM.RADIX_CUDA_COUNTING_SORT[] = true
         fmm!(b, cb; scalar_potential=true, gradient=true)   # counting sort
         @test sort(Array(view(ca.state.grid.perm, 1:n))) == collect(1:n)
         @test issorted(Array(view(ca.device_ctx.sorted_keys, 1:n)))

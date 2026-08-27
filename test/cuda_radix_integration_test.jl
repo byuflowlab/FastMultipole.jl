@@ -883,23 +883,33 @@ _cuda_integration_required() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0")
             wp_tol = TF === Float64 ? 1e-10 : 1f-4
             saved_wp = FastMultipole.DENSE_CUDA_WHOLE_PASS[]
             saved_fused = FastMultipole.DENSE_CUDA_FUSED[]
+            # DENSE_CUDA_WHOLE_PASS is construction-locked (047 contract: a
+            # late flip on an existing cache errors loudly), so each GEMM
+            # driver gets its own cache built under its setting;
+            # DENSE_CUDA_FUSED is a runtime setting and flips in place
             try
                 FastMultipole.DENSE_CUDA_FUSED[] = false
                 FastMultipole.DENSE_CUDA_WHOLE_PASS[] = false
-                fmm!(dev_sys, dev_dcache; scalar_potential=!LH, gradient=true)
-                !LH && @test maximum(abs.(dev_sys.potential[1, :] .-
+                pc_sys = generate_gravitational(fseed, nf)
+                pc_cache = RadixFMMCache(pc_sys; stencil_epsilon=1e-4, expansion_order=P, ell=3,
+                    bounds=bounds, lamb_helmholtz=LH, device=true, options=dense_opts)
+                fmm!(pc_sys, pc_cache; scalar_potential=!LH, gradient=true)
+                !LH && @test maximum(abs.(pc_sys.potential[1, :] .-
                     whole_pot[1, :])) < wp_tol
-                @test maximum(abs.(dev_sys.potential[5:7, :] .-
+                @test maximum(abs.(pc_sys.potential[5:7, :] .-
                     whole_pot[5:7, :])) < 10 * wp_tol
                 FastMultipole.DENSE_CUDA_WHOLE_PASS[] = true
-                fmm!(dev_sys, dev_dcache; scalar_potential=!LH, gradient=true)
-                !LH && @test maximum(abs.(dev_sys.potential[1, :] .-
+                wp_sys = generate_gravitational(fseed, nf)
+                wp_cache = RadixFMMCache(wp_sys; stencil_epsilon=1e-4, expansion_order=P, ell=3,
+                    bounds=bounds, lamb_helmholtz=LH, device=true, options=dense_opts)
+                fmm!(wp_sys, wp_cache; scalar_potential=!LH, gradient=true)
+                !LH && @test maximum(abs.(wp_sys.potential[1, :] .-
                     whole_pot[1, :])) < wp_tol
-                @test maximum(abs.(dev_sys.potential[5:7, :] .-
+                @test maximum(abs.(wp_sys.potential[5:7, :] .-
                     whole_pot[5:7, :])) < 10 * wp_tol
-                FastMultipole._launch_resident_m2l!(dev_dcache.state)
+                FastMultipole._launch_resident_m2l!(wp_cache.state)
                 gemm_alloc = @eval CUDA.@allocated FastMultipole._launch_resident_m2l!(
-                    $(dev_dcache).state)
+                    $(wp_cache).state)
                 @test gemm_alloc == 0
             finally
                 FastMultipole.DENSE_CUDA_WHOLE_PASS[] = saved_wp
@@ -928,18 +938,23 @@ _cuda_integration_required() = get(ENV, "FASTMULTIPOLE_REQUIRE_CUDA_TESTS", "0")
             # multi-chunk whole pass and per-class sub-chunking are exercised
             saved_dtc_wp = FastMultipole.DENSE_CUDA_WHOLE_PASS[]
             saved_dtc_fused = FastMultipole.DENSE_CUDA_FUSED[]
-            local dtc_pot
+            local dtc_pot, dtc2_sys
             try
                 FastMultipole.DENSE_CUDA_FUSED[] = false
                 fmm!(dtc_sys, dtc_cache; scalar_potential=true, gradient=true)
                 dtc_pot = copy(dtc_sys.potential)
+                # DENSE_CUDA_WHOLE_PASS is construction-locked: the per-class
+                # sub-chunking run needs its own cache built under wp=false
                 FastMultipole.DENSE_CUDA_WHOLE_PASS[] = false
-                fmm!(dtc_sys, dtc_cache; scalar_potential=true, gradient=true)
+                dtc2_sys = generate_gravitational(seed + 73, 400)
+                dtc2_cache = RadixFMMCache(dtc2_sys; stencil_epsilon=1e-4, expansion_order=4,
+                    ell=3, bounds=bounds, device=true, options=mk_dense_opts(Float64))
+                fmm!(dtc2_sys, dtc2_cache; scalar_potential=true, gradient=true)
             finally
                 FastMultipole.DENSE_CUDA_WHOLE_PASS[] = saved_dtc_wp
                 FastMultipole.DENSE_CUDA_FUSED[] = saved_dtc_fused
             end
-            @test maximum(abs.(dtc_sys.potential[1, :] .- dtc_pot[1, :])) < 1e-10
+            @test maximum(abs.(dtc2_sys.potential[1, :] .- dtc_pot[1, :])) < 1e-10
             dtc_host_sys = generate_gravitational(seed + 73, 400)
             dtc_host_cache = RadixFMMCache(dtc_host_sys; stencil_epsilon=1e-4, expansion_order=4, ell=3,
                 bounds=bounds, options=mk_dense_opts(Float64))

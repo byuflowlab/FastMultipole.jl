@@ -365,7 +365,8 @@ end
                 old_gh = FNF_FM.CUDA_NEARFIELD_GH_MODE[]
                 FNF_FM.CUDA_NEARFIELD_GH_MODE[] = :lut
                 try
-                    @test_throws ArgumentError fmm!(sys, cache;
+                    # construction-locked settings error loudly on a late flip
+                    @test_throws r"construction-locked" fmm!(sys, cache;
                         scalar_potential=false, gradient=true)
                 finally
                     FNF_FM.CUDA_NEARFIELD_GH_MODE[] = old_gh
@@ -378,7 +379,8 @@ end
             old_shape = FNF_FM.CUDA_NEARFIELD_SHAPE[]
             FNF_FM.CUDA_NEARFIELD_SHAPE[] = :bogus
             try
-                @test_throws ArgumentError fmm!(sys2, cache2;
+                # construction-locked settings error loudly on a late flip
+                @test_throws r"construction-locked" fmm!(sys2, cache2;
                     scalar_potential=false, gradient=true)
             finally
                 FNF_FM.CUDA_NEARFIELD_SHAPE[] = old_shape

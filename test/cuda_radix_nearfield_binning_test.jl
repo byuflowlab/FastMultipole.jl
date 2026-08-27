@@ -26,9 +26,12 @@ if _BINNING_LOADED
     using CUDA
 end
 
-# run one device fmm! for `sys_ctor(seed, n)` under the given binning
-# mechanism, returning (U 3×n, J 9×n) from the wrapped VortexParticles
-function _binning_device_run(sys, cache; mode, subsort, pass2_queued=false,
+# run `f()` with the binning-mechanism Refs set as requested, restoring the
+# previous values afterwards. Construction-locked settings (BINNING, GH_MODE,
+# PASS2_QUEUED, TARGET_AABB_PRUNE, PAIR_AABB; 047 lock contract) must hold
+# their run values while a cache is BUILT, so cache construction goes through
+# this window too. `subsort=nothing` leaves the (runtime) subsort Ref alone.
+function _with_binning_refs(f; mode, subsort=nothing, pass2_queued=false,
         pass2_aabb=false, pair_aabb=false, gh_mode=:shipped)
     old_mode = FastMultipole.CUDA_NEARFIELD_BINNING[]
     old_sub = FastMultipole.CUDA_NEARFIELD_SUBSORT[]
@@ -37,13 +40,13 @@ function _binning_device_run(sys, cache; mode, subsort, pass2_queued=false,
     old_paabb = FastMultipole.CUDA_NEARFIELD_PAIR_AABB[]
     old_gh = FastMultipole.CUDA_NEARFIELD_GH_MODE[]
     FastMultipole.CUDA_NEARFIELD_BINNING[] = mode
-    FastMultipole.CUDA_NEARFIELD_SUBSORT[] = subsort
+    subsort === nothing || (FastMultipole.CUDA_NEARFIELD_SUBSORT[] = subsort)
     FastMultipole.CUDA_TWOPASS_PASS2_QUEUED[] = pass2_queued
     FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = pass2_aabb
     FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = pair_aabb
     FastMultipole.CUDA_NEARFIELD_GH_MODE[] = gh_mode
     try
-        fmm!(sys, cache; scalar_potential=false, gradient=true, hessian=true)
+        return f()
     finally
         FastMultipole.CUDA_NEARFIELD_BINNING[] = old_mode
         FastMultipole.CUDA_NEARFIELD_SUBSORT[] = old_sub
@@ -52,7 +55,20 @@ function _binning_device_run(sys, cache; mode, subsort, pass2_queued=false,
         FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = old_paabb
         FastMultipole.CUDA_NEARFIELD_GH_MODE[] = old_gh
     end
-    return nothing
+end
+
+# run one device fmm! under the given binning mechanism. `cache` may be a
+# 0-arg builder closure, in which case the cache is CONSTRUCTED inside the
+# settings window (required for any run whose construction-locked settings
+# differ from the shipped defaults). Returns the (built) cache.
+function _binning_device_run(sys, cache; mode, subsort, pass2_queued=false,
+        pass2_aabb=false, pair_aabb=false, gh_mode=:shipped)
+    _with_binning_refs(; mode, subsort, pass2_queued, pass2_aabb, pair_aabb,
+            gh_mode) do
+        c = cache isa Function ? cache() : cache
+        fmm!(sys, c; scalar_potential=false, gradient=true, hessian=true)
+        c
+    end
 end
 
 #--- 037e host unit tests: pair-AABB reachability predicate (no CUDA needed;
@@ -127,23 +143,32 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         nv = 1500
         sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
 
-        # host Float64 references at both kernels (Stage A/B validated)
-        host_p = PartitionedSmoothedVortex(SmoothedVortex(generate_vortex(seed, nv),
-            copy(sigma)))
-        hp_cache = RadixFMMCache(host_p; expansion_order=8, ell=3, near_radius2=16, hessian=true,
-            options=CUDARadixLifecycleOptions(; precision=Float64,
-                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
-        fmm!(host_p, hp_cache; scalar_potential=false, gradient=true, hessian=true)
-        Uref_p = copy(_binning_inner(host_p).gradient_stretching[1:3, :])
-        Jref_p = copy(_binning_inner(host_p).potential[5:13, :])
-        host_t = TwoPassSmoothedVortex(SmoothedVortex(generate_vortex(seed, nv),
-            copy(sigma)))
-        ht_cache = RadixFMMCache(host_t; expansion_order=8, ell=3, near_radius2=16, hessian=true,
-            options=CUDARadixLifecycleOptions(; precision=Float64,
-                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
-        fmm!(host_t, ht_cache; scalar_potential=false, gradient=true, hessian=true)
-        Uref_t = copy(_binning_inner(host_t).gradient_stretching[1:3, :])
-        Jref_t = copy(_binning_inner(host_t).potential[5:13, :])
+        # host Float64 references at both kernels (Stage A/B validated).
+        # The HOST nearfield also consults CUDA_NEARFIELD_GH_MODE, whose
+        # ambient default flipped to :fp32 (037f, user-approved 2026-08-14);
+        # references must be produced at the :shipped control mode to match
+        # the pinned device runs, else U/J shift ~1.8e-7/3e-7 relative and
+        # the 1e-8 parity contract breaks (cf. 1b3c65a7 for the interface
+        # parity test).
+        Uref_p, Jref_p, Uref_t, Jref_t = _with_binning_refs(;
+                mode=:classsplit, gh_mode=:shipped) do
+            host_p = PartitionedSmoothedVortex(SmoothedVortex(generate_vortex(seed, nv),
+                copy(sigma)))
+            hp_cache = RadixFMMCache(host_p; expansion_order=8, ell=3, near_radius2=16, hessian=true,
+                options=CUDARadixLifecycleOptions(; precision=Float64,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+            fmm!(host_p, hp_cache; scalar_potential=false, gradient=true, hessian=true)
+            host_t = TwoPassSmoothedVortex(SmoothedVortex(generate_vortex(seed, nv),
+                copy(sigma)))
+            ht_cache = RadixFMMCache(host_t; expansion_order=8, ell=3, near_radius2=16, hessian=true,
+                options=CUDARadixLifecycleOptions(; precision=Float64,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+            fmm!(host_t, ht_cache; scalar_potential=false, gradient=true, hessian=true)
+            (copy(_binning_inner(host_p).gradient_stretching[1:3, :]),
+             copy(_binning_inner(host_p).potential[5:13, :]),
+             copy(_binning_inner(host_t).gradient_stretching[1:3, :]),
+             copy(_binning_inner(host_t).potential[5:13, :]))
+        end
         u_scale = maximum(abs.(Uref_p))
         j_scale = maximum(abs.(Jref_p))
 
@@ -152,26 +177,31 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         #    P = 4 per the standing rule) ---#
 
         for P in (4, 8), TF in (Float64, Float32)
-            hsys = PartitionedSmoothedVortex(SmoothedVortex(
-                generate_vortex(seed, nv), copy(sigma)))
-            hcache = RadixFMMCache(hsys; expansion_order=P, ell=3, near_radius2=16, hessian=true,
-                options=CUDARadixLifecycleOptions(; precision=TF,
-                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
-            fmm!(hsys, hcache; scalar_potential=false, gradient=true, hessian=true)
-            Uh = copy(_binning_inner(hsys).gradient_stretching[1:3, :])
-            Jh = copy(_binning_inner(hsys).potential[5:13, :])
+            # host reference at the :shipped g/h control mode (see the
+            # testset-preamble note; ambient default is :fp32)
+            Uh, Jh = _with_binning_refs(; mode=:classsplit, gh_mode=:shipped) do
+                hsys = PartitionedSmoothedVortex(SmoothedVortex(
+                    generate_vortex(seed, nv), copy(sigma)))
+                hcache = RadixFMMCache(hsys; expansion_order=P, ell=3, near_radius2=16, hessian=true,
+                    options=CUDARadixLifecycleOptions(; precision=TF,
+                        m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+                fmm!(hsys, hcache; scalar_potential=false, gradient=true, hessian=true)
+                (copy(_binning_inner(hsys).gradient_stretching[1:3, :]),
+                 copy(_binning_inner(hsys).potential[5:13, :]))
+            end
             # device-vs-host same-P tolerance: reassociation + fast rsqrt
             tol = TF == Float64 ? 1e-8 : 4e-4
             for mode in (:unbinned, :classsplit, :ballot, :classsplit_ballot),
                     subsort in (false, true)
                 dsys = PartitionedSmoothedVortex(SmoothedVortex(
                     generate_vortex(seed, nv), copy(sigma)))
-                dcache = RadixFMMCache(dsys; expansion_order=P, ell=3, near_radius2=16,
-                    hessian=true, device=true,
-                    options=CUDARadixLifecycleOptions(; precision=TF,
-                        m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+                dcache = _binning_device_run(dsys,
+                    () -> RadixFMMCache(dsys; expansion_order=P, ell=3, near_radius2=16,
+                        hessian=true, device=true,
+                        options=CUDARadixLifecycleOptions(; precision=TF,
+                            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()));
+                    mode, subsort)
                 @test FastMultipole._cache_nearfield_bin_ctx(dcache) !== nothing
-                _binning_device_run(dsys, dcache; mode, subsort)
                 Ud = _binning_inner(dsys).gradient_stretching[1:3, :]
                 Jd = _binning_inner(dsys).potential[5:13, :]
                 @test maximum(abs.(Ud .- Uh)) / u_scale < tol
@@ -183,27 +213,32 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         #    all mechanisms, both pass-2 modes, P = 4 and P = 8, both TF ---#
 
         for P in (4, 8), TF in (Float64, Float32)
-            hsys = TwoPassSmoothedVortex(SmoothedVortex(
-                generate_vortex(seed, nv), copy(sigma)))
-            hcache = RadixFMMCache(hsys; expansion_order=P, ell=3, near_radius2=16, hessian=true,
-                options=CUDARadixLifecycleOptions(; precision=TF,
-                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
-            fmm!(hsys, hcache; scalar_potential=false, gradient=true, hessian=true)
-            Uh = copy(_binning_inner(hsys).gradient_stretching[1:3, :])
-            Jh = copy(_binning_inner(hsys).potential[5:13, :])
+            # host reference at the :shipped g/h control mode (see the
+            # testset-preamble note; ambient default is :fp32)
+            Uh, Jh = _with_binning_refs(; mode=:classsplit, gh_mode=:shipped) do
+                hsys = TwoPassSmoothedVortex(SmoothedVortex(
+                    generate_vortex(seed, nv), copy(sigma)))
+                hcache = RadixFMMCache(hsys; expansion_order=P, ell=3, near_radius2=16, hessian=true,
+                    options=CUDARadixLifecycleOptions(; precision=TF,
+                        m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+                fmm!(hsys, hcache; scalar_potential=false, gradient=true, hessian=true)
+                (copy(_binning_inner(hsys).gradient_stretching[1:3, :]),
+                 copy(_binning_inner(hsys).potential[5:13, :]))
+            end
             tol = TF == Float64 ? 1e-8 : 4e-4
             for mode in (:unbinned, :classsplit, :classsplit_ballot),
                     pass2_queued in (false, true)
                 dsys = TwoPassSmoothedVortex(SmoothedVortex(
                     generate_vortex(seed, nv), copy(sigma)))
-                dcache = RadixFMMCache(dsys; expansion_order=P, ell=3, near_radius2=16,
-                    hessian=true, device=true,
-                    options=CUDARadixLifecycleOptions(; precision=TF,
-                        m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+                dcache = _binning_device_run(dsys,
+                    () -> RadixFMMCache(dsys; expansion_order=P, ell=3, near_radius2=16,
+                        hessian=true, device=true,
+                        options=CUDARadixLifecycleOptions(; precision=TF,
+                            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()));
+                    mode, subsort=false, pass2_queued)
                 nfctx = FastMultipole._cache_nearfield_bin_ctx(dcache)
                 @test nfctx !== nothing
                 @test nfctx.twopass_K > 0
-                _binning_device_run(dsys, dcache; mode, subsort=false, pass2_queued)
                 Ud = _binning_inner(dsys).gradient_stretching[1:3, :]
                 Jd = _binning_inner(dsys).potential[5:13, :]
                 @test maximum(abs.(Ud .- Uh)) / u_scale < tol
@@ -217,10 +252,11 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         for (ctor, Uref, Jref) in ((PartitionedSmoothedVortex, Uref_p, Jref_p),
                 (TwoPassSmoothedVortex, Uref_t, Jref_t))
             dsys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
-            dcache = RadixFMMCache(dsys; expansion_order=8, ell=3, near_radius2=16, hessian=true,
-                device=true, options=CUDARadixLifecycleOptions(; precision=Float64,
-                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
-            _binning_device_run(dsys, dcache; mode=:classsplit, subsort=false)
+            _binning_device_run(dsys,
+                () -> RadixFMMCache(dsys; expansion_order=8, ell=3, near_radius2=16, hessian=true,
+                    device=true, options=CUDARadixLifecycleOptions(; precision=Float64,
+                        m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()));
+                mode=:classsplit, subsort=false)
             @test maximum(abs.(_binning_inner(dsys).gradient_stretching[1:3, :] .-
                 Uref)) / u_scale < 1e-8
             @test maximum(abs.(_binning_inner(dsys).potential[5:13, :] .-
@@ -235,10 +271,12 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
             for mode in (:classsplit, :ballot, :classsplit_ballot)
                 ctor === TwoPassSmoothedVortex && mode === :ballot && continue
                 dsys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
-                dcache = RadixFMMCache(dsys; expansion_order=4, ell=3, near_radius2=16,
-                    hessian=true, device=true,
-                    options=CUDARadixLifecycleOptions(; precision=Float32,
-                        m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+                dcache = _with_binning_refs(
+                    () -> RadixFMMCache(dsys; expansion_order=4, ell=3, near_radius2=16,
+                        hessian=true, device=true,
+                        options=CUDARadixLifecycleOptions(; precision=Float32,
+                            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()));
+                    mode, pass2_queued)
                 for subsort in (false, true)
                     _binning_device_run(dsys, dcache; mode, subsort, pass2_queued)
                     _binning_device_run(dsys, dcache; mode, subsort, pass2_queued)
@@ -257,12 +295,18 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
                     # CUDA.jl's pool-served accumulate! scan scratch; the stage-C
                     # kernels themselves add no per-step allocation). Runtime
                     # @eval: CUDA.@allocated only exists when CUDA loaded.
-                    @eval CUDA.@allocated fmm!($dsys, $dcache;
-                        scalar_potential=false, gradient=true, hessian=true)
-                    step_a = @eval CUDA.@allocated fmm!($dsys, $dcache;
-                        scalar_potential=false, gradient=true, hessian=true)
-                    step_b = @eval CUDA.@allocated fmm!($dsys, $dcache;
-                        scalar_potential=false, gradient=true, hessian=true)
+                    _with_binning_refs(; mode, subsort, pass2_queued) do
+                        @eval CUDA.@allocated fmm!($dsys, $dcache;
+                            scalar_potential=false, gradient=true, hessian=true)
+                    end
+                    step_a = _with_binning_refs(; mode, subsort, pass2_queued) do
+                        @eval CUDA.@allocated fmm!($dsys, $dcache;
+                            scalar_potential=false, gradient=true, hessian=true)
+                    end
+                    step_b = _with_binning_refs(; mode, subsort, pass2_queued) do
+                        @eval CUDA.@allocated fmm!($dsys, $dcache;
+                            scalar_potential=false, gradient=true, hessian=true)
+                    end
                     @test step_b == step_a
                 end
             end
@@ -273,10 +317,11 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
 
         dsys = PartitionedSmoothedVortex(SmoothedVortex(
             generate_vortex(seed, nv), copy(sigma)))
-        dcache = RadixFMMCache(dsys; expansion_order=4, ell=3, near_radius2=16, hessian=true,
-            device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
-                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
-        _binning_device_run(dsys, dcache; mode=:unbinned, subsort=false)
+        dcache = _binning_device_run(dsys,
+            () -> RadixFMMCache(dsys; expansion_order=4, ell=3, near_radius2=16, hessian=true,
+                device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()));
+            mode=:unbinned, subsort=false)
         h_all = FastMultipole.cuda_nearfield_homogeneity(dcache.state; stream=:all)
         @test h_all.instants > 0
         @test h_all.uniform + h_all.mixed == h_all.instants
@@ -295,19 +340,28 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
 
         tsys = TwoPassSmoothedVortex(SmoothedVortex(
             generate_vortex(seed, nv), copy(sigma)))
-        tcache = RadixFMMCache(tsys; expansion_order=4, ell=3, near_radius2=16, hessian=true,
-            device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
-                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
-        _binning_device_run(tsys, tcache; mode=:unbinned, subsort=false)
+        tcache = _binning_device_run(tsys,
+            () -> RadixFMMCache(tsys; expansion_order=4, ell=3, near_radius2=16, hessian=true,
+                device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()));
+            mode=:unbinned, subsort=false)
         h_shell = FastMultipole.cuda_twopass_shell_homogeneity(tcache.state)
         @test h_shell.instants > 0
         @test h_shell.uniform + h_shell.mixed == h_shell.instants
         @test h_shell.candidate_pairs >= h_shell.shell_pairs > 0
-        _binning_device_run(tsys, tcache; mode=:unbinned, subsort=true,
-            pass2_aabb=true)
+        # TARGET_AABB_PRUNE is construction-locked: the pruned run gets its
+        # own cache built under the flag (same seed → identical tree, so the
+        # shell-pair comparison below stays valid)
+        tsys2 = TwoPassSmoothedVortex(SmoothedVortex(
+            generate_vortex(seed, nv), copy(sigma)))
+        tcache2 = _binning_device_run(tsys2,
+            () -> RadixFMMCache(tsys2; expansion_order=4, ell=3, near_radius2=16, hessian=true,
+                device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()));
+            mode=:unbinned, subsort=true, pass2_aabb=true)
         FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = true
         h_pruned = try
-            FastMultipole.cuda_twopass_shell_homogeneity(tcache.state)
+            FastMultipole.cuda_twopass_shell_homogeneity(tcache2.state)
         finally
             FastMultipole.CUDA_TWOPASS_TARGET_AABB_PRUNE[] = false
         end
@@ -339,16 +393,19 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
                 (PartitionedSmoothedVortex, :ballot),
                 (TwoPassSmoothedVortex, :classsplit))
             ref_sys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
-            ref_cache = RadixFMMCache(ref_sys; expansion_order=4, ell=3, near_radius2=16,
-                hessian=true, device=true,
-                options=CUDARadixLifecycleOptions(; precision=Float32,
-                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
-            _binning_device_run(ref_sys, ref_cache; mode, subsort=false)
+            ref_cache = _binning_device_run(ref_sys,
+                () -> RadixFMMCache(ref_sys; expansion_order=4, ell=3, near_radius2=16,
+                    hessian=true, device=true,
+                    options=CUDARadixLifecycleOptions(; precision=Float32,
+                        m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()));
+                mode, subsort=false)
             gsys = ctor(SmoothedVortex(generate_vortex(seed, nv), copy(sigma)))
-            gcache = RadixFMMCache(gsys; expansion_order=4, ell=3, near_radius2=16, hessian=true,
-                device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
-                    m2l_strategy=FastMultipole.DenseTranslationM2L(
-                        apply_chunk=64, build_chunk=8)))
+            gcache = _with_binning_refs(
+                () -> RadixFMMCache(gsys; expansion_order=4, ell=3, near_radius2=16, hessian=true,
+                    device=true, options=CUDARadixLifecycleOptions(; precision=Float32,
+                        m2l_strategy=FastMultipole.DenseTranslationM2L(
+                            apply_chunk=64, build_chunk=8)));
+                mode)
             # step 1 warms, step 2 records, step 3 replays the captured graph
             for _ in 1:3
                 _binning_device_run(gsys, gcache; mode, subsort=false)
@@ -375,32 +432,30 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
         _mk_psys() = PartitionedSmoothedVortex(SmoothedVortex(
             generate_vortex(seed, nv), copy(sigma)))
         function _mk_pcache(sys, P, TF; hess=true,
-                strategy=FastMultipole.ConcatenatedFixedZM2L(), pair_aabb=false)
-            # the Ref is read in the lifecycle body (graph-bake contract):
-            # a flag-on cache must be CONSTRUCTED under the flag
-            old = FastMultipole.CUDA_NEARFIELD_PAIR_AABB[]
-            FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = pair_aabb
-            try
-                return RadixFMMCache(sys; expansion_order=P, ell=3,
+                strategy=FastMultipole.ConcatenatedFixedZM2L(), pair_aabb=false,
+                mode=:classsplit, gh_mode=:shipped, pass2_queued=false)
+            # every construction-locked Ref is read in the lifecycle body
+            # (graph-bake / 047 lock contract): the cache must be CONSTRUCTED
+            # under the exact settings its runs will use
+            _with_binning_refs(; mode, pair_aabb, gh_mode, pass2_queued) do
+                RadixFMMCache(sys; expansion_order=P, ell=3,
                     near_radius2=16, hessian=hess, device=true,
                     options=CUDARadixLifecycleOptions(; precision=TF,
                         m2l_strategy=strategy))
-            finally
-                FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = old
             end
         end
         for P in (4, 8), TF in (Float64, Float32),
                 mode in (:classsplit, :classsplit_ballot)
             UJs = map(1:2) do _
                 s = _mk_psys()
-                c = _mk_pcache(s, P, TF)
+                c = _mk_pcache(s, P, TF; mode)
                 _binning_device_run(s, c; mode, subsort=false)
                 (copy(_binning_inner(s).gradient_stretching[1:3, :]),
                  copy(_binning_inner(s).potential[5:13, :]))
             end
             deterministic = UJs[1] == UJs[2]
             s_on = _mk_psys()
-            c_on = _mk_pcache(s_on, P, TF; pair_aabb=true)
+            c_on = _mk_pcache(s_on, P, TF; mode, pair_aabb=true)
             _binning_device_run(s_on, c_on; mode, subsort=false, pair_aabb=true)
             Uon = _binning_inner(s_on).gradient_stretching[1:3, :]
             Jon = _binning_inner(s_on).potential[5:13, :]
@@ -424,17 +479,15 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
 
         s_off = _mk_psys()
         c_off = _mk_pcache(s_off, 4, Float32; hess=false)
-        FastMultipole.fmm!(s_off, c_off; scalar_potential=false, gradient=true,
-            hessian=false)
+        _with_binning_refs(; mode=:classsplit) do
+            FastMultipole.fmm!(s_off, c_off; scalar_potential=false,
+                gradient=true, hessian=false)
+        end
         s_on = _mk_psys()
         c_on = _mk_pcache(s_on, 4, Float32; hess=false, pair_aabb=true)
-        old_paabb = FastMultipole.CUDA_NEARFIELD_PAIR_AABB[]
-        FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = true
-        try
+        _with_binning_refs(; mode=:classsplit, pair_aabb=true) do
             FastMultipole.fmm!(s_on, c_on; scalar_potential=false,
                 gradient=true, hessian=false)
-        finally
-            FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = old_paabb
         end
         @test maximum(abs.(_binning_inner(s_on).gradient_stretching[1:3, :] .-
             _binning_inner(s_off).gradient_stretching[1:3, :])) / u_scale < 2e-6
@@ -480,12 +533,18 @@ _binning_inner(sys::SmoothedVortex) = sys.inner
             @test counters7.operator_uploads == op0
             @test counters7.body_uploads == body0 + 1
             @test counters7.expansion_host_copies == 0
-            @eval CUDA.@allocated fmm!($ds, $dc;
-                scalar_potential=false, gradient=true, hessian=true)
-            step_a = @eval CUDA.@allocated fmm!($ds, $dc;
-                scalar_potential=false, gradient=true, hessian=true)
-            step_b = @eval CUDA.@allocated fmm!($ds, $dc;
-                scalar_potential=false, gradient=true, hessian=true)
+            _with_binning_refs(; mode=:classsplit, pair_aabb=true) do
+                @eval CUDA.@allocated fmm!($ds, $dc;
+                    scalar_potential=false, gradient=true, hessian=true)
+            end
+            step_a = _with_binning_refs(; mode=:classsplit, pair_aabb=true) do
+                @eval CUDA.@allocated fmm!($ds, $dc;
+                    scalar_potential=false, gradient=true, hessian=true)
+            end
+            step_b = _with_binning_refs(; mode=:classsplit, pair_aabb=true) do
+                @eval CUDA.@allocated fmm!($ds, $dc;
+                    scalar_potential=false, gradient=true, hessian=true)
+            end
             @test step_b == step_a
         finally
             FastMultipole.CUDA_NEARFIELD_PAIR_AABB[] = false
@@ -545,9 +604,8 @@ end
 
         for P in (4, 8), TF in (Float64, Float32)
             ref_sys = fresh_psys()
-            ref_cache = fresh_cache(ref_sys, P, TF)
-            _binning_device_run(ref_sys, ref_cache; mode=:classsplit,
-                subsort=false, gh_mode=:shipped)
+            _binning_device_run(ref_sys, () -> fresh_cache(ref_sys, P, TF);
+                mode=:classsplit, subsort=false, gh_mode=:shipped)
             U0 = copy(_binning_inner(ref_sys).gradient_stretching[1:3, :])
             J0 = copy(_binning_inner(ref_sys).potential[5:13, :])
             u_scale = maximum(abs.(U0))
@@ -562,12 +620,12 @@ end
                 ((:reduced, 5e-4), (:lut, 5e-4))
             for (gh_mode, mode_tol) in gh_modes, bmode in (:classsplit, :ballot)
                 dsys = fresh_psys()
-                dcache = fresh_cache(dsys, P, TF)
+                dcache = _binning_device_run(dsys,
+                    () -> fresh_cache(dsys, P, TF);
+                    mode=bmode, subsort=false, gh_mode)
                 nfctx = FastMultipole._cache_nearfield_bin_ctx(dcache)
                 @test nfctx !== nothing
                 @test size(nfctx.gh_lut) == (2, FastMultipole._NF_GH_LUT_N)
-                _binning_device_run(dsys, dcache; mode=bmode, subsort=false,
-                    gh_mode)
                 Ud = _binning_inner(dsys).gradient_stretching[1:3, :]
                 Jd = _binning_inner(dsys).potential[5:13, :]
                 tol = max(mode_tol, base_tol)
@@ -581,15 +639,13 @@ end
 
         for TF in (Float64, Float32)
             ref_sys = fresh_tsys()
-            ref_cache = fresh_cache(ref_sys, 4, TF)
-            _binning_device_run(ref_sys, ref_cache; mode=:classsplit,
-                subsort=false, gh_mode=:shipped)
+            _binning_device_run(ref_sys, () -> fresh_cache(ref_sys, 4, TF);
+                mode=:classsplit, subsort=false, gh_mode=:shipped)
             U0 = copy(_binning_inner(ref_sys).gradient_stretching[1:3, :])
             u_scale = maximum(abs.(U0))
             dsys = fresh_tsys()
-            dcache = fresh_cache(dsys, 4, TF)
-            _binning_device_run(dsys, dcache; mode=:classsplit, subsort=false,
-                gh_mode=:reduced)
+            _binning_device_run(dsys, () -> fresh_cache(dsys, 4, TF);
+                mode=:classsplit, subsort=false, gh_mode=:reduced)
             Ud = _binning_inner(dsys).gradient_stretching[1:3, :]
             @test maximum(abs.(Ud .- U0)) / u_scale <
                 max(1e-4, TF == Float64 ? 1e-8 : 4e-4)
@@ -601,7 +657,8 @@ end
 
         for gh_mode in (:reduced, :lut)
             dsys = fresh_psys()
-            dcache = fresh_cache(dsys, 4, Float32)
+            dcache = _with_binning_refs(() -> fresh_cache(dsys, 4, Float32);
+                mode=:classsplit, gh_mode)
             for _ in 1:2
                 _binning_device_run(dsys, dcache; mode=:classsplit,
                     subsort=false, gh_mode)
@@ -637,15 +694,17 @@ end
 
         for gh_mode in (:reduced, :lut)
             ref_sys = fresh_psys()
-            ref_cache = fresh_cache(ref_sys, 4, Float32)
-            _binning_device_run(ref_sys, ref_cache; mode=:classsplit,
-                subsort=false, gh_mode)
+            ref_cache = _binning_device_run(ref_sys,
+                () -> fresh_cache(ref_sys, 4, Float32);
+                mode=:classsplit, subsort=false, gh_mode)
             gsys = fresh_psys()
-            gcache = RadixFMMCache(gsys; expansion_order=4, ell=3, near_radius2=16,
-                hessian=true, device=true,
-                options=CUDARadixLifecycleOptions(; precision=Float32,
-                    m2l_strategy=FastMultipole.DenseTranslationM2L(
-                        apply_chunk=64, build_chunk=8)))
+            gcache = _with_binning_refs(
+                () -> RadixFMMCache(gsys; expansion_order=4, ell=3, near_radius2=16,
+                    hessian=true, device=true,
+                    options=CUDARadixLifecycleOptions(; precision=Float32,
+                        m2l_strategy=FastMultipole.DenseTranslationM2L(
+                            apply_chunk=64, build_chunk=8)));
+                mode=:classsplit, gh_mode)
             for _ in 1:3
                 _binning_device_run(gsys, gcache; mode=:classsplit,
                     subsort=false, gh_mode)
@@ -675,13 +734,15 @@ end
         finally
             FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :shipped
         end
+        # the cache must be BUILT under :lut (047 lock contract) so fmm!
+        # reaches the flat-path launch validation rather than the lock error
         rsys = SmoothedVortex(generate_vortex(seed, 400), fill(0.02, 400))
-        rcache = RadixFMMCache(rsys; expansion_order=4, ell=2, hessian=true,
-            device=true, policy=FastMultipole.ConstantPAnalyticStencil(4, 1e-3),
-            options=CUDARadixLifecycleOptions(; precision=Float32,
-                m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :lut
         try
+            rcache = RadixFMMCache(rsys; expansion_order=4, ell=2, hessian=true,
+                device=true, policy=FastMultipole.ConstantPAnalyticStencil(4, 1e-3),
+                options=CUDARadixLifecycleOptions(; precision=Float32,
+                    m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
             @test_throws ArgumentError fmm!(rsys, rcache; scalar_potential=false,
                 gradient=true, hessian=true)
         finally

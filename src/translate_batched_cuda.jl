@@ -8144,7 +8144,10 @@ function _build_cuda_hierarchical_context(::Type{TF}, basis_info::OperatorBasisI
         "Morton binary-search fallback has no device implementation. Raise the " *
         "budget, lower ell, or run this policy host-resident."))
     noffsets = length(tables.push_offsets)
-    K = min(policy.window_classes, noffsets)
+    # Clamp to >= 1 so `1:K:noffsets` window strides stay well-formed on the
+    # zero-M2L degenerate cache (noffsets == 0, task 052c) — every such loop
+    # is empty anyway, but a zero step would be an ArgumentError.
+    K = max(min(policy.window_classes, noffsets), 1)
     flag_capacity = max(K * max_level_nodes, 1)
     node_at = CUDA.zeros(Int32, length(occupancy.node_at))
     d_level_base = CUDA.CuArray{Int}(occupancy.level_base)

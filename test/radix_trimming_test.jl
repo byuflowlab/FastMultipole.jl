@@ -238,4 +238,40 @@ end
         TRIM_FM.update_radix_state!(cache, (sys,))
         @test (@allocated TRIM_FM.update_radix_state!(cache, (sys,))) <= 64 * 1024
     end
+
+    #--- (g) zero-M2L degenerate geometry runs pure direct (task 052c) ---#
+    # On a (1,1,2) grid with q = 12 every root offset lies inside the near
+    # ball (max |o|^2 = 1 + 1 + 9 = 11), so the hierarchy has zero M2L levels
+    # (first_m2l_level == ell + 1). The cache must degenerate to direct-only
+    # evaluation — the efficient answer for a field this small — not throw.
+
+    let ell_axes = SVector(1, 1, 2), ell = 2, extent = (2.0, 2.0, 4.0)
+        @test TRIM_FM._radix_root_level(ell_axes, ell, 12) == (2, 2)
+        coords = _trim_sparse_coords(rng, ell_axes, 0.9)
+        sys = _trim_system(coords)
+        cache = RadixFMMCache(sys; expansion_order=3, ell,
+            bounds=(origin, extent), near_radius2=12)
+        ctx = cache.state.interaction_list
+        @test ctx.first_m2l_level == ell + 1
+        @test isempty(cache.accepted_offsets)
+        @test isempty(ctx.tables.push_offsets)
+        fmm!(sys, cache; scalar_potential=true, gradient=true)
+        @test cache.state.counts.n_routes == 0
+        # direct covers every ordered leaf pair exactly once — the exact-once
+        # audit degenerates to the direct list alone
+        hits = _trim_coverage_hits(cache)
+        @test all(hits .== 1)
+        # with no expansions anywhere the answer is the direct sum: the gap to
+        # direct! sits at the kernel softening-convention level (~5e-9 with the
+        # 1e-3 body radius here), orders below the ~2e-3 truncation-level
+        # tolerances of section (d)
+        ref = _trim_system(coords)
+        FastMultipole.direct!(ref; scalar_potential=true, gradient=true)
+        @test maximum(abs.(sys.potential[1, :] .- ref.potential[1, :])) < 1e-7
+        @test maximum(abs.(sys.potential[5:7, :] .- ref.potential[5:7, :])) < 1e-6
+        # an explicit level schedule cannot anchor to zero active levels
+        @test_throws ArgumentError RadixFMMCache(_trim_system(coords);
+            expansion_order=3, ell, bounds=(origin, extent), near_radius2=12,
+            level_radii2=(12,))
+    end
 end
