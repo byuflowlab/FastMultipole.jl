@@ -225,7 +225,18 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
     bodies[5, :] .= 1.0f0 / n
 
     sys = Gravitational(bodies)
-    policy = AdaptiveTreePolicy(; ell_max, K_max, balance=true)
+    # RadixFMMCache's constructor builds interaction lists (V/U/WX + DTR
+    # frontier), not just the tree, even though only tree-build timing is
+    # wanted here — unavoidable without bypassing the public constructor
+    # entirely. Its default auto-sized capacities (_cuda_adaptive_capacities,
+    # tree_batched_cuda.jl:44-58) are calibrated against real wake-simulation
+    # V-list volumes; this benchmark's synthetic uniform/dense-cluster test
+    # data is denser/more uniform than that and overflowed the default at
+    # n=100000 (job 13505541: "DTR frontier capacity 6400000 exceeded").
+    # Oversize generously (4x the observed overflow point at the same n) —
+    # UNVERIFIED past n=100000 until this runs again.
+    policy = AdaptiveTreePolicy(; ell_max, K_max, balance=true,
+        v_capacity=256 * n, u_capacity=64 * n, wx_capacity=16 * n)
 
     # Fix the same root cube (x_min, h0) as the CPU/KA arms via `bounds`
     # (RadixFMMCache's box_size = 2*h0; leaving bounds=nothing would let it
