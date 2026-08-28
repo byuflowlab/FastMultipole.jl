@@ -431,6 +431,19 @@ function main()
                     push!(results, res)
                 end
             end
+
+            # Reclaim device memory before the next test case. actx/cache device
+            # buffers created above go out of scope when their benchmark_* function
+            # returns, but are otherwise only freed whenever Julia's own GC pressure
+            # happens to trigger — without this, they sit live for the rest of the
+            # process, growing the shared CUDA caching allocator's live set across
+            # cases and degrading later (larger-n) cases' allocator performance
+            # (confirmed via job 13506207's gpu.csv: memory.used grew monotonically
+            # 0->41GB across all 8 cases with no drops).
+            GC.gc()
+            if !isapple() && CUDA.functional()
+                CUDA.reclaim()
+            end
         end
     end
 

@@ -148,6 +148,38 @@ function main()
             sum(build_leaves_allocs) + sum(balance_allocs) + sum(finalize_allocs)
     report("SUM of all phases (avg/trial)", round(Int64, total / ntrials))
     println("\n(compare against job 13506036's measured ~1.95GB/trial for the full ka_build_adaptive_tree! call)")
+
+    # ----- Part 3: residual ~18.1KB/trial after the KAAdaptiveTreeContext fix -----
+    # Production code (ka_build_adaptive_tree! / ka_adaptive_balance! / ka_adaptive_finalize!)
+    # calls `sortperm!(view(dest,1:nl), view(src,1:nl))` on views into actx buffers, not
+    # plain CuArrays -- Part 1 above only tested sortperm! on plain CuArrays (0.0 MB).
+    # Test whether CUDA.jl's sortperm! falls back to an allocating generic path for
+    # SubArray (view) arguments, which plain-array dispatch avoids.
+    println("\n--- Part 3: sortperm! on views vs. plain CuArrays (job 13506207 residual) ---")
+
+    for m in (Int(1e6), nl_estimate)
+        keys_plain = KA.zeros(CUDABackend(), UInt64, m)
+        rand!(keys_plain)
+        perm_plain = KA.zeros(CUDABackend(), Int, m)
+        plain_allocs = Int64[]
+        for _ in 1:ntrials
+            CUDA.synchronize()
+            push!(plain_allocs, CUDA.@allocated sortperm!(perm_plain, keys_plain))
+        end
+        CUDA.synchronize()
+        report("sortperm!(plain CuArray, plain CuArray) at m=$m", round(Int64, sum(plain_allocs) / ntrials))
+
+        keys_big = KA.zeros(CUDABackend(), UInt64, m + 256)
+        rand!(view(keys_big, 1:m))
+        perm_big = KA.zeros(CUDABackend(), Int, m + 256)
+        view_allocs = Int64[]
+        for _ in 1:ntrials
+            CUDA.synchronize()
+            push!(view_allocs, CUDA.@allocated sortperm!(view(perm_big, 1:m), view(keys_big, 1:m)))
+        end
+        CUDA.synchronize()
+        report("sortperm!(view, view) at m=$m (production pattern)", round(Int64, sum(view_allocs) / ntrials))
+    end
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
