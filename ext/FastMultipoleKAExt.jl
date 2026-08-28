@@ -946,4 +946,261 @@ function ka_adaptive_balance!(nl::Int, leaf_levels, leaf_keys, leaf_lo, leaf_hi,
     return nl, total, src[1], src[2], src[3], src[4]
 end
 
+#------- Phase C: level-major node table finalize -------#
+
+@kernel function ka_ancestor_flags_kernel!(flags, @Const(slev), nl, L)
+    i = @index(Global)
+    @inbounds if i <= nl
+        flags[i] = Int(slev[i]) >= L ? Int32(1) : Int32(0)
+    end
+end
+
+@kernel function ka_ancestor_compact_kernel!(cand, @Const(flags), @Const(prefix),
+        @Const(slev), @Const(skey), nl, L)
+    i = @index(Global)
+    @inbounds if i <= nl && flags[i] == Int32(1)
+        cand[Int(prefix[i])] = skey[i] >> (3 * (Int(slev[i]) - L))
+    end
+end
+
+@kernel function ka_unique_flags_kernel!(flags, @Const(cand), m)
+    i = @index(Global)
+    @inbounds if i <= m
+        flags[i] = (i == 1 || cand[i] != cand[i - 1]) ? Int32(1) : Int32(0)
+    end
+end
+
+@kernel function ka_unique_compact_kernel!(node_keys, node_levels, base, @Const(flags),
+        @Const(prefix), @Const(cand), m, L)
+    i = @index(Global)
+    @inbounds if i <= m && flags[i] == Int32(1)
+        idx = base + Int(prefix[i])
+        node_keys[idx] = cand[i]
+        node_levels[idx] = Int32(L)
+    end
+end
+
+@kernel function ka_node_ranges_kernel!(node_lo, node_hi, @Const(node_keys),
+        @Const(node_levels), n_nodes, @Const(sorted_keys), n, ell_max)
+    i = @index(Global)
+    @inbounds if i <= n_nodes
+        shift = 3 * (ell_max - Int(node_levels[i]))
+        startk = node_keys[i] << shift
+        endk = startk + (UInt64(1) << shift)
+        node_lo[i] = Int32(ka_lower_bound(sorted_keys, 1, n, startk))
+        node_hi[i] = Int32(ka_lower_bound(sorted_keys, 1, n, endk) - 1)
+    end
+end
+
+@kernel function ka_node_geometry_kernel!(node_coords, node_centers, @Const(node_keys),
+        @Const(node_levels), n_nodes, x_min, h0)
+    i = @index(Global)
+    @inbounds if i <= n_nodes
+        L = Int(node_levels[i])
+        cx, cy, cz = ka_decode_morton_key(node_keys[i], L)
+        node_coords[1, i] = cx
+        node_coords[2, i] = cy
+        node_coords[3, i] = cz
+        TF = eltype(node_centers)
+        width = (2 * h0) / (1 << L)
+        node_centers[1, i] = x_min[1] + width * (TF(cx) + TF(0.5))
+        node_centers[2, i] = x_min[2] + width * (TF(cy) + TF(0.5))
+        node_centers[3, i] = x_min[3] + width * (TF(cz) + TF(0.5))
+    end
+end
+
+@kernel function ka_parent_kernel!(parent_index, @Const(node_keys), base, count,
+        base_prev, count_prev)
+    i = @index(Global)
+    @inbounds if i <= count
+        node = base + i
+        pk = node_keys[node] >> 3
+        parent_index[node] = Int32(ka_lower_bound(node_keys, base_prev + 1,
+            base_prev + count_prev, pk))
+    end
+end
+
+@kernel function ka_children_kernel!(child_ranges, @Const(node_keys), base, count,
+        base_next, count_next)
+    i = @index(Global)
+    @inbounds if i <= count
+        node = base + i
+        k = node_keys[node] << 3
+        firstc = ka_lower_bound(node_keys, base_next + 1, base_next + count_next, k)
+        endc = ka_lower_bound(node_keys, base_next + 1, base_next + count_next, k + UInt64(8))
+        child_ranges[1, node] = Int32(endc > firstc ? firstc : 0)
+        child_ranges[2, node] = Int32(endc - firstc)
+    end
+end
+
+@kernel function ka_leaf_flags_kernel!(flags, @Const(child_ranges), n_nodes)
+    i = @index(Global)
+    @inbounds if i <= n_nodes
+        flags[i] = child_ranges[2, i] == 0 ? Int32(1) : Int32(0)
+    end
+end
+
+@kernel function ka_leaf_compact_kernel!(leaf_index, leaf_slot_of, @Const(flags),
+        @Const(prefix), n_nodes)
+    i = @index(Global)
+    @inbounds if i <= n_nodes
+        leaf_slot_of[i] = Int32(0)
+        if flags[i] == Int32(1)
+            slot = Int(prefix[i])
+            leaf_index[slot] = Int32(i)
+            leaf_slot_of[i] = Int32(slot)
+        end
+    end
+end
+
+@kernel function ka_cell_arrays_kernel!(cell_ranges, cell_centers, cell_keys, leaf_to_node,
+        @Const(leaf_index), @Const(node_lo), @Const(node_hi), @Const(node_centers),
+        @Const(node_keys), n_leaves)
+    c = @index(Global)
+    @inbounds if c <= n_leaves
+        f = Int(leaf_index[c])
+        leaf_to_node[c] = Int32(f)
+        cell_ranges[1, c] = node_lo[f]
+        cell_ranges[2, c] = node_hi[f] - node_lo[f] + Int32(1)
+        cell_centers[1, c] = node_centers[1, f]
+        cell_centers[2, c] = node_centers[2, f]
+        cell_centers[3, c] = node_centers[3, f]
+        cell_keys[c] = node_keys[f]
+    end
+end
+
+"""
+    ka_adaptive_finalize!(nl, leaf_levels, leaf_keys, leaf_lo, leaf_hi, sorted_keys,
+                           ell_max, n, x_min, h0::TF; node_capacity, workgroup=64)
+
+Backend-agnostic port of `_cuda_adaptive_finalize!` (tree_batched_cuda.jl): builds the
+level-major node table (ancestor + leaf nodes, Morton-sorted within each level) from
+the final (post 2:1-balance) leaf set produced by `ka_adaptive_balance!`, then resolves
+node body-ranges, geometry, parent/child links, leaf compaction, and the leaf-indexed
+cell presentation arrays. `leaf_levels`/`leaf_keys`/`leaf_lo`/`leaf_hi` are backend
+arrays logically truncated to `1:nl`; `sorted_keys` is the same full-depth-sorted body
+key array used throughout the adaptive-tree pipeline. `x_min`/`h0` are the tree's
+bounding-box origin/half-width (plain scalars, e.g. an `SVector{3,TF}`/`TF`, not device
+arrays -- mirrors CUDA's `grid.x_min`/`grid.h0` convention).
+
+Returns a `NamedTuple` `(n_nodes, n_leaves, node_keys, node_levels, node_coords,
+node_centers, node_lo, node_hi, parent_index, child_ranges, leaf_index, leaf_slot_of,
+cell_ranges, cell_centers, cell_keys, leaf_to_node)`. The node-indexed arrays are
+allocated at `node_capacity` and logically truncated to `1:n_nodes`; the leaf-indexed
+cell arrays are allocated exactly at `n_leaves` (== `nl`, asserted).
+"""
+function ka_adaptive_finalize!(nl::Int, leaf_levels, leaf_keys, leaf_lo, leaf_hi,
+        sorted_keys::AbstractVector{UInt64}, ell_max::Int, n::Int, x_min, h0::TF;
+        node_capacity::Int, workgroup::Int=64) where TF
+    backend = KA.get_backend(sorted_keys)
+
+    shifted = KA.zeros(backend, UInt64, nl)
+    order = KA.zeros(backend, Int, nl)
+    skey = KA.zeros(backend, UInt64, nl)
+    slev = KA.zeros(backend, Int32, nl)
+    cand = KA.zeros(backend, UInt64, nl)
+    flags = KA.zeros(backend, Int32, node_capacity)
+    prefix = KA.zeros(backend, Int32, node_capacity)
+
+    node_keys = KA.zeros(backend, UInt64, node_capacity)
+    node_levels = KA.zeros(backend, Int32, node_capacity)
+    node_coords = KA.zeros(backend, Int32, 3, node_capacity)
+    node_centers = KA.zeros(backend, TF, 3, node_capacity)
+    node_lo = KA.zeros(backend, Int32, node_capacity)
+    node_hi = KA.zeros(backend, Int32, node_capacity)
+    parent_index = KA.zeros(backend, Int32, node_capacity)
+    child_ranges = KA.zeros(backend, Int32, 2, node_capacity)
+    leaf_index = KA.zeros(backend, Int32, node_capacity)
+    leaf_slot_of = KA.zeros(backend, Int32, node_capacity)
+
+    shiftedk = _cached_kernel(ka_leaf_shifted_kernel!, backend, workgroup)
+    ancflagsk = _cached_kernel(ka_ancestor_flags_kernel!, backend, workgroup)
+    anccompactk = _cached_kernel(ka_ancestor_compact_kernel!, backend, workgroup)
+    uflagsk = _cached_kernel(ka_unique_flags_kernel!, backend, workgroup)
+    ucompactk = _cached_kernel(ka_unique_compact_kernel!, backend, workgroup)
+    rangesk = _cached_kernel(ka_node_ranges_kernel!, backend, workgroup)
+    geomk = _cached_kernel(ka_node_geometry_kernel!, backend, workgroup)
+    parentk = _cached_kernel(ka_parent_kernel!, backend, workgroup)
+    childrenk = _cached_kernel(ka_children_kernel!, backend, workgroup)
+    leafflagsk = _cached_kernel(ka_leaf_flags_kernel!, backend, workgroup)
+    leafcompactk = _cached_kernel(ka_leaf_compact_kernel!, backend, workgroup)
+    cellk = _cached_kernel(ka_cell_arrays_kernel!, backend, workgroup)
+
+    shiftedk(shifted, leaf_levels, leaf_keys, ell_max; ndrange=nl)
+    KA.synchronize(backend)
+    ov = view(order, 1:nl)
+    sortperm!(ov, view(shifted, 1:nl))
+    ka_gather_values!(skey, leaf_keys, ov; workgroup=workgroup)
+    ka_gather_values!(slev, leaf_levels, ov; workgroup=workgroup)
+
+    off = zeros(Int, ell_max + 2)
+    n_nodes = 0
+    for L in 0:ell_max
+        off[L + 1] = n_nodes
+        ancflagsk(flags, slev, nl, L; ndrange=nl)
+        KA.synchronize(backend)
+        me = _ka_scan_total!(flags, prefix, nl)
+        me == 0 && continue
+        anccompactk(cand, flags, prefix, slev, skey, nl, L; ndrange=nl)
+        KA.synchronize(backend)
+        uflagsk(flags, cand, me; ndrange=me)
+        KA.synchronize(backend)
+        mL = _ka_scan_total!(flags, prefix, me)
+        n_nodes + mL <= node_capacity || error(
+            "adaptive KA node capacity $node_capacity exceeded; raise node_capacity")
+        ucompactk(node_keys, node_levels, n_nodes, flags, prefix, cand, me, L; ndrange=me)
+        KA.synchronize(backend)
+        n_nodes += mL
+    end
+    off[ell_max + 2] = n_nodes
+
+    rangesk(node_lo, node_hi, node_keys, node_levels, n_nodes, sorted_keys, n, ell_max;
+        ndrange=n_nodes)
+    geomk(node_coords, node_centers, node_keys, node_levels, n_nodes, x_min, h0;
+        ndrange=n_nodes)
+    KA.synchronize(backend)
+
+    fill!(view(parent_index, 1:n_nodes), Int32(0))
+    fill!(view(child_ranges, :, 1:n_nodes), Int32(0))
+    for L in 1:ell_max
+        base = off[L + 1]
+        count = off[L + 2] - off[L + 1]
+        count > 0 || continue
+        base_prev = off[L]
+        count_prev = off[L + 1] - off[L]
+        parentk(parent_index, node_keys, base, count, base_prev, count_prev; ndrange=count)
+    end
+    for L in 0:(ell_max - 1)
+        base = off[L + 1]
+        count = off[L + 2] - off[L + 1]
+        count > 0 || continue
+        base_next = off[L + 2]
+        count_next = off[L + 3] - off[L + 2]
+        childrenk(child_ranges, node_keys, base, count, base_next, count_next; ndrange=count)
+    end
+    KA.synchronize(backend)
+
+    leafflagsk(flags, child_ranges, n_nodes; ndrange=n_nodes)
+    KA.synchronize(backend)
+    n_leaves = _ka_scan_total!(flags, prefix, n_nodes)
+    n_leaves == nl || throw(AssertionError(
+        "adaptive KA finalize: leaf count mismatch ($n_leaves vs $nl)"))
+    leafcompactk(leaf_index, leaf_slot_of, flags, prefix, n_nodes; ndrange=n_nodes)
+    KA.synchronize(backend)
+
+    cell_ranges = KA.zeros(backend, Int32, 2, n_leaves)
+    cell_centers = KA.zeros(backend, TF, 3, n_leaves)
+    cell_keys = KA.zeros(backend, UInt64, n_leaves)
+    leaf_to_node = KA.zeros(backend, Int32, n_leaves)
+    cellk(cell_ranges, cell_centers, cell_keys, leaf_to_node, leaf_index, node_lo, node_hi,
+        node_centers, node_keys, n_leaves; ndrange=n_leaves)
+    KA.synchronize(backend)
+
+    return (n_nodes=n_nodes, n_leaves=n_leaves, node_keys=node_keys, node_levels=node_levels,
+        node_coords=node_coords, node_centers=node_centers, node_lo=node_lo, node_hi=node_hi,
+        parent_index=parent_index, child_ranges=child_ranges, leaf_index=leaf_index,
+        leaf_slot_of=leaf_slot_of, cell_ranges=cell_ranges, cell_centers=cell_centers,
+        cell_keys=cell_keys, leaf_to_node=leaf_to_node)
+end
+
 end
