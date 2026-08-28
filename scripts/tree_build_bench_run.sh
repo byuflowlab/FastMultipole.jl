@@ -33,8 +33,12 @@ GPULOG="$WORKDIR/tree_build_bench_${SLURM_JOB_ID}.gpu.csv"
 # Background GPU sample, 1s cadence, for the duration of the julia run:
 # utilization/memory catch co-tenant activity; clocks/power/throttle-reasons
 # catch thermal/power throttling independent of any other tenant.
+# clocks.mem/temperature.memory added because the SM-clock check alone
+# (13506267) didn't rule out HBM-specific throttling, which would explain
+# the n>=1e5 staircase hitting every kernel type uniformly.
 nvidia-smi --query-gpu=timestamp,utilization.gpu,memory.used,memory.total,\
-clocks.sm,clocks.max.sm,power.draw,power.limit,clocks_event_reasons.active \
+clocks.sm,clocks.max.sm,clocks.mem,clocks.max.mem,temperature.memory,\
+power.draw,power.limit,clocks_event_reasons.active \
     --format=csv -l 1 > "$GPULOG" &
 GPU_MONITOR_PID=$!
 trap 'kill "$GPU_MONITOR_PID" 2>/dev/null' EXIT
