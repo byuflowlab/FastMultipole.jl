@@ -44,6 +44,15 @@ function print_result(res::BenchmarkResult)
             "$(time_μs)μs [IQR ±$(iqr_μs)μs] ($(res.ntrials) trials)")
 end
 
+# Diagnostic: at n=1e6 the IQR/median ratio is 5-8x and unexplained (see
+# project_fastmultipole_ka_migration memory). Dump the raw per-trial times so
+# the distribution shape (bimodal? monotonic drift? isolated outliers?) can be
+# inspected instead of guessing from median/IQR alone.
+function print_raw_trials(name::String, n::Int, dist::Symbol, times::Vector{Float64})
+    times_μs = round.(times ./ 1000; digits=1)
+    println("  [raw] $(name) (n=$n, $dist) sorted trial times (μs): $(sort(times_μs))")
+end
+
 # Sanity check: tree has reasonable structure (not empty, leaves <= nodes)
 function verify_tree_structure(name::String, n_nodes::Int, n_leaves::Int, n_bodies::Int)
     n_nodes > 0 || error("$name: tree has no nodes")
@@ -365,6 +374,7 @@ function main()
                     res = BenchmarkResult("CUDA-KA", n, dist, cuda_ka_nodes, cuda_ka_leaves,
                         median_ns, iqr_ns, ntrials)
                     print_result(res)
+                    n == Int(1e6) && print_raw_trials("CUDA-KA", n, dist, cuda_ka_times)
                     push!(results, res)
                 end
             end
@@ -382,6 +392,7 @@ function main()
                     res = BenchmarkResult("CUDA-native", n, dist, cuda_native_nodes, cuda_native_leaves,
                         median_ns, iqr_ns, ntrials)
                     print_result(res)
+                    n == Int(1e6) && print_raw_trials("CUDA-native", n, dist, cuda_native_times)
                     push!(results, res)
                 end
             end
