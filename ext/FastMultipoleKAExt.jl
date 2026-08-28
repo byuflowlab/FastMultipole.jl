@@ -5,6 +5,15 @@ using KernelAbstractions
 using LinearAlgebra
 const KA = KernelAbstractions
 
+# Constructing a KA kernel object (`some_kernel!(backend, workgroup)`) redoes
+# generic dispatch/partitioning work on every call; caching it per (kernel
+# function, backend type, workgroup) avoids repeating that on the hot path.
+const _KERNEL_CACHE = Dict{Tuple{Any,DataType,Int},Any}()
+function _cached_kernel(f, backend, workgroup::Int)
+    key = (f, typeof(backend), workgroup)
+    return get!(() -> f(backend, workgroup), _KERNEL_CACHE, key)
+end
+
 # Backend-agnostic M2M building blocks (GPU-native, no host round-trip),
 # mirroring FastMultipole's CUDA-only production kernels in
 # src/translate_batched_cuda.jl (`_cuda_gather_rotate_z_kernel!`,
@@ -47,8 +56,8 @@ CUDA `_gather_rotate_z!` convention.
 function ka_gather_rotate_z!(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; workgroup=64)
     length(dst) == 0 && return dst
     backend = KA.get_backend(dst)
-    ka_gather_rotate_z_kernel!(backend, workgroup)(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; ndrange=length(dst))
-    KA.synchronize(backend)
+    kernel = _cached_kernel(ka_gather_rotate_z_kernel!, backend, workgroup)
+    kernel(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; ndrange=length(dst))
     return dst
 end
 
@@ -78,8 +87,8 @@ confirmed working on Metal.
 function ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=64)
     length(slab) == 0 && return dest
     backend = KA.get_backend(dest)
-    ka_rotate_z_scatter_accumulate_kernel!(backend, workgroup)(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; ndrange=length(slab))
-    KA.synchronize(backend)
+    kernel = _cached_kernel(ka_rotate_z_scatter_accumulate_kernel!, backend, workgroup)
+    kernel(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; ndrange=length(slab))
     return dest
 end
 
@@ -127,8 +136,8 @@ row gather `dst[i, :] = src[rows[i], :]`, used by the Lamb-Helmholtz row-mix sta
 function ka_gather_rows!(dst, src, rows; workgroup=64)
     length(dst) == 0 && return dst
     backend = KA.get_backend(dst)
-    ka_gather_rows_kernel!(backend, workgroup)(dst, src, rows; ndrange=length(dst))
-    KA.synchronize(backend)
+    kernel = _cached_kernel(ka_gather_rows_kernel!, backend, workgroup)
+    kernel(dst, src, rows; ndrange=length(dst))
     return dst
 end
 
@@ -197,6 +206,7 @@ function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
     ka_stacked_y_dense!(rphi, ret_phi, Ur, Vs, C, S, G, G2, ndof_phi)
     ka_rotate_z_scatter_accumulate!(dest.phi, rphi, ws.phi_flat_idx, target_idx,
         ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, group_phis)
+    KA.synchronize(KA.get_backend(dest.phi))
     return dest
 end
 
