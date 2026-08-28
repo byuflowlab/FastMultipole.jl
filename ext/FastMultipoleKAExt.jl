@@ -1277,4 +1277,104 @@ function ka_adaptive_sigma_sweep!(node_lo, node_hi, child_ranges, n_nodes::Int,
     return node_sigma
 end
 
+#------- Harness front end: position -> full-depth key, and a full-build driver -------#
+#
+# Not a CUDA-parity phase (no `_cuda_*` counterpart is ported one-to-one here) --
+# this stitches Phases A-D together into a single from-scratch tree build, the way
+# `_cuda_refresh_adaptive_tree!` (tree_batched_cuda.jl:1387) stitches the hand-written
+# CUDA stages, so the 4-way tree-build benchmark can drive local-Metal and HPC-KA off
+# one shared, backend-agnostic entry point.
+
+@kernel function ka_radix_keys_kernel!(keys, @Const(positions), x_min, h0, ell, n)
+    i = @index(Global)
+    @inbounds if i <= n
+        G = 1 << ell
+        delta = (2 * h0) / G
+        px = positions[1, i]
+        py = positions[2, i]
+        pz = positions[3, i]
+        ix = clamp(floor(Int, (px - x_min[1]) / delta), 0, G - 1)
+        iy = clamp(floor(Int, (py - x_min[2]) / delta), 0, G - 1)
+        iz = clamp(floor(Int, (pz - x_min[3]) / delta), 0, G - 1)
+        keys[i] = ka_morton_key(ix, iy, iz, ell)
+    end
+end
+
+"""
+    ka_radix_keys!(keys, positions, x_min, h0, ell; workgroup=64)
+
+Backend-agnostic port of `_cuda_radix_keys_checked_kernel!` (translate_batched_cuda.jl),
+minus its out-of-bounds flag (bodies are assumed to already lie in the fixed root cube
+`[x_min, x_min + 2*h0]^3` -- true by construction for a from-scratch benchmark build;
+callers needing the OOB guard for a live refresh loop should add it at the call site).
+Writes each body's full-depth (`ell`-level) Morton key from its position into `keys`.
+`positions` is a `3 x n` backend matrix; `x_min` is a plain 3-tuple/SVector, not a
+device array (mirrors CUDA's `grid.x_min` convention).
+"""
+function ka_radix_keys!(keys::AbstractVector{UInt64}, positions::AbstractMatrix,
+        x_min, h0, ell::Int; workgroup::Int=64)
+    n = length(keys)
+    backend = KA.get_backend(keys)
+    keysk = _cached_kernel(ka_radix_keys_kernel!, backend, workgroup)
+    keysk(keys, positions, x_min, h0, ell, n; ndrange=n)
+    KA.synchronize(backend)
+    return keys
+end
+
+"""
+    ka_build_adaptive_tree!(positions, ell_max, K_max, balance, x_min, h0::TF;
+                             leaf_capacity, frontier_capacity, node_capacity,
+                             sigma_row=0, source_bodies=nothing, workgroup=64)
+
+From-scratch adaptive-octree build from raw body positions: full-depth Morton keys
+(`ka_radix_keys!`) + sort (`sortperm!`/`ka_gather_values!`, same as Phases B/C) feeding
+`ka_adaptive_build_leaves!` (Phase A) -> `ka_adaptive_balance!` (Phase B, if `balance`)
+-> `ka_adaptive_finalize!` (Phase C) -> `ka_adaptive_sigma_sweep!` (Phase D, if
+`sigma_row > 0` and `source_bodies` given). `positions` is a `3 x n` backend matrix;
+`x_min`/`h0` are the fixed root cube (plain scalars, not device arrays). Mirrors the
+stage order of `_cuda_refresh_adaptive_tree!` for a first (non-incremental) build.
+
+Returns Phase C's `NamedTuple` merged with `perm`, `sorted_keys`, `n_balance_splits`,
+and `node_sigma_max` (`nothing` if the sigma sweep was not armed).
+"""
+function ka_build_adaptive_tree!(positions::AbstractMatrix, ell_max::Int, K_max::Int,
+        balance::Bool, x_min, h0::TF; leaf_capacity::Int, frontier_capacity::Int,
+        node_capacity::Int, sigma_row::Int=0, source_bodies=nothing,
+        workgroup::Int=64) where TF
+    backend = KA.get_backend(positions)
+    n = size(positions, 2)
+
+    keys = KA.zeros(backend, UInt64, n)
+    ka_radix_keys!(keys, positions, x_min, h0, ell_max; workgroup=workgroup)
+
+    perm = KA.zeros(backend, Int, n)
+    sortperm!(perm, keys)
+    sorted_keys = KA.zeros(backend, UInt64, n)
+    ka_gather_values!(sorted_keys, keys, perm; workgroup=workgroup)
+
+    nl, llev, lkey, llo, lhi = ka_adaptive_build_leaves!(sorted_keys, ell_max, K_max, n;
+        leaf_capacity=leaf_capacity, frontier_capacity=frontier_capacity,
+        workgroup=workgroup)
+
+    n_balance_splits = 0
+    if balance
+        nl, n_balance_splits, llev, lkey, llo, lhi = ka_adaptive_balance!(nl, llev, lkey,
+            llo, lhi, sorted_keys, ell_max; leaf_capacity=leaf_capacity,
+            workgroup=workgroup)
+    end
+
+    fin = ka_adaptive_finalize!(nl, llev, lkey, llo, lhi, sorted_keys, ell_max, n, x_min,
+        h0; node_capacity=node_capacity, workgroup=workgroup)
+
+    node_sigma_max = if sigma_row > 0 && source_bodies !== nothing
+        ka_adaptive_sigma_sweep!(fin.node_lo, fin.node_hi, fin.child_ranges, fin.n_nodes,
+            fin.level_offsets, ell_max, source_bodies, sigma_row; workgroup=workgroup)
+    else
+        nothing
+    end
+
+    return merge(fin, (perm=perm, sorted_keys=sorted_keys,
+        n_balance_splits=n_balance_splits, node_sigma_max=node_sigma_max))
+end
+
 end
