@@ -154,11 +154,18 @@ for tol in (1e-4, 1e-5, 1e-6, 1e-7)
 end
 pnl.FILAMENT_REGULARIZATION[] = saved
 
-println("\n=== P5: device-path guard ===")
-p5a = try FastMultipole.RectangularPanelInfluence(:linegauss); 1.0 catch; 0.0 end
-check("P5 RectangularPanelInfluence(:linegauss) throws", p5a, 0.0)
-p5b = try FastMultipole._rect_reg_val(Int32(4)); 1.0 catch; 0.0 end
-check("P5 _rect_reg_val(4) throws (no silent Vatistas)", p5b, 0.0)
+println("\n=== P5: device-path arm (Step 3, 2026-08-28: LineGauss ported) ===")
+# pre-Step-3 this section asserted the THROW guard; the rectangular kernel
+# now carries the Val{4} LineGauss arm (k04_rect_linegauss.jl is its parity
+# harness), so assert the plumbing routes code 4 and still rejects unknowns
+p5a = try
+    FastMultipole.RectangularPanelInfluence(:linegauss).filament_reg == Int32(4) ? 0.0 : 1.0
+catch; 1.0 end
+check("P5 RectangularPanelInfluence(:linegauss) -> code 4", p5a, 0.0)
+p5b = try FastMultipole._rect_reg_val(Int32(4)) === Val(4) ? 0.0 : 1.0 catch; 1.0 end
+check("P5 _rect_reg_val(4) -> Val(4)", p5b, 0.0)
+p5c = try FastMultipole._rect_reg_val(Int32(5)); 1.0 catch; 0.0 end
+check("P5 _rect_reg_val(5) throws (no silent Vatistas)", p5c, 0.0)
 
 println(fails[] == 0 ? "\nALL PASS" : "\n$(fails[]) FAILURES")
 exit(fails[] == 0 ? 0 : 1)

@@ -68,7 +68,7 @@ struct RectangularGaussianErfVortex <: AbstractRectangularKernel end
 
 """
     RectangularPanelInfluence(filament_reg=1)
-    RectangularPanelInfluence(:vatistas | :compact | :gaussian)
+    RectangularPanelInfluence(:vatistas | :compact | :gaussian | :linegauss)
 
 Rectangular pair kernel for FLOWPanel panel elements (the 018 rotor element
 set), transcribed from FLOWPanel.jl `src/FLOWPanel_elements_fmm.jl` at commit
@@ -81,6 +81,10 @@ selects the bound-vortex filament family (FLOWPanel's
 - `2` = compact support (working-tree elements_fmm.jl:971-976, 1017-1029)
 - `3` = Gaussian / Lamb-Oseen (working-tree elements_fmm.jl:977-982, 1030-1042;
   FLOWPanel's working-tree DEFAULT)
+- `4` = LineGauss (052d): exact blob-line convolution of the segment kernel
+  with the FLOWVPM Gaussian core (FLOWPanel commit 8b07f96
+  elements_fmm.jl:973-1152, 1194-1201, 1228-1231); Float64-only guard/series
+  thresholds
 
 The family is stamped into the pair loop at compile time (one kernel
 instantiation per family — no runtime branch per edge, matching FLOWPanel's
@@ -127,11 +131,9 @@ function RectangularPanelInfluence(family::Symbol)
     family === :vatistas && return RectangularPanelInfluence(Int32(1))
     family === :compact && return RectangularPanelInfluence(Int32(2))
     family === :gaussian && return RectangularPanelInfluence(Int32(3))
-    family === :linegauss && throw(ArgumentError(
-        "LineGaussRegularization is not yet ported to the rectangular-" *
-        "influence/device filament kernel (host-only in FLOWPanel; 052d)"))
+    family === :linegauss && return RectangularPanelInfluence(Int32(4))
     throw(ArgumentError("unknown filament regularization $(repr(family)); " *
-        "use :vatistas, :compact, or :gaussian"))
+        "use :vatistas, :compact, :gaussian, or :linegauss"))
 end
 
 # Int -> Val barrier (one dynamic dispatch per direct_rectangular! call / CUDA
@@ -139,10 +141,12 @@ end
 @inline function _rect_reg_val(reg::Integer)
     reg == 2 && return Val(2)
     reg == 3 && return Val(3)
-    # code 4 = FLOWPanel LineGaussRegularization: NOT ported to this kernel —
-    # falling through to Vatistas here would silently change the physics
-    reg >= 4 && throw(ArgumentError("filament regularization code $reg " *
-        "(LineGauss?) is not supported by the rectangular-influence kernel"))
+    # code 4 = FLOWPanel LineGaussRegularization (052d device arm below)
+    reg == 4 && return Val(4)
+    # unknown codes throw — falling through to Vatistas would silently
+    # change the physics
+    reg >= 5 && throw(ArgumentError("filament regularization code $reg " *
+        "is not supported by the rectangular-influence kernel"))
     return Val(1)
 end
 
@@ -523,6 +527,204 @@ end
     return -T(ONE_OVER_4π) * p
 end
 
+#------- LineGauss (REG=4) closed-form segment kernel (052d) -------#
+# Exact blob-line convolution of the segment Biot–Savart kernel with the
+# FLOWVPM Gaussian core g(t) = erf(t/√2) − √(2/π)·t·e^(−t²/2). Faithful
+# transcription of the FLOWPanel port (branch fastmultipole, commit 8b07f96,
+# FLOWPanel_elements_fmm.jl:973-1152); derivation/validation in
+# MATRIX_OPERATOR_REFACTOR/prototypes/052d_compact_kernel/ (DERIVATION.md,
+# k01/k03 harnesses). erf backend: the vendored fdlibm _rect_erf above
+# (== FLOWVPM custom_erf64 bit-for-bit), GPU-compilable as-is, so host
+# fallback and CUDA device agree exactly; it differs from the FLOWPanel host
+# port (SpecialFunctions.erf) by ulps only, amplified to ≤ ~5e-8 relative by
+# the q̃-cancellation conditioning on distant axial-ish configs (k03 P3).
+# All helper arguments are σ-scaled (σ ≡ core_size); guard thresholds and
+# series truncations are Float64-derived (a Float32 port needs re-derivation;
+# the RectangularPanelInfluence contract is Float64-only anyway).
+
+const _RECT_LG_SQ2OPI = 0.7978845608028654   # sqrt(2/pi)
+const _RECT_LG_SMALL_R = 0.125
+
+# blob velocity function g(t) (odd in t), series-guarded as t → 0
+@inline function _rect_lg_gfun(t)
+    at = abs(t)
+    at >= 9.3 && return copysign(one(t), t)   # deviation < 2e-18
+    if at < 0.125
+        t2 = t * t
+        term = t * t2 / 3
+        s = term
+        for m in 1:12
+            term *= -t2 * (2m + 1) / (2m * (2m + 3))
+            s += term
+        end
+        return _RECT_LG_SQ2OPI * s
+    end
+    return _rect_erf(t / sqrt(2)) - _RECT_LG_SQ2OPI * t * exp(-t * t / 2)
+end
+
+# on-axis antiderivative ψ (odd, ψ(0) = 0): M_axis = ψ(ẑ1) − ψ(ẑ2)
+@inline function _rect_lg_psi(z)
+    z == 0 && return zero(z)
+    if abs(z) < 0.125
+        z2 = z * z
+        return _RECT_LG_SQ2OPI * z * (1 / 3 - z2 / 30 + z2^2 / 280 -
+                                      z2^3 / 3024 + z2^4 / 38016 - z2^5 / 549120)
+    end
+    return _RECT_LG_SQ2OPI * (z / 2) * exp(-z * z / 2) -
+           _rect_lg_gfun(z) / (2 * z * z) + _rect_lg_gfun(z) / 2
+end
+
+# g(R)/R³ including its finite R = 0 limit (gradient axial factor)
+@inline function _rect_lg_kfun(R)
+    if R < 0.125
+        r2 = R * R
+        return _RECT_LG_SQ2OPI * (1 / 3 - r2 / 10 + r2^2 / 56 -
+                                  r2^3 / 432 + r2^4 / 4224 - r2^5 / 49920)
+    end
+    return _rect_lg_gfun(R) / R^3
+end
+
+# FIXED threshold at the error crossover (2026-08-28 session-3 bug fix): the
+# axis limit truncates O(ĥ²) terms while the general branch loses ~eps/ĥ² to
+# cancellation in N = ĥ²·M — both ≤ ~2.5e-8 at ĥ² = 1e-7. Do NOT scale by
+# min ẑ² (the pre-fix form silently dropped the O(ĥ²) correction for long
+# segments).
+@inline _rect_lg_axis_guard(ĥ2, ẑ1, ẑ2) =
+    ĥ2 < 1e-7 && ẑ1 != 0 && ẑ2 != 0
+
+# wholly-small configuration: term-by-term integral of the convolution;
+# returns M and the radial-gradient factor D = M + 2ĥ²·∂M/∂ĥ². binomial(m,k)
+# is built incrementally in Float64 (exact for m ≤ 12, keeps Base.binomial's
+# Int branch/throw machinery off the device).
+function _rect_lg_small_radius_MD(ẑ1, ẑ2, ĥ2)
+    M = zero(ĥ2)
+    dM = zero(ĥ2)
+    coeff = 1 / 3
+    for m in 0:12
+        Im = zero(ĥ2)
+        dIm = zero(ĥ2)
+        bc = one(ĥ2)   # C(m,0)
+        for k in 0:m
+            p = m - k
+            dzpow = (ẑ1^(2k + 1) - ẑ2^(2k + 1)) / (2k + 1)
+            Im += bc * ĥ2^p * dzpow
+            p > 0 && (dIm += bc * p * ĥ2^(p - 1) * dzpow)
+            bc = bc * (m - k) / (k + 1)   # C(m,k+1), exact in Float64
+        end
+        M += coeff * Im
+        dM += coeff * dIm
+        coeff *= -(2m + 3) / (2 * (m + 1) * (2m + 5))
+    end
+    M *= _RECT_LG_SQ2OPI
+    return M, M + 2ĥ2 * _RECT_LG_SQ2OPI * dM
+end
+
+# one endpoint in the small-radius region: split the integral at |ẑ| = SMALL_R
+@inline _rect_lg_endpoint_split_guard(ĥ2, ẑ1, ẑ2, R̂1, R̂2) =
+    ĥ2 < 1e-8 * _RECT_LG_SMALL_R^2 && min(abs(ẑ1), abs(ẑ2)) < _RECT_LG_SMALL_R &&
+    max(R̂1, R̂2) >= _RECT_LG_SMALL_R
+
+function _rect_lg_endpoint_split_MD(ẑ1, ẑ2, ĥ2)
+    if abs(ẑ1) < _RECT_LG_SMALL_R
+        split = -_RECT_LG_SMALL_R
+        Mc, Dc = _rect_lg_small_radius_MD(ẑ1, split, ĥ2)
+        Mf = _rect_lg_psi(split) - _rect_lg_psi(ẑ2)
+    else
+        split = _RECT_LG_SMALL_R
+        Mc, Dc = _rect_lg_small_radius_MD(split, ẑ2, ĥ2)
+        Mf = _rect_lg_psi(ẑ1) - _rect_lg_psi(split)
+    end
+    return Mf + Mc, Mf + Dc
+end
+
+# M = N/ĥ² with u = c·M/(4π σ² L); guarded near the axis and endpoints
+function _rect_lg_M(ẑ1, ẑ2, ĥ2, R̂1, R̂2)
+    if ĥ2 == 0
+        return _rect_lg_psi(ẑ1) - _rect_lg_psi(ẑ2)
+    elseif max(R̂1, R̂2) < _RECT_LG_SMALL_R
+        M, _ = _rect_lg_small_radius_MD(ẑ1, ẑ2, ĥ2)
+        return M
+    elseif _rect_lg_endpoint_split_guard(ĥ2, ẑ1, ẑ2, R̂1, R̂2)
+        M, _ = _rect_lg_endpoint_split_MD(ẑ1, ẑ2, ĥ2)
+        return M
+    elseif _rect_lg_axis_guard(ĥ2, ẑ1, ẑ2)
+        return _rect_lg_psi(ẑ1) - _rect_lg_psi(ẑ2)
+    end
+    # cancellation-reduced closed form: the endpoint Gaussians inside the
+    # four g functions cancel exactly — 4 erf + 1 exp per edge
+    G = exp(-ĥ2 / 2)
+    N = ẑ1 * _rect_erf(R̂1 / sqrt(2)) / R̂1 -
+        ẑ2 * _rect_erf(R̂2 / sqrt(2)) / R̂2 -
+        G * (_rect_erf(ẑ1 / sqrt(2)) - _rect_erf(ẑ2 / sqrt(2)))
+    return N / ĥ2
+end
+
+@inline _rect_lg_skewmat(t::SVector{3,T}) where T = SMatrix{3,3,T,9}(
+    zero(T), t[3], -t[2],
+    -t[3], zero(T), t[1],
+    t[2], -t[1], zero(T))
+
+# LineGauss ∂u_i/∂x_j per unit Γ (cylindrical assembly, DERIVATION.md §5 —
+# ∇D ≠ κ∇A here, so this does NOT fit the (D, κ∇A) shape of
+# _rect_bound_vortex_gradient); same index convention as that function
+# (pinned by k01 T3c). Transcribes FLOWPanel _linegauss_gradient
+# (elements_fmm.jl:1104-1152).
+@inline function _rect_linegauss_gradient(r1::SVector{3,T}, r2::SVector{3,T},
+        σ::T) where T
+    Z = zero(SMatrix{3,3,T,9})
+    s = r1 - r2
+    B = s[1]*s[1] + s[2]*s[2] + s[3]*s[3]
+    L = sqrt(B)
+    L < 5*eps(T) && return Z
+    that = -s / L
+    ẑ1 = -(that[1]*r1[1] + that[2]*r1[2] + that[3]*r1[3]) / σ
+    ẑ2 = ẑ1 - L / σ
+    c = SVector{3,T}(r1[2]*r2[3] - r1[3]*r2[2],
+                     r1[3]*r2[1] - r1[1]*r2[3],
+                     r1[1]*r2[2] - r1[2]*r2[1])
+    ĥ2 = (c[1]*c[1] + c[2]*c[2] + c[3]*c[3]) / (B * σ * σ)
+    R̂1 = sqrt(r1[1]*r1[1] + r1[2]*r1[2] + r1[3]*r1[3]) / σ
+    R̂2 = sqrt(r2[1]*r2[1] + r2[2]*r2[2] + r2[3]*r2[3]) / σ
+    M = _rect_lg_M(ẑ1, ẑ2, ĥ2, R̂1, R̂2)
+    C = 1 / (4 * T(pi) * σ * σ)
+    if ĥ2 == 0
+        # on the segment axis: the regularized transverse derivative is finite
+        return (C * M) * _rect_lg_skewmat(that)
+    end
+    ĥ = sqrt(ĥ2)
+    hvec = -r1 - (σ * ẑ1) * that      # h n̂ = (x − P1) − z1 t̂
+    nh = sqrt(hvec[1]*hvec[1] + hvec[2]*hvec[2] + hvec[3]*hvec[3])
+    if nh <= T(1e-10) * σ * max(R̂1, R̂2)
+        # transverse direction lost to projection roundoff (can be exactly
+        # zero → NaN): collapse to the deterministic axis-limit skew form
+        return (C * M) * _rect_lg_skewmat(that)
+    end
+    n̂ = hvec / nh
+    b̂ = SVector{3,T}(that[2]*n̂[3] - that[3]*n̂[2],
+                     that[3]*n̂[1] - that[1]*n̂[3],
+                     that[1]*n̂[2] - that[2]*n̂[1])
+    k1 = _rect_lg_kfun(R̂1)
+    k2 = _rect_lg_kfun(R̂2)
+    duθdz = C * ĥ * (k1 - k2)
+    if max(R̂1, R̂2) < _RECT_LG_SMALL_R
+        _, radial = _rect_lg_small_radius_MD(ẑ1, ẑ2, ĥ2)
+        duθdh = C * radial
+    elseif _rect_lg_endpoint_split_guard(ĥ2, ẑ1, ẑ2, R̂1, R̂2)
+        _, radial = _rect_lg_endpoint_split_MD(ẑ1, ẑ2, ĥ2)
+        duθdh = C * radial
+    elseif _rect_lg_axis_guard(ĥ2, ẑ1, ẑ2)
+        duθdh = C * M          # bracket → 2M on the axis, so brk − M → M
+    else
+        G = exp(-ĥ2 / 2)
+        brk = -ẑ1 * k1 + ẑ2 * k2 +
+              G * (_rect_erf(ẑ1 / sqrt(2)) - _rect_erf(ẑ2 / sqrt(2)))
+        duθdh = C * (brk - M)
+    end
+    uθ_h = C * M
+    return duθdh * (b̂ * transpose(n̂)) + duθdz * (b̂ * transpose(that)) -
+           uθ_h * (n̂ * transpose(b̂))
+end
+
 # Bound-vortex filament velocity, per-family regularization. Vatistas (REG=1)
 # is the HEAD kernel (elements_fmm.jl:867-898 @ 75b45c7); compact (REG=2) and
 # Gaussian (REG=3) are the working-tree families (branch fastmultipole,
@@ -558,6 +760,16 @@ end
         x2 = dotrixrj / (r0sqr * core_size * core_size)
         gscaled = x2 < T(1e-12) ? T(0.5) : T(-expm1(-x2/2) / x2)
         return num * rijdothat * gscaled / (r0sqr * core_size * core_size) / (4*T(pi))
+    elseif REG == 4
+        # LineGauss (working-tree elements_fmm.jl:1194-1201): exact blob-line
+        # convolution u = c·M/(4π σ² L); matches the singular kernel to tol
+        # beyond ~6σ of the SEGMENT
+        L = sqrt(r0sqr)
+        ẑ1 = (r0[1]*r1[1] + r0[2]*r1[2] + r0[3]*r1[3]) / (L * core_size)
+        M = _rect_lg_M(ẑ1, ẑ1 - L / core_size,
+            dotrixrj / (r0sqr * core_size * core_size),
+            nr1 / core_size, nr2 / core_size)
+        return num * (M / (4*T(pi) * core_size * core_size * L))
     else
         # Vatistas n=2 (HEAD elements_fmm.jl:884 / working tree :968-970)
         rc4 = core_size*core_size*core_size*core_size
@@ -577,6 +789,9 @@ end
     if nr1 < 5*eps(T) || nr2 < 5*eps(T)                    # elements_fmm.jl:905
         return zero(SMatrix{3,3,T,9})
     end
+    # LineGauss (REG=4) does not fit the (D, κ∇A) shape — dedicated
+    # cylindrical assembly (working-tree elements_fmm.jl:1228-1231)
+    REG == 4 && return _rect_linegauss_gradient(r1, r2, core_size)
     c = SVector{3,T}(r1[2]*r2[3] - r1[3]*r2[2],
                      r1[3]*r2[1] - r1[1]*r2[3],
                      r1[1]*r2[2] - r1[2]*r2[1])

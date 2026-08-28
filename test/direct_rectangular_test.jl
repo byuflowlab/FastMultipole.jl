@@ -309,7 +309,7 @@ end
     _pack_panel!(segs, 2, 3, (vB, vC), 0.77, 0.0, rc)
     _pack_panel!(segs, 3, 3, (vC, vA), 0.77, 0.0, rc)
     tgts4 = randn(3, 8) .* 0.8
-    for fam in (:vatistas, :compact, :gaussian)
+    for fam in (:vatistas, :compact, :gaussian, :linegauss)
         kernf = RectangularPanelInfluence(fam)
         o1 = zeros(T, 12, 8); o2 = zeros(T, 12, 8)
         direct_rectangular!(o1, tgts4, kernf, ring3f; gradient=true)
@@ -440,7 +440,20 @@ end
         # FLOWPanel only the vatistas case above runs.
         if isdefined(pnl, :set_filament_regularization!)
             fam0 = pnl.FILAMENT_REGULARIZATION[]
-            for (fam, regi) in ((:vatistas, 1), (:compact, 2), (:gaussian, 3))
+            for (fam, regi) in ((:vatistas, 1), (:compact, 2), (:gaussian, 3),
+                                (:linegauss, 4))
+                # :linegauss requires the FLOWPanel LineGauss port (commit
+                # 8b07f96); its parity floor is the erf-backend difference
+                # (SpecialFunctions.erf host vs vendored fdlibm _rect_erf),
+                # ulps amplified by q̃-conditioning on axial-ish configs —
+                # observed ≤ ~5e-8 worst-case single-config (k03 P3), so the
+                # aggregate relerr gets a loosened gate.
+                if fam === :linegauss &&
+                        !isdefined(pnl, :LineGaussRegularization)
+                    @info "loaded FLOWPanel lacks LineGaussRegularization; skipping linegauss parity"
+                    continue
+                end
+                famtol = fam === :linegauss ? 1e-7 : 1e-12
                 pnl.set_filament_regularization!(fam)
                 for (label, E, tag, nk) in (
                         ("source+vortexring", Union{pnl.ConstantSource, pnl.VortexRing}, 4, 2),
@@ -479,8 +492,8 @@ end
                             end
                         end
                     end
-                    @test relerr(out[1:3, :], ref[1:3, :]) < 1e-12
-                    @test relerr(out[4:12, :], ref[4:12, :]) < 1e-12
+                    @test relerr(out[1:3, :], ref[1:3, :]) < famtol
+                    @test relerr(out[4:12, :], ref[4:12, :]) < famtol
                     @info "FLOWPanel parity ($fam, $label)" relerr_U=relerr(out[1:3, :], ref[1:3, :]) relerr_H=relerr(out[4:12, :], ref[4:12, :])
                 end
 
@@ -517,8 +530,8 @@ end
                         end
                     end
                 end
-                @test relerr(outfl[1:3, :], reff[1:3, :]) < 1e-12
-                @test relerr(outfl[4:12, :], reff[4:12, :]) < 1e-12
+                @test relerr(outfl[1:3, :], reff[1:3, :]) < famtol
+                @test relerr(outfl[4:12, :], reff[4:12, :]) < famtol
                 @info "FLOWPanel parity ($fam, open filament)" relerr_U=relerr(outfl[1:3, :], reff[1:3, :]) relerr_H=relerr(outfl[4:12, :], reff[4:12, :])
             end
             pnl.set_filament_regularization!(fam0)
