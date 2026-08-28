@@ -1,0 +1,53 @@
+=== 1. aggregate far mismatch vs exclusion radius (2000 targets) ===
+pair pass: 9.8 s, rms|U_reg|=5.1389e-02
+  R=0.005 m : far-mismatch relRMS = 8.350e-02
+  R=0.010 m : far-mismatch relRMS = 1.609e-02
+  R=0.015 m : far-mismatch relRMS = 9.542e-03
+  R=0.020 m : far-mismatch relRMS = 5.188e-03
+  R=0.025 m : far-mismatch relRMS = 3.238e-03
+  R=0.030 m : far-mismatch relRMS = 2.668e-03
+  R=0.035 m : far-mismatch relRMS = 1.606e-03
+  R=0.040 m : far-mismatch relRMS = 1.140e-03
+  R=0.045 m : far-mismatch relRMS = 8.576e-04
+  R=0.050 m : far-mismatch relRMS = 5.066e-04
+  R=0.055 m : far-mismatch relRMS = 2.413e-04
+  R=0.060 m : far-mismatch relRMS = 3.168e-04
+  R=0.065 m : far-mismatch relRMS = 1.711e-04
+  R=0.070 m : far-mismatch relRMS = 1.510e-04
+  R=0.075 m : far-mismatch relRMS = 1.217e-04
+  R=0.080 m : far-mismatch relRMS = 5.144e-05
+  R=0.085 m : far-mismatch relRMS = 4.732e-05
+  R=0.090 m : far-mismatch relRMS = 5.103e-05
+  R=0.095 m : far-mismatch relRMS = 4.769e-05
+  R=0.100 m : far-mismatch relRMS = 4.658e-05
+R_guard(<=3e-5) = 0.1 m  (NOT REACHED — capped)
+
+=== 2. guarded accuracy sweep (R_guard=0.1 and 1.5x) ===
+Rg     q    ellx  P   |  relRMS_U  margin |   n_m2l   n_dem  near_int    dem_int
+0.100  3    5     3   | 2.398e-05    4.17 |     352    3772    256962   31226240
+0.100  3    5     4   | 1.355e-05    7.38 |     352    3772    256962   31226240
+0.100  3    5     6   | 8.818e-06   11.34 |     352    3772    256962   31226240
+0.100  3    7     3   | 2.398e-05    4.17 |     352    5251      4269   31478933
+0.100  3    7     4   | 1.355e-05    7.38 |     352    5251      4269   31478933
+0.100  3    7     6   | 8.818e-06   11.34 |     352    5251      4269   31478933
+0.100  12   5     3   | 2.438e-05    4.10 |    4422   13077   1713242   22754208
+0.100  12   5     4   | 2.336e-05    4.28 |    4422   13077   1713242   22754208
+0.100  12   5     6   | 2.328e-05    4.30 |    4422   13077   1713242   22754208
+0.100  12   7     3   | 2.438e-05    4.10 |    4422   23845     30007   24437443
+0.100  12   7     4   | 2.336e-05    4.28 |    4422   23845     30007   24437443
+0.100  12   7     6   | 2.328e-05    4.30 |    4422   23845     30007   24437443
+0.150  3    5     3   | 3.734e-06   26.78 |     119    4005    256962   96536080
+0.150  3    5     4   | 8.787e-07  113.81 |     119    4005    256962   96536080
+0.150  3    5     6   | 1.921e-07  520.56 |     119    4005    256962   96536080
+0.150  3    7     3   | 3.734e-06   26.78 |     119    5484      4269   96788773
+0.150  3    7     4   | 8.787e-07  113.81 |     119    5484      4269   96788773
+0.150  3    7     6   | 1.921e-07  520.56 |     119    5484      4269   96788773
+0.150  12   5     3   | 4.391e-06   22.77 |    1662   15837   1713242   45569160
+0.150  12   5     4   | 3.919e-06   25.51 |    1662   15837   1713242   45569160
+0.150  12   5     6   | 3.902e-06   25.63 |    1662   15837   1713242   45569160
+0.150  12   7     3   | 4.391e-06   22.77 |    1662   26605     30007   47252395
+0.150  12   7     4   | 3.919e-06   25.51 |    1662   26605     30007   47252395
+0.150  12   7     6   | 3.902e-06   25.63 |    1662   26605     30007   47252395
+┌ Warning: FMM radius inflation (0.005897977468151848) exceeds 10× the panel radius (2.0180581352456914e-5): core_size 0.001 is large relative to the panel size, so most interactions will be evaluated directly.
+└ @ FLOWPanel ~/Dropbox/research/projects/FLOWPanel.jl/src/FLOWPanel_abstractbody.jl:1202
+DONE

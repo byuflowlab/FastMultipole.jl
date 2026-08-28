@@ -1,0 +1,55 @@
+FLOWPanel: filament regularization = LineGaussRegularization (pinned by FLOWPANEL_FILAMENT_REG)
+USING RANDOM STRENGTHS (seed 472)
+=== 1. aggregate far mismatch vs exclusion radius (2000 targets) ===
+pair pass: 10.7 s, rms|U_reg|=4.1995e-02
+  R=0.005 m : far-mismatch relRMS = 5.582e-05
+  R=0.010 m : far-mismatch relRMS = 8.095e-14
+  R=0.015 m : far-mismatch relRMS = 5.918e-14
+  R=0.020 m : far-mismatch relRMS = 5.909e-14
+  R=0.025 m : far-mismatch relRMS = 5.545e-14
+  R=0.030 m : far-mismatch relRMS = 5.549e-14
+  R=0.035 m : far-mismatch relRMS = 5.076e-14
+  R=0.040 m : far-mismatch relRMS = 5.349e-14
+  R=0.045 m : far-mismatch relRMS = 4.830e-14
+  R=0.050 m : far-mismatch relRMS = 4.767e-14
+  R=0.055 m : far-mismatch relRMS = 4.708e-14
+  R=0.060 m : far-mismatch relRMS = 4.596e-14
+  R=0.065 m : far-mismatch relRMS = 4.413e-14
+  R=0.070 m : far-mismatch relRMS = 4.253e-14
+  R=0.075 m : far-mismatch relRMS = 4.101e-14
+  R=0.080 m : far-mismatch relRMS = 3.898e-14
+  R=0.085 m : far-mismatch relRMS = 3.763e-14
+  R=0.090 m : far-mismatch relRMS = 3.691e-14
+  R=0.095 m : far-mismatch relRMS = 3.637e-14
+  R=0.100 m : far-mismatch relRMS = 3.544e-14
+R_guard(<=3e-5) = 0.01 m
+
+=== 2. guarded accuracy sweep (R_guard=0.01 and 1.5x) ===
+Rg     q    ellx  P   |  relRMS_U  margin |   n_m2l   n_dem  near_int    dem_int
+0.006  3    5     3   | 2.275e-03    0.04 |    4124       0    256962          0
+0.006  3    5     4   | 1.190e-03    0.08 |    4124       0    256962          0
+0.006  3    5     6   | 2.926e-04    0.34 |    4124       0    256962          0
+0.006  3    7     3   | 6.337e-03    0.02 |    5357     246      4269      16712
+0.006  3    7     4   | 2.718e-03    0.04 |    5357     246      4269      16712
+0.006  3    7     6   | 6.246e-04    0.16 |    5357     246      4269      16712
+0.006  12   5     3   | 1.256e-04    0.80 |   17499       0   1713242          0
+0.006  12   5     4   | 3.009e-05    3.32 |   17499       0   1713242          0
+0.006  12   5     6   | 2.078e-06   48.12 |   17499       0   1713242          0
+0.006  12   7     3   | 1.196e-03    0.08 |   28267       0     30007          0
+0.006  12   7     4   | 3.475e-04    0.29 |   28267       0     30007          0
+0.006  12   7     6   | 1.939e-05    5.16 |   28267       0     30007          0
+0.012  3    5     3   | 2.275e-03    0.04 |    4124       0    256962          0
+0.012  3    5     4   | 1.190e-03    0.08 |    4124       0    256962          0
+0.012  3    5     6   | 2.926e-04    0.34 |    4124       0    256962          0
+0.012  3    7     3   | 2.429e-03    0.04 |    4700     903      4269     122783
+0.012  3    7     4   | 1.208e-03    0.08 |    4700     903      4269     122783
+0.012  3    7     6   | 2.930e-04    0.34 |    4700     903      4269     122783
+0.012  12   5     3   | 1.256e-04    0.80 |   17499       0   1713242          0
+0.012  12   5     4   | 3.009e-05    3.32 |   17499       0   1713242          0
+0.012  12   5     6   | 2.078e-06   48.12 |   17499       0   1713242          0
+0.012  12   7     3   | 4.175e-04    0.24 |   27560     707     30007      40063
+0.012  12   7     4   | 1.016e-04    0.98 |   27560     707     30007      40063
+0.012  12   7     6   | 5.230e-06   19.12 |   27560     707     30007      40063
+┌ Warning: FMM radius inflation (0.006247977468151847) exceeds 10× the panel radius (2.0180581352456914e-5): core_size 0.001 is large relative to the panel size, so most interactions will be evaluated directly.
+└ @ FLOWPanel ~/Dropbox/research/projects/FLOWPanel.jl/src/FLOWPanel_abstractbody.jl:1202
+DONE

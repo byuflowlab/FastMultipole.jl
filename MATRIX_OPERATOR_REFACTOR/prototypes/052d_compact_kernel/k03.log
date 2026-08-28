@@ -1,0 +1,50 @@
+=== P1: enum + setter plumbing ===
+P1 setter selects LineGaussRegularization                   0.000e+00  (tol  0.0e+00)  PASS
+P1 enum code is 4th member (Int = 3, gpu code 4)            0.000e+00  (tol  0.0e+00)  PASS
+P1 :bogus still throws                                      0.000e+00  (tol  0.0e+00)  PASS
+
+=== P2: radius_inflation rule ===
+  tol 0.0001: Δr = 5.3432σ (measured 5.25σ, 0.25σ grid)
+P2 rule ≥ measured radius − grid step @tol 0.0001          -3.432e-01  (tol  0.0e+00)  PASS
+  tol 1e-05: Δr = 5.8169σ (measured 5.75σ, 0.25σ grid)
+P2 rule ≥ measured radius − grid step @tol 1.0e-5          -3.169e-01  (tol  0.0e+00)  PASS
+  tol 1e-06: Δr = 6.2480σ (measured 6.25σ, 0.25σ grid)
+P2 rule ≥ measured radius − grid step @tol 1.0e-6          -2.480e-01  (tol  0.0e+00)  PASS
+P2 tol=Inf disables                                         0.000e+00  (tol  0.0e+00)  PASS
+
+=== P3: FLOWPanel port vs prototype parity ===
+  new worst vel parity 9.182e-15 at L=0.002 ξ=-0.5 h=0.3 (κ_cond=2.00e+00, κ·1e-16=2.00e-16)
+  new worst vel parity 9.407e-15 at L=0.002 ξ=0.1 h=0.3 (κ_cond=1.00e+00, κ·1e-16=1.00e-16)
+  new worst vel parity 6.837e-14 at L=0.05 ξ=-0.01 h=0.124 (κ_cond=1.02e+00, κ·1e-16=1.02e-16)
+  new worst vel parity 1.692e-09 at L=0.124 ξ=-0.5 h=0.001 (κ_cond=1.73e+04, κ·1e-16=1.73e-12)
+  new worst vel parity 2.104e-09 at L=1.79 ξ=-0.5 h=0.001 (κ_cond=3.60e+06, κ·1e-16=3.60e-10)
+  new worst vel parity 2.630e-09 at L=1.79 ξ=1.5 h=0.001 (κ_cond=3.60e+06, κ·1e-16=3.60e-10)
+  new worst vel parity 1.599e-08 at L=16 ξ=1.5 h=0.001 (κ_cond=2.88e+08, κ·1e-16=2.88e-08)
+  new worst vel parity 4.441e-08 at L=1000 ξ=-0.01 h=0.001 (κ_cond=4.00e+08, κ·1e-16=4.00e-08)
+P3 non-finite port outputs (count)                          0.000e+00  (tol  0.0e+00)  PASS
+P3 velocity parity (h ≥ 1e-3σ)                              4.441e-08  (tol  1.0e-06)  PASS
+P3 gradient parity (h ≥ 1e-3σ)                              1.599e-08  (tol  1.0e-06)  PASS
+P3 velocity abs parity (axis band)                          8.141e-23  (tol  1.0e-12)  PASS
+P3 gradient parity (axis band, rel-or-abs)                  8.888e-09  (tol  1.0e-04)  PASS
+P3 endpoint velocity zero (FLOWPanel contract)              0.000e+00  (tol  0.0e+00)  PASS
+P3 endpoint gradient zero (FLOWPanel contract)              0.000e+00  (tol  0.0e+00)  PASS
+
+=== P4: dense radius-rule verification (ported kernel) ===
+  tol 0.0001: Δr = 5.343σ  max vel 2.785e-06  max grad 3.690e-05
+P4 velocity ≤ tol at rule radius @tol 0.0001                2.785e-06  (tol  1.0e-04)  PASS
+P4 gradient ≤ tol at rule radius @tol 0.0001                3.690e-05  (tol  1.0e-04)  PASS
+  tol 1e-05: Δr = 5.817σ  max vel 2.182e-07  max grad 3.350e-06
+P4 velocity ≤ tol at rule radius @tol 1.0e-5                2.182e-07  (tol  1.0e-05)  PASS
+P4 gradient ≤ tol at rule radius @tol 1.0e-5                3.350e-06  (tol  1.0e-05)  PASS
+  tol 1e-06: Δr = 6.248σ  max vel 3.138e-08  max grad 3.056e-07
+P4 velocity ≤ tol at rule radius @tol 1.0e-6                3.138e-08  (tol  1.0e-06)  PASS
+P4 gradient ≤ tol at rule radius @tol 1.0e-6                3.056e-07  (tol  1.0e-06)  PASS
+  tol 1e-07: Δr = 6.647σ  max vel 1.859e-08  max grad 2.801e-08
+P4 velocity ≤ tol at rule radius @tol 1.0e-7                1.859e-08  (tol  1.0e-07)  PASS
+P4 gradient ≤ tol at rule radius @tol 1.0e-7                2.801e-08  (tol  1.0e-07)  PASS
+
+=== P5: device-path guard ===
+P5 RectangularPanelInfluence(:linegauss) throws             0.000e+00  (tol  0.0e+00)  PASS
+P5 _rect_reg_val(4) throws (no silent Vatistas)             0.000e+00  (tol  0.0e+00)  PASS
+
+ALL PASS

@@ -1,0 +1,126 @@
+=== T0: small-argument and short-segment references ===
+T0a g(t) vs independent 256-bit series                      1.286e-16  (tol  2.0e-15)  PASS
+T0b short/near-endpoint velocity vs 256-bit quadrature      3.818e-16  (tol  2.0e-11)  PASS
+T0c mixed-scale near-endpoint velocity                      2.307e-12  (tol  2.0e-11)  PASS
+T0d mixed-scale near-endpoint gradient vs FD                3.240e-14  (tol  2.0e-10)  PASS
+T0e endpoint gradient L=1.0e-12, z=0.0                      0.000e+00  (tol  2.0e-11)  PASS
+T0f endpoint velocity L=1.0e-12, z=0.0                      0.000e+00  (tol  0.0e+00)  PASS
+T0e endpoint gradient L=1.0e-12, z=1.0e-12                  0.000e+00  (tol  2.0e-11)  PASS
+T0f endpoint velocity L=1.0e-12, z=1.0e-12                  0.000e+00  (tol  0.0e+00)  PASS
+T0e endpoint gradient L=1.0e-6, z=0.0                       1.563e-16  (tol  2.0e-11)  PASS
+T0f endpoint velocity L=1.0e-6, z=0.0                       0.000e+00  (tol  0.0e+00)  PASS
+T0e endpoint gradient L=1.0e-6, z=1.0e-6                    1.563e-16  (tol  2.0e-11)  PASS
+T0f endpoint velocity L=1.0e-6, z=1.0e-6                    0.000e+00  (tol  0.0e+00)  PASS
+T0e endpoint gradient L=0.1, z=0.0                          2.051e-16  (tol  2.0e-11)  PASS
+T0f endpoint velocity L=0.1, z=0.0                          0.000e+00  (tol  0.0e+00)  PASS
+T0e endpoint gradient L=0.1, z=0.1                          2.051e-16  (tol  2.0e-11)  PASS
+T0f endpoint velocity L=0.1, z=0.1                          0.000e+00  (tol  0.0e+00)  PASS
+T0e endpoint gradient L=2.0, z=0.0                          1.133e-16  (tol  2.0e-11)  PASS
+T0f endpoint velocity L=2.0, z=0.0                          0.000e+00  (tol  0.0e+00)  PASS
+T0e endpoint gradient L=2.0, z=2.0                          1.133e-16  (tol  2.0e-11)  PASS
+T0f endpoint velocity L=2.0, z=2.0                          0.000e+00  (tol  0.0e+00)  PASS
+T0g analytic small-core |u| asymptote                       3.250e-13  (tol  2.0e-12)  PASS
+=== T1: local erf vs reference values ===
+T1 max abs erf error                                        6.661e-16  (tol  1.0e-15)  PASS
+
+=== T2: closed form vs quadrature ===
+T2 max rel err (90 configs)                                 2.803e-11  (tol  1.0e-08)  PASS
+
+=== T3: singular limit + convention check vs FLOWPanel ===
+T3a singular assembly vs FLOWPanel singular                 7.268e-15  (tol  1.0e-12)  PASS
+T3c singular gradient vs FLOWPanel singular gradient        2.762e-15  (tol  1.0e-09)  PASS
+T3b deviation from singular vs exp(-d²/2σ²) (L=2, side approach):
+  d=  4.0σ : relerr = 9.816e-04   exp(-d²/2) = 3.355e-04   ratio = 2.93
+  d=  6.0σ : relerr = 6.443e-08   exp(-d²/2) = 1.523e-08   ratio = 4.23
+  d=  8.0σ : relerr = 7.024e-14   exp(-d²/2) = 1.266e-14   ratio = 5.55
+  d= 10.0σ : relerr = 0.000e+00   exp(-d²/2) = 1.929e-22   ratio = 0.00
+
+=== T4: infinite-line limit → shipped Gaussian profile ===
+T4 max rel err W vs 1-exp(-h²/2)                            2.347e-07  (tol  1.0e-06)  PASS
+
+=== T5: analytic gradient vs central finite differences ===
+  T5 diag: L= 2.00 ξ=-1.20 h=1.0e-03  err(δ1e-6)=1.26e-05 err(δ1e-5)=3.02e-07 err(quadFD δ1e-5)=2.13e-09
+  T5 diag: L=10.00 ξ= 1.60 h=1.0e-03  err(δ1e-6)=1.96e-05 err(δ1e-5)=4.23e-06 err(quadFD δ1e-5)=4.02e-08
+T5 max rel err gradient vs FD (48 configs)                  4.235e-06  (tol  2.0e-05)  PASS
+
+=== T6: axis-guard seam (closed form vs quadrature) ===
+T6 max rel err at guard seam                                9.009e-07  (tol  1.0e-06)  PASS
+T6b velocity continuity across corrected axis seam          2.632e-06  (tol  5.0e-06)  PASS
+T6c gradient continuity across corrected axis seam          6.355e-07  (tol  5.0e-06)  PASS
+T6d suffix-safe nonmonotonic guard fixture                  0.000e+00  (tol  0.0e+00)  PASS
+
+=== T7: error decay vs SEGMENT distance; Δr(tol) ===
+L = 0.50σ:
+    d/σ |   linegauss (vel, grad) |       gauss (vel, grad) |     compact (vel, grad)
+   2.00 |   2.59e-01   6.28e-01 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   3.00 |   2.90e-02   1.33e-01 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   4.00 |   1.12e-03   8.62e-03 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   5.00 |   1.53e-05   1.79e-04 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   6.00 |   7.41e-08   1.23e-06 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   7.00 |   1.29e-10   2.89e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   8.00 |   2.95e-12   1.22e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   9.00 |   3.85e-14   1.23e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+  10.00 |   3.56e-14   1.23e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+  11.00 |   2.34e-14   1.24e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+  Δr(0.0001, linegauss) = 5.25σ
+  Δr(0.0001, gauss) = > 11.0σ (channel open)
+  Δr(0.0001, compact) = > 11.0σ (channel open)
+  Δr(1e-05, linegauss) = 5.75σ
+  Δr(1e-05, gauss) = > 11.0σ (channel open)
+  Δr(1e-05, compact) = > 11.0σ (channel open)
+  Δr(1e-06, linegauss) = 6.25σ
+  Δr(1e-06, gauss) = > 11.0σ (channel open)
+  Δr(1e-06, compact) = > 11.0σ (channel open)
+L = 1.79σ:
+    d/σ |   linegauss (vel, grad) |       gauss (vel, grad) |     compact (vel, grad)
+   2.00 |   2.37e-01   5.98e-01 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   3.00 |   2.62e-02   1.23e-01 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   4.00 |   1.01e-03   7.86e-03 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   5.00 |   1.37e-05   1.62e-04 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   6.00 |   6.63e-08   1.11e-06 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   7.00 |   1.15e-10   2.60e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   8.00 |   5.98e-13   1.08e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   9.00 |   5.07e-15   1.10e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+  10.00 |   2.85e-14   1.11e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+  11.00 |   2.90e-14   1.12e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+  Δr(0.0001, linegauss) = 5.25σ
+  Δr(0.0001, gauss) = > 11.0σ (channel open)
+  Δr(0.0001, compact) = > 11.0σ (channel open)
+  Δr(1e-05, linegauss) = 5.75σ
+  Δr(1e-05, gauss) = > 11.0σ (channel open)
+  Δr(1e-05, compact) = > 11.0σ (channel open)
+  Δr(1e-06, linegauss) = 6.25σ
+  Δr(1e-06, gauss) = > 11.0σ (channel open)
+  Δr(1e-06, compact) = > 11.0σ (channel open)
+L = 3.00σ:
+    d/σ |   linegauss (vel, grad) |       gauss (vel, grad) |     compact (vel, grad)
+   2.00 |   2.08e-01   5.59e-01 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   3.00 |   2.23e-02   1.10e-01 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   4.00 |   8.47e-04   6.80e-03 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   5.00 |   1.14e-05   1.37e-04 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   6.00 |   5.50e-08   9.33e-07 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   7.00 |   9.55e-11   2.17e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   8.00 |   4.22e-13   9.88e-10 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+   9.00 |   8.04e-15   1.01e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+  10.00 |   1.87e-15   1.03e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+  11.00 |   2.05e-14   1.05e-09 |   1.00e+00   1.00e+00 |   1.00e+00   1.00e+00
+  Δr(0.0001, linegauss) = 5.25σ
+  Δr(0.0001, gauss) = > 11.0σ (channel open)
+  Δr(0.0001, compact) = > 11.0σ (channel open)
+  Δr(1e-05, linegauss) = 5.75σ
+  Δr(1e-05, gauss) = > 11.0σ (channel open)
+  Δr(1e-05, compact) = > 11.0σ (channel open)
+  Δr(1e-06, linegauss) = 6.0σ
+  Δr(1e-06, gauss) = > 11.0σ (channel open)
+  Δr(1e-06, compact) = > 11.0σ (channel open)
+
+=== T7b: dense finite-segment radius check at tol=1e-6 ===
+T7b velocity radius 5.90σ (dense L/capsule scan)            1.585e-07  (tol  1.0e-06)  PASS
+T7b gradient radius 6.25σ (dense L/capsule scan)            3.021e-07  (tol  1.0e-06)  PASS
+
+=== T8: peaks at matched core size (phase_00 extension) ===
+L = 1.79   σ : u_max·rc = 0.1789  ‖∇u‖_max·rc² = 0.2205  [Γ/2π units]
+L = 1000   σ : u_max·rc = 0.4512  ‖∇u‖_max·rc² = 0.5000  [Γ/2π units]
+(reference: shipped Gaussian infinite-line 0.4514 / 0.50)
+
+ALL CHECKS PASSED

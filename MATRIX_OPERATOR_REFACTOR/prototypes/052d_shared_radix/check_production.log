@@ -1,0 +1,4 @@
+leaf= 32 theta=0.5 : count_identity=true (covered=8893469472, dense=8893469472) macbad=0 bad_samples=0/400 -> PASS
+leaf=128 theta=0.4 : count_identity=true (covered=8893469472, dense=8893469472) macbad=0 bad_samples=0/400 -> PASS
+leaf=256 theta=0.6 : count_identity=true (covered=8893469472, dense=8893469472) macbad=0 bad_samples=0/400 -> PASS
+PRODUCTION-SCALE CHECKS PASSED

@@ -1,0 +1,17 @@
+random seed 1                      PASS | nsrc= 2000 ntgt= 3000 | M2L=  2850 near=  6841 nearpairs=   332588 | miss=0 dup=0 macbad=0 det=true
+random seed 2                      PASS | nsrc= 2000 ntgt= 3000 | M2L=  2956 near=  7164 nearpairs=   327814 | miss=0 dup=0 macbad=0 det=true
+random seed 3                      PASS | nsrc= 2000 ntgt= 3000 | M2L=  2837 near=  7098 nearpairs=   350084 | miss=0 dup=0 macbad=0 det=true
+random seed 4                      PASS | nsrc= 2000 ntgt= 3000 | M2L=  2858 near=  5343 nearpairs=   295683 | miss=0 dup=0 macbad=0 det=true
+all-in-one-cell (coincident)       PASS | nsrc=  200 ntgt=  300 | M2L=     0 near=     1 nearpairs=    60000 | miss=0 dup=0 macbad=0 det=true
+all-in-one-cell (tiny ball)        PASS | nsrc=  200 ntgt=  300 | M2L=    54 near=   681 nearpairs=    58517 | miss=0 dup=0 macbad=0 det=true
+collinear same line                PASS | nsrc=  500 ntgt=  700 | M2L=   157 near=   177 nearpairs=    88168 | miss=0 dup=0 macbad=0 det=true
+collinear disjoint segments        PASS | nsrc=  500 ntgt=  700 | M2L=     2 near=     0 nearpairs=        0 | miss=0 dup=0 macbad=0 det=true
+coincident boxes                   PASS | nsrc= 1500 ntgt= 1500 | M2L=  1463 near=  4257 nearpairs=  1768432 | miss=0 dup=0 macbad=0 det=true
+identical point sets               PASS | nsrc= 1500 ntgt= 1500 | M2L=  1764 near=  4831 nearpairs=  1726644 | miss=0 dup=0 macbad=0 det=true
+deep-level source cluster          PASS | nsrc= 2000 ntgt= 3000 | M2L=   226 near=  3500 nearpairs=   234000 | miss=0 dup=0 macbad=0 det=true
+random ls=8 theta=0.4              PASS | nsrc= 2000 ntgt= 3000 | M2L= 12451 near= 28405 nearpairs=   366259 | miss=0 dup=0 macbad=0 det=true
+random ls=8 theta=0.6              PASS | nsrc= 2000 ntgt= 3000 | M2L=  3850 near= 11644 nearpairs=   176071 | miss=0 dup=0 macbad=0 det=true
+random ls=64 theta=0.4             PASS | nsrc= 2000 ntgt= 3000 | M2L=   528 near=  2873 nearpairs=  1846846 | miss=0 dup=0 macbad=0 det=true
+random ls=64 theta=0.6             PASS | nsrc= 2000 ntgt= 3000 | M2L=   299 near=  1148 nearpairs=   803615 | miss=0 dup=0 macbad=0 det=true
+
+ALL VALIDATION CHECKS PASSED
