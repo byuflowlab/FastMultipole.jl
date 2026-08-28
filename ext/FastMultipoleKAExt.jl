@@ -1391,11 +1391,17 @@ and `node_sigma_max` (`nothing` if the sigma sweep was not armed).
 """
 function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::AbstractMatrix,
         ell_max::Int, K_max::Int, balance::Bool, x_min, h0::TF; sigma_row::Int=0,
-        source_bodies=nothing, workgroup::Int=64) where TF
+        source_bodies=nothing, workgroup::Int=64,
+        stage_ns::Union{Nothing,Vector{UInt64}}=nothing) where TF
     backend = actx.backend
     n = size(positions, 2)
     n <= actx.maxn || error("adaptive KA context maxn=$(actx.maxn) exceeded by n=$n")
     b = actx.bufs
+
+    # Optional per-stage timing (mirrors CUDA-native's actx.profile_stages/
+    # stage_ns convention, tree_batched_cuda.jl:1387-1431) to root-cause the
+    # n>=1e5 timing anomaly (project_fastmultipole_ka_migration memory).
+    t0 = stage_ns !== nothing ? (KernelAbstractions.synchronize(backend); time_ns()) : UInt64(0)
 
     keys = view(b.keys, 1:n)
     ka_radix_keys!(keys, positions, x_min, h0, ell_max; workgroup=workgroup)
@@ -1405,8 +1411,18 @@ function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::Abstrac
     sorted_keys = view(b.sorted_keys, 1:n)
     ka_gather_values!(sorted_keys, keys, perm; workgroup=workgroup)
 
+    if stage_ns !== nothing
+        KernelAbstractions.synchronize(backend)
+        stage_ns[1] = time_ns() - t0; t0 = time_ns()
+    end
+
     nl, llev, lkey, llo, lhi = ka_adaptive_build_leaves!(actx, sorted_keys, ell_max, K_max, n;
         workgroup=workgroup)
+
+    if stage_ns !== nothing
+        KernelAbstractions.synchronize(backend)
+        stage_ns[2] = time_ns() - t0; t0 = time_ns()
+    end
 
     n_balance_splits = 0
     if balance
@@ -1414,8 +1430,18 @@ function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::Abstrac
             llo, lhi, sorted_keys, ell_max; workgroup=workgroup)
     end
 
+    if stage_ns !== nothing
+        KernelAbstractions.synchronize(backend)
+        stage_ns[3] = time_ns() - t0; t0 = time_ns()
+    end
+
     fin = ka_adaptive_finalize!(actx, nl, llev, lkey, llo, lhi, sorted_keys, ell_max, n, x_min,
         h0; workgroup=workgroup)
+
+    if stage_ns !== nothing
+        KernelAbstractions.synchronize(backend)
+        stage_ns[4] = time_ns() - t0
+    end
 
     node_sigma_max = if sigma_row > 0 && source_bodies !== nothing
         ka_adaptive_sigma_sweep!(actx, fin.node_lo, fin.node_hi, fin.child_ranges, fin.n_nodes,

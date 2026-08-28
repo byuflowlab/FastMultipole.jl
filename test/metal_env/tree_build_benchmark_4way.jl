@@ -63,6 +63,21 @@ function print_raw_allocs(name::String, n::Int, dist::Symbol, allocs::Vector{Int
     println("  [raw-allocs] $(name) (n=$n, $dist) sorted per-trial GPU allocs (KB): $(sort(allocs_kb))")
 end
 
+# Per-stage breakdown (key+sort, build_leaves, balance, finalize) to localize
+# which internal stage drives the n>=1e5 timing anomaly (see
+# project_fastmultipole_ka_migration memory) instead of guessing from the
+# whole-call time alone.
+const STAGE_NAMES = ("sort", "build_leaves", "balance", "finalize")
+function print_stage_breakdown(name::String, n::Int, dist::Symbol, stage_hist)
+    for (s, sname) in enumerate(STAGE_NAMES)
+        vals_us = sort(round.(stage_hist[s] ./ 1000; digits=1))
+        med_us = round(median(stage_hist[s]) / 1000; digits=1)
+        iqr_us = round((quantile(stage_hist[s], 0.75) - quantile(stage_hist[s], 0.25)) / 1000; digits=1)
+        println("  [stage] $(name) (n=$n, $dist) $sname: median=$(med_us)μs IQR=±$(iqr_us)μs " *
+                "sorted: $vals_us")
+    end
+end
+
 # Sanity check: tree has reasonable structure (not empty, leaves <= nodes)
 function verify_tree_structure(name::String, n_nodes::Int, n_leaves::Int, n_bodies::Int)
     n_nodes > 0 || error("$name: tree has no nodes")
@@ -189,9 +204,9 @@ end
 @static if !HAS_METAL
 
 function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
-        nwarmup::Int=1, ntrials::Int=5)
+        nwarmup::Int=1, ntrials::Int=5, profile::Bool=false)
     if !CUDA.functional()
-        return nothing, nothing, nothing, nothing
+        return nothing, nothing, nothing, nothing, nothing
     end
 
     n = size(positions, 2)
@@ -219,16 +234,25 @@ function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
     # Measure
     times = Float64[]
     allocs = Int64[]
+    # stage_hist[stage] = per-trial ns for that stage (sort, build_leaves,
+    # balance, finalize), only populated when profile=true.
+    stage_hist = [Float64[] for _ in 1:4]
     ref_nodes, ref_leaves = nothing, nothing
     for trial in 1:ntrials
+        stage_ns = profile ? zeros(UInt64, 4) : nothing
         CUDA.synchronize()
         t0 = time_ns()
         local result
-        alloc_bytes = CUDA.@allocated (result = ext.ka_build_adaptive_tree!(actx, dev_positions, ell_max, K_max, true, x_min, h0))
+        alloc_bytes = CUDA.@allocated (result = ext.ka_build_adaptive_tree!(actx, dev_positions, ell_max, K_max, true, x_min, h0; stage_ns))
         CUDA.synchronize()
         t1 = time_ns()
         push!(times, Float64(t1 - t0))
         push!(allocs, alloc_bytes)
+        if profile
+            for s in 1:4
+                push!(stage_hist[s], Float64(stage_ns[s]))
+            end
+        end
 
         if trial == 1
             ref_nodes = result.n_nodes
@@ -236,7 +260,7 @@ function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
         end
     end
 
-    return times, ref_nodes, ref_leaves, allocs
+    return times, ref_nodes, ref_leaves, allocs, stage_hist
 end
 
 # ===== HPC-CUDA arm (native CUDA driver) =====
@@ -244,7 +268,7 @@ end
 function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
         nwarmup::Int=1, ntrials::Int=5)
     if !CUDA.functional()
-        return nothing, nothing, nothing, nothing
+        return nothing, nothing, nothing, nothing, nothing
     end
 
     n = size(positions, 2)
@@ -291,6 +315,9 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
     actx.profile_stages = true
     times = Float64[]
     allocs = Int64[]
+    # stage_hist[stage] = per-trial ns (stage_ns[1]=key+sort, [2]=build_leaves,
+    # [3]=balance, [4]=finalize — see _cuda_refresh_adaptive_tree!).
+    stage_hist = [Float64[] for _ in 1:4]
     ref_nodes, ref_leaves = nothing, nothing
     for trial in 1:ntrials
         CUDA.synchronize()
@@ -304,6 +331,9 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
         t1 = time_ns()
         push!(times, Float64(t1 - t0))
         push!(allocs, alloc_bytes)
+        for s in 1:4
+            push!(stage_hist[s], Float64(actx.stage_ns[s]))
+        end
 
         if trial == 1
             ref_nodes = actx.n_nodes
@@ -311,7 +341,7 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
         end
     end
 
-    return times, ref_nodes, ref_leaves, allocs
+    return times, ref_nodes, ref_leaves, allocs, stage_hist
 end
 
 end # @static if !HAS_METAL
@@ -390,11 +420,14 @@ function main()
                 println("  Metal not functional; skipping Metal-KA")
             end
 
+            # Profile per-stage timing at n>=1e5, where the timing anomaly lives.
+            profile_this_case = n >= Int(1e5)
+
             # CUDA-KA arm
             if !isapple() && CUDA.functional()
                 println("  Running CUDA-KA (HPC)...")
-                cuda_ka_times, cuda_ka_nodes, cuda_ka_leaves, cuda_ka_allocs =
-                    benchmark_cuda_ka(positions, ell_max, K_max; nwarmup, ntrials)
+                cuda_ka_times, cuda_ka_nodes, cuda_ka_leaves, cuda_ka_allocs, cuda_ka_stages =
+                    benchmark_cuda_ka(positions, ell_max, K_max; nwarmup, ntrials, profile=profile_this_case)
                 if cuda_ka_times !== nothing
                     verify_tree_structure("CUDA-KA", cuda_ka_nodes, cuda_ka_leaves, n)
                     verify_matches_reference("CUDA-KA", cuda_ka_nodes, cuda_ka_leaves, cpu_nodes, cpu_leaves)
@@ -407,6 +440,9 @@ function main()
                         print_raw_trials("CUDA-KA", n, dist, cuda_ka_times)
                         print_raw_allocs("CUDA-KA", n, dist, cuda_ka_allocs)
                     end
+                    if profile_this_case
+                        print_stage_breakdown("CUDA-KA", n, dist, cuda_ka_stages)
+                    end
                     push!(results, res)
                 end
             end
@@ -414,7 +450,7 @@ function main()
             # CUDA-native arm
             if !isapple() && CUDA.functional()
                 println("  Running CUDA-native (HPC)...")
-                cuda_native_times, cuda_native_nodes, cuda_native_leaves, cuda_native_allocs =
+                cuda_native_times, cuda_native_nodes, cuda_native_leaves, cuda_native_allocs, cuda_native_stages =
                     benchmark_cuda_native(positions, ell_max, K_max; nwarmup, ntrials)
                 if cuda_native_times !== nothing
                     verify_tree_structure("CUDA-native", cuda_native_nodes, cuda_native_leaves, n)
@@ -427,6 +463,9 @@ function main()
                     if n == Int(1e6)
                         print_raw_trials("CUDA-native", n, dist, cuda_native_times)
                         print_raw_allocs("CUDA-native", n, dist, cuda_native_allocs)
+                    end
+                    if profile_this_case
+                        print_stage_breakdown("CUDA-native", n, dist, cuda_native_stages)
                     end
                     push!(results, res)
                 end
