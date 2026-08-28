@@ -484,4 +484,74 @@ function FastMultipole.ka_m2l_operator_batch!(op, targets, sources, phis, thetas
     return ka_resident_m2l_concat_apply!(targets, sources, ws, idx, idx, nbatch)
 end
 
+# --- L2L (downward pass) ---
+#
+# The real production GPU L2L path (`_launch_resident_l2l!`, src/translate_batched.jl:3702)
+# reaches the exact same `_resident_stage_group_apply!` group-apply function that M2M does,
+# just with `kind=:l2l` (the function's `mult = kind === :m2m` branch alone selects the
+# multipole vs. local y-rotation tables and LH row direction). `ka_resident_stage_group_apply!`
+# above already threads `kind` through unchanged, so no new KA kernel or group-apply port is
+# needed for L2L -- only a `:l2l` group/workspace builder and dispatch stub, mirroring M2M's.
+function _build_l2l_group_and_workspace(exemplar, ::Type{TF}, invariant_cache,
+        phis_host::Vector{TF}, thetas_host::Vector{TF}, rs_host::Vector{TF}, ::Val{LH}) where {TF,LH}
+    basis_info = invariant_cache.basis_info
+    B = typeof(basis_info.basis)
+    nbatch = length(phis_host)
+    P_phi = basis_info.orders.P_phi
+    P_active = basis_info.orders.P_active
+
+    group = FastMultipole._resident_group(exemplar, TF, basis_info, :l2l, 0,
+        collect(1:nbatch), collect(1:nbatch), phis_host, thetas_host, rs_host)
+
+    phi_flat_idx = FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_phi))
+    chi_flat_idx = LH ?
+        FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_active)) :
+        FastMultipole._array_like_vector(exemplar, Int, Int[])
+    maps_phi = FastMultipole.DegreeMajorMaps(TF, P_phi, exemplar)
+    maps_chi = LH ? FastMultipole.DegreeMajorMaps(TF, P_active, exemplar) : maps_phi
+
+    ndof_phi = FastMultipole.degree_major_dof(P_phi)
+    ndof_chi = LH ? FastMultipole.degree_major_dof(P_active) : 0
+    mkphi() = similar(exemplar, TF, ndof_phi, nbatch)
+    mkchi() = similar(exemplar, TF, ndof_chi, LH ? nbatch : 0)
+    aphi = mkphi(); yphi = mkphi(); zphi = mkphi(); rphi = mkphi(); cphi = mkphi()
+    achi = mkchi(); ychi = mkchi(); zchi = mkchi(); rchi = mkchi(); cchi = mkchi()
+
+    ystk_phi = FastMultipole.StackedYChannel(exemplar, TF, invariant_cache, P_phi, nbatch)
+    ystk_chi = LH ? FastMultipole.StackedYChannel(exemplar, TF, invariant_cache, P_active, nbatch) : nothing
+
+    ws = FastMultipole.ResidentOperatorWorkspace{TF,B,LH}(
+        basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
+        nothing, nothing, nothing, nothing, nothing, nbatch,
+        nothing, nothing,
+        aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi, cphi, cchi,
+        nothing, nothing, nothing, nothing, FastMultipole.ResidentOperatorGroup[], nothing, nothing,
+        ystk_phi, ystk_chi,
+    )
+    return group, ws
+end
+
+"""
+    FastMultipole.ka_l2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
+
+KernelAbstractions-backed L2L batch operator (stub declared in `src/FastMultipole.jl`).
+On a CPU backend this just delegates to the existing `l2l_operator_batch!` (identical
+math, no device dispatch needed). On a GPU backend it builds a single-group resident
+operator workspace (`_build_l2l_group_and_workspace`) and runs `ka_resident_stage_group_apply!`
+with `kind=:l2l` -- the same KA-ported group-apply M2M already uses, reached in production
+via `_launch_resident_l2l!`.
+"""
+function FastMultipole.ka_l2l_operator_batch!(op, targets, sources, phis, thetas, rs,
+        invariant_cache, scratch, lamb_helmholtz::Val{LH}) where LH
+    backend = KA.get_backend(targets.phi)
+    if backend isa KA.CPU
+        return FastMultipole.l2l_operator_batch!(op, targets, sources, phis, thetas, rs,
+            invariant_cache, scratch, lamb_helmholtz)
+    end
+    TF = eltype(targets.phi)
+    group, ws = _build_l2l_group_and_workspace(targets.phi, TF, invariant_cache,
+        TF.(collect(phis)), TF.(collect(thetas)), TF.(collect(rs)), lamb_helmholtz)
+    return ka_resident_stage_group_apply!(targets, sources, group, ws, :l2l)
+end
+
 end
