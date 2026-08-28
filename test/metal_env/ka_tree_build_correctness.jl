@@ -216,9 +216,10 @@ for case in cases
     frontier_capacity = 8 * leaf_capacity
 
     dev_positions = Metal.MtlArray(positions)
-    got = ext.ka_build_adaptive_tree!(dev_positions, ell_max, K_max, true, x_min, h0;
+    actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
         leaf_capacity=leaf_capacity, frontier_capacity=frontier_capacity,
         node_capacity=node_capacity)
+    got = ext.ka_build_adaptive_tree!(actx, dev_positions, ell_max, K_max, true, x_min, h0)
 
     got_sorted_keys = Array(got.sorted_keys)
     got_sorted_keys == ref_keys || error("n=$n, K_max=$K_max: sorted_keys mismatch")

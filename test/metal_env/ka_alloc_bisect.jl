@@ -105,6 +105,9 @@ function main()
     balance_allocs = Int64[]
     finalize_allocs = Int64[]
 
+    actx = ext.ka_allocate_adaptive_context(CUDABackend(), Float32, n;
+        leaf_capacity, frontier_capacity, node_capacity)
+
     for trial in 1:ntrials
         keys_t = KA.zeros(CUDABackend(), UInt64, n)
         CUDA.synchronize()
@@ -121,18 +124,16 @@ function main()
         CUDA.synchronize()
         local nl, llev, lkey, llo, lhi
         push!(build_leaves_allocs, CUDA.@allocated ((nl, llev, lkey, llo, lhi) =
-            ext.ka_adaptive_build_leaves!(sorted_keys_t, ell_max, K_max, n;
-                leaf_capacity=leaf_capacity, frontier_capacity=frontier_capacity)))
+            ext.ka_adaptive_build_leaves!(actx, sorted_keys_t, ell_max, K_max, n)))
 
         CUDA.synchronize()
         local nl2, n_splits, llev2, lkey2, llo2, lhi2
         push!(balance_allocs, CUDA.@allocated ((nl2, n_splits, llev2, lkey2, llo2, lhi2) =
-            ext.ka_adaptive_balance!(nl, llev, lkey, llo, lhi, sorted_keys_t, ell_max;
-                leaf_capacity=leaf_capacity)))
+            ext.ka_adaptive_balance!(actx, nl, llev, lkey, llo, lhi, sorted_keys_t, ell_max)))
 
         CUDA.synchronize()
-        push!(finalize_allocs, CUDA.@allocated ext.ka_adaptive_finalize!(nl2, llev2, lkey2, llo2, lhi2,
-            sorted_keys_t, ell_max, n, x_min, h0; node_capacity=node_capacity))
+        push!(finalize_allocs, CUDA.@allocated ext.ka_adaptive_finalize!(actx, nl2, llev2, lkey2, llo2, lhi2,
+            sorted_keys_t, ell_max, n, x_min, h0))
         CUDA.synchronize()
     end
 

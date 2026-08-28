@@ -285,8 +285,10 @@ for case in cases
         dev_key = Metal.MtlArray(key)
         dev_lo = Metal.MtlArray(lo)
         dev_hi = Metal.MtlArray(hi)
-        r = ext.ka_adaptive_finalize!(nl, dev_lev, dev_key, dev_lo, dev_hi, dev_keys,
-            ell_max, n, x_min, h0; node_capacity=node_capacity)
+        actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+            leaf_capacity=max(1, nl), frontier_capacity=max(1, nl), node_capacity=node_capacity)
+        r = ext.ka_adaptive_finalize!(actx, nl, dev_lev, dev_key, dev_lo, dev_hi, dev_keys,
+            ell_max, n, x_min, h0)
         (n_nodes=r.n_nodes, n_leaves=r.n_leaves,
          node_keys=Array(r.node_keys)[1:r.n_nodes],
          node_levels=Int.(Array(r.node_levels)[1:r.n_nodes]),

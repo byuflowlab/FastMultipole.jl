@@ -151,10 +151,12 @@ function benchmark_metal_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int
     leaf_capacity = 10 * nl_estimate + 256
     frontier_capacity = 16 * leaf_capacity
 
+    actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+        leaf_capacity, frontier_capacity, node_capacity)
+
     # Warmup
     for _ in 1:nwarmup
-        _ = ext.ka_build_adaptive_tree!(dev_positions, ell_max, K_max, true,
-            x_min, h0; leaf_capacity, frontier_capacity, node_capacity)
+        _ = ext.ka_build_adaptive_tree!(actx, dev_positions, ell_max, K_max, true, x_min, h0)
     end
 
     # Measure
@@ -162,8 +164,7 @@ function benchmark_metal_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int
     ref_nodes, ref_leaves = nothing, nothing
     for trial in 1:ntrials
         t0 = time_ns()
-        result = ext.ka_build_adaptive_tree!(dev_positions, ell_max, K_max, true,
-            x_min, h0; leaf_capacity, frontier_capacity, node_capacity)
+        result = ext.ka_build_adaptive_tree!(actx, dev_positions, ell_max, K_max, true, x_min, h0)
         KernelAbstractions.synchronize(Metal.MetalBackend())
         t1 = time_ns()
         push!(times, Float64(t1 - t0))
@@ -207,10 +208,12 @@ function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
     leaf_capacity = 10 * nl_estimate + 256
     frontier_capacity = 16 * leaf_capacity
 
+    actx = ext.ka_allocate_adaptive_context(CUDABackend(), Float32, n;
+        leaf_capacity, frontier_capacity, node_capacity)
+
     # Warmup
     for _ in 1:nwarmup
-        _ = ext.ka_build_adaptive_tree!(dev_positions, ell_max, K_max, true,
-            x_min, h0; leaf_capacity, frontier_capacity, node_capacity)
+        _ = ext.ka_build_adaptive_tree!(actx, dev_positions, ell_max, K_max, true, x_min, h0)
     end
 
     # Measure
@@ -221,8 +224,7 @@ function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
         CUDA.synchronize()
         t0 = time_ns()
         local result
-        alloc_bytes = CUDA.@allocated (result = ext.ka_build_adaptive_tree!(dev_positions, ell_max, K_max, true,
-            x_min, h0; leaf_capacity, frontier_capacity, node_capacity))
+        alloc_bytes = CUDA.@allocated (result = ext.ka_build_adaptive_tree!(actx, dev_positions, ell_max, K_max, true, x_min, h0))
         CUDA.synchronize()
         t1 = time_ns()
         push!(times, Float64(t1 - t0))

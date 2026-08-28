@@ -261,13 +261,15 @@ for case in cases
     dev_key = Metal.MtlArray(key)
     dev_lo = Metal.MtlArray(lo)
     dev_hi = Metal.MtlArray(hi)
-    r = ext.ka_adaptive_finalize!(nl, dev_lev, dev_key, dev_lo, dev_hi, dev_keys,
-        ell_max, n, x_min, h0; node_capacity=node_capacity)
+    actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+        leaf_capacity=max(1, nl), frontier_capacity=max(1, nl), node_capacity=node_capacity)
+    r = ext.ka_adaptive_finalize!(actx, nl, dev_lev, dev_key, dev_lo, dev_hi, dev_keys,
+        ell_max, n, x_min, h0)
 
     r.n_nodes == ref_fin.n_nodes || error("n=$n, K_max=$K_max: n_nodes mismatch (sanity)")
 
     dev_bodies = Metal.MtlArray(source_bodies)
-    got_sigma_dev = ext.ka_adaptive_sigma_sweep!(r.node_lo, r.node_hi, r.child_ranges,
+    got_sigma_dev = ext.ka_adaptive_sigma_sweep!(actx, r.node_lo, r.node_hi, r.child_ranges,
         r.n_nodes, r.level_offsets, ell_max, dev_bodies, sigma_row)
     got_sigma = Array(got_sigma_dev)[1:r.n_nodes]
 

@@ -71,8 +71,9 @@ for case in cases
     ref = cpu_reference_leaves(keys, ell_max, K_max)
     got = begin
         dev_keys = Metal.MtlArray(keys)
-        nl, llev, lkey, llo, lhi = ext.ka_adaptive_build_leaves!(dev_keys, ell_max, K_max, n;
-            leaf_capacity=8 * n + 8, frontier_capacity=8 * n + 64)
+        actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+            leaf_capacity=8 * n + 8, frontier_capacity=8 * n + 64, node_capacity=8 * n + 8)
+        nl, llev, lkey, llo, lhi = ext.ka_adaptive_build_leaves!(actx, dev_keys, ell_max, K_max, n)
         lev_h = Array(llev)[1:nl]; key_h = Array(lkey)[1:nl]
         lo_h = Array(llo)[1:nl]; hi_h = Array(lhi)[1:nl]
         sort([(Int(lev_h[i]), key_h[i], Int(lo_h[i]), Int(hi_h[i])) for i in 1:nl])

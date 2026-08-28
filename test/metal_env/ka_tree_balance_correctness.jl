@@ -211,8 +211,10 @@ for case in cases
         dev_key = Metal.MtlArray(pad(key0))
         dev_lo = Metal.MtlArray(pad(lo0))
         dev_hi = Metal.MtlArray(pad(hi0))
-        nl, splits, flev, fkey, flo, fhi = ext.ka_adaptive_balance!(nl0, dev_lev, dev_key,
-            dev_lo, dev_hi, dev_keys, ell_max; leaf_capacity=leaf_capacity)
+        actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+            leaf_capacity=leaf_capacity, frontier_capacity=8 * n + 64, node_capacity=leaf_capacity)
+        nl, splits, flev, fkey, flo, fhi = ext.ka_adaptive_balance!(actx, nl0, dev_lev, dev_key,
+            dev_lo, dev_hi, dev_keys, ell_max)
         lev_h = Array(flev)[1:nl]; key_h = Array(fkey)[1:nl]
         lo_h = Array(flo)[1:nl]; hi_h = Array(fhi)[1:nl]
         sort([(Int(lev_h[i]), key_h[i], Int(lo_h[i]), Int(hi_h[i])) for i in 1:nl]), splits

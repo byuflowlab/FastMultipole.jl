@@ -655,23 +655,91 @@ function _ka_scan_total!(flags, prefix, m::Int)
     return Int(Array(view(prefix, m:m))[1])
 end
 
+#------- Preallocated tree-build context (zero recurring allocation) -------#
+#
+# Mirrors CUDA-native's `DeviceAdaptiveCUDAContext`/`actx` convention
+# (src/tree_batched_cuda.jl:60-160): every working buffer used by
+# `ka_build_adaptive_tree!`'s phases is allocated once, here, at capacity, and
+# reused across calls instead of being rebuilt via `KA.zeros(...)` on every
+# invocation -- the source of the ~1.95GB/trial n=1e6 allocation pressure
+# bisected in job 13506038 (see project_fastmultipole_ka_migration memory).
+# Scoped to tree construction (Phases A/B/C/D); CUDA's DTR/interaction-list
+# buffers (`u_capacity`/`v_capacity`/`wx_capacity`) have no KA counterpart yet.
+
+struct KAAdaptiveTreeContext{B,NT<:NamedTuple}
+    backend::B
+    maxn::Int
+    leaf_capacity::Int
+    frontier_capacity::Int
+    node_capacity::Int
+    bufs::NT
+end
+
 """
-    ka_adaptive_build_leaves!(sorted_keys, ell_max, K_max, n; leaf_capacity, frontier_capacity, workgroup=64)
+    ka_allocate_adaptive_context(backend, TF, maxn; leaf_capacity, frontier_capacity, node_capacity)
+
+Allocate a `KAAdaptiveTreeContext`: every scratch/output buffer
+`ka_build_adaptive_tree!` and its phase functions need, sized once at
+`maxn`/`leaf_capacity`/`frontier_capacity`/`node_capacity` and reused across
+calls. Construct once per (backend, capacity) combination, outside any
+trial/timestep loop.
+"""
+function ka_allocate_adaptive_context(backend, ::Type{TF}, maxn::Int;
+        leaf_capacity::Int, frontier_capacity::Int, node_capacity::Int) where TF
+    LC, FC, NC = leaf_capacity, frontier_capacity, node_capacity
+    bufs = (
+        keys=KA.zeros(backend, UInt64, maxn), perm=KA.zeros(backend, Int, maxn),
+        sorted_keys=KA.zeros(backend, UInt64, maxn),
+
+        llev=KA.zeros(backend, Int32, LC), lkey=KA.zeros(backend, UInt64, LC),
+        llo=KA.zeros(backend, Int32, LC), lhi=KA.zeros(backend, Int32, LC),
+        a_lev=KA.zeros(backend, Int32, FC), a_key=KA.zeros(backend, UInt64, FC),
+        a_lo=KA.zeros(backend, Int32, FC), a_hi=KA.zeros(backend, Int32, FC),
+        b_lev=KA.zeros(backend, Int32, FC), b_key=KA.zeros(backend, UInt64, FC),
+        b_lo=KA.zeros(backend, Int32, FC), b_hi=KA.zeros(backend, Int32, FC),
+        bl_flags=KA.zeros(backend, Int32, FC), bl_prefix=KA.zeros(backend, Int32, FC),
+
+        bal_shifted=KA.zeros(backend, UInt64, LC), bal_order=KA.zeros(backend, Int, LC),
+        bal_scratch_starts=KA.zeros(backend, UInt64, LC), bal_marks=KA.zeros(backend, Int32, LC),
+        bal_flags=KA.zeros(backend, Int32, LC), bal_prefix=KA.zeros(backend, Int32, LC),
+        dlev=KA.zeros(backend, Int32, LC), dkey=KA.zeros(backend, UInt64, LC),
+        dlo=KA.zeros(backend, Int32, LC), dhi=KA.zeros(backend, Int32, LC),
+
+        fin_shifted=KA.zeros(backend, UInt64, LC), fin_order=KA.zeros(backend, Int, LC),
+        fin_skey=KA.zeros(backend, UInt64, LC), fin_slev=KA.zeros(backend, Int32, LC),
+        fin_cand=KA.zeros(backend, UInt64, LC),
+        fin_flags=KA.zeros(backend, Int32, NC), fin_prefix=KA.zeros(backend, Int32, NC),
+        node_keys=KA.zeros(backend, UInt64, NC), node_levels=KA.zeros(backend, Int32, NC),
+        node_coords=KA.zeros(backend, Int32, 3, NC), node_centers=KA.zeros(backend, TF, 3, NC),
+        node_lo=KA.zeros(backend, Int32, NC), node_hi=KA.zeros(backend, Int32, NC),
+        parent_index=KA.zeros(backend, Int32, NC), child_ranges=KA.zeros(backend, Int32, 2, NC),
+        leaf_index=KA.zeros(backend, Int32, NC), leaf_slot_of=KA.zeros(backend, Int32, NC),
+        cell_ranges=KA.zeros(backend, Int32, 2, LC), cell_centers=KA.zeros(backend, TF, 3, LC),
+        cell_keys=KA.zeros(backend, UInt64, LC), leaf_to_node=KA.zeros(backend, Int32, LC),
+
+        node_sigma=KA.zeros(backend, TF, NC),
+    )
+    return KAAdaptiveTreeContext(backend, maxn, leaf_capacity, frontier_capacity, node_capacity, bufs)
+end
+
+"""
+    ka_adaptive_build_leaves!(actx, sorted_keys, ell_max, K_max, n; workgroup=64)
 
 Backend-agnostic port of `_cuda_adaptive_build_leaves!` (tree_batched_cuda.jl):
 builds the K_max leaf set (adaptive octree theory §1.2) from `sorted_keys`, a
 KA-backend array of the `n` bodies' full-depth Morton keys in ascending sorted
 order. Returns `(nl, leaf_levels, leaf_keys, leaf_lo, leaf_hi)`, each a
-backend array truncated logically to `1:nl` (allocated at `leaf_capacity`).
-`leaf_lo`/`leaf_hi` are 1-based inclusive ranges into `sorted_keys`.
+backend array truncated logically to `1:nl` (allocated at `actx.leaf_capacity`).
+`leaf_lo`/`leaf_hi` are 1-based inclusive ranges into `sorted_keys`. Scratch/
+output buffers come from `actx` (see `KAAdaptiveTreeContext`) -- no allocation.
 """
-function ka_adaptive_build_leaves!(sorted_keys::AbstractVector{UInt64}, ell_max::Int,
-        K_max::Int, n::Int; leaf_capacity::Int, frontier_capacity::Int, workgroup::Int=64)
-    backend = KA.get_backend(sorted_keys)
-    llev = KA.zeros(backend, Int32, leaf_capacity)
-    lkey = KA.zeros(backend, UInt64, leaf_capacity)
-    llo = KA.zeros(backend, Int32, leaf_capacity)
-    lhi = KA.zeros(backend, Int32, leaf_capacity)
+function ka_adaptive_build_leaves!(actx::KAAdaptiveTreeContext, sorted_keys::AbstractVector{UInt64},
+        ell_max::Int, K_max::Int, n::Int; workgroup::Int=64)
+    backend = actx.backend
+    b = actx.bufs
+    leaf_capacity = actx.leaf_capacity
+    frontier_capacity = actx.frontier_capacity
+    llev, lkey, llo, lhi = b.llev, b.lkey, b.llo, b.lhi
 
     seedk = _cached_kernel(ka_seed_root_kernel!, backend, 1)
 
@@ -681,16 +749,9 @@ function ka_adaptive_build_leaves!(sorted_keys::AbstractVector{UInt64}, ell_max:
         return 1, llev, lkey, llo, lhi
     end
 
-    a_lev = KA.zeros(backend, Int32, frontier_capacity)
-    a_key = KA.zeros(backend, UInt64, frontier_capacity)
-    a_lo = KA.zeros(backend, Int32, frontier_capacity)
-    a_hi = KA.zeros(backend, Int32, frontier_capacity)
-    b_lev = KA.zeros(backend, Int32, frontier_capacity)
-    b_key = KA.zeros(backend, UInt64, frontier_capacity)
-    b_lo = KA.zeros(backend, Int32, frontier_capacity)
-    b_hi = KA.zeros(backend, Int32, frontier_capacity)
-    flags = KA.zeros(backend, Int32, frontier_capacity)
-    prefix = KA.zeros(backend, Int32, frontier_capacity)
+    a_lev, a_key, a_lo, a_hi = b.a_lev, b.a_key, b.a_lo, b.a_hi
+    b_lev, b_key, b_lo, b_hi = b.b_lev, b.b_key, b.b_lo, b.b_hi
+    flags, prefix = b.bl_flags, b.bl_prefix
 
     seedk(a_lev, a_key, a_lo, a_hi, n; ndrange=1)
     KA.synchronize(backend)
@@ -872,34 +933,28 @@ end
 end
 
 """
-    ka_adaptive_balance!(nl, leaf_levels, leaf_keys, leaf_lo, leaf_hi, sorted_keys, ell_max;
-                          leaf_capacity, workgroup=64)
+    ka_adaptive_balance!(actx, nl, leaf_levels, leaf_keys, leaf_lo, leaf_hi, sorted_keys, ell_max;
+                          workgroup=64)
 
 Backend-agnostic port of `_cuda_adaptive_balance!` (tree_batched_cuda.jl): Jacobi
 2:1-balance sweep (theory §1.4, Sundar-style) to the fixed point over the K_max
 leaf set produced by `ka_adaptive_build_leaves!`. `leaf_levels`/`leaf_keys`/
-`leaf_lo`/`leaf_hi` are backend arrays (allocated at `leaf_capacity`, logically
+`leaf_lo`/`leaf_hi` are backend arrays (allocated at `actx.leaf_capacity`, logically
 truncated to `1:nl`); `sorted_keys` is the same full-depth-sorted body key
 array `ka_adaptive_build_leaves!` was given. Returns
 `(nl, n_balance_splits, leaf_levels, leaf_keys, leaf_lo, leaf_hi)` -- the final
 leaf arrays may be either input array (ping-pong), not necessarily the ones
-passed in.
+passed in. Scratch/output buffers come from `actx` -- no allocation.
 """
-function ka_adaptive_balance!(nl::Int, leaf_levels, leaf_keys, leaf_lo, leaf_hi,
-        sorted_keys::AbstractVector{UInt64}, ell_max::Int; leaf_capacity::Int, workgroup::Int=64)
-    backend = KA.get_backend(sorted_keys)
+function ka_adaptive_balance!(actx::KAAdaptiveTreeContext, nl::Int, leaf_levels, leaf_keys,
+        leaf_lo, leaf_hi, sorted_keys::AbstractVector{UInt64}, ell_max::Int; workgroup::Int=64)
+    backend = actx.backend
+    b = actx.bufs
+    leaf_capacity = actx.leaf_capacity
 
-    shifted = KA.zeros(backend, UInt64, leaf_capacity)
-    order = KA.zeros(backend, Int, leaf_capacity)
-    scratch_starts = KA.zeros(backend, UInt64, leaf_capacity)
-    marks = KA.zeros(backend, Int32, leaf_capacity)
-    flags = KA.zeros(backend, Int32, leaf_capacity)
-    prefix = KA.zeros(backend, Int32, leaf_capacity)
-
-    dlev = KA.zeros(backend, Int32, leaf_capacity)
-    dkey = KA.zeros(backend, UInt64, leaf_capacity)
-    dlo = KA.zeros(backend, Int32, leaf_capacity)
-    dhi = KA.zeros(backend, Int32, leaf_capacity)
+    shifted, order, scratch_starts = b.bal_shifted, b.bal_order, b.bal_scratch_starts
+    marks, flags, prefix = b.bal_marks, b.bal_flags, b.bal_prefix
+    dlev, dkey, dlo, dhi = b.dlev, b.dkey, b.dlo, b.dhi
 
     shiftedk = _cached_kernel(ka_leaf_shifted_kernel!, backend, workgroup)
     markk = _cached_kernel(ka_balance_mark_kernel!, backend, workgroup)
@@ -1070,8 +1125,8 @@ end
 end
 
 """
-    ka_adaptive_finalize!(nl, leaf_levels, leaf_keys, leaf_lo, leaf_hi, sorted_keys,
-                           ell_max, n, x_min, h0::TF; node_capacity, workgroup=64)
+    ka_adaptive_finalize!(actx, nl, leaf_levels, leaf_keys, leaf_lo, leaf_hi, sorted_keys,
+                           ell_max, n, x_min, h0::TF; workgroup=64)
 
 Backend-agnostic port of `_cuda_adaptive_finalize!` (tree_batched_cuda.jl): builds the
 level-major node table (ancestor + leaf nodes, Morton-sorted within each level) from
@@ -1086,32 +1141,26 @@ arrays -- mirrors CUDA's `grid.x_min`/`grid.h0` convention).
 Returns a `NamedTuple` `(n_nodes, n_leaves, node_keys, node_levels, node_coords,
 node_centers, node_lo, node_hi, parent_index, child_ranges, leaf_index, leaf_slot_of,
 cell_ranges, cell_centers, cell_keys, leaf_to_node)`. The node-indexed arrays are
-allocated at `node_capacity` and logically truncated to `1:n_nodes`; the leaf-indexed
-cell arrays are allocated exactly at `n_leaves` (== `nl`, asserted).
+allocated at `actx.node_capacity` and logically truncated to `1:n_nodes`; the
+leaf-indexed cell arrays are allocated at `actx.leaf_capacity` and logically truncated
+to `1:n_leaves` (== `nl`, asserted). Scratch/output buffers come from `actx` -- no
+allocation.
 """
-function ka_adaptive_finalize!(nl::Int, leaf_levels, leaf_keys, leaf_lo, leaf_hi,
-        sorted_keys::AbstractVector{UInt64}, ell_max::Int, n::Int, x_min, h0::TF;
-        node_capacity::Int, workgroup::Int=64) where TF
-    backend = KA.get_backend(sorted_keys)
+function ka_adaptive_finalize!(actx::KAAdaptiveTreeContext, nl::Int, leaf_levels, leaf_keys,
+        leaf_lo, leaf_hi, sorted_keys::AbstractVector{UInt64}, ell_max::Int, n::Int, x_min,
+        h0::TF; workgroup::Int=64) where TF
+    backend = actx.backend
+    b = actx.bufs
 
-    shifted = KA.zeros(backend, UInt64, nl)
-    order = KA.zeros(backend, Int, nl)
-    skey = KA.zeros(backend, UInt64, nl)
-    slev = KA.zeros(backend, Int32, nl)
-    cand = KA.zeros(backend, UInt64, nl)
-    flags = KA.zeros(backend, Int32, node_capacity)
-    prefix = KA.zeros(backend, Int32, node_capacity)
+    shifted, order = b.fin_shifted, b.fin_order
+    skey, slev, cand = b.fin_skey, b.fin_slev, b.fin_cand
+    flags, prefix = b.fin_flags, b.fin_prefix
 
-    node_keys = KA.zeros(backend, UInt64, node_capacity)
-    node_levels = KA.zeros(backend, Int32, node_capacity)
-    node_coords = KA.zeros(backend, Int32, 3, node_capacity)
-    node_centers = KA.zeros(backend, TF, 3, node_capacity)
-    node_lo = KA.zeros(backend, Int32, node_capacity)
-    node_hi = KA.zeros(backend, Int32, node_capacity)
-    parent_index = KA.zeros(backend, Int32, node_capacity)
-    child_ranges = KA.zeros(backend, Int32, 2, node_capacity)
-    leaf_index = KA.zeros(backend, Int32, node_capacity)
-    leaf_slot_of = KA.zeros(backend, Int32, node_capacity)
+    node_keys, node_levels = b.node_keys, b.node_levels
+    node_coords, node_centers = b.node_coords, b.node_centers
+    node_lo, node_hi = b.node_lo, b.node_hi
+    parent_index, child_ranges = b.parent_index, b.child_ranges
+    leaf_index, leaf_slot_of = b.leaf_index, b.leaf_slot_of
 
     shiftedk = _cached_kernel(ka_leaf_shifted_kernel!, backend, workgroup)
     ancflagsk = _cached_kernel(ka_ancestor_flags_kernel!, backend, workgroup)
@@ -1130,9 +1179,10 @@ function ka_adaptive_finalize!(nl::Int, leaf_levels, leaf_keys, leaf_lo, leaf_hi
     KA.synchronize(backend)
     ov = view(order, 1:nl)
     sortperm!(ov, view(shifted, 1:nl))
-    ka_gather_values!(skey, leaf_keys, ov; workgroup=workgroup)
-    ka_gather_values!(slev, leaf_levels, ov; workgroup=workgroup)
+    ka_gather_values!(view(skey, 1:nl), leaf_keys, ov; workgroup=workgroup)
+    ka_gather_values!(view(slev, 1:nl), leaf_levels, ov; workgroup=workgroup)
 
+    node_capacity = actx.node_capacity
     off = zeros(Int, ell_max + 2)
     n_nodes = 0
     for L in 0:ell_max
@@ -1188,10 +1238,10 @@ function ka_adaptive_finalize!(nl::Int, leaf_levels, leaf_keys, leaf_lo, leaf_hi
     leafcompactk(leaf_index, leaf_slot_of, flags, prefix, n_nodes; ndrange=n_nodes)
     KA.synchronize(backend)
 
-    cell_ranges = KA.zeros(backend, Int32, 2, n_leaves)
-    cell_centers = KA.zeros(backend, TF, 3, n_leaves)
-    cell_keys = KA.zeros(backend, UInt64, n_leaves)
-    leaf_to_node = KA.zeros(backend, Int32, n_leaves)
+    cell_ranges = view(b.cell_ranges, :, 1:n_leaves)
+    cell_centers = view(b.cell_centers, :, 1:n_leaves)
+    cell_keys = view(b.cell_keys, 1:n_leaves)
+    leaf_to_node = view(b.leaf_to_node, 1:n_leaves)
     cellk(cell_ranges, cell_centers, cell_keys, leaf_to_node, leaf_index, node_lo, node_hi,
         node_centers, node_keys, n_leaves; ndrange=n_leaves)
     KA.synchronize(backend)
@@ -1238,7 +1288,7 @@ end
 end
 
 """
-    ka_adaptive_sigma_sweep!(node_lo, node_hi, child_ranges, n_nodes, level_offsets,
+    ka_adaptive_sigma_sweep!(actx, node_lo, node_hi, child_ranges, n_nodes, level_offsets,
                               ell_max, source_bodies, sigma_row; workgroup=64)
 
 Backend-agnostic port of `_cuda_adaptive_sigma_sweep!` (tree_batched_cuda.jl): computes,
@@ -1250,14 +1300,14 @@ up to `0` using `level_offsets` (so children are always finalized before their p
 visited). `source_bodies` must be indexed in the same sorted-body ordering as
 `node_lo`/`node_hi` (i.e. the same `sorted_keys` passed to `ka_adaptive_finalize!`).
 
-Returns `node_sigma_max`, an array sized `length(node_lo)` (the node-table capacity),
-logically truncated to `1:n_nodes`.
+Returns `node_sigma_max`, an array sized `actx.node_capacity`, logically truncated to
+`1:n_nodes`. Buffer comes from `actx` -- no allocation.
 """
-function ka_adaptive_sigma_sweep!(node_lo, node_hi, child_ranges, n_nodes::Int,
-        level_offsets::Vector{Int}, ell_max::Int, source_bodies::AbstractMatrix{TF},
-        sigma_row::Int; workgroup::Int=64) where TF
-    backend = KA.get_backend(node_lo)
-    node_sigma = KA.zeros(backend, TF, length(node_lo))
+function ka_adaptive_sigma_sweep!(actx::KAAdaptiveTreeContext, node_lo, node_hi, child_ranges,
+        n_nodes::Int, level_offsets::Vector{Int}, ell_max::Int,
+        source_bodies::AbstractMatrix{TF}, sigma_row::Int; workgroup::Int=64) where TF
+    backend = actx.backend
+    node_sigma = actx.bufs.node_sigma
 
     leafsigmak = _cached_kernel(ka_leaf_sigma_kernel!, backend, workgroup)
     upk = _cached_kernel(ka_sigma_up_kernel!, backend, workgroup)
@@ -1322,52 +1372,53 @@ function ka_radix_keys!(keys::AbstractVector{UInt64}, positions::AbstractMatrix,
 end
 
 """
-    ka_build_adaptive_tree!(positions, ell_max, K_max, balance, x_min, h0::TF;
-                             leaf_capacity, frontier_capacity, node_capacity,
+    ka_build_adaptive_tree!(actx, positions, ell_max, K_max, balance, x_min, h0::TF;
                              sigma_row=0, source_bodies=nothing, workgroup=64)
 
 From-scratch adaptive-octree build from raw body positions: full-depth Morton keys
 (`ka_radix_keys!`) + sort (`sortperm!`/`ka_gather_values!`, same as Phases B/C) feeding
 `ka_adaptive_build_leaves!` (Phase A) -> `ka_adaptive_balance!` (Phase B, if `balance`)
 -> `ka_adaptive_finalize!` (Phase C) -> `ka_adaptive_sigma_sweep!` (Phase D, if
-`sigma_row > 0` and `source_bodies` given). `positions` is a `3 x n` backend matrix;
-`x_min`/`h0` are the fixed root cube (plain scalars, not device arrays). Mirrors the
-stage order of `_cuda_refresh_adaptive_tree!` for a first (non-incremental) build.
+`sigma_row > 0` and `source_bodies` given). `positions` is a `3 x n` backend matrix
+(`n <= actx.maxn`); `x_min`/`h0` are the fixed root cube (plain scalars, not device
+arrays). Mirrors the stage order of `_cuda_refresh_adaptive_tree!` for a first
+(non-incremental) build. All scratch/output buffers come from `actx` (see
+`KAAdaptiveTreeContext`/`ka_allocate_adaptive_context`) -- zero recurring allocation,
+matching CUDA-native's `actx` convention.
 
 Returns Phase C's `NamedTuple` merged with `perm`, `sorted_keys`, `n_balance_splits`,
 and `node_sigma_max` (`nothing` if the sigma sweep was not armed).
 """
-function ka_build_adaptive_tree!(positions::AbstractMatrix, ell_max::Int, K_max::Int,
-        balance::Bool, x_min, h0::TF; leaf_capacity::Int, frontier_capacity::Int,
-        node_capacity::Int, sigma_row::Int=0, source_bodies=nothing,
-        workgroup::Int=64) where TF
-    backend = KA.get_backend(positions)
+function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::AbstractMatrix,
+        ell_max::Int, K_max::Int, balance::Bool, x_min, h0::TF; sigma_row::Int=0,
+        source_bodies=nothing, workgroup::Int=64) where TF
+    backend = actx.backend
     n = size(positions, 2)
+    n <= actx.maxn || error("adaptive KA context maxn=$(actx.maxn) exceeded by n=$n")
+    b = actx.bufs
 
-    keys = KA.zeros(backend, UInt64, n)
+    keys = view(b.keys, 1:n)
     ka_radix_keys!(keys, positions, x_min, h0, ell_max; workgroup=workgroup)
 
-    perm = KA.zeros(backend, Int, n)
+    perm = view(b.perm, 1:n)
     sortperm!(perm, keys)
-    sorted_keys = KA.zeros(backend, UInt64, n)
+    sorted_keys = view(b.sorted_keys, 1:n)
     ka_gather_values!(sorted_keys, keys, perm; workgroup=workgroup)
 
-    nl, llev, lkey, llo, lhi = ka_adaptive_build_leaves!(sorted_keys, ell_max, K_max, n;
-        leaf_capacity=leaf_capacity, frontier_capacity=frontier_capacity,
+    nl, llev, lkey, llo, lhi = ka_adaptive_build_leaves!(actx, sorted_keys, ell_max, K_max, n;
         workgroup=workgroup)
 
     n_balance_splits = 0
     if balance
-        nl, n_balance_splits, llev, lkey, llo, lhi = ka_adaptive_balance!(nl, llev, lkey,
-            llo, lhi, sorted_keys, ell_max; leaf_capacity=leaf_capacity,
-            workgroup=workgroup)
+        nl, n_balance_splits, llev, lkey, llo, lhi = ka_adaptive_balance!(actx, nl, llev, lkey,
+            llo, lhi, sorted_keys, ell_max; workgroup=workgroup)
     end
 
-    fin = ka_adaptive_finalize!(nl, llev, lkey, llo, lhi, sorted_keys, ell_max, n, x_min,
-        h0; node_capacity=node_capacity, workgroup=workgroup)
+    fin = ka_adaptive_finalize!(actx, nl, llev, lkey, llo, lhi, sorted_keys, ell_max, n, x_min,
+        h0; workgroup=workgroup)
 
     node_sigma_max = if sigma_row > 0 && source_bodies !== nothing
-        ka_adaptive_sigma_sweep!(fin.node_lo, fin.node_hi, fin.child_ranges, fin.n_nodes,
+        ka_adaptive_sigma_sweep!(actx, fin.node_lo, fin.node_hi, fin.child_ranges, fin.n_nodes,
             fin.level_offsets, ell_max, source_bodies, sigma_row; workgroup=workgroup)
     else
         nothing
