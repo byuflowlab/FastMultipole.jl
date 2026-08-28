@@ -4,12 +4,19 @@
 # combine both into a single sbatch job for efficiency.
 
 using FastMultipole
-using Metal, KernelAbstractions
+using KernelAbstractions
 using Random
 using Statistics
 import Base.Sys: isapple
 
-if !isapple()
+# Metal/CUDA are mutually exclusive here: the HPC (CUDA) env has no Metal
+# package installed at all (correctly — no Apple GPU there), so `using Metal`
+# must not even be attempted off-Apple, or package resolution fails before
+# any code runs.
+const HAS_METAL = isapple()
+if HAS_METAL
+    using Metal
+else
     using CUDA
     FastMultipole.load_cuda_radix_lifecycle!()
 end
@@ -104,7 +111,7 @@ end
 
 function benchmark_metal_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
         nwarmup::Int=1, ntrials::Int=5)
-    if !Metal.functional()
+    if !HAS_METAL || !Metal.functional()
         return nothing, nothing, nothing
     end
 
@@ -316,7 +323,7 @@ function main()
             nwarmup = max(1, div(ntrials, 5))
 
             # Metal-KA arm
-            if Metal.functional()
+            if HAS_METAL && Metal.functional()
                 println("  Running Metal-KA (local)...")
                 metal_times, metal_nodes, metal_leaves = benchmark_metal_ka(positions, ell_max, K_max;
                     nwarmup, ntrials)
