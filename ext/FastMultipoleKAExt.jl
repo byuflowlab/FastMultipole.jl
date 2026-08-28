@@ -3,6 +3,7 @@ module FastMultipoleKAExt
 using FastMultipole
 using KernelAbstractions
 using LinearAlgebra
+using StaticArrays: SVector
 const KA = KernelAbstractions
 
 # Constructing a KA kernel object (`some_kernel!(backend, workgroup)`) redoes
@@ -124,6 +125,26 @@ end
         col = (i - 1) ÷ nrow + 1
         dst[row, col] = src[rows[row], col]
     end
+end
+
+@kernel function ka_gather_values_kernel!(dst, @Const(src), @Const(ids))
+    i = @index(Global)
+    @inbounds dst[i] = src[ids[i]]
+end
+
+"""
+    ka_gather_values!(dst, src, ids; workgroup=64)
+
+Backend-agnostic port of `_gather_values!` (src/translate_batched.jl): allocation-free
+value gather `dst[i] = src[ids[i]]`, used by the M2L concat plan's per-chunk column
+parameter gather (phi/theta/r/invr) from the per-class geometry tables.
+"""
+function ka_gather_values!(dst, src, ids; workgroup=64)
+    length(dst) == 0 && return dst
+    backend = KA.get_backend(dst)
+    kernel = _cached_kernel(ka_gather_values_kernel!, backend, workgroup)
+    kernel(dst, src, ids; ndrange=length(dst))
+    return dst
 end
 
 """
@@ -280,6 +301,187 @@ function FastMultipole.ka_m2m_operator_batch!(op, targets, sources, phis, thetas
     group, ws = _build_m2m_group_and_workspace(targets.phi, TF, invariant_cache,
         TF.(collect(phis)), TF.(collect(thetas)), TF.(collect(rs)), lamb_helmholtz)
     return ka_resident_stage_group_apply!(targets, sources, group, ws, :m2m)
+end
+
+# --- M2L (horizontal pass) ---
+#
+# The real production GPU M2L path is `ConcatenatedFixedZM2L`/`_launch_resident_m2l_concat!`
+# (src/translate_batched.jl:3828, `ResidentM2LConcatPlan`/`ConcatChannelOps`) -- confirmed
+# by checking `RadixFMMCache`'s default/allowed M2L strategies (src/translate_batched_resident.jl),
+# not the `FactoredRotationM2L`/`_resident_factored_m2l_group_apply!` path, whose per-degree
+# y-rotation blocks are type-asserted as plain CPU `Matrix{TF}` (translate_batched.jl:3077-3080)
+# and never dispatch to CUBLAS/Metal GPU matmul -- that path is CPU-only.
+#
+# `_launch_resident_m2l_concat!`'s primitives are, beyond the M2M-shared ones above:
+#   - `_gather_values!` (1D per-chunk column-parameter gather) -- ported here as `ka_gather_values!`
+#   - `_stacked_y_dense!` -- already backend-generic (`mul!` + broadcast); reused directly
+#     from `ka_stacked_y_dense!` above (same math, real/imag stacked-block form)
+#   - `_resident_mul!` (== `mul!`) for the fixed z-translation GEMM -- already backend-generic,
+#     called directly
+# No new `@kernel` beyond `ka_gather_values!` is needed; `ka_gather_rotate_z!`,
+# `ka_gather_rows!`, and `ka_rotate_z_scatter_accumulate!` are reused unchanged from M2M.
+
+# Build a `ResidentM2LConcatPlan` + the (M2L-only) slice of a `ResidentOperatorWorkspace`
+# on `exemplar`'s backend for an isolated per-route correctness check: `nbatch` independent
+# (source, target) = (i, i) pairs, one geometry class per route (arbitrary per-route
+# (r, θ, φ), not the uniform-grid-stencil classes production groups routes into) so any
+# random test geometry can be exercised without a tree. `accepted_offsets` here only sizes
+# `nclasses` to `nbatch`; the real per-class (r, θ, φ) tables are overwritten right after
+# construction with the caller's actual test angles.
+function _build_m2l_concat_plan_and_workspace(exemplar, ::Type{TF}, invariant_cache,
+        phis_host::Vector{TF}, thetas_host::Vector{TF}, rs_host::Vector{TF}, ::Val{LH}) where {TF,LH}
+    basis_info = invariant_cache.basis_info
+    B = typeof(basis_info.basis)
+    nbatch = length(phis_host)
+    P_phi = basis_info.orders.P_phi
+    P_active = basis_info.orders.P_active
+
+    offsets = [SVector{3,Int}(i, 0, 0) for i in 1:nbatch]
+    plan = FastMultipole.ResidentM2LConcatPlan(TF, basis_info, exemplar,
+        FastMultipole.ConcatenatedFixedZM2L(nbatch), invariant_cache, offsets, one(TF), nbatch)
+    copyto!(plan.phis, phis_host)
+    copyto!(plan.thetas, thetas_host)
+    copyto!(plan.rs, rs_host)
+    copyto!(plan.invrs, inv.(rs_host))
+    copyto!(plan.route_class, Int32.(1:nbatch))
+
+    phi_flat_idx = FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_phi))
+    chi_flat_idx = LH ?
+        FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_active)) :
+        FastMultipole._array_like_vector(exemplar, Int, Int[])
+    maps_phi = FastMultipole.DegreeMajorMaps(TF, P_phi, exemplar)
+    maps_chi = LH ? FastMultipole.DegreeMajorMaps(TF, P_active, exemplar) : maps_phi
+
+    empty_sm() = similar(exemplar, TF, 0, 0)
+    ws = FastMultipole.ResidentOperatorWorkspace{TF,B,LH}(
+        basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
+        nothing, nothing, nothing, nothing, nothing, nbatch,
+        nothing, nothing,
+        empty_sm(), empty_sm(), empty_sm(), empty_sm(),
+        empty_sm(), empty_sm(), empty_sm(), empty_sm(),
+        empty_sm(), empty_sm(),
+        nothing, nothing, nothing, nothing, FastMultipole.ResidentOperatorGroup[], nothing, plan,
+        nothing, nothing,
+    )
+    return plan, ws
+end
+
+"""
+    ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets, nroutes)
+
+Backend-agnostic port of `_launch_resident_m2l_concat!` (src/translate_batched.jl:3828),
+the real production `ConcatenatedFixedZM2L` resident M2L apply. Operates on `ws.m2l_concat`
+(a `ResidentM2LConcatPlan`) plus `route_sources`/`route_targets` (GPU index vectors) directly,
+rather than a full `DeviceResidentRadixState`, so it can be dropped into an isolated
+per-route correctness check the same way `ka_resident_stage_group_apply!` was for M2M.
+"""
+function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets, nroutes::Int)
+    nroutes == 0 && return dest
+    plan = ws.m2l_concat
+    LH = size(dest.chi, 1) > 0
+    TF = eltype(dest.phi)
+    for c0 in 1:plan.chunk:nroutes
+        cols = c0:min(c0 + plan.chunk - 1, nroutes)
+        n = length(cols)
+        cls = @view plan.route_class[cols]
+        phis = @view plan.col_phi[1:n]
+        thetas = @view plan.col_theta[1:n]
+        invr_col = @view plan.col_invr[1:n]
+        ka_gather_values!(phis, plan.phis, cls)
+        ka_gather_values!(thetas, plan.thetas, cls)
+        ka_gather_values!(invr_col, plan.invrs, cls)
+        invr_row = transpose(invr_col)
+        if LH
+            rs_col = @view plan.col_r[1:n]
+            ka_gather_values!(rs_col, plan.rs, cls)
+            rs_row = transpose(rs_col)
+        end
+        src_cols = @view route_sources[cols]
+        tgt_cols = @view route_targets[cols]
+        aphi = @view plan.aphi[:, 1:n]; yphi = @view plan.yphi[:, 1:n]
+        zphi = @view plan.zphi[:, 1:n]; rphi = @view plan.rphi[:, 1:n]
+        ops_phi = plan.ops_phi
+        ndof_phi = size(plan.aphi, 1)
+        Gphi = @view ops_phi.G[:, 1:n]; G2phi = @view ops_phi.G2[:, 1:n]
+        Cphi = @view ops_phi.Cy[:, 1:n]; Sphi = @view ops_phi.Sy[:, 1:n]
+        sphi = @view ops_phi.scale[:, 1:n]
+        thetas_row = transpose(thetas)
+        Cphi .= cos.(ops_phi.nu .* thetas_row)
+        Sphi .= sin.(ops_phi.nu .* thetas_row)
+        sphi .= invr_row .^ plan.rexp_phi
+        ka_gather_rotate_z!(aphi, src.phi, ws.phi_flat_idx, src_cols,
+            ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis, one(TF))
+        ka_stacked_y_dense!(yphi, aphi, ops_phi.yU_mult, ops_phi.yV_mult,
+            Cphi, Sphi, Gphi, G2phi, ndof_phi)
+        yphi .*= sphi
+        mul!(zphi, ops_phi.zD, yphi)
+        zphi .*= sphi
+        ret_phi = zphi
+
+        if LH
+            ops_chi = plan.ops_chi
+            ndof_chi = size(plan.achi, 1)
+            Gchi = @view ops_chi.G[:, 1:n]; G2chi = @view ops_chi.G2[:, 1:n]
+            Cchi = @view ops_chi.Cy[:, 1:n]; Schi = @view ops_chi.Sy[:, 1:n]
+            schi = @view ops_chi.scale[:, 1:n]
+            achi = @view plan.achi[:, 1:n]; ychi = @view plan.ychi[:, 1:n]
+            zchi = @view plan.zchi[:, 1:n]; rchi = @view plan.rchi[:, 1:n]
+            cphi = @view plan.cphi[:, 1:n]; cchi = @view plan.cchi[:, 1:n]
+            lhgp = @view plan.lhgp[:, 1:n]; lhgu = @view plan.lhgu[:, 1:n]
+            Cchi .= cos.(ops_chi.nu .* thetas_row)
+            Schi .= sin.(ops_chi.nu .* thetas_row)
+            schi .= invr_row .^ plan.rexp_chi
+            ka_gather_rotate_z!(achi, src.chi, ws.chi_flat_idx, src_cols,
+                ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis, one(TF))
+            ka_stacked_y_dense!(ychi, achi, ops_chi.yU_mult, ops_chi.yV_mult,
+                Cchi, Schi, Gchi, G2chi, ndof_chi)
+            ychi .*= schi
+            mul!(zchi, ops_chi.zD, ychi)
+            zchi .*= schi
+            ka_gather_rows!(lhgp, zchi, ws.maps_phi.row_pair)
+            ka_gather_rows!(lhgu, zchi, ws.maps_chi.row_up)
+            cphi .= zphi .+ (plan.lh_arow_unit .* rs_row) .* lhgp
+            cchi .= zchi .+ (plan.lh_brow_unit .* rs_row) .* lhgu
+            ka_stacked_y_dense!(rchi, cchi, ops_chi.yU_loc, ops_chi.yV_loc,
+                Cchi, Schi, Gchi, G2chi, ndof_chi)
+            ka_rotate_z_scatter_accumulate!(dest.chi, rchi, ws.chi_flat_idx, tgt_cols,
+                ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis)
+            ret_phi = cphi
+        end
+
+        ka_stacked_y_dense!(rphi, ret_phi, ops_phi.yU_loc, ops_phi.yV_loc,
+            Cphi, Sphi, Gphi, G2phi, ndof_phi)
+        ka_rotate_z_scatter_accumulate!(dest.phi, rphi, ws.phi_flat_idx, tgt_cols,
+            ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis)
+    end
+    KA.synchronize(KA.get_backend(dest.phi))
+    return dest
+end
+
+"""
+    FastMultipole.ka_m2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
+
+KernelAbstractions-backed M2L batch operator (stub declared in `src/FastMultipole.jl`).
+On a CPU backend this delegates to the existing `m2l_operator_batch!` (identical math, no
+device dispatch needed). On a GPU backend it builds a single-chunk resident concat plan
+(`_build_m2l_concat_plan_and_workspace`) treating each (phis[i], thetas[i], rs[i]) as an
+independent (source i -> target i) M2L pair, and runs `ka_resident_m2l_concat_apply!` --
+the KA-ported form of the real production `ConcatenatedFixedZM2L` resident M2L path
+(`_launch_resident_m2l_concat!`) -- against it.
+"""
+function FastMultipole.ka_m2l_operator_batch!(op, targets, sources, phis, thetas, rs,
+        invariant_cache, scratch, lamb_helmholtz::Val{LH}) where LH
+    backend = KA.get_backend(targets.phi)
+    if backend isa KA.CPU
+        return FastMultipole.m2l_operator_batch!(op, targets, sources, phis, thetas, rs,
+            invariant_cache, scratch, lamb_helmholtz)
+    end
+    TF = eltype(targets.phi)
+    plan, ws = _build_m2l_concat_plan_and_workspace(targets.phi, TF, invariant_cache,
+        TF.(collect(phis)), TF.(collect(thetas)), TF.(collect(rs)), lamb_helmholtz)
+    nbatch = length(phis)
+    idx = FastMultipole._array_like_vector(targets.phi, Int, collect(1:nbatch))
+    return ka_resident_m2l_concat_apply!(targets, sources, ws, idx, idx, nbatch)
 end
 
 end
