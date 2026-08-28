@@ -332,7 +332,7 @@ function main()
             println("  CPU: $cpu_nodes nodes, $cpu_leaves leaves")
 
             # Determine trial counts based on n (smaller n → more trials)
-            ntrials = max(10, min(200, div(10_000_000, n)))
+            ntrials = max(100, min(200, div(10_000_000, n)))
             nwarmup = max(1, div(ntrials, 5))
 
             # Metal-KA arm
