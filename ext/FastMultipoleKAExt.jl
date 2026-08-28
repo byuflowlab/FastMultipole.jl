@@ -554,4 +554,191 @@ function FastMultipole.ka_l2l_operator_batch!(op, targets, sources, phis, thetas
     return ka_resident_stage_group_apply!(targets, sources, group, ws, :l2l)
 end
 
+#------- Step 5/6: adaptive octree construction, Phase A (K_max frontier split) -------#
+#
+# Backend-agnostic port of src/tree_batched_cuda.jl's Phase A
+# (`_adt_cuda_seed_root_kernel!`/`_adt_cuda_split_flags_kernel!`/
+# `_adt_cuda_split_compact_kernel!`/`_cuda_adaptive_build_leaves!`): the
+# level-synchronous K_max frontier split that builds the adaptive octree's leaf
+# set from a device array of full-depth-sorted Morton keys, before 2:1 balance
+# (tree_batched_cuda.jl Phase B, not yet ported) and finalize (Phase C, not yet
+# ported). This is the first phase of the tree/grid construction subsystem that
+# `RadixFMMCache(device=true)` currently requires CUDA for (see the ka-migration
+# plan/memory note on why `fmm!()` can't reach the KA M2M/M2L/L2L path on Metal
+# without this). `_cuda_lower_bound` is CUDA-lifecycle-gated (only defined once
+# `load_cuda_radix_lifecycle!()` runs), so `ka_lower_bound` below is a
+# self-contained duplicate, not a shared call -- consistent with how the rest of
+# this ext never calls into the lazy CUDA-only kernel file.
+
+@inline function ka_lower_bound(keys, first, stop, key)
+    lo = first
+    hi = stop + 1
+    while lo < hi
+        mid = (lo + hi) >>> 1
+        if @inbounds(keys[mid]) < key
+            lo = mid + 1
+        else
+            hi = mid
+        end
+    end
+    return lo
+end
+
+# Child tuple of frontier cell `i`, child bits `c` (0-based): occupied range by
+# binary search over the full-depth-sorted body keys. Matches
+# `_adt_cuda_child_range` (tree_batched_cuda.jl) exactly.
+@inline function ka_child_range(sorted_keys, alev, akey, alo, ahi, i, c, ell_max)
+    @inbounds begin
+        lc = Int(alev[i]) + 1
+        shift = 3 * (ell_max - lc)
+        ckey = (akey[i] << 3) | UInt64(c)
+        startk = ckey << shift
+        endk = startk + (UInt64(1) << shift)
+        lo_c = ka_lower_bound(sorted_keys, Int(alo[i]), Int(ahi[i]), startk)
+        hi_c = ka_lower_bound(sorted_keys, Int(alo[i]), Int(ahi[i]), endk) - 1
+    end
+    return lc, ckey, lo_c, hi_c
+end
+
+@kernel function ka_seed_root_kernel!(lev, key, lo, hi, n)
+    i = @index(Global)
+    @inbounds if i == 1
+        lev[1] = Int32(0)
+        key[1] = UInt64(0)
+        lo[1] = Int32(1)
+        hi[1] = Int32(n)
+    end
+end
+
+# flags over the 8 x nact virtual child slots; want_leaf=1 flags children that
+# become leaves, want_leaf=0 flags children that stay active (split again).
+@kernel function ka_split_flags_kernel!(flags, @Const(sorted_keys), @Const(alev),
+        @Const(akey), @Const(alo), @Const(ahi), nact, K_max, ell_max, want_leaf)
+    j = @index(Global)
+    @inbounds if j <= 8 * nact
+        i = (j - 1) >> 3 + 1
+        c = (j - 1) & 7
+        lc, _, lo_c, hi_c = ka_child_range(sorted_keys, alev, akey, alo, ahi, i, c, ell_max)
+        f = Int32(0)
+        if lo_c <= hi_c
+            isleaf = (hi_c - lo_c + 1 <= K_max) || (lc == ell_max)
+            f = ((want_leaf == Int32(1)) == isleaf) ? Int32(1) : Int32(0)
+        end
+        flags[j] = f
+    end
+end
+
+@kernel function ka_split_compact_kernel!(dlev, dkey, dlo, dhi, base, @Const(flags),
+        @Const(prefix), @Const(sorted_keys), @Const(alev), @Const(akey), @Const(alo),
+        @Const(ahi), nact, ell_max)
+    j = @index(Global)
+    @inbounds if j <= 8 * nact && flags[j] == Int32(1)
+        i = (j - 1) >> 3 + 1
+        c = (j - 1) & 7
+        lc, ckey, lo_c, hi_c = ka_child_range(sorted_keys, alev, akey, alo, ahi, i, c, ell_max)
+        idx = base + Int(prefix[j])
+        dlev[idx] = Int32(lc)
+        dkey[idx] = ckey
+        dlo[idx] = Int32(lo_c)
+        dhi[idx] = Int32(hi_c)
+    end
+end
+
+# Inclusive scan of flags[1:m] into prefix[1:m], returning the total. Mirrors
+# `_adt_cuda_scan_total!`; `accumulate!` is already backend-generic (KA/GPUArrays),
+# so only the final host-scalar readback needs to be written out explicitly.
+function _ka_scan_total!(flags, prefix, m::Int)
+    m == 0 && return 0
+    fv = view(flags, 1:m)
+    pv = view(prefix, 1:m)
+    accumulate!(+, pv, fv)
+    return Int(Array(view(prefix, m:m))[1])
+end
+
+"""
+    ka_adaptive_build_leaves!(sorted_keys, ell_max, K_max, n; leaf_capacity, frontier_capacity, workgroup=64)
+
+Backend-agnostic port of `_cuda_adaptive_build_leaves!` (tree_batched_cuda.jl):
+builds the K_max leaf set (adaptive octree theory §1.2) from `sorted_keys`, a
+KA-backend array of the `n` bodies' full-depth Morton keys in ascending sorted
+order. Returns `(nl, leaf_levels, leaf_keys, leaf_lo, leaf_hi)`, each a
+backend array truncated logically to `1:nl` (allocated at `leaf_capacity`).
+`leaf_lo`/`leaf_hi` are 1-based inclusive ranges into `sorted_keys`.
+"""
+function ka_adaptive_build_leaves!(sorted_keys::AbstractVector{UInt64}, ell_max::Int,
+        K_max::Int, n::Int; leaf_capacity::Int, frontier_capacity::Int, workgroup::Int=64)
+    backend = KA.get_backend(sorted_keys)
+    llev = KA.zeros(backend, Int32, leaf_capacity)
+    lkey = KA.zeros(backend, UInt64, leaf_capacity)
+    llo = KA.zeros(backend, Int32, leaf_capacity)
+    lhi = KA.zeros(backend, Int32, leaf_capacity)
+
+    seedk = _cached_kernel(ka_seed_root_kernel!, backend, 1)
+
+    if n <= K_max || ell_max == 0
+        seedk(llev, lkey, llo, lhi, n; ndrange=1)
+        KA.synchronize(backend)
+        return 1, llev, lkey, llo, lhi
+    end
+
+    a_lev = KA.zeros(backend, Int32, frontier_capacity)
+    a_key = KA.zeros(backend, UInt64, frontier_capacity)
+    a_lo = KA.zeros(backend, Int32, frontier_capacity)
+    a_hi = KA.zeros(backend, Int32, frontier_capacity)
+    b_lev = KA.zeros(backend, Int32, frontier_capacity)
+    b_key = KA.zeros(backend, UInt64, frontier_capacity)
+    b_lo = KA.zeros(backend, Int32, frontier_capacity)
+    b_hi = KA.zeros(backend, Int32, frontier_capacity)
+    flags = KA.zeros(backend, Int32, frontier_capacity)
+    prefix = KA.zeros(backend, Int32, frontier_capacity)
+
+    seedk(a_lev, a_key, a_lo, a_hi, n; ndrange=1)
+    KA.synchronize(backend)
+
+    flagsk = _cached_kernel(ka_split_flags_kernel!, backend, workgroup)
+    compactk = _cached_kernel(ka_split_compact_kernel!, backend, workgroup)
+
+    nact = 1
+    nl = 0
+    round = 0
+    while nact > 0
+        round += 1
+        round <= ell_max + 1 || error("adaptive KA K_max split failed to terminate")
+        m = 8 * nact
+        m <= frontier_capacity || error(
+            "adaptive KA split frontier capacity $frontier_capacity exceeded")
+
+        flagsk(flags, sorted_keys, a_lev, a_key, a_lo, a_hi, nact, K_max, ell_max,
+            Int32(1); ndrange=m)
+        KA.synchronize(backend)
+        nleaf = _ka_scan_total!(flags, prefix, m)
+        nl + nleaf <= leaf_capacity || error(
+            "adaptive KA leaf capacity $leaf_capacity exceeded")
+        if nleaf > 0
+            compactk(llev, lkey, llo, lhi, nl, flags, prefix, sorted_keys, a_lev, a_key,
+                a_lo, a_hi, nact, ell_max; ndrange=m)
+            KA.synchronize(backend)
+        end
+        nl += nleaf
+
+        flagsk(flags, sorted_keys, a_lev, a_key, a_lo, a_hi, nact, K_max, ell_max,
+            Int32(0); ndrange=m)
+        KA.synchronize(backend)
+        nact2 = _ka_scan_total!(flags, prefix, m)
+        nact2 <= frontier_capacity || error(
+            "adaptive KA active frontier count $nact2 exceeded capacity $frontier_capacity")
+        if nact2 > 0
+            compactk(b_lev, b_key, b_lo, b_hi, 0, flags, prefix, sorted_keys, a_lev, a_key,
+                a_lo, a_hi, nact, ell_max; ndrange=m)
+            KA.synchronize(backend)
+        end
+        a_lev, b_lev = b_lev, a_lev
+        a_key, b_key = b_key, a_key
+        a_lo, b_lo = b_lo, a_lo
+        a_hi, b_hi = b_hi, a_hi
+        nact = nact2
+    end
+    return nl, llev, lkey, llo, lhi
+end
+
 end
