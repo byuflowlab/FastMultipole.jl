@@ -2,7 +2,6 @@
 #SBATCH --job-name=fmm_treebuild
 #SBATCH --qos=eng
 #SBATCH --gpus=h200:1
-#SBATCH --exclusive
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=64G
 #SBATCH --time=00:30:00
@@ -11,9 +10,13 @@
 # FastMultipole's ka-migration side-track. Pattern: FLOWVPM-kabench's
 # ka_cuda_bench_run.sh, trimmed for this repo's layout.
 #
-# --exclusive: n=1e6 tree-build timing showed IQR 5-8x the median even at 100
-# trials (jobs 13506026/13506031); this rules out shared-node GPU contention
-# as the cause by reserving the whole node.
+# n=1e6 tree-build timing showed IQR 5-8x the median even at 100 trials
+# (jobs 13506026/13506031). An --exclusive rerun (13506032) was queued to rule
+# out shared-node contention but sat pending on resources too long to be
+# worth waiting on. Instead the co-tenancy log below now also samples SM
+# clock, power draw, and throttle-reason flags, which tests the clock-
+# throttling hypothesis directly without needing a whole-node reservation;
+# memory.used/utilization.gpu still catch co-tenant activity if any is there.
 set -eo pipefail
 source /etc/profile
 module load cuda julia/1.11.7-6bmogfl
@@ -27,9 +30,11 @@ LOG="$WORKDIR/tree_build_bench_${SLURM_JOB_ID}.log"
 PROV="$WORKDIR/tree_build_bench_${SLURM_JOB_ID}.provenance"
 GPULOG="$WORKDIR/tree_build_bench_${SLURM_JOB_ID}.gpu.csv"
 
-# Background co-tenancy sample, 1s cadence, for the duration of the julia run
-# (kept even under --exclusive as a check that the reservation actually held).
-nvidia-smi --query-gpu=timestamp,utilization.gpu,memory.used,memory.total \
+# Background GPU sample, 1s cadence, for the duration of the julia run:
+# utilization/memory catch co-tenant activity; clocks/power/throttle-reasons
+# catch thermal/power throttling independent of any other tenant.
+nvidia-smi --query-gpu=timestamp,utilization.gpu,memory.used,memory.total,\
+clocks.sm,clocks.max.sm,power.draw,power.limit,clocks_event_reasons.active \
     --format=csv -l 1 > "$GPULOG" &
 GPU_MONITOR_PID=$!
 trap 'kill "$GPU_MONITOR_PID" 2>/dev/null' EXIT
