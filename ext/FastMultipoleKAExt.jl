@@ -1200,7 +1200,81 @@ function ka_adaptive_finalize!(nl::Int, leaf_levels, leaf_keys, leaf_lo, leaf_hi
         node_coords=node_coords, node_centers=node_centers, node_lo=node_lo, node_hi=node_hi,
         parent_index=parent_index, child_ranges=child_ranges, leaf_index=leaf_index,
         leaf_slot_of=leaf_slot_of, cell_ranges=cell_ranges, cell_centers=cell_centers,
-        cell_keys=cell_keys, leaf_to_node=leaf_to_node)
+        cell_keys=cell_keys, leaf_to_node=leaf_to_node, level_offsets=off)
+end
+
+#------- Phase D: per-node subtree sigma_max upward pass -------#
+
+@kernel function ka_leaf_sigma_kernel!(node_sigma, @Const(node_lo), @Const(node_hi),
+        @Const(child_ranges), @Const(source_bodies), sigma_row, n_nodes)
+    i = @index(Global)
+    @inbounds if i <= n_nodes && child_ranges[2, i] == 0
+        TF = eltype(node_sigma)
+        m = zero(TF)
+        for r in Int(node_lo[i]):Int(node_hi[i])
+            s = source_bodies[sigma_row, r]
+            s > m && (m = s)
+        end
+        node_sigma[i] = m
+    end
+end
+
+@kernel function ka_sigma_up_kernel!(node_sigma, @Const(child_ranges), base, count)
+    i = @index(Global)
+    @inbounds if i <= count
+        node = base + i
+        nc = Int(child_ranges[2, node])
+        if nc != 0
+            c0 = Int(child_ranges[1, node])
+            TF = eltype(node_sigma)
+            m = zero(TF)
+            for c in c0:(c0 + nc - 1)
+                s = node_sigma[c]
+                s > m && (m = s)
+            end
+            node_sigma[node] = m
+        end
+    end
+end
+
+"""
+    ka_adaptive_sigma_sweep!(node_lo, node_hi, child_ranges, n_nodes, level_offsets,
+                              ell_max, source_bodies, sigma_row; workgroup=64)
+
+Backend-agnostic port of `_cuda_adaptive_sigma_sweep!` (tree_batched_cuda.jl): computes,
+for every node of the finalized level-major node table (see `ka_adaptive_finalize!`),
+the max of `source_bodies[sigma_row, :]` over its subtree -- leaves take the max over
+their own body range (`node_lo`/`node_hi`), interior nodes take the max over their
+children's already-computed `node_sigma_max`, processed level-by-level from `ell_max - 1`
+up to `0` using `level_offsets` (so children are always finalized before their parent is
+visited). `source_bodies` must be indexed in the same sorted-body ordering as
+`node_lo`/`node_hi` (i.e. the same `sorted_keys` passed to `ka_adaptive_finalize!`).
+
+Returns `node_sigma_max`, an array sized `length(node_lo)` (the node-table capacity),
+logically truncated to `1:n_nodes`.
+"""
+function ka_adaptive_sigma_sweep!(node_lo, node_hi, child_ranges, n_nodes::Int,
+        level_offsets::Vector{Int}, ell_max::Int, source_bodies::AbstractMatrix{TF},
+        sigma_row::Int; workgroup::Int=64) where TF
+    backend = KA.get_backend(node_lo)
+    node_sigma = KA.zeros(backend, TF, length(node_lo))
+
+    leafsigmak = _cached_kernel(ka_leaf_sigma_kernel!, backend, workgroup)
+    upk = _cached_kernel(ka_sigma_up_kernel!, backend, workgroup)
+
+    leafsigmak(node_sigma, node_lo, node_hi, child_ranges, source_bodies, sigma_row,
+        n_nodes; ndrange=n_nodes)
+    KA.synchronize(backend)
+
+    for L in (ell_max - 1):-1:0
+        base = level_offsets[L + 1]
+        count = level_offsets[L + 2] - level_offsets[L + 1]
+        count > 0 || continue
+        upk(node_sigma, child_ranges, base, count; ndrange=count)
+        KA.synchronize(backend)
+    end
+
+    return node_sigma
 end
 
 end
