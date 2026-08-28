@@ -1,0 +1,31 @@
+dense refs done: rms|U| reg=5.4562e-02 sing=4.9017e+00 | global reg-vs-sing relRMS=9.028e+01
+
+q=12  ellx=5 P=3 : farErr=8.574e-04 | kernel_mismatch=8.431e-04 | truncation=1.121e-04
+q=12  ellx=5 P=8 : farErr=8.431e-04 | kernel_mismatch=8.431e-04 | truncation=1.155e-07
+  top-10 worst targets (P=8): |farErr|  |kernel|  |trunc|  dist_to_nearest_centroid
+    2.759e-03  2.759e-03  2.049e-08  1.0549e-02
+    2.716e-03  2.716e-03  3.887e-07  8.9422e-04
+    2.230e-03  2.230e-03  2.648e-08  1.9677e-04
+    1.787e-03  1.787e-03  1.463e-08  3.1623e-03
+    1.695e-03  1.695e-03  7.477e-08  2.1120e-03
+    1.363e-03  1.363e-03  7.687e-08  1.5414e-03
+    1.003e-03  1.003e-03  5.005e-08  1.8276e-02
+    9.083e-04  9.083e-04  3.582e-08  7.0268e-03
+    8.310e-04  8.310e-04  4.593e-08  3.4727e-03
+    5.689e-04  5.689e-04  4.321e-08  1.8235e-02
+q=3   ellx=7 P=3 : farErr=9.196e-02 | kernel_mismatch=9.239e-02 | truncation=1.284e-02
+q=3   ellx=7 P=8 : farErr=9.244e-02 | kernel_mismatch=9.239e-02 | truncation=3.862e-04
+  top-10 worst targets (P=8): |farErr|  |kernel|  |trunc|  dist_to_nearest_centroid
+    5.756e-01  5.754e-01  7.992e-04  8.9422e-04
+    1.885e-01  1.885e-01  3.409e-04  1.9677e-04
+    8.628e-02  8.542e-02  1.875e-03  2.1120e-03
+    7.954e-02  7.969e-02  2.000e-04  1.5414e-03
+    2.718e-02  2.729e-02  2.536e-04  3.1623e-03
+    7.826e-03  8.680e-03  1.084e-03  3.4727e-03
+    5.226e-03  5.261e-03  5.370e-05  6.5244e-03
+    4.301e-03  4.324e-03  2.476e-05  1.0549e-02
+    4.094e-03  4.081e-03  1.885e-05  1.9710e-02
+    2.918e-03  2.971e-03  1.302e-04  9.1931e-03
+┌ Warning: FMM radius inflation (0.005897977468151848) exceeds 10× the panel radius (2.0180581352456914e-5): core_size 0.001 is large relative to the panel size, so most interactions will be evaluated directly.
+└ @ FLOWPanel ~/Dropbox/research/projects/FLOWPanel.jl/src/FLOWPanel_abstractbody.jl:1202
+DONE

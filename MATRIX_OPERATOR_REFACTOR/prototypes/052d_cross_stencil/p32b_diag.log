@@ -1,0 +1,30 @@
+┌ Warning: FMM radius inflation (0.005897977468151848) exceeds 10× the panel radius (2.0180581352456914e-5): core_size 0.001 is large relative to the panel size, so most interactions will be evaluated directly.
+└ @ FLOWPanel ~/Dropbox/research/projects/FLOWPanel.jl/src/FLOWPanel_abstractbody.jl:1202
+=== A. panel extent vs cell width ===
+panel circumradius: max=2.215e-03 p99=2.104e-03 p90=1.857e-03 median=1.792e-03
+ell_x=5 w=1.415e-02 | overhang/w: max=0.13 p99=0.09 frac>0=0.23  (circumr/w max=0.16 p99=0.15)
+ell_x=6 w=7.073e-03 | overhang/w: max=0.26 p99=0.21 frac>0=0.44  (circumr/w max=0.31 p99=0.30)
+ell_x=7 w=3.536e-03 | overhang/w: max=0.54 p99=0.44 frac>0=0.73  (circumr/w max=0.63 p99=0.60)
+ell_x=8 w=1.768e-03 | overhang/w: max=1.14 p99=0.91 frac>0=0.91  (circumr/w max=1.25 p99=1.19)
+
+=== B. real panels: error percentiles + worst-target forensics ===
+q=12  ellx=5 P=3 : relRMS=8.574e-04 | per-target |err| max=2.749e-03 p99=6.890e-05 p90=8.857e-06 med=1.301e-07
+    error concentration: top10=95.3% top100=99.4% of sum-sq
+    worst 8 targets (dist to nearest panel centroid, in cell widths): 0.75 0.06 0.01 0.22 0.15 0.11 1.29 0.50 
+q=12  ellx=5 P=8 : relRMS=8.431e-04 | per-target |err| max=2.759e-03 p99=3.009e-05 p90=1.103e-07 med=8.159e-11
+    error concentration: top10=96.8% top100=100.0% of sum-sq
+    worst 8 targets (dist to nearest panel centroid, in cell widths): 0.75 0.06 0.01 0.22 0.15 0.11 1.29 0.50 
+q=3   ellx=7 P=3 : relRMS=9.196e-02 | per-target |err| max=5.648e-01 p99=1.234e-03 p90=3.629e-05 med=1.166e-06
+    error concentration: top10=99.8% top100=100.0% of sum-sq
+    worst 8 targets (dist to nearest panel centroid, in cell widths): 0.25 0.06 0.60 0.44 0.98 0.89 1.97 1.22 
+q=3   ellx=7 P=8 : relRMS=9.244e-02 | per-target |err| max=5.756e-01 p99=1.284e-04 p90=7.971e-07 med=3.697e-09
+    error concentration: top10=100.0% top100=100.0% of sum-sq
+    worst 8 targets (dist to nearest panel centroid, in cell widths): 0.25 0.06 0.60 0.44 0.89 0.98 1.84 2.98 
+
+=== C. shrunk panels (factor 0.02 about centroids; same centroids/strengths) ===
+shrunk dense ref rms|U|=3.5552e-04 (real was 5.4562e-02)
+SHRUNK q=12  ellx=5 P=3 : relRMS=2.679e-03
+SHRUNK q=12  ellx=5 P=8 : relRMS=2.678e-03
+SHRUNK q=3   ellx=7 P=3 : relRMS=2.923e-01
+SHRUNK q=3   ellx=7 P=8 : relRMS=2.923e-01
+DONE

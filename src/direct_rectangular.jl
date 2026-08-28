@@ -127,6 +127,9 @@ function RectangularPanelInfluence(family::Symbol)
     family === :vatistas && return RectangularPanelInfluence(Int32(1))
     family === :compact && return RectangularPanelInfluence(Int32(2))
     family === :gaussian && return RectangularPanelInfluence(Int32(3))
+    family === :linegauss && throw(ArgumentError(
+        "LineGaussRegularization is not yet ported to the rectangular-" *
+        "influence/device filament kernel (host-only in FLOWPanel; 052d)"))
     throw(ArgumentError("unknown filament regularization $(repr(family)); " *
         "use :vatistas, :compact, or :gaussian"))
 end
@@ -136,6 +139,10 @@ end
 @inline function _rect_reg_val(reg::Integer)
     reg == 2 && return Val(2)
     reg == 3 && return Val(3)
+    # code 4 = FLOWPanel LineGaussRegularization: NOT ported to this kernel —
+    # falling through to Vatistas here would silently change the physics
+    reg >= 4 && throw(ArgumentError("filament regularization code $reg " *
+        "(LineGauss?) is not supported by the rectangular-influence kernel"))
     return Val(1)
 end
 
