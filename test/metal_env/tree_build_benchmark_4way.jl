@@ -280,9 +280,11 @@ function generate_dense_cluster(n::Int, seed::Int; n_cluster::Int=100, cluster_r
     Random.seed!(seed)
     positions = rand(Float32, 3, n)
     if n >= n_cluster
-        # Add a tight cluster in the middle
+        # Add a tight cluster in the middle of the pre-scale [0,1)^3 domain
+        # (0.5, not 1.0 — 1.0 is the domain's edge, and cluster_radius=0.1
+        # pushed points past it, outside the [0,2]^3 fixed root cube post-scale)
         cluster_idx = randperm(n)[1:n_cluster]
-        cluster_center = 1.0f0 * ones(Float32, 3)
+        cluster_center = 0.5f0 * ones(Float32, 3)
         positions[:, cluster_idx] = cluster_center .+ cluster_radius .* (rand(Float32, 3, n_cluster) .- 0.5f0)
     end
     positions .*= 2.0f0
