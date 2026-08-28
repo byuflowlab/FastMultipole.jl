@@ -741,4 +741,209 @@ function ka_adaptive_build_leaves!(sorted_keys::AbstractVector{UInt64}, ell_max:
     return nl, llev, lkey, llo, lhi
 end
 
+#------- Phase B: 2:1 balance (Jacobi rounds over the leaf key set) -------#
+
+@inline function ka_upper_bound(keys, first, stop, key)
+    lo = first
+    hi = stop + 1
+    while lo < hi
+        mid = (lo + hi) >>> 1
+        if @inbounds(keys[mid]) <= key
+            lo = mid + 1
+        else
+            hi = mid
+        end
+    end
+    return lo
+end
+
+@inline function ka_morton_key(ix, iy, iz, ell)
+    key = UInt64(0)
+    for bit in 0:(ell - 1)
+        key |= (UInt64((ix >> bit) & 0x1) << (3 * bit))
+        key |= (UInt64((iy >> bit) & 0x1) << (3 * bit + 1))
+        key |= (UInt64((iz >> bit) & 0x1) << (3 * bit + 2))
+    end
+    return key
+end
+
+@inline function ka_decode_morton_key(key, ell)
+    ix = 0
+    iy = 0
+    iz = 0
+    for bit in 0:(ell - 1)
+        ix |= Int((key >> (3 * bit)) & UInt64(0x1)) << bit
+        iy |= Int((key >> (3 * bit + 1)) & UInt64(0x1)) << bit
+        iz |= Int((key >> (3 * bit + 2)) & UInt64(0x1)) << bit
+    end
+    return ix, iy, iz
+end
+
+@kernel function ka_leaf_shifted_kernel!(shifted, @Const(lev), @Const(key), ell_max)
+    i = @index(Global)
+    @inbounds shifted[i] = key[i] << (3 * (ell_max - Int(lev[i])))
+end
+
+# Mark every leaf that violates 2:1 against the current leaf set (mirrors
+# `_adt_cuda_balance_mark_kernel!`): leaf B at level lev emits its <=8 touching
+# parent-level cells; a leaf A at level <= lev-2 whose interval contains the
+# emitted cell start is marked. `marks` is pre-zeroed by the driver (a
+# same-kernel clear would race with concurrent mark writes from other threads).
+@kernel function ka_balance_mark_kernel!(marks, @Const(lev), @Const(key), nl,
+        @Const(sorted_starts), @Const(order), @Const(slev), ell_max)
+    i = @index(Global)
+    @inbounds if i <= nl
+        l = Int(lev[i])
+        if l >= 2
+            cx, cy, cz = ka_decode_morton_key(key[i], l)
+            Gc = 1 << (l - 1)
+            qx0 = (cx - 1) >> 1
+            qy0 = (cy - 1) >> 1
+            qz0 = (cz - 1) >> 1
+            for dz in 0:1, dy in 0:1, dx in 0:1
+                qx = qx0 + dx
+                qy = qy0 + dy
+                qz = qz0 + dz
+                if 0 <= qx < Gc && 0 <= qy < Gc && 0 <= qz < Gc
+                    qstart = ka_morton_key(qx, qy, qz, l - 1) << (3 * (ell_max - (l - 1)))
+                    j = ka_upper_bound(sorted_starts, 1, nl, qstart) - 1
+                    if j != 0
+                        aid = Int(order[j])
+                        la = Int(slev[aid])
+                        if la <= l - 2
+                            astart = sorted_starts[j]
+                            alen = UInt64(1) << (3 * (ell_max - la))
+                            if qstart < astart + alen
+                                marks[aid] = Int32(1)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+# Per-leaf emission count: unmarked leaves keep one slot; marked leaves emit
+# their occupied children (theory §1.4 -- the split leaf is occupied, so >= 1).
+@kernel function ka_balance_count_kernel!(cnt, @Const(marks), @Const(lev), @Const(key),
+        @Const(lo), @Const(hi), nl, @Const(sorted_keys), ell_max)
+    i = @index(Global)
+    @inbounds if i <= nl
+        if marks[i] == Int32(0)
+            cnt[i] = Int32(1)
+        else
+            m = 0
+            for c in 0:7
+                _, _, lo_c, hi_c = ka_child_range(sorted_keys, lev, key, lo, hi, i, c, ell_max)
+                if lo_c <= hi_c
+                    m += 1
+                end
+            end
+            cnt[i] = Int32(m)
+        end
+    end
+end
+
+@kernel function ka_balance_emit_kernel!(dlev, dkey, dlo, dhi, @Const(marks), @Const(prefix),
+        @Const(lev), @Const(key), @Const(lo), @Const(hi), nl, @Const(sorted_keys), ell_max)
+    i = @index(Global)
+    @inbounds if i <= nl
+        base = i == 1 ? 0 : Int(prefix[i - 1])
+        if marks[i] == Int32(0)
+            dlev[base + 1] = lev[i]
+            dkey[base + 1] = key[i]
+            dlo[base + 1] = lo[i]
+            dhi[base + 1] = hi[i]
+        else
+            w = 0
+            for c in 0:7
+                lc, ckey, lo_c, hi_c = ka_child_range(sorted_keys, lev, key, lo, hi, i, c, ell_max)
+                if lo_c <= hi_c
+                    w += 1
+                    dlev[base + w] = Int32(lc)
+                    dkey[base + w] = ckey
+                    dlo[base + w] = Int32(lo_c)
+                    dhi[base + w] = Int32(hi_c)
+                end
+            end
+        end
+    end
+end
+
+"""
+    ka_adaptive_balance!(nl, leaf_levels, leaf_keys, leaf_lo, leaf_hi, sorted_keys, ell_max;
+                          leaf_capacity, workgroup=64)
+
+Backend-agnostic port of `_cuda_adaptive_balance!` (tree_batched_cuda.jl): Jacobi
+2:1-balance sweep (theory §1.4, Sundar-style) to the fixed point over the K_max
+leaf set produced by `ka_adaptive_build_leaves!`. `leaf_levels`/`leaf_keys`/
+`leaf_lo`/`leaf_hi` are backend arrays (allocated at `leaf_capacity`, logically
+truncated to `1:nl`); `sorted_keys` is the same full-depth-sorted body key
+array `ka_adaptive_build_leaves!` was given. Returns
+`(nl, n_balance_splits, leaf_levels, leaf_keys, leaf_lo, leaf_hi)` -- the final
+leaf arrays may be either input array (ping-pong), not necessarily the ones
+passed in.
+"""
+function ka_adaptive_balance!(nl::Int, leaf_levels, leaf_keys, leaf_lo, leaf_hi,
+        sorted_keys::AbstractVector{UInt64}, ell_max::Int; leaf_capacity::Int, workgroup::Int=64)
+    backend = KA.get_backend(sorted_keys)
+
+    shifted = KA.zeros(backend, UInt64, leaf_capacity)
+    order = KA.zeros(backend, Int, leaf_capacity)
+    scratch_starts = KA.zeros(backend, UInt64, leaf_capacity)
+    marks = KA.zeros(backend, Int32, leaf_capacity)
+    flags = KA.zeros(backend, Int32, leaf_capacity)
+    prefix = KA.zeros(backend, Int32, leaf_capacity)
+
+    dlev = KA.zeros(backend, Int32, leaf_capacity)
+    dkey = KA.zeros(backend, UInt64, leaf_capacity)
+    dlo = KA.zeros(backend, Int32, leaf_capacity)
+    dhi = KA.zeros(backend, Int32, leaf_capacity)
+
+    shiftedk = _cached_kernel(ka_leaf_shifted_kernel!, backend, workgroup)
+    markk = _cached_kernel(ka_balance_mark_kernel!, backend, workgroup)
+    countk = _cached_kernel(ka_balance_count_kernel!, backend, workgroup)
+    emitk = _cached_kernel(ka_balance_emit_kernel!, backend, workgroup)
+
+    src = (leaf_levels, leaf_keys, leaf_lo, leaf_hi)
+    dst = (dlev, dkey, dlo, dhi)
+    total = 0
+    round = 0
+    while true
+        round += 1
+        round <= 2 * ell_max + 4 || error(
+            "adaptive KA 2:1 balance failed to reach a fixed point")
+
+        shiftedk(shifted, src[1], src[2], ell_max; ndrange=nl)
+        KA.synchronize(backend)
+        ov = view(order, 1:nl)
+        sortperm!(ov, view(shifted, 1:nl))
+        ka_gather_values!(view(scratch_starts, 1:nl), view(shifted, 1:nl), ov; workgroup=workgroup)
+
+        fill!(view(marks, 1:nl), Int32(0))
+        markk(marks, src[1], src[2], nl, scratch_starts, order, src[1], ell_max; ndrange=nl)
+        KA.synchronize(backend)
+
+        copyto!(view(flags, 1:nl), view(marks, 1:nl))
+        nmark = _ka_scan_total!(flags, prefix, nl)
+        nmark == 0 && break
+        total += nmark
+
+        countk(flags, marks, src[1], src[2], src[3], src[4], nl, sorted_keys, ell_max; ndrange=nl)
+        KA.synchronize(backend)
+        nl2 = _ka_scan_total!(flags, prefix, nl)
+        nl2 <= leaf_capacity || error(
+            "adaptive KA leaf capacity $leaf_capacity exceeded during the balance sweep")
+
+        emitk(dst[1], dst[2], dst[3], dst[4], marks, prefix, src[1], src[2], src[3], src[4],
+            nl, sorted_keys, ell_max; ndrange=nl)
+        KA.synchronize(backend)
+
+        src, dst = dst, src
+        nl = nl2
+    end
+    return nl, total, src[1], src[2], src[3], src[4]
+end
+
 end
