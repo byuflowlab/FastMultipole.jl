@@ -272,6 +272,13 @@ for case in cases
     Int.(Array(grid.invperm))[1:n] == hinv ||
         error("n=$n, K_max=$K_max: grid.invperm does not carry the build output")
 
+    # Single-system body attribution, global-ordinal indexed (the convention of
+    # _cuda_extract_matrix_positions_kernel!).
+    all(Int.(Array(grid.body_system))[1:n] .== 1) ||
+        error("n=$n, K_max=$K_max: grid.body_system is not all system 1")
+    Int.(Array(grid.body_index))[1:n] == collect(1:n) ||
+        error("n=$n, K_max=$K_max: grid.body_index is not the identity")
+
     println("✓ n=$n, K_max=$K_max, ell_max=$ell_max: $(got.n_nodes) nodes, " *
             "$(got.n_leaves) leaves, matches CPU reference exactly")
 end

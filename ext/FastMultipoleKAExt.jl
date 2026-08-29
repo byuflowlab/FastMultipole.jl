@@ -190,6 +190,41 @@ function ka_fill_invperm!(invperm, perm; workgroup::Int=64)
     return invperm
 end
 
+@kernel function ka_fill_single_system_attribution_kernel!(body_system, body_index, n)
+    i = @index(Global)
+    @inbounds if i <= n
+        body_system[i] = 1
+        body_index[i] = i
+    end
+end
+
+"""
+    ka_fill_single_system_attribution!(body_system, body_index, n; workgroup=64)
+
+Fill the `DeviceRadixGrid` body-attribution arrays for a single source system:
+`body_system[i] = 1`, `body_index[i] = i` over `1:n`. Both are indexed by *global*
+(unsorted) body ordinal, so a sorted slot is resolved as `body_system[perm[slot]]`.
+
+This is the attribution half of `_cuda_extract_matrix_positions_kernel!`
+(src/translate_batched_cuda.jl), which CUDA fuses into position extraction. The KA
+build takes an already-extracted `3 x n` position matrix, so there is nothing to
+fuse with and the fill stands alone.
+
+Multi-system attribution (`_cuda_extract_source_positions_kernel!`: one launch per
+system, each writing `isys` and its local index into an offset slice) is not ported;
+it belongs to the repack path rather than the octree build.
+"""
+function ka_fill_single_system_attribution!(body_system, body_index, n::Int; workgroup::Int=64)
+    n == 0 && return body_system, body_index
+    (length(body_system) >= n && length(body_index) >= n) || throw(ArgumentError(
+        "body attribution arrays (lengths $(length(body_system)), $(length(body_index))) " *
+        "are shorter than n=$n"))
+    backend = KA.get_backend(body_system)
+    kernel = _cached_kernel(ka_fill_single_system_attribution_kernel!, backend, workgroup)
+    kernel(body_system, body_index, n; ndrange=n)
+    return body_system, body_index
+end
+
 # --- Integration with FastMultipole's real M2M call path ---
 #
 # `ka_resident_stage_group_apply!` mirrors `_resident_stage_group_apply!`
@@ -723,10 +758,9 @@ The node- and cell-indexed outputs are allocated as the fields of a capacity-siz
 `DeviceRadixGrid` (`actx.grid`), which `bufs` aliases; the geometry fields
 (`x_min`/`h0`/`ell`) and the prefix lengths (`n_bodies`/`n_cells`) are placeholders
 until `ka_build_adaptive_tree!` sets them from its build arguments, exactly as
-`_cuda_refresh_adaptive_tree!` does. `grid.body_system`/`grid.body_index` are
-allocated but never written: they carry multi-system body attribution, which the
-repack path supplies rather than the octree build, and the KA path is single-system
-for now.
+`_cuda_refresh_adaptive_tree!` does. `grid.body_system`/`grid.body_index` are filled
+for a single source system (see `ka_fill_single_system_attribution!`); multi-system
+attribution belongs to the repack path rather than the octree build.
 """
 function ka_allocate_adaptive_context(backend, ::Type{TF}, maxn::Int;
         leaf_capacity::Int, frontier_capacity::Int, node_capacity::Int) where TF
@@ -2165,6 +2199,8 @@ function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::Abstrac
     grid.ell = ell_max
     grid.n_bodies = n
     grid.n_cells = fin.n_leaves
+    ka_fill_single_system_attribution!(grid.body_system, grid.body_index, n;
+        workgroup=workgroup)
 
     if stage_ns !== nothing
         KernelAbstractions.synchronize(backend)
