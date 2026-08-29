@@ -1574,12 +1574,18 @@ struct KAAdaptiveListsContext{B,L3,C3,NT<:NamedTuple}
     lut_reach::Int
     noffsets::Int
     first_m2l_level::Int
+    ell_max::Int
+    nclasses::Int
+    class_starts::Vector{Int}
+    level_starts::Vector{Int}
+    host_class_counts::Vector{Int32}
     bufs::NT
 end
 
 function ka_allocate_lists_context(backend, offset_lut, level_class_of;
         frontier_capacity::Int, u_capacity::Int, v_capacity::Int, wx_capacity::Int,
-        lut_reach::Int, noffsets::Int, first_m2l_level::Int)
+        lut_reach::Int, noffsets::Int, first_m2l_level::Int, ell_max::Int=0,
+        nclasses::Int=max(1, noffsets * (ell_max + 1 - first_m2l_level)))
     FC, UC, VC, WC = frontier_capacity, u_capacity, v_capacity, wx_capacity
     bufs = (
         fa=KA.zeros(backend, Int32, FC), fb=KA.zeros(backend, Int32, FC),
@@ -1594,9 +1600,17 @@ function ka_allocate_lists_context(backend, offset_lut, level_class_of;
         w_targets=KA.zeros(backend, Int32, WC), w_sources=KA.zeros(backend, Int32, WC),
         x_targets=KA.zeros(backend, Int32, WC), x_sources=KA.zeros(backend, Int32, WC),
         violation_flags=KA.zeros(backend, Int32, 1),
+
+        # Phase F: V class partition into the CSR route stream
+        vsort_keys=KA.zeros(backend, UInt64, VC), vsort_ix=KA.zeros(backend, Int, VC),
+        route_targets=KA.zeros(backend, Int, VC), route_sources=KA.zeros(backend, Int, VC),
+        route_class=KA.zeros(backend, Int32, VC),
+        route_class_offset=KA.zeros(backend, Int32, VC),
+        class_counts_dev=KA.zeros(backend, Int32, nclasses),
     )
     return KAAdaptiveListsContext(backend, FC, UC, VC, WC, offset_lut, level_class_of,
-        lut_reach, noffsets, first_m2l_level, bufs)
+        lut_reach, noffsets, first_m2l_level, ell_max, nclasses,
+        zeros(Int, nclasses + 1), zeros(Int, ell_max + 2), zeros(Int32, nclasses), bufs)
 end
 
 """
@@ -1705,6 +1719,94 @@ function ka_adaptive_build_lists!(lctx::KAAdaptiveListsContext, node_levels, nod
         "the sticky demotion invariant (theory §2.4/§5.2) is violated"))
 
     return n_u, n_v, n_w, n_x, n_dem
+end
+
+#------- Phase F: V-list class partition into the CSR route stream -------#
+#
+# Port of `_cuda_adaptive_partition_v!` and its three kernels
+# (src/tree_batched_cuda.jl:1143-1218). The V stage stream carries a class id
+# per pair; the routes have to be grouped by class so each M2L class becomes one
+# contiguous slab. Sorting on `(class << 32) | emission_index` makes the
+# partition stable by construction -- ties inside a class keep DTR emission
+# order -- so no separate stable-sort primitive is needed.
+
+@kernel function ka_vsort_keys_kernel!(keys, @Const(vclass), n_v)
+    i = @index(Global)
+    @inbounds if i <= n_v
+        keys[i] = (UInt64(vclass[i]) << 32) | UInt64(i)
+    end
+end
+
+@kernel function ka_csr_gather_kernel!(route_targets, route_sources, route_class,
+        route_class_offset, @Const(vsort_ix), @Const(vt), @Const(vs), @Const(vc),
+        n_v, noffsets)
+    p = @index(Global)
+    @inbounds if p <= n_v
+        i = Int(vsort_ix[p])
+        route_targets[p] = Int(vt[i])
+        route_sources[p] = Int(vs[i])
+        c = Int(vc[i])
+        route_class[p] = Int32(c)
+        # per-offset id for the dense family (class_base = 0 convention)
+        route_class_offset[p] = Int32(c - ((c - 1) ÷ noffsets) * noffsets)
+    end
+end
+
+@kernel function ka_class_histogram_kernel!(counts, @Const(vclass), n_v)
+    i = @index(Global)
+    @inbounds if i <= n_v
+        KA.@atomic counts[Int(vclass[i])] += Int32(1)
+    end
+end
+
+"""
+    ka_adaptive_partition_v!(lctx, n_v; workgroup=64)
+
+Backend-agnostic port of `_cuda_adaptive_partition_v!`: deterministically
+partitions the `n_v` staged V pairs by class into the CSR route stream
+(`lctx.bufs.route_*`, valid over `1:n_v`) and fills `lctx.class_starts` /
+`lctx.level_starts` on the host. Returns `n_v` (the route count).
+"""
+function ka_adaptive_partition_v!(lctx::KAAdaptiveListsContext, n_v::Int;
+        workgroup::Int=64)
+    backend = lctx.backend
+    b = lctx.bufs
+    cc = lctx.host_class_counts
+
+    if n_v == 0
+        fill!(cc, Int32(0))
+    else
+        keysk = _cached_kernel(ka_vsort_keys_kernel!, backend, workgroup)
+        gatherk = _cached_kernel(ka_csr_gather_kernel!, backend, workgroup)
+        histk = _cached_kernel(ka_class_histogram_kernel!, backend, workgroup)
+
+        keysk(b.vsort_keys, b.vstage_class, n_v; ndrange=n_v)
+        KA.synchronize(backend)
+        # `sortperm!` dispatches to the backend's own sort (confirmed working on
+        # Metal in Phase B), matching CUDA's `_cuda_sortperm_into!` convention.
+        sortperm!(view(b.vsort_ix, 1:n_v), view(b.vsort_keys, 1:n_v))
+        gatherk(b.route_targets, b.route_sources, b.route_class, b.route_class_offset,
+            b.vsort_ix, b.vstage_targets, b.vstage_sources, b.vstage_class, n_v,
+            lctx.noffsets; ndrange=n_v)
+        KA.synchronize(backend)
+        fill!(b.class_counts_dev, Int32(0))
+        histk(b.class_counts_dev, b.vstage_class, n_v; ndrange=n_v)
+        KA.synchronize(backend)
+        copyto!(cc, Array(b.class_counts_dev))
+    end
+
+    cs = lctx.class_starts
+    cs[1] = 1
+    @inbounds for c in 1:lctx.nclasses
+        cs[c + 1] = cs[c] + Int(cc[c])
+    end
+    ls = lctx.level_starts
+    first = lctx.first_m2l_level
+    @inbounds for L in 0:lctx.ell_max
+        ls[L + 1] = L < first ? 1 : cs[(L - first) * lctx.noffsets + 1]
+    end
+    ls[lctx.ell_max + 2] = cs[end]
+    return n_v
 end
 
 #------- Harness front end: position -> full-depth key, and a full-build driver -------#

@@ -349,7 +349,6 @@ end
 ext = Base.get_extension(FastMultipole, :FastMultipoleKAExt)
 ext !== nothing || error("FastMultipoleKAExt did not load")
 
-Random.seed!(11)
 ell_max = 4
 # q = near_radius2. gate=false exercises the pure geometric DTR; gate=true adds
 # the sticky sigma demotion path (theory 5.2), which is where U grows and V/W/X
@@ -366,8 +365,13 @@ cases = [
     (n=150,  K_max=4,  q=3, gate=false, dup=true),
 ]
 
+# Seeded PER CASE, not once up front: the device sort inside Phase F perturbs
+# the global RNG stream (Metal's sortperm! appears to draw a pivot), which would
+# otherwise make every case after the first depend on how much GPU work ran
+# before it. Per-case seeding keeps each case's data fixed and reproducible.
 npass = 0
-for case in cases
+for (ci, case) in enumerate(cases)
+    Random.seed!(1000 + ci)
     n, K_max, q = case.n, case.K_max, case.q
     gate = case.gate
     rho_t = haskey(case, :rho_t) ? case.rho_t : 0.0f0
@@ -420,7 +424,8 @@ for case in cases
         u_capacity=max(4096, 4 * fin.n_nodes^2),
         v_capacity=max(4096, 4 * fin.n_nodes^2),
         wx_capacity=max(4096, 4 * fin.n_nodes^2),
-        lut_reach=reach, noffsets=noffsets, first_m2l_level=first_m2l_level)
+        lut_reach=reach, noffsets=noffsets, first_m2l_level=first_m2l_level,
+        ell_max=ell_max)
 
     dev_levels = Metal.MtlArray(Int32.(fin.node_levels))
     dev_coords = Metal.MtlArray(coords)
@@ -465,8 +470,58 @@ for case in cases
         lv[ia] == lv[ib] || error("$tag: V pair ($ia,$ib) is not equal-level")
     end
 
+    # ---- Phase F: class partition of the V stream into CSR routes ----
+    n_routes = ext.ka_adaptive_partition_v!(lctx, n_v)
+    n_routes == n_v || error("$tag: partition_v returned $n_routes routes, expected $n_v")
+
+    rt = Int.(Array(lctx.bufs.route_targets)[1:n_v])
+    rs = Int.(Array(lctx.bufs.route_sources)[1:n_v])
+    rc = Int.(Array(lctx.bufs.route_class)[1:n_v])
+    rco = Int.(Array(lctx.bufs.route_class_offset)[1:n_v])
+    cs = lctx.class_starts
+
+    # The reference partition: a plain stable sort of the emitted V stream by
+    # class, which is what the device's (class<<32 | index) sort key encodes.
+    # got_V is already canonicalized, so re-derive the device's own emission
+    # order from the staged buffers instead.
+    stage_t = Int.(Array(lctx.bufs.vstage_targets)[1:n_v])
+    stage_s = Int.(Array(lctx.bufs.vstage_sources)[1:n_v])
+    stage_c = Int.(Array(lctx.bufs.vstage_class)[1:n_v])
+    perm = sortperm(1:n_v; by = i -> (stage_c[i], i))   # stable by construction
+    rt == stage_t[perm] || error("$tag: route_targets != class-stable-sorted stage stream")
+    rs == stage_s[perm] || error("$tag: route_sources != class-stable-sorted stage stream")
+    rc == stage_c[perm] || error("$tag: route_class != class-stable-sorted stage stream")
+
+    # Reference-independent CSR invariants: classes are contiguous and
+    # non-decreasing; class_starts brackets exactly the routes of that class;
+    # the per-offset id is the class id folded into [1, noffsets].
+    issorted(rc) || error("$tag: route_class is not non-decreasing (CSR broken)")
+    for c in 1:lctx.nclasses
+        lo, hi = cs[c], cs[c + 1] - 1
+        for p in lo:hi
+            rc[p] == c || error("$tag: route $p in class-$c block has class $(rc[p])")
+        end
+    end
+    cs[lctx.nclasses + 1] == n_v + 1 ||
+        error("$tag: class_starts ends at $(cs[end]), expected $(n_v + 1)")
+    for p in 1:n_v
+        expect = rc[p] - ((rc[p] - 1) ÷ noffsets) * noffsets
+        rco[p] == expect || error("$tag: route_class_offset[$p]=$(rco[p]) != $expect")
+    end
+    # level_starts must bracket each level's classes within the CSR stream.
+    ls = lctx.level_starts
+    issorted(ls) || error("$tag: level_starts is not non-decreasing")
+    ls[ell_max + 2] == n_v + 1 ||
+        error("$tag: level_starts tail $(ls[end]) != $(n_v + 1)")
+    for p in 1:n_v
+        L = fin.node_levels[rt[p]]
+        (ls[L + 1] <= p < ls[L + 2]) ||
+            error("$tag: route $p at level $L outside level_starts bracket " *
+                  "[$(ls[L + 1]), $(ls[L + 2]))")
+    end
+
     println("  PASS  $tag  ->  |U|=$n_u |V|=$n_v |W|=$n_w |X|=$n_x dem=$n_dem " *
-            "(nodes=$(fin.n_nodes))")
+            "routes=$n_routes (nodes=$(fin.n_nodes))")
     global npass += 1
 end
 
