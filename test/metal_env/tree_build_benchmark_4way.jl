@@ -125,7 +125,34 @@ struct TrialTelemetry
     pstate::Int
     util_compute::Float64
     events::String
+    nprocs::Int
 end
+
+# Host CPU time, to separate "the host thread was busy/spinning" from "the host
+# thread was blocked waiting on the device". Job 13508342 showed n=1e6 trials are
+# bimodal (~5.3ms floor vs. scattered 10-90ms) with no drift, and that the stall
+# is not GPU compute — but NVML's utilization is sampled over a driver-chosen
+# window not aligned to a trial, so it cannot say where the stalled time goes.
+# Wall-vs-CPU per trial can:
+#   wall 90ms / cpu ~90ms  -> host-side: spinning or descheduled-but-runnable
+#                             (CUDA.jl's non-blocking sync spins, so it counts)
+#   wall 90ms / cpu  ~5ms  -> host blocked in the driver: device/driver-side
+# CLOCK_PROCESS_CPUTIME_ID(2) covers CUDA's internal threads too;
+# CLOCK_THREAD_CPUTIME_ID(3) isolates the thread running the trial. Both are
+# vDSO reads (~20-30ns), negligible against a 5ms trial.
+const CLOCK_PROCESS_CPUTIME_ID = Cint(2)
+const CLOCK_THREAD_CPUTIME_ID = Cint(3)
+
+function clock_ns(clockid::Cint)
+    ts = Ref{NTuple{2,Int64}}((Int64(0), Int64(0)))
+    rc = ccall(:clock_gettime, Cint, (Cint, Ptr{Cvoid}), clockid, ts)
+    rc == 0 || return UInt64(0)
+    s, ns = ts[]
+    return UInt64(s) * 1_000_000_000 + UInt64(ns)
+end
+
+process_cpu_ns() = clock_ns(CLOCK_PROCESS_CPUTIME_ID)
+thread_cpu_ns() = clock_ns(CLOCK_THREAD_CPUTIME_ID)
 
 function nvml_device()
     try
@@ -152,8 +179,19 @@ function sample_nvml(dev)
         NamedTuple()
     end
     active = join(String.([k for (k, v) in pairs(reasons) if v]), "|")
+    # Co-tenancy: --gpus=h200:1 should give us the device exclusively, but that
+    # has never actually been verified, and another process holding a CUDA
+    # context on the same device would serialize against ours via context
+    # switching while leaving device-wide utilization low — which is exactly
+    # the signature seen so far.
+    nprocs = try
+        length(NVML.compute_processes(dev))
+    catch
+        -1
+    end
     return TrialTelemetry(sm, mem, NVML.power_usage(dev), NVML.temperature(dev),
-        pstate, NVML.utilization_rates(dev).compute, isempty(active) ? "-" : active)
+        pstate, NVML.utilization_rates(dev).compute, isempty(active) ? "-" : active,
+        nprocs)
 end
 
 # Printed in trial order (not sorted) and next to the trial's own time: the
@@ -162,13 +200,47 @@ end
 function print_telemetry(name::String, n::Int, dist::Symbol,
         times::Vector{Float64}, tele::Vector{TrialTelemetry})
     println("  [tele] $(name) (n=$n, $dist) per-trial telemetry:")
-    println("  [tele]  trial       t_us   sm_MHz  mem_MHz   power_W  temp_C  pstate  util  events")
+    println("  [tele]  trial       t_us   sm_MHz  mem_MHz   power_W  temp_C  pstate  util  nproc  events")
     for (i, s) in enumerate(tele)
         t_us = round(times[i] / 1000; digits=1)
         println("  [tele]  ", lpad(i, 5), lpad(t_us, 11), lpad(s.sm_mhz, 9),
             lpad(s.mem_mhz, 9), lpad(round(s.power_w; digits=1), 10),
             lpad(s.temp_c, 8), lpad(s.pstate, 8),
-            lpad(round(s.util_compute; digits=2), 6), "  ", s.events)
+            lpad(round(s.util_compute; digits=2), 6), lpad(s.nprocs, 7), "  ", s.events)
+    end
+end
+
+# The discriminator. `cpu_frac` = host CPU time consumed during the trial /
+# wall time. Near 1.0 means the host thread was running the whole trial
+# (CPU-bound, or spinning in a non-blocking sync); near the fast-trial floor's
+# absolute CPU cost means the host was blocked in the driver and the time went
+# to the device/driver side. Compare the fast and slow populations directly:
+# if slow trials burn proportionally more CPU, it's host-side.
+function print_cpu_split(name::String, n::Int, dist::Symbol,
+        times::Vector{Float64}, pcpu::Vector{Float64}, tcpu::Vector{Float64})
+    println("  [cpu] $(name) (n=$n, $dist) per-trial wall vs host CPU:")
+    println("  [cpu]  trial     wall_us   proc_cpu_us   thr_cpu_us   proc_frac   thr_frac")
+    for i in eachindex(times)
+        w = times[i]
+        println("  [cpu]  ", lpad(i, 5), lpad(round(w / 1000; digits=1), 12),
+            lpad(round(pcpu[i] / 1000; digits=1), 14),
+            lpad(round(tcpu[i] / 1000; digits=1), 13),
+            lpad(round(pcpu[i] / max(w, 1.0); digits=3), 12),
+            lpad(round(tcpu[i] / max(w, 1.0); digits=3), 11))
+    end
+    # Split fast vs slow at 1.5x the observed floor and summarize, so the
+    # answer doesn't depend on reading 100 rows by eye.
+    floor_ns = minimum(times)
+    fast = [i for i in eachindex(times) if times[i] < 1.5 * floor_ns]
+    slow = [i for i in eachindex(times) if times[i] >= 1.5 * floor_ns]
+    for (label, idx) in (("fast", fast), ("slow", slow))
+        isempty(idx) && continue
+        mw = median(times[idx]) / 1000
+        mp = median(pcpu[idx]) / 1000
+        mt = median(tcpu[idx]) / 1000
+        println("  [cpu] $(name) (n=$n, $dist) $label (n=$(length(idx))): " *
+                "median wall=$(round(mw; digits=1))μs proc_cpu=$(round(mp; digits=1))μs " *
+                "thr_cpu=$(round(mt; digits=1))μs proc_frac=$(round(mp / mw; digits=3))")
     end
 end
 
@@ -336,16 +408,22 @@ function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
     used_hist = Int64[]
     cached_hist = Int64[]
     tele_hist = TrialTelemetry[]
+    pcpu_hist = Float64[]
+    tcpu_hist = Float64[]
     nvdev = telemetry ? nvml_device() : nothing
     ref_nodes, ref_leaves = nothing, nothing
     for trial in 1:ntrials
         stage_ns = profile ? zeros(UInt64, 4) : nothing
         CUDA.synchronize()
+        p0 = process_cpu_ns()
+        c0 = thread_cpu_ns()
         t0 = time_ns()
         local result
         alloc_bytes = CUDA.@allocated (result = ext.ka_build_adaptive_tree!(actx, dev_positions, ell_max, K_max, true, x_min, h0; stage_ns))
         CUDA.synchronize()
         t1 = time_ns()
+        push!(pcpu_hist, Float64(process_cpu_ns() - p0))
+        push!(tcpu_hist, Float64(thread_cpu_ns() - c0))
         push!(times, Float64(t1 - t0))
         push!(allocs, alloc_bytes)
         if profile
@@ -363,7 +441,8 @@ function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
         end
     end
 
-    return times, ref_nodes, ref_leaves, allocs, stage_hist, used_hist, cached_hist, tele_hist
+    return times, ref_nodes, ref_leaves, allocs, stage_hist, used_hist, cached_hist,
+        tele_hist, pcpu_hist, tcpu_hist
 end
 
 # ===== HPC-CUDA arm (native CUDA driver) =====
@@ -424,10 +503,14 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
     used_hist = Int64[]
     cached_hist = Int64[]
     tele_hist = TrialTelemetry[]
+    pcpu_hist = Float64[]
+    tcpu_hist = Float64[]
     nvdev = telemetry ? nvml_device() : nothing
     ref_nodes, ref_leaves = nothing, nothing
     for trial in 1:ntrials
         CUDA.synchronize()
+        p0 = process_cpu_ns()
+        c0 = thread_cpu_ns()
         t0 = time_ns()
         alloc_bytes = CUDA.@allocated begin
             source_bufs = FastMultipole._radix_cache_refresh_source_buffers!(ctx, (sys,), Float32)
@@ -436,6 +519,8 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
         end
         CUDA.synchronize()
         t1 = time_ns()
+        push!(pcpu_hist, Float64(process_cpu_ns() - p0))
+        push!(tcpu_hist, Float64(thread_cpu_ns() - c0))
         push!(times, Float64(t1 - t0))
         push!(allocs, alloc_bytes)
         for s in 1:4
@@ -451,7 +536,8 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
         end
     end
 
-    return times, ref_nodes, ref_leaves, allocs, stage_hist, used_hist, cached_hist, tele_hist
+    return times, ref_nodes, ref_leaves, allocs, stage_hist, used_hist, cached_hist,
+        tele_hist, pcpu_hist, tcpu_hist
 end
 
 end # @static if !HAS_METAL
