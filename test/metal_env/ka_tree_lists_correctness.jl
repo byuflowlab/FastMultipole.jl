@@ -504,6 +504,27 @@ for (ci, case) in enumerate(cases)
         lv[ia] == lv[ib] || error("$tag: V pair ($ia,$ib) is not equal-level")
     end
 
+    # ---- gate_type genericity: the KA port's gate arithmetic is generic in
+    # any AbstractFloat (CUDA's hardcodes Float64, which Metal cannot run at
+    # all). Passing the default explicitly must reproduce the default run
+    # exactly; a different float type must still compile, run, and produce a
+    # structurally valid classification.
+    if gate
+        n2 = ext.ka_adaptive_build_lists!(lctx, dev_levels, dev_coords, dev_child,
+            dev_sigma; ell_max, near_radius2=q, gate, rho_t, delta_min2,
+            gate_type=Float32)
+        n2 == (n_u, n_v, n_w, n_x, n_dem) ||
+            error("$tag: explicit gate_type=Float32 differs from the default")
+        n16 = ext.ka_adaptive_build_lists!(lctx, dev_levels, dev_coords, dev_child,
+            dev_sigma; ell_max, near_radius2=q, gate, rho_t, delta_min2,
+            gate_type=Float16)
+        sum(n16[1:4]) > 0 || error("$tag: gate_type=Float16 produced no pairs at all")
+        # Re-run at the default so the buffers the checks below read are the
+        # ones the default gate produced.
+        ext.ka_adaptive_build_lists!(lctx, dev_levels, dev_coords, dev_child,
+            dev_sigma; ell_max, near_radius2=q, gate, rho_t, delta_min2)
+    end
+
     # ---- Phase F: class partition of the V stream into CSR routes ----
     n_routes = ext.ka_adaptive_partition_v!(lctx, n_v)
     n_routes == n_v || error("$tag: partition_v returned $n_routes routes, expected $n_v")
