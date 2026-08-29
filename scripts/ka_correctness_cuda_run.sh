@@ -36,7 +36,7 @@ PROV="$WORKDIR/ka_correctness_cuda_${SLURM_JOB_ID}.provenance"
 SUITES="ka_tree_leaves_correctness.jl ka_tree_balance_correctness.jl \
 ka_tree_finalize_correctness.jl ka_tree_sigma_sweep_correctness.jl \
 ka_tree_build_correctness.jl ka_tree_lists_correctness.jl \
-ka_radix_state_correctness.jl"
+ka_radix_state_correctness.jl ka_radix_lists_wiring_correctness.jl"
 FAILED=""
 : > "$LOG"
 for s in $SUITES; do

@@ -2344,6 +2344,51 @@ function _ka_flat_buffer(backend, ::Type{TF}, basis_info::FastMultipole.Operator
 end
 
 """
+    ka_refresh_adaptive_lists!(lctx, actx, build; near_radius2, ell_max,
+                               rho_t=0, sigma_armed=false)
+
+Backend-agnostic port of `tree_batched_cuda.jl`'s `_cuda_refresh_adaptive_lists!`:
+run the DTR sweep, partition the V stream into CSR routes, map the U endpoints to
+leaf slots and rebuild the target-major U CSR, in that order, against the tree
+`ka_build_adaptive_tree!` most recently wrote into `actx.grid`.
+
+Returns the NamedTuple `ka_radix_state`'s `lists` keyword expects. `n_direct` is
+the U-pair count and `n_routes` the CSR route count -- the two logical extents that
+land in `state.counts`; the remaining counts are diagnostics (`n_dem` is the
+sticky-demotion trigger count, nonzero only when the sigma gate is armed).
+
+The lists live in `lctx.bufs` and are valid over `1:n_*`; nothing is copied.
+"""
+function ka_refresh_adaptive_lists!(lctx::KAAdaptiveListsContext,
+        actx::KAAdaptiveTreeContext, build; near_radius2::Int, ell_max::Int,
+        rho_t::Real=0, sigma_armed::Bool=false, workgroup::Int=64)
+    grid = actx.grid
+    b = actx.bufs
+    n_nodes = build.n_nodes
+    n_leaves = build.n_leaves
+    gate = sigma_armed && rho_t > 0
+    # the finest-lattice cell width, squared; the gate compares an integer-exact
+    # squared AABB gap against (rho_t * sigma)^2 in these units
+    delta_min = 2 * Float64(grid.h0) / (1 << ell_max)
+
+    n_u, n_v, n_w, n_x, n_dem = ka_adaptive_build_lists!(lctx,
+        grid.node_levels, grid.node_coords, grid.child_ranges, b.node_sigma;
+        ell_max=ell_max, near_radius2=near_radius2, gate=gate, rho_t=rho_t,
+        delta_min2=delta_min * delta_min, workgroup=workgroup)
+
+    n_routes = ka_adaptive_partition_v!(lctx, n_v; workgroup=workgroup)
+
+    n_u <= length(lctx.bufs.direct_targets) || throw(AssertionError(
+        "adaptive KA direct capacity $(length(lctx.bufs.direct_targets)) exceeded " *
+        "by n_u=$n_u"))
+    ka_adaptive_u_slots!(lctx, b.leaf_slot_of, n_u; workgroup=workgroup)
+    ka_adaptive_build_u_csr!(lctx, grid.cell_ranges, n_leaves, n_u; workgroup=workgroup)
+
+    return (lctx=lctx, n_direct=n_u, n_routes=n_routes,
+        n_u=n_u, n_v=n_v, n_w=n_w, n_x=n_x, n_dem=n_dem, n_nodes=n_nodes)
+end
+
+"""
     ka_radix_state(actx, build, source_buffer, P, lamb_helmholtz=Val(false);
                    options, n_root_nodes=1, workgroup=64)
 
@@ -2358,17 +2403,21 @@ rebuild through the same context is visible to the state without reconstructing 
 The grid's arrays stay capacity-sized; every logical extent lives in `state.counts`
 (`n_bodies`, `n_cells`, `n_nodes`), exactly as on the CUDA adaptive path.
 
-Not yet wired, and `nothing`/empty rather than silently wrong:
-`interaction_list` and the route arrays (no KA interaction list yet, so
-`counts.n_routes == counts.n_direct == 0`), `scratch` (the operator workspace builds
-CUDA-specific M2L plans), and the host node/route mirrors. The host *body* mirrors
+Pass `lists` -- a `ka_refresh_adaptive_lists!` return -- to wire the interaction
+list: `interaction_list` becomes the lists context, the route/direct arrays alias
+its device buffers, and `counts.n_routes`/`counts.n_direct` carry their extents.
+Omit it and those stay `nothing`/empty with both counts zero.
+
+Still not wired, and `nothing`/empty rather than silently wrong: `scratch` (the
+operator workspace builds CUDA-specific M2L plans), the `route_levels`/`route_offsets`
+pair (the adaptive path routes by CSR class instead), and the host node/route mirrors. The host *body* mirrors
 (`host_body_perm`/`host_body_system_ids`/`host_body_indices`) are downloaded once here,
 so they are correct for this build and go stale on the next one -- the CUDA path
 re-downloads them per step in `_cuda_update_adaptive_radix_state!`.
 """
 function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
         P::Integer, lamb_helmholtz::Val{LH}=Val(false);
-        options::FastMultipole.CUDARadixLifecycleOptions,
+        options::FastMultipole.CUDARadixLifecycleOptions, lists=nothing,
         n_root_nodes::Int=1, workgroup::Int=64) where LH
     backend = actx.backend
     grid = actx.grid
@@ -2408,10 +2457,29 @@ function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
     locals = _ka_flat_buffer(backend, TF, basis_info, actx.node_capacity)
     output = KA.zeros(backend, TF, 4, actx.maxn)
 
-    # no interaction list yet: empty arrays of the SAME types as the populated
-    # device fields, since the state's type parameters are shared across them
+    # Route/direct wiring. With `lists` given (a `ka_refresh_adaptive_lists!`
+    # return), the state ALIASES the lists context's device buffers rather than
+    # copying them -- the task-023 zero-recurring-allocation contract, and the same
+    # shape as the CUDA adaptive path, where the U-slot kernel writes straight into
+    # `state.direct_targets`. `route_levels`/`route_offsets` stay empty on both
+    # paths: the adaptive lifecycle routes by CSR class, not by (level, offset), so
+    # a capacity-sized zero array there would only look meaningful.
     empty_iv = KA.zeros(backend, Int, 0)
     empty_im = KA.zeros(backend, Int, 3, 0)
+    if lists === nothing
+        route_targets = route_sources = direct_targets = direct_sources = empty_iv
+        n_routes = n_direct = 0
+        interaction_list = nothing
+    else
+        lb = lists.lctx.bufs
+        route_targets, route_sources = lb.route_targets, lb.route_sources
+        direct_targets, direct_sources = lb.direct_targets, lb.direct_sources
+        n_routes, n_direct = lists.n_routes, lists.n_direct
+        lists.n_nodes == n_nodes || throw(ArgumentError(
+            "lists were built for n_nodes=$(lists.n_nodes) but this build has " *
+            "n_nodes=$n_nodes; refresh the lists after the tree build"))
+        interaction_list = lists.lctx
+    end
 
     # one-shot download of the host body mirrors (see docstring on staleness)
     host_body_perm = Array{Int}(undef, n)
@@ -2423,17 +2491,17 @@ function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
     counters.metadata_downloads += 3
 
     return FastMultipole.DeviceResidentRadixState{TF,FastMultipole.CompressedComplexBasis,LH}(
-        grid, nothing, source_bodies, source_bodies,
+        grid, interaction_list, source_bodies, source_bodies,
         grid.perm, grid.body_system, grid.body_index,
         host_body_perm, host_body_system_ids, host_body_indices,
         nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
         grid.cell_centers, grid.cell_ranges,
         m2m_parent, m2m_child, l2l_parent, l2l_child,
         multipoles, locals,
-        empty_iv, empty_im, empty_iv, empty_iv,
-        empty_iv, empty_iv, output,
+        empty_iv, empty_im, route_targets, route_sources,
+        direct_targets, direct_sources, output,
         FastMultipole.OperatorInvariantCache(TF, basis_info), nothing, counters, options,
-        FastMultipole.RadixStepCounts(n, n_cells, n_nodes, 0, 0),
+        FastMultipole.RadixStepCounts(n, n_cells, n_nodes, n_routes, n_direct),
     )
 end
 
