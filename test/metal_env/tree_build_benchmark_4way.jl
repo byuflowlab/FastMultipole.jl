@@ -48,8 +48,18 @@ end
 # project_fastmultipole_ka_migration memory). Dump the raw per-trial times so
 # the distribution shape (bimodal? monotonic drift? isolated outliers?) can be
 # inspected instead of guessing from median/IQR alone.
+#
+# TRIAL ORDER FIRST, sorted second. This printer used to emit ONLY the sorted
+# array, which is what produced the "staircase"/"ramp starting at trial 50-55"
+# readings in jobs 13506267/13506486 — a sorted bimodal sample is a step
+# function by construction, and its apparent "onset" is just the fraction of
+# fast trials, which is exactly the "onset tracks trial-loop fraction, not
+# trial number" property that was treated as a clue. Job 13508342 showed the
+# slow trials are in fact scattered from trial 1 onward with no drift at all.
+# Never diagnose ordering/drift from the sorted dump.
 function print_raw_trials(name::String, n::Int, dist::Symbol, times::Vector{Float64})
     times_μs = round.(times ./ 1000; digits=1)
+    println("  [raw] $(name) (n=$n, $dist) trial-order times (μs): $times_μs")
     println("  [raw] $(name) (n=$n, $dist) sorted trial times (μs): $(sort(times_μs))")
 end
 
@@ -70,11 +80,14 @@ end
 const STAGE_NAMES = ("sort", "build_leaves", "balance", "finalize")
 function print_stage_breakdown(name::String, n::Int, dist::Symbol, stage_hist)
     for (s, sname) in enumerate(STAGE_NAMES)
-        vals_us = sort(round.(stage_hist[s] ./ 1000; digits=1))
+        vals_us = round.(stage_hist[s] ./ 1000; digits=1)
         med_us = round(median(stage_hist[s]) / 1000; digits=1)
         iqr_us = round((quantile(stage_hist[s], 0.75) - quantile(stage_hist[s], 0.25)) / 1000; digits=1)
+        # Trial order, not sorted — see print_raw_trials. The "all 4 stages
+        # staircase at the same relative point" reading (job 13506267) was an
+        # artifact of sorting each stage's samples independently.
         println("  [stage] $(name) (n=$n, $dist) $sname: median=$(med_us)μs IQR=±$(iqr_us)μs " *
-                "sorted: $vals_us")
+                "trial order: $vals_us")
     end
 end
 
