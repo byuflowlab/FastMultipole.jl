@@ -709,13 +709,13 @@ function ka_allocate_adaptive_context(backend, ::Type{TF}, maxn::Int;
         fin_skey=KA.zeros(backend, UInt64, LC), fin_slev=KA.zeros(backend, Int32, LC),
         fin_cand=KA.zeros(backend, UInt64, LC),
         fin_flags=KA.zeros(backend, Int32, NC), fin_prefix=KA.zeros(backend, Int32, NC),
-        node_keys=KA.zeros(backend, UInt64, NC), node_levels=KA.zeros(backend, Int32, NC),
-        node_coords=KA.zeros(backend, Int32, 3, NC), node_centers=KA.zeros(backend, TF, 3, NC),
+        node_keys=KA.zeros(backend, UInt64, NC), node_levels=KA.zeros(backend, Int, NC),
+        node_coords=KA.zeros(backend, Int, 3, NC), node_centers=KA.zeros(backend, TF, 3, NC),
         node_lo=KA.zeros(backend, Int32, NC), node_hi=KA.zeros(backend, Int32, NC),
-        parent_index=KA.zeros(backend, Int32, NC), child_ranges=KA.zeros(backend, Int32, 2, NC),
+        parent_index=KA.zeros(backend, Int, NC), child_ranges=KA.zeros(backend, Int, 2, NC),
         leaf_index=KA.zeros(backend, Int32, NC), leaf_slot_of=KA.zeros(backend, Int32, NC),
-        cell_ranges=KA.zeros(backend, Int32, 2, LC), cell_centers=KA.zeros(backend, TF, 3, LC),
-        cell_keys=KA.zeros(backend, UInt64, LC), leaf_to_node=KA.zeros(backend, Int32, LC),
+        cell_ranges=KA.zeros(backend, Int, 2, LC), cell_centers=KA.zeros(backend, TF, 3, LC),
+        cell_keys=KA.zeros(backend, UInt64, LC), leaf_to_node=KA.zeros(backend, Int, LC),
 
         node_sigma=KA.zeros(backend, TF, NC),
     )
@@ -1031,7 +1031,7 @@ end
     @inbounds if i <= m && flags[i] == Int32(1)
         idx = base + Int(prefix[i])
         node_keys[idx] = cand[i]
-        node_levels[idx] = Int32(L)
+        node_levels[idx] = L
     end
 end
 
@@ -1070,8 +1070,8 @@ end
     @inbounds if i <= count
         node = base + i
         pk = node_keys[node] >> 3
-        parent_index[node] = Int32(ka_lower_bound(node_keys, base_prev + 1,
-            base_prev + count_prev, pk))
+        parent_index[node] = ka_lower_bound(node_keys, base_prev + 1,
+            base_prev + count_prev, pk)
     end
 end
 
@@ -1083,8 +1083,8 @@ end
         k = node_keys[node] << 3
         firstc = ka_lower_bound(node_keys, base_next + 1, base_next + count_next, k)
         endc = ka_lower_bound(node_keys, base_next + 1, base_next + count_next, k + UInt64(8))
-        child_ranges[1, node] = Int32(endc > firstc ? firstc : 0)
-        child_ranges[2, node] = Int32(endc - firstc)
+        child_ranges[1, node] = endc > firstc ? firstc : 0
+        child_ranges[2, node] = endc - firstc
     end
 end
 
@@ -1114,9 +1114,9 @@ end
     c = @index(Global)
     @inbounds if c <= n_leaves
         f = Int(leaf_index[c])
-        leaf_to_node[c] = Int32(f)
-        cell_ranges[1, c] = node_lo[f]
-        cell_ranges[2, c] = node_hi[f] - node_lo[f] + Int32(1)
+        leaf_to_node[c] = f
+        cell_ranges[1, c] = Int(node_lo[f])
+        cell_ranges[2, c] = Int(node_hi[f]) - Int(node_lo[f]) + 1
         cell_centers[1, c] = node_centers[1, f]
         cell_centers[2, c] = node_centers[2, f]
         cell_centers[3, c] = node_centers[3, f]
@@ -1210,8 +1210,8 @@ function ka_adaptive_finalize!(actx::KAAdaptiveTreeContext, nl::Int, leaf_levels
         ndrange=n_nodes)
     KA.synchronize(backend)
 
-    fill!(view(parent_index, 1:n_nodes), Int32(0))
-    fill!(view(child_ranges, :, 1:n_nodes), Int32(0))
+    fill!(view(parent_index, 1:n_nodes), 0)
+    fill!(view(child_ranges, :, 1:n_nodes), 0)
     for L in 1:ell_max
         base = off[L + 1]
         count = off[L + 2] - off[L + 1]
