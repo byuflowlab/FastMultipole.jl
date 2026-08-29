@@ -1340,13 +1340,32 @@ end
 # same pair SET; they emit it in different orders. Any comparison between them
 # must canonicalize (sort) first -- element-wise equality is meaningless here.
 #
-# Precision note: CUDA's `_adt_cuda_classify` does the sigma-gate arithmetic in
-# Float64. Metal has no Float64 at all, so the gate type is a parameter here
-# (`TG`) rather than hardcoded. Pass Float64 on CUDA to mirror the native path
-# exactly; Float32 is required on Metal. Only the gate comparison
-# `delta_min2*g2 < cut^2` is affected, and only for pairs sitting within a
-# rounding step of the threshold -- everything else in the classification is
-# exact integer lattice arithmetic.
+# Precision note: CUDA's `_adt_cuda_classify` hardcodes Float64 for the sigma
+# gate. Metal has no Float64 at all, so the KA port makes the gate arithmetic
+# generic in a float type `TG` instead (the CUDA path is left exactly as it is).
+# `ka_gate_float_type` picks a default that is always valid for the backend the
+# tree lives on -- the sigma array's own float type, which is whatever that
+# backend supports -- and any float type can be forced via the `gate_type`
+# keyword: Float64 on CUDA to mirror the native path bit-for-bit, Float32 on
+# Metal, Float16 or a custom AbstractFloat if some future backend wants it.
+# Only the gate comparison `delta_min2*g2 < cut^2` is precision-sensitive, and
+# only for pairs sitting within a rounding step of the threshold; everything
+# else in the classification is exact integer lattice arithmetic, so the choice
+# cannot change which pairs are geometrically near.
+#
+# `g2` is bounded by 3*(2^ell_max)^2, so it is exactly representable in Float32
+# for ell_max <= 12 and in Float16 for ell_max <= 4 -- past those the gate
+# arithmetic, not the tree, is what limits precision.
+
+"""
+    ka_gate_float_type(node_sigma) -> Type{<:AbstractFloat}
+
+Default float type for the DTR sigma gate: the float type the tree's own sigma
+array already uses, which is by construction one the backend supports. Override
+with the `gate_type` keyword on `ka_adaptive_build_lists!` when a specific
+precision is wanted (e.g. Float64 on CUDA, to match `_adt_cuda_classify`).
+"""
+ka_gate_float_type(node_sigma) = float(eltype(node_sigma))
 
 const _KA_KIND_U = Int32(1)
 const _KA_KIND_V = Int32(2)
@@ -1555,10 +1574,22 @@ end
 """
     KAAdaptiveListsContext
 
-Preallocated buffers for `ka_adaptive_build_lists!`, mirroring the DTR/list
-portion of CUDA's `DeviceAdaptiveCUDAContext`. Kept separate from
-`KAAdaptiveTreeContext` so the tree-construction phases (A-D) and their
-correctness gates are untouched by list-build work.
+Preallocated buffers for the DTR/list phases (E/F/G), mirroring the list portion
+of CUDA's `DeviceAdaptiveCUDAContext`.
+
+Constructed against the `KAAdaptiveTreeContext` whose tree it will build lists
+for, and **shares that context's frontier-sized scratch** rather than allocating
+a second copy: the DTR pair frontier aliases the tree-build frontier ping-pong
+(`a_lev`/`a_lo`/`a_hi` and `b_lev`/`b_lo`/`b_hi`, all `Int32` at
+`frontier_capacity`), and the DTR scan aliases `bl_flags`/`bl_prefix`. That is
+safe because a tree build always completes before its list build, and CUDA's own
+`actx` shares buffers the same way (the U CSR reusing the V sort scratch is the
+same trick, kept below). At n=1e6 with `frontier_capacity` ~2e7 this is the
+difference between ~640MB of duplicate frontier scratch and none.
+
+**Ordering requirement**: do not interleave `ka_build_adaptive_tree!` and
+`ka_adaptive_build_lists!` on the same pair of contexts -- finish the tree, then
+build its lists. Rebuilding the tree invalidates any list built from it anyway.
 
 `offset_lut`/`level_class_of` are the geometry LUTs from an
 `AdaptiveInteractionLists` (moved to the backend by the caller).
@@ -1582,19 +1613,23 @@ struct KAAdaptiveListsContext{B,L3,C3,NT<:NamedTuple}
     bufs::NT
 end
 
-function ka_allocate_lists_context(backend, offset_lut, level_class_of;
-        frontier_capacity::Int, u_capacity::Int, v_capacity::Int, wx_capacity::Int,
+function ka_allocate_lists_context(actx::KAAdaptiveTreeContext, offset_lut,
+        level_class_of; u_capacity::Int, v_capacity::Int, wx_capacity::Int,
         lut_reach::Int, noffsets::Int, first_m2l_level::Int, ell_max::Int=0,
         nclasses::Int=max(1, noffsets * (ell_max + 1 - first_m2l_level)),
-        leaf_capacity::Int=0, maxn::Int=0)
-    FC, UC, VC, WC = frontier_capacity, u_capacity, v_capacity, wx_capacity
+        leaf_capacity::Int=actx.leaf_capacity, maxn::Int=actx.maxn)
+    backend = actx.backend
+    FC = actx.frontier_capacity
+    UC, VC, WC = u_capacity, v_capacity, wx_capacity
     LC, MN = max(1, leaf_capacity), max(1, maxn)
+    t = actx.bufs
     bufs = (
-        fa=KA.zeros(backend, Int32, FC), fb=KA.zeros(backend, Int32, FC),
-        fdem=KA.zeros(backend, Int32, FC),
-        fa2=KA.zeros(backend, Int32, FC), fb2=KA.zeros(backend, Int32, FC),
-        fdem2=KA.zeros(backend, Int32, FC),
-        flags=KA.zeros(backend, Int32, FC), prefix=KA.zeros(backend, Int32, FC),
+        # DTR pair frontier + scan: aliases of the tree-build frontier scratch
+        # (see the docstring). Same element type and length; the tree build is
+        # finished by the time any of these are read.
+        fa=t.a_lev, fb=t.a_lo, fdem=t.a_hi,
+        fa2=t.b_lev, fb2=t.b_lo, fdem2=t.b_hi,
+        flags=t.bl_flags, prefix=t.bl_prefix,
         u_targets=KA.zeros(backend, Int32, UC), u_sources=KA.zeros(backend, Int32, UC),
         vstage_targets=KA.zeros(backend, Int32, VC),
         vstage_sources=KA.zeros(backend, Int32, VC),
@@ -1618,6 +1653,10 @@ function ka_allocate_lists_context(backend, offset_lut, level_class_of;
         u_csr_sources=KA.zeros(backend, Int32, UC),
         u_csr_body_leaf=KA.zeros(backend, Int32, MN),
     )
+    # Guard the aliasing assumption rather than trusting it silently.
+    all(x -> length(x) >= FC, (bufs.fa, bufs.fb, bufs.fdem, bufs.fa2, bufs.fb2,
+        bufs.fdem2, bufs.flags, bufs.prefix)) || throw(ArgumentError(
+        "tree context's frontier scratch is smaller than frontier_capacity=$FC"))
     return KAAdaptiveListsContext(backend, FC, UC, VC, WC, offset_lut, level_class_of,
         lut_reach, noffsets, first_m2l_level, ell_max, nclasses,
         zeros(Int, nclasses + 1), zeros(Int, ell_max + 2), zeros(Int32, nclasses), bufs)
@@ -1632,14 +1671,22 @@ Backend-agnostic port of `_cuda_adaptive_build_lists!`: the frontier DTR sweep
 octree. Returns `(n_u, n_v, n_w, n_x, n_dem)`; the lists themselves live in
 `lctx.bufs`, valid over `1:n_*`.
 
-`rho_t`/`delta_min2` set the sigma-gate precision `TG` (see the precision note
-above): Float64 to mirror CUDA-native exactly, Float32 on Metal.
+`rho_t`/`delta_min2` may be any `Real`; they are converted to `gate_type`,
+which defaults to `ka_gate_float_type(node_sigma)` and controls the sigma-gate
+precision (see the precision note above). Pass `gate_type=Float64` on CUDA to
+mirror `_adt_cuda_classify` bit-for-bit.
 """
 function ka_adaptive_build_lists!(lctx::KAAdaptiveListsContext, node_levels, node_coords,
         child_ranges, node_sigma; ell_max::Int, near_radius2::Int, gate::Bool,
-        rho_t::TG, delta_min2::TG, workgroup::Int=64) where TG
+        rho_t::Real, delta_min2::Real,
+        gate_type::Type{TG}=ka_gate_float_type(node_sigma),
+        workgroup::Int=64) where {TG<:AbstractFloat}
     backend = lctx.backend
     b = lctx.bufs
+    # Convert once, on the host: the kernels take these as scalar arguments, so
+    # every pair sees the identical value and the gate stays in exactly TG.
+    rho_t_g = TG(rho_t)
+    delta_min2_g = TG(delta_min2)
     fill!(b.violation_flags, Int32(0))
 
     seedk = _cached_kernel(ka_dtr_seed_kernel!, backend, 1)
@@ -1652,10 +1699,9 @@ function ka_adaptive_build_lists!(lctx::KAAdaptiveListsContext, node_levels, nod
     a = (b.fa, b.fb, b.fdem)
     bb = (b.fa2, b.fb2, b.fdem2)
     seedk(a[1], a[2], a[3]; ndrange=1)
-    KA.synchronize(backend)
 
     node_args = (node_levels, node_coords, child_ranges, node_sigma)
-    gate_args = (near_radius2, gate, rho_t, delta_min2, ell_max)
+    gate_args = (near_radius2, gate, rho_t_g, delta_min2_g, ell_max)
 
     np = 1
     n_u = 0; n_v = 0; n_w = 0; n_x = 0; n_dem = 0
@@ -1671,14 +1717,10 @@ function ka_adaptive_build_lists!(lctx::KAAdaptiveListsContext, node_levels, nod
         emit_kind! = function (want, base, cap, dst_t, dst_s, label)
             flagk(b.flags, a[1], a[2], a[3], np, node_args..., gate_args..., want;
                 ndrange=np)
-            KA.synchronize(backend)
             m = _ka_scan_total!(b.flags, b.prefix, np)
             base + m <= cap || throw(AssertionError(
                 "adaptive KA $label list capacity $cap exceeded"))
-            if m > 0
-                emitk(dst_t, dst_s, base, b.flags, b.prefix, a[1], a[2], np; ndrange=np)
-                KA.synchronize(backend)
-            end
+            m > 0 && emitk(dst_t, dst_s, base, b.flags, b.prefix, a[1], a[2], np; ndrange=np)
             return m
         end
         n_u += emit_kind!(_KA_KIND_U, n_u, lctx.u_capacity, b.u_targets, b.u_sources, "U")
@@ -1688,7 +1730,6 @@ function ka_adaptive_build_lists!(lctx::KAAdaptiveListsContext, node_levels, nod
         # V carries the geometry class id, so it needs its own emit kernel.
         flagk(b.flags, a[1], a[2], a[3], np, node_args..., gate_args..., _KA_KIND_V;
             ndrange=np)
-        KA.synchronize(backend)
         m = _ka_scan_total!(b.flags, b.prefix, np)
         n_v + m <= lctx.v_capacity || throw(AssertionError(
             "adaptive KA V route capacity $(lctx.v_capacity) exceeded"))
@@ -1697,7 +1738,6 @@ function ka_adaptive_build_lists!(lctx::KAAdaptiveListsContext, node_levels, nod
                 b.prefix, a[1], a[2], np, node_levels, node_coords, lctx.offset_lut,
                 lctx.level_class_of, lctx.lut_reach, lctx.noffsets, lctx.first_m2l_level,
                 b.violation_flags; ndrange=np)
-            KA.synchronize(backend)
         end
         n_v += m
 
@@ -1705,25 +1745,26 @@ function ka_adaptive_build_lists!(lctx::KAAdaptiveListsContext, node_levels, nod
         if gate
             flagk(b.flags, a[1], a[2], a[3], np, node_args..., gate_args..., Int32(6);
                 ndrange=np)
-            KA.synchronize(backend)
             n_dem += _ka_scan_total!(b.flags, b.prefix, np)
         end
 
         # expand: count child pairs per frontier entry, scan, emit next frontier
         ecountk(b.flags, a[1], a[2], a[3], np, node_args..., gate_args...; ndrange=np)
-        KA.synchronize(backend)
         np2 = _ka_scan_total!(b.flags, b.prefix, np)
         np2 <= lctx.frontier_capacity || throw(AssertionError(
             "adaptive KA DTR frontier capacity $(lctx.frontier_capacity) exceeded"))
-        if np2 > 0
-            eemitk(bb[1], bb[2], bb[3], a[1], a[2], a[3], np, b.prefix, node_args...,
-                gate_args...; ndrange=np)
-            KA.synchronize(backend)
-        end
+        np2 > 0 && eemitk(bb[1], bb[2], bb[3], a[1], a[2], a[3], np, b.prefix,
+            node_args..., gate_args...; ndrange=np)
         a, bb = bb, a
         np = np2
     end
 
+    # One sync at the end, not one per launch. KA kernels on a backend are
+    # ordered on that backend's own queue, so consecutive launches need no
+    # explicit barrier, and each `_ka_scan_total!` already forces a sync via its
+    # host readback of the scan total. Per-kernel `KA.synchronize` is what cost
+    # the M2M port 53.6ms vs 20ms before it was removed there (commit ff14b7e).
+    KA.synchronize(backend)
     Int(Array(view(b.violation_flags, 1:1))[1]) == 0 || throw(AssertionError(
         "adaptive KA V pair lies outside the task-025 phase-table class set — " *
         "the sticky demotion invariant (theory §2.4/§5.2) is violated"))
@@ -1791,18 +1832,15 @@ function ka_adaptive_partition_v!(lctx::KAAdaptiveListsContext, n_v::Int;
         histk = _cached_kernel(ka_class_histogram_kernel!, backend, workgroup)
 
         keysk(b.vsort_keys, b.vstage_class, n_v; ndrange=n_v)
-        KA.synchronize(backend)
         # `sortperm!` dispatches to the backend's own sort (confirmed working on
         # Metal in Phase B), matching CUDA's `_cuda_sortperm_into!` convention.
         sortperm!(view(b.vsort_ix, 1:n_v), view(b.vsort_keys, 1:n_v))
         gatherk(b.route_targets, b.route_sources, b.route_class, b.route_class_offset,
             b.vsort_ix, b.vstage_targets, b.vstage_sources, b.vstage_class, n_v,
             lctx.noffsets; ndrange=n_v)
-        KA.synchronize(backend)
         fill!(b.class_counts_dev, Int32(0))
         histk(b.class_counts_dev, b.vstage_class, n_v; ndrange=n_v)
-        KA.synchronize(backend)
-        copyto!(cc, Array(b.class_counts_dev))
+        copyto!(cc, Array(b.class_counts_dev))   # forces the sync
     end
 
     cs = lctx.class_starts
@@ -1818,6 +1856,7 @@ function ka_adaptive_partition_v!(lctx::KAAdaptiveListsContext, n_v::Int;
     ls[lctx.ell_max + 2] = cs[end]
     return n_v
 end
+
 
 #------- Phase G: U endpoints -> leaf slots, then the target-major U CSR -------#
 #
@@ -1901,7 +1940,7 @@ function ka_adaptive_u_slots!(lctx::KAAdaptiveListsContext, leaf_slot_of, n_u::I
     k = _cached_kernel(ka_u_slots_kernel!, backend, workgroup)
     k(b.direct_targets, b.direct_sources, b.u_targets, b.u_sources, leaf_slot_of,
         n_u, b.violation_flags; ndrange=n_u)
-    KA.synchronize(backend)
+    # the readback below is itself the sync point
     Int(Array(view(b.violation_flags, 2:2))[1]) == 0 || throw(AssertionError(
         "adaptive KA U pair endpoint is not a leaf cell slot"))
     return nothing
@@ -1934,18 +1973,16 @@ function ka_adaptive_build_u_csr!(lctx::KAAdaptiveListsContext, cell_ranges,
         offsk = _cached_kernel(ka_ucsr_offsets_kernel!, backend, workgroup)
 
         keysk(b.vsort_keys, b.direct_targets, n_u; ndrange=n_u)
-        KA.synchronize(backend)
         sortperm!(view(b.vsort_ix, 1:n_u), view(b.vsort_keys, 1:n_u))
         gatherk(b.u_csr_sources, b.vsort_ix, b.direct_sources, n_u; ndrange=n_u)
         offsk(b.u_csr_offsets, b.vsort_ix, b.direct_targets, n_u; ndrange=n_u)
-        KA.synchronize(backend)
     end
 
     if n_leaves > 0
         bodyk = _cached_kernel(ka_body_leaf_kernel!, backend, workgroup)
         bodyk(b.u_csr_body_leaf, cell_ranges, n_leaves; ndrange=n_leaves)
-        KA.synchronize(backend)
     end
+    KA.synchronize(backend)     # single sync: results are caller-visible after this
     return nothing
 end
 

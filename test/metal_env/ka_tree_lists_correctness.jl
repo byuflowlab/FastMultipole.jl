@@ -390,10 +390,17 @@ cases = [
     (n=150,  K_max=4,  q=3, gate=false, dup=true),
 ]
 
-# Seeded PER CASE, not once up front: the device sort inside Phase F perturbs
-# the global RNG stream (Metal's sortperm! appears to draw a pivot), which would
-# otherwise make every case after the first depend on how much GPU work ran
-# before it. Per-case seeding keeps each case's data fixed and reproducible.
+# Seeded PER CASE, not once up front. Metal.jl draws one `Random.rand(UInt32)`
+# from the task-local default RNG on every kernel launch, to seed that kernel's
+# on-device RNG state (Metal/src/compiler/execution.jl:431). So the number of
+# kernels this test launches shifts the host RNG stream, and every case after
+# the first would otherwise depend on how much GPU work preceded it. It is not
+# sortperm! specifically -- Metal's sort goes through a path that draws nothing;
+# a broadcast draws 1, `accumulate!` draws 5. CUDA.jl does the same per-launch
+# seeding but deliberately draws from a SEPARATE task-local RNG
+# (CUDACore/src/compiler/execution.jl:478, `launch_rng`) precisely so kernel
+# launches do not perturb the user-visible stream, so this is Metal-only.
+# Per-case seeding makes each case's data fixed regardless.
 npass = 0
 for (ci, case) in enumerate(cases)
     Random.seed!(1000 + ci)
@@ -439,16 +446,18 @@ for (ci, case) in enumerate(cases)
                           "— the synthetic LUT is too narrow, fix the test not the port")
 
     backend = Metal.MetalBackend()
-    lctx = ext.ka_allocate_lists_context(backend,
+    # The lists context shares the tree context's frontier scratch, so the tree
+    # context has to exist first and carry the frontier capacity the DTR needs.
+    # Sized off n_nodes^2, not a multiple of n_nodes: under heavy sigma demotion
+    # (rho_t=2) nearly every pair terminates in U, so the list approaches the
+    # leaf-pair bound. A linear-in-n_nodes cap overflows there, which is a
+    # property of the test data, not of the port.
+    cap = max(4096, 4 * fin.n_nodes^2)
+    actx = ext.ka_allocate_adaptive_context(backend, Float32, n;
+        leaf_capacity=fin.n_nodes, frontier_capacity=cap, node_capacity=fin.n_nodes)
+    lctx = ext.ka_allocate_lists_context(actx,
         Metal.MtlArray(offset_lut), Metal.MtlArray(level_class_of);
-        # Sized off n_nodes^2, not a multiple of n_nodes: under heavy sigma
-        # demotion (rho_t=2) nearly every pair terminates in U, so the list
-        # approaches the leaf-pair bound. A linear-in-n_nodes cap overflows
-        # there, which is a property of the test data, not of the port.
-        frontier_capacity=max(4096, 4 * fin.n_nodes^2),
-        u_capacity=max(4096, 4 * fin.n_nodes^2),
-        v_capacity=max(4096, 4 * fin.n_nodes^2),
-        wx_capacity=max(4096, 4 * fin.n_nodes^2),
+        u_capacity=cap, v_capacity=cap, wx_capacity=cap,
         lut_reach=reach, noffsets=noffsets, first_m2l_level=first_m2l_level,
         ell_max=ell_max, leaf_capacity=fin.n_nodes, maxn=n)
 
