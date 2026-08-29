@@ -881,11 +881,6 @@ function _assert_matching_host_radix_grid(device_grid::DeviceRadixGrid, host_gri
     return nothing
 end
 
-function _has_device_source_to_buffer_method(device_buffer, system, sort_index)
-    sig = Tuple{typeof(device_buffer),typeof(system),typeof(sort_index)}
-    return hasmethod(source_to_buffer!, sig)
-end
-
 function _canonical_cuda_source_buffer(system, ::Type{TF},
         counters::CUDARadixTransferCounters, ::HostResident) where TF
     sort_index = collect(1:get_n_bodies(system))
@@ -901,19 +896,6 @@ function _canonical_cuda_source_buffer(system, ::Type{TF},
     # per-system buffer in _radix_cache_refresh_source_buffers! (task 032)
     device_buffer = CUDA.CuArray{TF}(undef, data_per_body(system), get_n_bodies(system))
     return _fill_device_source_buffer!(device_buffer, system)
-end
-
-# identity permutation: a range, matching the documented `sort_index` default in
-# compatibility.jl. `collect` here allocated an 8 MB Vector{Int} every step at
-# n=1e6 (14% of per-step host allocation, task 028).
-function _fill_device_source_buffer!(device_buffer, system)
-    sort_index = Base.OneTo(get_n_bodies(system))
-    _has_device_source_to_buffer_method(device_buffer, system, sort_index) ||
-        throw(ArgumentError(
-            "DeviceResident CUDA source systems must overload FastMultipole.source_to_buffer!(device_buffer, system, sort_index)",
-        ))
-    source_to_buffer!(device_buffer, system, sort_index)
-    return device_buffer
 end
 
 function _canonical_cuda_source_buffers(systems::Tuple, ::Type{TF},
@@ -6304,9 +6286,6 @@ function _cuda_sortperm_into!(ix, keys)
     return ix
 end
 
-_radix_any_host_resident(systems::Tuple) =
-    any(residency(system) isa HostResident for system in systems)
-
 function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
         x_min::SVector{3,TF}, h0::TF, maxn::Int, options::CUDARadixLifecycleOptions,
         stencil_policy, accepted::Vector{SVector{3,Int}},
@@ -6584,29 +6563,6 @@ function _radix_cache_device_build(sources::Tuple, P::Int, ell::Int,
     )
     update_cuda_radix_state!(cache, sources)
     return cache
-end
-
-# Refresh the persistent per-system device source buffers. Host-resident systems
-# repack into their pinned staging and upload the valid column prefix (one upload
-# per system per step); device-resident systems fill the valid prefix of their
-# persistent buffer in place through their source_to_buffer! overload (no
-# transfer, no allocation — task 032 gap-5 fix).
-function _radix_cache_refresh_source_buffers!(ctx, systems::Tuple, ::Type{TF}) where TF
-    return ntuple(length(systems)) do isys
-        system = systems[isys]
-        n_sys = get_n_bodies(system)
-        device_buffer = ctx.device_sources[isys]
-        if residency(system) isa HostResident
-            staging = ctx.host_stagings[isys]
-            source_to_buffer!(staging, system, 1:n_sys)
-            # linear-prefix copy: the first n_sys columns are contiguous
-            copyto!(device_buffer, 1, staging, 1, size(staging, 1) * n_sys)
-            ctx.counters.body_uploads += 1
-        else
-            _fill_device_source_buffer!(view(device_buffer, :, 1:n_sys), system)
-        end
-        view(device_buffer, :, 1:n_sys)
-    end
 end
 
 function _radix_cache_collect_positions!(ctx, source_buffers::Tuple)

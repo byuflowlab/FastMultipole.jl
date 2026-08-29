@@ -40,6 +40,8 @@ _rs_nonnegint(v) = (v isa Integer && !(v isa Bool) && v >= 0 && v <= typemax(Int
 _rs_cuda_threads(v) = (v isa Int && 32 <= v <= 1024 && v % 32 == 0) ? nothing :
     throw(ArgumentError("expected Int warp multiple in 32:1024, got $(repr(v))"))
 _rs_enum(vals) = v -> v in vals ? nothing : throw(ArgumentError("expected one of $(vals), got $(repr(v))"))
+_rs_ka_workgroup(v) = (v isa Int && (v == 0 || (32 <= v <= 1024 && v % 32 == 0))) ? nothing :
+    throw(ArgumentError("expected 0 (auto) or an Int warp multiple in 32:1024, got $(repr(v))"))
 
 # KA arm of the uniform lifecycle. Unlike every other tunable here this one has
 # no CUDA-side Ref to reference, so it lives in always-loaded src: the whole
@@ -47,6 +49,16 @@ _rs_enum(vals) = v -> v in vals ? nothing : throw(ArgumentError("expected one of
 # selection has to be readable whether or not translate_batched_cuda.jl was
 # ever included.
 const RADIX_KA_LIFECYCLE = Ref(false)
+
+# Workgroup size for the auto-tuned KA launches, for the same reason as
+# RADIX_KA_LIFECYCLE above: a KA tunable has to be settable on a build where
+# translate_batched_cuda.jl never loads. `0` means "let the backend decide" --
+# FastMultipoleKAExt.resolve_workgroup then picks per backend (256 on
+# CUDA/ROCm/oneAPI, 64 on Metal and CPU), which is the point: 64 suits Metal's
+# small threadgroups but wastes scheduler slots on an A100. Does not affect the
+# launches where `workgroup` is a team size the kernel's @localmem extents are
+# declared against (b2m, l2b, nearfield, adaptive m2t/s2l).
+const KA_WORKGROUP = Ref(0)
 
 """
     ka_radix_lifecycle!(state)
@@ -131,6 +143,8 @@ const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
         "Nearfield side-stream overlap (first statement of the captured body)."),
     :RADIX_KA_LIFECYCLE => RadixSettingSpec(:runtime, _rs_bool,
         "Run the uniform per-step lifecycle with KernelAbstractions kernels instead of the native CUDA ones (checked per step at entry; requires the KA extension loaded)."),
+    :KA_WORKGROUP => RadixSettingSpec(:runtime, _rs_ka_workgroup,
+        "Workgroup size for auto-tuned KA launches; 0 (default) resolves per backend. Team-size launches (b2m/l2b/nearfield/adaptive) are unaffected."),
     # ---- host GEMM thresholds ------------------------------------------------
     :FACTORED_Y_GEMM_MIN_COLS => RadixSettingSpec(:runtime, _rs_nonnegint,
         "Host factored-y GEMM column threshold."),

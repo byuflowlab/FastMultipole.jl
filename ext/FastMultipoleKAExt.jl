@@ -12,8 +12,60 @@ const KA = KernelAbstractions
 # function, backend type, workgroup) avoids repeating that on the hot path.
 const _KERNEL_CACHE = Dict{Tuple{Any,DataType,Int},Any}()
 function _cached_kernel(f, backend, workgroup::Int)
-    key = (f, typeof(backend), workgroup)
-    return get!(() -> f(backend, workgroup), _KERNEL_CACHE, key)
+    wg = resolve_workgroup(backend, workgroup)
+    key = (f, typeof(backend), wg)
+    return get!(() -> f(backend, wg), _KERNEL_CACHE, key)
+end
+
+#------- backend workgroup policy -------#
+#
+# `workgroup=64` was the unexamined default at most launch sites here. 64 suits
+# Metal (SIMD width 32, small threadgroups keep occupancy up on a 16-32 core
+# GPU) but wastes scheduler slots on an A100, where 256 is the usual figure for
+# the memory-bound elementwise kernels that dominate this file. Tunable sites
+# now pass `KA_AUTO_WORKGROUP` and the size is resolved per backend, so one
+# source tunes for both the local and the HPC target.
+#
+# NOT every site is tunable. `ka_launch_b2m!`, `ka_launch_l2b!`,
+# `ka_launch_nearfield!`, `ka_launch_adaptive_m2t!` and `ka_launch_adaptive_s2l!`
+# thread `workgroup` into `Val(workgroup)` and into `ndrange = n * workgroup`:
+# there it is the per-cell/per-pair *team size* that the kernel's `@localmem`
+# extents are declared against, not an occupancy knob. Those keep their explicit
+# sizes and are a separate tuning axis; changing one there changes the parallel
+# decomposition, not just the launch geometry.
+
+"""
+    KA_AUTO_WORKGROUP
+
+Sentinel workgroup size meaning "let the backend decide"; see
+[`resolve_workgroup`](@ref).
+"""
+const KA_AUTO_WORKGROUP = 0
+
+_backend_default_workgroup(::KA.CPU) = 64
+function _backend_default_workgroup(backend)
+    # The accelerator backend types live in packages this extension must not
+    # depend on, so select on the type's name rather than on the type.
+    name = string(nameof(typeof(backend)))
+    (name == "CUDABackend" || name == "ROCBackend" || name == "oneAPIBackend") && return 256
+    name == "MetalBackend" && return 64
+    return 64  # conservative for an unrecognised accelerator
+end
+
+const _WORKGROUP_CACHE = Dict{DataType,Int}()
+
+"""
+    resolve_workgroup(backend, workgroup) -> Int
+
+Return `workgroup` unchanged unless it is [`KA_AUTO_WORKGROUP`](@ref), in which
+case return the `:KA_WORKGROUP` radix setting if set, else the default for
+`backend` (256 on CUDA/ROCm/oneAPI, 64 on Metal and CPU).
+"""
+function resolve_workgroup(backend, workgroup::Int)
+    workgroup == KA_AUTO_WORKGROUP || return workgroup
+    override = FastMultipole.KA_WORKGROUP[]
+    override == KA_AUTO_WORKGROUP || return override
+    return get!(() -> _backend_default_workgroup(backend), _WORKGROUP_CACHE, typeof(backend))
 end
 
 # Backend-agnostic M2M building blocks (GPU-native, no host round-trip),
@@ -55,7 +107,7 @@ Backend-agnostic port of `_cuda_gather_rotate_z_kernel!`
 stage of the M2M/M2L source alignment. `sgn = inverse ? -1 : 1`, matching the
 CUDA `_gather_rotate_z!` convention.
 """
-function ka_gather_rotate_z!(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; workgroup=64)
+function ka_gather_rotate_z!(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; workgroup=KA_AUTO_WORKGROUP)
     length(dst) == 0 && return dst
     backend = KA.get_backend(dst)
     kernel = _cached_kernel(ka_gather_rotate_z_kernel!, backend, workgroup)
@@ -86,7 +138,7 @@ atomic-accumulating scatter back into the flat coefficient buffer (the
 M2M/M2L "return alignment" stage). Uses `KernelAbstractions.@atomic`,
 confirmed working on Metal.
 """
-function ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=64)
+function ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=KA_AUTO_WORKGROUP)
     length(slab) == 0 && return dest
     backend = KA.get_backend(dest)
     kernel = _cached_kernel(ka_rotate_z_scatter_accumulate_kernel!, backend, workgroup)
@@ -140,7 +192,7 @@ Backend-agnostic port of `_gather_values!` (src/translate_batched.jl): allocatio
 value gather `dst[i] = src[ids[i]]`, used by the M2L concat plan's per-chunk column
 parameter gather (phi/theta/r/invr) from the per-class geometry tables.
 """
-function ka_gather_values!(dst, src, ids; workgroup=64)
+function ka_gather_values!(dst, src, ids; workgroup=KA_AUTO_WORKGROUP)
     length(dst) == 0 && return dst
     backend = KA.get_backend(dst)
     kernel = _cached_kernel(ka_gather_values_kernel!, backend, workgroup)
@@ -155,7 +207,7 @@ Backend-agnostic port of `_gather_rows!` (src/translate_batched.jl): allocation-
 row gather `dst[i, :] = src[rows[i], :]`, used by the Lamb-Helmholtz row-mix stage of
 `_resident_stage_group_apply!`.
 """
-function ka_gather_rows!(dst, src, rows; workgroup=64)
+function ka_gather_rows!(dst, src, rows; workgroup=KA_AUTO_WORKGROUP)
     length(dst) == 0 && return dst
     backend = KA.get_backend(dst)
     kernel = _cached_kernel(ka_gather_rows_kernel!, backend, workgroup)
@@ -227,7 +279,7 @@ and must be at least that long; `perm` must be a genuine permutation of `1:n` (e
 slot is written exactly once, so a non-permutation silently leaves stale entries --
 the same contract CUDA carries).
 """
-function ka_fill_invperm!(invperm, perm; workgroup::Int=64)
+function ka_fill_invperm!(invperm, perm; workgroup::Int=KA_AUTO_WORKGROUP)
     n = length(perm)
     n == 0 && return invperm
     length(invperm) >= n || throw(ArgumentError(
@@ -262,7 +314,7 @@ Multi-system attribution (`_cuda_extract_source_positions_kernel!`: one launch p
 system, each writing `isys` and its local index into an offset slice) is not ported;
 it belongs to the repack path rather than the octree build.
 """
-function ka_fill_single_system_attribution!(body_system, body_index, n::Int; workgroup::Int=64)
+function ka_fill_single_system_attribution!(body_system, body_index, n::Int; workgroup::Int=KA_AUTO_WORKGROUP)
     n == 0 && return body_system, body_index
     (length(body_system) >= n && length(body_index) >= n) || throw(ArgumentError(
         "body attribution arrays (lengths $(length(body_system)), $(length(body_index))) " *
@@ -304,7 +356,7 @@ number of leading nodes that are roots (`parent_index == 0`) and therefore contr
 no edge; 1 for the adaptive tree, matching CUDA's call site.
 """
 function ka_tree_routes!(m2m_parent, m2m_child, l2l_parent, l2l_child, parent_index,
-        n_nodes::Int; n_root_nodes::Int=1, workgroup::Int=64)
+        n_nodes::Int; n_root_nodes::Int=1, workgroup::Int=KA_AUTO_WORKGROUP)
     n_edges = max(n_nodes - n_root_nodes, 0)
     n_edges == 0 && return m2m_parent, m2m_child, l2l_parent, l2l_child
     n_nodes <= length(parent_index) || throw(ArgumentError(
@@ -359,7 +411,7 @@ per system, as CUDA does -- with the single-system attribution of
 are left untouched.
 """
 function ka_pack_body_matrix!(body, source_buffer, perm, body_system, body_index,
-        n::Int; isys::Integer=1, workgroup::Int=64)
+        n::Int; isys::Integer=1, workgroup::Int=KA_AUTO_WORKGROUP)
     n == 0 && return body
     size(body, 2) >= n || throw(ArgumentError(
         "body has $(size(body, 2)) columns, fewer than n=$n"))
@@ -460,7 +512,11 @@ function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
     ka_stacked_y_dense!(rphi, ret_phi, Ur, Vs, C, S, G, G2, ndof_phi)
     ka_rotate_z_scatter_accumulate!(dest.phi, rphi, ws.phi_flat_idx, target_idx,
         ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, group_phis)
-    KA.synchronize(KA.get_backend(dest.phi))
+    # No sync here: every kernel above is queue-ordered against the caller's
+    # next launch on this same backend, and this driver is called once per
+    # M2M/L2L group and per M2L route set -- a barrier here is the per-stage
+    # sync `ka_lifecycle_body!` exists to avoid (measured 1.37-2.7x on this
+    # code). The single end-of-lifecycle sync there covers the host readback.
     return dest
 end
 
@@ -687,7 +743,11 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
         ka_rotate_z_scatter_accumulate!(dest.phi, rphi, ws.phi_flat_idx, tgt_cols,
             ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis)
     end
-    KA.synchronize(KA.get_backend(dest.phi))
+    # No sync here: every kernel above is queue-ordered against the caller's
+    # next launch on this same backend, and this driver is called once per
+    # M2M/L2L group and per M2L route set -- a barrier here is the per-stage
+    # sync `ka_lifecycle_body!` exists to avoid (measured 1.37-2.7x on this
+    # code). The single end-of-lifecycle sync there covers the host readback.
     return dest
 end
 
@@ -995,7 +1055,7 @@ backend array truncated logically to `1:nl` (allocated at `actx.leaf_capacity`).
 output buffers come from `actx` (see `KAAdaptiveTreeContext`) -- no allocation.
 """
 function ka_adaptive_build_leaves!(actx::KAAdaptiveTreeContext, sorted_keys::AbstractVector{UInt64},
-        ell_max::Int, K_max::Int, n::Int; workgroup::Int=64)
+        ell_max::Int, K_max::Int, n::Int; workgroup::Int=KA_AUTO_WORKGROUP)
     backend = actx.backend
     b = actx.bufs
     leaf_capacity = actx.leaf_capacity
@@ -1208,7 +1268,7 @@ leaf arrays may be either input array (ping-pong), not necessarily the ones
 passed in. Scratch/output buffers come from `actx` -- no allocation.
 """
 function ka_adaptive_balance!(actx::KAAdaptiveTreeContext, nl::Int, leaf_levels, leaf_keys,
-        leaf_lo, leaf_hi, sorted_keys::AbstractVector{UInt64}, ell_max::Int; workgroup::Int=64)
+        leaf_lo, leaf_hi, sorted_keys::AbstractVector{UInt64}, ell_max::Int; workgroup::Int=KA_AUTO_WORKGROUP)
     backend = actx.backend
     b = actx.bufs
     leaf_capacity = actx.leaf_capacity
@@ -1409,7 +1469,7 @@ allocation.
 """
 function ka_adaptive_finalize!(actx::KAAdaptiveTreeContext, nl::Int, leaf_levels, leaf_keys,
         leaf_lo, leaf_hi, sorted_keys::AbstractVector{UInt64}, ell_max::Int, n::Int, x_min,
-        h0::TF; workgroup::Int=64) where TF
+        h0::TF; workgroup::Int=KA_AUTO_WORKGROUP) where TF
     backend = actx.backend
     b = actx.bufs
 
@@ -1566,7 +1626,7 @@ Returns `node_sigma_max`, an array sized `actx.node_capacity`, logically truncat
 """
 function ka_adaptive_sigma_sweep!(actx::KAAdaptiveTreeContext, node_lo, node_hi, child_ranges,
         n_nodes::Int, level_offsets::Vector{Int}, ell_max::Int,
-        source_bodies::AbstractMatrix{TF}, sigma_row::Int; workgroup::Int=64) where TF
+        source_bodies::AbstractMatrix{TF}, sigma_row::Int; workgroup::Int=KA_AUTO_WORKGROUP) where TF
     backend = actx.backend
     node_sigma = actx.bufs.node_sigma
 
@@ -1941,7 +2001,7 @@ function ka_adaptive_build_lists!(lctx::KAAdaptiveListsContext, node_levels, nod
         child_ranges, node_sigma; ell_max::Int, near_radius2::Int, gate::Bool,
         rho_t::Real, delta_min2::Real,
         gate_type::Type{TG}=ka_gate_float_type(node_sigma),
-        workgroup::Int=64) where {TG<:AbstractFloat}
+        workgroup::Int=KA_AUTO_WORKGROUP) where {TG<:AbstractFloat}
     backend = lctx.backend
     b = lctx.bufs
     # Convert once, on the host: the kernels take these as scalar arguments, so
@@ -2080,7 +2140,7 @@ partitions the `n_v` staged V pairs by class into the CSR route stream
 `lctx.level_starts` on the host. Returns `n_v` (the route count).
 """
 function ka_adaptive_partition_v!(lctx::KAAdaptiveListsContext, n_v::Int;
-        workgroup::Int=64)
+        workgroup::Int=KA_AUTO_WORKGROUP)
     backend = lctx.backend
     b = lctx.bufs
     cc = lctx.host_class_counts
@@ -2194,7 +2254,7 @@ Map the `n_u` U pairs' node ids to leaf-cell slots, into
 pair is not a leaf (which would mean the DTR produced a non-leaf U pair).
 """
 function ka_adaptive_u_slots!(lctx::KAAdaptiveListsContext, leaf_slot_of, n_u::Int;
-        workgroup::Int=64)
+        workgroup::Int=KA_AUTO_WORKGROUP)
     n_u == 0 && return nothing
     backend = lctx.backend
     b = lctx.bufs
@@ -2217,7 +2277,7 @@ map for the dense body-packed nearfield shape. Reuses the Phase F sort scratch,
 as CUDA does.
 """
 function ka_adaptive_build_u_csr!(lctx::KAAdaptiveListsContext, cell_ranges,
-        n_leaves::Int, n_u::Int; workgroup::Int=64)
+        n_leaves::Int, n_u::Int; workgroup::Int=KA_AUTO_WORKGROUP)
     backend = lctx.backend
     b = lctx.bufs
     n_leaves + 1 <= length(b.u_csr_offsets) || throw(AssertionError(
@@ -2282,7 +2342,7 @@ Writes each body's full-depth (`ell`-level) Morton key from its position into `k
 device array (mirrors CUDA's `grid.x_min` convention).
 """
 function ka_radix_keys!(keys::AbstractVector{UInt64}, positions::AbstractMatrix,
-        x_min, h0, ell::Int; workgroup::Int=64)
+        x_min, h0, ell::Int; workgroup::Int=KA_AUTO_WORKGROUP)
     n = length(keys)
     backend = KA.get_backend(keys)
     keysk = _cached_kernel(ka_radix_keys_kernel!, backend, workgroup)
@@ -2311,7 +2371,7 @@ Returns Phase C's `NamedTuple` merged with `grid`, `perm`, `invperm`, `sorted_ke
 """
 function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::AbstractMatrix,
         ell_max::Int, K_max::Int, balance::Bool, x_min, h0::TF; sigma_row::Int=0,
-        source_bodies=nothing, workgroup::Int=64,
+        source_bodies=nothing, workgroup::Int=KA_AUTO_WORKGROUP,
         stage_ns::Union{Nothing,Vector{UInt64}}=nothing) where TF
     backend = actx.backend
     n = size(positions, 2)
@@ -2430,7 +2490,7 @@ The lists live in `lctx.bufs` and are valid over `1:n_*`; nothing is copied.
 """
 function ka_refresh_adaptive_lists!(lctx::KAAdaptiveListsContext,
         actx::KAAdaptiveTreeContext, build; near_radius2::Int, ell_max::Int,
-        rho_t::Real=0, sigma_armed::Bool=false, workgroup::Int=64)
+        rho_t::Real=0, sigma_armed::Bool=false, workgroup::Int=KA_AUTO_WORKGROUP)
     grid = actx.grid
     b = actx.bufs
     n_nodes = build.n_nodes
@@ -2488,7 +2548,7 @@ function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
         P::Integer, lamb_helmholtz::Val{LH}=Val(false);
         options::FastMultipole.CUDARadixLifecycleOptions, lists=nothing,
         scratch=nothing, output_rows::Int=4, n_root_nodes::Int=1,
-        workgroup::Int=64) where LH
+        workgroup::Int=KA_AUTO_WORKGROUP) where LH
     backend = actx.backend
     grid = actx.grid
     TF = typeof(grid.h0)
@@ -3183,6 +3243,10 @@ end
 """
     ka_lifecycle_body!(state; workgroup_b2m=128, workgroup=64, sync=true)
 
+`workgroup` here is *not* the auto-resolved occupancy knob: it reaches
+`ka_launch_nearfield!` and `ka_launch_l2b!`, where it is the per-pair/per-cell
+team size their `@localmem` extents are declared against. It stays explicit.
+
 Run the uniform radix lifecycle over `state` entirely with KA kernels. `state`
 may be resident on any KA backend, including a `CuArray` state built by the
 existing `RadixFMMCache(device=true)` -- which is how the KA-vs-native
@@ -3247,6 +3311,365 @@ function ka_launch_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
     return state
 end
 
+#------- hierarchical M2L window generation (KA) -------#
+#
+# KA port of `_cuda_hier_generate_window_core!`
+# (src/translate_batched_cuda.jl:7350). This is the flag/scan/compact that fills
+# `route_targets`/`route_sources`/`route_class` for one (level, offset-class)
+# window. It was the last CUDA-only dependency inside `ka_hierarchical_m2l!`,
+# and therefore the reason the hierarchical arm could not be gated on Metal.
+#
+# `DeviceHierarchicalM2LContext` is already array-type generic
+# (containers.jl:782: IV32/IM32/IA32/IV/SM type parameters), so nothing here
+# needs a CUDA-specific context mirror -- unlike the lifecycle, which needed
+# `host_radix_state`. The scan reuses `_ka_scan_total!`'s `accumulate!`, which
+# is backend-generic via GPUArrays.
+#
+# The three kernels are elementwise index math with no shared memory and no
+# CUDA intrinsics, so they are direct translations and carry no `@localmem`
+# team-size coupling: all three take `KA_AUTO_WORKGROUP`.
+
+@kernel function ka_hier_route_flags_kernel!(flags, @Const(node_at),
+        @Const(node_coords), @Const(push_offsets), @Const(class_of),
+        level_base_L, first_source, n_sources, first_offset, kn, L)
+    idx = @index(Global)
+    @inbounds if idx <= kn * n_sources
+        kloc = (idx - 1) ÷ n_sources + 1
+        s = (idx - 1) % n_sources + 1
+        k = first_offset + kloc - 1
+        source = first_source + s - 1
+        G = 1 << L
+        cx = node_coords[1, source]
+        cy = node_coords[2, source]
+        cz = node_coords[3, source]
+        # same x/y/z bit convention as _rigid_phase_index
+        phase = 1 + (cx & 1) + 2 * (cy & 1) + 4 * (cz & 1)
+        hit = Int32(0)
+        if class_of[phase, k, L + 1] != Int32(0)
+            tx = cx + push_offsets[1, k]
+            ty = cy + push_offsets[2, k]
+            tz = cz + push_offsets[3, k]
+            if 0 <= tx < G && 0 <= ty < G && 0 <= tz < G
+                linear = tx + G * (ty + G * tz)
+                node_at[level_base_L + linear + 1] == Int32(0) || (hit = Int32(1))
+            end
+        end
+        flags[idx] = hit
+    end
+end
+
+# Per-class cumulative window counts read straight off the inclusive scan: class
+# `kloc` ends at flat index `kloc * n_sources`.
+@kernel function ka_hier_window_cum_kernel!(cum, @Const(prefix), n_sources, kn)
+    i = @index(Global)
+    @inbounds if i <= kn
+        cum[i] = prefix[i * n_sources]
+    end
+end
+
+# Compact one window into the start of the reusable route buffers. Offsets are
+# the unscaled integer push offsets; endpoints are flat node indices.
+@kernel function ka_hier_route_compact_kernel!(route_levels, route_offsets,
+        route_targets, route_sources, route_class, @Const(flags), @Const(prefix),
+        @Const(node_at), @Const(node_coords), @Const(push_offsets),
+        level_base_L, first_source, n_sources, first_offset, kn, L, class_base)
+    idx = @index(Global)
+    @inbounds if idx <= kn * n_sources && flags[idx] == Int32(1)
+        kloc = (idx - 1) ÷ n_sources + 1
+        s = (idx - 1) % n_sources + 1
+        k = first_offset + kloc - 1
+        source = first_source + s - 1
+        G = 1 << L
+        ox = push_offsets[1, k]
+        oy = push_offsets[2, k]
+        oz = push_offsets[3, k]
+        tx = node_coords[1, source] + ox
+        ty = node_coords[2, source] + oy
+        tz = node_coords[3, source] + oz
+        linear = tx + G * (ty + G * tz)
+        target = Int(node_at[level_base_L + linear + 1])
+        p = Int(prefix[idx])
+        route_levels[p] = L
+        route_offsets[1, p] = Int(ox)
+        route_offsets[2, p] = Int(oy)
+        route_offsets[3, p] = Int(oz)
+        route_targets[p] = target
+        route_sources[p] = source
+        route_class[p] = Int32(class_base + k)
+    end
+end
+
+#------- resident stage-group edge refresh (KA) -------#
+#
+# KA port of `_cuda_refresh_resident_stage_groups!`
+# (src/translate_batched_cuda.jl:6120) and `_cuda_refresh_group_edges_kernel!`.
+# Rebuilds the per-level M2M/L2L edge columns -- (source, target) node index
+# pairs plus the spherical angles of the parent-child displacement -- from the
+# refreshed grid, once per occupancy change inside `update_cuda_radix_state!`.
+#
+# Scope matches the CUDA function, not the host one: `_refresh_resident_stage_groups!`
+# (translate_batched_resident.jl) also refills `ws.nonleaf_idx`, which is
+# host-path-only storage (see the note at :3589) and untouched on device.
+#
+# `TF` is threaded in as a type argument rather than taken from `eltype(phis)`
+# inside the kernel -- see [[reference-ka-localmem-eltype-metal]]; the group
+# fields are `Any`-typed, so an in-kernel `eltype` is exactly the pattern that
+# fails to resolve on Metal.
+@kernel function ka_refresh_group_edges_kernel!(source_idx, target_idx, phis,
+        thetas, @Const(parent_index), @Const(node_centers), first_child, n_edges,
+        child_to_parent, ::Type{TF}) where {TF}
+    i = @index(Global)
+    @inbounds if i <= n_edges
+        child = first_child + i - 1
+        parent = parent_index[child]
+        if child_to_parent
+            dx = node_centers[1, parent] - node_centers[1, child]
+            dy = node_centers[2, parent] - node_centers[2, child]
+            dz = node_centers[3, parent] - node_centers[3, child]
+            source_idx[i] = child
+            target_idx[i] = parent
+        else
+            dx = node_centers[1, child] - node_centers[1, parent]
+            dy = node_centers[2, child] - node_centers[2, parent]
+            dz = node_centers[3, child] - node_centers[3, parent]
+            source_idx[i] = parent
+            target_idx[i] = child
+        end
+        x2y2 = dx * dx + dy * dy
+        r2 = x2y2 + dz * dz
+        eps2 = TF(1e-10) * TF(1e-10)
+        r = sqrt(r2)
+        theta = zero(TF)
+        if r2 > eps2
+            if x2y2 > eps2
+                theta = acos(clamp(dz / r, -one(TF), one(TF)))
+            else
+                theta = TF(pi) * (dz < 0)
+            end
+        end
+        phis[i] = iszero(x2y2) ? zero(TF) : atan(dy, dx)
+        thetas[i] = theta
+    end
+end
+
+function ka_refresh_group_edges!(group, grid, level_offsets::Vector{Int},
+        child_level::Int, child_to_parent::Bool, kind::Symbol;
+        workgroup=KA_AUTO_WORKGROUP)
+    first_child = level_offsets[child_level + 1] + 1
+    n_edges = level_offsets[child_level + 2] - level_offsets[child_level + 1]
+    n_edges <= length(group.source_idx) || throw(AssertionError(
+        "resident $kind group at child level $child_level exceeded its capacity"))
+    group.count[] = n_edges
+    n_edges > 0 || return group
+    TF = eltype(group.phis)
+    backend = KA.get_backend(group.phis)
+    kernel = _cached_kernel(ka_refresh_group_edges_kernel!, backend, workgroup)
+    kernel(group.source_idx, group.target_idx, group.phis, group.thetas,
+        grid.parent_index, grid.node_centers, first_child, n_edges,
+        child_to_parent, TF; ndrange=n_edges)
+    return group
+end
+
+function ka_refresh_resident_stage_groups!(ws::FastMultipole.ResidentOperatorWorkspace,
+        grid, level_offsets::Vector{Int}, ell::Int, first_level::Int=0;
+        workgroup=KA_AUTO_WORKGROUP)
+    length(ws.m2m_groups) == ell - first_level || throw(ArgumentError(
+        "resident cache workspace does not match the trimmed level range"))
+    for (gi, parent_level) in enumerate((ell - 1):-1:first_level)
+        ka_refresh_group_edges!(ws.m2m_groups[gi], grid, level_offsets,
+            parent_level + 1, true, :m2m; workgroup)
+    end
+    for (gi, child_level) in enumerate((first_level + 1):ell)
+        ka_refresh_group_edges!(ws.l2l_groups[gi], grid, level_offsets,
+            child_level, false, :l2l; workgroup)
+    end
+    return ws
+end
+
+#------- device source-position extraction (KA) -------#
+#
+# KA port of `_cuda_extract_source_positions_kernel!`
+# (src/translate_batched_cuda.jl:90) and its driver
+# `_radix_cache_collect_positions!` (:6612). Unlike the three helpers beside it
+# in the update path -- which were backend-agnostic code merely misfiled in the
+# CUDA-only include and have been moved to translate_batched_resident.jl -- this
+# one is a real kernel launch and needs a port.
+#
+# Elementwise gather of the xyz rows plus the (system, index) attribution of each
+# body into the concatenated global order: no shared memory, `KA_AUTO_WORKGROUP`.
+@kernel function ka_extract_source_positions_kernel!(positions, body_system,
+        body_index, @Const(source_buffer), offset, isys, nb)
+    i = @index(Global)
+    @inbounds if i <= nb
+        global_i = offset + i
+        positions[1, global_i] = source_buffer[1, i]
+        positions[2, global_i] = source_buffer[2, i]
+        positions[3, global_i] = source_buffer[3, i]
+        body_system[global_i] = isys
+        body_index[global_i] = i
+    end
+end
+
+# `source_buffers` are the per-system views `_radix_cache_refresh_source_buffers!`
+# returns; the return value is the total body count, as on the CUDA side.
+function ka_collect_positions!(positions, body_system, body_index,
+        source_buffers::Tuple; workgroup=KA_AUTO_WORKGROUP)
+    offset = 0
+    for isys in eachindex(source_buffers)
+        buf = source_buffers[isys]
+        nb = size(buf, 2)
+        if nb > 0
+            backend = KA.get_backend(positions)
+            kernel = _cached_kernel(ka_extract_source_positions_kernel!, backend,
+                workgroup)
+            kernel(positions, body_system, body_index, buf, offset, isys, nb;
+                ndrange=nb)
+        end
+        offset += nb
+    end
+    return offset
+end
+
+# KA port of `_cuda_hier_node_at_scatter_kernel!`
+# (src/translate_batched_cuda.jl:7066) and its driver
+# `_cuda_hier_refresh_occupancy!` (:7214). `node_at` is zeroed at construction on
+# both backends and refilled from the resident grid every time the occupied-node
+# set changes, so the window generator above cannot run off CUDA without it.
+# Elementwise scatter, no shared memory: `KA_AUTO_WORKGROUP`.
+@kernel function ka_hier_node_at_scatter_kernel!(node_at, @Const(node_levels),
+        @Const(node_coords), @Const(level_base), n_nodes)
+    i = @index(Global)
+    @inbounds if i <= n_nodes
+        L = node_levels[i]
+        G = 1 << L
+        linear = node_coords[1, i] + G * (node_coords[2, i] + G * node_coords[3, i])
+        node_at[level_base[L + 1] + linear + 1] = Int32(i)
+    end
+end
+
+function ka_hier_refresh_occupancy!(hctx::FastMultipole.DeviceHierarchicalM2LContext,
+        grid, level_offsets::Vector{Int}; workgroup=KA_AUTO_WORKGROUP)
+    copyto!(hctx.level_offsets, level_offsets)
+    n_nodes = level_offsets[end]
+    n_nodes <= typemax(Int32) || throw(ArgumentError(
+        "device hierarchical occupancy requires flat node indices to fit Int32; " *
+        "got $n_nodes occupied nodes"))
+    fill!(hctx.node_at, Int32(0))
+    @inbounds for level in 0:hctx.ell
+        hctx.nodes_per_level[level + 1] =
+            level_offsets[level + 2] - level_offsets[level + 1]
+    end
+    n_nodes == 0 && return hctx
+    backend = KA.get_backend(hctx.node_at)
+    kernel = _cached_kernel(ka_hier_node_at_scatter_kernel!, backend, workgroup)
+    kernel(hctx.node_at, grid.node_levels, grid.node_coords, hctx.d_level_base,
+        n_nodes; ndrange=n_nodes)
+    return hctx
+end
+
+# Backend-generic mirror of `_build_cuda_hierarchical_context`
+# (src/translate_batched_cuda.jl:8134). `DeviceHierarchicalM2LContext` is
+# already array-type generic, so this is a pure array-type substitution: every
+# `CUDA.zeros`/`CUDA.CuArray{T}` becomes a KA allocation on `backend`. It exists
+# so `ka_hier_generate_window!` can be gated off CUDA; it covers the concat-plan
+# configuration only (the dense CUDA plan's `source_scale`/`target_scale` come
+# from `_cuda_hier_dense_scales`, which is CUDA-only and outside the KA pin).
+function ka_hierarchical_context(::Type{TF}, backend, tables, class_level,
+        class_offset, effective_offsets, level_class_of::Array{Int32,3},
+        level_radii2, plan, ell::Int, first_m2l_level::Int, max_level_nodes::Int,
+        occupancy; window_classes::Int=typemax(Int)) where {TF}
+    plan isa FastMultipole.ResidentM2LConcatPlan || throw(ArgumentError(
+        "ka_hierarchical_context covers ResidentM2LConcatPlan only; got $(typeof(plan))"))
+    isempty(occupancy.node_at) && throw(ArgumentError(
+        "ka_hierarchical_context requires the dense per-level occupancy lookup"))
+    noffsets = length(tables.push_offsets)
+    K = max(min(window_classes, noffsets), 1)
+    flag_capacity = max(K * max_level_nodes, 1)
+    size(level_class_of) == (8, noffsets, ell + 1) || throw(ArgumentError(
+        "invalid hierarchical per-level class table dimensions $(size(level_class_of))"))
+    _dev(A) = KA.allocate(backend, eltype(A), size(A)...) |> d -> (copyto!(d, A); d)
+    # `_radix_offsets_matrix` lives in translate_batched_cuda.jl, which is
+    # `include`d only when CUDA is available -- calling it here would make this
+    # builder CUDA-only at run time. Same five lines, inlined.
+    _offsets_matrix(offsets) = (m = Matrix{Int32}(undef, 3, length(offsets));
+        for (k, o) in enumerate(offsets); m[1, k] = Int32(o[1]);
+            m[2, k] = Int32(o[2]); m[3, k] = Int32(o[3]); end; m)
+    _zeros(T, n) = (z = KA.allocate(backend, T, n); fill!(z, zero(T)); z)
+    empty_scale = KA.allocate(backend, TF, 0, 0)
+    return FastMultipole.DeviceHierarchicalM2LContext(
+        tables, level_radii2, class_level, class_offset, effective_offsets, plan,
+        K, ell, first_m2l_level, noffsets,
+        copy(occupancy.level_base), zeros(Int, ell + 2),
+        _zeros(Int32, length(occupancy.node_at)),
+        _dev(Vector{Int}(occupancy.level_base)),
+        _dev(_offsets_matrix(tables.push_offsets)),
+        _dev(level_class_of),
+        _dev(_offsets_matrix(tables.near_offsets)),
+        _zeros(Int, 0), _zeros(Int, 0),
+        _zeros(Int32, flag_capacity), _zeros(Int32, flag_capacity),
+        _zeros(Int32, max(K, 1)), zeros(Int32, max(K, 1)),
+        empty_scale, empty_scale,
+        0, zeros(Int, ell + 1), zeros(Int, ell + 1), 0, 0, 1, 0,
+        false, zeros(UInt64, 5), zeros(UInt64, ell + 1),
+        0, 0, false, zeros(Int, ell + 2), zeros(Int, ell + 2),
+        nothing, nothing, nothing, nothing, -1, -1,
+        nothing,
+    )
+end
+
+function ka_hier_generate_window!(state::FastMultipole.DeviceResidentRadixState,
+        hctx::FastMultipole.DeviceHierarchicalM2LContext, route_class, L::Int,
+        first_offset::Int, last_offset::Int, class_base::Int;
+        workgroup=KA_AUTO_WORKGROUP)
+    return ka_hier_generate_window_core!(state.route_levels, state.route_offsets,
+        state.route_targets, state.route_sources, state.grid, hctx, route_class,
+        L, first_offset, last_offset, class_base; workgroup)
+end
+
+function ka_hier_generate_window_core!(route_levels, route_offsets, route_targets,
+        route_sources, grid, hctx::FastMultipole.DeviceHierarchicalM2LContext,
+        route_class, L::Int, first_offset::Int, last_offset::Int, class_base::Int;
+        workgroup=KA_AUTO_WORKGROUP)
+    first_source = hctx.level_offsets[L + 1] + 1
+    n_sources = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
+    kn = last_offset - first_offset + 1
+    (n_sources > 0 && kn > 0) || return 0
+    used = kn * n_sources
+    used <= length(hctx.route_flags) || throw(AssertionError(
+        "device hierarchical window flag buffer exceeded its capacity " *
+        "($(length(hctx.route_flags)) < $used); reduce window_classes"))
+    backend = KA.get_backend(hctx.route_flags)
+    level_base_L = hctx.level_base[L + 1]
+
+    flags_kernel = _cached_kernel(ka_hier_route_flags_kernel!, backend, workgroup)
+    flags_kernel(hctx.route_flags, hctx.node_at, grid.node_coords,
+        hctx.d_push_offsets, hctx.d_class_of, level_base_L, first_source,
+        n_sources, first_offset, kn, L; ndrange=used)
+
+    # Inclusive scan over the used prefix, then the per-class cumulative counts.
+    accumulate!(+, view(hctx.route_prefix, 1:used), view(hctx.route_flags, 1:used))
+
+    cum_kernel = _cached_kernel(ka_hier_window_cum_kernel!, backend, workgroup)
+    cum_kernel(hctx.window_cum, hctx.route_prefix, n_sources, kn; ndrange=kn)
+
+    # The `kn`-entry D2H is the one unavoidable sync point per window: the
+    # compact launch needs `n_routes` on the host to bounds-check the route
+    # buffers, exactly as the CUDA core does.
+    KA.synchronize(backend)
+    copyto!(hctx.host_window_cum, 1, hctx.window_cum, 1, kn)
+    n_routes = Int(hctx.host_window_cum[kn])
+    n_routes == 0 && return 0
+    n_routes <= length(route_targets) || throw(AssertionError(
+        "device hierarchical route window exceeded capacity " *
+        "$(length(route_targets)); increase window storage or reduce window_classes"))
+
+    compact_kernel = _cached_kernel(ka_hier_route_compact_kernel!, backend, workgroup)
+    compact_kernel(route_levels, route_offsets, route_targets, route_sources,
+        route_class, hctx.route_flags, hctx.route_prefix, hctx.node_at,
+        grid.node_coords, hctx.d_push_offsets, level_base_L, first_source,
+        n_sources, first_offset, kn, L, class_base; ndrange=used)
+    return n_routes
+end
 """
     ka_hierarchical_m2l!(state, hctx, ws)
 
@@ -3254,20 +3677,25 @@ KA arm of `_launch_cuda_hierarchical_m2l!`: the same `(level, offset-class
 window)` loop nest, with the per-window concat apply run by KA kernels instead
 of `_launch_resident_m2l_concat!`.
 
-**Window GENERATION stays native.** `_cuda_hier_generate_window!` is the
+**Window generation is now KA too.** `ka_hier_generate_window!` (above) is the
 flag/scan/compact that fills `state.route_targets`/`route_sources` for one
-window; it is a CUDA-only function and is deliberately shared by both arms.
-That makes this an A/B of the M2L *apply* -- the rotation/translation math,
-which is where the time is -- and not of the route bookkeeping. Any timing
-comparison built on this driver must be reported that way.
+window. It replaced the shared `_cuda_hier_generate_window!` call, so this
+driver no longer reaches any `_cuda_*` function and the arm is backend-generic.
+
+Historical note for reading older benchmarks: until 2026-08-29 the generator
+was shared-native, which made every timing comparison built on this driver an
+A/B of the M2L *apply* only (the rotation/translation math) and not of the
+route bookkeeping. Job 13511158 and earlier numbers were produced under that
+regime and must still be read that way.
 
 Concat plans only. The dense plan is CUDA-specific (`ResidentM2LDenseCUDAPlan`,
 and only it is window-cacheable), and precomputed-y needs a per-window refresh
 that has no KA port; both are outside the pin recorded in
 [`ka_radix_cache_workspace`](@ref).
 
-Because the generator is CUDA-only, this function is reachable only on a
-CUDA-resident state and cannot be gated on Metal.
+`DeviceHierarchicalM2LContext` is array-type generic (containers.jl:782), so
+with the generator ported this function is reachable on any KA backend and is
+gated on Metal.
 """
 function ka_hierarchical_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
         hctx::FastMultipole.DeviceHierarchicalM2LContext, ws) where {TF,B,LH}
@@ -3287,7 +3715,7 @@ function ka_hierarchical_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B
         class_base = (L - hctx.first_m2l_level) * noffsets
         for first_offset in 1:K:noffsets
             last_offset = min(first_offset + K - 1, noffsets)
-            n = FastMultipole._cuda_hier_generate_window!(state, hctx, route_class, L,
+            n = ka_hier_generate_window!(state, hctx, route_class, L,
                 first_offset, last_offset, class_base)
             hctx.last_window_routes = n
             state.counts.n_routes = n
@@ -3351,6 +3779,361 @@ function ka_radix_cache_workspace(backend, ::Type{TF},
         Int(max_cells), Int(max_nodes), Int(route_capacity), accepted_offsets, invariant,
         FastMultipole.ConcatenatedFixedZM2L(), FastMultipole.MaterializedYRotationM2L();
         compact_cuda_factored=false, ell_axes=ell_axes, first_level=Int(first_level))
+end
+
+#------- flat (uniform) radix route generation: KA port of
+#         `_cuda_generate_radix_routes!` (src/translate_batched_cuda.jl:6174) -------#
+#
+# Second-to-last CUDA-only dependency of `update_cuda_radix_state!`'s uniform,
+# `sfs=false` path. Five elementwise kernels (`cell_at` scatter, then
+# flag/scan/compact for the accepted-offset routes and again for the rejected
+# offsets' direct pairs) driven by the same chunked loop nest as the CUDA
+# original, whose chunking exists so the flag/prefix buffers stay bounded by
+# `class_chunk * max_cells` rather than by `naccept * n_cells`.
+#
+# `ctx` is a NamedTuple on the CUDA side already, so this driver is generic in
+# it without a core/wrapper split: it reads `cell_at`, `class_chunk`,
+# `d_accepted`, `d_rejected`, `route_flags`/`route_prefix`,
+# `direct_flags`/`direct_prefix`, `host_scalar32`, `route_levels`,
+# `route_offsets`, `route_targets`, `route_sources`, `direct_targets`,
+# `direct_sources`; `grid` is read for `cell_keys` only.
+#
+# Host oracle: `build_radix_routes!` (src/interaction_list_batched.jl:966),
+# which emits routes offset-class-major/cell-minor and direct pairs
+# target-major/offset-minor -- exactly the two flat index decompositions below,
+# so the gate compares elementwise rather than set-wise.
+
+@kernel function ka_cell_at_scatter_kernel!(cell_at, @Const(cell_keys), n_cells, ell)
+    c = @index(Global)
+    @inbounds if c <= n_cells
+        ix, iy, iz = ka_decode_morton_key(cell_keys[c], ell)
+        cell_at[ix + 1, iy + 1, iz + 1] = Int32(c)
+    end
+end
+
+@kernel function ka_route_flags_kernel!(flags, @Const(cell_at), @Const(cell_keys),
+        @Const(offsets), kbase, n_cells, kn, ell)
+    idx = @index(Global)
+    @inbounds if idx <= kn * n_cells
+        kloc = (idx - 1) ÷ n_cells + 1
+        c = (idx - 1) % n_cells + 1
+        k = kbase + kloc
+        G = 1 << ell
+        ix, iy, iz = ka_decode_morton_key(cell_keys[c], ell)
+        sx = ix - offsets[1, k]
+        sy = iy - offsets[2, k]
+        sz = iz - offsets[3, k]
+        src = Int32(0)
+        if 0 <= sx < G && 0 <= sy < G && 0 <= sz < G
+            src = cell_at[sx + 1, sy + 1, sz + 1]
+        end
+        flags[idx] = src == Int32(0) ? Int32(0) : Int32(1)
+    end
+end
+
+@kernel function ka_route_compact_kernel!(route_levels, route_offsets, route_targets,
+        route_sources, route_class, @Const(flags), @Const(prefix), @Const(cell_at),
+        @Const(cell_keys), @Const(offsets), kbase, n_cells, kn, ell, leaf_offset, base)
+    idx = @index(Global)
+    @inbounds if idx <= kn * n_cells && flags[idx] == Int32(1)
+        kloc = (idx - 1) ÷ n_cells + 1
+        c = (idx - 1) % n_cells + 1
+        k = kbase + kloc
+        ix, iy, iz = ka_decode_morton_key(cell_keys[c], ell)
+        sx = ix - offsets[1, k]
+        sy = iy - offsets[2, k]
+        sz = iz - offsets[3, k]
+        src = cell_at[sx + 1, sy + 1, sz + 1]
+        p = base + Int(prefix[idx])
+        route_levels[p] = ell
+        route_offsets[1, p] = Int(offsets[1, k])
+        route_offsets[2, p] = Int(offsets[2, k])
+        route_offsets[3, p] = Int(offsets[3, k])
+        route_targets[p] = leaf_offset + c
+        route_sources[p] = leaf_offset + Int(src)
+        route_class[p] = Int32(k)
+    end
+end
+
+@kernel function ka_direct_flags_kernel!(flags, @Const(cell_at), @Const(cell_keys),
+        @Const(offsets), fbase, len, kn, ell)
+    idx = @index(Global)
+    @inbounds if idx <= len
+        g = fbase + idx
+        c = (g - 1) ÷ kn + 1
+        k = (g - 1) % kn + 1
+        G = 1 << ell
+        ix, iy, iz = ka_decode_morton_key(cell_keys[c], ell)
+        sx = ix - offsets[1, k]
+        sy = iy - offsets[2, k]
+        sz = iz - offsets[3, k]
+        src = Int32(0)
+        if 0 <= sx < G && 0 <= sy < G && 0 <= sz < G
+            src = cell_at[sx + 1, sy + 1, sz + 1]
+        end
+        flags[idx] = src == Int32(0) ? Int32(0) : Int32(1)
+    end
+end
+
+@kernel function ka_direct_compact_kernel!(direct_targets, direct_sources,
+        @Const(flags), @Const(prefix), @Const(cell_at), @Const(cell_keys),
+        @Const(offsets), fbase, len, kn, ell, base)
+    idx = @index(Global)
+    @inbounds if idx <= len && flags[idx] == Int32(1)
+        g = fbase + idx
+        c = (g - 1) ÷ kn + 1
+        k = (g - 1) % kn + 1
+        ix, iy, iz = ka_decode_morton_key(cell_keys[c], ell)
+        sx = ix - offsets[1, k]
+        sy = iy - offsets[2, k]
+        sz = iz - offsets[3, k]
+        src = cell_at[sx + 1, sy + 1, sz + 1]
+        p = base + Int(prefix[idx])
+        direct_targets[p] = c
+        direct_sources[p] = Int(src)
+    end
+end
+
+function ka_generate_radix_routes!(ctx, grid, n_cells::Int, leaf_offset::Int,
+        ell::Int, route_class; workgroup=KA_AUTO_WORKGROUP)
+    backend = KA.get_backend(ctx.cell_at)
+    cell_keys = grid.cell_keys
+    fill!(ctx.cell_at, Int32(0))
+    if n_cells > 0
+        scatter = _cached_kernel(ka_cell_at_scatter_kernel!, backend, workgroup)
+        scatter(ctx.cell_at, cell_keys, n_cells, ell; ndrange=n_cells)
+    end
+
+    naccept = size(ctx.d_accepted, 2)
+    n_routes = 0
+    k0 = 1
+    flags_kernel = _cached_kernel(ka_route_flags_kernel!, backend, workgroup)
+    compact_kernel = _cached_kernel(ka_route_compact_kernel!, backend, workgroup)
+    while k0 <= naccept && n_cells > 0
+        kn = min(ctx.class_chunk, naccept - k0 + 1)
+        used = kn * n_cells
+        used <= length(ctx.route_flags) ||
+            throw(AssertionError("device route flag buffer exceeded its capacity"))
+        flags_kernel(ctx.route_flags, ctx.cell_at, cell_keys, ctx.d_accepted,
+            k0 - 1, n_cells, kn, ell; ndrange=used)
+        accumulate!(+, view(ctx.route_prefix, 1:used), view(ctx.route_flags, 1:used))
+        # The one-scalar D2H per chunk is the same sync point the CUDA driver
+        # takes: the compact launch needs `chunk_total` on the host to
+        # bounds-check the route buffers.
+        KA.synchronize(backend)
+        copyto!(ctx.host_scalar32, 1, ctx.route_prefix, used, 1)
+        chunk_total = Int(ctx.host_scalar32[1])
+        if chunk_total > 0
+            n_routes + chunk_total <= length(ctx.route_targets) ||
+                throw(AssertionError("device route buffer exceeded its capacity"))
+            compact_kernel(ctx.route_levels, ctx.route_offsets, ctx.route_targets,
+                ctx.route_sources, route_class, ctx.route_flags, ctx.route_prefix,
+                ctx.cell_at, cell_keys, ctx.d_accepted, k0 - 1, n_cells, kn, ell,
+                leaf_offset, n_routes; ndrange=used)
+        end
+        n_routes += chunk_total
+        k0 += kn
+    end
+
+    nreject = size(ctx.d_rejected, 2)
+    n_direct = 0
+    if n_cells > 0 && nreject > 0
+        total = nreject * n_cells
+        flag_capacity_direct = length(ctx.direct_flags)
+        flag_capacity_direct > 0 ||
+            throw(AssertionError("device direct flag buffer has zero capacity"))
+        dflags_kernel = _cached_kernel(ka_direct_flags_kernel!, backend, workgroup)
+        dcompact_kernel = _cached_kernel(ka_direct_compact_kernel!, backend, workgroup)
+        f0 = 0
+        while f0 < total
+            len = min(flag_capacity_direct, total - f0)
+            dflags_kernel(ctx.direct_flags, ctx.cell_at, cell_keys, ctx.d_rejected,
+                f0, len, nreject, ell; ndrange=len)
+            accumulate!(+, view(ctx.direct_prefix, 1:len), view(ctx.direct_flags, 1:len))
+            KA.synchronize(backend)
+            copyto!(ctx.host_scalar32, 1, ctx.direct_prefix, len, 1)
+            chunk_total = Int(ctx.host_scalar32[1])
+            if chunk_total > 0
+                n_direct + chunk_total <= length(ctx.direct_targets) ||
+                    throw(AssertionError("device direct pair buffer exceeded its capacity"))
+                dcompact_kernel(ctx.direct_targets, ctx.direct_sources,
+                    ctx.direct_flags, ctx.direct_prefix, ctx.cell_at, cell_keys,
+                    ctx.d_rejected, f0, len, nreject, ell, n_direct; ndrange=len)
+            end
+            n_direct += chunk_total
+            f0 += len
+        end
+    end
+    KA.synchronize(backend)
+    return n_routes, n_direct
+end
+
+#------- in-place grid rebuild, stage 1: keys + sort + leaf-cell compression -------#
+#
+# First two stages of `_cuda_update_radix_grid_in_place!`
+# (src/translate_batched_cuda.jl:6591), the last CUDA-only block on the uniform,
+# `sfs=false` path of `update_cuda_radix_state!`. Ported and gated stage by stage
+# rather than big-bang: this covers everything through the occupied-leaf-cell
+# compression, which is the natural seam -- `perm`/`invperm`/`cell_ranges` are
+# functions of the body positions and always refresh, while everything after the
+# compression is a pure function of the occupied cell SET and sits behind the
+# occupancy-epoch check.
+#
+# `ka_radix_keys!` (above) already ports the key kernel for the from-scratch
+# benchmark build, but deliberately drops the out-of-bounds flag. The live
+# refresh loop cannot: the fixed Morton box is part of the cache's invariant
+# contract, and a body leaving it must throw rather than clamp. Hence a second,
+# checked kernel here, which also takes the per-axis `box_extent` (task 037
+# rectangular geometry) instead of assuming the cubic `2h0`.
+#
+# Host oracle for the gate: `_radix_fill_body_data!`,
+# `_host_radix_sort_permutation` and `_compress_radix_cells`
+# (src/tree_batched.jl), which are exactly these three steps on the CPU.
+
+@kernel function ka_radix_keys_checked_kernel!(keys, oob_flag, @Const(positions),
+        x_min, box_extent, h0, ell, n)
+    i = @index(Global)
+    @inbounds if i <= n
+        G = 1 << ell
+        delta = (2 * h0) / G
+        px = positions[1, i]
+        py = positions[2, i]
+        pz = positions[3, i]
+        # benign-race flag store: any lane observing an escape sets it
+        if !(x_min[1] <= px <= x_min[1] + box_extent[1] &&
+             x_min[2] <= py <= x_min[2] + box_extent[2] &&
+             x_min[3] <= pz <= x_min[3] + box_extent[3])
+            oob_flag[1] = Int32(1)
+        end
+        ix = clamp(floor(Int, (px - x_min[1]) / delta), 0, G - 1)
+        iy = clamp(floor(Int, (py - x_min[2]) / delta), 0, G - 1)
+        iz = clamp(floor(Int, (pz - x_min[3]) / delta), 0, G - 1)
+        keys[i] = ka_morton_key(ix, iy, iz, ell)
+    end
+end
+
+@kernel function ka_gather_sorted_keys_kernel!(sorted_keys, @Const(keys),
+        @Const(perm), n)
+    i = @index(Global)
+    @inbounds if i <= n
+        sorted_keys[i] = keys[perm[i]]
+    end
+end
+
+@kernel function ka_key_change_flags_kernel!(flags, @Const(sorted_keys), n)
+    i = @index(Global)
+    @inbounds if i <= n
+        flags[i] = (i == 1 || sorted_keys[i] != sorted_keys[i - 1]) ? 1 : 0
+    end
+end
+
+@kernel function ka_fill_cell_firsts_kernel!(cell_keys, cell_ranges,
+        @Const(sorted_keys), @Const(flags), @Const(prefix), n)
+    i = @index(Global)
+    @inbounds if i <= n && flags[i] == 1
+        icell = prefix[i]
+        cell_keys[icell] = sorted_keys[i]
+        cell_ranges[1, icell] = i
+    end
+end
+
+@kernel function ka_fill_cell_counts_kernel!(cell_ranges, @Const(flags),
+        @Const(prefix), n)
+    # `cell_ranges[1, :]` must be written by a prior launch; the launch boundary
+    # is the synchronization this read needs (same contract as the CUDA kernel).
+    i = @index(Global)
+    @inbounds if i <= n && (i == n || flags[i + 1] == 1)
+        icell = prefix[i]
+        first = cell_ranges[1, icell]
+        cell_ranges[2, icell] = i - first + 1
+    end
+end
+
+"""
+    ka_radix_keys_checked!(keys, oob_flag, host_oob, positions, x_min, box_extent,
+                           h0, ell; workgroup=KA_AUTO_WORKGROUP)
+
+Backend-agnostic port of `_cuda_radix_keys_checked_kernel!` plus its host-side
+out-of-bounds check. Writes the full-depth (`ell`-level) Morton key of each of
+the `length(keys)` bodies and throws `ArgumentError` if any body lies outside the
+fixed box `[x_min, x_min + box_extent]`. `keys` is scratch on the caller's side,
+so throwing here leaves the persistent grid at its previous consistent step.
+"""
+function ka_radix_keys_checked!(keys, oob_flag, host_oob, positions, x_min,
+        box_extent, h0, ell::Int; workgroup=KA_AUTO_WORKGROUP)
+    n = length(keys)
+    n == 0 && return keys
+    backend = KA.get_backend(keys)
+    fill!(oob_flag, Int32(0))
+    kernel = _cached_kernel(ka_radix_keys_checked_kernel!, backend, workgroup)
+    kernel(keys, oob_flag, positions, x_min, box_extent, h0, ell, n; ndrange=n)
+    KA.synchronize(backend)
+    copyto!(host_oob, oob_flag)
+    if host_oob[1] != 0
+        x_max = x_min .+ box_extent
+        throw(ArgumentError(
+            "at least one body lies outside the fixed RadixFMMCache box " *
+            "[$(Tuple(x_min)), $(Tuple(x_max))]; the box is part of the cache's " *
+            "invariant contract — construct a new cache (or pass explicit " *
+            "bounds=(x_min, box_size) covering the trajectory)"))
+    end
+    return keys
+end
+
+"""
+    ka_radix_sort_bodies!(perm, sorted_keys, invperm, keys; workgroup=KA_AUTO_WORKGROUP)
+
+Sort the bodies by Morton key: `perm` receives the sorting permutation,
+`sorted_keys` the gathered keys, `invperm` the scatter inverse. Port of the
+`_cuda_sortperm_into!` / `_cuda_gather_sorted_keys_kernel!` /
+`_cuda_fill_invperm_kernel!` triple. The bounded counting-sort fast path is not
+ported: it is an *unstable* CUDA-only optimization, so leaving it out makes the
+KA arm's same-cell ordering deterministic rather than losing anything the
+correctness contract depends on.
+"""
+function ka_radix_sort_bodies!(perm, sorted_keys, invperm, keys;
+        workgroup=KA_AUTO_WORKGROUP)
+    n = length(keys)
+    n == 0 && return perm
+    backend = KA.get_backend(keys)
+    sortperm!(perm, keys)
+    gather = _cached_kernel(ka_gather_sorted_keys_kernel!, backend, workgroup)
+    gather(sorted_keys, keys, perm, n; ndrange=n)
+    ka_fill_invperm!(invperm, perm; workgroup)
+    KA.synchronize(backend)
+    return perm
+end
+
+"""
+    ka_radix_compress_cells!(cell_keys, cell_ranges, sorted_keys, flags, prefix,
+                             host_scalar; workgroup=KA_AUTO_WORKGROUP)
+
+Compress the sorted body keys into occupied leaf cells, writing `cell_keys` and
+`cell_ranges` (row 1 = first sorted body index, row 2 = body count) and
+returning `n_cells`. Port of the `_cuda_key_change_flags_kernel!` /
+`accumulate!` / `_cuda_fill_cell_firsts_kernel!` /
+`_cuda_fill_cell_counts_kernel!` block. `flags`/`prefix` are caller-owned
+`1:n` scratch views; `host_scalar` is a 1-element host vector for the count
+download, the single unavoidable sync point (the caller needs `n_cells` to
+bounds-check against the cache's cell capacity).
+"""
+function ka_radix_compress_cells!(cell_keys, cell_ranges, sorted_keys, flags,
+        prefix, host_scalar; workgroup=KA_AUTO_WORKGROUP)
+    n = length(sorted_keys)
+    n == 0 && return 0
+    backend = KA.get_backend(sorted_keys)
+    flagk = _cached_kernel(ka_key_change_flags_kernel!, backend, workgroup)
+    flagk(flags, sorted_keys, n; ndrange=n)
+    accumulate!(+, prefix, flags)
+    KA.synchronize(backend)
+    copyto!(host_scalar, 1, prefix, n, 1)
+    n_cells = Int(host_scalar[1])
+    firstsk = _cached_kernel(ka_fill_cell_firsts_kernel!, backend, workgroup)
+    firstsk(cell_keys, cell_ranges, sorted_keys, flags, prefix, n; ndrange=n)
+    countsk = _cached_kernel(ka_fill_cell_counts_kernel!, backend, workgroup)
+    countsk(cell_ranges, flags, prefix, n; ndrange=n)
+    KA.synchronize(backend)
+    return n_cells
 end
 
 end

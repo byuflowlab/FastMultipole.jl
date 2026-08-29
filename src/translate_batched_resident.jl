@@ -3353,6 +3353,61 @@ function _radix_cache_sfs_buffers!(cache::RadixFMMCache{TF}, targets::Tuple) whe
     return sb
 end
 
+#------- backend-agnostic device source-buffer plumbing -------#
+#
+# These four lived in translate_batched_cuda.jl, which is `include`d only when
+# CUDA is available, but none of them contains a CUDA type or a CUDA launch:
+# they are `source_to_buffer!` dispatch, a `copyto!`, and a residency query, all
+# generic over the array type. Their placement made them CUDA-only at run time
+# — the same defect as `_radix_offsets_matrix` — and
+# `_recenter_union_bounds` (above) already calls `_fill_device_source_buffer!`
+# from generic code. Moved here so a KA `_radix_cache_device_step!` can reach
+# them; behavior is unchanged and the CUDA path resolves the same methods.
+
+function _has_device_source_to_buffer_method(device_buffer, system, sort_index)
+    sig = Tuple{typeof(device_buffer),typeof(system),typeof(sort_index)}
+    return hasmethod(source_to_buffer!, sig)
+end
+
+# identity permutation: a range, matching the documented `sort_index` default in
+# compatibility.jl. `collect` here allocated an 8 MB Vector{Int} every step at
+# n=1e6 (14% of per-step host allocation, task 028).
+function _fill_device_source_buffer!(device_buffer, system)
+    sort_index = Base.OneTo(get_n_bodies(system))
+    _has_device_source_to_buffer_method(device_buffer, system, sort_index) ||
+        throw(ArgumentError(
+            "DeviceResident CUDA source systems must overload FastMultipole.source_to_buffer!(device_buffer, system, sort_index)",
+        ))
+    source_to_buffer!(device_buffer, system, sort_index)
+    return device_buffer
+end
+
+_radix_any_host_resident(systems::Tuple) =
+    any(residency(system) isa HostResident for system in systems)
+
+# Refresh the persistent per-system device source buffers. Host-resident systems
+# repack into their pinned staging and upload the valid column prefix (one upload
+# per system per step); device-resident systems fill the valid prefix of their
+# persistent buffer in place through their source_to_buffer! overload (no
+# transfer, no allocation — task 032 gap-5 fix).
+function _radix_cache_refresh_source_buffers!(ctx, systems::Tuple, ::Type{TF}) where TF
+    return ntuple(length(systems)) do isys
+        system = systems[isys]
+        n_sys = get_n_bodies(system)
+        device_buffer = ctx.device_sources[isys]
+        if residency(system) isa HostResident
+            staging = ctx.host_stagings[isys]
+            source_to_buffer!(staging, system, 1:n_sys)
+            # linear-prefix copy: the first n_sys columns are contiguous
+            copyto!(device_buffer, 1, staging, 1, size(staging, 1) * n_sys)
+            ctx.counters.body_uploads += 1
+        else
+            _fill_device_source_buffer!(view(device_buffer, :, 1:n_sys), system)
+        end
+        view(device_buffer, :, 1:n_sys)
+    end
+end
+
 # Device-resident construction/step; redefined by translate_batched_cuda.jl (task
 # 023 step 7) once load_cuda_radix_lifecycle!() has run.
 function _radix_cache_device_build(args...; kwargs...)
