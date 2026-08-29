@@ -248,6 +248,14 @@ for case in cases
     end
     all(covered) || error("n=$n, K_max=$K_max: cell ranges do not cover all $n bodies")
 
+    # invperm must invert perm exactly: invperm[perm[i]] == i for every sorted slot,
+    # which also proves perm is a genuine permutation of 1:n.
+    hperm = Int.(Array(got.perm))
+    hinv = Int.(Array(got.invperm))
+    length(hinv) == n || error("n=$n, K_max=$K_max: invperm length $(length(hinv)) != $n")
+    all(hinv[hperm[i]] == i for i in 1:n) ||
+        error("n=$n, K_max=$K_max: invperm is not the inverse of perm")
+
     println("✓ n=$n, K_max=$K_max, ell_max=$ell_max: $(got.n_nodes) nodes, " *
             "$(got.n_leaves) leaves, matches CPU reference exactly")
 end

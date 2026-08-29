@@ -162,6 +162,34 @@ function ka_gather_rows!(dst, src, rows; workgroup=64)
     return dst
 end
 
+@kernel function ka_fill_invperm_kernel!(invperm, @Const(perm), n)
+    sorted_i = @index(Global)
+    @inbounds if sorted_i <= n
+        invperm[perm[sorted_i]] = sorted_i
+    end
+end
+
+"""
+    ka_fill_invperm!(invperm, perm; workgroup=64)
+
+Backend-agnostic port of `_cuda_fill_invperm_kernel!` (src/translate_batched_cuda.jl):
+scatter the inverse of the body sort permutation, `invperm[perm[i]] = i`, so a global
+body ordinal maps back to its sorted slot. `invperm` is written over `1:length(perm)`
+and must be at least that long; `perm` must be a genuine permutation of `1:n` (each
+slot is written exactly once, so a non-permutation silently leaves stale entries --
+the same contract CUDA carries).
+"""
+function ka_fill_invperm!(invperm, perm; workgroup::Int=64)
+    n = length(perm)
+    n == 0 && return invperm
+    length(invperm) >= n || throw(ArgumentError(
+        "invperm (length $(length(invperm))) is shorter than perm (length $n)"))
+    backend = KA.get_backend(invperm)
+    kernel = _cached_kernel(ka_fill_invperm_kernel!, backend, workgroup)
+    kernel(invperm, perm, n; ndrange=n)
+    return invperm
+end
+
 # --- Integration with FastMultipole's real M2M call path ---
 #
 # `ka_resident_stage_group_apply!` mirrors `_resident_stage_group_apply!`
@@ -689,6 +717,7 @@ function ka_allocate_adaptive_context(backend, ::Type{TF}, maxn::Int;
     LC, FC, NC = leaf_capacity, frontier_capacity, node_capacity
     bufs = (
         keys=KA.zeros(backend, UInt64, maxn), perm=KA.zeros(backend, Int, maxn),
+        invperm=KA.zeros(backend, Int, maxn),
         sorted_keys=KA.zeros(backend, UInt64, maxn),
 
         llev=KA.zeros(backend, Int32, LC), lkey=KA.zeros(backend, UInt64, LC),
@@ -2045,8 +2074,8 @@ arrays). Mirrors the stage order of `_cuda_refresh_adaptive_tree!` for a first
 `KAAdaptiveTreeContext`/`ka_allocate_adaptive_context`) -- zero recurring allocation,
 matching CUDA-native's `actx` convention.
 
-Returns Phase C's `NamedTuple` merged with `perm`, `sorted_keys`, `n_balance_splits`,
-and `node_sigma_max` (`nothing` if the sigma sweep was not armed).
+Returns Phase C's `NamedTuple` merged with `perm`, `invperm`, `sorted_keys`,
+`n_balance_splits`, and `node_sigma_max` (`nothing` if the sigma sweep was not armed).
 """
 function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::AbstractMatrix,
         ell_max::Int, K_max::Int, balance::Bool, x_min, h0::TF; sigma_row::Int=0,
@@ -2069,6 +2098,8 @@ function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::Abstrac
     sortperm!(perm, keys)
     sorted_keys = view(b.sorted_keys, 1:n)
     ka_gather_values!(sorted_keys, keys, perm; workgroup=workgroup)
+    invperm = view(b.invperm, 1:n)
+    ka_fill_invperm!(invperm, perm; workgroup=workgroup)
 
     if stage_ns !== nothing
         KernelAbstractions.synchronize(backend)
@@ -2109,7 +2140,7 @@ function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::Abstrac
         nothing
     end
 
-    return merge(fin, (perm=perm, sorted_keys=sorted_keys,
+    return merge(fin, (perm=perm, invperm=invperm, sorted_keys=sorted_keys,
         n_balance_splits=n_balance_splits, node_sigma_max=node_sigma_max))
 end
 
