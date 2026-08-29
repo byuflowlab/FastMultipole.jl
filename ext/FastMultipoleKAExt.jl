@@ -1327,6 +1327,386 @@ function ka_adaptive_sigma_sweep!(actx::KAAdaptiveTreeContext, node_lo, node_hi,
     return node_sigma
 end
 
+#------- Phase E: DTR interaction-list build (U/V/W/X) -------#
+#
+# Backend-agnostic port of `_cuda_adaptive_build_lists!` and its six kernels
+# (src/tree_batched_cuda.jl:910-1139), the frontier dual-tree-recursion sweep of
+# adaptive octree theory §2.7 with sticky sigma demotion (§5.2).
+#
+# Shape note: the CPU reference (`build_adaptive_interaction_lists!`,
+# src/interaction_list_batched.jl:1182) is a DFS over an explicit pair stack,
+# while the device version is a level-synchronous BFS over a pair frontier with
+# the same flags/scan/compact decomposition as Phases A-C. Both enumerate the
+# same pair SET; they emit it in different orders. Any comparison between them
+# must canonicalize (sort) first -- element-wise equality is meaningless here.
+#
+# Precision note: CUDA's `_adt_cuda_classify` does the sigma-gate arithmetic in
+# Float64. Metal has no Float64 at all, so the gate type is a parameter here
+# (`TG`) rather than hardcoded. Pass Float64 on CUDA to mirror the native path
+# exactly; Float32 is required on Metal. Only the gate comparison
+# `delta_min2*g2 < cut^2` is affected, and only for pairs sitting within a
+# rounding step of the threshold -- everything else in the classification is
+# exact integer lattice arithmetic.
+
+const _KA_KIND_U = Int32(1)
+const _KA_KIND_V = Int32(2)
+const _KA_KIND_W = Int32(3)
+const _KA_KIND_X = Int32(4)
+const _KA_KIND_EXPAND = Int32(5)
+
+@inline function ka_axis_clamp(ca::Int, la::Int, cb::Int, lb::Int)
+    k = lb - la
+    a0 = ca << k
+    a1 = ((ca + 1) << k) - 1
+    return cb < a0 ? a0 - cb : (cb > a1 ? cb - a1 : 0)
+end
+
+# Mirror of `_adt_cuda_classify`: returns (kind, dem_out, leaf_a, leaf_b).
+@inline function ka_dtr_classify(node_levels, node_coords, child_ranges, node_sigma,
+        ia::Int, ib::Int, dem::Bool, q::Int, gate::Bool, rho_t::TG,
+        delta_min2::TG, ell_max::Int) where TG
+    @inbounds begin
+        la = Int(node_levels[ia]); lb = Int(node_levels[ib])
+        ax = Int(node_coords[1, ia]); ay = Int(node_coords[2, ia]); az = Int(node_coords[3, ia])
+        bx = Int(node_coords[1, ib]); by = Int(node_coords[2, ib]); bz = Int(node_coords[3, ib])
+        local dx::Int, dy::Int, dz::Int
+        if la == lb
+            dx = bx - ax; dy = by - ay; dz = bz - az
+        elseif la < lb
+            dx = ka_axis_clamp(ax, la, bx, lb)
+            dy = ka_axis_clamp(ay, la, by, lb)
+            dz = ka_axis_clamp(az, la, bz, lb)
+        else
+            dx = ka_axis_clamp(bx, lb, ax, la)
+            dy = ka_axis_clamp(by, lb, ay, la)
+            dz = ka_axis_clamp(bz, lb, az, la)
+        end
+        near = dem || (dx * dx + dy * dy + dz * dz <= q)
+        dem_out = dem
+        if !near && gate
+            # integer-exact squared AABB gap on the finest lattice (host mirror)
+            sa = 1 << (ell_max - la)
+            sb = 1 << (ell_max - lb)
+            g2 = 0
+            g = max(ax * sa - (bx * sb + sb), bx * sb - (ax * sa + sa), 0); g2 += g * g
+            g = max(ay * sa - (by * sb + sb), by * sb - (ay * sa + sa), 0); g2 += g * g
+            g = max(az * sa - (bz * sb + sb), bz * sb - (az * sa + sa), 0); g2 += g * g
+            cut = rho_t * TG(node_sigma[ib])
+            if delta_min2 * TG(g2) < cut * cut
+                near = true
+                dem_out = true
+            end
+        end
+        leaf_a = child_ranges[2, ia] == 0
+        leaf_b = child_ranges[2, ib] == 0
+        local kind::Int32
+        if !near
+            kind = la == lb ? _KA_KIND_V : (la < lb ? _KA_KIND_W : _KA_KIND_X)
+        elseif leaf_a && leaf_b
+            kind = _KA_KIND_U
+        else
+            kind = _KA_KIND_EXPAND
+        end
+    end
+    return kind, dem_out, leaf_a, leaf_b
+end
+
+@inline function ka_expand_count(node_levels, child_ranges, ia::Int, ib::Int,
+        leaf_a::Bool, leaf_b::Bool)
+    @inbounds begin
+        la = Int(node_levels[ia]); lb = Int(node_levels[ib])
+        na = Int(child_ranges[2, ia]); nb = Int(child_ranges[2, ib])
+        if la == lb
+            leaf_a && return nb
+            leaf_b && return na
+            return na * nb
+        end
+        return la < lb ? nb : na
+    end
+end
+
+# j-th (1-based) child pair of an EXPAND pair, in the host's deterministic
+# (ja-major, jb-minor) order.
+@inline function ka_expand_get(node_levels, child_ranges, ia::Int, ib::Int,
+        leaf_a::Bool, leaf_b::Bool, j::Int)
+    @inbounds begin
+        la = Int(node_levels[ia]); lb = Int(node_levels[ib])
+        if la == lb
+            if leaf_a
+                return ia, Int(child_ranges[1, ib]) + j - 1
+            elseif leaf_b
+                return Int(child_ranges[1, ia]) + j - 1, ib
+            else
+                nb = Int(child_ranges[2, ib])
+                return Int(child_ranges[1, ia]) + (j - 1) ÷ nb,
+                    Int(child_ranges[1, ib]) + (j - 1) % nb
+            end
+        elseif la < lb
+            return ia, Int(child_ranges[1, ib]) + j - 1
+        else
+            return Int(child_ranges[1, ia]) + j - 1, ib
+        end
+    end
+end
+
+@kernel function ka_dtr_seed_kernel!(fa, fb, fdem)
+    i = @index(Global)
+    @inbounds if i == 1
+        fa[1] = Int32(1)
+        fb[1] = Int32(1)
+        fdem[1] = Int32(0)
+    end
+end
+
+# want: 1..5 kind flags; 6 = demotion-trigger diagnostic count
+@kernel function ka_dtr_flags_kernel!(flags, @Const(fa), @Const(fb), @Const(fdem), np,
+        @Const(node_levels), @Const(node_coords), @Const(child_ranges), @Const(node_sigma),
+        q, gate, rho_t, delta_min2, ell_max, want)
+    p = @index(Global)
+    @inbounds if p <= np
+        ia = Int(fa[p]); ib = Int(fb[p]); dem = fdem[p] != Int32(0)
+        kind, dem_out, _, _ = ka_dtr_classify(node_levels, node_coords, child_ranges,
+            node_sigma, ia, ib, dem, q, gate, rho_t, delta_min2, ell_max)
+        if want == Int32(6)
+            flags[p] = (dem_out && !dem) ? Int32(1) : Int32(0)
+        else
+            flags[p] = kind == want ? Int32(1) : Int32(0)
+        end
+    end
+end
+
+# Emit U/W/X node-id pairs at base offsets (deterministic scan order).
+@kernel function ka_dtr_emit_pairs_kernel!(dst_t, dst_s, base, @Const(flags),
+        @Const(prefix), @Const(fa), @Const(fb), np)
+    p = @index(Global)
+    @inbounds if p <= np && flags[p] == Int32(1)
+        idx = base + Int(prefix[p])
+        dst_t[idx] = fa[p]
+        dst_s[idx] = fb[p]
+    end
+end
+
+# Emit V pairs with the global class id; validity per the 025 phase-table
+# membership (sticky-demotion invariant) via the violation flag.
+@kernel function ka_dtr_emit_v_kernel!(vt, vs, vc, base, @Const(flags), @Const(prefix),
+        @Const(fa), @Const(fb), np, @Const(node_levels), @Const(node_coords),
+        @Const(offset_lut), @Const(level_class_of), reach, noffsets, first_m2l_level,
+        violation_flags)
+    p = @index(Global)
+    @inbounds if p <= np && flags[p] == Int32(1)
+        ia = Int(fa[p]); ib = Int(fb[p])
+        la = Int(node_levels[ia])
+        ox = Int(node_coords[1, ia]) - Int(node_coords[1, ib])
+        oy = Int(node_coords[2, ia]) - Int(node_coords[2, ib])
+        oz = Int(node_coords[3, ia]) - Int(node_coords[3, ib])
+        k = 0
+        if abs(ox) <= reach && abs(oy) <= reach && abs(oz) <= reach
+            k = Int(offset_lut[ox + reach + 1, oy + reach + 1, oz + reach + 1])
+        end
+        phase = 1 + (Int(node_coords[1, ib]) & 1) + 2 * (Int(node_coords[2, ib]) & 1) +
+            4 * (Int(node_coords[3, ib]) & 1)
+        ok = k != 0 && la >= first_m2l_level &&
+            level_class_of[phase, k, la + 1] != Int32(0)
+        ok || (violation_flags[1] = Int32(1))
+        idx = base + Int(prefix[p])
+        vt[idx] = fa[p]
+        vs[idx] = fb[p]
+        vc[idx] = Int32((la - first_m2l_level) * noffsets + k)
+    end
+end
+
+@kernel function ka_dtr_expand_count_kernel!(flags, @Const(fa), @Const(fb), @Const(fdem),
+        np, @Const(node_levels), @Const(node_coords), @Const(child_ranges),
+        @Const(node_sigma), q, gate, rho_t, delta_min2, ell_max)
+    p = @index(Global)
+    @inbounds if p <= np
+        ia = Int(fa[p]); ib = Int(fb[p]); dem = fdem[p] != Int32(0)
+        kind, _, leaf_a, leaf_b = ka_dtr_classify(node_levels, node_coords, child_ranges,
+            node_sigma, ia, ib, dem, q, gate, rho_t, delta_min2, ell_max)
+        flags[p] = kind == _KA_KIND_EXPAND ?
+            Int32(ka_expand_count(node_levels, child_ranges, ia, ib, leaf_a, leaf_b)) :
+            Int32(0)
+    end
+end
+
+@kernel function ka_dtr_expand_emit_kernel!(ga, gb, gdem, @Const(fa), @Const(fb),
+        @Const(fdem), np, @Const(prefix), @Const(node_levels), @Const(node_coords),
+        @Const(child_ranges), @Const(node_sigma), q, gate, rho_t, delta_min2, ell_max)
+    p = @index(Global)
+    @inbounds if p <= np
+        ia = Int(fa[p]); ib = Int(fb[p]); dem = fdem[p] != Int32(0)
+        kind, dem_out, leaf_a, leaf_b = ka_dtr_classify(node_levels, node_coords,
+            child_ranges, node_sigma, ia, ib, dem, q, gate, rho_t, delta_min2, ell_max)
+        if kind == _KA_KIND_EXPAND
+            # exclusive prefix from the inclusive scan, as CUDA's emit kernel does
+            base = p == 1 ? 0 : Int(prefix[p - 1])
+            cnt = ka_expand_count(node_levels, child_ranges, ia, ib, leaf_a, leaf_b)
+            d = dem_out ? Int32(1) : Int32(0)
+            for j in 1:cnt
+                ja, jb = ka_expand_get(node_levels, child_ranges, ia, ib, leaf_a, leaf_b, j)
+                ga[base + j] = Int32(ja)
+                gb[base + j] = Int32(jb)
+                gdem[base + j] = d
+            end
+        end
+    end
+end
+
+"""
+    KAAdaptiveListsContext
+
+Preallocated buffers for `ka_adaptive_build_lists!`, mirroring the DTR/list
+portion of CUDA's `DeviceAdaptiveCUDAContext`. Kept separate from
+`KAAdaptiveTreeContext` so the tree-construction phases (A-D) and their
+correctness gates are untouched by list-build work.
+
+`offset_lut`/`level_class_of` are the geometry LUTs from an
+`AdaptiveInteractionLists` (moved to the backend by the caller).
+"""
+struct KAAdaptiveListsContext{B,L3,C3,NT<:NamedTuple}
+    backend::B
+    frontier_capacity::Int
+    u_capacity::Int
+    v_capacity::Int
+    wx_capacity::Int
+    offset_lut::L3
+    level_class_of::C3
+    lut_reach::Int
+    noffsets::Int
+    first_m2l_level::Int
+    bufs::NT
+end
+
+function ka_allocate_lists_context(backend, offset_lut, level_class_of;
+        frontier_capacity::Int, u_capacity::Int, v_capacity::Int, wx_capacity::Int,
+        lut_reach::Int, noffsets::Int, first_m2l_level::Int)
+    FC, UC, VC, WC = frontier_capacity, u_capacity, v_capacity, wx_capacity
+    bufs = (
+        fa=KA.zeros(backend, Int32, FC), fb=KA.zeros(backend, Int32, FC),
+        fdem=KA.zeros(backend, Int32, FC),
+        fa2=KA.zeros(backend, Int32, FC), fb2=KA.zeros(backend, Int32, FC),
+        fdem2=KA.zeros(backend, Int32, FC),
+        flags=KA.zeros(backend, Int32, FC), prefix=KA.zeros(backend, Int32, FC),
+        u_targets=KA.zeros(backend, Int32, UC), u_sources=KA.zeros(backend, Int32, UC),
+        vstage_targets=KA.zeros(backend, Int32, VC),
+        vstage_sources=KA.zeros(backend, Int32, VC),
+        vstage_class=KA.zeros(backend, Int32, VC),
+        w_targets=KA.zeros(backend, Int32, WC), w_sources=KA.zeros(backend, Int32, WC),
+        x_targets=KA.zeros(backend, Int32, WC), x_sources=KA.zeros(backend, Int32, WC),
+        violation_flags=KA.zeros(backend, Int32, 1),
+    )
+    return KAAdaptiveListsContext(backend, FC, UC, VC, WC, offset_lut, level_class_of,
+        lut_reach, noffsets, first_m2l_level, bufs)
+end
+
+"""
+    ka_adaptive_build_lists!(lctx, node_levels, node_coords, child_ranges, node_sigma;
+                             ell_max, near_radius2, gate, rho_t, delta_min2, workgroup=64)
+
+Backend-agnostic port of `_cuda_adaptive_build_lists!`: the frontier DTR sweep
+(theory §2.7) producing the U/V/W/X interaction lists from a finalized adaptive
+octree. Returns `(n_u, n_v, n_w, n_x, n_dem)`; the lists themselves live in
+`lctx.bufs`, valid over `1:n_*`.
+
+`rho_t`/`delta_min2` set the sigma-gate precision `TG` (see the precision note
+above): Float64 to mirror CUDA-native exactly, Float32 on Metal.
+"""
+function ka_adaptive_build_lists!(lctx::KAAdaptiveListsContext, node_levels, node_coords,
+        child_ranges, node_sigma; ell_max::Int, near_radius2::Int, gate::Bool,
+        rho_t::TG, delta_min2::TG, workgroup::Int=64) where TG
+    backend = lctx.backend
+    b = lctx.bufs
+    fill!(b.violation_flags, Int32(0))
+
+    seedk = _cached_kernel(ka_dtr_seed_kernel!, backend, 1)
+    flagk = _cached_kernel(ka_dtr_flags_kernel!, backend, workgroup)
+    emitk = _cached_kernel(ka_dtr_emit_pairs_kernel!, backend, workgroup)
+    emitvk = _cached_kernel(ka_dtr_emit_v_kernel!, backend, workgroup)
+    ecountk = _cached_kernel(ka_dtr_expand_count_kernel!, backend, workgroup)
+    eemitk = _cached_kernel(ka_dtr_expand_emit_kernel!, backend, workgroup)
+
+    a = (b.fa, b.fb, b.fdem)
+    bb = (b.fa2, b.fb2, b.fdem2)
+    seedk(a[1], a[2], a[3]; ndrange=1)
+    KA.synchronize(backend)
+
+    node_args = (node_levels, node_coords, child_ranges, node_sigma)
+    gate_args = (near_radius2, gate, rho_t, delta_min2, ell_max)
+
+    np = 1
+    n_u = 0; n_v = 0; n_w = 0; n_x = 0; n_dem = 0
+    rounds = 0
+    while np > 0
+        rounds += 1
+        rounds <= 2 * ell_max + 3 || throw(AssertionError(
+            "adaptive KA DTR failed to terminate"))
+
+        # U / W / X share the plain pair-emit path; only the `want` code, the
+        # running count and the destination buffers differ. Written out rather
+        # than looped, mirroring `_cuda_adaptive_build_lists!`.
+        emit_kind! = function (want, base, cap, dst_t, dst_s, label)
+            flagk(b.flags, a[1], a[2], a[3], np, node_args..., gate_args..., want;
+                ndrange=np)
+            KA.synchronize(backend)
+            m = _ka_scan_total!(b.flags, b.prefix, np)
+            base + m <= cap || throw(AssertionError(
+                "adaptive KA $label list capacity $cap exceeded"))
+            if m > 0
+                emitk(dst_t, dst_s, base, b.flags, b.prefix, a[1], a[2], np; ndrange=np)
+                KA.synchronize(backend)
+            end
+            return m
+        end
+        n_u += emit_kind!(_KA_KIND_U, n_u, lctx.u_capacity, b.u_targets, b.u_sources, "U")
+        n_w += emit_kind!(_KA_KIND_W, n_w, lctx.wx_capacity, b.w_targets, b.w_sources, "W")
+        n_x += emit_kind!(_KA_KIND_X, n_x, lctx.wx_capacity, b.x_targets, b.x_sources, "X")
+
+        # V carries the geometry class id, so it needs its own emit kernel.
+        flagk(b.flags, a[1], a[2], a[3], np, node_args..., gate_args..., _KA_KIND_V;
+            ndrange=np)
+        KA.synchronize(backend)
+        m = _ka_scan_total!(b.flags, b.prefix, np)
+        n_v + m <= lctx.v_capacity || throw(AssertionError(
+            "adaptive KA V route capacity $(lctx.v_capacity) exceeded"))
+        if m > 0
+            emitvk(b.vstage_targets, b.vstage_sources, b.vstage_class, n_v, b.flags,
+                b.prefix, a[1], a[2], np, node_levels, node_coords, lctx.offset_lut,
+                lctx.level_class_of, lctx.lut_reach, lctx.noffsets, lctx.first_m2l_level,
+                b.violation_flags; ndrange=np)
+            KA.synchronize(backend)
+        end
+        n_v += m
+
+        # demotion diagnostic
+        if gate
+            flagk(b.flags, a[1], a[2], a[3], np, node_args..., gate_args..., Int32(6);
+                ndrange=np)
+            KA.synchronize(backend)
+            n_dem += _ka_scan_total!(b.flags, b.prefix, np)
+        end
+
+        # expand: count child pairs per frontier entry, scan, emit next frontier
+        ecountk(b.flags, a[1], a[2], a[3], np, node_args..., gate_args...; ndrange=np)
+        KA.synchronize(backend)
+        np2 = _ka_scan_total!(b.flags, b.prefix, np)
+        np2 <= lctx.frontier_capacity || throw(AssertionError(
+            "adaptive KA DTR frontier capacity $(lctx.frontier_capacity) exceeded"))
+        if np2 > 0
+            eemitk(bb[1], bb[2], bb[3], a[1], a[2], a[3], np, b.prefix, node_args...,
+                gate_args...; ndrange=np)
+            KA.synchronize(backend)
+        end
+        a, bb = bb, a
+        np = np2
+    end
+
+    Int(Array(view(b.violation_flags, 1:1))[1]) == 0 || throw(AssertionError(
+        "adaptive KA V pair lies outside the task-025 phase-table class set — " *
+        "the sticky demotion invariant (theory §2.4/§5.2) is violated"))
+
+    return n_u, n_v, n_w, n_x, n_dem
+end
+
 #------- Harness front end: position -> full-depth key, and a full-build driver -------#
 #
 # Not a CUDA-parity phase (no `_cuda_*` counterpart is ported one-to-one here) --
