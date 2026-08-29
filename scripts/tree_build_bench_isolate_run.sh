@@ -2,7 +2,7 @@
 #SBATCH --job-name=fm_treebuild_isolate
 #SBATCH --gpus=h200:1
 #SBATCH --qos=eng
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=00:20:00
 #SBATCH --output=%x-%j.out
@@ -16,6 +16,15 @@
 # used a 1 Hz background nvidia-smi loop, too coarse and unaligned to see a
 # transition landing at a specific trial. No background GPU log here: the
 # per-trial NVML samples supersede it.
+#
+# cpus-per-task raised 1 -> 8 after job 13508353. That job's wall-vs-CPU split
+# showed proc_cpu/wall = 0.996-0.998 on BOTH fast and slow trials in both arms:
+# with one allocated core that ratio is pinned at its ceiling, i.e. the process
+# saturates its single CPU for the entire trial, fast or slow. Process CPU also
+# exceeds thread CPU (3.3ms of 5.4ms fast; 25.9ms of 53.7ms slow), so CUDA
+# driver threads are burning CPU alongside the main thread and contending for
+# that one core. NVML compute_processes was 1 on every sample, so GPU
+# co-tenancy is ruled out. This run tests CPU starvation directly.
 set -eo pipefail
 source /etc/profile
 module load cuda julia/1.11.7-6bmogfl
