@@ -694,12 +694,19 @@ end
 # Scoped to tree construction (Phases A/B/C/D); CUDA's DTR/interaction-list
 # buffers (`u_capacity`/`v_capacity`/`wx_capacity`) have no KA counterpart yet.
 
-struct KAAdaptiveTreeContext{B,NT<:NamedTuple}
+struct KAAdaptiveTreeContext{B,G,NT<:NamedTuple}
     backend::B
     maxn::Int
     leaf_capacity::Int
     frontier_capacity::Int
     node_capacity::Int
+    # The tree's public output, in the form the resident FMM path consumes
+    # (`DeviceResidentRadixState.grid`). Allocated here at capacity and mutated
+    # in place by the phases -- `bufs` aliases its arrays, so the phase code is
+    # unchanged and there is no per-build tuple-to-grid conversion (which would
+    # allocate and break the task-023 contract). Mirrors CUDA, where
+    # `DeviceAdaptiveCUDAContext` owns the grid and every phase writes `grid.*`.
+    grid::G
     bufs::NT
 end
 
@@ -711,13 +718,33 @@ Allocate a `KAAdaptiveTreeContext`: every scratch/output buffer
 `maxn`/`leaf_capacity`/`frontier_capacity`/`node_capacity` and reused across
 calls. Construct once per (backend, capacity) combination, outside any
 trial/timestep loop.
+
+The node- and cell-indexed outputs are allocated as the fields of a capacity-sized
+`DeviceRadixGrid` (`actx.grid`), which `bufs` aliases; the geometry fields
+(`x_min`/`h0`/`ell`) and the prefix lengths (`n_bodies`/`n_cells`) are placeholders
+until `ka_build_adaptive_tree!` sets them from its build arguments, exactly as
+`_cuda_refresh_adaptive_tree!` does. `grid.body_system`/`grid.body_index` are
+allocated but never written: they carry multi-system body attribution, which the
+repack path supplies rather than the octree build, and the KA path is single-system
+for now.
 """
 function ka_allocate_adaptive_context(backend, ::Type{TF}, maxn::Int;
         leaf_capacity::Int, frontier_capacity::Int, node_capacity::Int) where TF
     LC, FC, NC = leaf_capacity, frontier_capacity, node_capacity
+    grid = FastMultipole.DeviceRadixGrid(
+        zero(SVector{3,TF}), one(TF), 0, 0, 0,
+        KA.zeros(backend, Int, maxn), KA.zeros(backend, Int, maxn),
+        KA.zeros(backend, UInt64, LC), KA.zeros(backend, Int, 2, LC),
+        KA.zeros(backend, Int, maxn), KA.zeros(backend, Int, maxn),
+        KA.zeros(backend, TF, 3, LC),
+        KA.zeros(backend, Int, NC), KA.zeros(backend, UInt64, NC),
+        KA.zeros(backend, Int, 3, NC), KA.zeros(backend, TF, 3, NC),
+        KA.zeros(backend, Int, NC), KA.zeros(backend, Int, 2, NC),
+        KA.zeros(backend, Int, LC),
+    )
     bufs = (
-        keys=KA.zeros(backend, UInt64, maxn), perm=KA.zeros(backend, Int, maxn),
-        invperm=KA.zeros(backend, Int, maxn),
+        keys=KA.zeros(backend, UInt64, maxn), perm=grid.perm,
+        invperm=grid.invperm,
         sorted_keys=KA.zeros(backend, UInt64, maxn),
 
         llev=KA.zeros(backend, Int32, LC), lkey=KA.zeros(backend, UInt64, LC),
@@ -738,17 +765,18 @@ function ka_allocate_adaptive_context(backend, ::Type{TF}, maxn::Int;
         fin_skey=KA.zeros(backend, UInt64, LC), fin_slev=KA.zeros(backend, Int32, LC),
         fin_cand=KA.zeros(backend, UInt64, LC),
         fin_flags=KA.zeros(backend, Int32, NC), fin_prefix=KA.zeros(backend, Int32, NC),
-        node_keys=KA.zeros(backend, UInt64, NC), node_levels=KA.zeros(backend, Int, NC),
-        node_coords=KA.zeros(backend, Int, 3, NC), node_centers=KA.zeros(backend, TF, 3, NC),
+        node_keys=grid.node_keys, node_levels=grid.node_levels,
+        node_coords=grid.node_coords, node_centers=grid.node_centers,
         node_lo=KA.zeros(backend, Int32, NC), node_hi=KA.zeros(backend, Int32, NC),
-        parent_index=KA.zeros(backend, Int, NC), child_ranges=KA.zeros(backend, Int, 2, NC),
+        parent_index=grid.parent_index, child_ranges=grid.child_ranges,
         leaf_index=KA.zeros(backend, Int32, NC), leaf_slot_of=KA.zeros(backend, Int32, NC),
-        cell_ranges=KA.zeros(backend, Int, 2, LC), cell_centers=KA.zeros(backend, TF, 3, LC),
-        cell_keys=KA.zeros(backend, UInt64, LC), leaf_to_node=KA.zeros(backend, Int, LC),
+        cell_ranges=grid.cell_ranges, cell_centers=grid.cell_centers,
+        cell_keys=grid.cell_keys, leaf_to_node=grid.leaf_to_node,
 
         node_sigma=KA.zeros(backend, TF, NC),
     )
-    return KAAdaptiveTreeContext(backend, maxn, leaf_capacity, frontier_capacity, node_capacity, bufs)
+    return KAAdaptiveTreeContext(backend, maxn, leaf_capacity, frontier_capacity,
+        node_capacity, grid, bufs)
 end
 
 """
@@ -2074,7 +2102,7 @@ arrays). Mirrors the stage order of `_cuda_refresh_adaptive_tree!` for a first
 `KAAdaptiveTreeContext`/`ka_allocate_adaptive_context`) -- zero recurring allocation,
 matching CUDA-native's `actx` convention.
 
-Returns Phase C's `NamedTuple` merged with `perm`, `invperm`, `sorted_keys`,
+Returns Phase C's `NamedTuple` merged with `grid`, `perm`, `invperm`, `sorted_keys`,
 `n_balance_splits`, and `node_sigma_max` (`nothing` if the sigma sweep was not armed).
 """
 function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::AbstractMatrix,
@@ -2128,6 +2156,16 @@ function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::Abstrac
     fin = ka_adaptive_finalize!(actx, nl, llev, lkey, llo, lhi, sorted_keys, ell_max, n, x_min,
         h0; workgroup=workgroup)
 
+    # Publish the build into the context's DeviceRadixGrid. The arrays were
+    # written in place through the `bufs` aliases; only the scalars need setting,
+    # the same five `_cuda_refresh_adaptive_tree!` assigns.
+    grid = actx.grid
+    grid.x_min = SVector{3,TF}(x_min[1], x_min[2], x_min[3])
+    grid.h0 = h0
+    grid.ell = ell_max
+    grid.n_bodies = n
+    grid.n_cells = fin.n_leaves
+
     if stage_ns !== nothing
         KernelAbstractions.synchronize(backend)
         stage_ns[4] = time_ns() - t0
@@ -2140,7 +2178,7 @@ function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::Abstrac
         nothing
     end
 
-    return merge(fin, (perm=perm, invperm=invperm, sorted_keys=sorted_keys,
+    return merge(fin, (grid=grid, perm=perm, invperm=invperm, sorted_keys=sorted_keys,
         n_balance_splits=n_balance_splits, node_sigma_max=node_sigma_max))
 end
 

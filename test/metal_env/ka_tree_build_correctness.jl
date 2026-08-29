@@ -256,6 +256,22 @@ for case in cases
     all(hinv[hperm[i]] == i for i in 1:n) ||
         error("n=$n, K_max=$K_max: invperm is not the inverse of perm")
 
+    # The context's DeviceRadixGrid must BE the build output, not a copy: the
+    # phases write through `bufs` aliases, so identity here is what guarantees
+    # there is no per-build conversion step.
+    grid = got.grid
+    grid.n_bodies == n || error("n=$n, K_max=$K_max: grid.n_bodies=$(grid.n_bodies) != $n")
+    grid.n_cells == got.n_leaves ||
+        error("n=$n, K_max=$K_max: grid.n_cells=$(grid.n_cells) != $(got.n_leaves)")
+    grid.ell == ell_max || error("n=$n, K_max=$K_max: grid.ell=$(grid.ell) != $ell_max")
+    grid.h0 == h0 || error("n=$n, K_max=$K_max: grid.h0 mismatch")
+    Array(grid.node_keys)[1:got.n_nodes] == ref_fin.node_keys ||
+        error("n=$n, K_max=$K_max: grid.node_keys does not carry the build output")
+    Int.(Array(grid.cell_ranges)[:, 1:got.n_leaves]) == cell_ranges[:, 1:got.n_leaves] ||
+        error("n=$n, K_max=$K_max: grid.cell_ranges does not carry the build output")
+    Int.(Array(grid.invperm))[1:n] == hinv ||
+        error("n=$n, K_max=$K_max: grid.invperm does not carry the build output")
+
     println("✓ n=$n, K_max=$K_max, ell_max=$ell_max: $(got.n_nodes) nodes, " *
             "$(got.n_leaves) leaves, matches CPU reference exactly")
 end
