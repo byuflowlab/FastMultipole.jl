@@ -2,7 +2,7 @@
 #SBATCH --job-name=fmm_treebuild
 #SBATCH --qos=eng
 #SBATCH --gpus=h200:1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --time=00:30:00
 #SBATCH --output=%x-%j.out
@@ -17,6 +17,14 @@
 # clock, power draw, and throttle-reason flags, which tests the clock-
 # throttling hypothesis directly without needing a whole-node reservation;
 # memory.used/utilization.gpu still catch co-tenant activity if any is there.
+# cpus-per-task raised 1 -> 8. Jobs 13508353 (1 CPU) vs 13508376 (8 CPUs), same
+# isolated n=1e6 case, showed the whole n>=1e5 variance was host CPU starvation:
+# slow trials 38/100 -> 2/100 (KA), IQR ±31.99ms -> ±0.24ms, and the process
+# stopped sitting pinned at proc_cpu/wall ~1.0. EVERY earlier job in this
+# investigation ran at 1 CPU, including the ones behind the "KA is 2.4-3.5x
+# slower at n<=1e4" reading -- and KA issues more, smaller kernels than the
+# native arm, so CPU starvation penalizes it disproportionately. That number has
+# to be re-measured here before it can be trusted.
 set -eo pipefail
 source /etc/profile
 module load cuda julia/1.11.7-6bmogfl
