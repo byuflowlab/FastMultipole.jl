@@ -1585,8 +1585,10 @@ end
 function ka_allocate_lists_context(backend, offset_lut, level_class_of;
         frontier_capacity::Int, u_capacity::Int, v_capacity::Int, wx_capacity::Int,
         lut_reach::Int, noffsets::Int, first_m2l_level::Int, ell_max::Int=0,
-        nclasses::Int=max(1, noffsets * (ell_max + 1 - first_m2l_level)))
+        nclasses::Int=max(1, noffsets * (ell_max + 1 - first_m2l_level)),
+        leaf_capacity::Int=0, maxn::Int=0)
     FC, UC, VC, WC = frontier_capacity, u_capacity, v_capacity, wx_capacity
+    LC, MN = max(1, leaf_capacity), max(1, maxn)
     bufs = (
         fa=KA.zeros(backend, Int32, FC), fb=KA.zeros(backend, Int32, FC),
         fdem=KA.zeros(backend, Int32, FC),
@@ -1599,7 +1601,8 @@ function ka_allocate_lists_context(backend, offset_lut, level_class_of;
         vstage_class=KA.zeros(backend, Int32, VC),
         w_targets=KA.zeros(backend, Int32, WC), w_sources=KA.zeros(backend, Int32, WC),
         x_targets=KA.zeros(backend, Int32, WC), x_sources=KA.zeros(backend, Int32, WC),
-        violation_flags=KA.zeros(backend, Int32, 1),
+        # slot 1: V phase-table violation; slot 2: U endpoint not a leaf slot
+        violation_flags=KA.zeros(backend, Int32, 2),
 
         # Phase F: V class partition into the CSR route stream
         vsort_keys=KA.zeros(backend, UInt64, VC), vsort_ix=KA.zeros(backend, Int, VC),
@@ -1607,6 +1610,13 @@ function ka_allocate_lists_context(backend, offset_lut, level_class_of;
         route_class=KA.zeros(backend, Int32, VC),
         route_class_offset=KA.zeros(backend, Int32, VC),
         class_counts_dev=KA.zeros(backend, Int32, nclasses),
+
+        # Phase G: U endpoints -> leaf slots, then target-major U CSR
+        direct_targets=KA.zeros(backend, Int, UC),
+        direct_sources=KA.zeros(backend, Int, UC),
+        u_csr_offsets=KA.zeros(backend, Int32, LC + 1),
+        u_csr_sources=KA.zeros(backend, Int32, UC),
+        u_csr_body_leaf=KA.zeros(backend, Int32, MN),
     )
     return KAAdaptiveListsContext(backend, FC, UC, VC, WC, offset_lut, level_class_of,
         lut_reach, noffsets, first_m2l_level, ell_max, nclasses,
@@ -1807,6 +1817,136 @@ function ka_adaptive_partition_v!(lctx::KAAdaptiveListsContext, n_v::Int;
     end
     ls[lctx.ell_max + 2] = cs[end]
     return n_v
+end
+
+#------- Phase G: U endpoints -> leaf slots, then the target-major U CSR -------#
+#
+# Port of `_adt_cuda_u_slots_kernel!` and `_cuda_adaptive_build_u_csr!` with its
+# three kernels (src/tree_batched_cuda.jl:1222-1324). The DTR emits U pairs in
+# frontier-major order, which is NOT target-major, so building the fused
+# nearfield's target-owned CSR needs the same stable (target-slot, index) key
+# sort the V partition uses.
+#
+# The offsets kernel writes the half-open slot range (tprev, t] for each CSR
+# position, which fills in leaves that own no U pairs at all; slots past the
+# last occupied target keep the `n_u + 1` prefill. Targets are sorted, so those
+# ranges are disjoint and the concurrent writes never overlap.
+
+@kernel function ka_u_slots_kernel!(direct_targets, direct_sources, @Const(u_targets),
+        @Const(u_sources), @Const(leaf_slot_of), n_u, violation_flags)
+    k = @index(Global)
+    @inbounds if k <= n_u
+        ts = leaf_slot_of[Int(u_targets[k])]
+        ss = leaf_slot_of[Int(u_sources[k])]
+        (ts == Int32(0) || ss == Int32(0)) && (violation_flags[2] = Int32(1))
+        direct_targets[k] = Int(ts)
+        direct_sources[k] = Int(ss)
+    end
+end
+
+@kernel function ka_body_leaf_kernel!(body_leaf, @Const(cell_ranges), n_leaves)
+    l = @index(Global)
+    @inbounds if l <= n_leaves
+        first = cell_ranges[1, l]
+        last = first + cell_ranges[2, l] - 1
+        i = first
+        while i <= last
+            body_leaf[i] = Int32(l)
+            i += 1
+        end
+    end
+end
+
+@kernel function ka_usort_keys_kernel!(keys, @Const(direct_targets), n_u)
+    i = @index(Global)
+    @inbounds if i <= n_u
+        keys[i] = (UInt64(direct_targets[i]) << 32) | UInt64(i)
+    end
+end
+
+@kernel function ka_ucsr_gather_kernel!(u_csr_sources, @Const(usort_ix),
+        @Const(direct_sources), n_u)
+    p = @index(Global)
+    @inbounds if p <= n_u
+        u_csr_sources[p] = Int32(direct_sources[Int(usort_ix[p])])
+    end
+end
+
+@kernel function ka_ucsr_offsets_kernel!(u_csr_offsets, @Const(usort_ix),
+        @Const(direct_targets), n_u)
+    p = @index(Global)
+    @inbounds if p <= n_u
+        t = Int(direct_targets[Int(usort_ix[p])])
+        tprev = p == 1 ? 0 : Int(direct_targets[Int(usort_ix[p - 1])])
+        s = tprev + 1
+        while s <= t
+            u_csr_offsets[s] = Int32(p)
+            s += 1
+        end
+    end
+end
+
+"""
+    ka_adaptive_u_slots!(lctx, leaf_slot_of, n_u; workgroup=64)
+
+Map the `n_u` U pairs' node ids to leaf-cell slots, into
+`lctx.bufs.direct_targets`/`direct_sources`. Throws if either endpoint of any
+pair is not a leaf (which would mean the DTR produced a non-leaf U pair).
+"""
+function ka_adaptive_u_slots!(lctx::KAAdaptiveListsContext, leaf_slot_of, n_u::Int;
+        workgroup::Int=64)
+    n_u == 0 && return nothing
+    backend = lctx.backend
+    b = lctx.bufs
+    k = _cached_kernel(ka_u_slots_kernel!, backend, workgroup)
+    k(b.direct_targets, b.direct_sources, b.u_targets, b.u_sources, leaf_slot_of,
+        n_u, b.violation_flags; ndrange=n_u)
+    KA.synchronize(backend)
+    Int(Array(view(b.violation_flags, 2:2))[1]) == 0 || throw(AssertionError(
+        "adaptive KA U pair endpoint is not a leaf cell slot"))
+    return nothing
+end
+
+"""
+    ka_adaptive_build_u_csr!(lctx, cell_ranges, n_leaves, n_u; workgroup=64)
+
+Backend-agnostic port of `_cuda_adaptive_build_u_csr!`: builds the target-major
+CSR (`u_csr_offsets` over `1:n_leaves+1`, `u_csr_sources` over `1:n_u`) from the
+slot-mapped U list produced by `ka_adaptive_u_slots!`, plus the body -> leaf-slot
+map for the dense body-packed nearfield shape. Reuses the Phase F sort scratch,
+as CUDA does.
+"""
+function ka_adaptive_build_u_csr!(lctx::KAAdaptiveListsContext, cell_ranges,
+        n_leaves::Int, n_u::Int; workgroup::Int=64)
+    backend = lctx.backend
+    b = lctx.bufs
+    n_leaves + 1 <= length(b.u_csr_offsets) || throw(AssertionError(
+        "KA U-CSR offsets capacity $(length(b.u_csr_offsets)) exceeded " *
+        "(n_leaves=$n_leaves)"))
+    fill!(view(b.u_csr_offsets, 1:(n_leaves + 1)), Int32(n_u + 1))
+
+    if n_u > 0
+        n_u <= length(b.vsort_keys) || throw(AssertionError(
+            "KA U-CSR reuses the V sort scratch; n_u=$n_u exceeds v_capacity " *
+            "$(length(b.vsort_keys))"))
+        keysk = _cached_kernel(ka_usort_keys_kernel!, backend, workgroup)
+        gatherk = _cached_kernel(ka_ucsr_gather_kernel!, backend, workgroup)
+        offsk = _cached_kernel(ka_ucsr_offsets_kernel!, backend, workgroup)
+
+        keysk(b.vsort_keys, b.direct_targets, n_u; ndrange=n_u)
+        KA.synchronize(backend)
+        sortperm!(view(b.vsort_ix, 1:n_u), view(b.vsort_keys, 1:n_u))
+        gatherk(b.u_csr_sources, b.vsort_ix, b.direct_sources, n_u; ndrange=n_u)
+        offsk(b.u_csr_offsets, b.vsort_ix, b.direct_targets, n_u; ndrange=n_u)
+        KA.synchronize(backend)
+    end
+
+    if n_leaves > 0
+        bodyk = _cached_kernel(ka_body_leaf_kernel!, backend, workgroup)
+        bodyk(b.u_csr_body_leaf, cell_ranges, n_leaves; ndrange=n_leaves)
+        KA.synchronize(backend)
+    end
+    return nothing
 end
 
 #------- Harness front end: position -> full-depth key, and a full-build driver -------#

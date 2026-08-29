@@ -1,9 +1,13 @@
-# Isolated correctness check for ext/FastMultipoleKAExt.jl's Phase E DTR
-# interaction-list port (ka_adaptive_build_lists!, the KA form of
-# tree_batched_cuda.jl's _cuda_adaptive_build_lists!): builds a finalized node
-# table with the CPU references below, uploads it to Metal, runs the frontier
-# DTR sweep, and compares the resulting U/V/W/X lists against an independent
-# CPU reference.
+# Isolated correctness check for ext/FastMultipoleKAExt.jl's interaction-list
+# ports -- Phase E (ka_adaptive_build_lists!, the DTR sweep), Phase F
+# (ka_adaptive_partition_v!, the V class partition into CSR routes) and Phase G
+# (ka_adaptive_u_slots! + ka_adaptive_build_u_csr!, the target-major U CSR) --
+# the KA forms of tree_batched_cuda.jl's _cuda_adaptive_build_lists! /
+# _cuda_adaptive_partition_v! / _cuda_adaptive_build_u_csr!.
+#
+# Builds a finalized node table with the CPU references below, uploads it to
+# Metal, runs all three phases in sequence, and checks each against an
+# independent CPU reference plus reference-independent structural invariants.
 #
 # Two things make the reference independent rather than a transcription:
 #   1. It is a plain RECURSION over pairs, not the device's level-synchronous
@@ -220,6 +224,27 @@ function cpu_reference_sigma_sweep(node_lo::Vector{Int}, node_hi::Vector{Int},
     return sigma
 end
 
+# Leaf slots and cell ranges, matching Phase C's convention (verbatim from
+# ka_tree_finalize_correctness.jl): leaves are the childless nodes in node
+# order, and each leaf's cell range is its node's body range.
+function cpu_reference_leaf_slots(child_ranges::Matrix{Int}, node_lo::Vector{Int},
+        node_hi::Vector{Int})
+    n_nodes = size(child_ranges, 2)
+    leaf_index = [i for i in 1:n_nodes if child_ranges[2, i] == 0]
+    n_leaves = length(leaf_index)
+    leaf_slot_of = zeros(Int32, n_nodes)
+    for (slot, f) in enumerate(leaf_index)
+        leaf_slot_of[f] = Int32(slot)
+    end
+    cell_ranges = zeros(Int32, 2, n_leaves)
+    for c in 1:n_leaves
+        f = leaf_index[c]
+        cell_ranges[1, c] = Int32(node_lo[f])
+        cell_ranges[2, c] = Int32(node_hi[f] - node_lo[f] + 1)
+    end
+    return leaf_index, leaf_slot_of, cell_ranges
+end
+
 # node_coords: lattice coordinate of each node, decoded from its Morton key at
 # its own level (Phase C computes this on device; the reference re-derives it).
 function cpu_reference_node_coords(node_keys::Vector{UInt64}, node_levels::Vector{Int})
@@ -340,7 +365,7 @@ function build_luts(reach::Int, q::Int, ell_max::Int)
     return offset_lut, level_class_of, noffsets
 end
 
-println("Starting KA adaptive-tree Phase E (DTR interaction lists) correctness test...")
+println("Starting KA adaptive-tree Phase E/F/G (interaction lists + CSR) correctness test...")
 if !Metal.functional()
     println("Metal not functional; skipping")
     exit(0)
@@ -425,7 +450,7 @@ for (ci, case) in enumerate(cases)
         v_capacity=max(4096, 4 * fin.n_nodes^2),
         wx_capacity=max(4096, 4 * fin.n_nodes^2),
         lut_reach=reach, noffsets=noffsets, first_m2l_level=first_m2l_level,
-        ell_max=ell_max)
+        ell_max=ell_max, leaf_capacity=fin.n_nodes, maxn=n)
 
     dev_levels = Metal.MtlArray(Int32.(fin.node_levels))
     dev_coords = Metal.MtlArray(coords)
@@ -520,9 +545,62 @@ for (ci, case) in enumerate(cases)
                   "[$(ls[L + 1]), $(ls[L + 2]))")
     end
 
+    # ---- Phase G: U endpoints -> leaf slots, then the target-major U CSR ----
+    leaf_index, leaf_slot_of, cell_ranges = cpu_reference_leaf_slots(
+        fin.child_ranges, fin.node_lo, fin.node_hi)
+    n_leaves = length(leaf_index)
+    dev_slot_of = Metal.MtlArray(leaf_slot_of)
+    dev_cell_ranges = Metal.MtlArray(cell_ranges)
+
+    ext.ka_adaptive_u_slots!(lctx, dev_slot_of, n_u)
+    ext.ka_adaptive_build_u_csr!(lctx, dev_cell_ranges, n_leaves, n_u)
+
+    # Reference CSR, from the device's own U emission order (frontier-major)
+    # stably regrouped by target slot -- which is what the (target<<32 | index)
+    # sort key encodes.
+    emit_t = Int.(Array(lctx.bufs.u_targets)[1:n_u])
+    emit_s = Int.(Array(lctx.bufs.u_sources)[1:n_u])
+    tslot = [Int(leaf_slot_of[t]) for t in emit_t]
+    sslot = [Int(leaf_slot_of[s]) for s in emit_s]
+    uperm = sortperm(1:n_u; by = i -> (tslot[i], i))
+    tsorted = tslot[uperm]
+
+    got_ucsr_src = Int.(Array(lctx.bufs.u_csr_sources)[1:n_u])
+    got_ucsr_off = Int.(Array(lctx.bufs.u_csr_offsets)[1:(n_leaves + 1)])
+
+    got_ucsr_src == sslot[uperm] ||
+        error("$tag: u_csr_sources != target-stable-regrouped U stream")
+    exp_off = [min(searchsortedfirst(tsorted, s), n_u + 1) for s in 1:(n_leaves + 1)]
+    got_ucsr_off == exp_off || error("$tag: u_csr_offsets mismatch")
+
+    # Reference-independent CSR invariants: offsets non-decreasing, bracketing
+    # the whole stream, and each leaf's bracket holding exactly the U sources
+    # whose target is that leaf.
+    issorted(got_ucsr_off) || error("$tag: u_csr_offsets is not non-decreasing")
+    got_ucsr_off[n_leaves + 1] == n_u + 1 ||
+        error("$tag: u_csr_offsets tail $(got_ucsr_off[end]) != $(n_u + 1)")
+    n_u == 0 || got_ucsr_off[1] == 1 ||
+        error("$tag: u_csr_offsets[1] = $(got_ucsr_off[1]), expected 1")
+    for l in 1:n_leaves
+        lo, hi = got_ucsr_off[l], got_ucsr_off[l + 1] - 1
+        expect = sort([sslot[i] for i in 1:n_u if tslot[i] == l])
+        sort(got_ucsr_src[lo:hi]) == expect ||
+            error("$tag: leaf $l CSR block does not match its U sources")
+    end
+
+    # body -> leaf-slot map: every body in a leaf's cell range maps to that leaf.
+    got_body_leaf = Int.(Array(lctx.bufs.u_csr_body_leaf)[1:n])
+    for l in 1:n_leaves
+        first = Int(cell_ranges[1, l]); cnt = Int(cell_ranges[2, l])
+        for i in first:(first + cnt - 1)
+            got_body_leaf[i] == l ||
+                error("$tag: body $i maps to leaf $(got_body_leaf[i]), expected $l")
+        end
+    end
+
     println("  PASS  $tag  ->  |U|=$n_u |V|=$n_v |W|=$n_w |X|=$n_x dem=$n_dem " *
-            "routes=$n_routes (nodes=$(fin.n_nodes))")
+            "routes=$n_routes leaves=$n_leaves (nodes=$(fin.n_nodes))")
     global npass += 1
 end
 
-println("Phase E (DTR interaction lists): $npass/$(length(cases)) cases passed")
+println("Phase E/F/G (interaction lists + V/U CSR): $npass/$(length(cases)) cases passed")
