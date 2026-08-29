@@ -225,6 +225,107 @@ function ka_fill_single_system_attribution!(body_system, body_index, n::Int; wor
     return body_system, body_index
 end
 
+@kernel function ka_tree_routes_kernel!(m2m_parent, m2m_child, l2l_parent, l2l_child,
+        @Const(parent_index), n_root_nodes, n_nodes)
+    edge = @index(Global)
+    node = edge + n_root_nodes
+    @inbounds if node <= n_nodes
+        parent = parent_index[node]
+        m2m_parent[edge] = parent
+        m2m_child[edge] = node
+        l2l_parent[edge] = parent
+        l2l_child[edge] = node
+    end
+end
+
+"""
+    ka_tree_routes!(m2m_parent, m2m_child, l2l_parent, l2l_child, parent_index, n_nodes;
+                    n_root_nodes=1, workgroup=64)
+
+Backend-agnostic port of `_cuda_tree_routes_kernel!`/`_cuda_radix_tree_routes`
+(src/translate_batched_cuda.jl): materialize the parent-child edge list the resident
+M2M and L2L passes walk. One edge per non-root node, in node order, so edge `e`
+carries child `e + n_root_nodes` and its parent. M2M and L2L get identical arrays
+(the passes differ in direction, not in topology) -- CUDA writes both rather than
+aliasing, and this does the same so the two can diverge later without a data race.
+
+`n_nodes` is the *logical* node count: `parent_index` is capacity-sized in the KA
+context, so its `length` is not the extent. The four outputs are written over
+`1:(n_nodes - n_root_nodes)` and must be at least that long. `n_root_nodes` is the
+number of leading nodes that are roots (`parent_index == 0`) and therefore contribute
+no edge; 1 for the adaptive tree, matching CUDA's call site.
+"""
+function ka_tree_routes!(m2m_parent, m2m_child, l2l_parent, l2l_child, parent_index,
+        n_nodes::Int; n_root_nodes::Int=1, workgroup::Int=64)
+    n_edges = max(n_nodes - n_root_nodes, 0)
+    n_edges == 0 && return m2m_parent, m2m_child, l2l_parent, l2l_child
+    n_nodes <= length(parent_index) || throw(ArgumentError(
+        "n_nodes=$n_nodes exceeds parent_index (length $(length(parent_index)))"))
+    for (name, arr) in (("m2m_parent", m2m_parent), ("m2m_child", m2m_child),
+            ("l2l_parent", l2l_parent), ("l2l_child", l2l_child))
+        length(arr) >= n_edges || throw(ArgumentError(
+            "$name (length $(length(arr))) is shorter than the edge count $n_edges"))
+    end
+    backend = KA.get_backend(m2m_parent)
+    kernel = _cached_kernel(ka_tree_routes_kernel!, backend, workgroup)
+    kernel(m2m_parent, m2m_child, l2l_parent, l2l_child, parent_index, n_root_nodes,
+        n_nodes; ndrange=n_edges)
+    return m2m_parent, m2m_child, l2l_parent, l2l_child
+end
+
+@kernel function ka_pack_body_matrix_kernel!(body, @Const(source_buffer), @Const(perm),
+        @Const(body_system), @Const(body_index), isys, n, nrows, nsys)
+    sorted_i = @index(Global)
+    @inbounds if sorted_i <= n
+        global_i = perm[sorted_i]
+        if body_system[global_i] == isys
+            ibody = body_index[global_i]
+            for row in 1:nsys
+                body[row, sorted_i] = source_buffer[row, ibody]
+            end
+            for row in (nsys + 1):nrows
+                body[row, sorted_i] = zero(eltype(body))
+            end
+        end
+    end
+end
+
+"""
+    ka_pack_body_matrix!(body, source_buffer, perm, body_system, body_index, n;
+                         isys=1, workgroup=64)
+
+Backend-agnostic port of `_cuda_pack_radix_body_kernel!`/`_pack_radix_body_matrix!`
+(src/translate_batched_cuda.jl): gather one source system's bodies out of its
+global-ordinal `source_buffer` into `body`, the sorted-order `dpb x n` matrix the
+resident lifecycle reads. Column `sorted_i` of `body` takes buffer column
+`body_index[perm[sorted_i]]`, and only for slots this system owns
+(`body_system[perm[sorted_i]] == isys`).
+
+Canonical all-rows packed layout (task 032): every source-buffer row is carried,
+including radius row 4, and a system narrower than `body` is zero-padded. Call once
+per system, as CUDA does -- with the single-system attribution of
+[`ka_fill_single_system_attribution!`](@ref) one `isys=1` call fills every column.
+
+`n` is the *logical* body count: `perm` is capacity-sized in the KA context, so its
+`length` is not the extent. Columns beyond `n`, and columns this system does not own,
+are left untouched.
+"""
+function ka_pack_body_matrix!(body, source_buffer, perm, body_system, body_index,
+        n::Int; isys::Integer=1, workgroup::Int=64)
+    n == 0 && return body
+    size(body, 2) >= n || throw(ArgumentError(
+        "body has $(size(body, 2)) columns, fewer than n=$n"))
+    n <= length(perm) || throw(ArgumentError(
+        "n=$n exceeds perm (length $(length(perm)))"))
+    nrows = size(body, 1)
+    nsys = min(size(source_buffer, 1), nrows)
+    backend = KA.get_backend(body)
+    kernel = _cached_kernel(ka_pack_body_matrix_kernel!, backend, workgroup)
+    kernel(body, source_buffer, perm, body_system, body_index, Int(isys), n, nrows, nsys;
+        ndrange=n)
+    return body
+end
+
 # --- Integration with FastMultipole's real M2M call path ---
 #
 # `ka_resident_stage_group_apply!` mirrors `_resident_stage_group_apply!`
@@ -2216,6 +2317,124 @@ function ka_build_adaptive_tree!(actx::KAAdaptiveTreeContext, positions::Abstrac
 
     return merge(fin, (grid=grid, perm=perm, invperm=invperm, sorted_keys=sorted_keys,
         n_balance_splits=n_balance_splits, node_sigma_max=node_sigma_max))
+end
+
+#------- Step (v): handing the built tree to a DeviceResidentRadixState -------#
+#
+# The analogue is `_cuda_allocate_adaptive_lifecycle` (translate_batched_cuda.jl),
+# the ADAPTIVE path's state constructor -- not `cuda_radix_state`, which serves the
+# uniform path and assumes exact-length grid arrays (`length(grid.node_keys)` ==
+# n_nodes). That distinction is what makes this cheap: the adaptive path already
+# hands its own capacity-sized `actx.grid` straight into the state and carries the
+# logical extents in `state.counts::RadixStepCounts`, so `actx.grid` goes in as-is,
+# by reference, with no truncating views and no host-mirror cross-check.
+#
+# Scope: this constructs the state. It does not build the interaction list or the
+# operator workspace (`ResidentOperatorWorkspace`, whose plan construction is
+# CUDA-specific), and it does not run the lifecycle -- B2M and L2B have no KA port.
+# `interaction_list` and `scratch` are therefore `nothing`, and the route arrays are
+# allocated empty. Those are the next steps, not omissions this one papers over.
+
+function _ka_flat_buffer(backend, ::Type{TF}, basis_info::FastMultipole.OperatorBasisInfo{B,LH},
+        batch::Integer) where {TF,B,LH}
+    phi = KA.zeros(backend, TF, basis_info.basis_dof_phi, batch)
+    chi = LH ? KA.zeros(backend, TF, basis_info.basis_dof_chi, batch) :
+        KA.zeros(backend, TF, 0, 0)
+    return FastMultipole.FlatCoefficientBuffer{TF,typeof(phi),B,LH}(phi, chi, basis_info)
+end
+
+"""
+    ka_radix_state(actx, build, source_buffer, P, lamb_helmholtz=Val(false);
+                   options, n_root_nodes=1, workgroup=64)
+
+Build a `DeviceResidentRadixState` around the tree `ka_build_adaptive_tree!` just
+wrote into `actx.grid`. `build` is that call's return value (its `n_nodes`/`n_leaves`
+supply the logical extents, which the grid itself does not carry); `source_buffer` is
+the `dpb x n` source buffer in *global* (unsorted) body order, which is gathered into
+the state's sorted-order body matrix.
+
+`actx.grid` is stored by reference, not copied: `state.grid === actx.grid`, so a later
+rebuild through the same context is visible to the state without reconstructing it.
+The grid's arrays stay capacity-sized; every logical extent lives in `state.counts`
+(`n_bodies`, `n_cells`, `n_nodes`), exactly as on the CUDA adaptive path.
+
+Not yet wired, and `nothing`/empty rather than silently wrong:
+`interaction_list` and the route arrays (no KA interaction list yet, so
+`counts.n_routes == counts.n_direct == 0`), `scratch` (the operator workspace builds
+CUDA-specific M2L plans), and the host node/route mirrors. The host *body* mirrors
+(`host_body_perm`/`host_body_system_ids`/`host_body_indices`) are downloaded once here,
+so they are correct for this build and go stale on the next one -- the CUDA path
+re-downloads them per step in `_cuda_update_adaptive_radix_state!`.
+"""
+function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
+        P::Integer, lamb_helmholtz::Val{LH}=Val(false);
+        options::FastMultipole.CUDARadixLifecycleOptions,
+        n_root_nodes::Int=1, workgroup::Int=64) where LH
+    backend = actx.backend
+    grid = actx.grid
+    TF = typeof(grid.h0)
+    options.precision === TF || throw(ArgumentError(
+        "options.precision=$(options.precision) does not match the KA context's " *
+        "element type $TF; allocate the context and the options at the same precision"))
+    n = grid.n_bodies
+    n_cells = grid.n_cells
+    n_nodes = build.n_nodes
+    n_nodes <= actx.node_capacity || throw(ArgumentError(
+        "build n_nodes=$n_nodes exceeds the context node_capacity=$(actx.node_capacity)"))
+    n_cells == build.n_leaves || throw(ArgumentError(
+        "grid.n_cells=$n_cells disagrees with build.n_leaves=$(build.n_leaves); " *
+        "`build` must be the result of the most recent ka_build_adaptive_tree! on `actx`"))
+
+    basis_info = FastMultipole.OperatorBasisInfo(FastMultipole.CompressedComplexBasis(),
+        P, lamb_helmholtz)
+    counters = FastMultipole.CUDARadixTransferCounters()
+
+    # sorted-order body matrix. Single-system attribution (step iv), so one isys=1
+    # pack call covers every column; the kernel keeps CUDA's system indirection so
+    # it stays correct when multi-system attribution lands.
+    dpb = size(source_buffer, 1)
+    source_bodies = KA.zeros(backend, TF, dpb, actx.maxn)
+    ka_pack_body_matrix!(source_bodies, source_buffer, grid.perm, grid.body_system,
+        grid.body_index, n; isys=1, workgroup=workgroup)
+
+    m2m_parent = KA.zeros(backend, Int, actx.node_capacity)
+    m2m_child = KA.zeros(backend, Int, actx.node_capacity)
+    l2l_parent = KA.zeros(backend, Int, actx.node_capacity)
+    l2l_child = KA.zeros(backend, Int, actx.node_capacity)
+    ka_tree_routes!(m2m_parent, m2m_child, l2l_parent, l2l_child, grid.parent_index,
+        n_nodes; n_root_nodes=n_root_nodes, workgroup=workgroup)
+
+    multipoles = _ka_flat_buffer(backend, TF, basis_info, actx.node_capacity)
+    locals = _ka_flat_buffer(backend, TF, basis_info, actx.node_capacity)
+    output = KA.zeros(backend, TF, 4, actx.maxn)
+
+    # no interaction list yet: empty arrays of the SAME types as the populated
+    # device fields, since the state's type parameters are shared across them
+    empty_iv = KA.zeros(backend, Int, 0)
+    empty_im = KA.zeros(backend, Int, 3, 0)
+
+    # one-shot download of the host body mirrors (see docstring on staleness)
+    host_body_perm = Array{Int}(undef, n)
+    host_body_system_ids = Array{Int}(undef, n)
+    host_body_indices = Array{Int}(undef, n)
+    copyto!(host_body_perm, 1, grid.perm, 1, n)
+    copyto!(host_body_system_ids, 1, grid.body_system, 1, n)
+    copyto!(host_body_indices, 1, grid.body_index, 1, n)
+    counters.metadata_downloads += 3
+
+    return FastMultipole.DeviceResidentRadixState{TF,FastMultipole.CompressedComplexBasis,LH}(
+        grid, nothing, source_bodies, source_bodies,
+        grid.perm, grid.body_system, grid.body_index,
+        host_body_perm, host_body_system_ids, host_body_indices,
+        nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
+        grid.cell_centers, grid.cell_ranges,
+        m2m_parent, m2m_child, l2l_parent, l2l_child,
+        multipoles, locals,
+        empty_iv, empty_im, empty_iv, empty_iv,
+        empty_iv, empty_iv, output,
+        FastMultipole.OperatorInvariantCache(TF, basis_info), nothing, counters, options,
+        FastMultipole.RadixStepCounts(n, n_cells, n_nodes, 0, 0),
+    )
 end
 
 end

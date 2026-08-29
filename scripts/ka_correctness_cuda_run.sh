@@ -33,14 +33,17 @@ cd "$WORKDIR"
 LOG="$WORKDIR/ka_correctness_cuda_${SLURM_JOB_ID}.log"
 PROV="$WORKDIR/ka_correctness_cuda_${SLURM_JOB_ID}.provenance"
 
-SUITES="leaves balance finalize sigma_sweep build lists"
+SUITES="ka_tree_leaves_correctness.jl ka_tree_balance_correctness.jl \
+ka_tree_finalize_correctness.jl ka_tree_sigma_sweep_correctness.jl \
+ka_tree_build_correctness.jl ka_tree_lists_correctness.jl \
+ka_radix_state_correctness.jl"
 FAILED=""
 : > "$LOG"
 for s in $SUITES; do
-  echo "=== ka_tree_${s}_correctness.jl ===" | tee -a "$LOG"
+  echo "=== $s ===" | tee -a "$LOG"
   # each suite is a separate julia process: a device fault in one phase must
   # not mask the phases after it
-  if julia --project="$ENVDIR" "test/metal_env/ka_tree_${s}_correctness.jl" 2>&1 | tee -a "$LOG"; then
+  if julia --project="$ENVDIR" "test/metal_env/$s" 2>&1 | tee -a "$LOG"; then
     echo "--- $s: exit 0" | tee -a "$LOG"
   else
     echo "--- $s: FAILED" | tee -a "$LOG"
