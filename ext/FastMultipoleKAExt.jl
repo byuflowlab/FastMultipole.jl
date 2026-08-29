@@ -384,10 +384,17 @@ end
 # so it can be dropped in wherever the CPU function is called, backed by any
 # KernelAbstractions array (Metal, CUDA, or plain CPU Array).
 #
-# Unlike the private CPU function, this does not use the `count[]`-prefix views
-# (`_vector_prefix_view`/`_matrix_col_view`) since those are FastMultipole-internal;
-# callers are expected to size `group`/`ws` to exactly `group.count[]` columns (true
-# for the isolated per-group correctness test this backs -- test/metal_env/ka_m2m_correctness.jl).
+# This DOES use the `count[]`-prefix views (`_vector_prefix_view`/`_matrix_col_view`),
+# exactly as the CPU function does. An earlier version did not, on the reasoning that
+# those helpers are FastMultipole-internal and that callers would size `group`/`ws` to
+# exactly `group.count[]` columns -- true for the isolated per-group suite this backs
+# (test/metal_env/ka_m2m_correctness.jl), and false everywhere else. In the production
+# lifecycle `ka_lifecycle_body!` loops over `ws.m2m_groups`/`ws.l2l_groups` from a real
+# workspace whose scratch is sized to `max_batch`, the max over levels, so most groups
+# are SHORTER than the scratch. Without the views that is a `DimensionMismatch` where
+# the shapes disagree and, worse, stale trailing columns scattered into `dest` where
+# they happen to broadcast. Both helpers return the array unchanged when the size
+# already matches, so the isolated suites are unaffected.
 function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
     n = group.count[]
     n == 0 && return dest
@@ -396,12 +403,19 @@ function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
     Ur = mult ? ystk.mult_Ur : ystk.loc_Ur
     Vs = mult ? ystk.mult_Vs : ystk.loc_Vs
     ndof_phi = size(ws.aphi, 1)
-    source_idx = group.source_idx
-    target_idx = group.target_idx
-    group_phis = group.phis
-    group_thetas = group.thetas
-    aphi = ws.aphi; yphi = ws.yphi; zphi = ws.zphi; rphi = ws.rphi; cphi = ws.cphi
-    C = ystk.Cy; S = ystk.Sy; G = ystk.G; G2 = ystk.G2
+    source_idx = FastMultipole._vector_prefix_view(group.source_idx, n)
+    target_idx = FastMultipole._vector_prefix_view(group.target_idx, n)
+    group_phis = FastMultipole._vector_prefix_view(group.phis, n)
+    group_thetas = FastMultipole._vector_prefix_view(group.thetas, n)
+    aphi = FastMultipole._matrix_col_view(ws.aphi, n)
+    yphi = FastMultipole._matrix_col_view(ws.yphi, n)
+    zphi = FastMultipole._matrix_col_view(ws.zphi, n)
+    rphi = FastMultipole._matrix_col_view(ws.rphi, n)
+    cphi = FastMultipole._matrix_col_view(ws.cphi, n)
+    C = FastMultipole._matrix_col_view(ystk.Cy, n)
+    S = FastMultipole._matrix_col_view(ystk.Sy, n)
+    G = FastMultipole._matrix_col_view(ystk.G, n)
+    G2 = FastMultipole._matrix_col_view(ystk.G2, n)
     thetas_row = transpose(group_thetas)
     C .= cos.(ystk.nu .* thetas_row)
     S .= sin.(ystk.nu .* thetas_row)
@@ -417,8 +431,15 @@ function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
         Urc = mult ? ystk_c.mult_Ur : ystk_c.loc_Ur
         Vsc = mult ? ystk_c.mult_Vs : ystk_c.loc_Vs
         ndof_chi = size(ws.achi, 1)
-        achi = ws.achi; ychi = ws.ychi; zchi = ws.zchi; rchi = ws.rchi; cchi = ws.cchi
-        Cc = ystk_c.Cy; Sc = ystk_c.Sy; Gc = ystk_c.G; G2c = ystk_c.G2
+        achi = FastMultipole._matrix_col_view(ws.achi, n)
+        ychi = FastMultipole._matrix_col_view(ws.ychi, n)
+        zchi = FastMultipole._matrix_col_view(ws.zchi, n)
+        rchi = FastMultipole._matrix_col_view(ws.rchi, n)
+        cchi = FastMultipole._matrix_col_view(ws.cchi, n)
+        Cc = FastMultipole._matrix_col_view(ystk_c.Cy, n)
+        Sc = FastMultipole._matrix_col_view(ystk_c.Sy, n)
+        Gc = FastMultipole._matrix_col_view(ystk_c.G, n)
+        G2c = FastMultipole._matrix_col_view(ystk_c.G2, n)
         Cc .= cos.(ystk_c.nu .* thetas_row)
         Sc .= sin.(ystk_c.nu .* thetas_row)
         ka_gather_rotate_z!(achi, src.chi, ws.chi_flat_idx, source_idx,
