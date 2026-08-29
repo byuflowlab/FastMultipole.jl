@@ -94,6 +94,73 @@ function print_pool_samples(name::String, n::Int, dist::Symbol,
     println("  [pool] $(name) (n=$n, $dist) cached/reserved (MiB, trial order): $cached_mb")
 end
 
+# Per-trial GPU telemetry. Every prior clock/power/throttle check (jobs
+# 13506034, 13506267, 13506362) sampled `nvidia-smi` once per second from a
+# background shell loop — far too coarse, and unaligned to trial index, to see
+# whether a clock/pstate transition lands at the specific trial where the
+# n>=1e5 ramp starts (~trial 50-55 of 100, job 13506486). NVML is queried
+# in-process here, once per trial, *outside* the timed region, so each sample
+# carries a trial index. Queries are host-side driver reads (no kernel launch,
+# no sync), ~tens of μs against a ~6ms trial.
+@static if !HAS_METAL
+
+struct TrialTelemetry
+    sm_mhz::Int
+    mem_mhz::Int
+    power_w::Float64
+    temp_c::Int
+    pstate::Int
+    util_compute::Float64
+    events::String
+end
+
+function nvml_device()
+    try
+        return NVML.Device(CUDA.uuid(CUDA.device()))
+    catch
+        return NVML.Device(0)
+    end
+end
+
+function sample_nvml(dev)
+    clocks = NVML.clock_info(dev)
+    sm = Int(get(clocks, :sm, get(clocks, :graphics, 0)))
+    mem = Int(get(clocks, :memory, 0))
+    pstate = try
+        ref = Ref{NVML.nvmlPstates_t}()
+        NVML.nvmlDeviceGetPerformanceState(dev, ref)
+        Int(ref[])
+    catch
+        -1
+    end
+    reasons = try
+        NVML.clock_event_reasons(dev)
+    catch
+        NamedTuple()
+    end
+    active = join(String.([k for (k, v) in pairs(reasons) if v]), "|")
+    return TrialTelemetry(sm, mem, NVML.power_usage(dev), NVML.temperature(dev),
+        pstate, NVML.utilization_rates(dev).compute, isempty(active) ? "-" : active)
+end
+
+# Printed in trial order (not sorted) and next to the trial's own time: the
+# whole point is to see whether a telemetry change coincides with the ramp
+# onset, which sorting would destroy.
+function print_telemetry(name::String, n::Int, dist::Symbol,
+        times::Vector{Float64}, tele::Vector{TrialTelemetry})
+    println("  [tele] $(name) (n=$n, $dist) per-trial telemetry:")
+    println("  [tele]  trial       t_us   sm_MHz  mem_MHz   power_W  temp_C  pstate  util  events")
+    for (i, s) in enumerate(tele)
+        t_us = round(times[i] / 1000; digits=1)
+        println("  [tele]  ", lpad(i, 5), lpad(t_us, 11), lpad(s.sm_mhz, 9),
+            lpad(s.mem_mhz, 9), lpad(round(s.power_w; digits=1), 10),
+            lpad(s.temp_c, 8), lpad(s.pstate, 8),
+            lpad(round(s.util_compute; digits=2), 6), "  ", s.events)
+    end
+end
+
+end # @static if !HAS_METAL
+
 # Sanity check: tree has reasonable structure (not empty, leaves <= nodes)
 function verify_tree_structure(name::String, n_nodes::Int, n_leaves::Int, n_bodies::Int)
     n_nodes > 0 || error("$name: tree has no nodes")
@@ -220,7 +287,7 @@ end
 @static if !HAS_METAL
 
 function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
-        nwarmup::Int=1, ntrials::Int=5, profile::Bool=false)
+        nwarmup::Int=1, ntrials::Int=5, profile::Bool=false, telemetry::Bool=false)
     if !CUDA.functional()
         return nothing, nothing, nothing, nothing, nothing
     end
@@ -255,6 +322,8 @@ function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
     stage_hist = [Float64[] for _ in 1:4]
     used_hist = Int64[]
     cached_hist = Int64[]
+    tele_hist = TrialTelemetry[]
+    nvdev = telemetry ? nvml_device() : nothing
     ref_nodes, ref_leaves = nothing, nothing
     for trial in 1:ntrials
         stage_ns = profile ? zeros(UInt64, 4) : nothing
@@ -273,6 +342,7 @@ function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
             push!(used_hist, CUDA.used_memory())
             push!(cached_hist, CUDA.cached_memory())
         end
+        telemetry && push!(tele_hist, sample_nvml(nvdev))
 
         if trial == 1
             ref_nodes = result.n_nodes
@@ -280,13 +350,13 @@ function benchmark_cuda_ka(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
         end
     end
 
-    return times, ref_nodes, ref_leaves, allocs, stage_hist, used_hist, cached_hist
+    return times, ref_nodes, ref_leaves, allocs, stage_hist, used_hist, cached_hist, tele_hist
 end
 
 # ===== HPC-CUDA arm (native CUDA driver) =====
 
 function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::Int;
-        nwarmup::Int=1, ntrials::Int=5)
+        nwarmup::Int=1, ntrials::Int=5, telemetry::Bool=false)
     if !CUDA.functional()
         return nothing, nothing, nothing, nothing, nothing
     end
@@ -340,6 +410,8 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
     stage_hist = [Float64[] for _ in 1:4]
     used_hist = Int64[]
     cached_hist = Int64[]
+    tele_hist = TrialTelemetry[]
+    nvdev = telemetry ? nvml_device() : nothing
     ref_nodes, ref_leaves = nothing, nothing
     for trial in 1:ntrials
         CUDA.synchronize()
@@ -358,6 +430,7 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
         end
         push!(used_hist, CUDA.used_memory())
         push!(cached_hist, CUDA.cached_memory())
+        telemetry && push!(tele_hist, sample_nvml(nvdev))
 
         if trial == 1
             ref_nodes = actx.n_nodes
@@ -365,7 +438,7 @@ function benchmark_cuda_native(positions::Matrix{Float32}, ell_max::Int, K_max::
         end
     end
 
-    return times, ref_nodes, ref_leaves, allocs, stage_hist, used_hist, cached_hist
+    return times, ref_nodes, ref_leaves, allocs, stage_hist, used_hist, cached_hist, tele_hist
 end
 
 end # @static if !HAS_METAL
