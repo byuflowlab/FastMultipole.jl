@@ -4,6 +4,7 @@ using FastMultipole
 using KernelAbstractions
 using LinearAlgebra
 using StaticArrays: SVector
+using GPUArraysCore: AnyGPUMatrix, AnyGPUVector
 const KA = KernelAbstractions
 
 # Constructing a KA kernel object (`some_kernel!(backend, workgroup)`) redoes
@@ -160,6 +161,53 @@ function ka_gather_rows!(dst, src, rows; workgroup=64)
     kernel = _cached_kernel(ka_gather_rows_kernel!, backend, workgroup)
     kernel(dst, src, rows; ndrange=length(dst))
     return dst
+end
+
+#------- PRODUCTION PRIMITIVE DISPATCH -------#
+#
+# The resident stage drivers in src/translate_batched.jl
+# (`_resident_stage_group_apply!`, `_launch_resident_m2l_concat!`) are already
+# backend-agnostic: apart from views, broadcast, `mul!` and `fill!`, the only
+# device work they do goes through the four primitives below. CUDA's "port" of
+# the far field is exactly the same trick -- `_launch_cuda_resident_m2m!` and
+# `_launch_cuda_resident_l2l!` are one-line passthroughs to those same generic
+# drivers, and `src/translate_batched_cuda.jl` specializes only these
+# primitives on `CUDA.AnyCuArray`.
+#
+# So overloading them on GPU arrays puts the KA kernels into the *production*
+# call graph rather than alongside it, which is why the standalone
+# `ka_resident_stage_group_apply!` / `ka_resident_m2l_concat_apply!` drivers
+# (which re-implemented the generic drivers) are no longer needed.
+#
+# Dispatch handle is `GPUArraysCore.AnyGPU{Matrix,Vector}` -- the wrapper-aware
+# analogue of `CUDA.AnyCuArray`. This matters: the drivers hand these
+# primitives *views* (`_matrix_col_view`, `@view`), and a `SubArray` of an
+# `MtlArray` is not itself an `AbstractGPUArray`. Verified: `MtlMatrix` and
+# views of it are `AnyGPUMatrix`, host `Array` is not, and CUDA's
+# `AnyCuArray` methods remain strictly more specific for every `CuArray`
+# shape including views -- so the CUDA path is unchanged and unambiguous.
+
+function FastMultipole._gather_rotate_z!(dst::AnyGPUMatrix, src::AnyGPUMatrix, flat_idx,
+        cols, row_m, row_ssign, row_pair, phis, inverse::Bool)
+    # `sgn` must be a float, never the raw `Bool`: `Bool * Number` would
+    # silently zero the sin cross-term rather than negate it.
+    TF = eltype(dst)
+    sgn = inverse ? -one(TF) : one(TF)
+    return ka_gather_rotate_z!(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn)
+end
+
+function FastMultipole._rotate_z_scatter_accumulate!(dest::AnyGPUMatrix, slab, flat_idx,
+        col_targets, row_m, row_ssign, row_pair, phis)
+    return ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets,
+                                           row_m, row_ssign, row_pair, phis)
+end
+
+function FastMultipole._gather_rows!(dst::AnyGPUMatrix, src::AnyGPUMatrix, rows)
+    return ka_gather_rows!(dst, src, rows)
+end
+
+function FastMultipole._gather_values!(dst::AnyGPUVector, src::AnyGPUVector, ids)
+    return ka_gather_values!(dst, src, ids)
 end
 
 @kernel function ka_fill_invperm_kernel!(invperm, @Const(perm), n)
@@ -2418,7 +2466,8 @@ re-downloads them per step in `_cuda_update_adaptive_radix_state!`.
 function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
         P::Integer, lamb_helmholtz::Val{LH}=Val(false);
         options::FastMultipole.CUDARadixLifecycleOptions, lists=nothing,
-        n_root_nodes::Int=1, workgroup::Int=64) where LH
+        scratch=nothing, output_rows::Int=4, n_root_nodes::Int=1,
+        workgroup::Int=64) where LH
     backend = actx.backend
     grid = actx.grid
     TF = typeof(grid.h0)
@@ -2455,7 +2504,7 @@ function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
 
     multipoles = _ka_flat_buffer(backend, TF, basis_info, actx.node_capacity)
     locals = _ka_flat_buffer(backend, TF, basis_info, actx.node_capacity)
-    output = KA.zeros(backend, TF, 4, actx.maxn)
+    output = KA.zeros(backend, TF, output_rows, actx.maxn)
 
     # Route/direct wiring. With `lists` given (a `ka_refresh_adaptive_lists!`
     # return), the state ALIASES the lists context's device buffers rather than
@@ -2500,9 +2549,703 @@ function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
         multipoles, locals,
         empty_iv, empty_im, route_targets, route_sources,
         direct_targets, direct_sources, output,
-        FastMultipole.OperatorInvariantCache(TF, basis_info), nothing, counters, options,
+        FastMultipole.OperatorInvariantCache(TF, basis_info), scratch, counters, options,
         FastMultipole.RadixStepCounts(n, n_cells, n_nodes, n_routes, n_direct),
     )
+end
+
+#------- B2M (body -> multipole), step 3 -------#
+#
+# Port of `_cuda_b2m_vortex_leaf_nodes_kernel!` / `_cuda_b2m_leaf_nodes_kernel!`
+# (src/translate_batched_cuda.jl): one workgroup per leaf cell, body-parallel
+# accumulation, tree-reduced across the group.
+#
+# The per-body math is NOT reimplemented -- `_resident_vortex_phi_contrib` and
+# `_resident_vortex_chi_contrib` live in src/translate_batched_resident.jl and
+# are backend-agnostic `@inline` Julia shared with the CPU path. Only the
+# reduction shape is ported.
+#
+# Workgroup size is 128 to match `CUDA_B2M_BLOCK`, not the 64 used by the tree
+# kernels: the reduction is a halving tree, so its summation ORDER depends on
+# the group size, and matching CUDA's block exactly is what makes this
+# bit-exact against the CUDA reference rather than merely close. WG must be a
+# power of two.
+#
+# Metal portability trap: the `@localmem` element type must be a compile-time
+# constant reaching the `Val`-wrapped `SharedMemory` call, and computing it
+# inside the kernel as `TF = eltype(phi)` does NOT qualify -- on Metal that
+# compiles but raises a device-side "undefined variable error" at launch (KA's
+# `@localmem` expansion, KernelAbstractions.jl:242). Pass the element type as a
+# `::Type{TF}` kernel argument instead. `Val{WG}` dims are fine either way.
+#
+# Float32 discipline: every literal stays in TF. Apple GPUs reject Float64
+# outright, and `_cuda_b2m_*` carries no Float64 of its own, so there is
+# nothing to widen here -- but a stray `0.5` would silently promote and break
+# Metal, so the accumulators are seeded with `zero(TF)`.
+
+# The halving tree reduction is written out lexically in both places rather
+# than factored into a helper: `@synchronize` must appear directly in the
+# kernel body and in uniform control flow, so it can neither live inside a
+# called function nor sit under a per-group `if`. (`ndrange = ncell * WG` gives
+# exactly `ncell` groups, so no group guard is needed either.)
+@kernel function ka_b2m_vortex_leaf_nodes_kernel!(phi, chi, @Const(source_bodies),
+        @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
+        P_phi, P_chi, ncell, ::Type{TF}, ::Val{WG}) where {TF,WG}
+    i_cell = @index(Group)
+    tid = @index(Local)
+    shre = @localmem TF (WG,)
+    shim = @localmem TF (WG,)
+    @inbounds begin
+        first = cell_ranges[1, i_cell]
+        count = cell_ranges[2, i_cell]
+        cx = cell_centers[1, i_cell]
+        cy = cell_centers[2, i_cell]
+        cz = cell_centers[3, i_cell]
+        node = leaf_to_node[i_cell]
+        for n in 0:P_phi
+            for m in 0:n
+                acc_re = zero(TF); acc_im = zero(TF)
+                k = first + tid - 1
+                while k <= first + count - 1
+                    re_, im_ = FastMultipole._resident_vortex_phi_contrib(
+                        cx - source_bodies[1, k], cy - source_bodies[2, k],
+                        cz - source_bodies[3, k], source_bodies[5, k],
+                        source_bodies[6, k], source_bodies[7, k], n, m)
+                    acc_re += re_; acc_im += im_
+                    k += WG
+                end
+                shre[tid] = acc_re
+                shim[tid] = acc_im
+                @synchronize()
+                s = WG >> 1
+                while s >= 1
+                    if tid <= s
+                        shre[tid] += shre[tid + s]
+                        shim[tid] += shim[tid + s]
+                    end
+                    @synchronize()
+                    s >>= 1
+                end
+                if tid == 1
+                    row = FastMultipole.flat_basis_index(n, m, 1)
+                    phi[row, node] = shre[1]
+                    phi[row + 1, node] = shim[1]
+                end
+                @synchronize()
+            end
+        end
+        for n in 1:P_chi
+            for m in 0:n
+                acc_re = zero(TF); acc_im = zero(TF)
+                k = first + tid - 1
+                while k <= first + count - 1
+                    re_, im_ = FastMultipole._resident_vortex_chi_contrib(
+                        cx - source_bodies[1, k], cy - source_bodies[2, k],
+                        cz - source_bodies[3, k], source_bodies[5, k],
+                        source_bodies[6, k], source_bodies[7, k], n, m)
+                    acc_re += re_; acc_im += im_
+                    k += WG
+                end
+                shre[tid] = acc_re
+                shim[tid] = acc_im
+                @synchronize()
+                s = WG >> 1
+                while s >= 1
+                    if tid <= s
+                        shre[tid] += shre[tid + s]
+                        shim[tid] += shim[tid + s]
+                    end
+                    @synchronize()
+                    s >>= 1
+                end
+                if tid == 1
+                    row = FastMultipole.flat_basis_index(n, m, 1)
+                    chi[row, node] = shre[1]
+                    chi[row + 1, node] = shim[1]
+                end
+                @synchronize()
+            end
+        end
+    end
+end
+
+"""
+    ka_launch_b2m!(state; workgroup=128)
+
+Body-to-multipole for the KA lifecycle: mirror of `_launch_cuda_b2m!`. Zeroes
+the multipole buffers, then runs one workgroup per leaf cell. Vortex sources
+require the Lamb-Helmholtz channel, exactly as the CUDA launcher does.
+"""
+function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
+        workgroup::Int=128) where {TF,B,LH}
+    return ka_launch_b2m!(state, state.options.body_type; workgroup)
+end
+
+function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        ::Type{<:FastMultipole.Point{FastMultipole.Vortex}}; workgroup::Int=128) where {TF,B,LH}
+    LH || throw(ArgumentError(
+        "Point{Vortex} sources require the Lamb-Helmholtz channel; construct the " *
+        "cache with lamb_helmholtz=true"))
+    ispow2(workgroup) || throw(ArgumentError(
+        "ka_launch_b2m! workgroup must be a power of two (halving tree reduction)"))
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    ncell = state.counts.n_cells
+    ncell == 0 && return state
+    orders = state.invariant_cache.basis_info.orders
+    backend = KA.get_backend(state.multipoles.phi)
+    kernel = _cached_kernel(ka_b2m_vortex_leaf_nodes_kernel!, backend, workgroup)
+    kernel(state.multipoles.phi, state.multipoles.chi, state.source_bodies,
+        state.cell_centers, state.cell_ranges, state.grid.leaf_to_node,
+        orders.P_phi, orders.P_active, ncell, TF, Val(workgroup);
+        ndrange=ncell * workgroup)
+    return state
+end
+
+#------- L2B (local -> body output), step 4 -------#
+#
+# Port of `_cuda_l2b_output_kernel!` / `_cuda_l2b_output_hessian_kernel!`
+# (src/translate_batched_cuda.jl). The per-body evaluation is NOT
+# reimplemented: `_resident_local_eval_flat` and
+# `_resident_local_eval_flat_hessian` (src/translate_batched_resident.jl) are
+# backend-agnostic `@inline` Julia shared with the CPU path.
+#
+# Shape differs deliberately from CUDA's. CUDA runs a warp per cell (4 warps
+# per 128-thread block) and strides bodies by 32; KA has no portable warp
+# concept, so this runs one WORKGROUP per cell and strides by the workgroup
+# size. That costs nothing and is safe: every body belongs to exactly one cell
+# (`cell_ranges` partitions the sorted bodies) and each body writes only its
+# own output column, so there is no reduction, no shared memory, no
+# `@synchronize` and no atomic here. The value written for a given body is
+# computed independently of the thread mapping, so this stays bit-exact
+# against the CUDA kernel rather than merely close.
+
+@kernel function ka_l2b_output_kernel!(output, @Const(source_bodies), @Const(cell_centers),
+        @Const(cell_ranges), @Const(leaf_to_node), @Const(local_phi), @Const(local_chi),
+        P_phi, P_active, ::Val{LHV}, ncell, ::Val{WG}) where {LHV,WG}
+    cell = @index(Group)
+    tid = @index(Local)
+    @inbounds begin
+        node = leaf_to_node[cell]
+        first = cell_ranges[1, cell]
+        last = first + cell_ranges[2, cell] - 1
+        cx = cell_centers[1, cell]; cy = cell_centers[2, cell]; cz = cell_centers[3, cell]
+        i = first + tid - 1
+        while i <= last
+            sp, gx, gy, gz = FastMultipole._resident_local_eval_flat(
+                local_phi, local_chi, node,
+                source_bodies[1, i] - cx, source_bodies[2, i] - cy,
+                source_bodies[3, i] - cz, P_phi, P_active, Val(LHV))
+            output[1, i] += sp
+            output[2, i] += gx
+            output[3, i] += gy
+            output[4, i] += gz
+            i += WG
+        end
+    end
+end
+
+@kernel function ka_l2b_output_hessian_kernel!(output, @Const(source_bodies),
+        @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
+        @Const(local_phi), @Const(local_chi), P_phi, P_active, ::Val{LHV},
+        ncell, ::Val{WG}) where {LHV,WG}
+    cell = @index(Group)
+    tid = @index(Local)
+    @inbounds begin
+        node = leaf_to_node[cell]
+        first = cell_ranges[1, cell]
+        last = first + cell_ranges[2, cell] - 1
+        cx = cell_centers[1, cell]; cy = cell_centers[2, cell]; cz = cell_centers[3, cell]
+        i = first + tid - 1
+        while i <= last
+            vals = FastMultipole._resident_local_eval_flat_hessian(
+                local_phi, local_chi, node,
+                source_bodies[1, i] - cx, source_bodies[2, i] - cy,
+                source_bodies[3, i] - cz, P_phi, P_active, Val(LHV))
+            Base.Cartesian.@nexprs 13 r -> (output[r, i] += vals[r])
+            i += WG
+        end
+    end
+end
+
+"""
+    ka_launch_l2b!(state; workgroup=64)
+
+Local-to-body evaluation for the KA lifecycle: mirror of
+`_launch_cuda_resident_l2b_only!`, minus the stream-event overlap (the KA
+driver runs its stages in order). Selects the 13-row hessian variant on
+`size(state.output, 1) >= 13`, the same gate the CUDA launcher uses; FLOWVPM
+runs with `hessian=true` and therefore takes that branch.
+"""
+function ka_launch_l2b!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
+        workgroup::Int=64) where {TF,B,LH}
+    ncell = state.counts.n_cells
+    ncell == 0 && return state
+    orders = state.invariant_cache.basis_info.orders
+    backend = KA.get_backend(state.output)
+    args = (state.output, state.source_bodies, state.cell_centers, state.cell_ranges,
+            state.grid.leaf_to_node, state.locals.phi, state.locals.chi,
+            orders.P_phi, orders.P_active, Val(LH), ncell, Val(workgroup))
+    if size(state.output, 1) >= 13
+        kernel = _cached_kernel(ka_l2b_output_hessian_kernel!, backend, workgroup)
+    else
+        kernel = _cached_kernel(ka_l2b_output_kernel!, backend, workgroup)
+    end
+    kernel(args...; ndrange=ncell * workgroup)
+    return state
+end
+
+#------- NEARFIELD (U-list direct pairs), step 5 -------#
+#
+# Port of the `:pairs` shape of `_cuda_direct_pairs_functor_kernel!`
+# (src/translate_batched_cuda.jl). The per-pair math is NOT reimplemented:
+# `_direct_pair_ug` / `_direct_pair_ugh` (src/translate_batched_resident.jl)
+# are backend-agnostic and shared with the CPU path, so every kernel functor
+# (PartitionedVortex, RegularizedVortex, SingularSource, ...) comes along for
+# free.
+#
+# Deliberately ports ONLY the `:pairs` shape. The fused target-owned CSR
+# shapes, the symmetric Newton-pair path, the binned split-vortex path and the
+# g/h lookup table are all skipped (`ghv = Val(:shipped)`, `shlut = nothing`) --
+# they are performance variants of the same physics. That leaves the KA U-CSR
+# built in tree Phase G unused for now; it is correct and gated, and a fused
+# shape can consume it later as a perf step.
+#
+# `_cuda_fast_rsqrt` is replaced by a plain `inv(sqrt(r2))`. That makes the KA
+# kernel the MORE accurate side, so this stage is gated against the CPU
+# reference, never against the CUDA kernel.
+#
+# Workgroup per pair, workitems striding the target bodies (CUDA uses a warp
+# per pair striding by 32). Targets of different pairs overlap, so the output
+# accumulation must stay atomic.
+
+@kernel function ka_direct_pairs_functor_kernel!(kernel, output, @Const(source_bodies),
+        @Const(cell_ranges), @Const(direct_targets), @Const(direct_sources),
+        npairs, ::Type{T}, ::Val{HS}, ::Val{WG}) where {T,HS,WG}
+    pair_i = @index(Group)
+    tid = @index(Local)
+    ep = FastMultipole._emits_potential(kernel)
+    ghv = Val(:shipped)
+    @inbounds begin
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + tid - 1
+        while i <= tlast
+            xi = source_bodies[1, i]; yi = source_bodies[2, i]; zi = source_bodies[3, i]
+            u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
+            h1 = zero(T); h2 = zero(T); h3 = zero(T)
+            h4 = zero(T); h5 = zero(T); h6 = zero(T)
+            h7 = zero(T); h8 = zero(T); h9 = zero(T)
+            for j in sfirst:slast
+                if i != j
+                    dx = xi - source_bodies[1, j]
+                    dy = yi - source_bodies[2, j]
+                    dz = zi - source_bodies[3, j]
+                    r2 = dx * dx + dy * dy + dz * dz
+                    if r2 > zero(r2)
+                        invr = inv(sqrt(r2))
+                        if HS
+                            du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                                FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
+                                    source_bodies, j, ghv)
+                            u += du; gx += dgx; gy += dgy; gz += dgz
+                            h1 += dh1; h2 += dh2; h3 += dh3
+                            h4 += dh4; h5 += dh5; h6 += dh6
+                            h7 += dh7; h8 += dh8; h9 += dh9
+                        else
+                            du, dgx, dgy, dgz = FastMultipole._direct_pair_ug(kernel,
+                                dx, dy, dz, r2, invr, source_bodies, j, ghv)
+                            u += du; gx += dgx; gy += dgy; gz += dgz
+                        end
+                    end
+                end
+            end
+            if ep
+                KA.@atomic output[1, i] += u
+            end
+            KA.@atomic output[2, i] += gx
+            KA.@atomic output[3, i] += gy
+            KA.@atomic output[4, i] += gz
+            if HS
+                KA.@atomic output[5, i]  += h1
+                KA.@atomic output[6, i]  += h2
+                KA.@atomic output[7, i]  += h3
+                KA.@atomic output[8, i]  += h4
+                KA.@atomic output[9, i]  += h5
+                KA.@atomic output[10, i] += h6
+                KA.@atomic output[11, i] += h7
+                KA.@atomic output[12, i] += h8
+                KA.@atomic output[13, i] += h9
+            end
+            i += WG
+        end
+    end
+end
+
+"""
+    ka_launch_nearfield!(state; workgroup=64, clear=true)
+
+U-list direct nearfield for the KA lifecycle: mirror of
+`_launch_cuda_nearfield_kernel!` restricted to the `:pairs` shape. Zeroes
+`state.output` (this is the first stage of the lifecycle, as on CUDA) unless
+`clear=false`.
+"""
+function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
+        workgroup::Int=64, clear::Bool=true) where {TF,B,LH}
+    clear && fill!(state.output, zero(TF))
+    npairs = state.counts.n_direct
+    npairs == 0 && return state
+    hs = size(state.output, 1) >= 13
+    backend = KA.get_backend(state.output)
+    kern = _cached_kernel(ka_direct_pairs_functor_kernel!, backend, workgroup)
+    kern(state.options.direct_kernel, state.output, state.source_bodies,
+         state.cell_ranges, state.direct_targets, state.direct_sources,
+         npairs, TF, Val(hs), Val(workgroup); ndrange=npairs * workgroup)
+    return state
+end
+
+#------- S2L (X list: source bodies -> local), step 6 -------#
+#
+# Port of `_cuda_adaptive_s2l_vortex_kernel!` (src/translate_batched_cuda.jl).
+# The adaptive tree emits W and X pairs, so omitting these stages does not just
+# cost accuracy -- it silently drops physics.
+#
+# The per-thread harmonics scratch is a slice of a GLOBAL array indexed by
+# global thread id (`H = view(Hall, :, slot:slot, :)`), not shared memory, so
+# it ports across directly: no `@localmem`, no `@synchronize`. `Hall` must be
+# sized `(2, n_groups * workgroup, nH2)`.
+#
+# All the harmonic helpers (`cartesian_to_spherical`, `irregular_harmonics!`,
+# `harmonic_index`, `flat_basis_index`, `_adt_S_re/_im`) live in non-CUDA src
+# files and are reused unchanged.
+#
+# The element type is taken as a `::Type{TF}` argument rather than
+# `eltype(lp)`: not strictly required here (there is no `@localmem`), but it
+# keeps every kernel in this file on one convention.
+
+@kernel function ka_adaptive_s2l_vortex_kernel!(lp, lc, @Const(source_bodies),
+        @Const(cell_ranges), @Const(leaf_slot_of), @Const(node_centers),
+        @Const(x_targets), @Const(x_sources), n_x, Hall, ::Type{TF},
+        ::Val{P_phi}, ::Val{P_active}, ::Val{NG}, ::Val{WG}) where {TF,P_phi,P_active,NG,WG}
+    grp = @index(Group)
+    tid = @index(Local)
+    gslot = (grp - 1) * WG + tid
+    H = view(Hall, :, gslot:gslot, :)
+    k = grp
+    @inbounds while k <= n_x
+        ia = Int(x_targets[k])
+        ib = Int(x_sources[k])
+        slot = Int(leaf_slot_of[ib])
+        first = cell_ranges[1, slot]
+        count = cell_ranges[2, slot]
+        cx = node_centers[1, ia]; cy = node_centers[2, ia]; cz = node_centers[3, ia]
+        sB = first + tid - 1
+        while sB <= first + count - 1
+            dx = source_bodies[1, sB] - cx
+            dy = source_bodies[2, sB] - cy
+            dz = source_bodies[3, sB] - cz
+            wx = source_bodies[5, sB]; wy = source_bodies[6, sB]; wz = source_bodies[7, sB]
+            r, theta, phi = FastMultipole.cartesian_to_spherical(dx, dy, dz)
+            FastMultipole.irregular_harmonics!(H, r, theta, phi, P_phi + 2)
+            for n in 1:P_phi
+                _1_n = isodd(n) ? -one(TF) : one(TF)
+                n_inv = inv(TF(n))
+                for m in 0:n
+                    _1_m = isodd(m) ? -one(TF) : one(TF)
+                    i = FastMultipole.harmonic_index(n, m)
+                    local Spre::TF, Spim::TF, Smre::TF, Smim::TF
+                    if m < n
+                        Spre = -_1_m * FastMultipole._adt_S_re(H, i + 1)
+                        Spim = _1_m * FastMultipole._adt_S_im(H, i + 1)
+                    else
+                        Spre = zero(TF); Spim = zero(TF)
+                    end
+                    Sre = _1_m * FastMultipole._adt_S_re(H, i)
+                    Sim = -_1_m * FastMultipole._adt_S_im(H, i)
+                    if m == 0
+                        Smre = -_1_m * Spre; Smim = _1_m * Spim
+                    else
+                        Smre = -_1_m * FastMultipole._adt_S_re(H, i - 1)
+                        Smim = _1_m * FastMultipole._adt_S_im(H, i - 1)
+                    end
+                    row = FastMultipole.flat_basis_index(n, m, 1)
+                    KA.@atomic lp[row, ia] += -_1_n * n_inv * (
+                        (n - m) * TF(0.5) * (wx * Spre - wy * Spim) -
+                        (n + m) * TF(0.5) * (wx * Smre + wy * Smim) +
+                        wz * m * Sim)
+                    KA.@atomic lp[row + 1, ia] += -_1_n * n_inv * (
+                        (n - m) * TF(0.5) * (wx * Spim + wy * Spre) -
+                        (n + m) * TF(0.5) * (wx * Smim - wy * Smre) -
+                        wz * m * Sre)
+                end
+            end
+            for n in 0:P_active
+                _1_np1 = isodd(n + 1) ? -one(TF) : one(TF)
+                np1_inv = inv(TF(n + 1))
+                for m in 0:n
+                    _1_m = isodd(m) ? -one(TF) : one(TF)
+                    i_np1 = FastMultipole.harmonic_index(n + 1, m)
+                    Sp1pre = -_1_m * FastMultipole._adt_S_re(H, i_np1 + 1)
+                    Sp1pim = _1_m * FastMultipole._adt_S_im(H, i_np1 + 1)
+                    Sp1re = _1_m * FastMultipole._adt_S_re(H, i_np1)
+                    Sp1im = -_1_m * FastMultipole._adt_S_im(H, i_np1)
+                    local Sp1mre::TF, Sp1mim::TF
+                    if m == 0
+                        Sp1mre = -_1_m * Sp1pre; Sp1mim = _1_m * Sp1pim
+                    else
+                        Sp1mre = -_1_m * FastMultipole._adt_S_re(H, i_np1 - 1)
+                        Sp1mim = _1_m * FastMultipole._adt_S_im(H, i_np1 - 1)
+                    end
+                    row = FastMultipole.flat_basis_index(n, m, 1)
+                    KA.@atomic lc[row, ia] += _1_np1 * np1_inv * (
+                        TF(0.5) * (wy * Sp1mre - wx * Sp1mim) -
+                        TF(0.5) * (wy * Sp1pre + wx * Sp1pim) - wz * Sp1re)
+                    KA.@atomic lc[row + 1, ia] += _1_np1 * np1_inv * (
+                        TF(0.5) * (wy * Sp1mim + wx * Sp1mre) -
+                        TF(0.5) * (wy * Sp1pim - wx * Sp1pre) - wz * Sp1im)
+                end
+            end
+            sB += WG
+        end
+        k += NG
+    end
+end
+
+#------- M2T (W list: multipole -> target bodies), step 6b -------#
+#
+# Port of `_cuda_adaptive_m2t_kernel!`. Like S2L this uses the GLOBAL
+# per-thread harmonics scratch (no shared memory), and the evaluation itself
+# is the shared `_resident_multipole_eval_flat[_hessian]` from
+# src/translate_batched_resident.jl -- so only the traversal is ported.
+#
+# Note the asymmetry with S2L: here `leaf_slot_of` is indexed by the TARGET
+# (`ia`) and the expansion centre comes from the SOURCE node (`ib`).
+
+@kernel function ka_adaptive_m2t_kernel!(output, @Const(source_bodies), @Const(cell_ranges),
+        @Const(leaf_slot_of), @Const(node_centers), @Const(w_targets), @Const(w_sources),
+        n_w, @Const(ph), @Const(ch), Hall, ::Type{TF}, ::Val{P_phi}, ::Val{P_active},
+        ::Val{LH}, ::Val{HS}, ::Val{NG}, ::Val{WG}) where {TF,P_phi,P_active,LH,HS,NG,WG}
+    grp = @index(Group)
+    tid = @index(Local)
+    gslot = (grp - 1) * WG + tid
+    H = view(Hall, :, gslot:gslot, :)
+    k = grp
+    @inbounds while k <= n_w
+        ia = Int(w_targets[k])
+        ib = Int(w_sources[k])
+        slot = Int(leaf_slot_of[ia])
+        first = cell_ranges[1, slot]
+        count = cell_ranges[2, slot]
+        cx = node_centers[1, ib]; cy = node_centers[2, ib]; cz = node_centers[3, ib]
+        i = first + tid - 1
+        while i <= first + count - 1
+            dx = source_bodies[1, i] - cx
+            dy = source_bodies[2, i] - cy
+            dz = source_bodies[3, i] - cz
+            r, theta, phi = FastMultipole.cartesian_to_spherical(dx, dy, dz)
+            FastMultipole.irregular_harmonics!(H, r, theta, phi, P_phi + 2)
+            if HS
+                vals = FastMultipole._resident_multipole_eval_flat_hessian(ph, ch, ib, H,
+                    P_phi, P_active, Val(LH))
+                Base.Cartesian.@nexprs 13 r_ -> (KA.@atomic output[r_, i] += vals[r_])
+            else
+                u, gx, gy, gz = FastMultipole._resident_multipole_eval_flat(ph, ch, ib, H,
+                    P_phi, P_active, Val(LH))
+                KA.@atomic output[1, i] += u
+                KA.@atomic output[2, i] += gx
+                KA.@atomic output[3, i] += gy
+                KA.@atomic output[4, i] += gz
+            end
+            i += WG
+        end
+        k += NG
+    end
+end
+
+"""
+    ka_launch_adaptive_m2t!(state, lists, actx, harmonics_scratch; workgroup=128)
+
+W-list multipole-to-target for the KA lifecycle: mirror of
+`_launch_cuda_adaptive_m2t!`. Selects the 13-row hessian variant on
+`size(state.output, 1) >= 13`, as CUDA does.
+"""
+function ka_launch_adaptive_m2t!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        lists, actx, harmonics_scratch; workgroup::Int=128) where {TF,B,LH}
+    n_w = lists.n_w
+    n_w == 0 && return state
+    orders = state.invariant_cache.basis_info.orders
+    hs = size(state.output, 1) >= 13
+    ng = min(n_w, KA_S2L_GROUPS)
+    backend = KA.get_backend(state.output)
+    b = lists.lctx.bufs
+    kern = _cached_kernel(ka_adaptive_m2t_kernel!, backend, workgroup)
+    kern(state.output, state.source_bodies, state.cell_ranges, actx.bufs.leaf_slot_of,
+         state.grid.node_centers, b.w_targets, b.w_sources, n_w,
+         FastMultipole.phi_slab(state.multipoles), FastMultipole.chi_slab(state.multipoles),
+         harmonics_scratch, TF, Val(orders.P_phi), Val(orders.P_active), Val(LH),
+         Val(hs), Val(ng), Val(workgroup); ndrange=ng * workgroup)
+    return state
+end
+
+const KA_S2L_GROUPS = 512   # mirrors _ADT_CUDA_HARMONIC_BLOCKS
+
+"""
+    ka_launch_adaptive_s2l!(state, lists, actx, harmonics_scratch; workgroup=128)
+
+X-list source-to-local for the KA lifecycle: mirror of
+`_launch_cuda_adaptive_s2l!`, vortex channel. The X pair arrays live on the
+lists context (`lists.lctx.bufs`) and `leaf_slot_of` on the tree context
+(`actx.bufs`), so both are needed. `harmonics_scratch` must be
+`(2, n_groups * workgroup, nH2)` -- see `ka_allocate_harmonics_scratch`.
+"""
+function ka_launch_adaptive_s2l!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        lists, actx, harmonics_scratch; workgroup::Int=128) where {TF,B,LH}
+    n_x = lists.n_x
+    n_x == 0 && return state
+    LH || throw(ArgumentError("adaptive S2L (vortex) requires the Lamb-Helmholtz channel"))
+    orders = state.invariant_cache.basis_info.orders
+    ng = min(n_x, KA_S2L_GROUPS)
+    backend = KA.get_backend(state.locals.phi)
+    b = lists.lctx.bufs
+    kern = _cached_kernel(ka_adaptive_s2l_vortex_kernel!, backend, workgroup)
+    kern(FastMultipole.phi_slab(state.locals), FastMultipole.chi_slab(state.locals),
+         state.source_bodies, state.cell_ranges, actx.bufs.leaf_slot_of,
+         state.grid.node_centers, b.x_targets, b.x_sources, n_x,
+         harmonics_scratch, TF, Val(orders.P_phi), Val(orders.P_active),
+         Val(ng), Val(workgroup); ndrange=ng * workgroup)
+    return state
+end
+
+"""
+    ka_allocate_harmonics_scratch(backend, TF, P_phi; groups=KA_S2L_GROUPS, workgroup=128)
+
+Per-thread irregular-harmonics scratch for the S2L/M2T kernels, shaped
+`(2, groups * workgroup, nH2)`. Mirrors CUDA's
+`CUDA.zeros(TF, 2, _ADT_CUDA_HARMONIC_BLOCKS * 128, nH2)`.
+"""
+function ka_allocate_harmonics_scratch(backend, ::Type{TF}, P_phi::Integer;
+        groups::Int=KA_S2L_GROUPS, workgroup::Int=128) where TF
+    nH2 = FastMultipole.harmonic_index(P_phi + 2, P_phi + 2)
+    return KA.zeros(backend, TF, 2, groups * workgroup, nH2)
+end
+
+#------- KA LIFECYCLE DRIVER (step 7a) -------#
+#
+# Mirror of `_cuda_lifecycle_body!` (src/translate_batched_cuda.jl) for the
+# UNIFORM radix lifecycle -- the one FLOWVPM actually runs.
+#
+# Why uniform and not adaptive: `_radix_cache_device_step!` branches on
+# `cache.adaptive === nothing`, and FLOWVPM builds its `RadixFMMCache` with
+# `ell`/`near_radius2`/`window_classes` and NO adaptive policy, so it takes
+# `run_cuda_radix_lifecycle!`. It could not take the adaptive path anyway: that
+# lifecycle rejects `PartitionedVortex` (FLOWVPM's shipped default kernel, a
+# task-040 deferral) and the Lamb-Helmholtz M2T hessian throws outright.
+#
+# The uniform per-step body is only three stages and rebuilds no tree (the
+# lattice is fixed at cache construction):
+#     nearfield -> B2M -> [M2M -> M2L -> L2L -> L2B]
+#
+# This driver deliberately calls the ext's STANDALONE `ka_*` stage drivers
+# rather than FastMultipole's generic ones. The generic drivers dispatch their
+# primitives on array type, which means they run KA kernels on Metal but NATIVE
+# CUDA kernels on CuArrays -- correct for production, useless for a KA-vs-native
+# A/B on one GPU. Going through the standalone drivers makes "KA" unambiguous on
+# every backend, so the same state can be run both ways and compared.
+#
+# One `KA.synchronize` at the END of the driver, never per stage: per-kernel
+# syncs cost 1.37-2.7x in earlier measurements on this code.
+
+"""
+    ka_lifecycle_body!(state; workgroup_b2m=128, workgroup=64, sync=true)
+
+Run the uniform radix lifecycle over `state` entirely with KA kernels. `state`
+may be resident on any KA backend, including a `CuArray` state built by the
+existing `RadixFMMCache(device=true)` -- which is how the KA-vs-native
+comparison runs both arms over identical data with no second cache build.
+"""
+function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
+        workgroup_b2m::Int=128, workgroup::Int=64, sync::Bool=true) where {TF,B,LH}
+    ws = state.scratch
+    ws isa FastMultipole.ResidentOperatorWorkspace || throw(ArgumentError(
+        "ka_lifecycle_body! requires a ResidentOperatorWorkspace in state.scratch"))
+
+    # 1. nearfield (clears state.output, as CUDA's fill+nearfield does)
+    ka_launch_nearfield!(state; workgroup=workgroup, clear=true)
+
+    # 2. B2M
+    ka_launch_b2m!(state; workgroup=workgroup_b2m)
+
+    # 3. far field: M2M -> M2L -> L2L, then L2B
+    FastMultipole._zero_resident_nonleaf_multipoles!(state)
+    for group in ws.m2m_groups
+        ka_resident_stage_group_apply!(state.multipoles, state.multipoles, group, ws, :m2m)
+    end
+    fill!(state.locals.phi, zero(TF))
+    LH && fill!(state.locals.chi, zero(TF))
+    nroutes = state.counts.n_routes
+    nroutes > 0 && ka_resident_m2l_concat_apply!(state.locals, state.multipoles, ws,
+        state.route_sources, state.route_targets, nroutes)
+    for group in ws.l2l_groups
+        ka_resident_stage_group_apply!(state.locals, state.locals, group, ws, :l2l)
+    end
+    ka_launch_l2b!(state; workgroup=workgroup)
+
+    sync && KA.synchronize(KA.get_backend(state.output))
+    return state
+end
+
+#------- RESIDENT OPERATOR WORKSPACE (step vi-b) -------#
+
+"""
+    ka_radix_cache_workspace(backend, TF, basis_info, ell, h0, max_cells, max_nodes,
+                             route_capacity, accepted_offsets, invariant;
+                             ell_axes, first_level)
+
+Build a device-resident [`ResidentOperatorWorkspace`](@ref) on any KA backend.
+
+This is a thin forward to `FastMultipole._radix_cache_workspace`, which is already
+backend-generic: every allocation in it goes through `similar(exemplar.phi, ...)`,
+`_array_like_vector(exemplar.phi, ...)` or `DegreeMajorMaps(TF, P, exemplar.phi)`,
+so handing it a KA-array exemplar returns a KA-resident workspace. There is
+nothing to port.
+
+The KA path is deliberately pinned to `ConcatenatedFixedZM2L` +
+`MaterializedYRotationM2L` -- the strategy already gated bit-exact on H200. That
+choice is what keeps this a wrapper: `compact_cuda_factored` routes only
+`DenseTranslationM2L`, `PrecomputedFactoredYM2L` and `FactoredRotationM2L`
+through the CUDA-specific whole-pass setups, so with concat the builder falls
+through to `ResidentM2LConcatPlan` and reaches no `_cuda_*` function at all.
+Hence `compact_cuda_factored=false` below, and hence no KA port of
+`_cuda_factored_whole_pass_setup!` / `_cuda_precomputed_y_whole_pass_setup!` /
+`_build_cuda_dense_m2l_plan`.
+
+Cost of that pin: the KA path forgoes the dense-fused M2L, CUDA's fastest H200
+configuration. That is a reversible performance ceiling, not a correctness gap.
+
+Graph capture is likewise not ported, and does not need to be:
+`_cuda_adaptive_graph_eligible` requires a `ResidentM2LDenseCUDAPlan`, so the
+concat plan is never graph-eligible *even on CUDA*. The KA substitute for the
+same launch-overhead problem is the one-sync-per-driver discipline.
+
+If this ever needs a keyword the generic builder does not already take, fix the
+genericity in `src/translate_batched.jl` rather than branching here.
+"""
+function ka_radix_cache_workspace(backend, ::Type{TF},
+        basis_info::FastMultipole.OperatorBasisInfo{B,LH}, ell::Integer, h0::TF,
+        max_cells::Integer, max_nodes::Integer, route_capacity::Integer,
+        accepted_offsets::Vector{SVector{3,Int}},
+        invariant::FastMultipole.OperatorInvariantCache;
+        ell_axes::SVector{3,Int}=SVector(Int(ell), Int(ell), Int(ell)),
+        first_level::Integer=0) where {TF,B,LH}
+    exemplar = _ka_flat_buffer(backend, TF, basis_info, 1)
+    return FastMultipole._radix_cache_workspace(TF, basis_info, exemplar, Int(ell), h0,
+        Int(max_cells), Int(max_nodes), Int(route_capacity), accepted_offsets, invariant,
+        FastMultipole.ConcatenatedFixedZM2L(), FastMultipole.MaterializedYRotationM2L();
+        compact_cuda_factored=false, ell_axes=ell_axes, first_level=Int(first_level))
 end
 
 end
