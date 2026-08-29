@@ -6996,7 +6996,11 @@ function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switche
     verify_locked_radix_settings(cache.locked_settings)
     update_cuda_radix_state!(cache, targets)
     if cache.adaptive === nothing
-        run_cuda_radix_lifecycle!(cache.state)
+        # KA arm (A/B against the native kernels over one and the same cache).
+        # Taken before run_cuda_radix_lifecycle! so the graph replay is bypassed
+        # rather than silently replaying a natively-recorded body.
+        radix_setting(:RADIX_KA_LIFECYCLE) ? ka_radix_lifecycle!(cache.state) :
+            run_cuda_radix_lifecycle!(cache.state)
         state = cache.state
     else
         # task 041: adaptive device lifecycle (B2M -> M2M -> V M2L -> X S2L ->

@@ -3184,17 +3184,101 @@ function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
     for group in ws.m2m_groups
         ka_resident_stage_group_apply!(state.multipoles, state.multipoles, group, ws, :m2m)
     end
-    fill!(state.locals.phi, zero(TF))
-    LH && fill!(state.locals.chi, zero(TF))
-    nroutes = state.counts.n_routes
-    nroutes > 0 && ka_resident_m2l_concat_apply!(state.locals, state.multipoles, ws,
-        state.route_sources, state.route_targets, nroutes)
+    ka_launch_m2l!(state, ws)
     for group in ws.l2l_groups
         ka_resident_stage_group_apply!(state.locals, state.locals, group, ws, :l2l)
     end
     ka_launch_l2b!(state; workgroup=workgroup)
 
     sync && KA.synchronize(KA.get_backend(state.output))
+    return state
+end
+
+# Selected by `set_radix_setting!(:RADIX_KA_LIFECYCLE, true)`; see the stub in
+# src/radix_settings.jl. Keyword defaults are the driver's own -- the setting is
+# a boolean arm switch, not a tuning surface.
+FastMultipole.ka_radix_lifecycle!(state::FastMultipole.DeviceResidentRadixState) =
+    ka_lifecycle_body!(state)
+
+"""
+    ka_launch_m2l!(state, ws)
+
+M2L stage of [`ka_lifecycle_body!`](@ref), branching on the resident
+interaction context exactly as `_launch_cuda_resident_m2l!` does: a
+`DeviceHierarchicalM2LContext` generates and applies route windows here, and
+anything else is the flat whole-route concat apply.
+
+The branch is not optional. FLOWVPM's `RadixFMMCache` carries the hierarchical
+policy, and on that context `state.counts.n_routes` holds only the LAST
+window's route count -- a flat apply would silently translate a fraction of the
+V list and be wrong rather than merely slow.
+"""
+function ka_launch_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        ws) where {TF,B,LH}
+    hctx = state.interaction_list
+    hctx isa FastMultipole.DeviceHierarchicalM2LContext &&
+        return ka_hierarchical_m2l!(state, hctx, ws)
+    fill!(state.locals.phi, zero(TF))
+    LH && fill!(state.locals.chi, zero(TF))
+    nroutes = state.counts.n_routes
+    nroutes > 0 && ka_resident_m2l_concat_apply!(state.locals, state.multipoles, ws,
+        state.route_sources, state.route_targets, nroutes)
+    return state
+end
+
+"""
+    ka_hierarchical_m2l!(state, hctx, ws)
+
+KA arm of `_launch_cuda_hierarchical_m2l!`: the same `(level, offset-class
+window)` loop nest, with the per-window concat apply run by KA kernels instead
+of `_launch_resident_m2l_concat!`.
+
+**Window GENERATION stays native.** `_cuda_hier_generate_window!` is the
+flag/scan/compact that fills `state.route_targets`/`route_sources` for one
+window; it is a CUDA-only function and is deliberately shared by both arms.
+That makes this an A/B of the M2L *apply* -- the rotation/translation math,
+which is where the time is -- and not of the route bookkeeping. Any timing
+comparison built on this driver must be reported that way.
+
+Concat plans only. The dense plan is CUDA-specific (`ResidentM2LDenseCUDAPlan`,
+and only it is window-cacheable), and precomputed-y needs a per-window refresh
+that has no KA port; both are outside the pin recorded in
+[`ka_radix_cache_workspace`](@ref).
+
+Because the generator is CUDA-only, this function is reachable only on a
+CUDA-resident state and cannot be gated on Metal.
+"""
+function ka_hierarchical_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        hctx::FastMultipole.DeviceHierarchicalM2LContext, ws) where {TF,B,LH}
+    plan = hctx.apply_plan
+    plan isa FastMultipole.ResidentM2LConcatPlan || throw(ArgumentError(
+        "ka_hierarchical_m2l! requires a ResidentM2LConcatPlan (build the cache " *
+        "with m2l_strategy = ConcatenatedFixedZM2L); got $(typeof(plan))"))
+    fill!(state.locals.phi, zero(TF))
+    LH && fill!(state.locals.chi, zero(TF))
+    route_class = plan.route_class
+    noffsets = hctx.noffsets
+    K = hctx.window_classes
+    total = 0
+    fill!(hctx.routes_per_level, 0)
+    for L in hctx.first_m2l_level:hctx.ell
+        level_total = 0
+        class_base = (L - hctx.first_m2l_level) * noffsets
+        for first_offset in 1:K:noffsets
+            last_offset = min(first_offset + K - 1, noffsets)
+            n = FastMultipole._cuda_hier_generate_window!(state, hctx, route_class, L,
+                first_offset, last_offset, class_base)
+            hctx.last_window_routes = n
+            state.counts.n_routes = n
+            n > 0 && ka_resident_m2l_concat_apply!(state.locals, state.multipoles, ws,
+                state.route_sources, state.route_targets, n)
+            level_total += n
+        end
+        hctx.routes_per_level[L + 1] = level_total
+        total += level_total
+    end
+    hctx.total_routes = total
+    state.counts.n_routes = total
     return state
 end
 

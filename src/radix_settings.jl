@@ -41,6 +41,27 @@ _rs_cuda_threads(v) = (v isa Int && 32 <= v <= 1024 && v % 32 == 0) ? nothing :
     throw(ArgumentError("expected Int warp multiple in 32:1024, got $(repr(v))"))
 _rs_enum(vals) = v -> v in vals ? nothing : throw(ArgumentError("expected one of $(vals), got $(repr(v))"))
 
+# KA arm of the uniform lifecycle. Unlike every other tunable here this one has
+# no CUDA-side Ref to reference, so it lives in always-loaded src: the whole
+# point is to select a NON-CUDA implementation of the per-step body, and the
+# selection has to be readable whether or not translate_batched_cuda.jl was
+# ever included.
+const RADIX_KA_LIFECYCLE = Ref(false)
+
+"""
+    ka_radix_lifecycle!(state)
+
+Run the uniform per-step lifecycle over `state` with KernelAbstractions
+kernels. Overloaded by `FastMultipoleKAExt`; this stub is what a caller hits
+when `:RADIX_KA_LIFECYCLE` was set without `KernelAbstractions` loaded.
+"""
+function ka_radix_lifecycle!(state)
+    throw(ArgumentError(
+        "radix setting :RADIX_KA_LIFECYCLE is on but the KernelAbstractions " *
+        "extension is not loaded; `using KernelAbstractions` (plus the backend " *
+        "package) before the first device step, or set it back to false"))
+end
+
 const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
     # ---- tree/refresh --------------------------------------------------------
     :RADIX_CUDA_COUNTING_SORT => RadixSettingSpec(:construction, _rs_bool,
@@ -108,6 +129,8 @@ const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
         "CUDA-graph capture/replay of the lifecycle (checked per step at entry)."),
     :CUDA_OVERLAP_NEARFIELD => RadixSettingSpec(:construction, _rs_bool,
         "Nearfield side-stream overlap (first statement of the captured body)."),
+    :RADIX_KA_LIFECYCLE => RadixSettingSpec(:runtime, _rs_bool,
+        "Run the uniform per-step lifecycle with KernelAbstractions kernels instead of the native CUDA ones (checked per step at entry; requires the KA extension loaded)."),
     # ---- host GEMM thresholds ------------------------------------------------
     :FACTORED_Y_GEMM_MIN_COLS => RadixSettingSpec(:runtime, _rs_nonnegint,
         "Host factored-y GEMM column threshold."),
