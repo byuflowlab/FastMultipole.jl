@@ -6,7 +6,8 @@
 # arrays) on Metal and compares every output array against an independent CPU
 # reference of the same step -- not tree_batched.jl's stateful AdaptiveRadixTree,
 # same precedent as ka_tree_leaves_correctness.jl / ka_tree_balance_correctness.jl.
-using Metal, KernelAbstractions, FastMultipole, Random
+include("ka_backend.jl")
+using FastMultipole, Random
 
 function cpu_decode_morton_key(key, ell)
     ix = iy = iz = 0
@@ -235,8 +236,8 @@ function cpu_reference_finalize(leaves::Vector{Tuple{Int,UInt64,Int,Int}},
 end
 
 println("Starting KA adaptive-tree Phase C (finalize) correctness test...")
-if !Metal.functional()
-    println("Metal not functional; skipping")
+if !dev_functional()
+    println("$(DEV_NAME) not functional; skipping")
     exit(0)
 end
 
@@ -280,12 +281,12 @@ for case in cases
     node_capacity = 40 * nl + 64
 
     got = begin
-        dev_keys = Metal.MtlArray(keys)
-        dev_lev = Metal.MtlArray(lev)
-        dev_key = Metal.MtlArray(key)
-        dev_lo = Metal.MtlArray(lo)
-        dev_hi = Metal.MtlArray(hi)
-        actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+        dev_keys = devarray(keys)
+        dev_lev = devarray(lev)
+        dev_key = devarray(key)
+        dev_lo = devarray(lo)
+        dev_hi = devarray(hi)
+        actx = ext.ka_allocate_adaptive_context(DEV_BACKEND, Float32, n;
             leaf_capacity=max(1, nl), frontier_capacity=max(1, nl), node_capacity=node_capacity)
         r = ext.ka_adaptive_finalize!(actx, nl, dev_lev, dev_key, dev_lo, dev_hi, dev_keys,
             ell_max, n, x_min, h0)
@@ -349,4 +350,4 @@ for case in cases
             "$(got.n_nodes) nodes, $(got.n_leaves) leaves, matches CPU reference exactly")
 end
 
-println("\n✓✓✓ All KA adaptive-tree Phase C (finalize) correctness tests passed on Metal! ✓✓✓")
+println("\n✓✓✓ All KA adaptive-tree Phase C (finalize) correctness tests passed on $(DEV_NAME)! ✓✓✓")

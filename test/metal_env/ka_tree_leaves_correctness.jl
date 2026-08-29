@@ -8,7 +8,8 @@
 # tree_batched.jl's stateful AdaptiveRadixTree so this checks the algorithm
 # itself, not any pre-existing host implementation (same precedent as the M2M
 # ka_m2m_correctness.jl building-block check).
-using Metal, KernelAbstractions, FastMultipole, Random
+include("ka_backend.jl")
+using FastMultipole, Random
 
 # Reference: recursive K_max split directly on a sorted key array, returning
 # the leaf set as (level, key, lo, hi) tuples (lo/hi 1-based inclusive into
@@ -46,8 +47,8 @@ function cpu_reference_leaves(keys::Vector{UInt64}, ell_max::Int, K_max::Int)
 end
 
 println("Starting KA adaptive-tree Phase A (leaf split) correctness test...")
-if !Metal.functional()
-    println("Metal not functional; skipping")
+if !dev_functional()
+    println("$(DEV_NAME) not functional; skipping")
     exit(0)
 end
 
@@ -70,8 +71,8 @@ for case in cases
 
     ref = cpu_reference_leaves(keys, ell_max, K_max)
     got = begin
-        dev_keys = Metal.MtlArray(keys)
-        actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+        dev_keys = devarray(keys)
+        actx = ext.ka_allocate_adaptive_context(DEV_BACKEND, Float32, n;
             leaf_capacity=8 * n + 8, frontier_capacity=8 * n + 64, node_capacity=8 * n + 8)
         nl, llev, lkey, llo, lhi = ext.ka_adaptive_build_leaves!(actx, dev_keys, ell_max, K_max, n)
         lev_h = Array(llev)[1:nl]; key_h = Array(lkey)[1:nl]
@@ -89,4 +90,4 @@ for case in cases
     println("✓ n=$n, K_max=$K_max, ell_max=$ell_max, dup=$dup: $(length(got)) leaves, matches CPU reference exactly")
 end
 
-println("\n✓✓✓ All KA adaptive-tree Phase A (leaf split) correctness tests passed on Metal! ✓✓✓")
+println("\n✓✓✓ All KA adaptive-tree Phase A (leaf split) correctness tests passed on $(DEV_NAME)! ✓✓✓")

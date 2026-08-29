@@ -26,7 +26,8 @@
 # AdaptiveInteractionLists: that keeps the test standalone, and makes the
 # violation flag a genuine signal -- with first_m2l_level=0 and a reach wide
 # enough to cover any offset the sweep can produce, it must never fire.
-using Metal, KernelAbstractions, FastMultipole, Random
+include("ka_backend.jl")
+using FastMultipole, Random
 
 
 function cpu_decode_morton_key(key, ell)
@@ -366,8 +367,8 @@ function build_luts(reach::Int, q::Int, ell_max::Int)
 end
 
 println("Starting KA adaptive-tree Phase E/F/G (interaction lists + CSR) correctness test...")
-if !Metal.functional()
-    println("Metal not functional; skipping")
+if !dev_functional()
+    println("$(DEV_NAME) not functional; skipping")
     exit(0)
 end
 
@@ -445,7 +446,7 @@ for (ci, case) in enumerate(cases)
     ref.violated && error("$tag: CPU reference itself reports a phase-table violation " *
                           "— the synthetic LUT is too narrow, fix the test not the port")
 
-    backend = Metal.MetalBackend()
+    backend = DEV_BACKEND
     # The lists context shares the tree context's frontier scratch, so the tree
     # context has to exist first and carry the frontier capacity the DTR needs.
     # Sized off n_nodes^2, not a multiple of n_nodes: under heavy sigma demotion
@@ -456,15 +457,15 @@ for (ci, case) in enumerate(cases)
     actx = ext.ka_allocate_adaptive_context(backend, Float32, n;
         leaf_capacity=fin.n_nodes, frontier_capacity=cap, node_capacity=fin.n_nodes)
     lctx = ext.ka_allocate_lists_context(actx,
-        Metal.MtlArray(offset_lut), Metal.MtlArray(level_class_of);
+        devarray(offset_lut), devarray(level_class_of);
         u_capacity=cap, v_capacity=cap, wx_capacity=cap,
         lut_reach=reach, noffsets=noffsets, first_m2l_level=first_m2l_level,
         ell_max=ell_max, leaf_capacity=fin.n_nodes, maxn=n)
 
-    dev_levels = Metal.MtlArray(Int32.(fin.node_levels))
-    dev_coords = Metal.MtlArray(coords)
-    dev_child = Metal.MtlArray(Int32.(fin.child_ranges))
-    dev_sigma = Metal.MtlArray(node_sigma)
+    dev_levels = devarray(Int32.(fin.node_levels))
+    dev_coords = devarray(coords)
+    dev_child = devarray(Int32.(fin.child_ranges))
+    dev_sigma = devarray(node_sigma)
 
     n_u, n_v, n_w, n_x, n_dem = ext.ka_adaptive_build_lists!(lctx, dev_levels, dev_coords,
         dev_child, dev_sigma; ell_max, near_radius2=q, gate, rho_t, delta_min2)
@@ -579,8 +580,8 @@ for (ci, case) in enumerate(cases)
     leaf_index, leaf_slot_of, cell_ranges = cpu_reference_leaf_slots(
         fin.child_ranges, fin.node_lo, fin.node_hi)
     n_leaves = length(leaf_index)
-    dev_slot_of = Metal.MtlArray(leaf_slot_of)
-    dev_cell_ranges = Metal.MtlArray(cell_ranges)
+    dev_slot_of = devarray(leaf_slot_of)
+    dev_cell_ranges = devarray(cell_ranges)
 
     ext.ka_adaptive_u_slots!(lctx, dev_slot_of, n_u)
     ext.ka_adaptive_build_u_csr!(lctx, dev_cell_ranges, n_leaves, n_u)

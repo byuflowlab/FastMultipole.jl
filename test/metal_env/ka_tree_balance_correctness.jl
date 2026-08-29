@@ -5,7 +5,8 @@
 # resulting leaf set (and split count) against a from-scratch CPU reference of
 # the same sweep, independent of tree_batched.jl's stateful AdaptiveRadixTree
 # (same precedent as ka_tree_leaves_correctness.jl).
-using Metal, KernelAbstractions, FastMultipole, Random
+include("ka_backend.jl")
+using FastMultipole, Random
 
 # Phase A reference (verbatim from ka_tree_leaves_correctness.jl): recursive
 # K_max split directly on a sorted key array.
@@ -162,8 +163,8 @@ function is_2to1_balanced(leaves::Vector{Tuple{Int,UInt64,Int,Int}}, ell_max::In
 end
 
 println("Starting KA adaptive-tree Phase B (2:1 balance) correctness test...")
-if !Metal.functional()
-    println("Metal not functional; skipping")
+if !dev_functional()
+    println("$(DEV_NAME) not functional; skipping")
     exit(0)
 end
 
@@ -205,13 +206,13 @@ for case in cases
     leaf_capacity = 8 * n + 64
 
     got, got_splits = begin
-        dev_keys = Metal.MtlArray(keys)
+        dev_keys = devarray(keys)
         pad(a) = vcat(a, zeros(eltype(a), leaf_capacity - length(a)))
-        dev_lev = Metal.MtlArray(pad(lev0))
-        dev_key = Metal.MtlArray(pad(key0))
-        dev_lo = Metal.MtlArray(pad(lo0))
-        dev_hi = Metal.MtlArray(pad(hi0))
-        actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+        dev_lev = devarray(pad(lev0))
+        dev_key = devarray(pad(key0))
+        dev_lo = devarray(pad(lo0))
+        dev_hi = devarray(pad(hi0))
+        actx = ext.ka_allocate_adaptive_context(DEV_BACKEND, Float32, n;
             leaf_capacity=leaf_capacity, frontier_capacity=8 * n + 64, node_capacity=leaf_capacity)
         nl, splits, flev, fkey, flo, fhi = ext.ka_adaptive_balance!(actx, nl0, dev_lev, dev_key,
             dev_lo, dev_hi, dev_keys, ell_max)
@@ -233,4 +234,4 @@ for case in cases
             "$(length(got)) leaves ($got_splits splits), matches CPU reference exactly, 2:1 balanced")
 end
 
-println("\n✓✓✓ All KA adaptive-tree Phase B (2:1 balance) correctness tests passed on Metal! ✓✓✓")
+println("\n✓✓✓ All KA adaptive-tree Phase B (2:1 balance) correctness tests passed on $(DEV_NAME)! ✓✓✓")

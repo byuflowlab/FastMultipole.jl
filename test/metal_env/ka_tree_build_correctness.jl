@@ -7,7 +7,8 @@
 # same way as ka_tree_finalize_correctness.jl / ka_tree_sigma_sweep_correctness.jl,
 # but now also re-deriving the sorted key array from positions on the CPU side
 # rather than taking it as a given input.
-using Metal, KernelAbstractions, FastMultipole, Random
+include("ka_backend.jl")
+using FastMultipole, Random
 
 function cpu_decode_morton_key(key, ell)
     ix = iy = iz = 0
@@ -186,8 +187,8 @@ function cpu_reference_finalize(leaves::Vector{Tuple{Int,UInt64,Int,Int}},
 end
 
 println("Starting KA adaptive-tree harness-front-end (position -> full build) correctness test...")
-if !Metal.functional()
-    println("Metal not functional; skipping")
+if !dev_functional()
+    println("$(DEV_NAME) not functional; skipping")
     exit(0)
 end
 
@@ -215,8 +216,8 @@ for case in cases
     leaf_capacity = 4 * nl + 64
     frontier_capacity = 8 * leaf_capacity
 
-    dev_positions = Metal.MtlArray(positions)
-    actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+    dev_positions = devarray(positions)
+    actx = ext.ka_allocate_adaptive_context(DEV_BACKEND, Float32, n;
         leaf_capacity=leaf_capacity, frontier_capacity=frontier_capacity,
         node_capacity=node_capacity)
     got = ext.ka_build_adaptive_tree!(actx, dev_positions, ell_max, K_max, true, x_min, h0)
@@ -283,4 +284,4 @@ for case in cases
             "$(got.n_leaves) leaves, matches CPU reference exactly")
 end
 
-println("\n✓✓✓ All KA adaptive-tree harness-front-end correctness tests passed on Metal! ✓✓✓")
+println("\n✓✓✓ All KA adaptive-tree harness-front-end correctness tests passed on $(DEV_NAME)! ✓✓✓")

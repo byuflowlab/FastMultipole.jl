@@ -10,7 +10,8 @@
 # whole subtree by finalize's own definition), rather than mirroring the
 # leaf/then-per-level-up-the-tree recursion the KA/CUDA kernels use -- a
 # methodologically distinct implementation of the same theory-defined quantity.
-using Metal, KernelAbstractions, FastMultipole, Random
+include("ka_backend.jl")
+using FastMultipole, Random
 
 function cpu_decode_morton_key(key, ell)
     ix = iy = iz = 0
@@ -207,8 +208,8 @@ function cpu_reference_sigma_sweep(node_lo::Vector{Int}, node_hi::Vector{Int},
 end
 
 println("Starting KA adaptive-tree Phase D (sigma sweep) correctness test...")
-if !Metal.functional()
-    println("Metal not functional; skipping")
+if !dev_functional()
+    println("$(DEV_NAME) not functional; skipping")
     exit(0)
 end
 
@@ -256,19 +257,19 @@ for case in cases
     hi = Int32[hi for (_, _, _, hi) in leaves]
     node_capacity = 40 * nl + 64
 
-    dev_keys = Metal.MtlArray(keys)
-    dev_lev = Metal.MtlArray(lev)
-    dev_key = Metal.MtlArray(key)
-    dev_lo = Metal.MtlArray(lo)
-    dev_hi = Metal.MtlArray(hi)
-    actx = ext.ka_allocate_adaptive_context(Metal.MetalBackend(), Float32, n;
+    dev_keys = devarray(keys)
+    dev_lev = devarray(lev)
+    dev_key = devarray(key)
+    dev_lo = devarray(lo)
+    dev_hi = devarray(hi)
+    actx = ext.ka_allocate_adaptive_context(DEV_BACKEND, Float32, n;
         leaf_capacity=max(1, nl), frontier_capacity=max(1, nl), node_capacity=node_capacity)
     r = ext.ka_adaptive_finalize!(actx, nl, dev_lev, dev_key, dev_lo, dev_hi, dev_keys,
         ell_max, n, x_min, h0)
 
     r.n_nodes == ref_fin.n_nodes || error("n=$n, K_max=$K_max: n_nodes mismatch (sanity)")
 
-    dev_bodies = Metal.MtlArray(source_bodies)
+    dev_bodies = devarray(source_bodies)
     got_sigma_dev = ext.ka_adaptive_sigma_sweep!(actx, r.node_lo, r.node_hi, r.child_ranges,
         r.n_nodes, r.level_offsets, ell_max, dev_bodies, sigma_row)
     got_sigma = Array(got_sigma_dev)[1:r.n_nodes]
@@ -303,4 +304,4 @@ for case in cases
             "$(r.n_nodes) nodes, matches CPU reference exactly")
 end
 
-println("\n✓✓✓ All KA adaptive-tree Phase D (sigma sweep) correctness tests passed on Metal! ✓✓✓")
+println("\n✓✓✓ All KA adaptive-tree Phase D (sigma sweep) correctness tests passed on $(DEV_NAME)! ✓✓✓")
