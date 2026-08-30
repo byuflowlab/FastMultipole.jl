@@ -4775,6 +4775,225 @@ function ka_finalize_radix_output!(state, target_systems;
 end
 
 
+#------- SFS (task 048): TG precompute, zeta pair sweep, E formation, scatter -------#
+#
+# Port of the four CUDA SFS kernels (`_cuda_sfs_tg_kernel!`,
+# `_cuda_sfs_zeta_pairs_kernel!`, `_cuda_sfs_form_e_kernel!`,
+# `_cuda_sfs_scatter_kernel!`, src/translate_batched_cuda.jl:5751-5915) and
+# their two launchers.
+#
+# SFS is not an FMM operator: nothing here touches an expansion, a stencil or a
+# route. Three of the four kernels are pointwise over bodies, and the fourth
+# walks the SAME direct pair list `ka_launch_nearfield!` already walks. It lives
+# in the radix cache only because both its inputs -- the J rows of
+# `state.output` and the direct pair list -- are already device resident.
+#
+# The per-body math is NOT reimplemented: `_sfs_apply_op` (backend-agnostic, in
+# src/translate_batched_resident.jl) is shared with the host mirror, so the
+# transposed/classic scheme cannot drift between the two. It takes `transposed`
+# as a plain `Bool`, which the `Val{TRANSPOSED}` launch constant-folds.
+#
+# DEVIATION (launch shape only, same as the nearfield port): CUDA runs a WARP
+# per pair striding targets by 32 with a grid-stride outer loop; KA runs a
+# WORKGROUP per pair striding targets by the workgroup size, with one group per
+# pair and no outer loop. `ndrange` is exact, so the grid-stride wrapper CUDA
+# needs to respect `DIRECT_CUDA_MAX_BLOCKS` has nothing to do here. Accumulation
+# into `om`/`q` stays atomic: targets of different pairs overlap.
+
+@kernel function ka_sfs_tg_kernel!(tg, om, q, @Const(output), @Const(source_bodies),
+        ::Type{T}, ::Val{TRANSPOSED}, n_bodies) where {T,TRANSPOSED}
+    i = @index(Global)
+    @inbounds if i <= n_bodies
+        g1 = source_bodies[5, i]
+        g2 = source_bodies[6, i]
+        g3 = source_bodies[7, i]
+        t1, t2, t3 = FastMultipole._sfs_apply_op(
+            output[5, i], output[6, i], output[7, i], output[8, i],
+            output[9, i], output[10, i], output[11, i], output[12, i],
+            output[13, i], g1, g2, g3, TRANSPOSED)
+        tg[1, i] = t1; tg[2, i] = t2; tg[3, i] = t3
+        om[1, i] = zero(T); om[2, i] = zero(T); om[3, i] = zero(T)
+        q[1, i] = zero(T); q[2, i] = zero(T); q[3, i] = zero(T)
+    end
+end
+
+@kernel function ka_sfs_zeta_pairs_kernel!(om, q, @Const(tg), @Const(source_bodies),
+        @Const(cell_ranges), @Const(direct_targets), @Const(direct_sources),
+        npairs, rc2, K1, active_row, ::Type{T}, ::Val{WG}) where {T,WG}
+    pair_i = @index(Group)
+    tid = @index(Local)
+    half = T(0.5)
+    @inbounds begin
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + tid - 1
+        while i <= tlast
+            if active_row == 0 || !iszero(source_bodies[active_row, i])
+                xi = source_bodies[1, i]
+                yi = source_bodies[2, i]
+                zi = source_bodies[3, i]
+                o1 = zero(T); o2 = zero(T); o3 = zero(T)
+                q1 = zero(T); q2 = zero(T); q3 = zero(T)
+                for j in sfirst:slast
+                    if i != j && (active_row == 0 || !iszero(source_bodies[active_row, j]))
+                        dx = xi - source_bodies[1, j]
+                        dy = yi - source_bodies[2, j]
+                        dz = zi - source_bodies[3, j]
+                        r2 = dx * dx + dy * dy + dz * dz
+                        sigma = source_bodies[8, j]
+                        rho2 = r2 / (sigma * sigma)
+                        if rho2 <= rc2
+                            z = K1 * exp(-half * rho2) / (sigma * sigma * sigma)
+                            o1 += z * source_bodies[5, j]
+                            o2 += z * source_bodies[6, j]
+                            o3 += z * source_bodies[7, j]
+                            q1 += z * tg[1, j]
+                            q2 += z * tg[2, j]
+                            q3 += z * tg[3, j]
+                        end
+                    end
+                end
+                KA.@atomic om[1, i] += o1
+                KA.@atomic om[2, i] += o2
+                KA.@atomic om[3, i] += o3
+                KA.@atomic q[1, i] += q1
+                KA.@atomic q[2, i] += q2
+                KA.@atomic q[3, i] += q3
+            end
+            i += WG
+        end
+    end
+end
+
+@kernel function ka_sfs_form_e_kernel!(tg, @Const(om), @Const(q), @Const(output),
+        ::Val{TRANSPOSED}, n_bodies) where TRANSPOSED
+    i = @index(Global)
+    @inbounds if i <= n_bodies
+        e1, e2, e3 = FastMultipole._sfs_apply_op(
+            output[5, i], output[6, i], output[7, i], output[8, i],
+            output[9, i], output[10, i], output[11, i], output[12, i],
+            output[13, i], om[1, i], om[2, i], om[3, i], TRANSPOSED)
+        tg[1, i] = e1 - q[1, i]
+        tg[2, i] = e2 - q[2, i]
+        tg[3, i] = e3 - q[3, i]
+    end
+end
+
+@kernel function ka_sfs_scatter_kernel!(target_buffer, @Const(e), @Const(perm),
+        @Const(body_system), @Const(body_index), isys, n_bodies)
+    sorted_i = @index(Global)
+    @inbounds if sorted_i <= n_bodies
+        global_i = perm[sorted_i]
+        if body_system[global_i] == isys
+            ibody = body_index[global_i]
+            target_buffer[1, ibody] = e[1, sorted_i]
+            target_buffer[2, ibody] = e[2, sorted_i]
+            target_buffer[3, ibody] = e[3, sorted_i]
+        end
+    end
+end
+
+"""
+    ka_launch_sfs!(state; workgroup=64)
+
+Port of `_launch_cuda_sfs!`: TG precompute + accumulator zeroing, then the zeta
+sweep over the full direct pair list. Called only for an evaluation that asks
+for `sfs=true`, after the U/J lifecycle has completed, so `state.output` carries
+a finished J.
+"""
+function ka_launch_sfs!(state::FastMultipole.DeviceResidentRadixState{TF};
+        workgroup::Int=64) where TF
+    sfs = state.sfs
+    sfs === nothing && return state
+    size(state.output, 1) >= 13 || throw(AssertionError(
+        "the SFS pass requires the 13-row (hessian) output"))
+    _ka_launch_sfs_typed!(state, sfs.tg, sfs.om, sfs.q,
+        sfs.transposed ? Val(true) : Val(false), sfs.active_row, workgroup)
+    return state
+end
+
+# function barrier over the Any-typed sfs NamedTuple (CUDA does the same)
+function _ka_launch_sfs_typed!(state::FastMultipole.DeviceResidentRadixState{TF},
+        tg::AbstractMatrix{TF}, om::AbstractMatrix{TF}, q::AbstractMatrix{TF},
+        tv::Val, active_row::Int, workgroup::Int) where TF
+    n = state.counts.n_bodies
+    n > 0 || return state
+    backend = KA.get_backend(state.output)
+    tgk = _cached_kernel(ka_sfs_tg_kernel!, backend, workgroup)
+    tgk(tg, om, q, state.output, state.source_bodies, TF, tv, n; ndrange=n)
+    npairs = state.counts.n_direct
+    if npairs > 0
+        zk = _cached_kernel(ka_sfs_zeta_pairs_kernel!, backend, workgroup)
+        zk(om, q, tg, state.source_bodies, state.cell_ranges,
+           state.direct_targets, state.direct_sources, npairs,
+           FastMultipole._sfs_saturation_rc2(TF), TF(FastMultipole._SFS_ZETA_K1),
+           active_row, TF, Val(workgroup); ndrange=npairs * workgroup)
+    end
+    KA.synchronize(backend)
+    return state
+end
+
+"""
+    ka_finalize_radix_sfs_output!(state, target_systems; host_sfs_staging=nothing,
+        sfs_target_buffers=nothing, device_sfs_buffers=nothing, workgroup=64)
+
+Backend-agnostic `finalize_cuda_radix_sfs_output!`. Forms E = op(J)Ω − Q into
+`sfs.tg` (dead after the pair sweep), de-permutes sorted -> global, and delivers
+a per-system `3 x n_bodies` global-order buffer through `sfs_to_target!` --
+device buffer for a `DeviceResident` target, host buffer otherwise. Called
+outside the lifecycle, next to `ka_finalize_radix_output!`.
+"""
+function ka_finalize_radix_sfs_output!(state::FastMultipole.DeviceResidentRadixState{TF},
+        target_systems; host_sfs_staging=nothing, sfs_target_buffers=nothing,
+        device_sfs_buffers=nothing, workgroup::Int=64) where TF
+    sfs = state.sfs
+    sfs === nothing && throw(ArgumentError(
+        "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
+    systems = FastMultipole.to_tuple(target_systems)
+    n = state.counts.n_bodies
+    n > 0 || return target_systems
+    backend = KA.get_backend(state.output)
+    ek = _cached_kernel(ka_sfs_form_e_kernel!, backend, workgroup)
+    ek(sfs.tg, sfs.om, sfs.q, state.output,
+       sfs.transposed ? Val(true) : Val(false), n; ndrange=n)
+    KA.synchronize(backend)
+    host_e = nothing
+    for (isys, target_system) in enumerate(systems)
+        nb = FastMultipole.get_n_bodies(target_system)
+        if FastMultipole.residency(target_system) isa FastMultipole.DeviceResident
+            buf = _ka_cached_target_buffer(device_sfs_buffers, backend, isys, TF, 3, nb)
+            fill!(buf, zero(TF))
+            sk = _cached_kernel(ka_sfs_scatter_kernel!, backend, workgroup)
+            sk(buf, sfs.tg, state.body_perm, state.body_system_ids,
+               state.body_indices, isys, n; ndrange=n)
+            KA.synchronize(backend)
+            FastMultipole.sfs_to_target!(target_system, buf, 1:nb)
+        else
+            if host_e === nothing
+                if host_sfs_staging === nothing
+                    host_e = Array(sfs.tg)
+                else
+                    copyto!(host_sfs_staging, 1, sfs.tg, 1, 3 * n)
+                    host_e = host_sfs_staging
+                end
+                state.counters.influence_downloads += 1
+            end
+            buf_full = sfs_target_buffers === nothing ?
+                Matrix{TF}(undef, 3, nb) : sfs_target_buffers[isys]
+            buf = size(buf_full, 2) == nb ? buf_full : view(buf_full, :, 1:nb)
+            FastMultipole._scatter_sfs_host!(buf, host_e, state.host_body_perm,
+                state.host_body_system_ids, state.host_body_indices, isys, n)
+            FastMultipole.sfs_to_target!(target_system, buf, 1:nb)
+        end
+    end
+    return target_systems
+end
+
+
 
 #------- hierarchical refresh: direct pairs, symmetric compaction, window cache -------#
 #
@@ -5039,9 +5258,9 @@ end
 #   * CUDA graph capture/replay has no KA equivalent; the body is launched
 #     directly every step.
 #
-# `sfs` is accepted and rejected rather than silently ignored: the SFS pass is
-# not ported, and an sfs=true evaluation that quietly returned U/J only would be
-# a wrong answer, not a slow one.
+#   * `sfs` is now ported (task 048): `ka_launch_sfs!` +
+#     `ka_finalize_radix_sfs_output!` run between the lifecycle body and the
+#     U/J finalize, in CUDA's order.
 
 """
     ka_update_radix_state!(cache, systems; workgroup=KA_AUTO_WORKGROUP)
@@ -5286,9 +5505,9 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         root_level::Int=0, first_m2l_level::Int=2,
         # task 048 SFS: FLOWVPM arms SFS STORAGE unconditionally at cache
         # construction and gates execution/delivery on the PER-EVALUATION `sfs`
-        # flag (FLOWVPM_fmm_radix.jl:550-553). So an sfs=true cache must
-        # allocate the accumulators here even though KA runs no SFS pass;
-        # `ka_radix_cache_device_step!` still rejects an sfs=true evaluation.
+        # flag (FLOWVPM_fmm_radix.jl:550-553), so the accumulators are allocated
+        # here whenever the cache is armed; `ka_radix_cache_device_step!` runs
+        # the pass only for an evaluation that asks for it.
         sfs::Bool=false, sfs_transposed::Bool=true, sfs_active_row::Int=0,
         workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
     stencil_policy isa FastMultipole.HierarchicalRigidStencil || throw(ArgumentError(
@@ -5479,23 +5698,35 @@ ka_radix_cache_device_build(backend, sources, args...; kwargs...) =
 
 Backend-agnostic `_radix_cache_device_step!`: refresh the device state, run the
 uniform lifecycle body, and scatter the output back into the target systems.
-This is the whole uniform `sfs=false` step with no CUDA dependency.
+Runs the SFS pass and its delivery when `sfs=true`, which requires a cache
+armed with `sfs=true` at construction. No CUDA dependency.
 """
 function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         targets::Tuple, switches::Tuple; sfs::Bool=false,
         workgroup=KA_AUTO_WORKGROUP)
-    sfs && throw(ArgumentError(
-        "the KA device step does not implement the SFS pass; run sfs=true on CUDA"))
     # construction-locked settings must not have drifted: a late flip is
     # baked-in-silently otherwise (buffers sized at construction)
     FastMultipole.verify_locked_radix_settings(cache.locked_settings)
     ka_update_radix_state!(cache, targets; workgroup)
     state = cache.state
     ka_lifecycle_body!(state)
+    # SFS is a per-evaluation option, not merely a cache capability: an
+    # sfs-armed cache runs no TG/zeta kernels on the (default) sfs=false path.
+    # Placed after the lifecycle body and before the U/J finalize, which is
+    # CUDA's order (translate_batched_cuda.jl:6971-6979).
+    if sfs
+        state.sfs === nothing && throw(ArgumentError(
+            "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
+        ka_launch_sfs!(state)
+    end
     ka_finalize_radix_output!(state, targets; derivatives_switches=switches,
         host_output_staging=cache.device_ctx.host_output,
         target_buffers=FastMultipole._radix_cache_target_buffers!(cache, switches),
         device_target_buffers=cache.device_ctx.device_target_buffers)
+    sfs && ka_finalize_radix_sfs_output!(state, targets;
+        host_sfs_staging=cache.device_ctx.host_sfs_staging,
+        sfs_target_buffers=FastMultipole._radix_cache_sfs_buffers!(cache, targets),
+        device_sfs_buffers=cache.device_ctx.device_sfs_buffers)
     return cache
 end
 
@@ -5523,9 +5754,9 @@ end
 #
 # Two checks from `fmm!` are absent, both because the KA cache cannot reach the
 # state they guard:
-#   * the `sfs && !cache.sfs` check -- `ka_radix_cache_device_build` has no
-#     `sfs_ctx` (it is hardcoded `nothing`), so a KA cache is never `sfs=true`;
-#     `ka_radix_cache_device_step!` rejects `sfs=true` at its own entry instead.
+#   * the `sfs && !cache.sfs` check -- `ka_radix_cache_device_step!` makes the
+#     equivalent check against `state.sfs`, which is what the pass actually
+#     reads, and throws CUDA's message.
 #   * the adaptive branch (src/fmm.jl:900-916) -- `ka_update_radix_state!`
 #     throws on a non-`nothing` `cache.adaptive`.
 """
@@ -5591,11 +5822,11 @@ ka_fmm!(systems, cache::FastMultipole.RadixFMMCache; kwargs...) =
 #     backend was actually passed; a KA cache is device-resident by
 #     construction, so there is no `device=false` branch to guard.
 #
-#  2. SFS. CUDA validates the SFS arguments (:2449-2464) and goes on to build
-#     an `sfs_ctx`. `ka_radix_cache_device_build` hardcodes `sfs_ctx=nothing`
-#     and has no SFS pass at all, so `sfs=true` is refused outright here rather
-#     than validated. Same position in the order, stricter outcome, and the
-#     rejection is explicit -- never a silent fallback to `sfs=false`.
+#  2. (RESOLVED, task 048 KA port) SFS used to be refused here because
+#     `ka_radix_cache_device_build` had no `sfs_ctx` and no SFS pass. Both now
+#     exist, so this is CUDA's validation (:2449-2464) statement for statement:
+#     the hessian requirement, the packed-row-8 sigma requirement, and the
+#     `sfs_active_row` bounds. Only two deviations remain (1 and 3).
 #
 #  3. The trait tail is NOT here. CUDA's `dk` checks at :2600-2626 (isbits,
 #     the `AbstractRegularizedVortex` sigma_row bound, and
@@ -5627,15 +5858,30 @@ function ka_validate_radix_arguments(backend, target_systems, source_systems=tar
         lamb_helmholtz::Union{Nothing,Bool}=nothing,
         hessian::Bool=false,
         sfs::Bool=false,
+        sfs_active_row::Int=0,
         options::Union{Nothing,FastMultipole.CUDARadixLifecycleOptions}=nothing)
     targets = FastMultipole.to_tuple(target_systems)
     sources = FastMultipole.to_tuple(source_systems)
     FastMultipole._assert_radix_targets_are_sources(targets, sources)
 
-    # DEVIATION 2 (see above): CUDA validates SFS here; KA has no sfs_ctx.
-    sfs && throw(ArgumentError(
-        "the KA radix path has no SFS pass (ka_radix_cache_device_build " *
-        "hardcodes sfs_ctx=nothing); construct with sfs=false"))
+    # task 048: the SFS pass reads the 9-component J from the 13-row output
+    # and the raw smoothing radius sigma from packed row 8
+    sfs && !hessian && throw(ArgumentError(
+        "RadixFMMCache(sfs=true) requires hessian=true (the SFS pass reads " *
+        "the velocity Jacobian from the 13-row output)"))
+    if sfs
+        for system in sources
+            FastMultipole.data_per_body(system) >= 8 || throw(ArgumentError(
+                "RadixFMMCache(sfs=true) requires the raw smoothing radius " *
+                "sigma in packed row 8; data_per_body must be >= 8 " *
+                "(got $(FastMultipole.data_per_body(system)) for $(typeof(system)))"))
+        end
+        sfs_active_row >= 0 || throw(ArgumentError(
+            "sfs_active_row must be zero (all bodies active) or a positive packed row"))
+        sfs_active_row == 0 ||
+            all(FastMultipole.data_per_body(system) >= sfs_active_row for system in sources) ||
+            throw(ArgumentError("sfs_active_row=$sfs_active_row exceeds data_per_body for an SFS source system"))
+    end
 
     LH = lamb_helmholtz === nothing ?
         FastMultipole.has_vector_potential(sources) : Bool(lamb_helmholtz)
