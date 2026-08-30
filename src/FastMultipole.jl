@@ -185,6 +185,50 @@ function load_cuda_radix_lifecycle!()
     return Base.invokelatest(cuda_radix_available)::Bool
 end
 
+#------- device-backend registry: non-CUDA radix lifecycles -------#
+#
+# CUDA claims the radix device path by runtime-`include`ing
+# translate_batched_cuda.jl INTO this module, overwriting the stubs in
+# translate_batched_resident.jl outright. A package extension cannot use that
+# mechanism -- redefining a method the parent module already owns is piracy,
+# and Julia's own diagnostic for it is "incremental compilation may be fatally
+# broken". So a non-CUDA backend REGISTERS its entry points here and the stubs
+# consult the registry before throwing.
+#
+# Precedence is by construction: CUDA's include REPLACES the consulting stub,
+# so a CUDA build never reaches the registry and the CUDA path is unchanged.
+
+const _RADIX_DEVICE_BACKEND_NAME = Ref{Any}(nothing)
+const _RADIX_DEVICE_BUILD_HOOK = Ref{Any}(nothing)
+const _RADIX_DEVICE_STEP_HOOK = Ref{Any}(nothing)
+
+"""
+    register_radix_device_backend!(name, build, step!)
+
+Register a non-CUDA device-resident radix lifecycle. `build` is called with the
+argument list of `_radix_cache_device_build` and must return a built
+`RadixFMMCache`; `step!` is called as `step!(cache, targets, switches; sfs)`.
+Called from a package extension's `__init__`.
+"""
+function register_radix_device_backend!(name, build, step!)
+    _RADIX_DEVICE_BACKEND_NAME[] = name
+    _RADIX_DEVICE_BUILD_HOOK[] = build
+    _RADIX_DEVICE_STEP_HOOK[] = step!
+    return nothing
+end
+
+"A non-CUDA device-resident radix lifecycle is registered."
+radix_device_backend_available() = _RADIX_DEVICE_STEP_HOOK[] !== nothing
+
+"Name of the registered non-CUDA radix backend, or `nothing`."
+radix_device_backend_name() = _RADIX_DEVICE_BACKEND_NAME[]
+
+function radix_device_status()
+    name = _RADIX_DEVICE_BACKEND_NAME[]
+    name === nothing && return cuda_radix_status()
+    return "device radix lifecycle provided by $(name)"
+end
+
 cuda_radix_state(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
 cuda_radix_grid(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
 run_cuda_radix_lifecycle!(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))

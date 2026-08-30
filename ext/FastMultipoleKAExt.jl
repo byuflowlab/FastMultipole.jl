@@ -3591,9 +3591,12 @@ end
 function ka_hierarchical_context(::Type{TF}, backend, tables, class_level,
         class_offset, effective_offsets, level_class_of::Array{Int32,3},
         level_radii2, plan, ell::Int, first_m2l_level::Int, max_level_nodes::Int,
-        occupancy; window_classes::Int=typemax(Int)) where {TF}
-    plan isa FastMultipole.ResidentM2LConcatPlan || throw(ArgumentError(
-        "ka_hierarchical_context covers ResidentM2LConcatPlan only; got $(typeof(plan))"))
+        occupancy; window_classes::Int=typemax(Int),
+        dense_scales=nothing) where {TF}
+    plan isa Union{FastMultipole.ResidentM2LConcatPlan,
+                   FastMultipole.ResidentM2LDenseCUDAPlan} || throw(ArgumentError(
+        "ka_hierarchical_context covers ResidentM2LConcatPlan and the dense " *
+        "plan; got $(typeof(plan))"))
     isempty(occupancy.node_at) && throw(ArgumentError(
         "ka_hierarchical_context requires the dense per-level occupancy lookup"))
     noffsets = length(tables.push_offsets)
@@ -3609,7 +3612,16 @@ function ka_hierarchical_context(::Type{TF}, backend, tables, class_level,
         for (k, o) in enumerate(offsets); m[1, k] = Int32(o[1]);
             m[2, k] = Int32(o[2]); m[3, k] = Int32(o[3]); end; m)
     _zeros(T, n) = (z = KA.allocate(backend, T, n); fill!(z, zero(T)); z)
+    # dense reads a per-level Lambda column at apply time; concat does not
     empty_scale = KA.allocate(backend, TF, 0, 0)
+    src_scale, tgt_scale = if plan isa FastMultipole.ResidentM2LDenseCUDAPlan
+        dense_scales === nothing && throw(ArgumentError(
+            "a dense plan requires dense_scales=(source_scale, target_scale) " *
+            "from `_ka_hier_dense_scales`"))
+        (_dev(dense_scales[1]), _dev(dense_scales[2]))
+    else
+        (empty_scale, empty_scale)
+    end
     return FastMultipole.DeviceHierarchicalM2LContext(
         tables, level_radii2, class_level, class_offset, effective_offsets, plan,
         K, ell, first_m2l_level, noffsets,
@@ -3622,7 +3634,7 @@ function ka_hierarchical_context(::Type{TF}, backend, tables, class_level,
         _zeros(Int, 0), _zeros(Int, 0),
         _zeros(Int32, flag_capacity), _zeros(Int32, flag_capacity),
         _zeros(Int32, max(K, 1)), zeros(Int32, max(K, 1)),
-        empty_scale, empty_scale,
+        src_scale, tgt_scale,
         0, zeros(Int, ell + 1), zeros(Int, ell + 1), 0, 0, 1, 0,
         false, zeros(UInt64, 5), zeros(UInt64, ell + 1),
         0, 0, false, zeros(Int, ell + 2), zeros(Int, ell + 2),
@@ -3714,9 +3726,12 @@ gated on Metal.
 function ka_hierarchical_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
         hctx::FastMultipole.DeviceHierarchicalM2LContext, ws) where {TF,B,LH}
     plan = hctx.apply_plan
-    plan isa FastMultipole.ResidentM2LConcatPlan || throw(ArgumentError(
-        "ka_hierarchical_m2l! requires a ResidentM2LConcatPlan (build the cache " *
-        "with m2l_strategy = ConcatenatedFixedZM2L); got $(typeof(plan))"))
+    plan isa Union{FastMultipole.ResidentM2LConcatPlan,
+                   FastMultipole.ResidentM2LDenseCUDAPlan} || throw(ArgumentError(
+        "ka_hierarchical_m2l! requires a ResidentM2LConcatPlan or a dense plan " *
+        "(m2l_strategy = ConcatenatedFixedZM2L or DenseTranslationM2L); " *
+        "got $(typeof(plan))"))
+    dense = plan isa FastMultipole.ResidentM2LDenseCUDAPlan
     fill!(state.locals.phi, zero(TF))
     LH && fill!(state.locals.chi, zero(TF))
     route_class = plan.route_class
@@ -3726,15 +3741,25 @@ function ka_hierarchical_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B
     fill!(hctx.routes_per_level, 0)
     for L in hctx.first_m2l_level:hctx.ell
         level_total = 0
-        class_base = (L - hctx.first_m2l_level) * noffsets
+        # dense classes are the unscaled push offsets, level enters through the
+        # scale column only, so the level component drops out (cuda:7956)
+        class_base = dense ? 0 : (L - hctx.first_m2l_level) * noffsets
         for first_offset in 1:K:noffsets
             last_offset = min(first_offset + K - 1, noffsets)
             n = ka_hier_generate_window!(state, hctx, route_class, L,
                 first_offset, last_offset, class_base)
             hctx.last_window_routes = n
             state.counts.n_routes = n
-            n > 0 && ka_resident_m2l_concat_apply!(state.locals, state.multipoles, ws,
-                state.route_sources, state.route_targets, n)
+            if n > 0
+                if dense
+                    ka_hier_refresh_dense_window!(plan, hctx, first_offset,
+                        last_offset, n)
+                    ka_hier_dense_apply_window!(state, ws, plan, hctx, L)
+                else
+                    ka_resident_m2l_concat_apply!(state.locals, state.multipoles, ws,
+                        state.route_sources, state.route_targets, n)
+                end
+            end
             level_total += n
         end
         hctx.routes_per_level[L + 1] = level_total
@@ -5162,7 +5187,13 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         ka_compact_symmetric_pairs!(ctx, hctx, grid.cell_ranges, n_direct,
             _ka_radix_setting(:SYMMETRIC_CUDA_MAX_CELL_BODIES, 128); workgroup)
     end
-    if _ka_radix_setting(:CUDA_CACHED_WINDOWS, true) && !hctx.win_valid &&
+    # The occupancy-epoch window cache pays off only with a cached-window APPLY
+    # to consume it (`_launch_cuda_hierarchical_m2l_cached!`, cuda:7930). KA has
+    # none: `ka_hierarchical_m2l!` regenerates window by window, so building the
+    # cache here would generate every window twice per epoch. This branch was
+    # dead while KA had no dense plan; the dense port made it reachable, and it
+    # stays off until the cached apply is ported.
+    if false && _ka_radix_setting(:CUDA_CACHED_WINDOWS, true) && !hctx.win_valid &&
             hctx.apply_plan isa FastMultipole.ResidentM2LDenseCUDAPlan &&
             _ka_radix_setting(:DENSE_CUDA_FUSED, true)
         ka_hier_cache_windows!(ctx, hctx, grid; workgroup)
@@ -5253,16 +5284,23 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
         box_extent::SVector{3,TF}=SVector{3,TF}(2 * h0, 2 * h0, 2 * h0),
         root_level::Int=0, first_m2l_level::Int=2,
+        # task 048 SFS: FLOWVPM arms SFS STORAGE unconditionally at cache
+        # construction and gates execution/delivery on the PER-EVALUATION `sfs`
+        # flag (FLOWVPM_fmm_radix.jl:550-553). So an sfs=true cache must
+        # allocate the accumulators here even though KA runs no SFS pass;
+        # `ka_radix_cache_device_step!` still rejects an sfs=true evaluation.
+        sfs::Bool=false, sfs_transposed::Bool=true, sfs_active_row::Int=0,
         workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
     stencil_policy isa FastMultipole.HierarchicalRigidStencil || throw(ArgumentError(
         "ka_radix_cache_device_build covers the hierarchical stencil path only; " *
         "got $(typeof(stencil_policy))"))
     hierarchical_tables isa FastMultipole.RigidHierarchicalTables || throw(ArgumentError(
         "the hierarchical policy requires the rigid hierarchical tables"))
-    options.m2l_strategy isa Union{FastMultipole.PrecomputedFactoredYM2L,
-        FastMultipole.DenseTranslationM2L} && throw(ArgumentError(
-        "the KA device cache builds the concatenated hierarchical plan; " *
+    options.m2l_strategy isa FastMultipole.PrecomputedFactoredYM2L && throw(ArgumentError(
+        "the KA device cache builds the concatenated or dense hierarchical plan; " *
         "m2l_strategy=$(typeof(options.m2l_strategy)) has no KA plan"))
+    dense_strategy = options.m2l_strategy isa FastMultipole.DenseTranslationM2L ?
+        options.m2l_strategy : nothing
 
     _z(T, dims...) = fill!(KA.allocate(backend, T, dims...), zero(T))
 
@@ -5313,10 +5351,32 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         "(dense_occupancy_max_bytes=$(stencil_policy.dense_occupancy_max_bytes), " *
         "dense_occupancy_max_ell=$(stencil_policy.dense_occupancy_max_ell)); the " *
         "host Morton binary-search fallback has no device implementation"))
+    # DEVIATION (dense). CUDA builds the workspace ITSELF with the dense
+    # strategy (cuda:6331, `workspace_strategy`), so `workspace.m2l_concat`
+    # becomes the dense plan and `hctx.apply_plan` is that same object. Routing
+    # the plan through `_radix_cache_workspace` would need a backend the dense
+    # builder's signature does not carry, so KA keeps the concat workspace and
+    # builds the dense plan alongside it, handing it to the context directly.
+    # Behaviourally identical on the dense path -- nothing reads
+    # `workspace.m2l_concat` once `apply_plan` is dense -- at the cost of one
+    # unused concat operator table.
+    #
+    # Classes are the UNSCALED push offsets built at the leaf cell width
+    # (cuda:6326), matching `class_base = 0` in `ka_hierarchical_m2l!`.
+    cell_width = (2 * h0) / (1 << ell)
+    apply_plan, dense_scales = if dense_strategy === nothing
+        (workspace.m2l_concat, nothing)
+    else
+        plan = ka_build_dense_m2l_plan(backend, TF, basis_info,
+            hierarchical_tables.push_offsets, cell_width, route_capacity,
+            max_cells, 1 << ell, dense_strategy, invariant)
+        (plan, _ka_hier_dense_scales(TF, basis_info, ell, plan.ndof, first_m2l_level))
+    end
     hierarchical_ctx = ka_hierarchical_context(TF, backend, hierarchical_tables,
         class_level, class_offset, accepted, hierarchical_level_class_of,
-        hierarchical_level_radii2, workspace.m2l_concat, ell, first_m2l_level,
-        max_level_nodes, occupancy; window_classes=stencil_policy.window_classes)
+        hierarchical_level_radii2, apply_plan, ell, first_m2l_level,
+        max_level_nodes, occupancy; window_classes=stencil_policy.window_classes,
+        dense_scales)
 
     dpb = maximum(FastMultipole.data_per_body(system) for system in sources)
     n_output_rows = hessian ? 13 : 4
@@ -5386,8 +5446,10 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         # `ka_finalize_radix_output!` silently mis-strides
         host_output=zeros(TF, n_output_rows, maxn),
         device_target_buffers=Dict{Int,Any}(),
-        sfs_ctx=nothing,
-        host_sfs_staging=nothing,
+        sfs_ctx=sfs ?
+            (; tg=_z(TF, 3, maxn), om=_z(TF, 3, maxn), q=_z(TF, 3, maxn),
+               transposed=sfs_transposed, active_row=sfs_active_row) : nothing,
+        host_sfs_staging=sfs ? zeros(TF, 3, maxn) : nothing,
         device_sfs_buffers=Dict{Int,Any}(),
     )
     cache = FastMultipole.RadixFMMCache{TF,LH}(
@@ -5399,7 +5461,7 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         length(sources), false, 0,
         nothing, nothing, nothing, nothing,
         FastMultipole.snapshot_locked_radix_settings(),
-        false, true, nothing,
+        sfs, sfs_transposed, nothing,
     )
     ka_update_radix_state!(cache, sources; workgroup)
     cache.built = true
@@ -6032,6 +6094,315 @@ end
         end
     end
     return FastMultipole._vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
+end
+
+
+
+#------- DenseTranslationM2L on KA: hierarchical dense M2L -------#
+#
+# KA port of the hierarchical dense M2L path
+# (src/translate_batched_cuda.jl:7470-7902). FLOWVPM's shipped default is
+# `m2l_strategy=:dense` (FLOWVPM_fmm_radix.jl:204), so without this the real
+# `UJ_fmm` entry can only run on a non-default setting.
+#
+# Only the SEMANTIC core is ported. The CUDA file spends ~1500 lines on
+# FP16/BF16 tensor-core operator tables, CUBLAS batched-GEMM plumbing with
+# device-pointer alpha/beta, free-memory preflight gates and a fused per-route
+# kernel variant. None of that is required to compute the operator: routes are
+# offset-class-major and contiguous and each class carries ONE shared
+# `ndof x ndof` operator, so the apply is a plain GEMM per class. The tensor
+# paths, the memory gates and the fused variant are deliberately absent; the
+# gather/GEMM/scatter chunk loop is `_cuda_hier_dense_apply_window!`'s
+# non-fused branch statement for statement.
+#
+# Host oracle: `resident_m2l_batch!(::DenseTranslationM2L, ...)`
+# (src/translate_batched.jl:2118), which builds the same operator per column
+# and applies it as `y = K x`.
+#
+# DEVIATION (class geometry). Following CUDA, the operator table is built from
+# the UNSCALED `tables.push_offsets` at the leaf cell width and scaled per
+# level at apply time, so `class_base = 0` for dense where the concat path uses
+# `(L - first_m2l_level) * noffsets` (cuda:7956).
+
+# Copy of `_cuda_hier_dense_scales` (cuda:8059). Pure host math over host
+# Matrices, but it lives in the runtime-`include`d CUDA file, so it cannot be
+# called from an extension; same body, unchanged.
+function _ka_hier_dense_scales(::Type{TF}, basis_info::FastMultipole.OperatorBasisInfo{B,LH},
+        ell::Int, D::Int, first_m2l_level::Int=2) where {TF,B,LH}
+    nlevels = max(ell - first_m2l_level + 1, 0)
+    source_scale = ones(TF, D, nlevels)
+    target_scale = ones(TF, D, nlevels)
+    Dphi = FastMultipole.degree_major_dof(basis_info.orders.P_phi)
+    @inbounds for L in first_m2l_level:ell
+        col = L - first_m2l_level + 1
+        s = TF(1 << (ell - L))
+        for n in 0:basis_info.orders.P_phi, row in FastMultipole.degree_row_range(n)
+            source_scale[row, col] = s^(-n)
+            target_scale[row, col] = s^(-(n + 1))
+        end
+        if LH
+            for n in 0:basis_info.orders.P_active, row in FastMultipole.degree_row_range(n)
+                rr = Dphi + row
+                source_scale[rr, col] = s^(-(n - 1))
+                target_scale[rr, col] = s^(-(n + 2))
+            end
+        end
+    end
+    return source_scale, target_scale
+end
+
+"""
+    ka_build_dense_m2l_plan(backend, TF, basis_info, offsets, cell_width,
+                            route_capacity, max_cells, grid_resolution,
+                            strategy, invariant) -> ResidentM2LDenseCUDAPlan
+
+KA mirror of `_build_cuda_dense_m2l_plan` (cuda:4785). Every `D x D` operator is
+oracle-built on the host by the SAME `build_dense_m2l_operator!` the host plan
+uses, then uploaded into its column-major slice of the packed
+`D x D x nclasses` device array.
+
+`ResidentM2LDenseCUDAPlan` is reused rather than mirrored: its array fields are
+type parameters (containers.jl:1859), so it holds KA arrays unchanged. The
+tensor-operator fields are filled with empty arrays -- there is no KA tensor
+path -- and the byte-accounting fields carry the payload sizes only.
+"""
+function ka_build_dense_m2l_plan(backend, ::Type{TF},
+        basis_info::FastMultipole.OperatorBasisInfo{B,LH},
+        accepted_offsets::AbstractVector{<:SVector{3,<:Integer}}, cell_width::Real,
+        route_capacity::Integer, max_cells::Integer, grid_resolution::Integer,
+        strategy::FastMultipole.DenseTranslationM2L,
+        invariant::FastMultipole.OperatorInvariantCache{TF,B,LH};
+        chunk::Int=4096) where {TF,B,LH}
+    nroutes = Int(route_capacity)
+    ncells = Int(max_cells)
+    G = Int(grid_resolution)
+    nclasses = length(accepted_offsets)
+    D = FastMultipole._dense_m2m_dof(basis_info, Val(LH))
+    class_capacities = Vector{Int}(undef, nclasses)
+    @inbounds for i in eachindex(accepted_offsets)
+        class_capacities[i] = FastMultipole._dense_m2l_capacity(accepted_offsets[i],
+            nroutes, ncells, G)
+    end
+    W = max(min(chunk, nroutes), 1)
+
+    build_width = strategy.build_chunk > 0 ? min(D, strategy.build_chunk) : D
+    workspace = FastMultipole.DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
+    Kbuf = Matrix{TF}(undef, D, D)
+    ops_host = Array{TF,3}(undef, D, D, nclasses)
+    @inbounds for (i, offset) in enumerate(accepted_offsets)
+        delta = TF(cell_width) * SVector{3,TF}(offset)
+        r, theta, phi = FastMultipole.cartesian_to_spherical(delta)
+        FastMultipole.build_dense_m2l_operator!(Kbuf, r, theta, phi, invariant,
+            workspace, Val(LH))
+        FastMultipole._check_dense_m2l_operator_finite!(Kbuf, basis_info, offset)
+        ops_host[:, :, i] .= Kbuf
+    end
+    _dev(A) = (d = KA.allocate(backend, eltype(A), size(A)...); copyto!(d, A); d)
+    _zeros(T, dims...) = (z = KA.allocate(backend, T, dims...); fill!(z, zero(T)); z)
+
+    d_operators = _dev(ops_host)
+    empty3(T) = KA.allocate(backend, T, 0, 0, 0)
+    ndof_phi = FastMultipole.degree_major_dof(basis_info.orders.P_phi)
+    operator_bytes = sizeof(TF) * D * D * nclasses
+    scratch_bytes = 2 * sizeof(TF) * D * W
+    route_metadata_bytes = nroutes * sizeof(Int32) + nclasses * sizeof(Int32)
+    return FastMultipole.ResidentM2LDenseCUDAPlan{TF,typeof(d_operators),
+            typeof(empty3(Float16)),typeof(empty3(Float16)),
+            typeof(KA.allocate(backend, Float32, 0, 0)),
+            typeof(_zeros(Int32, nroutes)),typeof(_zeros(Int32, nclasses)),
+            typeof(_zeros(TF, D, W))}(
+        _zeros(Int32, nroutes), d_operators,
+        empty3(Float16), empty3(Float16), KA.allocate(backend, Float32, 0, 0),
+        _zeros(Int32, nclasses), zeros(Int32, nclasses), zeros(Int, nclasses + 1),
+        class_capacities, _zeros(TF, D, W), _zeros(TF, D, W),
+        nclasses, D, ndof_phi, W,
+        operator_bytes, scratch_bytes, route_metadata_bytes,
+        operator_bytes + scratch_bytes + route_metadata_bytes, 0,
+        Base.RefValue{Any}(nothing),
+    )
+end
+
+# Copy of `_cuda_hier_refresh_dense_window!` (cuda:7470): pure host bookkeeping
+# over `hctx.host_window_cum`, rebuilding `class_starts` for the window. The
+# `DENSE_CUDA_FUSED` branch is dropped -- KA has no fused variant, so the
+# out-of-window sentinel fill always runs.
+function ka_hier_refresh_dense_window!(plan::FastMultipole.ResidentM2LDenseCUDAPlan,
+        hctx::FastMultipole.DeviceHierarchicalM2LContext, lo::Int, hi::Int, n_routes::Int)
+    host_counts = plan.host_class_counts::Vector{Int32}
+    @inbounds for k in hctx.window_lo:hctx.window_hi
+        host_counts[k] = Int32(0)
+    end
+    starts = plan.class_starts
+    cursor = 1
+    total = 0
+    @inbounds for k in lo:hi
+        prev = k == lo ? 0 : Int(hctx.host_window_cum[k - lo])
+        c = Int(hctx.host_window_cum[k - lo + 1]) - prev
+        c <= plan.class_capacities[k] || throw(AssertionError(
+            "hierarchical dense M2L class $k count $c exceeds capacity $(plan.class_capacities[k])"))
+        host_counts[k] = Int32(c)
+        starts[k] = cursor
+        cursor += c
+        total += c
+    end
+    total == n_routes || throw(AssertionError(
+        "hierarchical dense M2L classes $lo:$hi do not partition the window's " *
+        "$n_routes routes (summed $total)"))
+    starts[hi + 1] = cursor
+    @inbounds for k in 1:(lo - 1)
+        starts[k] = 1
+    end
+    @inbounds for k in (hi + 2):length(starts)
+        starts[k] = cursor
+    end
+    hctx.window_lo = lo
+    hctx.window_hi = hi
+    return plan
+end
+
+# Mirrors of `_cuda_hier_dense_gather_kernel!` / `_cuda_hier_dense_scatter_kernel!`
+# (cuda:7732, :7750). Flat elementwise index math; the scatter accumulates with
+# `@atomic` exactly as CUDA does, since several routes in a window can target
+# the same cell.
+@kernel function ka_hier_dense_gather_kernel!(slab, @Const(phi), @Const(chi),
+        @Const(phi_flat_idx), @Const(chi_flat_idx), @Const(src_cols),
+        ndof_phi, lcol, @Const(src_scale), ::Val{LH}) where LH
+    idx = @index(Global)
+    ndof = size(slab, 1)
+    @inbounds if idx <= ndof * size(slab, 2)
+        row = (idx - 1) % ndof + 1
+        j = (idx - 1) ÷ ndof + 1
+        col = src_cols[j]
+        if row <= ndof_phi
+            slab[row, j] = phi[phi_flat_idx[row], col] * src_scale[row, lcol]
+        elseif LH
+            slab[row, j] = chi[chi_flat_idx[row - ndof_phi], col] * src_scale[row, lcol]
+        end
+    end
+end
+
+@kernel function ka_hier_dense_scatter_kernel!(phi, chi, @Const(slab),
+        @Const(phi_flat_idx), @Const(chi_flat_idx), @Const(tgt_cols),
+        ndof_phi, lcol, @Const(tgt_scale), ::Val{LH}) where LH
+    idx = @index(Global)
+    ndof = size(slab, 1)
+    @inbounds if idx <= ndof * size(slab, 2)
+        row = (idx - 1) % ndof + 1
+        j = (idx - 1) ÷ ndof + 1
+        col = tgt_cols[j]
+        if row <= ndof_phi
+            KA.@atomic phi[phi_flat_idx[row], col] += slab[row, j] * tgt_scale[row, lcol]
+        elseif LH
+            KA.@atomic chi[chi_flat_idx[row - ndof_phi], col] +=
+                slab[row, j] * tgt_scale[row, lcol]
+        end
+    end
+end
+
+# One class's GEMM: `dst[:, lo:hi] = operators[:, :, k] * src[:, lo:hi]`.
+# Replaces the `CUBLAS.gemm!` call at `_cuda_dense_class_gemm!`. One thread per
+# output element with a D-long inner product -- D is (P+1)^2 (36 at P=5), so the
+# operator row fits in cache and this stays bandwidth-bound on the slab.
+@kernel function ka_dense_class_gemm_kernel!(dst, @Const(ops), @Const(src),
+        k, lo, ncols, D)
+    idx = @index(Global)
+    @inbounds if idx <= D * ncols
+        row = (idx - 1) % D + 1
+        j = (idx - 1) ÷ D + 1
+        col = lo + j - 1
+        acc = zero(eltype(dst))
+        for t in 1:D
+            acc += ops[row, t, k] * src[t, col]
+        end
+        dst[row, col] = acc
+    end
+end
+
+function ka_dense_class_gemm!(dst, ops, k::Int, src, lo::Int, hi::Int;
+        workgroup=KA_AUTO_WORKGROUP)
+    ncols = hi - lo + 1
+    ncols <= 0 && return dst
+    D = size(ops, 1)
+    backend = KA.get_backend(dst)
+    n_el = D * ncols
+    kernel = _cached_kernel(ka_dense_class_gemm_kernel!, backend, workgroup)
+    kernel(dst, ops, src, k, lo, ncols, D; ndrange=n_el)
+    return dst
+end
+
+# `_cuda_hier_dense_apply_window!` (cuda:7862), non-fused branch, statement for
+# statement: chunked gather -> per-class GEMM over the classes the chunk spans
+# -> scatter-add.
+function ka_hier_dense_apply_window!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        ws, plan::FastMultipole.ResidentM2LDenseCUDAPlan,
+        hctx::FastMultipole.DeviceHierarchicalM2LContext, L::Int;
+        workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
+    n_routes = state.counts.n_routes
+    n_routes == 0 && return state
+    lcol = L - hctx.first_m2l_level + 1
+    starts = plan.class_starts
+    W = plan.width
+    ndof_phi = plan.ndof_phi
+    D = plan.ndof
+    backend = KA.get_backend(plan.src_slab)
+    kcur = hctx.window_lo
+    @inbounds for c0 in 1:W:n_routes
+        n = min(W, n_routes - c0 + 1)
+        chi_hi = c0 + n - 1
+        src_view = view(plan.src_slab, :, 1:n)
+        dst_view = view(plan.dst_slab, :, 1:n)
+        gk = _cached_kernel(ka_hier_dense_gather_kernel!, backend, workgroup)
+        gk(src_view, state.multipoles.phi, state.multipoles.chi,
+            ws.phi_flat_idx, ws.chi_flat_idx, view(state.route_sources, c0:chi_hi),
+            ndof_phi, lcol, hctx.source_scale, Val(LH); ndrange=D * n)
+        while kcur < hctx.window_hi && starts[kcur + 1] <= c0
+            kcur += 1
+        end
+        k = kcur
+        while k <= hctx.window_hi && starts[k] <= chi_hi
+            lo = max(starts[k], c0)
+            hi = min(starts[k + 1] - 1, chi_hi)
+            hi >= lo && ka_dense_class_gemm!(plan.dst_slab, plan.operators, k,
+                plan.src_slab, lo - c0 + 1, hi - c0 + 1; workgroup)
+            k += 1
+        end
+        sk = _cached_kernel(ka_hier_dense_scatter_kernel!, backend, workgroup)
+        sk(state.locals.phi, state.locals.chi, dst_view,
+            ws.phi_flat_idx, ws.chi_flat_idx, view(state.route_targets, c0:chi_hi),
+            ndof_phi, lcol, hctx.target_scale, Val(LH); ndrange=D * n)
+    end
+    return state
+end
+
+#------- STAGE 0: real `fmm!` dispatch, through the src/ backend registry -------#
+#
+# `ka_fmm!` (above) still exists as the direct entry the bench and suites call.
+# What follows wires the REAL one: `fmm!(targets, sources, cache)` reaches
+# `FastMultipole._radix_cache_device_step!`, whose stub now consults the
+# registry in `register_radix_device_backend!` instead of throwing. CUDA is
+# unaffected -- its runtime `include` replaces the consulting stub outright, so
+# a CUDA build never reaches the registry.
+
+function _ka_radix_device_build_hook(sources::Tuple, args...;
+        adaptive_policy=nothing, dpb_adaptive::Int=0, kwargs...)
+    adaptive_policy === nothing || throw(ArgumentError(
+        "the KA radix backend has no adaptive octree lifecycle; " *
+        "build the cache with adaptive=nothing"))
+    backend = FastMultipole.radix_sources_backend(sources)
+    backend === nothing && throw(ArgumentError(
+        "RadixFMMCache(device=true) resolved to the KA backend, but no source " *
+        "system names one; define FastMultipole.device_backend(system) to " *
+        "return the KernelAbstractions backend its storage lives on"))
+    return ka_radix_cache_device_build(backend, sources, args...; kwargs...)
+end
+
+_ka_radix_device_step_hook(cache, targets, switches; sfs::Bool=false) =
+    ka_radix_cache_device_step!(cache, targets, switches; sfs)
+
+function __init__()
+    FastMultipole.register_radix_device_backend!("KernelAbstractions",
+        _ka_radix_device_build_hook, _ka_radix_device_step_hook)
+    return nothing
 end
 
 

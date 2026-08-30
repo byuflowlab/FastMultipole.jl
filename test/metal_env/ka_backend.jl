@@ -22,11 +22,13 @@ const HAS_METAL = isapple()
     const DEV_NAME = "Metal"
     const DEV_BACKEND = Metal.MetalBackend()
     devarray(x) = Metal.MtlArray(x)
+    const devmatrix = Metal.MtlMatrix
     dev_functional() = Metal.functional()
 else
     using CUDA
     const DEV_NAME = "CUDA"
     const DEV_BACKEND = CUDABackend()
     devarray(x) = CUDA.CuArray(x)
+    const devmatrix = CUDA.CuMatrix
     dev_functional() = CUDA.functional()
 end

@@ -31,7 +31,7 @@ CUDA: `src/translate_batched_resident.jl:2426-2591` (`RadixFMMCache`).
 | 5 | Stencil policy + hierarchical tables (`root_level`, `first_m2l_level`, accepted/rejected offsets) + options/`dk` finalization | `resident:2546-2578`, `:2594-2626` | `ext:5769` (`ka_radix_stencil_policy`) | SAME (two noted deviations, one reordering) |
 | 6 | Capacity sizing: `max_cells`, `max_nodes`, `max_level_nodes`, `route_capacity`, `direct_capacity` | `resident:2580-2592` | `ext:5877` (`ka_radix_capacities`) | SAME |
 | 7 | Device ctx allocation | | `ext:5226` | SAME (hierarchical + `ConcatenatedFixedZM2L` only) |
-| 8 | First state refresh | inside the ctor, `cuda:6564` | left to the caller | DIFFERS |
+| 8 | First state refresh | inside the ctor, `cuda:6564`, then `built = true` (`resident:2691`) | inside `ka_radix_cache_device_build` (`ext:5406`), then `built = true` | SAME |
 
 **Stage 1 landed 2026-08-30** as `ka_validate_radix_arguments` (`ext:5561`): a
 statement-for-statement port of the constructor's pre-geometry prologue, in
@@ -86,10 +86,18 @@ This closes the two consequences this document recorded while stages 2-6 were
 missing: KA now has a front end, and the sizing it performs is gated against an
 independently-built host cache rather than copied from one.
 
-Still outstanding at construction: **stage 0** (there is no `fmm!` dispatch that
-reaches KA; the bench and the suites call `ext.ka_fmm!` / 
-`ext.ka_radix_cache_device_step!` directly) and **stage 8** (the first state
-refresh, left to the caller).
+**Stage 8 landed 2026-08-30** (session 22, recorded session 23): the tail of
+`ka_radix_cache_device_build` calls `ka_update_radix_state!(cache, sources)` and
+then sets `cache.built = true`, the same two statements in the same order as the
+CUDA constructor's `update_cuda_radix_state!` + `resident:2691`. No code was
+written this session; the row above was stale. It is gated implicitly by
+`pipeline_stage_bench.jl`, which goes straight from `ka_radix_cache_device_build`
+to `ka_fmm!` with no caller-side refresh in between and scores relerr(U) ~1e-6 --
+a cache whose first refresh had not run would have no grid at all.
+
+Still outstanding at construction: **stage 0** alone (there is no `fmm!` dispatch
+that reaches KA; the bench and the suites call `ext.ka_fmm!` /
+`ext.ka_radix_cache_device_step!` directly).
 
 There is no auto-`ell` derivation on *either* side. FLOWVPM's
 `max(2, floor(log2(np)/3))` rule lives in the caller

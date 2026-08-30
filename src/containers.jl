@@ -1956,6 +1956,26 @@ struct HostResident <: Residency end
 
 struct DeviceResident <: Residency end
 
+"""
+    device_backend(system) -> backend or nothing
+
+KernelAbstractions backend a `DeviceResident` system's storage lives on, or
+`nothing` (the default) for a system that names no backend. CUDA never consults
+this -- it reaches its device through `CUDA.jl` directly -- so it exists for the
+registry in `register_radix_device_backend!`, which must know which device to
+allocate the cache on BEFORE it may touch a source system's buffers.
+"""
+device_backend(system) = nothing
+
+"Backend named by the first source system that names one, or `nothing`."
+function radix_sources_backend(systems::Tuple)
+    for system in systems
+        backend = device_backend(system)
+        backend === nothing || return backend
+    end
+    return nothing
+end
+
 "Role policy for tree construction; replaces ambiguous source/target booleans."
 abstract type TreeRole end
 struct SourceTree <: TreeRole end

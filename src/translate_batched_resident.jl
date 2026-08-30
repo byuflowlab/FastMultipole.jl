@@ -2502,9 +2502,11 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     end
     TF = options.precision
     if device
-        cuda_radix_available() ||
+        cuda_radix_available() || radix_device_backend_available() ||
             throw(ArgumentError("RadixFMMCache(device=true) requires a functional CUDA " *
-                "radix lifecycle; call load_cuda_radix_lifecycle!() first ($(cuda_radix_status()))"))
+                "radix lifecycle, or a registered non-CUDA device backend; call " *
+                "load_cuda_radix_lifecycle!() first, or load a backend extension " *
+                "($(cuda_radix_status()))"))
     end
     for system in sources
         data_per_body(system) >= 4 + strength_dims(system) ||
@@ -3411,7 +3413,9 @@ end
 # Device-resident construction/step; redefined by translate_batched_cuda.jl (task
 # 023 step 7) once load_cuda_radix_lifecycle!() has run.
 function _radix_cache_device_build(args...; kwargs...)
-    throw(CUDARadixUnavailable(cuda_radix_status()))
+    hook = _RADIX_DEVICE_BUILD_HOOK[]
+    hook === nothing && throw(CUDARadixUnavailable(cuda_radix_status()))
+    return hook(args...; kwargs...)
 end
 
 # Device-resident dense M2L plan construction (task 023f); redefined by
@@ -3424,7 +3428,9 @@ end
 
 function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple;
         sfs::Bool=false)
-    throw(CUDARadixUnavailable(cuda_radix_status()))
+    hook = _RADIX_DEVICE_STEP_HOOK[]
+    hook === nothing && throw(CUDARadixUnavailable(cuda_radix_status()))
+    return hook(cache, targets, switches; sfs)
 end
 
 #------- adaptive octree host resident lifecycle: state assembly + drivers (task 040) -------#
