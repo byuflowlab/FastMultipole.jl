@@ -2983,7 +2983,13 @@ function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B
     hs = size(state.output, 1) >= 13
     backend = KA.get_backend(state.output)
     kern = _cached_kernel(ka_direct_pairs_functor_kernel!, backend, workgroup)
-    kern(state.options.direct_kernel, state.output, state.source_bodies,
+    # `state.options.direct_kernel` is the stock functor, whose regularized
+    # variants carry hardcoded `Float64` cutoffs; rebuild it with `TF` cutoffs
+    # before it crosses into device code (see the "precision-parameterized
+    # device functors" block near the end of this file). Singular kernels are
+    # returned unchanged, so this is a no-op for every existing suite.
+    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF)
+    kern(dkernel, state.output, state.source_bodies,
          state.cell_ranges, state.direct_targets, state.direct_sources,
          npairs, TF, Val(hs), Val(workgroup); ndrange=npairs * workgroup)
     return state
@@ -3011,7 +3017,7 @@ end
 @kernel function ka_adaptive_s2l_vortex_kernel!(lp, lc, @Const(source_bodies),
         @Const(cell_ranges), @Const(leaf_slot_of), @Const(node_centers),
         @Const(x_targets), @Const(x_sources), n_x, Hall, ::Type{TF},
-        ::Val{P_phi}, ::Val{P_active}, ::Val{NG}, ::Val{WG}) where {TF,P_phi,P_active,NG,WG}
+        ::Val{P_phi}, ::Val{P_active}, n_g, ::Val{WG}) where {TF,P_phi,P_active,WG}
     grp = @index(Group)
     tid = @index(Local)
     gslot = (grp - 1) * WG + tid
@@ -3092,7 +3098,7 @@ end
             end
             sB += WG
         end
-        k += NG
+        k += n_g
     end
 end
 
@@ -3109,7 +3115,7 @@ end
 @kernel function ka_adaptive_m2t_kernel!(output, @Const(source_bodies), @Const(cell_ranges),
         @Const(leaf_slot_of), @Const(node_centers), @Const(w_targets), @Const(w_sources),
         n_w, @Const(ph), @Const(ch), Hall, ::Type{TF}, ::Val{P_phi}, ::Val{P_active},
-        ::Val{LH}, ::Val{HS}, ::Val{NG}, ::Val{WG}) where {TF,P_phi,P_active,LH,HS,NG,WG}
+        ::Val{LH}, ::Val{HS}, n_g, ::Val{WG}) where {TF,P_phi,P_active,LH,HS,WG}
     grp = @index(Group)
     tid = @index(Local)
     gslot = (grp - 1) * WG + tid
@@ -3143,7 +3149,7 @@ end
             end
             i += WG
         end
-        k += NG
+        k += n_g
     end
 end
 
@@ -3153,6 +3159,14 @@ end
 W-list multipole-to-target for the KA lifecycle: mirror of
 `_launch_cuda_adaptive_m2t!`. Selects the 13-row hessian variant on
 `size(state.output, 1) >= 13`, as CUDA does.
+
+`ng` is passed as a RUNTIME `Int`, not a `Val`, and this is deliberate: it is
+the window-loop stride, CUDA's `gridDim().x`, which CUDA also reads at runtime.
+As `Val(ng)` it was `min(n_w, KA_S2L_GROUPS)` baked into a type parameter, so
+every distinct window count forced a fresh specialization and a fresh device
+compile -- 82-300 s each on Metal. It buys nothing: the stride is only ever an
+increment. `ka_launch_adaptive_s2l!` is the same. Do not "optimize" these back
+into `Val`.
 """
 function ka_launch_adaptive_m2t!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
         lists, actx, harmonics_scratch; workgroup::Int=128) where {TF,B,LH}
@@ -3168,7 +3182,7 @@ function ka_launch_adaptive_m2t!(state::FastMultipole.DeviceResidentRadixState{T
          state.grid.node_centers, b.w_targets, b.w_sources, n_w,
          FastMultipole.phi_slab(state.multipoles), FastMultipole.chi_slab(state.multipoles),
          harmonics_scratch, TF, Val(orders.P_phi), Val(orders.P_active), Val(LH),
-         Val(hs), Val(ng), Val(workgroup); ndrange=ng * workgroup)
+         Val(hs), ng, Val(workgroup); ndrange=ng * workgroup)
     return state
 end
 
@@ -3197,7 +3211,7 @@ function ka_launch_adaptive_s2l!(state::FastMultipole.DeviceResidentRadixState{T
          state.source_bodies, state.cell_ranges, actx.bufs.leaf_slot_of,
          state.grid.node_centers, b.x_targets, b.x_sources, n_x,
          harmonics_scratch, TF, Val(orders.P_phi), Val(orders.P_active),
-         Val(ng), Val(workgroup); ndrange=ng * workgroup)
+         ng, Val(workgroup); ndrange=ng * workgroup)
     return state
 end
 
@@ -4080,25 +4094,123 @@ function ka_radix_keys_checked!(keys, oob_flag, host_oob, positions, x_min,
     return keys
 end
 
-"""
-    ka_radix_sort_bodies!(perm, sorted_keys, invperm, keys; workgroup=KA_AUTO_WORKGROUP)
+#------- bounded-key counting sort: KA port of the CUDA Stage 6 fast path -------#
+#
+# Port of `_cuda_counting_sort_into!` and its three kernels
+# (src/translate_batched_cuda.jl:183-236). The cache's fixed Morton depth bounds
+# keys to `0:2^(3ell)-1`, so a histogram over the whole key domain plus one scan
+# and an atomic-cursor scatter replaces the comparison sort.
+#
+# This path is deliberately UNSTABLE, exactly as CUDA's is: the scatter claims
+# its slot with an atomic cursor, so bodies sharing a cell land in an order that
+# varies between otherwise identical runs. That is the CUDA behavior being
+# matched, and it is why this sits behind the same runtime gate rather than
+# simply replacing `sortperm!`. Two consequences, both inherited from CUDA:
+#
+#   * within-cell body order is not reproducible run to run, so neither is the
+#     summation order of the same-cell nearfield atomics -- identical inputs
+#     move in the last bits between runs;
+#   * `perm` can no longer be compared elementwise against the stable host sort.
+#     Everything downstream still is exact: `cell_keys`, `cell_ranges`, cell
+#     centers and the whole node table are pure functions of the occupied-cell
+#     SET, not of within-cell ordering.
+#
+# The gate mirrors CUDA's two conditions (`_cuda_counting_sort_ready`): the
+# setting must be on for this `ell`, AND the histogram actually handed in must
+# span the key domain -- flipping the knob on after construction would otherwise
+# drive `@inbounds` atomics through a length-1 array. Falling back is always safe.
 
-Sort the bodies by Morton key: `perm` receives the sorting permutation,
-`sorted_keys` the gathered keys, `invperm` the scatter inverse. Port of the
-`_cuda_sortperm_into!` / `_cuda_gather_sorted_keys_kernel!` /
-`_cuda_fill_invperm_kernel!` triple. The bounded counting-sort fast path is not
-ported: it is an *unstable* CUDA-only optimization, so leaving it out makes the
-KA arm's same-cell ordering deterministic rather than losing anything the
-correctness contract depends on.
+@kernel function ka_counting_histogram_kernel!(histogram, @Const(keys), n)
+    i = @index(Global)
+    @inbounds if i <= n
+        KA.@atomic histogram[Int(keys[i]) + 1] += Int32(1)
+    end
+end
+
+@kernel function ka_counting_cursor_kernel!(cursor, @Const(prefix), n)
+    k = @index(Global)
+    @inbounds if k <= n
+        cursor[k] = k == 1 ? Int32(0) : prefix[k - 1]
+    end
+end
+
+@kernel function ka_counting_scatter_kernel!(perm, sorted_keys, cursor, @Const(keys), n)
+    i = @index(Global)
+    @inbounds if i <= n
+        key = keys[i]
+        # CUDA calls `atomic_add!`, which returns the OLD value, and takes
+        # `old + 1` as the 1-based slot. KA's `@atomic x += v` returns the NEW
+        # value, which is that same slot -- verified on Metal, not assumed.
+        slot = KA.@atomic cursor[Int(key) + 1] += Int32(1)
+        perm[Int(slot)] = i
+        sorted_keys[Int(slot)] = key
+    end
+end
+
+@inline ka_counting_sort_enabled(ell::Int) =
+    _ka_radix_setting(:RADIX_CUDA_COUNTING_SORT, true) &&
+        ell <= _ka_radix_setting(:RADIX_CUDA_COUNTING_SORT_MAX_ELL, 6)
+
+@inline ka_counting_sort_ready(histogram, ell::Int) =
+    histogram !== nothing && ell >= 0 && ka_counting_sort_enabled(ell) &&
+        length(histogram) == 1 << (3 * ell)
+
 """
-function ka_radix_sort_bodies!(perm, sorted_keys, invperm, keys;
+    ka_counting_sort_into!(perm, sorted_keys, keys, histogram, prefix, cursor;
+                           workgroup=KA_AUTO_WORKGROUP)
+
+Backend-agnostic port of `_cuda_counting_sort_into!`: histogram the bounded
+Morton keys, inclusive-scan the histogram, shift it into an exclusive cursor,
+then scatter each body into the slot its atomic cursor claims. `histogram`,
+`prefix` and `cursor` must each span the full `2^(3ell)` key domain. Unstable by
+construction -- see the note above.
+"""
+function ka_counting_sort_into!(perm, sorted_keys, keys, histogram, prefix, cursor;
         workgroup=KA_AUTO_WORKGROUP)
     n = length(keys)
     n == 0 && return perm
     backend = KA.get_backend(keys)
-    sortperm!(perm, keys)
-    gather = _cached_kernel(ka_gather_sorted_keys_kernel!, backend, workgroup)
-    gather(sorted_keys, keys, perm, n; ndrange=n)
+    fill!(histogram, Int32(0))
+    hk = _cached_kernel(ka_counting_histogram_kernel!, backend, workgroup)
+    hk(histogram, keys, n; ndrange=n)
+    accumulate!(+, prefix, histogram)
+    nd = length(histogram)
+    ck = _cached_kernel(ka_counting_cursor_kernel!, backend, workgroup)
+    ck(cursor, prefix, nd; ndrange=nd)
+    sc = _cached_kernel(ka_counting_scatter_kernel!, backend, workgroup)
+    sc(perm, sorted_keys, cursor, keys, n; ndrange=n)
+    return perm
+end
+
+"""
+    ka_radix_sort_bodies!(perm, sorted_keys, invperm, keys; workgroup=KA_AUTO_WORKGROUP,
+                          ell=-1, histogram=nothing, prefix=nothing, cursor=nothing)
+
+Sort the bodies by Morton key: `perm` receives the sorting permutation,
+`sorted_keys` the gathered keys, `invperm` the scatter inverse. Port of the
+`_cuda_sortperm_into!` / `_cuda_gather_sorted_keys_kernel!` /
+`_cuda_fill_invperm_kernel!` triple, and -- when `ell` and the counting buffers
+are supplied and the gate passes -- of CUDA's bounded counting-sort fast path
+too, branching exactly where `_cuda_update_radix_grid_in_place!` branches.
+
+Callers that omit the counting buffers (the isolated correctness suites) keep
+the stable `sortperm!` path, which is what makes an elementwise `perm`
+comparison against the host sort meaningful for them.
+"""
+function ka_radix_sort_bodies!(perm, sorted_keys, invperm, keys;
+        workgroup=KA_AUTO_WORKGROUP, ell::Int=-1,
+        histogram=nothing, prefix=nothing, cursor=nothing)
+    n = length(keys)
+    n == 0 && return perm
+    backend = KA.get_backend(keys)
+    if ka_counting_sort_ready(histogram, ell)
+        ka_counting_sort_into!(perm, sorted_keys, keys, histogram, prefix, cursor;
+            workgroup)
+    else
+        sortperm!(perm, keys)
+        gather = _cached_kernel(ka_gather_sorted_keys_kernel!, backend, workgroup)
+        gather(sorted_keys, keys, perm, n; ndrange=n)
+    end
     ka_fill_invperm!(invperm, perm; workgroup)
     KA.synchronize(backend)
     return perm
@@ -4135,5 +4247,1792 @@ function ka_radix_compress_cells!(cell_keys, cell_ranges, sorted_keys, flags,
     KA.synchronize(backend)
     return n_cells
 end
+
+
+#------- in-place grid rebuild, stage 2: occupancy-epoch check + cell centers -------#
+#
+# Third stage of `_cuda_update_radix_grid_in_place!`
+# (src/translate_batched_cuda.jl:6591), directly after the leaf-cell compression
+# ported in stage 1. This is the seam the epoch check defines: everything from
+# here on -- cell centers, per-level unique node keys, node geometry/parent/child
+# topology, leaf_to_node -- is a pure function of the occupied leaf-cell SET
+# inside the cache's fixed Morton box, so when the sorted unique keys match the
+# previous step's snapshot exactly the whole node-metadata rebuild is skipped
+# and the persistent arrays stay valid. The compare costs one kernel plus one
+# 4-byte D2H, replacing ~40 launches, several device scans and two blocking
+# downloads on the steady occupancy-static step.
+#
+# Host oracle for the gate: the cell-center loop of `_refresh_radix_grid!`
+# (src/tree_batched.jl:485), plus `morton_decode` for the integer coords, which
+# the host grid does not store (`ctx.cell_coords` is device-side only).
+
+@kernel function ka_keys_differ_kernel!(flag, @Const(keys), @Const(snapshot), n)
+    i = @index(Global)
+    @inbounds if i <= n && keys[i] != snapshot[i]
+        # benign-race flag store: any lane observing a difference sets it
+        flag[1] = Int32(1)
+    end
+end
+
+@kernel function ka_cell_centers_kernel!(centers, coords, @Const(cell_keys),
+        x_min, h0, ell, n_cells)
+    icell = @index(Global)
+    @inbounds if icell <= n_cells
+        TF = eltype(centers)
+        delta = (2 * h0) / (1 << ell)
+        ix, iy, iz = ka_decode_morton_key(cell_keys[icell], ell)
+        coords[1, icell] = ix
+        coords[2, icell] = iy
+        coords[3, icell] = iz
+        centers[1, icell] = x_min[1] + delta * (TF(ix) + TF(0.5))
+        centers[2, icell] = x_min[2] + delta * (TF(iy) + TF(0.5))
+        centers[3, icell] = x_min[3] + delta * (TF(iz) + TF(0.5))
+    end
+end
+
+"""
+    ka_radix_occupancy_changed!(flag, host_flag, cell_keys, snapshot, n_cells;
+                                workgroup=KA_AUTO_WORKGROUP)
+
+Backend-agnostic port of the `_cuda_keys_differ_kernel!` compare: returns `true`
+when the first `n_cells` occupied leaf-cell keys differ anywhere from
+`snapshot`. Both key arrays are ascending and of equal length by the caller's
+own `n`/`n_cells` precheck, so an elementwise compare is a set compare. `flag`
+is a 1-element device buffer, `host_flag` its 1-element host mirror.
+"""
+function ka_radix_occupancy_changed!(flag, host_flag, cell_keys, snapshot,
+        n_cells::Int; workgroup=KA_AUTO_WORKGROUP)
+    n_cells == 0 && return false
+    backend = KA.get_backend(cell_keys)
+    fill!(flag, Int32(0))
+    kernel = _cached_kernel(ka_keys_differ_kernel!, backend, workgroup)
+    kernel(flag, cell_keys, snapshot, n_cells; ndrange=n_cells)
+    KA.synchronize(backend)
+    copyto!(host_flag, flag)
+    return host_flag[1] != Int32(0)
+end
+
+"""
+    ka_radix_cell_centers!(centers, coords, cell_keys, x_min, h0, ell, n_cells;
+                           workgroup=KA_AUTO_WORKGROUP)
+
+Port of `_cuda_cell_centers_kernel!`: decode each occupied leaf cell's Morton
+key into its integer grid coordinate (`coords`) and the cell's physical center
+(`centers`). `x_min` is a plain host scalar triple (an `SVector{3,TF}`), `h0`
+the box half-width; the `0.5` is `TF`-typed, since a bare literal would promote
+the whole expression to `Float64` and fail to compile on Metal.
+"""
+function ka_radix_cell_centers!(centers, coords, cell_keys, x_min, h0, ell::Int,
+        n_cells::Int; workgroup=KA_AUTO_WORKGROUP)
+    n_cells == 0 && return centers
+    backend = KA.get_backend(cell_keys)
+    kernel = _cached_kernel(ka_cell_centers_kernel!, backend, workgroup)
+    kernel(centers, coords, cell_keys, x_min, h0, ell, n_cells; ndrange=n_cells)
+    KA.synchronize(backend)
+    return centers
+end
+
+
+
+#------- in-place grid rebuild, stage 3: per-level unique node keys -------#
+#
+# Fourth stage of `_cuda_update_radix_grid_in_place!`
+# (src/translate_batched_cuda.jl:6591), the first block behind the stage-2
+# occupancy-epoch check. `cell_keys` is ascending and a right shift is monotone,
+# so each level's ancestor keys are *already sorted* -- no per-level sort is
+# needed, and the same flag/scan/compact triple that compressed bodies into
+# leaf cells in stage 1 compresses each level's ancestor keys into that level's
+# unique nodes. Only the counts round-trip to the host, because the level
+# offsets are a running host-side prefix that the node-capacity check and the
+# stage-4 launch geometry (`max_count`) both read.
+#
+# Levels below the cache root are trimmed (task 037 stage 3): never keyed, never
+# built. `ka_gather_level_counts_kernel!` still reads every column, including
+# the unfilled prefix columns of the trimmed levels, exactly as the CUDA kernel
+# does -- the host loop zeroes those counts immediately after the download, so
+# the garbage never reaches an offset.
+#
+# Host oracle for the gate: `_refresh_radix_nodes!` (src/tree_batched.jl), whose
+# count and fill loops are what `_radix_grid` runs on the CPU.
+
+@kernel function ka_leaf_ancestor_keys_kernel!(ancestor_keys, @Const(cell_keys),
+        leaf_level, level, n_cells)
+    i = @index(Global)
+    @inbounds if i <= n_cells
+        ancestor_keys[i] = cell_keys[i] >> (3 * (leaf_level - level))
+    end
+end
+
+@kernel function ka_gather_level_counts_kernel!(level_counts, @Const(level_prefix),
+        n_cells, n_levels)
+    l = @index(Global)
+    @inbounds if l <= n_levels
+        level_counts[l] = n_cells == 0 ? 0 : level_prefix[n_cells, l]
+    end
+end
+
+@kernel function ka_fill_unique_keys_kernel!(dest, @Const(sorted_keys), @Const(flags),
+        @Const(prefix), offset, n)
+    i = @index(Global)
+    @inbounds if i <= n && flags[i] == 1
+        dest[offset + prefix[i]] = sorted_keys[i]
+    end
+end
+
+"""
+    ka_radix_level_nodes!(node_keys, level_offsets, level_keys, level_flags,
+                          level_prefix, level_counts, host_level_counts,
+                          d_level_offsets, cell_keys, n_cells, ell, first_level,
+                          max_nodes; workgroup=KA_AUTO_WORKGROUP)
+
+Backend-agnostic port of the per-level unique-node block of
+`_cuda_update_radix_grid_in_place!`: for each active level `first_level:ell`,
+shift the occupied leaf-cell keys to that level's ancestor keys and compress the
+runs into `node_keys`, level-major. Fills the host `level_offsets` (length
+`ell + 2`, trimmed levels left at 0), mirrors it to `d_level_offsets`, and
+returns `(n_nodes, max_count)` -- the node total for the caller's capacity
+bookkeeping and the largest per-level node count, which is the x-extent of the
+stage-4 2D launches.
+
+`level_keys`/`level_flags`/`level_prefix` are `max_cells x (ell + 1)` device
+scratch matrices, one column per level; `level_counts` is an `ell + 1` device
+vector and `host_level_counts` its host mirror. Throws `AssertionError` if the
+node total exceeds `max_nodes`.
+"""
+function ka_radix_level_nodes!(node_keys, level_offsets, level_keys, level_flags,
+        level_prefix, level_counts, host_level_counts, d_level_offsets,
+        cell_keys, n_cells::Int, ell::Int, first_level::Int, max_nodes::Int;
+        workgroup=KA_AUTO_WORKGROUP)
+    backend = KA.get_backend(cell_keys)
+    n_levels = length(level_counts)
+    if n_cells > 0
+        ancestor = _cached_kernel(ka_leaf_ancestor_keys_kernel!, backend, workgroup)
+        flagk = _cached_kernel(ka_key_change_flags_kernel!, backend, workgroup)
+        for level in first_level:ell
+            col = level + 1
+            lk = view(level_keys, 1:n_cells, col)
+            lf = view(level_flags, 1:n_cells, col)
+            ancestor(lk, cell_keys, ell, level, n_cells; ndrange=n_cells)
+            flagk(lf, lk, n_cells; ndrange=n_cells)
+            accumulate!(+, view(level_prefix, 1:n_cells, col), lf)
+        end
+    end
+    gather = _cached_kernel(ka_gather_level_counts_kernel!, backend, workgroup)
+    gather(level_counts, level_prefix, n_cells, n_levels; ndrange=n_levels)
+    KA.synchronize(backend)
+    copyto!(host_level_counts, level_counts)
+
+    level_offsets[1] = 0
+    for level in 0:(first_level - 1)
+        # trimmed levels: the gathered counts read unfilled prefix columns
+        host_level_counts[level + 1] = 0
+        level_offsets[level + 2] = 0
+    end
+    for level in first_level:ell
+        level_offsets[level + 2] = level_offsets[level + 1] + host_level_counts[level + 1]
+    end
+    n_nodes = level_offsets[end]
+    n_nodes <= max_nodes ||
+        throw(AssertionError("device radix grid exceeded the cache node capacity"))
+
+    if n_cells > 0
+        uniquek = _cached_kernel(ka_fill_unique_keys_kernel!, backend, workgroup)
+        for level in first_level:ell
+            col = level + 1
+            uniquek(node_keys, view(level_keys, 1:n_cells, col),
+                view(level_flags, 1:n_cells, col),
+                view(level_prefix, 1:n_cells, col), level_offsets[col], n_cells;
+                ndrange=n_cells)
+        end
+    end
+    copyto!(d_level_offsets, level_offsets)
+    KA.synchronize(backend)
+    return n_nodes, maximum(host_level_counts; init=0)
+end
+
+
+
+#------- in-place grid rebuild, stage 4: node geometry, parents, children -------#
+#
+# Final stage of `_cuda_update_radix_grid_in_place!`
+# (src/translate_batched_cuda.jl:6591): with the level-major `node_keys` and the
+# `level_offsets` prefix in hand from stage 3, fill each node's level/coord/
+# center, its parent index, and its contiguous child range, then map each leaf
+# cell to its deepest-level node.
+#
+# The three CUDA kernels launch 2D, `blockIdx().y` carrying the level, so every
+# active level runs concurrently and the per-level launch loop collapses to one
+# launch. The KA ports keep that -- one launch over all levels -- but **flatten**
+# the grid to 1D and decode the level from the flat index, the same idiom the
+# route generator uses (`ka_route_flags_kernel!`). A 2D `ndrange` would have to
+# carry a matching 2D workgroup size, which the per-backend scalar workgroup
+# policy above does not produce; flattening keeps one tunable launch geometry
+# for both backends. The x-extent is `max_count` from stage 3, so the flat range
+# is `max_count * n_levels` with the ragged tail masked per level, exactly as
+# the CUDA `node > stop` guard does.
+#
+# Parents and children resolve by binary search into the adjacent level's node
+# block rather than by the host builder's sorted-merge walk: both blocks are
+# ascending in key, and a search is what makes the levels independent enough to
+# launch together. Roots (`level == min_level`) get `parent_index = 0` and the
+# deepest level gets an empty child range.
+#
+# Host oracle for the gate: `_refresh_radix_nodes!` (src/tree_batched.jl) again
+# -- stage 3 compared the part of its output stage 3 owns, this stage compares
+# the rest.
+
+@kernel function ka_node_geometry_levels_kernel!(node_levels, node_coords, node_centers,
+        @Const(node_keys), @Const(level_offsets), x_min, h0, min_level, max_count)
+    idx = @index(Global)
+    @inbounds begin
+        level = min_level + (idx - 1) ÷ max_count
+        node = level_offsets[level + 1] + (idx - 1) % max_count + 1
+        if node <= level_offsets[level + 2]
+            TF = eltype(node_centers)
+            delta = (2 * h0) / (1 << level)
+            ix, iy, iz = ka_decode_morton_key(node_keys[node], level)
+            node_levels[node] = level
+            node_coords[1, node] = ix
+            node_coords[2, node] = iy
+            node_coords[3, node] = iz
+            node_centers[1, node] = x_min[1] + delta * (TF(ix) + TF(0.5))
+            node_centers[2, node] = x_min[2] + delta * (TF(iy) + TF(0.5))
+            node_centers[3, node] = x_min[3] + delta * (TF(iz) + TF(0.5))
+        end
+    end
+end
+
+@kernel function ka_parent_index_levels_kernel!(parent_index, @Const(node_keys),
+        @Const(level_offsets), min_level, max_count)
+    idx = @index(Global)
+    @inbounds begin
+        level = min_level + (idx - 1) ÷ max_count
+        node = level_offsets[level + 1] + (idx - 1) % max_count + 1
+        if node <= level_offsets[level + 2]
+            if level == min_level
+                parent_index[node] = 0
+            else
+                parent_key = node_keys[node] >> 3
+                parent_first = level_offsets[level] + 1
+                parent_stop = level_offsets[level + 1]
+                parent = ka_lower_bound(node_keys, parent_first, parent_stop, parent_key)
+                parent_index[node] =
+                    (parent <= parent_stop && node_keys[parent] == parent_key) ? parent : 0
+            end
+        end
+    end
+end
+
+@kernel function ka_child_ranges_levels_kernel!(child_ranges, @Const(node_keys),
+        @Const(level_offsets), max_level, min_level, max_count)
+    idx = @index(Global)
+    @inbounds begin
+        level = min_level + (idx - 1) ÷ max_count
+        node = level_offsets[level + 1] + (idx - 1) % max_count + 1
+        if node <= level_offsets[level + 2]
+            if level == max_level
+                child_ranges[1, node] = 0
+                child_ranges[2, node] = 0
+            else
+                child_first = level_offsets[level + 2] + 1
+                child_stop = level_offsets[level + 3]
+                lo_key = node_keys[node] << 3
+                hi_key = lo_key + UInt64(7)
+                lo = ka_lower_bound(node_keys, child_first, child_stop, lo_key)
+                hi = ka_upper_bound(node_keys, child_first, child_stop, hi_key)
+                count = hi - lo
+                child_ranges[1, node] = count > 0 ? lo : 0
+                child_ranges[2, node] = count
+            end
+        end
+    end
+end
+
+@kernel function ka_fill_leaf_to_node_kernel!(leaf_to_node, leaf_offset, n_cells)
+    i = @index(Global)
+    @inbounds if i <= n_cells
+        leaf_to_node[i] = leaf_offset + i
+    end
+end
+
+"""
+    ka_radix_node_topology!(node_levels, node_coords, node_centers, parent_index,
+                            child_ranges, leaf_to_node, node_keys, d_level_offsets,
+                            level_offsets, x_min, h0, n_cells, ell, first_level,
+                            max_count; workgroup=KA_AUTO_WORKGROUP)
+
+Backend-agnostic port of the node geometry / parent / child-range trio plus
+`_cuda_fill_leaf_to_node_kernel!` -- the last block of
+`_cuda_update_radix_grid_in_place!`. Consumes stage 3's level-major `node_keys`,
+its device-side `d_level_offsets` mirror and the host `level_offsets` vector,
+and the `max_count` it returned (the per-level x-extent of the flattened
+launches). Levels below `first_level` are trimmed and never touched; nodes at
+`first_level` are roots with `parent_index = 0`.
+"""
+function ka_radix_node_topology!(node_levels, node_coords, node_centers,
+        parent_index, child_ranges, leaf_to_node, node_keys, d_level_offsets,
+        level_offsets, x_min, h0, n_cells::Int, ell::Int, first_level::Int,
+        max_count::Int; workgroup=KA_AUTO_WORKGROUP)
+    backend = KA.get_backend(node_keys)
+    if max_count > 0
+        n_levels = ell - first_level + 1
+        flat = max_count * n_levels
+        geom = _cached_kernel(ka_node_geometry_levels_kernel!, backend, workgroup)
+        geom(node_levels, node_coords, node_centers, node_keys, d_level_offsets,
+            x_min, h0, first_level, max_count; ndrange=flat)
+        par = _cached_kernel(ka_parent_index_levels_kernel!, backend, workgroup)
+        par(parent_index, node_keys, d_level_offsets, first_level, max_count;
+            ndrange=flat)
+        chi = _cached_kernel(ka_child_ranges_levels_kernel!, backend, workgroup)
+        chi(child_ranges, node_keys, d_level_offsets, ell, first_level, max_count;
+            ndrange=flat)
+    end
+    if n_cells > 0
+        l2n = _cached_kernel(ka_fill_leaf_to_node_kernel!, backend, workgroup)
+        l2n(leaf_to_node, level_offsets[ell + 1], n_cells; ndrange=n_cells)
+    end
+    KA.synchronize(backend)
+    return leaf_to_node
+end
+
+
+
+#------- output finalization -------#
+#
+# Backend-agnostic port of `finalize_cuda_radix_output!`
+# (src/translate_batched_cuda.jl:5686): de-permute the lifecycle's sorted-order
+# `state.output` back into each target system's own body order and hand it to
+# `buffer_to_target!`.
+#
+# Only one of the two branches contains anything device-specific. The
+# host-resident branch is already generic -- a prefix `copyto!` into the pinned
+# staging, then `_copy_radix_output_to_host_target_buffer!`, both of which live
+# in translate_batched_resident.jl and never mention CUDA -- so it is reproduced
+# verbatim, including the download-once-per-call sharing of `host_output` across
+# systems and the `influence_downloads` counter bump. The device-resident branch
+# needs the scatter kernel, which is what this ports.
+#
+# Row layout is the switch's, not the output's: `scalar_potential_index`,
+# `gradient_range` and `hessian_range` decide where each of the output's 1 / 2:4
+# / 5:13 rows lands, and a switch asking for hessian rows from a 4-row output
+# throws rather than reading past the end.
+
+@kernel function ka_scatter_output_to_target_buffer_kernel!(target_buffer, @Const(output),
+        @Const(perm), @Const(body_system), @Const(body_index), isys, scalar_row,
+        gradient_start, gradient_stop, hessian_start, hessian_stop, n_bodies)
+    sorted_i = @index(Global)
+    @inbounds if sorted_i <= n_bodies
+        global_i = perm[sorted_i]
+        if body_system[global_i] == isys
+            ibody = body_index[global_i]
+            if scalar_row > 0
+                target_buffer[scalar_row, ibody] = output[1, sorted_i]
+            end
+            if gradient_start <= gradient_stop
+                target_buffer[gradient_start, ibody] = output[2, sorted_i]
+                target_buffer[gradient_start + 1, ibody] = output[3, sorted_i]
+                target_buffer[gradient_start + 2, ibody] = output[4, sorted_i]
+            end
+            if hessian_start <= hessian_stop
+                for k in 0:8
+                    target_buffer[hessian_start + k, ibody] = output[5 + k, sorted_i]
+                end
+            end
+        end
+    end
+end
+
+"""
+    ka_scatter_output_to_target_buffer!(target_buffer, output, body_perm,
+        body_system_ids, body_indices, isys, derivatives_switch, n_bodies;
+        workgroup=KA_AUTO_WORKGROUP)
+
+Port of `_copy_radix_output_to_device_target_buffer!`: zero `target_buffer` and
+scatter the sorted-order `output` columns belonging to system `isys` into it at
+the rows the derivatives switch selects.
+"""
+function ka_scatter_output_to_target_buffer!(target_buffer, output, body_perm,
+        body_system_ids, body_indices, isys::Integer, derivatives_switch,
+        n_bodies::Integer=size(output, 2); workgroup=KA_AUTO_WORKGROUP)
+    fill!(target_buffer, zero(eltype(target_buffer)))
+    hrange = FastMultipole.hessian_range(derivatives_switch)
+    isempty(hrange) || size(output, 1) >= 13 ||
+        throw(ArgumentError("hessian output requested but the radix output " *
+            "carries potential + gradient only; construct RadixFMMCache(...; hessian=true)"))
+    grange = FastMultipole.gradient_range(derivatives_switch)
+    n_bodies == 0 && return target_buffer
+    backend = KA.get_backend(output)
+    kernel = _cached_kernel(ka_scatter_output_to_target_buffer_kernel!, backend, workgroup)
+    kernel(target_buffer, output, body_perm, body_system_ids, body_indices, isys,
+        FastMultipole.scalar_potential_index(derivatives_switch),
+        isempty(grange) ? 1 : first(grange), isempty(grange) ? 0 : last(grange),
+        isempty(hrange) ? 1 : first(hrange), isempty(hrange) ? 0 : last(hrange),
+        n_bodies; ndrange=n_bodies)
+    KA.synchronize(backend)
+    return target_buffer
+end
+
+# Per-system cached device scatter buffer, the generic form of
+# `_cuda_cached_target_buffer`: allocated undef once per (rows, n_bodies) layout
+# and reused, since the scatter zero-fills it anyway.
+function _ka_cached_target_buffer(cache, backend, isys::Integer, ::Type{TF},
+        rows::Integer, nb::Integer) where TF
+    cache === nothing && return KA.allocate(backend, TF, rows, nb)
+    buf = get(cache, isys, nothing)
+    if !(buf isa AbstractMatrix{TF}) || size(buf) != (rows, nb)
+        buf = KA.allocate(backend, TF, rows, nb)
+        cache[isys] = buf
+    end
+    return buf
+end
+
+"""
+    ka_finalize_radix_output!(state, target_systems; derivatives_switches,
+        host_output_staging, target_buffers, device_target_buffers)
+
+Backend-agnostic `finalize_cuda_radix_output!`. Scatters `state.output` back
+into the target systems, downloading it once per call into
+`host_output_staging` (the valid column prefix only) when any target is host
+resident, and going through `ka_scatter_output_to_target_buffer!` for
+device-resident ones.
+"""
+function ka_finalize_radix_output!(state, target_systems;
+        derivatives_switches=nothing, host_output_staging=nothing,
+        target_buffers=nothing, device_target_buffers=nothing)
+    TF = eltype(state.output)
+    systems = FastMultipole.to_tuple(target_systems)
+    switches = derivatives_switches === nothing ?
+        FastMultipole.to_tuple(FastMultipole.DerivativesSwitch(true, true, false, systems)) :
+        FastMultipole.to_tuple(derivatives_switches)
+    length(systems) == length(switches) ||
+        throw(ArgumentError("target systems and derivatives switches must have the same length"))
+    backend = KA.get_backend(state.output)
+
+    host_output = nothing
+    for (isys, target_system, switch) in zip(eachindex(systems), systems, switches)
+        if FastMultipole.residency(target_system) isa FastMultipole.DeviceResident
+            target_buffer = _ka_cached_target_buffer(device_target_buffers, backend,
+                isys, TF, FastMultipole.target_buffer_rows(switch),
+                FastMultipole.get_n_bodies(target_system))
+            ka_scatter_output_to_target_buffer!(target_buffer, state.output,
+                state.body_perm, state.body_system_ids, state.body_indices, isys,
+                switch, state.counts.n_bodies)
+            FastMultipole.buffer_to_target!(target_system, target_buffer, switch,
+                1:FastMultipole.get_n_bodies(target_system))
+        else
+            if host_output === nothing
+                if host_output_staging === nothing
+                    host_output = Array(state.output)
+                else
+                    # recurring path: download only the valid column prefix into
+                    # the preallocated (pinned) staging
+                    nb = state.counts.n_bodies
+                    KA.synchronize(backend)
+                    copyto!(host_output_staging, 1, state.output, 1,
+                        size(state.output, 1) * nb)
+                    host_output = host_output_staging
+                end
+                state.counters.influence_downloads += 1
+            end
+            target_buffer = target_buffers === nothing ?
+                FastMultipole.allocate_target_buffer(TF, target_system, switch) :
+                target_buffers[isys]
+            FastMultipole._copy_radix_output_to_host_target_buffer!(
+                target_buffer, host_output, state.host_body_perm,
+                state.host_body_system_ids, state.host_body_indices, isys, switch,
+                state.counts.n_bodies,
+            )
+            FastMultipole.buffer_to_target!(target_system, target_buffer, switch,
+                1:FastMultipole.get_n_bodies(target_system))
+        end
+    end
+    return target_systems
+end
+
+
+
+#------- hierarchical refresh: direct pairs, symmetric compaction, window cache -------#
+#
+# The three pieces of the hierarchical branch of `update_cuda_radix_state!`
+# (src/translate_batched_cuda.jl:6857) that were still CUDA-only. This is the
+# branch FLOWVPM actually takes: its cache is built with `window_classes`, so
+# `RadixFMMCache` selects a `HierarchicalRigidStencil` and `hierarchical_ctx` is
+# non-`nothing`. The flat `ka_generate_radix_routes!` above serves the
+# `hctx === nothing` path only -- it is NOT what the production refresh calls.
+#
+# `ka_hier_refresh_occupancy!` (above) already covered the per-level occupancy
+# lookup and `ka_hier_generate_window_core!` the single-window generator, so
+# what is added here is the direct-pair generator, the symmetric compaction, and
+# the loop that concatenates every level's windows into the epoch cache.
+#
+# Direct pairs differ from the flat path's in what they index: the flat kernels
+# look up `cell_at` by decoded leaf Morton key, these look up the hierarchical
+# per-level `node_at` by the leaf node's stored `node_coords` at `level_base_L`.
+# Both chunk over the flag buffer with a running output base, for the same
+# reason -- the flag/prefix buffers stay bounded by the scratch capacity rather
+# than by `kn * n_cells`.
+
+@kernel function ka_hier_direct_flags_kernel!(flags, @Const(node_at), @Const(node_coords),
+        @Const(near_offsets), fbase, len, kn, leaf_base, level_base_L, ell)
+    idx = @index(Global)
+    @inbounds if idx <= len
+        g = fbase + idx
+        c = (g - 1) ÷ kn + 1
+        k = (g - 1) % kn + 1
+        G = 1 << ell
+        target_node = leaf_base + c
+        sx = node_coords[1, target_node] - near_offsets[1, k]
+        sy = node_coords[2, target_node] - near_offsets[2, k]
+        sz = node_coords[3, target_node] - near_offsets[3, k]
+        src = Int32(0)
+        if 0 <= sx < G && 0 <= sy < G && 0 <= sz < G
+            src = node_at[level_base_L + (sx + G * (sy + G * sz)) + 1]
+        end
+        flags[idx] = src == Int32(0) ? Int32(0) : Int32(1)
+    end
+end
+
+@kernel function ka_hier_direct_compact_kernel!(direct_targets, direct_sources,
+        @Const(flags), @Const(prefix), @Const(node_at), @Const(node_coords),
+        @Const(near_offsets), fbase, len, kn, leaf_base, level_base_L, ell, base)
+    idx = @index(Global)
+    @inbounds if idx <= len && flags[idx] == Int32(1)
+        g = fbase + idx
+        c = (g - 1) ÷ kn + 1
+        k = (g - 1) % kn + 1
+        G = 1 << ell
+        target_node = leaf_base + c
+        sx = node_coords[1, target_node] - near_offsets[1, k]
+        sy = node_coords[2, target_node] - near_offsets[2, k]
+        sz = node_coords[3, target_node] - near_offsets[3, k]
+        src = Int(node_at[level_base_L + (sx + G * (sy + G * sz)) + 1])
+        p = base + Int(prefix[idx])
+        direct_targets[p] = c
+        direct_sources[p] = src - leaf_base
+    end
+end
+
+"""
+    ka_hier_generate_direct_pairs!(ctx, hctx, grid, n_cells, leaf_base, ell;
+                                   workgroup=KA_AUTO_WORKGROUP)
+
+Port of `_cuda_hier_generate_direct_pairs!`: flag/scan/compact the near-offset
+neighbours of every occupied leaf cell into `ctx.direct_targets` /
+`ctx.direct_sources`, chunked so the flag buffer bounds the working set.
+Returns the pair count.
+"""
+function ka_hier_generate_direct_pairs!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LContext,
+        grid, n_cells::Int, leaf_base::Int, ell::Int; workgroup=KA_AUTO_WORKGROUP)
+    kn = size(hctx.d_near_offsets, 2)
+    (n_cells > 0 && kn > 0) || return 0
+    backend = KA.get_backend(ctx.direct_flags)
+    level_base_L = hctx.level_base[ell + 1]
+    total = kn * n_cells
+    capacity = length(ctx.direct_flags)
+    capacity > 0 ||
+        throw(AssertionError("device direct flag buffer has zero capacity"))
+    flagk = _cached_kernel(ka_hier_direct_flags_kernel!, backend, workgroup)
+    compactk = _cached_kernel(ka_hier_direct_compact_kernel!, backend, workgroup)
+    n_direct = 0
+    f0 = 0
+    while f0 < total
+        len = min(capacity, total - f0)
+        flagk(ctx.direct_flags, hctx.node_at, grid.node_coords, hctx.d_near_offsets,
+            f0, len, kn, leaf_base, level_base_L, ell; ndrange=len)
+        accumulate!(+, view(ctx.direct_prefix, 1:len), view(ctx.direct_flags, 1:len))
+        KA.synchronize(backend)
+        copyto!(ctx.host_scalar32, 1, ctx.direct_prefix, len, 1)
+        chunk_total = Int(ctx.host_scalar32[1])
+        if chunk_total > 0
+            n_direct + chunk_total <= length(ctx.direct_targets) ||
+                throw(AssertionError("device hierarchical direct pair buffer exceeded its capacity"))
+            compactk(ctx.direct_targets, ctx.direct_sources, ctx.direct_flags,
+                ctx.direct_prefix, hctx.node_at, grid.node_coords,
+                hctx.d_near_offsets, f0, len, kn, leaf_base, level_base_L, ell,
+                n_direct; ndrange=len)
+        end
+        n_direct += chunk_total
+        f0 += len
+    end
+    KA.synchronize(backend)
+    return n_direct
+end
+
+@kernel function ka_symmetric_pair_flags_kernel!(flags, @Const(direct_targets),
+        @Const(direct_sources), @Const(cell_ranges), n_direct, max_bodies)
+    i = @index(Global)
+    @inbounds if i <= n_direct
+        t = direct_targets[i]
+        s = direct_sources[i]
+        oversized = cell_ranges[2, t] > max_bodies || cell_ranges[2, s] > max_bodies
+        flags[i] = (oversized || t <= s) ? Int32(1) : Int32(0)
+    end
+end
+
+@kernel function ka_symmetric_pair_compact_kernel!(targets, sources, @Const(flags),
+        @Const(prefix), @Const(direct_targets), @Const(direct_sources),
+        @Const(cell_ranges), n_direct, max_bodies)
+    i = @index(Global)
+    @inbounds if i <= n_direct && flags[i] == Int32(1)
+        t = direct_targets[i]
+        s = direct_sources[i]
+        oversized = cell_ranges[2, t] > max_bodies || cell_ranges[2, s] > max_bodies
+        p = Int(prefix[i])
+        # oversized cells keep BOTH directed entries and encode the dense
+        # fallback as a negative target id, so the selection stays on device
+        targets[p] = oversized ? -t : t
+        sources[p] = s
+    end
+end
+
+"""
+    ka_compact_symmetric_pairs!(ctx, hctx, cell_ranges, n_direct, max_bodies;
+                                workgroup=KA_AUTO_WORKGROUP)
+
+Port of `_cuda_compact_symmetric_pairs!`: reduce the directed leaf-cell pair
+list to one unordered entry per ordinary pair, keeping both directed entries for
+oversized cells (negative target id = dense fallback). Writes
+`hctx.symmetric_targets`/`symmetric_sources`, sets `hctx.n_symmetric_pairs`, and
+returns it. Refreshes every step, not only on occupancy change: the oversized
+selection reads the per-cell body counts, which move with the bodies.
+"""
+function ka_compact_symmetric_pairs!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LContext,
+        cell_ranges, n_direct::Int, max_bodies::Int; workgroup=KA_AUTO_WORKGROUP)
+    n_direct == 0 && (hctx.n_symmetric_pairs = 0; return 0)
+    n_direct <= length(ctx.direct_flags) || throw(AssertionError(
+        "symmetric compaction exceeds direct scratch capacity"))
+    backend = KA.get_backend(ctx.direct_flags)
+    flagk = _cached_kernel(ka_symmetric_pair_flags_kernel!, backend, workgroup)
+    flagk(ctx.direct_flags, ctx.direct_targets, ctx.direct_sources, cell_ranges,
+        n_direct, max_bodies; ndrange=n_direct)
+    accumulate!(+, view(ctx.direct_prefix, 1:n_direct), view(ctx.direct_flags, 1:n_direct))
+    KA.synchronize(backend)
+    copyto!(ctx.host_scalar32, 1, ctx.direct_prefix, n_direct, 1)
+    n = Int(ctx.host_scalar32[1])
+    n <= length(hctx.symmetric_targets) || throw(AssertionError(
+        "symmetric pair buffer exceeded capacity"))
+    if n > 0
+        compactk = _cached_kernel(ka_symmetric_pair_compact_kernel!, backend, workgroup)
+        compactk(hctx.symmetric_targets, hctx.symmetric_sources, ctx.direct_flags,
+            ctx.direct_prefix, ctx.direct_targets, ctx.direct_sources, cell_ranges,
+            n_direct, max_bodies; ndrange=n_direct)
+        KA.synchronize(backend)
+    end
+    hctx.n_symmetric_pairs = n
+    return n
+end
+
+# Grow the cached-window arrays to `needed`, preserving the first `cursor`
+# entries. Generic form of `_cuda_hier_win_ensure!`; growth happens only inside
+# epoch regeneration, so this allocation recurs exactly with occupancy change.
+function _ka_hier_win_ensure!(hctx, backend, cursor::Int, needed::Int)
+    old_class = hctx.win_class
+    cap = old_class === nothing ? 0 : length(old_class)
+    needed <= cap && return nothing
+    newcap = max(needed, cap + cld(cap, 2), 1024)
+    new_class = KA.allocate(backend, Int32, newcap)
+    new_sources = KA.allocate(backend, Int, newcap)
+    new_targets = KA.allocate(backend, Int, newcap)
+    if cursor > 0
+        copyto!(new_class, 1, old_class, 1, cursor)
+        copyto!(new_sources, 1, hctx.win_sources, 1, cursor)
+        copyto!(new_targets, 1, hctx.win_targets, 1, cursor)
+    end
+    hctx.win_class = new_class
+    hctx.win_sources = new_sources
+    hctx.win_targets = new_targets
+    return nothing
+end
+
+"""
+    ka_hier_cache_windows!(ctx, hctx, grid; workgroup=KA_AUTO_WORKGROUP)
+
+Port of `_cuda_hier_cache_windows!`: regenerate the complete per-level window
+concatenation for the current occupancy epoch, reusing the single-window
+generator verbatim so the cached routes are byte-identical to what the M2L stage
+would have generated window by window. Runs inside the refresh, which is legal
+because windows read node metadata only, never expansions.
+"""
+function ka_hier_cache_windows!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LContext,
+        grid; workgroup=KA_AUTO_WORKGROUP)
+    plan = hctx.apply_plan
+    route_class = plan.route_class
+    backend = KA.get_backend(ctx.route_targets)
+    noffsets = hctx.noffsets
+    K = hctx.window_classes
+    ell = hctx.ell
+    cursor = 0
+    fill!(hctx.win_level_starts, 0)
+    fill!(hctx.win_level_counts, 0)
+    fill!(hctx.routes_per_level, 0)
+    for L in hctx.first_m2l_level:ell
+        hctx.win_level_starts[L + 1] = cursor
+        level_total = 0
+        for first_offset in 1:K:noffsets
+            last_offset = min(first_offset + K - 1, noffsets)
+            n = ka_hier_generate_window_core!(ctx.route_levels, ctx.route_offsets,
+                ctx.route_targets, ctx.route_sources, grid, hctx, route_class, L,
+                first_offset, last_offset, 0; workgroup)
+            n == 0 && continue
+            _ka_hier_win_ensure!(hctx, backend, cursor, cursor + n)
+            copyto!(hctx.win_class, cursor + 1, route_class, 1, n)
+            copyto!(hctx.win_sources, cursor + 1, ctx.route_sources, 1, n)
+            copyto!(hctx.win_targets, cursor + 1, ctx.route_targets, 1, n)
+            cursor += n
+            level_total += n
+        end
+        hctx.win_level_counts[L + 1] = level_total
+        hctx.routes_per_level[L + 1] = level_total
+    end
+    hctx.total_routes = cursor
+    hctx.last_window_routes = 0
+    hctx.win_valid = true
+    return hctx
+end
+
+
+
+#------- backend-agnostic device step (the whole uniform sfs=false lifecycle) -------#
+#
+# KA form of `update_cuda_radix_state!` + `_radix_cache_device_step!`
+# (src/translate_batched_cuda.jl:6791 and :6948) for the branch FLOWVPM runs:
+# `cache.adaptive === nothing` (uniform grid) with a `HierarchicalRigidStencil`,
+# hence `ctx.hierarchical_ctx !== nothing`. Everything it calls now exists off
+# CUDA -- the four grid-rebuild stages, the hierarchical occupancy/direct-pair/
+# window-cache refresh, the stage-group edges, the lifecycle body, and the
+# output finalize -- so this driver is what closes the loop: with it, no part of
+# the uniform `sfs=false` step needs `translate_batched_cuda.jl` to be loaded.
+#
+# Two deliberate omissions, both perf-only and both following the precedent set
+# by the stage-1 counting sort:
+#
+#   * `_cuda_nearfield_subsort!` (CUDA_NEARFIELD_SUBSORT, default on with
+#     PartitionedVortex) composes a within-cell sub-Morton reordering into
+#     `perm` for nearfield locality. It changes no cell key, cell range or node
+#     -- only the order bodies are summed in -- so omitting it costs locality,
+#     not correctness, and keeps the KA arm's summation order deterministic.
+#   * CUDA graph capture/replay has no KA equivalent; the body is launched
+#     directly every step.
+#
+# `sfs` is accepted and rejected rather than silently ignored: the SFS pass is
+# not ported, and an sfs=true evaluation that quietly returned U/J only would be
+# a wrong answer, not a slow one.
+
+"""
+    ka_update_radix_state!(cache, systems; workgroup=KA_AUTO_WORKGROUP)
+
+Backend-agnostic `update_cuda_radix_state!` for a uniform, hierarchical
+`RadixFMMCache(device=true)`: refresh the per-system source buffers, rebuild the
+grid in place inside the cache's fixed Morton box, refresh the hierarchical
+occupancy / direct pairs / cached M2L windows on occupancy change, and refresh
+the per-level operator-group edges. Returns the cache with `cache.state` built
+(first step) or refreshed in place.
+"""
+# `radix_setting` throws for a CUDA-only tunable until `load_cuda_radix_lifecycle!()`
+# has defined its Ref -- which never happens on a non-CUDA backend, so every
+# read below would abort the KA step. The KA arm honours the same tunables when
+# CUDA has been loaded and falls back to the shipped default otherwise (the
+# values in translate_batched_cuda.jl, kept in sync by the assertion at each
+# call site's comment). It is a read-only fallback: nothing here can set one.
+_ka_radix_setting(name::Symbol, default) =
+    FastMultipole._radix_setting_ref(name) === nothing ? default :
+        FastMultipole.radix_setting(name)
+
+function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, systems::Tuple;
+        workgroup=KA_AUTO_WORKGROUP) where {TF,LH}
+    ctx = cache.device_ctx
+    ctx === nothing &&
+        throw(ArgumentError("ka_update_radix_state! requires a cache built with device=true"))
+    cache.adaptive === nothing ||
+        throw(ArgumentError("ka_update_radix_state! covers the uniform path only; " *
+            "the adaptive device lifecycle is CUDA-only"))
+    length(systems) == cache.n_systems ||
+        throw(ArgumentError("cache was built for $(cache.n_systems) source systems, got $(length(systems))"))
+    n = FastMultipole.get_n_bodies(systems)
+    n > 0 || throw(ArgumentError("ka_update_radix_state! requires at least one body"))
+    n <= cache.max_n_bodies ||
+        throw(ArgumentError("n=$n exceeds the cache capacity max_n_bodies=$(cache.max_n_bodies)"))
+    grid = ctx.grid
+    hctx = ctx.hierarchical_ctx
+    counters = ctx.counters
+    backend = KA.get_backend(ctx.positions)
+    ell = cache.ell
+    first_level = cache.root_level
+
+    source_buffers = FastMultipole._radix_cache_refresh_source_buffers!(ctx, systems, TF)
+    ka_collect_positions!(ctx.positions, grid.body_system, grid.body_index,
+        source_buffers; workgroup)
+
+    # ---- grid rebuild, stages 1-4 ----
+    ka_radix_keys_checked!(view(ctx.keys, 1:n), ctx.oob_flag, ctx.host_oob,
+        ctx.positions, cache.x_min, cache.box_extent, cache.h0, ell; workgroup)
+    kv = view(ctx.keys, 1:n)
+    sk = view(ctx.sorted_keys, 1:n)
+    # branch exactly where `_cuda_update_radix_grid_in_place!` branches: the
+    # bounded counting sort when the cache was built with a domain-sized
+    # histogram and the setting is on for this `ell`, else the stable sortperm
+    ka_radix_sort_bodies!(view(grid.perm, 1:n), sk, grid.invperm, kv; workgroup,
+        ell=ell, histogram=ctx.counting_histogram, prefix=ctx.counting_prefix,
+        cursor=ctx.counting_cursor)
+    n_cells = ka_radix_compress_cells!(grid.cell_keys, grid.cell_ranges, sk,
+        view(ctx.body_flags, 1:n), view(ctx.body_prefix, 1:n), ctx.host_scalar;
+        workgroup)
+    n_cells <= cache.max_cells ||
+        throw(AssertionError("device radix grid exceeded the cache cell capacity"))
+    ckv = view(grid.cell_keys, 1:n_cells)
+
+    # occupancy epoch: everything past this point is a pure function of the
+    # occupied leaf-cell SET inside the fixed box
+    track_epoch = length(ctx.epoch_cell_keys) > 0 &&
+        _ka_radix_setting(:CUDA_CACHED_WINDOWS, true)
+    occ_changed = true
+    if track_epoch && ctx.epoch_have[] && ctx.epoch_prev_n[] == n &&
+            ctx.epoch_prev_n_cells[] == n_cells
+        occ_changed = ka_radix_occupancy_changed!(ctx.epoch_flag, ctx.host_epoch_flag,
+            ckv, ctx.epoch_cell_keys, n_cells; workgroup)
+    end
+    if occ_changed
+        if track_epoch
+            copyto!(ctx.epoch_cell_keys, 1, grid.cell_keys, 1, n_cells)
+            ctx.epoch_prev_n[] = n
+            ctx.epoch_prev_n_cells[] = n_cells
+            ctx.epoch_have[] = true
+        end
+        ka_radix_cell_centers!(grid.cell_centers, ctx.cell_coords, ckv, cache.x_min,
+            cache.h0, ell, n_cells; workgroup)
+        n_nodes, max_count = ka_radix_level_nodes!(grid.node_keys, cache.level_offsets,
+            ctx.level_keys, ctx.level_flags, ctx.level_prefix, ctx.level_counts,
+            ctx.host_level_counts, ctx.d_level_offsets, ckv, n_cells, ell,
+            first_level, cache.max_nodes; workgroup)
+        ka_radix_node_topology!(grid.node_levels, grid.node_coords, grid.node_centers,
+            grid.parent_index, grid.child_ranges, view(grid.leaf_to_node, 1:n_cells),
+            grid.node_keys, ctx.d_level_offsets, cache.level_offsets, cache.x_min,
+            cache.h0, n_cells, ell, first_level, max_count; workgroup)
+    end
+    n_nodes = cache.level_offsets[end]
+    grid.n_bodies = n
+    grid.n_cells = n_cells
+
+    # NOTE: the CUDA path composes `_cuda_nearfield_subsort!` into `perm` here.
+    # See the block comment above: locality only, deliberately not ported.
+    for isys in eachindex(source_buffers)
+        ka_pack_body_matrix!(ctx.source_bodies, source_buffers[isys],
+            view(grid.perm, 1:n), grid.body_system, grid.body_index, n;
+            isys, workgroup)
+    end
+    FastMultipole._direct_kernel_geometry_gate!(cache, cache.options.direct_kernel,
+        ctx.source_bodies, n)
+
+    # host mirrors serve host-resident target finalization only
+    if FastMultipole._radix_any_host_resident(systems)
+        KA.synchronize(backend)
+        copyto!(ctx.host_perm, 1, grid.perm, 1, n)
+        copyto!(ctx.host_body_system, 1, grid.body_system, 1, n)
+        copyto!(ctx.host_body_index, 1, grid.body_index, 1, n)
+        counters.metadata_downloads += 3
+    end
+
+    # multi-root tree edges: every node at root_level is a root
+    n_root_nodes = cache.level_offsets[cache.root_level + 2]
+    n_edges = max(n_nodes - n_root_nodes, 0)
+    if occ_changed && n_edges > 0
+        ka_tree_routes!(ctx.m2m_parent_routes, ctx.m2m_child_routes,
+            ctx.l2l_parent_routes, ctx.l2l_child_routes,
+            view(grid.parent_index, 1:n_nodes), n_root_nodes; workgroup)
+    end
+
+    hctx === nothing && throw(ArgumentError(
+        "ka_update_radix_state! covers the hierarchical stencil path only; " *
+        "build the cache with window_classes (FLOWVPM's default)"))
+    if occ_changed
+        hctx.epoch_id += 1
+        hctx.win_valid = false
+        ka_hier_refresh_occupancy!(hctx, grid, cache.level_offsets; workgroup)
+        n_direct = ka_hier_generate_direct_pairs!(ctx, hctx, grid, n_cells,
+            cache.level_offsets[ell + 1], ell; workgroup)
+        hctx.epoch_n_direct = n_direct
+    else
+        n_direct = hctx.epoch_n_direct
+    end
+    if isempty(hctx.symmetric_targets)
+        hctx.n_symmetric_pairs = 0
+    else
+        # oversized-cell fallback selection reads per-cell body counts, so the
+        # symmetric compaction refreshes every step
+        ka_compact_symmetric_pairs!(ctx, hctx, grid.cell_ranges, n_direct,
+            _ka_radix_setting(:SYMMETRIC_CUDA_MAX_CELL_BODIES, 128); workgroup)
+    end
+    if _ka_radix_setting(:CUDA_CACHED_WINDOWS, true) && !hctx.win_valid &&
+            hctx.apply_plan isa FastMultipole.ResidentM2LDenseCUDAPlan &&
+            _ka_radix_setting(:DENSE_CUDA_FUSED, true)
+        ka_hier_cache_windows!(ctx, hctx, grid; workgroup)
+    end
+    n_routes = hctx.win_valid ? hctx.total_routes : 0
+
+    if occ_changed
+        ka_refresh_resident_stage_groups!(ctx.workspace, grid, cache.level_offsets,
+            ell, cache.root_level; workgroup)
+    end
+    KA.synchronize(backend)
+
+    counts = ctx.counts
+    counts.n_bodies = n
+    counts.n_cells = n_cells
+    counts.n_nodes = n_nodes
+    counts.n_routes = n_routes
+    counts.n_direct = n_direct
+
+    if cache.state === nothing
+        # every array here is persistent; the wrapper is built once and
+        # refreshed in place on later steps
+        cache.state = FastMultipole.DeviceResidentRadixState{TF,FastMultipole.CompressedComplexBasis,LH}(
+            grid, hctx, ctx.source_bodies, ctx.source_bodies,
+            grid.perm, grid.body_system, grid.body_index,
+            ctx.host_perm, ctx.host_body_system, ctx.host_body_index,
+            nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
+            grid.cell_centers, grid.cell_ranges,
+            ctx.m2m_parent_routes, ctx.m2m_child_routes,
+            ctx.l2l_parent_routes, ctx.l2l_child_routes,
+            ctx.multipoles, ctx.locals,
+            ctx.route_levels, ctx.route_offsets, ctx.route_targets, ctx.route_sources,
+            ctx.direct_targets, ctx.direct_sources, ctx.output,
+            ctx.invariant, ctx.workspace, counters, cache.options, counts;
+            sfs=ctx.sfs_ctx,
+        )
+    end
+    cache.step += 1
+    return cache
+end
+
+ka_update_radix_state!(cache::FastMultipole.RadixFMMCache, systems; kwargs...) =
+    ka_update_radix_state!(cache, FastMultipole.to_tuple(systems); kwargs...)
+
+#------- device-resident cache construction: KA port of
+#         `_radix_cache_device_build` (src/translate_batched_cuda.jl:6289) -------#
+#
+# The last CUDA-only link in the chain. `RadixFMMCache(...; device=true)` routes
+# to the CUDA builder, which allocates the whole ctx NamedTuple from `CUDA.zeros`
+# and the hierarchical context from `_build_cuda_hierarchical_context`, so no
+# device cache could be constructed on a non-CUDA backend at all -- which left
+# `ka_finalize_radix_output!` and `ka_radix_cache_device_step!` load-checked but
+# ungated. This builder closes that: it produces a real `RadixFMMCache` whose
+# `device_ctx` is backend-allocated, so `ka_radix_cache_device_step!` runs end to
+# end and a full UJ can be gated against the host lifecycle.
+#
+# Scope, matching what the KA step actually implements (each omission is a guard,
+# not a silent fallback):
+#   * hierarchical stencil policy only -- `ka_update_radix_state!` refuses a flat
+#     cache, and FLOWVPM's `window_classes` cache is hierarchical anyway
+#     (see the block comment above `ka_update_radix_state!`).
+#   * concatenated M2L only -- `ka_radix_cache_workspace` pins
+#     `ConcatenatedFixedZM2L`/`MaterializedYRotationM2L`, the same pair the CUDA
+#     builder selects for a non-specialized hierarchical cache. A dense or
+#     precomputed-y strategy would silently get a different plan, so it throws.
+#   * no SFS pass, no adaptive octree mirror.
+#
+# Two allocation differences from the CUDA original, both inert on this path:
+# the pinned host mirrors become plain `Array`s (pinning is a CUDA transfer
+# optimization); `CUDA.enable_synchronization!` has no KA analogue and no
+# side-stream exists here to need it. The nearfield bin context is likewise
+# not built: `ka_launch_nearfield!` runs the unbinned functor kernel and never
+# reads `hctx.nearfield`, so a `PartitionedVortex` cache is correct without it
+# (binning is locality only).
+function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
+        x_min::SVector{3,TF}, h0::TF, maxn::Int,
+        options::FastMultipole.CUDARadixLifecycleOptions,
+        stencil_policy, accepted::Vector{SVector{3,Int}},
+        rejected::Vector{SVector{3,Int}}, max_cells::Int, max_nodes::Int,
+        route_capacity::Int, direct_capacity::Int,
+        basis_info::FastMultipole.OperatorBasisInfo{B,LH}, ::Val{LH};
+        hierarchical_tables=nothing,
+        class_level::Vector{Int32}=Int32[],
+        class_offset::Matrix{Int32}=Matrix{Int32}(undef, 3, 0),
+        hierarchical_level_class_of::Array{Int32,3}=Array{Int32}(undef, 0, 0, 0),
+        hierarchical_level_radii2::Vector{Int}=Int[],
+        max_level_nodes::Int=0, hessian::Bool=false,
+        ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
+        box_extent::SVector{3,TF}=SVector{3,TF}(2 * h0, 2 * h0, 2 * h0),
+        root_level::Int=0, first_m2l_level::Int=2,
+        workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
+    stencil_policy isa FastMultipole.HierarchicalRigidStencil || throw(ArgumentError(
+        "ka_radix_cache_device_build covers the hierarchical stencil path only; " *
+        "got $(typeof(stencil_policy))"))
+    hierarchical_tables isa FastMultipole.RigidHierarchicalTables || throw(ArgumentError(
+        "the hierarchical policy requires the rigid hierarchical tables"))
+    options.m2l_strategy isa Union{FastMultipole.PrecomputedFactoredYM2L,
+        FastMultipole.DenseTranslationM2L} && throw(ArgumentError(
+        "the KA device cache builds the concatenated hierarchical plan; " *
+        "m2l_strategy=$(typeof(options.m2l_strategy)) has no KA plan"))
+
+    _z(T, dims...) = fill!(KA.allocate(backend, T, dims...), zero(T))
+
+    counters = FastMultipole.CUDARadixTransferCounters()
+    multipoles = _ka_flat_buffer(backend, TF, basis_info, max_nodes)
+    locals = _ka_flat_buffer(backend, TF, basis_info, max_nodes)
+    invariant = FastMultipole.OperatorInvariantCache(TF, basis_info)
+    workspace = ka_radix_cache_workspace(backend, TF, basis_info, ell, h0,
+        max_cells, max_nodes, route_capacity, accepted, invariant;
+        ell_axes, first_level=root_level)
+
+    # capacity-sized persistent grid: counts bound the valid prefixes, so
+    # recurring steps refresh these arrays in place and never reallocate
+    grid = FastMultipole.DeviceRadixGrid(
+        x_min, h0, ell, 0, 0,
+        _z(Int, maxn), _z(Int, maxn),
+        _z(UInt64, max_cells), _z(Int, 2, max_cells),
+        _z(Int, maxn), _z(Int, maxn),
+        _z(TF, 3, max_cells),
+        _z(Int, max_nodes), _z(UInt64, max_nodes),
+        _z(Int, 3, max_nodes), _z(TF, 3, max_nodes),
+        _z(Int, max_nodes), _z(Int, 2, max_nodes),
+        _z(Int, max_cells),
+    )
+    n_edges_capacity = max(max_nodes - 1, 0)
+
+    # per-system source staging: host-resident systems get a host buffer plus a
+    # persistent device buffer (one upload per step); device-resident systems get
+    # a persistent device buffer their `source_to_buffer!` overload fills in place
+    host_stagings = Tuple(
+        FastMultipole.residency(system) isa FastMultipole.HostResident ?
+            Matrix{TF}(undef, FastMultipole.data_per_body(system), maxn) : nothing
+        for system in sources)
+    device_sources = Tuple(
+        _z(TF, FastMultipole.data_per_body(system), maxn) for system in sources)
+
+    # the hierarchical path keeps its stencil tables on the device hierarchical
+    # context instead of a flat accepted/rejected pair, so these stay empty --
+    # as do the leaf-only flat occupancy and route flag storage
+    d_accepted = KA.zeros(backend, Int32, 3, 0)
+    d_rejected = KA.zeros(backend, Int32, 3, 0)
+    occupancy = FastMultipole.RadixLevelOccupancy(ell;
+        max_bytes=stencil_policy.dense_occupancy_max_bytes,
+        max_dense_ell=stencil_policy.dense_occupancy_max_ell)
+    isempty(occupancy.node_at) && throw(ArgumentError(
+        "the device hierarchical stencil requires the dense per-level occupancy " *
+        "lookup, but ell=$ell exceeds the configured budget " *
+        "(dense_occupancy_max_bytes=$(stencil_policy.dense_occupancy_max_bytes), " *
+        "dense_occupancy_max_ell=$(stencil_policy.dense_occupancy_max_ell)); the " *
+        "host Morton binary-search fallback has no device implementation"))
+    hierarchical_ctx = ka_hierarchical_context(TF, backend, hierarchical_tables,
+        class_level, class_offset, accepted, hierarchical_level_class_of,
+        hierarchical_level_radii2, workspace.m2l_concat, ell, first_m2l_level,
+        max_level_nodes, occupancy; window_classes=stencil_policy.window_classes)
+
+    dpb = maximum(FastMultipole.data_per_body(system) for system in sources)
+    n_output_rows = hessian ? 13 : 4
+    ctx = (;
+        multipoles, locals, workspace, invariant, counters, grid,
+        counts=FastMultipole.RadixStepCounts(0, 0, 0, 0, 0),
+        source_bodies=_z(TF, dpb, maxn),
+        output=_z(TF, n_output_rows, maxn),
+        cell_at=_z(Int32, 0, 0, 0),
+        hierarchical_ctx,
+        d_accepted, d_rejected, class_chunk=1,
+        route_levels=_z(Int, route_capacity),
+        route_offsets=_z(Int, 3, route_capacity),
+        route_targets=_z(Int, route_capacity),
+        route_sources=_z(Int, route_capacity),
+        direct_targets=_z(Int, direct_capacity),
+        direct_sources=_z(Int, direct_capacity),
+        route_flags=_z(Int32, 0),
+        route_prefix=_z(Int32, 0),
+        direct_flags=_z(Int32, direct_capacity),
+        direct_prefix=_z(Int32, direct_capacity),
+        # grid-update scratch: persistent, so the recurring step allocates
+        # nothing beyond the backend's own sort scratch
+        positions=_z(TF, 3, maxn),
+        keys=_z(UInt64, maxn),
+        sorted_keys=_z(UInt64, maxn),
+        # bounded counting-sort domain buffers, sized by the same rule as the
+        # CUDA builder (translate_batched_cuda.jl:6462): the full 2^(3ell) key
+        # domain when the fast path is enabled for this `ell`, else length 1,
+        # which is itself the signal `ka_counting_sort_ready` falls back on
+        counting_histogram=_z(Int32, ka_counting_sort_enabled(ell) ? 1 << (3 * ell) : 1),
+        counting_prefix=_z(Int32, ka_counting_sort_enabled(ell) ? 1 << (3 * ell) : 1),
+        counting_cursor=_z(Int32, ka_counting_sort_enabled(ell) ? 1 << (3 * ell) : 1),
+        body_flags=_z(Int, maxn),
+        body_prefix=_z(Int, maxn),
+        subsort_keys=_z(UInt32, maxn),
+        cell_coords=_z(Int, 3, max_cells),
+        level_keys=_z(UInt64, max_cells, ell + 1),
+        level_flags=_z(Int, max_cells, ell + 1),
+        level_prefix=_z(Int, max_cells, ell + 1),
+        level_counts=_z(Int, ell + 1),
+        d_level_offsets=_z(Int, ell + 2),
+        oob_flag=_z(Int32, 1),
+        # occupancy-epoch snapshot: the hierarchical cache compares the sorted
+        # unique leaf keys against the previous step to skip node-metadata,
+        # window and direct-pair regeneration
+        epoch_cell_keys=_z(UInt64, max_cells),
+        epoch_flag=_z(Int32, 1),
+        host_epoch_flag=zeros(Int32, 1),
+        epoch_prev_n=Ref(0),
+        epoch_prev_n_cells=Ref(0),
+        epoch_have=Ref(false),
+        m2m_parent_routes=_z(Int, n_edges_capacity),
+        m2m_child_routes=_z(Int, n_edges_capacity),
+        l2l_parent_routes=_z(Int, n_edges_capacity),
+        l2l_child_routes=_z(Int, n_edges_capacity),
+        host_stagings, device_sources,
+        # host mirrors/staging for the step downloads
+        host_oob=zeros(Int32, 1),
+        host_scalar=zeros(Int, 1),
+        host_scalar32=zeros(Int32, 1),
+        host_level_counts=zeros(Int, ell + 1),
+        host_perm=zeros(Int, maxn),
+        host_body_system=zeros(Int, maxn),
+        host_body_index=zeros(Int, maxn),
+        # must track the output row count, or the prefix copyto! in
+        # `ka_finalize_radix_output!` silently mis-strides
+        host_output=zeros(TF, n_output_rows, maxn),
+        device_target_buffers=Dict{Int,Any}(),
+        sfs_ctx=nothing,
+        host_sfs_staging=nothing,
+        device_sfs_buffers=Dict{Int,Any}(),
+    )
+    cache = FastMultipole.RadixFMMCache{TF,LH}(
+        P, ell, x_min, h0, ell_axes, box_extent, root_level, maxn, true, hessian,
+        options, stencil_policy,
+        accepted, rejected, max_cells, max_nodes, route_capacity, direct_capacity,
+        nothing, zeros(Int32, 0, 0, 0), SVector{3,Int}[], zeros(Int, ell + 2),
+        UInt64[], Int[], Int[], Int[], nothing, nothing, ctx,
+        length(sources), false, 0,
+        nothing, nothing, nothing, nothing,
+        FastMultipole.snapshot_locked_radix_settings(),
+        false, true, nothing,
+    )
+    ka_update_radix_state!(cache, sources; workgroup)
+    cache.built = true
+    return cache
+end
+
+ka_radix_cache_device_build(backend, sources, args...; kwargs...) =
+    ka_radix_cache_device_build(backend, FastMultipole.to_tuple(sources), args...;
+        kwargs...)
+
+
+"""
+    ka_radix_cache_device_step!(cache, targets, switches; sfs=false,
+                                workgroup=KA_AUTO_WORKGROUP)
+
+Backend-agnostic `_radix_cache_device_step!`: refresh the device state, run the
+uniform lifecycle body, and scatter the output back into the target systems.
+This is the whole uniform `sfs=false` step with no CUDA dependency.
+"""
+function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
+        targets::Tuple, switches::Tuple; sfs::Bool=false,
+        workgroup=KA_AUTO_WORKGROUP)
+    sfs && throw(ArgumentError(
+        "the KA device step does not implement the SFS pass; run sfs=true on CUDA"))
+    # construction-locked settings must not have drifted: a late flip is
+    # baked-in-silently otherwise (buffers sized at construction)
+    FastMultipole.verify_locked_radix_settings(cache.locked_settings)
+    ka_update_radix_state!(cache, targets; workgroup)
+    state = cache.state
+    ka_lifecycle_body!(state)
+    ka_finalize_radix_output!(state, targets; derivatives_switches=switches,
+        host_output_staging=cache.device_ctx.host_output,
+        target_buffers=FastMultipole._radix_cache_target_buffers!(cache, switches),
+        device_target_buffers=cache.device_ctx.device_target_buffers)
+    return cache
+end
+
+
+
+#------- stage 0: user entry (port of `fmm!`, src/fmm.jl:873-899) -------#
+#
+# CUDA's stage 0 is `fmm!(targets, sources, cache::RadixFMMCache)`
+# (src/fmm.jl:873), whose device branch calls `_radix_cache_device_step!`
+# (src/fmm.jl:898). That call resolves to CUDA's definition only because
+# `translate_batched_cuda.jl` is runtime-`include`d INTO the FastMultipole
+# module, overwriting the throwing stub at
+# `src/translate_batched_resident.jl:3425`.
+#
+# DEVIATION (forced, entry symbol only). A package extension cannot use that
+# mechanism: defining `FastMultipole._radix_cache_device_step!` here with the
+# same signature is method piracy over a method the parent module already owns,
+# and Julia's own diagnostic for it is "incremental compilation may be fatally
+# broken". So this entry point carries a different NAME. Everything inside it is
+# a statement-for-statement port of `fmm!`'s prologue, in CUDA's order, with the
+# same argument checks, the same error text, and the same `DerivativesSwitch`
+# construction. Wiring real `fmm!` dispatch requires a backend trait hook in
+# `src/` (the stub would ask the cache for its backend instead of throwing);
+# that is a `src/` change and is deliberately NOT made here.
+#
+# Two checks from `fmm!` are absent, both because the KA cache cannot reach the
+# state they guard:
+#   * the `sfs && !cache.sfs` check -- `ka_radix_cache_device_build` has no
+#     `sfs_ctx` (it is hardcoded `nothing`), so a KA cache is never `sfs=true`;
+#     `ka_radix_cache_device_step!` rejects `sfs=true` at its own entry instead.
+#   * the adaptive branch (src/fmm.jl:900-916) -- `ka_update_radix_state!`
+#     throws on a non-`nothing` `cache.adaptive`.
+"""
+    ka_fmm!(target_systems, source_systems, cache; kwargs...)
+    ka_fmm!(systems, cache; kwargs...)
+
+KA stage 0: the backend-agnostic entry point corresponding to
+`fmm!(targets, sources, cache::RadixFMMCache)` (`src/fmm.jl:873`). Validates
+arguments, builds the `DerivativesSwitch` tuple, and dispatches to
+`ka_radix_cache_device_step!`.
+"""
+function ka_fmm!(target_systems, source_systems,
+        cache::FastMultipole.RadixFMMCache{TF,LH};
+        scalar_potential::Bool=false, gradient::Bool=true, hessian::Bool=false,
+        sfs::Bool=false, lamb_helmholtz::Union{Nothing,Bool}=nothing,
+        workgroup=KA_AUTO_WORKGROUP) where {TF,LH}
+    targets = FastMultipole.to_tuple(target_systems)
+    sources = FastMultipole.to_tuple(source_systems)
+    FastMultipole._assert_radix_targets_are_sources(targets, sources)
+    hessian && !cache.hessian && throw(ArgumentError(
+        "hessian output requested but this RadixFMMCache was built with " *
+        "hessian=false (4-row output); construct RadixFMMCache(...; hessian=true)"))
+    lamb_helmholtz === nothing || Bool(lamb_helmholtz) == LH || throw(ArgumentError(
+        "lamb_helmholtz=$(lamb_helmholtz) conflicts with the cache's lamb_helmholtz=$LH; " *
+        "the Lamb-Helmholtz channel is fixed at cache construction"))
+    !FastMultipole.has_vector_potential(sources) || LH || throw(ArgumentError(
+        "source systems carry a vector potential but the cache was built with " *
+        "lamb_helmholtz=false; rebuild the cache with lamb_helmholtz=true"))
+    cache.device || throw(ArgumentError(
+        "ka_fmm! requires a device-resident cache built by ka_radix_cache_device_build"))
+
+    switches = FastMultipole.DerivativesSwitch(
+        FastMultipole.to_vector(scalar_potential, length(targets)),
+        FastMultipole.to_vector(gradient, length(targets)),
+        FastMultipole.to_vector(hessian, length(targets)), targets)
+    ka_radix_cache_device_step!(cache, targets, switches; sfs, workgroup)
+    return cache
+end
+
+ka_fmm!(systems, cache::FastMultipole.RadixFMMCache; kwargs...) =
+    ka_fmm!(systems, systems, cache; kwargs...)
+
+
+#------- stage 1: argument + trait validation -------#
+#
+# CUDA's stage 1 is the prologue of `RadixFMMCache`
+# (src/translate_batched_resident.jl:2445-2519 plus the strategy check at
+# :2549) -- everything the constructor decides BEFORE it looks at where the
+# bodies are. It resolves four traits off the source systems (Lamb-Helmholtz,
+# body type, strength dims, direct kernel), rejects every argument combination
+# the radix path cannot represent, and picks the first-pass options so that
+# `TF` exists for the geometry that follows.
+#
+# This is a statement-for-statement port in CUDA's own order, with the same
+# error text. It returns the resolved values instead of assigning them into a
+# constructor's local scope, because KA's stages 2-6 are not written yet and
+# the caller has to thread them by hand until they are.
+#
+# THREE DEVIATIONS, all forced:
+#
+#  1. Device availability. CUDA checks `cuda_radix_available()` behind
+#     `device=true` (:2510). The KA analogue is that a `KernelAbstractions`
+#     backend was actually passed; a KA cache is device-resident by
+#     construction, so there is no `device=false` branch to guard.
+#
+#  2. SFS. CUDA validates the SFS arguments (:2449-2464) and goes on to build
+#     an `sfs_ctx`. `ka_radix_cache_device_build` hardcodes `sfs_ctx=nothing`
+#     and has no SFS pass at all, so `sfs=true` is refused outright here rather
+#     than validated. Same position in the order, stricter outcome, and the
+#     rejection is explicit -- never a silent fallback to `sfs=false`.
+#
+#  3. The trait tail is NOT here. CUDA's `dk` checks at :2600-2626 (isbits,
+#     the `AbstractRegularizedVortex` sigma_row bound, and
+#     `_assert_device_kernel_policy`) read `options.direct_kernel` AFTER the
+#     policy-dependent options substitution, so they belong to stage 5, not
+#     stage 1. What is portable without the policy -- the per-system
+#     `direct_kernel` trait agreement -- is done here, exactly as CUDA does it
+#     at :2492-2498.
+#
+# What stage 1 does NOT do, on purpose: derive `ell`. There is no auto-`ell`
+# rule in FastMultipole on either side (PIPELINE.md stage 4); it is a kwarg
+# defaulting to 4, and FLOWVPM's own rule lives in the caller.
+
+"""
+    ka_validate_radix_arguments(backend, target_systems, source_systems; kwargs...)
+
+KA stage 1: the argument and trait validation `RadixFMMCache` performs before
+it computes any geometry (`src/translate_batched_resident.jl:2445-2519`).
+
+Returns a `NamedTuple` with the resolved
+`(; targets, sources, LH, BT, dk_trait, options, auto_options, TF, P, dpb, n0,
+maxn, hessian)`, which the
+remaining (unported) construction stages consume. Throws the same
+`ArgumentError`s, with the same messages, that the host constructor throws.
+"""
+function ka_validate_radix_arguments(backend, target_systems, source_systems=target_systems;
+        expansion_order::Integer=4,
+        max_n_bodies::Union{Nothing,Integer}=nothing,
+        lamb_helmholtz::Union{Nothing,Bool}=nothing,
+        hessian::Bool=false,
+        sfs::Bool=false,
+        options::Union{Nothing,FastMultipole.CUDARadixLifecycleOptions}=nothing)
+    targets = FastMultipole.to_tuple(target_systems)
+    sources = FastMultipole.to_tuple(source_systems)
+    FastMultipole._assert_radix_targets_are_sources(targets, sources)
+
+    # DEVIATION 2 (see above): CUDA validates SFS here; KA has no sfs_ctx.
+    sfs && throw(ArgumentError(
+        "the KA radix path has no SFS pass (ka_radix_cache_device_build " *
+        "hardcodes sfs_ctx=nothing); construct with sfs=false"))
+
+    LH = lamb_helmholtz === nothing ?
+        FastMultipole.has_vector_potential(sources) : Bool(lamb_helmholtz)
+
+    # B2M element resolution (task 032): one shared body type per cache.
+    BT = FastMultipole.body_type(first(sources))
+    for system in sources
+        FastMultipole.body_type(system) === BT || throw(ArgumentError(
+            "all source systems sharing a RadixFMMCache must report the same " *
+            "body_type; got $(FastMultipole.body_type(system)) and $BT"))
+        FastMultipole.strength_dims(system) == FastMultipole.strength_dims(first(sources)) ||
+            throw(ArgumentError(
+            "all source systems sharing a RadixFMMCache must report the same " *
+            "strength_dims (the packed strength rows 5:4+strength_dims are shared)"))
+    end
+    if BT <: FastMultipole.Point{FastMultipole.Vortex} && !LH
+        throw(ArgumentError(
+            "Point{Vortex} sources require the Lamb-Helmholtz channel; construct " *
+            "the cache with lamb_helmholtz=true (or leave it to be inferred from " *
+            "has_vector_potential)"))
+    end
+
+    # Nearfield kernel resolution (task 032 stage 2): one shared functor per
+    # cache. The post-options checks on it are stage 5 -- DEVIATION 3.
+    dk_trait = FastMultipole.direct_kernel(first(sources))
+    for system in sources
+        FastMultipole.direct_kernel(system) == dk_trait || throw(ArgumentError(
+            "all source systems sharing a RadixFMMCache must report the same " *
+            "direct_kernel; got $(FastMultipole.direct_kernel(system)) and $dk_trait"))
+    end
+
+    # Measured defaults (024/028). Precision depends only on the expansion order
+    # and is needed for the bounds and stencil tolerance in stage 2; the strategy
+    # also depends on the class count, so it is re-resolved once the policy is
+    # built (stage 5).
+    auto_options = options === nothing
+    if auto_options
+        options = FastMultipole.CUDARadixLifecycleOptions(;
+            precision=FastMultipole._default_radix_precision(Int(expansion_order)),
+            m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
+    end
+    TF = options.precision
+
+    # DEVIATION 1 (see above): the KA analogue of `cuda_radix_available()`.
+    backend isa KA.Backend || throw(ArgumentError(
+        "the KA radix path requires a KernelAbstractions backend; got " *
+        "$(typeof(backend))"))
+
+    for system in sources
+        FastMultipole.data_per_body(system) >= 4 + FastMultipole.strength_dims(system) ||
+            throw(ArgumentError("the radix path packs bodies as [x, y, z, radius, " *
+                "strength..., extras...]; data_per_body(system) must be >= " *
+                "4 + strength_dims(system)"))
+    end
+    dpb = maximum(FastMultipole.data_per_body(system) for system in sources)
+
+    n0 = FastMultipole.get_n_bodies(sources)
+    n0 > 0 || throw(ArgumentError("RadixFMMCache requires at least one body"))
+    maxn = max_n_bodies === nothing ? n0 : Int(max_n_bodies)
+    maxn >= n0 || throw(ArgumentError(
+        "max_n_bodies=$maxn is smaller than the current body count $n0"))
+
+    # Out of source order (CUDA runs this at :2549, after the geometry block)
+    # but argument-only: the hierarchical path routes the concatenated and
+    # grouped-factored selections through the bounded concat engine, which would
+    # otherwise silently accept a strategy the flat path rejects (task 027).
+    options.m2l_strategy isa Union{FastMultipole.ConcatenatedFixedZM2L,
+        FastMultipole.PrecomputedFactoredYM2L,FastMultipole.DenseTranslationM2L} ||
+        throw(ArgumentError(
+        "RadixFMMCache supports ConcatenatedFixedZM2L, PrecomputedFactoredYM2L, " *
+        "or DenseTranslationM2L; got $(typeof(options.m2l_strategy)) (the " *
+        "SharedRotationM2L group layout is not refreshable in place)"))
+
+    return (; targets, sources, LH, BT, dk_trait, options, auto_options, TF,
+        P=Int(expansion_order), dpb, n0, maxn, hessian)
+end
+
+
+
+#------- stage 2: root geometry -------#
+#
+# CUDA's stage 2 is the geometry block of `RadixFMMCache`
+# (src/translate_batched_resident.jl:2521-2535): the first point at which the
+# constructor looks at WHERE the bodies are. It turns the caller's `bounds`
+# (or, absent them, the body extent) into the four root-box quantities every
+# later stage indexes against -- `x_min`, `h0`, `ell_axes` and `box_extent`.
+#
+# This is a statement-for-statement port in CUDA's own order, sharing CUDA's
+# own helpers: `_radix_bounds` (src/tree_batched.jl:117/137) and
+# `_resolve_radix_ell_axes` (:2190/:2196) are backend-independent host code
+# that computes host scalars, so a KA copy of them would be duplication, not a
+# port. Only the surrounding branch is reproduced here.
+#
+# ONE DEVIATION, and it is a subtraction: CUDA's derived branch also names
+# `center` and `box`, which are consumed only by the two lines below them and
+# are dead at the end of the block. They are not returned.
+#
+# WHY THERE IS NO DEVICE REDUCTION. The `bounds === nothing` branch walks the
+# bodies one at a time through `get_position`, which is scalar indexing if the
+# system is backed by device arrays. That is CUDA's behavior too, not a KA
+# regression, and the production path never reaches it: FLOWVPM always passes
+# an explicit `bounds` (its own padded, optionally center-snapped box --
+# FLOWVPM_fmm_radix.jl:521-523, :539, :560-562), so the constructor takes the
+# `else` branch, which touches no body data at all. A device min/max reduction
+# would be a new capability on a path production does not use; if the derived
+# branch ever becomes hot for a device-resident field, that is its own task.
+
+"""
+    ka_radix_geometry(sources, TF, ell; bounds=nothing, bounds_margin=0.05)
+
+KA stage 2: the root-box geometry `RadixFMMCache` derives immediately after
+argument validation (`src/translate_batched_resident.jl:2521-2535`).
+
+With `bounds === nothing` the root cube is the body bounding box inflated by
+`bounds_margin`; otherwise `bounds = (x_min, box_size)` is taken as given and
+`box_size` is resolved into per-axis depths. Returns a `NamedTuple`
+`(; x_min, h0, ell_axes, box_extent)`. `TF` and `ell` come from stage 1 and the
+caller respectively.
+"""
+function ka_radix_geometry(sources, ::Type{TF}, ell::Integer;
+        bounds=nothing, bounds_margin::Real=0.05) where TF
+    if bounds === nothing
+        x_min_data, x_max_data = FastMultipole._radix_bounds(sources, TF)
+        center = (x_min_data + x_max_data) * TF(0.5)
+        box = (x_max_data - x_min_data) * TF(0.5)
+        h0 = max(box[1], box[2], box[3]) * (1 + TF(bounds_margin))
+        h0 > zero(TF) || throw(ArgumentError(
+            "bodies are degenerate (zero extent); pass explicit bounds=(x_min, box_size)"))
+        x_min = center - SVector{3,TF}(h0, h0, h0)
+        ell_axes = SVector(Int(ell), Int(ell), Int(ell))
+        box_extent = SVector{3,TF}(2 * h0, 2 * h0, 2 * h0)
+    else
+        x_min = SVector{3,TF}(bounds[1])
+        ell_axes, h0, box_extent =
+            FastMultipole._resolve_radix_ell_axes(bounds[2], Int(ell), TF)
+    end
+    return (; x_min, h0, ell_axes, box_extent)
+end
+
+
+#------- stage 5: stencil policy, hierarchical tables, options finalization -------#
+#
+# CUDA's stage 5 is the constructor's policy block
+# (src/translate_batched_resident.jl:2546-2578) plus the options/`dk` tail
+# (:2594-2626): it picks the stencil policy, builds and verifies the
+# hierarchical level schedule, produces the accepted/rejected offset sets every
+# later stage sizes and routes against, and only then -- once the class count
+# exists -- finalizes `options` and runs the kernel checks stage 1 had to defer.
+#
+# It consumes stage 1's NamedTuple and stage 2's geometry directly, because
+# that is what the constructor's local scope hands these statements.
+#
+# THE ONE REORDERING. CUDA runs the capacity block (:2580-2592, KA stage 6)
+# BETWEEN the tables and the options tail. The two are independent -- the
+# capacities read `ell`, `ell_axes`, `maxn`, `stencil_policy.window_classes`
+# and accepted/rejected, none of which the options tail touches, and the
+# options tail reads `length(accepted)` and `basis_info`, neither of which the
+# capacities produce -- so KA runs the tail here and leaves the capacities
+# whole for stage 6. Nothing observable depends on the order.
+#
+# TWO DEVIATIONS, both refusals in the style of stage 1's `sfs`:
+#
+#  1. Adaptive octree. CUDA's `adaptive !== nothing` block (:2628-2679) guards
+#     a host- and CUDA-only lifecycle that KA does not implement at all.
+#     `adaptive` is refused outright rather than validated.
+#
+#  2. `_assert_device_kernel_policy` is called with `device=true`
+#     unconditionally: a KA cache is device-resident by construction, exactly
+#     as in stage 1's deviation 1. The `device` argument to
+#     `_default_radix_policy` is `true` for the same reason, which is what
+#     selects `RADIX_DEVICE_WINDOW_CLASSES` as the default window width.
+#
+# `_default_radix_policy`, `_hierarchical_scheduled_tables`,
+# `_verify_hierarchical_classifier!`, `_hierarchical_class_metadata`,
+# `classify_radix_stencil_offsets` and `_default_radix_options` are shared host
+# code producing host tables -- as in stage 2, a KA copy would be duplication
+# rather than a port, so they are called, not reimplemented.
+
+"""
+    ka_radix_stencil_policy(v, ell, h0, ell_axes; kwargs...)
+
+KA stage 5: the stencil policy, hierarchical level schedule and options
+finalization `RadixFMMCache` performs after the geometry
+(`src/translate_batched_resident.jl:2546-2578`, `:2594-2626`).
+
+`v` is stage 1's NamedTuple; `h0` and `ell_axes` come from stage 2. The
+`policy` / `stencil_epsilon` / `near_radius2` / `window_classes` /
+`level_radii2` kwargs are the constructor's own, with the constructor's
+meanings. Returns a `NamedTuple` carrying the policy, the hierarchical tables
+and their metadata, the accepted/rejected offset sets, `basis_info`, and the
+finalized `options` / `dk`.
+"""
+function ka_radix_stencil_policy(v, ell::Integer, h0, ell_axes;
+        policy=nothing, stencil_epsilon=nothing, near_radius2=nothing,
+        window_classes=nothing, level_radii2=nothing, adaptive=nothing)
+    TF, LH, BT = v.TF, v.LH, v.BT
+    P = v.P
+
+    # DEVIATION 1 (see above): KA has no adaptive octree lifecycle.
+    adaptive === nothing || throw(ArgumentError(
+        "the KA radix path has no adaptive octree lifecycle (tasks 039-041 are " *
+        "host- and CUDA-only); construct with adaptive=nothing"))
+
+    # DEVIATION 2: device=true, a KA cache being device-resident by construction.
+    stencil_policy = FastMultipole._default_radix_policy(policy, P, TF, LH, h0,
+        Int(ell), true, stencil_epsilon, near_radius2, window_classes, level_radii2)
+    hierarchical = stencil_policy isa FastMultipole.HierarchicalRigidStencil
+    # Active-level trimming (task 037 stage 3): hierarchical caches retain node
+    # levels root_level:ell and run M2L on levels first_m2l_level:ell. Cubic
+    # caches degenerate to root_level = 1 with an empty flat-top; flat-policy
+    # caches stay untrimmed (root_level = 0).
+    if hierarchical
+        hierarchical_tables, hierarchical_level_class_of, hierarchical_level_radii2,
+            root_level, first_m2l_level =
+            FastMultipole._hierarchical_scheduled_tables(stencil_policy, Int(ell), ell_axes)
+        FastMultipole._verify_hierarchical_classifier!(h0, Int(ell), stencil_policy,
+            hierarchical_tables, ell_axes, root_level, first_m2l_level,
+            hierarchical_level_radii2)
+        class_level, class_offset, effective_offsets =
+            FastMultipole._hierarchical_class_metadata(hierarchical_tables, Int(ell),
+                first_m2l_level)
+        accepted, rejected = effective_offsets, hierarchical_tables.near_offsets
+    else
+        hierarchical_tables = nothing
+        hierarchical_level_class_of = Array{Int32}(undef, 0, 0, 0)
+        hierarchical_level_radii2 = Int[]
+        root_level, first_m2l_level = 0, 2
+        class_level, class_offset, effective_offsets =
+            Int32[], Matrix{Int32}(undef, 3, 0), SVector{3,Int}[]
+        accepted, rejected =
+            FastMultipole.classify_radix_stencil_offsets(h0, Int(ell), stencil_policy.config)
+    end
+
+    basis_info = FastMultipole.OperatorBasisInfo(
+        FastMultipole.CompressedComplexBasis(), P, Val(LH))
+
+    options = v.options
+    if v.auto_options
+        options = FastMultipole._default_radix_options(TF, P, LH, true,
+            length(accepted), FastMultipole._dense_m2m_dof(basis_info, Val(LH)))
+    end
+    options = FastMultipole._options_with_body_type(options, BT)
+    if v.dk_trait != FastMultipole._default_direct_kernel(BT)
+        # explicit trait choice; a conflicting explicit options choice is an error
+        (options.direct_kernel == FastMultipole._default_direct_kernel(BT) ||
+            options.direct_kernel == v.dk_trait) || throw(ArgumentError(
+            "options.direct_kernel=$(options.direct_kernel) conflicts with the " *
+            "direct_kernel(system) trait $(v.dk_trait)"))
+        options = FastMultipole._options_with_direct_kernel(options, v.dk_trait)
+    end
+    dk = options.direct_kernel
+    isbits(dk) || throw(ArgumentError(
+        "direct_kernel must be an isbits functor (GPU-compilable, no references); " *
+        "got $(typeof(dk))"))
+    if dk isa FastMultipole.AbstractRegularizedVortex
+        kname = nameof(typeof(dk))
+        BT <: FastMultipole.Point{FastMultipole.Vortex} || throw(ArgumentError(
+            "$kname requires body_type Point{Vortex}; got $BT"))
+        for system in v.sources
+            dk.sigma_row <= FastMultipole.data_per_body(system) || throw(ArgumentError(
+                "$kname sigma_row=$(dk.sigma_row) exceeds " *
+                "data_per_body=$(FastMultipole.data_per_body(system)) for " *
+                "$(typeof(system)); every source system must carry the smoothing " *
+                "radius sigma in packed row sigma_row"))
+        end
+    end
+    FastMultipole._assert_device_kernel_policy(true, dk, hierarchical)
+
+    return (; stencil_policy, hierarchical, hierarchical_tables,
+        hierarchical_level_class_of, hierarchical_level_radii2,
+        root_level, first_m2l_level, class_level, class_offset,
+        accepted, rejected, basis_info, options, dk)
+end
+
+
+#------- stage 6: capacity sizing -------#
+#
+# CUDA's stage 6 is the constructor's capacity block
+# (src/translate_batched_resident.jl:2580-2592): the five numbers that fix
+# every persistent device allocation the cache will ever make. They are sized
+# to `maxn` (the capacity contract: live `np` may vary below it with no
+# reallocation), not to the live body count.
+#
+# A statement-for-statement port with NO deviations. It reads stage 1's `maxn`,
+# stage 2's `ell_axes` and stage 5's policy/offset sets, and computes nothing
+# device-side -- these are host integers.
+#
+# This is the stage the pipeline note called ungated by construction: until it
+# existed, every suite handed KA known-good capacities copied off a host cache,
+# so no gate could catch a KA sizing bug because KA did no sizing.
+
+"""
+    ka_radix_capacities(v, ell, ell_axes, s)
+
+KA stage 6: the five persistent capacities `RadixFMMCache` derives from the
+resolved policy (`src/translate_batched_resident.jl:2580-2592`).
+
+`v` is stage 1's NamedTuple, `ell_axes` stage 2's, and `s` stage 5's. Returns
+`(; max_cells, max_nodes, max_level_nodes, route_capacity, direct_capacity)`.
+"""
+function ka_radix_capacities(v, ell::Integer, ell_axes, s)
+    L_max = Int(ell)
+    max_cells = FastMultipole._radix_level_node_capacity(L_max, ell_axes, L_max, v.maxn)
+    max_nodes = sum(FastMultipole._radix_level_node_capacity(L, ell_axes, L_max, max_cells)
+        for L in s.root_level:L_max)
+    # init=0 covers the zero-M2L degenerate hierarchy (first_m2l_level == ell+1,
+    # empty range -- task 052c): no M2L level, so no per-level node bound needed.
+    max_level_nodes = L_max >= 2 ? maximum(
+        (FastMultipole._radix_level_node_capacity(L, ell_axes, L_max, max_cells)
+         for L in (s.hierarchical ? s.first_m2l_level : 2):L_max); init=0) : 0
+    route_capacity = s.hierarchical ?
+        min(min(s.stencil_policy.window_classes,
+                length(s.hierarchical_tables.push_offsets)) * max_level_nodes,
+            max_level_nodes * max_level_nodes) :
+        min(length(s.accepted), max_cells) * max_cells
+    direct_capacity = max_cells * min(length(s.rejected), max_cells)
+    return (; max_cells, max_nodes, max_level_nodes, route_capacity, direct_capacity)
+end
+
+
+#------- precision-parameterized device functors (KA-only) -------#
+#
+# WHY THIS EXISTS. `PartitionedVortex`, `RegularizedVortex` and `TwoPassVortex`
+# store their cutoffs as HARD `Float64` fields -- `rho_t::Float64` /
+# `rho_c::Float64`, force-coerced by the inner constructors
+# (src/containers.jl:2031, :2068, :2090). The direct-pair kernels take the
+# functor BY VALUE for compile-time specialization, so those fields cross into
+# device code as doubles.
+#
+# On CUDA that is invisible: H100/H200 have native FP64 units, the field loads
+# and the comparison simply execute in double. Metal has no Float64 at all, so
+# the same IR fails to compile outright:
+#
+#   InvalidIRError: ... gpu_ka_direct_pairs_functor_kernel!(::PartitionedVortex,
+#   ...) resulted in invalid LLVM IR / Reason: unsupported use of double value
+#
+# The per-pair ARITHMETIC is already precision-generic and needs no change:
+# `_direct_pair_ug`/`_ugh` convert with `T(_pass1_regularized_cutoff(kernel))`
+# (src/translate_batched_resident.jl:843, :861), `_gaussianerf_g_h` converts
+# every constant with `T(...)`, and Float32 series coefficients already exist
+# (`_gausserf_series_g(z::Float32)`, :686). The double is materialized by the
+# FIELD LOAD, which happens before any of that -- so no use-site conversion can
+# remove it. The type has to arrive on the device already carrying `TF`.
+#
+# These mirrors do exactly that and nothing else. The precision follows what the
+# particle field passes in (`options.precision`, i.e. FLOWVPM's
+# `RadixFMMSettings.precision`), so a Float64 field on a Float64-capable backend
+# still runs in Float64 -- this is not a downcast, it is the removal of a
+# HARDCODED Float64 from a type that should always have been parameterized.
+#
+# NOTHING ON THE CUDA PATH IS TOUCHED. `src/containers.jl` and
+# `src/translate_batched_resident.jl` are unmodified; CUDA keeps building and
+# consuming the stock `PartitionedVortex`. Conversion happens once on the host,
+# in `_ka_device_direct_kernel`, at cache build.
+#
+# The duplicated code is the ~10-line functor WRAPPER only. All real math --
+# `_gaussianerf_g_h`, `_vortex_pair_ug`, `_vortex_pair_ugh` -- is called
+# straight out of FastMultipole, so the numerics cannot drift from the host
+# oracle: same functions, same order, only the cutoff's storage type differs.
+
+"""
+    KAPartitionedVortex{TF}(sigma_row, rho_t)
+
+Device mirror of `PartitionedVortex` with the cutoff stored as `TF` instead of
+a hardcoded `Float64`. See the block comment above.
+"""
+struct KAPartitionedVortex{TF} <: FastMultipole.AbstractDirectKernel
+    sigma_row::Int
+    rho_t::TF
+end
+
+"""
+    KATwoPassVortex{TF}(sigma_row, rho_t, rho_c)
+
+Device mirror of `TwoPassVortex`; pass 1 branches at `rho_c`, matching
+`_pass1_regularized_cutoff(::TwoPassVortex)` (src/translate_batched_resident.jl:831).
+"""
+struct KATwoPassVortex{TF} <: FastMultipole.AbstractDirectKernel
+    sigma_row::Int
+    rho_t::TF
+    rho_c::TF
+end
+
+"""
+    KARegularizedVortex{TF}(sigma_row, rho_t)
+
+Device mirror of `RegularizedVortex`.
+"""
+struct KARegularizedVortex{TF} <: FastMultipole.AbstractDirectKernel
+    sigma_row::Int
+    rho_t::TF
+end
+
+const KARegularizedFunctor{TF} =
+    Union{KAPartitionedVortex{TF},KATwoPassVortex{TF},KARegularizedVortex{TF}}
+
+# trait parity with src/containers.jl:2132
+FastMultipole._emits_potential(::KARegularizedFunctor) = false
+
+# pass-1 cutoff, mirroring src/translate_batched_resident.jl:830-831 exactly:
+# PartitionedVortex branches at rho_t, TwoPassVortex at rho_c.
+@inline _ka_pass1_cutoff(k::KAPartitionedVortex) = k.rho_t
+@inline _ka_pass1_cutoff(k::KARegularizedVortex) = k.rho_t
+@inline _ka_pass1_cutoff(k::KATwoPassVortex) = k.rho_c
+
+"""
+    _ka_device_direct_kernel(kernel, ::Type{TF}) -> device functor
+
+Host-side conversion, called once at cache build. Singular kernels carry no
+float fields and are returned unchanged; the regularized family is rebuilt with
+`TF` cutoffs.
+"""
+_ka_device_direct_kernel(k::FastMultipole.AbstractDirectKernel, ::Type{TF}) where TF = k
+_ka_device_direct_kernel(k::FastMultipole.PartitionedVortex, ::Type{TF}) where TF =
+    KAPartitionedVortex{TF}(k.sigma_row, TF(k.rho_t))
+_ka_device_direct_kernel(k::FastMultipole.RegularizedVortex, ::Type{TF}) where TF =
+    KARegularizedVortex{TF}(k.sigma_row, TF(k.rho_t))
+_ka_device_direct_kernel(k::FastMultipole.TwoPassVortex, ::Type{TF}) where TF =
+    KATwoPassVortex{TF}(k.sigma_row, TF(k.rho_t), TF(k.rho_c))
+
+# Port of `_direct_pair_ug(::Union{PartitionedVortex,TwoPassVortex}, ...)`
+# (src/translate_batched_resident.jl:833-848). Statement for statement identical;
+# the only difference is that the cutoff needs no `T(...)` because it is already
+# `TF`. `_gaussianerf_g_h` and `_vortex_pair_ug` are FastMultipole's own.
+@inline function FastMultipole._direct_pair_ug(kernel::KARegularizedFunctor,
+        dx, dy, dz, r2, invr, source_bodies, j)
+    T = typeof(r2)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    g = one(T)
+    if sigma > zero(T)
+        rho = r2 * invr / sigma
+        if rho <= T(_ka_pass1_cutoff(kernel))
+            g, _ = FastMultipole._gaussianerf_g_h(rho)
+        end
+    end
+    return FastMultipole._vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
+end
+
+# Port of `_direct_pair_ugh(...)` (src/translate_batched_resident.jl:850-866).
+@inline function FastMultipole._direct_pair_ugh(kernel::KARegularizedFunctor,
+        dx, dy, dz, r2, invr, source_bodies, j)
+    T = typeof(r2)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    g = one(T)
+    h = -T(3)
+    if sigma > zero(T)
+        rho = r2 * invr / sigma
+        if rho <= T(_ka_pass1_cutoff(kernel))
+            g, h = FastMultipole._gaussianerf_g_h(rho)
+        end
+    end
+    return FastMultipole._vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
+end
+
 
 end

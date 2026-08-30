@@ -1,4 +1,13 @@
-# Gate for step 6b: KA W-list multipole-to-target (M2T), 13-row hessian.
+# Gate for step 6b: KA W-list multipole-to-target (M2T).
+#
+# Two variants per case, matching exactly what CUDA supports:
+#   (LH=true,  4 rows)  -- Lamb-Helmholtz gradient
+#   (LH=false, 13 rows) -- scalar hessian
+# The fourth combination (LH + hessian) is a task-040 deferral: shared
+# `_resident_multipole_eval_flat_hessian` throws on it, so the native CUDA
+# kernel fails identically. It is also rejected at cache construction
+# (translate_batched_resident.jl:2671), so production cannot build it. Nothing
+# to gate; the suite must not ask for it.
 #
 # Oracle is FastMultipole's OWN host M2T (`_host_m2t_pairs_kernel!`,
 # src/translate_batched.jl), not a reimplementation. The host form walks node
@@ -48,20 +57,21 @@ for (ci,(n,K_max,ell_max,P,q)) in pairs(CASES)
         nskip[]+=1; println("  SKIP case $ci: no W pairs"); continue
     end
     opts=FM.CUDARadixLifecycleOptions(;precision=TF, body_type=FM.Point{FM.Vortex})
-    state=ext.ka_radix_state(actx,build,devb,P,Val(true); options=opts, lists=lists, output_rows=13)
-    o=state.invariant_cache.basis_info.orders
-    # populate multipoles with a well-scaled pseudo-expansion; the evaluation,
-    # not the expansion, is what is under test
-    mp = rand(TF, size(state.multipoles.phi)...) .* TF(0.01)
-    mc = rand(TF, size(state.multipoles.chi)...) .* TF(0.01)
-    copyto!(state.multipoles.phi, mp); copyto!(state.multipoles.chi, mc)
-    fill!(state.output, zero(TF))
-    H = ext.ka_allocate_harmonics_scratch(DEV_BACKEND, TF, o.P_phi)
-    try
-        ext.ka_launch_adaptive_m2t!(state, lists, actx, H)
-        KernelAbstractions.synchronize(DEV_BACKEND)
-    catch e
-        nfail[]+=1; println("  FAIL case $ci: kernel threw: ", sprint(showerror,e)[1:min(end,2500)]); continue
+    for (LH, rows) in ((true, 4), (false, 13))
+        state=ext.ka_radix_state(actx,build,devb,P,Val(LH); options=opts, lists=lists, output_rows=rows)
+        o=state.invariant_cache.basis_info.orders
+        # populate multipoles with a well-scaled pseudo-expansion; the evaluation,
+        # not the expansion, is what is under test
+        mp = rand(TF, size(state.multipoles.phi)...) .* TF(0.01)
+        mc = rand(TF, size(state.multipoles.chi)...) .* TF(0.01)
+        copyto!(state.multipoles.phi, mp); copyto!(state.multipoles.chi, mc)
+        fill!(state.output, zero(TF))
+        H = ext.ka_allocate_harmonics_scratch(DEV_BACKEND, TF, o.P_phi)
+        try
+            ext.ka_launch_adaptive_m2t!(state, lists, actx, H)
+            KernelAbstractions.synchronize(DEV_BACKEND)
+        catch e
+            nfail[]+=1; println("  FAIL case $ci LH=$LH rows=$rows: kernel threw: ", sprint(showerror,e)[1:min(end,2500)]); continue
     end
     # host oracle
     nH2 = FM.harmonic_index(o.P_phi+2, o.P_phi+2)
@@ -70,13 +80,14 @@ for (ci,(n,K_max,ell_max,P,q)) in pairs(CASES)
     FM._host_m2t_pairs_kernel!(hout, Array(state.source_bodies),
         Array(actx.bufs.node_lo), Array(actx.bufs.node_hi), Array(state.grid.node_centers),
         Array(lctx.bufs.w_targets), Array(lctx.bufs.w_sources), lists.n_w,
-        mp, mc, Hh, o.P_phi, o.P_active, Val(true), Val(true))
+        mp, mc, Hh, o.P_phi, o.P_active, Val(LH), Val(rows >= 13))
     e=relerr(Array(state.output), hout)
     tol=1e-4
     if e<=tol
-        npass[]+=1; println("  PASS  n=$n P=$P n_w=$(lists.n_w)  relerr=$(round(e,sigdigits=3))")
+        npass[]+=1; println("  PASS  n=$n P=$P n_w=$(lists.n_w) LH=$LH rows=$rows  relerr=$(round(e,sigdigits=3))")
     else
-        nfail[]+=1; println("  FAIL  n=$n P=$P n_w=$(lists.n_w)  relerr=$e (tol $tol)")
+        nfail[]+=1; println("  FAIL  n=$n P=$P n_w=$(lists.n_w) LH=$LH rows=$rows  relerr=$e (tol $tol)")
+    end
     end
 end
 println("\nKA M2T on $(DEV_NAME): $(npass[]) passed, $(nfail[]) failed, $(nskip[]) skipped")
