@@ -374,7 +374,8 @@ function ka_tree_routes!(m2m_parent, m2m_child, l2l_parent, l2l_child, parent_in
 end
 
 @kernel function ka_pack_body_matrix_kernel!(body, @Const(source_buffer), @Const(perm),
-        @Const(body_system), @Const(body_index), isys, n, nrows, nsys)
+        @Const(body_system), @Const(body_index), isys, n, nrows, nsys,
+        sigma_row, inv_sigma_row)
     sorted_i = @index(Global)
     @inbounds if sorted_i <= n
         global_i = perm[sorted_i]
@@ -385,6 +386,16 @@ end
             end
             for row in (nsys + 1):nrows
                 body[row, sorted_i] = zero(eltype(body))
+            end
+            # Reciprocal-sigma row: one divide per body here replaces one divide
+            # per target-source INTERACTION in the nearfield kernel (measured 15.6%
+            # of the nearfield at np=248714). Stored as 0 for a non-positive sigma
+            # so the nearfield's `sigma > 0` regularization guard becomes an
+            # exactly equivalent `inv_sigma > 0` test on the row it already loads.
+            if inv_sigma_row > 0
+                sig = body[sigma_row, sorted_i]
+                body[inv_sigma_row, sorted_i] =
+                    sig > zero(sig) ? inv(sig) : zero(sig)
             end
         end
     end
@@ -411,7 +422,8 @@ per system, as CUDA does -- with the single-system attribution of
 are left untouched.
 """
 function ka_pack_body_matrix!(body, source_buffer, perm, body_system, body_index,
-        n::Int; isys::Integer=1, workgroup::Int=KA_AUTO_WORKGROUP)
+        n::Int; isys::Integer=1, sigma_row::Integer=0, inv_sigma_row::Integer=0,
+        workgroup::Int=KA_AUTO_WORKGROUP)
     n == 0 && return body
     size(body, 2) >= n || throw(ArgumentError(
         "body has $(size(body, 2)) columns, fewer than n=$n"))
@@ -419,10 +431,14 @@ function ka_pack_body_matrix!(body, source_buffer, perm, body_system, body_index
         "n=$n exceeds perm (length $(length(perm)))"))
     nrows = size(body, 1)
     nsys = min(size(source_buffer, 1), nrows)
+    inv_sigma_row == 0 || (0 < sigma_row <= nsys && inv_sigma_row <= nrows) ||
+        throw(ArgumentError(
+            "inv_sigma_row=$inv_sigma_row needs 0 < sigma_row=$sigma_row <= $nsys " *
+            "and inv_sigma_row <= nrows=$nrows"))
     backend = KA.get_backend(body)
     kernel = _cached_kernel(ka_pack_body_matrix_kernel!, backend, workgroup)
-    kernel(body, source_buffer, perm, body_system, body_index, Int(isys), n, nrows, nsys;
-        ndrange=n)
+    kernel(body, source_buffer, perm, body_system, body_index, Int(isys), n, nrows, nsys,
+        Int(sigma_row), Int(inv_sigma_row); ndrange=n)
     return body
 end
 
@@ -2576,10 +2592,17 @@ function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
     # sorted-order body matrix. Single-system attribution (step iv), so one isys=1
     # pack call covers every column; the kernel keeps CUDA's system indirection so
     # it stays correct when multi-system attribution lands.
+    # One row past `data_per_body` carries 1/sigma for the regularized nearfield
+    # (see `ka_pack_body_matrix_kernel!`). Rows 1:dpb keep their meaning exactly,
+    # so `ka_node_sigma_max!` -- which maxes the TRUE sigma over each subtree to
+    # drive the sigma-adequacy ell gate -- reads the same values as before.
     dpb = size(source_buffer, 1)
-    source_bodies = KA.zeros(backend, TF, dpb, actx.maxn)
+    sigma_row = _ka_kernel_sigma_row(options.direct_kernel)
+    inv_sigma_row = sigma_row > 0 ? dpb + 1 : 0
+    source_bodies = KA.zeros(backend, TF, dpb + 1, actx.maxn)
     ka_pack_body_matrix!(source_bodies, source_buffer, grid.perm, grid.body_system,
-        grid.body_index, n; isys=1, workgroup=workgroup)
+        grid.body_index, n; isys=1, sigma_row=sigma_row, inv_sigma_row=inv_sigma_row,
+        workgroup=workgroup)
 
     m2m_parent = KA.zeros(backend, Int, actx.node_capacity)
     m2m_child = KA.zeros(backend, Int, actx.node_capacity)
@@ -2993,7 +3016,8 @@ function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B
     # before it crosses into device code (see the "precision-parameterized
     # device functors" block near the end of this file). Singular kernels are
     # returned unchanged, so this is a no-op for every existing suite.
-    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF)
+    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF,
+        _ka_inv_sigma_row(state.options.direct_kernel, state.source_bodies))
     kern(dkernel, state.output, state.source_bodies,
          state.cell_ranges, state.direct_targets, state.direct_sources,
          npairs, TF, Val(hs), Val(workgroup); ndrange=npairs * workgroup)
@@ -5540,10 +5564,16 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         # ([[reference-ka-workgroup-is-sometimes-team-size]]).
         ka_nearfield_subsort!(ctx, cache, n, n_cells)
     end
+    # The reciprocal-sigma row has to be refilled here, not just at cache build:
+    # this repack runs every step and would otherwise leave it holding the
+    # previous step's sigmas (or zeros on the first step).
+    pack_sigma_row = _ka_kernel_sigma_row(cache.options.direct_kernel)
+    pack_inv_sigma_row = pack_sigma_row > 0 ? size(ctx.source_bodies, 1) : 0
     for isys in eachindex(source_buffers)
         ka_pack_body_matrix!(ctx.source_bodies, source_buffers[isys],
             view(grid.perm, 1:n), grid.body_system, grid.body_index, n;
-            isys, workgroup)
+            isys, sigma_row=pack_sigma_row, inv_sigma_row=pack_inv_sigma_row,
+            workgroup)
     end
     FastMultipole._direct_kernel_geometry_gate!(cache, cache.options.direct_kernel,
         ctx.source_bodies, n)
@@ -5784,7 +5814,7 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
     ctx = (;
         multipoles, locals, workspace, invariant, counters, grid,
         counts=FastMultipole.RadixStepCounts(0, 0, 0, 0, 0),
-        source_bodies=_z(TF, dpb, maxn),
+        source_bodies=_z(TF, dpb + 1, maxn),
         output=_z(TF, n_output_rows, maxn),
         cell_at=_z(Int32, 0, 0, 0),
         hierarchical_ctx,
@@ -6445,6 +6475,7 @@ a hardcoded `Float64`. See the block comment above.
 struct KAPartitionedVortex{TF} <: FastMultipole.AbstractDirectKernel
     sigma_row::Int
     rho_t::TF
+    inv_sigma_row::Int
 end
 
 """
@@ -6457,6 +6488,7 @@ struct KATwoPassVortex{TF} <: FastMultipole.AbstractDirectKernel
     sigma_row::Int
     rho_t::TF
     rho_c::TF
+    inv_sigma_row::Int
 end
 
 """
@@ -6467,6 +6499,7 @@ Device mirror of `RegularizedVortex`.
 struct KARegularizedVortex{TF} <: FastMultipole.AbstractDirectKernel
     sigma_row::Int
     rho_t::TF
+    inv_sigma_row::Int
 end
 
 const KARegularizedFunctor{TF} =
@@ -6488,13 +6521,68 @@ Host-side conversion, called once at cache build. Singular kernels carry no
 float fields and are returned unchanged; the regularized family is rebuilt with
 `TF` cutoffs.
 """
-_ka_device_direct_kernel(k::FastMultipole.AbstractDirectKernel, ::Type{TF}) where TF = k
-_ka_device_direct_kernel(k::FastMultipole.PartitionedVortex, ::Type{TF}) where TF =
-    KAPartitionedVortex{TF}(k.sigma_row, TF(k.rho_t))
-_ka_device_direct_kernel(k::FastMultipole.RegularizedVortex, ::Type{TF}) where TF =
-    KARegularizedVortex{TF}(k.sigma_row, TF(k.rho_t))
-_ka_device_direct_kernel(k::FastMultipole.TwoPassVortex, ::Type{TF}) where TF =
-    KATwoPassVortex{TF}(k.sigma_row, TF(k.rho_t), TF(k.rho_c))
+_ka_device_direct_kernel(k::FastMultipole.AbstractDirectKernel, ::Type{TF},
+    inv_sigma_row::Integer=0) where TF = k
+_ka_device_direct_kernel(k::FastMultipole.PartitionedVortex, ::Type{TF},
+    inv_sigma_row::Integer=0) where TF =
+    KAPartitionedVortex{TF}(k.sigma_row, TF(k.rho_t), Int(inv_sigma_row))
+_ka_device_direct_kernel(k::FastMultipole.RegularizedVortex, ::Type{TF},
+    inv_sigma_row::Integer=0) where TF =
+    KARegularizedVortex{TF}(k.sigma_row, TF(k.rho_t), Int(inv_sigma_row))
+_ka_device_direct_kernel(k::FastMultipole.TwoPassVortex, ::Type{TF},
+    inv_sigma_row::Integer=0) where TF =
+    KATwoPassVortex{TF}(k.sigma_row, TF(k.rho_t), TF(k.rho_c), Int(inv_sigma_row))
+
+"""
+    _ka_kernel_sigma_row(kernel) -> Int
+
+`sigma_row` for the regularized family, 0 for every kernel that carries no
+sigma. Host-side only; decides whether the reciprocal-sigma row is allocated.
+"""
+_ka_kernel_sigma_row(::FastMultipole.AbstractDirectKernel) = 0
+_ka_kernel_sigma_row(k::FastMultipole.PartitionedVortex) = k.sigma_row
+_ka_kernel_sigma_row(k::FastMultipole.RegularizedVortex) = k.sigma_row
+_ka_kernel_sigma_row(k::FastMultipole.TwoPassVortex) = k.sigma_row
+
+"""
+    _ka_inv_sigma_row(kernel, source_bodies) -> Int
+
+Row of `source_bodies` holding 1/sigma, or 0 to keep the divide. Both KA
+`source_bodies` allocations carry one row past `data_per_body` unconditionally,
+so the reciprocal row is always the LAST row -- that invariant is what makes
+this derivable at launch instead of threaded through `DeviceResidentRadixState`.
+Singular kernels get 0 (their functors carry no `inv_sigma_row` field at all).
+"""
+@inline function _ka_inv_sigma_row(kernel, source_bodies)
+    sr = _ka_kernel_sigma_row(kernel)
+    sr == 0 && return 0
+    r = size(source_bodies, 1)
+    r > sr || throw(ArgumentError(
+        "source_bodies has $r rows, not more than sigma_row=$sr: the " *
+        "reciprocal-sigma row is missing, so this state was not built by " *
+        "ka_radix_state"))
+    return r
+end
+
+# rho = |r|/sigma for the regularized family, plus the guard value the caller
+# tests for `> 0`. With the reciprocal-sigma row wired (`inv_sigma_row > 0`) this
+# is one load and one MULTIPLY; without it, the original load-and-divide. The
+# branch is on a struct field, so it is uniform across every thread in the launch
+# and there is exactly one compiled variant per functor type either way.
+#
+# The guard is exact, not approximate: the pack kernel stores 0 in the reciprocal
+# row for every body with sigma <= 0, so `inv_sigma > 0` selects the same bodies
+# `sigma > 0` did. `rho` differs from the divide by at most one Float32 rounding.
+@inline function _ka_rho_and_guard(kernel, source_bodies, j, r2::T, invr::T) where T
+    isr = kernel.inv_sigma_row
+    if isr > 0
+        @inbounds invsig = source_bodies[isr, j]
+        return r2 * invr * invsig, invsig
+    else
+        @inbounds sigma = source_bodies[kernel.sigma_row, j]
+        return sigma > zero(T) ? r2 * invr / sigma : zero(T), sigma
+    end
+end
 
 # Port of `_direct_pair_ug(::Union{PartitionedVortex,TwoPassVortex}, ...)`
 # (src/translate_batched_resident.jl:833-848). Statement for statement identical;
@@ -6506,10 +6594,9 @@ _ka_device_direct_kernel(k::FastMultipole.TwoPassVortex, ::Type{TF}) where TF =
     @inbounds gsx = source_bodies[5, j]
     @inbounds gsy = source_bodies[6, j]
     @inbounds gsz = source_bodies[7, j]
-    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    rho, guard = _ka_rho_and_guard(kernel, source_bodies, j, r2, invr)
     g = one(T)
-    if sigma > zero(T)
-        rho = r2 * invr / sigma
+    if guard > zero(T)
         if rho <= T(_ka_pass1_cutoff(kernel))
             g, _ = FastMultipole._gaussianerf_g_h(rho)
         end
@@ -6524,11 +6611,10 @@ end
     @inbounds gsx = source_bodies[5, j]
     @inbounds gsy = source_bodies[6, j]
     @inbounds gsz = source_bodies[7, j]
-    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    rho, guard = _ka_rho_and_guard(kernel, source_bodies, j, r2, invr)
     g = one(T)
     h = -T(3)
-    if sigma > zero(T)
-        rho = r2 * invr / sigma
+    if guard > zero(T)
         if rho <= T(_ka_pass1_cutoff(kernel))
             g, h = FastMultipole._gaussianerf_g_h(rho)
         end

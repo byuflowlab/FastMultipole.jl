@@ -1124,6 +1124,45 @@ end
     return rho * x * G, rho * x * x * H
 end
 
+# LUT-mode pair math for the regularized family: identical branch structure to
+# `_direct_pair_ug(h)` (sigma <= 0 -> singular; split kernels switch at the
+# pass-1 cutoff; x >= rho_t^2 -> singular, the table's own domain end).
+@inline _lut_pair_cutoff(kernel::AbstractRegularizedVortex) = kernel.rho_t
+@inline _lut_pair_cutoff(kernel::TwoPassVortex) = kernel.rho_c
+
+@inline function _lut_pair_gh(kernel::AbstractRegularizedVortex, shlut,
+        r2::T, invr::T, sigma::T) where T
+    g = one(T)
+    h = -T(3)
+    if sigma > zero(T)
+        rho = r2 * invr / sigma
+        if rho <= T(_lut_pair_cutoff(kernel))
+            g, h = _gh_from_lut(shlut, rho, T(kernel.rho_t)^2)
+        end
+    end
+    return g, h
+end
+
+@inline function _lut_pair_ug(kernel::AbstractRegularizedVortex, shlut,
+        dx, dy, dz, r2, invr, source_bodies, j)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    g, _ = _lut_pair_gh(kernel, shlut, r2, invr, sigma)
+    return _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
+end
+
+@inline function _lut_pair_ugh(kernel::AbstractRegularizedVortex, shlut,
+        dx, dy, dz, r2, invr, source_bodies, j)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    @inbounds sigma = source_bodies[kernel.sigma_row, j]
+    g, h = _lut_pair_gh(kernel, shlut, r2, invr, sigma)
+    return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
+end
+
 # Validated host-side mode (the host reference path maps :lut -> :shipped)
 function _validated_host_gh_mode()
     m = radix_setting(:CUDA_NEARFIELD_GH_MODE)
