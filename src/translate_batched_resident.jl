@@ -123,18 +123,42 @@ function _host_flat_buffer(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, batc
     return FlatCoefficientBuffer(TF, basis_info, batch)
 end
 
-@inline function _resident_regular_harmonic_coeff(dx, dy, dz, nt, mt)
+# Transcendental prologue of `_resident_regular_harmonic_coeff`, split out so a
+# caller that needs MANY coefficients at the SAME offset pays the sqrt/acos/
+# atan/2x-sincos once instead of once per (n,m). That was the dominant cost of
+# the resident B2M and L2B kernels: both evaluate one coefficient per (n,m) pair
+# and so re-derived (rho, theta, phi) for every one of them -- 63 times per body
+# in L2B, and three times per (n,m) in the vortex B2M contributions.
+#
+# Bit-exactness is preserved by construction. These are the identical
+# expressions the monolithic function computed, in the same order, and the
+# recurrence that consumes them is untouched; only the point at which they are
+# evaluated moves. The rho == 0 branch still short-circuits before any
+# transcendental, and the recurrence re-tests it off the carried `rho`.
+@inline function _resident_harmonic_setup(dx, dy, dz)
     rho = sqrt(dx * dx + dy * dy + dz * dz)
     if rho == zero(rho)
-        return nt == 0 && mt == 0 ? (one(rho), zero(rho)) : (zero(rho), zero(rho))
+        z = zero(rho)
+        return (rho, z, z, z, z)
     end
     theta = acos(clamp(dz / rho, -one(rho), one(rho)))
     phi = atan(dy, dx)
     y, x = sincos(theta)
+    iei_imag, iei_real = sincos(phi + convert(typeof(rho), pi / 2))
+    return (rho, x, y, iei_real, iei_imag)
+end
+
+@inline _resident_regular_harmonic_coeff(dx, dy, dz, nt, mt) =
+    _resident_regular_harmonic_coeff(_resident_harmonic_setup(dx, dy, dz), nt, mt)
+
+@inline function _resident_regular_harmonic_coeff(setup::NTuple{5,<:Any}, nt, mt)
+    rho, x, y, iei_real, iei_imag = setup
+    if rho == zero(rho)
+        return nt == 0 && mt == 0 ? (one(rho), zero(rho)) : (zero(rho), zero(rho))
+    end
     fact = one(rho)
     pn = one(rho)
     rhom = one(rho)
-    iei_imag, iei_real = sincos(phi + convert(typeof(rho), pi / 2))
     ieim_real = one(rho)
     ieim_imag = zero(rho)
     for m in 0:nt
@@ -245,23 +269,29 @@ end
 # is a legacy-pipeline quirk the resident scalar B2M deliberately omits; it has
 # no analogue for the vortex.)
 
-@inline function _resident_vortex_q(mdx, mdy, mdz, n, m)
-    TF = typeof(mdx)
+@inline _resident_vortex_q(mdx, mdy, mdz, n, m) =
+    _resident_vortex_q(_resident_harmonic_setup(mdx, mdy, mdz), n, m)
+
+@inline function _resident_vortex_q(setup::NTuple{5,<:Any}, n, m)
+    TF = typeof(setup[1])
     if m < 0
         # conjugate symmetry per legacy get_n/get_nm1: Q_{n,-1} = -conj(Q_{n,1})
         (m == -1 && n >= 1) || return zero(TF), zero(TF)
-        qre, qim = _resident_regular_harmonic_coeff(mdx, mdy, mdz, n, 1)
+        qre, qim = _resident_regular_harmonic_coeff(setup, n, 1)
         return -qre, qim
     end
     (m > n || n < 0) && return zero(TF), zero(TF)
-    return _resident_regular_harmonic_coeff(mdx, mdy, mdz, n, m)
+    return _resident_regular_harmonic_coeff(setup, n, m)
 end
 
+# The three `_resident_vortex_q` lookups below share one offset, so the
+# transcendental prologue is computed once here rather than inside each.
 @inline function _resident_vortex_phi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
     TF = typeof(mdx)
-    qmm1_re, qmm1_im = _resident_vortex_q(mdx, mdy, mdz, n, m - 1)
-    qm_re, qm_im = _resident_vortex_q(mdx, mdy, mdz, n, m)
-    qmp1_re, qmp1_im = _resident_vortex_q(mdx, mdy, mdz, n, m + 1)
+    setup = _resident_harmonic_setup(mdx, mdy, mdz)
+    qmm1_re, qmm1_im = _resident_vortex_q(setup, n, m - 1)
+    qm_re, qm_im = _resident_vortex_q(setup, n, m)
+    qmp1_re, qmp1_im = _resident_vortex_q(setup, n, m + 1)
     nmmp1_2 = TF(n - m + 1) * TF(0.5)
     npmp1_2 = TF(n + m + 1) * TF(0.5)
     _1_np1 = inv(TF(n + 1))
@@ -275,9 +305,10 @@ end
 
 @inline function _resident_vortex_chi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
     TF = typeof(mdx)
-    qmm1_re, qmm1_im = _resident_vortex_q(mdx, mdy, mdz, n - 1, m - 1)
-    qm_re, qm_im = _resident_vortex_q(mdx, mdy, mdz, n - 1, m)
-    qmp1_re, qmp1_im = _resident_vortex_q(mdx, mdy, mdz, n - 1, m + 1)
+    setup = _resident_harmonic_setup(mdx, mdy, mdz)
+    qmm1_re, qmm1_im = _resident_vortex_q(setup, n - 1, m - 1)
+    qm_re, qm_im = _resident_vortex_q(setup, n - 1, m)
+    qmp1_re, qmp1_im = _resident_vortex_q(setup, n - 1, m + 1)
     # legacy get_nm1 zeroes (n-1, m) for m == n and (n-1, m+1) for m+1 >= n;
     # _resident_vortex_q's m > n-1 bound check reproduces both
     _1_over_n = inv(TF(n))
@@ -1256,8 +1287,11 @@ end
     c = inv(TF(4) * TF(pi))
     u = zero(TF)
     vx = zero(TF); vy = zero(TF); vz = zero(TF)
+    # every coefficient below is taken at the SAME offset, so the transcendental
+    # prologue is evaluated once here instead of once per (n,m)
+    setup = _resident_harmonic_setup(dx, dy, dz)
     @inbounds for n in 0:P_active
-        rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, 0)
+        rre, rim = _resident_regular_harmonic_coeff(setup, n, 0)
         if n <= P_phi && (!LH || n == 0)
             u += rre * _resident_flat_phi_re(ph, node, P_phi, n, 0) -
                  rim * _resident_flat_phi_im(ph, node, P_phi, n, 0)
@@ -1279,7 +1313,7 @@ end
         vz += vzr * rre - vzi * rim
 
         for m in 1:n
-            rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, m)
+            rre, rim = _resident_regular_harmonic_coeff(setup, n, m)
             if n <= P_phi && !LH
                 u += 2 * (rre * _resident_flat_phi_re(ph, node, P_phi, n, m) -
                           rim * _resident_flat_phi_im(ph, node, P_phi, n, m))
@@ -1389,8 +1423,10 @@ end
     c = inv(TF(4) * TF(pi))
     u = zero(TF)
     vx = zero(TF); vy = zero(TF); vz = zero(TF)
+    # one transcendental prologue per body, shared by both passes below
+    setup = _resident_harmonic_setup(dx, dy, dz)
     @inbounds for n in 0:P_active
-        rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, 0)
+        rre, rim = _resident_regular_harmonic_coeff(setup, n, 0)
         if n <= P_phi && (!LH || n == 0)
             u += rre * _resident_flat_phi_re(ph, node, P_phi, n, 0) -
                  rim * _resident_flat_phi_im(ph, node, P_phi, n, 0)
@@ -1401,7 +1437,7 @@ end
         vy += vyr * rre - vyi * rim
         vz += vzr * rre - vzi * rim
         for m in 1:n
-            rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, m)
+            rre, rim = _resident_regular_harmonic_coeff(setup, n, m)
             if n <= P_phi && !LH
                 u += 2 * (rre * _resident_flat_phi_re(ph, node, P_phi, n, m) -
                           rim * _resident_flat_phi_im(ph, node, P_phi, n, m))
@@ -1418,7 +1454,7 @@ end
     hyx = zero(TF); hyy = zero(TF); hyz = zero(TF)
     hzx = zero(TF); hzy = zero(TF); hzz = zero(TF)
     @inbounds for n in 0:(P_active - 1)
-        rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, 0)
+        rre, rim = _resident_regular_harmonic_coeff(setup, n, 0)
         # gradient coefficients at (n+1, 0) and (n+1, 1)
         g0x_r, g0x_i, g0y_r, g0y_i, g0z_r, g0z_i =
             _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, 0, lhv)
@@ -1434,7 +1470,7 @@ end
         hyz += -g1z_r * rre
         hzz += -g0z_r * rre + g0z_i * rim
         for m in 1:n
-            rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, m)
+            rre, rim = _resident_regular_harmonic_coeff(setup, n, m)
             amx_r, amx_i, amy_r, amy_i, amz_r, amz_i =
                 _resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, m - 1, lhv)
             bmx_r, bmx_i, bmy_r, bmy_i, bmz_r, bmz_i =
