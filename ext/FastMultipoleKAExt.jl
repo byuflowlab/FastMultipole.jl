@@ -664,15 +664,20 @@ the real production `ConcatenatedFixedZM2L` resident M2L apply. Operates on `ws.
 rather than a full `DeviceResidentRadixState`, so it can be dropped into an isolated
 per-route correctness check the same way `ka_resident_stage_group_apply!` was for M2M.
 """
-function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets, nroutes::Int)
+function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets,
+        nroutes::Int; route_class=nothing)
     nroutes == 0 && return dest
     plan = ws.m2l_concat
+    # `route_class` defaults to the plan's own window-scoped buffer, which the
+    # generate-and-apply-per-window path refills before every call. The cached
+    # path passes a view into the epoch-cached class stream instead.
+    classes = route_class === nothing ? plan.route_class : route_class
     LH = size(dest.chi, 1) > 0
     TF = eltype(dest.phi)
     for c0 in 1:plan.chunk:nroutes
         cols = c0:min(c0 + plan.chunk - 1, nroutes)
         n = length(cols)
-        cls = @view plan.route_class[cols]
+        cls = @view classes[cols]
         phis = @view plan.col_phi[1:n]
         thetas = @view plan.col_theta[1:n]
         invr_col = @view plan.col_invr[1:n]
@@ -3732,6 +3737,12 @@ function ka_hierarchical_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B
         "(m2l_strategy = ConcatenatedFixedZM2L or DenseTranslationM2L); " *
         "got $(typeof(plan))"))
     dense = plan isa FastMultipole.ResidentM2LDenseCUDAPlan
+    # Steady state on the concat plan: the occupancy-epoch cache holds the whole
+    # route stream, so there is nothing to generate and the level loop collapses
+    # into a single apply (the level rides in the class, not in an argument).
+    if !dense && hctx.win_valid && _ka_radix_setting(:CUDA_CACHED_WINDOWS, true)
+        return ka_hierarchical_m2l_cached_concat!(state, hctx, ws)
+    end
     fill!(state.locals.phi, zero(TF))
     LH && fill!(state.locals.chi, zero(TF))
     route_class = plan.route_class
@@ -3767,6 +3778,31 @@ function ka_hierarchical_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B
     end
     hctx.total_routes = total
     state.counts.n_routes = total
+    return state
+end
+
+# The cached counterpart of the loop above, for the concat plan only. KA-only:
+# CUDA's cached path (`_launch_cuda_hierarchical_m2l_cached!`) is dense-fused,
+# because its dense GEMM reference driver needs per-window class starts. The
+# concat apply needs none of that -- (class, source, target) and a count is its
+# entire input -- so the cached stream can be applied in one call, with no
+# route generation, no per-window prefix D2H, and no per-window sync.
+#
+# Gated against the uncached loop, not against CUDA: CUDA has no concat cache
+# to compare with. Route order is identical either way (the cache concatenates
+# the same windows in the same order), so the two arms agree to within the
+# reassociation of a longer chunk sequence.
+function ka_hierarchical_m2l_cached_concat!(
+        state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        hctx::FastMultipole.DeviceHierarchicalM2LContext, ws) where {TF,B,LH}
+    fill!(state.locals.phi, zero(TF))
+    LH && fill!(state.locals.chi, zero(TF))
+    n = hctx.total_routes
+    state.counts.n_routes = n
+    n == 0 && return state
+    ka_resident_m2l_concat_apply!(state.locals, state.multipoles, ws,
+        view(hctx.win_sources, 1:n), view(hctx.win_targets, 1:n), n;
+        route_class=view(hctx.win_class, 1:n))
     return state
 end
 
@@ -4774,6 +4810,133 @@ function ka_finalize_radix_output!(state, target_systems;
     return target_systems
 end
 
+#------- stage 19: within-cell sub-Morton nearfield subsort -------#
+#
+# Port of `_cuda_nearfield_subsort!` (src/translate_batched_cuda.jl:8209) and
+# its two kernels. Mechanism (a) of 032a stage C: compose a within-cell
+# sub-Morton ordering into `grid.perm` after the sort and before body packing,
+# so consecutive sorted bodies -- adjacent lanes in the nearfield kernel -- span
+# a compact spatial sub-block of their cell.
+#
+# It is locality only: no cell key, cell range or node changes, and cells larger
+# than the shared-memory sort capacity keep their unspecified order. But it does
+# change the ORDER same-cell contributions are summed in, so it is the one
+# post-tree stage whose absence moves results. That is why it is ported rather
+# than left as a perf variant: with it, the KA and CUDA arms sum in the same
+# order for every cell the mechanism covers.
+#
+# DEVIATION (launch shape). CUDA runs one block per cell with a grid-stride
+# outer loop bounded at 8192 blocks; KA runs the same loop with `@index(Group)`
+# and an explicit group count, since KA has no `gridDim()`. The sort itself --
+# odd-even transposition in workgroup-local memory, capacity 1024 -- is
+# statement for statement.
+
+const KA_SUBSORT_CAPACITY = 1024
+
+@kernel function ka_subsort_keys_kernel!(subsort_keys, @Const(positions), @Const(perm),
+        x_min, h0, ell, sub, n)
+    p = @index(Global)
+    @inbounds if p <= n
+        b = perm[p]
+        Gs = 1 << (ell + sub)
+        m = Int32((1 << sub) - 1)
+        T = eltype(positions)
+        delta = (2 * h0) / T(Gs)
+        cx = min(max(unsafe_trunc(Int32, (positions[1, b] - x_min[1]) / delta),
+            Int32(0)), Int32(Gs - 1)) & m
+        cy = min(max(unsafe_trunc(Int32, (positions[2, b] - x_min[2]) / delta),
+            Int32(0)), Int32(Gs - 1)) & m
+        cz = min(max(unsafe_trunc(Int32, (positions[3, b] - x_min[3]) / delta),
+            Int32(0)), Int32(Gs - 1)) & m
+        key = UInt32(0)
+        bit = 0
+        while bit < sub
+            key |= (UInt32((cx >> bit) & Int32(1)) << (3 * bit))
+            key |= (UInt32((cy >> bit) & Int32(1)) << (3 * bit + 1))
+            key |= (UInt32((cz >> bit) & Int32(1)) << (3 * bit + 2))
+            bit += 1
+        end
+        subsort_keys[p] = key
+    end
+end
+
+# Workgroup-per-cell odd-even transposition sort of the perm segment by sub-key
+# in local memory. The `1 < cnt <= capacity` condition is uniform across the
+# group, so the barriers are safe.
+@kernel function ka_subsort_cell_sort_kernel!(perm, subsort_keys, @Const(cell_ranges),
+        n_cells, n_groups, ::Type{TP}, ::Val{CAP}, ::Val{WG}) where {TP,CAP,WG}
+    keys_sh = @localmem UInt32 CAP
+    perm_sh = @localmem TP CAP
+    cell = @index(Group)
+    t = @index(Local)
+    @inbounds while cell <= n_cells
+        first = cell_ranges[1, cell]
+        cnt = cell_ranges[2, cell]
+        if 1 < cnt <= CAP
+            idx = t
+            while idx <= cnt
+                keys_sh[idx] = subsort_keys[first + idx - 1]
+                perm_sh[idx] = perm[first + idx - 1]
+                idx += WG
+            end
+            @synchronize
+            phase = 0
+            while phase < cnt
+                base = 1 + (phase & 1)
+                idx = base + 2 * (t - 1)
+                while idx <= cnt - 1
+                    ka = keys_sh[idx]
+                    kb = keys_sh[idx + 1]
+                    if kb < ka
+                        keys_sh[idx] = kb
+                        keys_sh[idx + 1] = ka
+                        pa = perm_sh[idx]
+                        perm_sh[idx] = perm_sh[idx + 1]
+                        perm_sh[idx + 1] = pa
+                    end
+                    idx += 2 * WG
+                end
+                @synchronize
+                phase += 1
+            end
+            idx = t
+            while idx <= cnt
+                subsort_keys[first + idx - 1] = keys_sh[idx]
+                perm[first + idx - 1] = perm_sh[idx]
+                idx += WG
+            end
+            @synchronize
+        end
+        cell += n_groups
+    end
+end
+
+"""
+    ka_nearfield_subsort!(ctx, cache, n, n_cells; workgroup=256)
+
+Port of `_cuda_nearfield_subsort!`: compose a within-cell sub-Morton ordering
+into `ctx.grid.perm` and refresh `invperm`. A no-op when the grid is already at
+the Morton depth cap (`sub == 0`) or the grid is empty.
+"""
+function ka_nearfield_subsort!(ctx, cache::FastMultipole.RadixFMMCache, n::Int,
+        n_cells::Int; workgroup::Int=256)
+    sub = min(3, FastMultipole.RADIX_GRID_MAX_ELL - cache.ell)
+    (sub > 0 && n > 0 && n_cells > 0) || return nothing
+    grid = ctx.grid
+    backend = KA.get_backend(grid.perm)
+    kk = _cached_kernel(ka_subsort_keys_kernel!, backend, 128)
+    kk(ctx.subsort_keys, ctx.positions, grid.perm, cache.x_min, cache.h0,
+       cache.ell, sub, n; ndrange=n)
+    n_groups = min(n_cells, 8192)
+    sk = _cached_kernel(ka_subsort_cell_sort_kernel!, backend, workgroup)
+    sk(grid.perm, ctx.subsort_keys, grid.cell_ranges, n_cells, n_groups,
+       eltype(grid.perm), Val(KA_SUBSORT_CAPACITY), Val(workgroup);
+       ndrange=n_groups * workgroup)
+    ka_fill_invperm!(grid.invperm, view(grid.perm, 1:n))
+    return nothing
+end
+
+
 
 #------- SFS (task 048): TG precompute, zeta pair sweep, E formation, scatter -------#
 #
@@ -4933,7 +5096,9 @@ function _ka_launch_sfs_typed!(state::FastMultipole.DeviceResidentRadixState{TF}
            FastMultipole._sfs_saturation_rc2(TF), TF(FastMultipole._SFS_ZETA_K1),
            active_row, TF, Val(workgroup); ndrange=npairs * workgroup)
     end
-    KA.synchronize(backend)
+    # NO sync here: kernels queued on one backend run in order, and this file's
+    # discipline is one sync at the end of a DRIVER, never per stage (see the
+    # `ka_lifecycle_body!` comment). The step's finalize is what synchronizes.
     return state
 end
 
@@ -4960,7 +5125,6 @@ function ka_finalize_radix_sfs_output!(state::FastMultipole.DeviceResidentRadixS
     ek = _cached_kernel(ka_sfs_form_e_kernel!, backend, workgroup)
     ek(sfs.tg, sfs.om, sfs.q, state.output,
        sfs.transposed ? Val(true) : Val(false), n; ndrange=n)
-    KA.synchronize(backend)
     host_e = nothing
     for (isys, target_system) in enumerate(systems)
         nb = FastMultipole.get_n_bodies(target_system)
@@ -4970,13 +5134,13 @@ function ka_finalize_radix_sfs_output!(state::FastMultipole.DeviceResidentRadixS
             sk = _cached_kernel(ka_sfs_scatter_kernel!, backend, workgroup)
             sk(buf, sfs.tg, state.body_perm, state.body_system_ids,
                state.body_indices, isys, n; ndrange=n)
-            KA.synchronize(backend)
             FastMultipole.sfs_to_target!(target_system, buf, 1:nb)
         else
             if host_e === nothing
                 if host_sfs_staging === nothing
                     host_e = Array(sfs.tg)
                 else
+                    KA.synchronize(backend)
                     copyto!(host_sfs_staging, 1, sfs.tg, 1, 3 * n)
                     host_e = host_sfs_staging
                 end
@@ -5205,6 +5369,12 @@ function ka_hier_cache_windows!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LCo
     noffsets = hctx.noffsets
     K = hctx.window_classes
     ell = hctx.ell
+    # BUG FIX (found porting the concat cache): `class_base` was hardcoded 0
+    # here while the live loop in `ka_hierarchical_m2l!` uses
+    # `(L - first_m2l_level) * noffsets` for concat. Dense folds the level into
+    # a scale column so 0 is right there, but a concat cache built with 0 would
+    # apply every level with level-2 operators.
+    dense = plan isa FastMultipole.ResidentM2LDenseCUDAPlan
     cursor = 0
     fill!(hctx.win_level_starts, 0)
     fill!(hctx.win_level_counts, 0)
@@ -5214,9 +5384,10 @@ function ka_hier_cache_windows!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LCo
         level_total = 0
         for first_offset in 1:K:noffsets
             last_offset = min(first_offset + K - 1, noffsets)
+            class_base = dense ? 0 : (L - hctx.first_m2l_level) * noffsets
             n = ka_hier_generate_window_core!(ctx.route_levels, ctx.route_offsets,
                 ctx.route_targets, ctx.route_sources, grid, hctx, route_class, L,
-                first_offset, last_offset, 0; workgroup)
+                first_offset, last_offset, class_base; workgroup)
             n == 0 && continue
             _ka_hier_win_ensure!(hctx, backend, cursor, cursor + n)
             copyto!(hctx.win_class, cursor + 1, route_class, 1, n)
@@ -5357,8 +5528,18 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     grid.n_bodies = n
     grid.n_cells = n_cells
 
-    # NOTE: the CUDA path composes `_cuda_nearfield_subsort!` into `perm` here.
-    # See the block comment above: locality only, deliberately not ported.
+    # 032a stage C mechanism (a): optional within-cell sub-Morton ordering,
+    # composed into the perm before packing (the sorted cell keys, cell ranges
+    # and node metadata are unaffected). Same gate as CUDA's at cuda:6807.
+    if _ka_radix_setting(:CUDA_NEARFIELD_SUBSORT, true) &&
+            cache.options.direct_kernel isa Union{FastMultipole.PartitionedVortex,
+                                                  FastMultipole.TwoPassVortex}
+        # NOT the refresh's `workgroup`: the local-memory sort's group size is
+        # baked into the kernel (Val(WG) against a fixed capacity), so it is the
+        # kernel's own constant, not a tuning surface
+        # ([[reference-ka-workgroup-is-sometimes-team-size]]).
+        ka_nearfield_subsort!(ctx, cache, n, n_cells)
+    end
     for isys in eachindex(source_buffers)
         ka_pack_body_matrix!(ctx.source_bodies, source_buffers[isys],
             view(grid.perm, 1:n), grid.body_system, grid.body_index, n;
@@ -5406,15 +5587,16 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         ka_compact_symmetric_pairs!(ctx, hctx, grid.cell_ranges, n_direct,
             _ka_radix_setting(:SYMMETRIC_CUDA_MAX_CELL_BODIES, 128); workgroup)
     end
-    # The occupancy-epoch window cache pays off only with a cached-window APPLY
-    # to consume it (`_launch_cuda_hierarchical_m2l_cached!`, cuda:7930). KA has
-    # none: `ka_hierarchical_m2l!` regenerates window by window, so building the
-    # cache here would generate every window twice per epoch. This branch was
-    # dead while KA had no dense plan; the dense port made it reachable, and it
-    # stays off until the cached apply is ported.
-    if false && _ka_radix_setting(:CUDA_CACHED_WINDOWS, true) && !hctx.win_valid &&
-            hctx.apply_plan isa FastMultipole.ResidentM2LDenseCUDAPlan &&
-            _ka_radix_setting(:DENSE_CUDA_FUSED, true)
+    # Occupancy-epoch window cache. CUDA arms this only for the dense FUSED
+    # apply (`_cuda_windows_cacheable`, cuda:7353) because its GEMM reference
+    # driver additionally consumes per-window class starts/counts. KA's dense
+    # apply IS that reference driver, so dense stays uncached here -- but the
+    # CONCAT apply consumes only (class, source, target), which is exactly what
+    # the cache stores, and it takes no level argument because the level is
+    # already baked into the class. So concat is cacheable on KA even though it
+    # is not on CUDA, and the whole epoch collapses to one apply.
+    if _ka_radix_setting(:CUDA_CACHED_WINDOWS, true) && !hctx.win_valid &&
+            hctx.apply_plan isa FastMultipole.ResidentM2LConcatPlan
         ka_hier_cache_windows!(ctx, hctx, grid; workgroup)
     end
     n_routes = hctx.win_valid ? hctx.total_routes : 0
@@ -5948,11 +6130,23 @@ function ka_validate_radix_arguments(backend, target_systems, source_systems=tar
     # but argument-only: the hierarchical path routes the concatenated and
     # grouped-factored selections through the bounded concat engine, which would
     # otherwise silently accept a strategy the flat path rejects (task 027).
+    #
+    # DEVIATION. CUDA also accepts `PrecomputedFactoredYM2L` here; KA does not.
+    # That plan's per-step refresh (`_cuda_refresh_precomputed_y_m2l_routes!`,
+    # cuda:4047) has no KA counterpart and `ka_radix_cache_workspace` pins
+    # `ConcatenatedFixedZM2L`, so no `ResidentM2LPrecomputedYPlan` is ever
+    # constructible on this path. It was refused only at
+    # `ka_radix_cache_device_build`, several stages downstream, which let a
+    # `:precomputed_y` setting (a legal `RadixFMMSettings` value in FLOWVPM,
+    # FLOWVPM_fmm_radix.jl:243) past the stage that is meant to state KA's
+    # envelope. The builder keeps its own guard for callers that bypass
+    # validation.
     options.m2l_strategy isa Union{FastMultipole.ConcatenatedFixedZM2L,
-        FastMultipole.PrecomputedFactoredYM2L,FastMultipole.DenseTranslationM2L} ||
+        FastMultipole.DenseTranslationM2L} ||
         throw(ArgumentError(
-        "RadixFMMCache supports ConcatenatedFixedZM2L, PrecomputedFactoredYM2L, " *
-        "or DenseTranslationM2L; got $(typeof(options.m2l_strategy)) (the " *
+        "the KA RadixFMMCache supports ConcatenatedFixedZM2L or " *
+        "DenseTranslationM2L; got $(typeof(options.m2l_strategy)) (CUDA also " *
+        "accepts PrecomputedFactoredYM2L, which has no KA plan; the " *
         "SharedRotationM2L group layout is not refreshable in place)"))
 
     return (; targets, sources, LH, BT, dk_trait, options, auto_options, TF,
