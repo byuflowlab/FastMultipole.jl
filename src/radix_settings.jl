@@ -60,6 +60,16 @@ const RADIX_KA_LIFECYCLE = Ref(false)
 # declared against (b2m, l2b, nearfield, adaptive m2t/s2l).
 const KA_WORKGROUP = Ref(0)
 
+# All-pairs direct arm (task 053). Swaps `ka_lifecycle_body!` for a single
+# O(np^2) kernel and skips the grid/route refresh entirely. Off by default and
+# selected only by an explicit write here: below some np the arm is faster
+# (np ~ 6e4 on Metal for one wake), but that crossover has not been measured
+# on CUDA and no automatic dispatch rule is built on it. Lives here for the
+# same reason as
+# RADIX_KA_LIFECYCLE: it selects a non-CUDA implementation and must be
+# readable on a build where translate_batched_cuda.jl never loads.
+const RADIX_DIRECT_ARM = Ref(false)
+
 """
     ka_radix_lifecycle!(state)
 
@@ -143,6 +153,8 @@ const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
         "Nearfield side-stream overlap (first statement of the captured body)."),
     :RADIX_KA_LIFECYCLE => RadixSettingSpec(:runtime, _rs_bool,
         "Run the uniform per-step lifecycle with KernelAbstractions kernels instead of the native CUDA ones (checked per step at entry; requires the KA extension loaded)."),
+    :RADIX_DIRECT_ARM => RadixSettingSpec(:runtime, _rs_bool,
+        "Evaluate the step as a single all-pairs O(np^2) direct kernel instead of the FMM lifecycle, skipping the grid and route refresh (KA device path only; checked per step at entry). Opt-in: nothing selects it automatically."),
     :KA_WORKGROUP => RadixSettingSpec(:runtime, _rs_ka_workgroup,
         "Workgroup size for auto-tuned KA launches; 0 (default) resolves per backend. Team-size launches (b2m/l2b/nearfield/adaptive) are unaffected."),
     # ---- host GEMM thresholds ------------------------------------------------
