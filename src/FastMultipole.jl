@@ -97,6 +97,7 @@ include("evaluate_expansions.jl")
 include("tree.jl")
 include("tree_batched.jl")
 include("interaction_list_batched.jl")
+include("cross_stencil_host.jl")
 include("translate_batched_resident.jl")
 include("radix_settings.jl")
 include("direct_rectangular.jl")
@@ -105,6 +106,7 @@ export Branch, SingleBranch, MultiBranch, Tree, SingleTree, MultiTree, initializ
 export RadixGrid, DeviceRadixGrid, RadixSortBackend, HostRadixSort, DeviceRadixSort, AutoRadixSort, radix_grid
 export ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L, ConstantPAnalyticStencil, HierarchicalRigidStencil, classic_fmm_stencil, rigid_stencil_epsilon, RadixTraversalStrategy
 export RigidHierarchicalTables, RadixLevelOccupancy
+export CrossStencilTables, cross_demotion_census
 export RigidImplicitStencil, SparseOffsetIntersection, BlockedOccupancyBitsets, LazyMaterializedBatches
 export RadixM2LBatch, RadixInteractionList
 export Residency, HostResident, DeviceResident, residency
@@ -177,6 +179,7 @@ function load_cuda_radix_lifecycle!()
     end
     try
         include(joinpath(@__DIR__, "translate_batched_cuda.jl"))
+        include(joinpath(@__DIR__, "cross_stencil_cuda.jl"))
     catch err
         _CUDA_RADIX_LIFECYCLE_LOAD_ERROR[] = err
         return false
