@@ -215,6 +215,123 @@ function ka_gather_rows!(dst, src, rows; workgroup=KA_AUTO_WORKGROUP)
     return dst
 end
 
+#------- FUSED POINTWISE M2L PRIMITIVES -------#
+#
+# Ports of the host launcher's already-fused helpers `_prefix_trig_scale!` and
+# `_prefix_lh_mix!` (src/translate_batched.jl), plus a three-way column gather.
+# The KA concat driver used to spell these out as separate broadcasts and
+# `ka_gather_rows!` calls -- 14 launches per chunk for work that is pure
+# elementwise reindexing. Profiled on the real wake at np=8192 (11650 routes):
+# the apply is neither bandwidth- nor FLOP-bound at that size (6-30 GB/s of
+# ~100; stacked_y at ~0.22 of ~3.6 TFLOP/s), and 1.69 ms of its 8.36 ms is
+# fixed per-launch cost across 22 launches. So pass COUNT is the lever here,
+# not traffic per pass.
+
+@kernel function ka_gather_values3_kernel!(d1, d2, d3, @Const(s1), @Const(s2),
+        @Const(s3), @Const(ids))
+    j = @index(Global)
+    @inbounds begin
+        id = ids[j]
+        d1[j] = s1[id]
+        d2[j] = s2[id]
+        d3[j] = s3[id]
+    end
+end
+
+"""
+    ka_gather_values3!(d1, d2, d3, s1, s2, s3, ids; workgroup=64)
+
+Three `ka_gather_values!` calls sharing one index vector, done in one launch and
+one `ids` read per column. Used for the concat plan's (phi, theta, invr) column
+parameter gather; the Lamb-Helmholtz `r` gather stays a separate call because
+`col_r` is absent on a non-LH plan.
+"""
+function ka_gather_values3!(d1, d2, d3, s1, s2, s3, ids; workgroup=KA_AUTO_WORKGROUP)
+    n = length(d1)
+    n == 0 && return d1
+    backend = KA.get_backend(d1)
+    kernel = _cached_kernel(ka_gather_values3_kernel!, backend, workgroup)
+    kernel(d1, d2, d3, s1, s2, s3, ids; ndrange=n)
+    return d1
+end
+
+@kernel function ka_prefix_trig_scale_kernel!(C, S, scale, @Const(nu),
+        @Const(theta), @Const(invr), @Const(rexp), nrow::Int)
+    i = @index(Global)
+    @inbounds begin
+        row = (i - 1) % nrow + 1
+        col = (i - 1) ÷ nrow + 1
+        th = nu[row] * theta[col]
+        C[row, col] = cos(th)
+        S[row, col] = sin(th)
+        scale[row, col] = invr[col]^rexp[row]
+    end
+end
+
+"""
+    ka_prefix_trig_scale!(C, S, scale, nu, theta, invr, rexp; workgroup=64)
+
+Backend-agnostic port of `_prefix_trig_scale!` (src/translate_batched.jl): the
+per-column rotation table `C = cos(nu*theta)`, `S = sin(nu*theta)` and the
+radial scaling `scale[i, j] = invr[j]^rexp[i]`, in one pass over the slab
+instead of three broadcasts. `C`, `S` and `scale` must be `length(nu)`-row views
+of the same column range as `theta` and `invr`.
+"""
+function ka_prefix_trig_scale!(C, S, scale, nu, theta, invr, rexp;
+        workgroup=KA_AUTO_WORKGROUP)
+    nrow = length(nu)
+    ncols = length(theta)
+    (nrow == 0 || ncols == 0) && return scale
+    backend = KA.get_backend(scale)
+    kernel = _cached_kernel(ka_prefix_trig_scale_kernel!, backend, workgroup)
+    kernel(C, S, scale, nu, theta, invr, rexp, nrow; ndrange=nrow * ncols)
+    return scale
+end
+
+@kernel function ka_prefix_lh_mix_kernel!(cphi, cchi, @Const(zphi), @Const(zchi),
+        @Const(arow), @Const(brow), @Const(rs), @Const(phi_pair), @Const(chi_up),
+        ndphi::Int, ndchi::Int)
+    i = @index(Global)
+    @inbounds begin
+        nd = ndphi + ndchi
+        row = (i - 1) % nd + 1
+        col = (i - 1) ÷ nd + 1
+        r = rs[col]
+        if row <= ndphi
+            cphi[row, col] = zphi[row, col] + arow[row] * r * zchi[phi_pair[row], col]
+        else
+            k = row - ndphi
+            cchi[k, col] = zchi[k, col] + brow[k] * r * zchi[chi_up[k], col]
+        end
+    end
+end
+
+"""
+    ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, arow, brow, rs, phi_pair, chi_up; workgroup=64)
+
+Backend-agnostic port of `_prefix_lh_mix!` (src/translate_batched.jl): the
+Lamb-Helmholtz row mix
+
+    cphi[i, j] = zphi[i, j] + arow[i] * rs[j] * zchi[phi_pair[i], j]
+    cchi[i, j] = zchi[i, j] + brow[i] * rs[j] * zchi[chi_up[i],   j]
+
+in one launch. The row gather is folded into the read, so the two staging slabs
+(`lhgp`, `lhgu`) and the two `ka_gather_rows!` passes that filled them are not
+needed. Both outputs are written by one ndrange, split at row `ndphi`.
+"""
+function ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, arow, brow, rs, phi_pair,
+        chi_up; workgroup=KA_AUTO_WORKGROUP)
+    ndphi = size(cphi, 1)
+    ndchi = size(cchi, 1)
+    ncols = length(rs)
+    (ncols == 0 || ndphi + ndchi == 0) && return cchi
+    backend = KA.get_backend(cchi)
+    kernel = _cached_kernel(ka_prefix_lh_mix_kernel!, backend, workgroup)
+    kernel(cphi, cchi, zphi, zchi, arow, brow, rs, phi_pair, chi_up, ndphi,
+        ndchi; ndrange=(ndphi + ndchi) * ncols)
+    return cchi
+end
+
 #------- PRODUCTION PRIMITIVE DISPATCH -------#
 #
 # The resident stage drivers in src/translate_batched.jl
@@ -697,14 +814,11 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
         phis = @view plan.col_phi[1:n]
         thetas = @view plan.col_theta[1:n]
         invr_col = @view plan.col_invr[1:n]
-        ka_gather_values!(phis, plan.phis, cls)
-        ka_gather_values!(thetas, plan.thetas, cls)
-        ka_gather_values!(invr_col, plan.invrs, cls)
-        invr_row = transpose(invr_col)
+        ka_gather_values3!(phis, thetas, invr_col, plan.phis, plan.thetas,
+            plan.invrs, cls)
         if LH
             rs_col = @view plan.col_r[1:n]
             ka_gather_values!(rs_col, plan.rs, cls)
-            rs_row = transpose(rs_col)
         end
         src_cols = @view route_sources[cols]
         tgt_cols = @view route_targets[cols]
@@ -715,10 +829,8 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
         Gphi = @view ops_phi.G[:, 1:n]; G2phi = @view ops_phi.G2[:, 1:n]
         Cphi = @view ops_phi.Cy[:, 1:n]; Sphi = @view ops_phi.Sy[:, 1:n]
         sphi = @view ops_phi.scale[:, 1:n]
-        thetas_row = transpose(thetas)
-        Cphi .= cos.(ops_phi.nu .* thetas_row)
-        Sphi .= sin.(ops_phi.nu .* thetas_row)
-        sphi .= invr_row .^ plan.rexp_phi
+        ka_prefix_trig_scale!(Cphi, Sphi, sphi, ops_phi.nu, thetas, invr_col,
+            plan.rexp_phi)
         ka_gather_rotate_z!(aphi, src.phi, ws.phi_flat_idx, src_cols,
             ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis, one(TF))
         ka_stacked_y_dense!(yphi, aphi, ops_phi.yU_mult, ops_phi.yV_mult,
@@ -737,10 +849,8 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
             achi = @view plan.achi[:, 1:n]; ychi = @view plan.ychi[:, 1:n]
             zchi = @view plan.zchi[:, 1:n]; rchi = @view plan.rchi[:, 1:n]
             cphi = @view plan.cphi[:, 1:n]; cchi = @view plan.cchi[:, 1:n]
-            lhgp = @view plan.lhgp[:, 1:n]; lhgu = @view plan.lhgu[:, 1:n]
-            Cchi .= cos.(ops_chi.nu .* thetas_row)
-            Schi .= sin.(ops_chi.nu .* thetas_row)
-            schi .= invr_row .^ plan.rexp_chi
+            ka_prefix_trig_scale!(Cchi, Schi, schi, ops_chi.nu, thetas, invr_col,
+                plan.rexp_chi)
             ka_gather_rotate_z!(achi, src.chi, ws.chi_flat_idx, src_cols,
                 ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis, one(TF))
             ka_stacked_y_dense!(ychi, achi, ops_chi.yU_mult, ops_chi.yV_mult,
@@ -748,10 +858,9 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
             ychi .*= schi
             mul!(zchi, ops_chi.zD, ychi)
             zchi .*= schi
-            ka_gather_rows!(lhgp, zchi, ws.maps_phi.row_pair)
-            ka_gather_rows!(lhgu, zchi, ws.maps_chi.row_up)
-            cphi .= zphi .+ (plan.lh_arow_unit .* rs_row) .* lhgp
-            cchi .= zchi .+ (plan.lh_brow_unit .* rs_row) .* lhgu
+            ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, plan.lh_arow_unit,
+                plan.lh_brow_unit, rs_col, ws.maps_phi.row_pair,
+                ws.maps_chi.row_up)
             ka_stacked_y_dense!(rchi, cchi, ops_chi.yU_loc, ops_chi.yV_loc,
                 Cchi, Schi, Gchi, G2chi, ndof_chi)
             ka_rotate_z_scatter_accumulate!(dest.chi, rchi, ws.chi_flat_idx, tgt_cols,
