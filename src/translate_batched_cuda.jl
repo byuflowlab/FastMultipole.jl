@@ -145,9 +145,17 @@ function _cuda_radix_keys_checked_kernel!(keys, oob_flag, positions, x_min,
         px = positions[1, i]
         py = positions[2, i]
         pz = positions[3, i]
-        if !(x_min[1] <= px <= x_min[1] + box_extent[1] &&
-             x_min[2] <= py <= x_min[2] + box_extent[2] &&
-             x_min[3] <= pz <= x_min[3] + box_extent[3])
+        # tolerate ulp-scale overshoot: a tight box built as center - h0 can sit
+        # a rounding error below the true data max (clamp handles the key)
+        hx = x_min[1] + box_extent[1]
+        hy = x_min[2] + box_extent[2]
+        hz = x_min[3] + box_extent[3]
+        tx = 4 * eps(max(abs(x_min[1]), abs(hx)))
+        ty = 4 * eps(max(abs(x_min[2]), abs(hy)))
+        tz = 4 * eps(max(abs(x_min[3]), abs(hz)))
+        if !(x_min[1] - tx <= px <= hx + tx &&
+             x_min[2] - ty <= py <= hy + ty &&
+             x_min[3] - tz <= pz <= hz + tz)
             oob_flag[1] = Int32(1)
         end
         ix = clamp(floor(Int, (px - x_min[1]) / delta), 0, G - 1)
