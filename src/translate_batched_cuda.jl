@@ -5688,17 +5688,26 @@ end
 
 # Per-system cached device scatter buffer for the recurring finalize (task 028
 # rider): CUDA.zeros here was a fresh pool allocation plus memset every step,
-# and the scatter copy zero-fills the buffer again anyway. With a cache dict the
-# buffer is allocated (undef) once per (rows, n_bodies) layout and reused.
+# and the scatter copy zero-fills the buffer again anyway. Capacity contract
+# (052 long-run leak, job 13508681): a shedding run changes `nb` every step,
+# and an exact-size cache then reallocates every step — the replaced device
+# buffer survives a full step before dying, gets promoted, and no major GC
+# ever runs because device bytes are invisible to the host GC heuristics, so
+# ~rows*nb*8 bytes of dead pool blocks accumulate per step. The cache instead
+# holds a grow-only capacity buffer (geometric headroom) and serves the live
+# `nb` as a contiguous column-prefix view.
 function _cuda_cached_target_buffer(cache, isys::Integer, ::Type{TF},
         rows::Integer, nb::Integer) where TF
     cache === nothing && return CUDA.CuArray{TF}(undef, rows, nb)
     buf = get(cache, isys, nothing)
-    if !(buf isa CUDA.CuArray{TF,2}) || size(buf) != (rows, nb)
-        buf = CUDA.CuArray{TF}(undef, rows, nb)
+    if !(buf isa CUDA.CuArray{TF,2}) || size(buf, 1) != rows || size(buf, 2) < nb
+        cap = buf isa CUDA.CuArray{TF,2} && size(buf, 1) == rows ?
+            max(nb, size(buf, 2) + cld(size(buf, 2), 4)) : nb
+        buf = CUDA.CuArray{TF}(undef, rows, cap)
         cache[isys] = buf
     end
-    return buf
+    buf = buf::CUDA.CuArray{TF,2}
+    return size(buf, 2) == nb ? buf : view(buf, :, 1:nb)
 end
 
 function finalize_cuda_radix_output!(state::DeviceResidentRadixState{TF}, target_systems;
