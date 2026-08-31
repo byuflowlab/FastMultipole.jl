@@ -78,6 +78,8 @@ end
 
 fmm.body_to_multipole!(system::VortexParticles, args...) = body_to_multipole!(Point{Vortex}, system, args...)
 
+FastMultipole.body_type(::VortexParticles) = Point{Vortex}
+
 function fmm.direct!(target_system::Matrix{TF}, target_index, derivatives_switch::FastMultipole.DerivativesSwitch{S,V,VG}, source_system::VortexParticles, source_buffer, source_index) where {TF,S,V,VG}
     for j_source in source_index
         x_source = FastMultipole.get_position(source_buffer, j_source)

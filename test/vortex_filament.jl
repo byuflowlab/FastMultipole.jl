@@ -71,9 +71,10 @@ function generate_inline_filaments(n_bodies; strength, noise=false, noise_streng
             i_filament += 1
         end
     end
-    # create filaments
-    core_size = fill(1e-2, size(x,2))
-    error_tolerance = fill(1e-4, size(x,2))
+    # create filaments (size(pts,2) = n filaments; a stale global `x` used to
+    # hide this reference when the file ran inside the full suite)
+    core_size = fill(1e-2, size(pts,2))
+    error_tolerance = fill(1e-4, size(pts,2))
     potential = zeros(length(strength_vec))
     gradient = zeros(SVector{3,Float64}, length(strength_vec))
     hessian = zeros(SMatrix{3,3,Float64,9}, length(strength_vec))
@@ -169,9 +170,10 @@ function generate_vortex_filaments(ntheta; nrings=2, r=1.0, dz=1.0, strength=1e-
         end
     end
 
-    # create filaments
-    core_size = fill(1e-2, size(x,2))
-    error_tolerance = fill(1e-4, size(x,2))
+    # create filaments (size(pts,2) = n filaments; a stale global `x` used to
+    # hide this reference when the file ran inside the full suite)
+    core_size = fill(1e-2, size(pts,2))
+    error_tolerance = fill(1e-4, size(pts,2))
     potential = zeros(length(strength_vec))
     gradient = zeros(SVector{3,Float64}, length(strength_vec))
     hessian = zeros(SMatrix{3,3,Float64,9}, length(strength_vec))
