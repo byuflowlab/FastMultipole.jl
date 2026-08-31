@@ -2101,15 +2101,78 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
     2.0^ell_max < x || (ell_max -= 1)
     depth_msg = ell_max >= 0 ? "the admissible depth at this geometry is ell <= $ell_max" :
         "no tree depth is admissible at this geometry (the box itself is inside the cutoff)"
-    throw(ArgumentError(
-        "regularized nearfield near-set adequacy failed: the direct stencil leaves " *
+    msg = "regularized nearfield near-set adequacy failed: the direct stencil leaves " *
         "an M2L gap of g_min*h_leaf = $(round(g_min * h_leaf, sigdigits=4)) but the " *
         "smoothing cutoff needs $rho_name*sigma_max = $(round(cutoff, sigdigits=4)) " *
         "(ratio $(round(g_min * h_leaf / cutoff, sigdigits=4)), g_min = " *
         "$(round(g_min, sigdigits=4)), sigma_max = $(round(sigma_max, sigdigits=4)), " *
         "ell = $(cache.ell)); $depth_msg. Pairs inside the cutoff would be handled " *
-        "by the singular far field and silently lose the regularization. Reduce ell, " *
-        "shrink sigma, or use a larger near set (row 032a)."))
+        "by the singular far field and silently lose the regularization (row 032a)."
+    # Task 052f (user decision 2026-08-29): a hierarchical cache no longer
+    # throws here. sigma can outgrow every admissible stencil geometry mid-run
+    # (core spreading + merging fatten sigma_max monotonically), so the caller
+    # demotes the cache to the all-direct zero-M2L geometry (052c) instead:
+    # every pair is evaluated by the regularized direct kernel on the same
+    # arrays/device, and no pair can reach the singular far field. The
+    # demotion is terminal for the cache — the degenerate geometry has no
+    # accepted offsets, so this gate goes vacuous and never fires again.
+    # TwoPassVortex is excluded: its pass-2 sweep capacity is derived from the
+    # gate-passing geometry (`_twopass_device_reach_check`), so the degenerate
+    # grid would trade this loud ArgumentError for an internal AssertionError.
+    if cache.policy isa HierarchicalRigidStencil && !(kernel isa TwoPassVortex)
+        @warn "$msg Falling back to the all-direct zero-M2L geometry: the " *
+            "cache is rebuilt at ell = 2 with a full-grid near ball (q = 27) " *
+            "and every pair runs the regularized direct kernel." maxlog = 4
+        return :alldirect
+    end
+    throw(ArgumentError(msg))
+end
+
+# Task 052f: all-direct demotion for a cache whose sigma_max outgrew every
+# admissible stencil geometry. Mirrors the recenter! rebuild-and-swap idiom
+# (same bounds, same capacities, same options/adaptive/sfs wiring) but forces
+# ell = 2 with a full-grid near ball: at ell = 2 every leaf offset satisfies
+# |o|^2 <= 27, so _radix_root_level reports L_allnear = ell, the scheduled
+# tables degenerate to the zero-M2L form (052c), and the whole evaluation is
+# the regularized direct near field on the original arrays/device. Cost mirrors
+# recenter!: one construction-equivalent rebuild (device caches transiently
+# ~2x device memory), after which the adequacy gate is vacuous forever.
+function _alldirect_geometry_fallback!(cache::RadixFMMCache{TF,LH},
+        systems::Tuple) where {TF,LH}
+    policy = cache.policy
+    policy isa HierarchicalRigidStencil || throw(ArgumentError(
+        "the all-direct adequacy fallback requires a HierarchicalRigidStencil " *
+        "policy; got $(typeof(policy))"))
+    # re-derive the box-scaled tolerance the q = 27 ball realizes at ell = 2
+    # (the construction-time _verify_hierarchical_classifier! gate requires the
+    # epsilon and the near set to agree exactly, same as _recentered_policy)
+    cfg = policy.config
+    eps_new = rigid_stencil_epsilon(cfg.P_phi, maximum(cache.box_extent) / 2, 2, 27;
+        lamb_helmholtz=LH, TF)
+    newconfig = ConstantPStencilConfig(cfg.P_phi, eps_new, cfg.source_strength;
+        chi_strength=cfg.chi_strength, lamb_helmholtz=LH,
+        normalization=_config_normalization(cfg))
+    newpolicy = HierarchicalRigidStencil(newconfig;
+        near_radius2=27, level_radii2=(),
+        window_classes=policy.window_classes,
+        dense_occupancy_max_bytes=policy.dense_occupancy_max_bytes,
+        dense_occupancy_max_ell=policy.dense_occupancy_max_ell)
+    old_sfs = cache.state.sfs
+    fresh = RadixFMMCache(systems, systems;
+        expansion_order=cache.expansion_order, ell=2,
+        max_n_bodies=cache.max_n_bodies,
+        bounds=(cache.x_min, cache.box_extent),
+        lamb_helmholtz=LH, hessian=cache.hessian, device=cache.device,
+        sfs=old_sfs !== nothing,
+        sfs_transposed=old_sfs === nothing ? true : old_sfs.transposed,
+        sfs_active_row=old_sfs === nothing ? 0 : old_sfs.active_row,
+        options=cache.options,
+        policy=newpolicy,
+        adaptive=cache.adaptive)
+    for f in fieldnames(RadixFMMCache)
+        setfield!(cache, f, getfield(fresh, f))
+    end
+    return cache
 end
 
 # Defensive pass-2 capacity assertion for device TwoPassVortex caches (task 032a
@@ -3151,8 +3214,14 @@ function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where 
     # replaced by the theory §5 per-cell sticky demotion gate (construction
     # requires it armed for regularized kernels), so the global throw is
     # skipped — one locally fat sigma must not force a globally shallow tree.
-    cache.adaptive === nothing && _direct_kernel_geometry_gate!(cache,
-        state.options.direct_kernel, state.source_bodies, n)
+    # Task 052f: an inadequate hierarchical geometry demotes to the all-direct
+    # zero-M2L cache and re-runs the refresh; the rebuilt cache's gate is
+    # vacuous, so the recursion terminates after one demotion.
+    if cache.adaptive === nothing && _direct_kernel_geometry_gate!(cache,
+            state.options.direct_kernel, state.source_bodies, n) === :alldirect
+        _alldirect_geometry_fallback!(cache, systems)
+        return update_radix_state!(cache, systems)
+    end
 
     resize!(cache.coords, n_cells)
     _refresh_radix_coords!(cache.coords, grid.cell_keys, n_cells, grid.ell)

@@ -335,9 +335,14 @@ abstract type RadixSeparationPolicy end
 # g_min*h_leaf > rho_t*sigma_max, which forces a large leaf near set, while the
 # fixed 1e-3 velocity gate needs more accuracy than q = 12 delivers at P = 4
 # (measured 1.088e-3, job 13058532) — q = 16 raises g_min from sqrt(5) to
-# sqrt(6), q = 20 to 3.
-const _SUPPORTED_RIGID_NEAR_RADII2 = (3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20)
-const _SUPPORTED_RIGID_NEAR_RADII2_TEXT = "3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20"
+# sqrt(6), q = 20 to 3. Radii 21-27 (23 has no lattice shell) were added by
+# task 052f for the all-direct adequacy fallback: q = 27 covers every offset
+# of the 4^3 leaf grid at ell = 2, producing the zero-M2L degenerate cache
+# (052c) in which every pair is evaluated by the regularized direct kernel.
+const _SUPPORTED_RIGID_NEAR_RADII2 =
+    (3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27)
+const _SUPPORTED_RIGID_NEAR_RADII2_TEXT =
+    "3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27"
 
 # Shipped rigid-stencil operating point, selected by measurement in task 028
 # Stage 7: `q = 5` at every M2L level except the coarsest, which uses `q = 6`.

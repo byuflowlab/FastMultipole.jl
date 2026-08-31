@@ -6874,9 +6874,16 @@ function update_cuda_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) w
         grid.body_system, grid.body_index)
     # near-set adequacy for regularized kernels (032 stage 2): a device
     # max-reduction over the packed σ row (pool-served scratch, six-byte-scale
-    # download), no-op for singular kernels
-    _direct_kernel_geometry_gate!(cache, cache.options.direct_kernel,
-        ctx.source_bodies, n)
+    # download), no-op for singular kernels. Task 052f: an inadequate
+    # hierarchical geometry demotes to the all-direct zero-M2L cache and
+    # re-runs the refresh from the top (the rebuild swaps every cache field,
+    # including grid/context, so the partial refresh above is discarded); the
+    # rebuilt cache's gate is vacuous, so the recursion terminates.
+    if _direct_kernel_geometry_gate!(cache, cache.options.direct_kernel,
+            ctx.source_bodies, n) === :alldirect
+        _alldirect_geometry_fallback!(cache, systems)
+        return update_cuda_radix_state!(cache, systems)
+    end
 
     # host mirrors serve host-resident target finalization only
     if _radix_any_host_resident(systems)
