@@ -166,11 +166,27 @@ end
                 host_sys.inner.potential[5:13, :])) < htol
         end
 
-        #--- (7) stage 2: near-set adequacy gate fires on device too ---#
+        #--- (7) stage 2: near-set adequacy fallback demotes on device too (052f) ---#
 
+        # Task 052f replaced the adequacy-gate throw with a warn + all-direct
+        # zero-M2L demotion for hierarchical caches; construction now succeeds
+        # at ell = 2 with the full-grid near ball (q = 27).
         bad = SmoothedVortex(generate_vortex(seed, 400), fill(0.2, 400))
-        @test_throws ArgumentError RadixFMMCache(bad; expansion_order=4, ell=3,
-            options=opts64, device=true)
+        bad_host = SmoothedVortex(generate_vortex(seed, 400), fill(0.2, 400))
+        warnpat = r"Falling back to the all-direct zero-M2L geometry"
+        bc = @test_logs (:warn, warnpat) match_mode=:any RadixFMMCache(bad;
+            expansion_order=4, ell=3, options=opts64, device=true)
+        hc_bad = @test_logs (:warn, warnpat) match_mode=:any RadixFMMCache(bad_host;
+            expansion_order=4, ell=3, options=opts64)
+        @test bc.ell == 2
+        # Task 052g: the degenerate cache has no accepted offsets, so the cached
+        # hierarchical M2L windows are never allocated (win_class === nothing);
+        # the device resident pipeline must skip the M2L launch instead of
+        # typeasserting on `nothing` (job 13513892 died on exactly this).
+        fmm!(bad, bc; scalar_potential=false, gradient=true)
+        fmm!(bad_host, hc_bad; scalar_potential=false, gradient=true)
+        @test maximum(abs.(bad.inner.gradient_stretching[1:3, :] .-
+            bad_host.inner.gradient_stretching[1:3, :])) < 1e-8
 
         #--- (8) stage 3: persistent device-resident source buffer (gap 5) ---#
 

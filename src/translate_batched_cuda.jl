@@ -8073,6 +8073,19 @@ function _launch_cuda_hierarchical_m2l_cached!(
     plan = hctx.apply_plan::ResidentM2LDenseCUDAPlan
     clear_locals && fill!(state.locals.phi, zero(TF))
     clear_locals && LH && fill!(state.locals.chi, zero(TF))
+    # Task 052g: the zero-M2L degenerate cache (noffsets == 0, or an epoch with
+    # no occupied routes) marks win_valid without ever allocating the window
+    # arrays — win_class stays `nothing` and total_routes is 0. M2L contributes
+    # nothing; locals are already cleared above, so publish a zero route count
+    # and skip the launch instead of typeasserting on `nothing`.
+    if hctx.total_routes == 0 || hctx.win_class === nothing
+        if hctx.profile_stages
+            fill!(hctx.m2l_level_ns, 0)
+            hctx.update_stage_ns[4] = 0
+        end
+        state.counts.n_routes = 0
+        return state
+    end
     wc = hctx.win_class::CUDA.CuVector{Int32}
     wsrc = hctx.win_sources::CUDA.CuVector{Int}
     wtgt = hctx.win_targets::CUDA.CuVector{Int}
