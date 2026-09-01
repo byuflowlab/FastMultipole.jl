@@ -2835,9 +2835,10 @@ end
 # legacy negative-m conjugate rule of `_resident_vortex_q` folded in. Columns
 # outside 0:nt come back zero, exactly as `_resident_vortex_q`'s bound checks do.
 @inline function ka_vortex_q3(setup::NTuple{5,TF}, nt_::Integer, mt_::Integer) where TF
-    # Int32 counters throughout: on Metal, Int64 arithmetic and Int64->Float32
-    # conversion are emulated on 32-bit ALUs and dominated this walk (2.5x, 2026-09-01).
-    nt = Int32(nt_); mt = Int32(mt_); i1 = one(Int32)
+    # Counters in the field's integer width (see _ka_int_type): Int64 arithmetic
+    # and Int64->Float32 conversion are emulated on Metal and dominated this walk.
+    IT = _ka_int_type(TF)
+    nt = IT(nt_); mt = IT(mt_); i1 = one(IT)
     rho, xc, ys, iei_re, iei_im = setup
     z = zero(TF)
     a_re = z; a_im = z   # column mt-1
@@ -2854,7 +2855,7 @@ end
             fact = one(TF); pn = one(TF); rhom = one(TF)
             ieim_re = one(TF); ieim_im = z
             mhi = min(mt + i1, nt)
-            m = zero(Int32)
+            m = zero(IT)
             while m <= mhi
                 p = pn
                 rmp = rhom * p
@@ -2913,13 +2914,20 @@ end
     return a_re, a_im, b_re, b_im, c_re, c_im
 end
 
+# Integer width for device recurrence counters follows the field type: Int32
+# with Float32 (Int64 is emulated on Metal's 32-bit ALUs), Int64 with Float64.
+@inline _ka_int_type(::Type{Float32}) = Int32
+@inline _ka_int_type(::Type{Float64}) = Int64
+@inline _ka_int_type(::Type{T}) where T = Int
+
 # Mirrors `_resident_vortex_phi_contrib` / `_resident_vortex_chi_contrib`, with
 # the three separate `_resident_vortex_q` restarts replaced by one walk.
 @inline function ka_vortex_phi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
     TF = typeof(mdx)
     setup = FastMultipole._resident_harmonic_setup(mdx, mdy, mdz)
     qmm1_re, qmm1_im, qm_re, qm_im, qmp1_re, qmp1_im = ka_vortex_q3(setup, n, m)
-    n32 = Int32(n); m32 = Int32(m); i1 = one(Int32)
+    IT = _ka_int_type(TF)
+    n32 = IT(n); m32 = IT(m); i1 = one(IT)
     nmmp1_2 = TF(n32 - m32 + i1) * TF(0.5)
     npmp1_2 = TF(n32 + m32 + i1) * TF(0.5)
     _1_np1 = inv(TF(n32 + i1))
@@ -2935,7 +2943,7 @@ end
     TF = typeof(mdx)
     setup = FastMultipole._resident_harmonic_setup(mdx, mdy, mdz)
     qmm1_re, qmm1_im, qm_re, qm_im, qmp1_re, qmp1_im = ka_vortex_q3(setup, n - 1, m)
-    _1_over_n = inv(TF(Int32(n)))
+    _1_over_n = inv(TF(_ka_int_type(TF)(n)))
     _1_m = isodd(m) ? -one(TF) : one(TF)
     re = -_1_m * _1_over_n * (TF(0.5) * (-vy * qmm1_re - vx * qmm1_im +
         vy * qmp1_re - vx * qmp1_im) - vz * qm_re)
@@ -3190,13 +3198,13 @@ end
     # rho == 0 needs no special case: the setup returns all-zero, so the sweep
     # emits (1,0) at (0,0) and zero elsewhere -- exactly what the shared
     # coefficient function returns for a coincident point.
-    # Int32 counters: Int64 arithmetic / Int64->Float32 conversion are emulated on
-    # Metal and dominated the B2M walk (ka_vortex_q3); same recurrence here.
-    i1 = one(Int32)
+    # Counters in the field's integer width (see _ka_int_type); same recurrence
+    # as ka_vortex_q3.
+    IT = _ka_int_type(TF); i1 = one(IT)
     @inbounds begin
         fact = one(TF); pn = one(TF); rhom = one(TF)
         ieim_re = one(TF); ieim_im = z
-        for m in zero(Int32):Int32(P_active)
+        for m in zero(IT):IT(P_active)
             # n == m
             p = pn
             rmp = rhom * p
@@ -3212,7 +3220,7 @@ end
             p = xc * TF(m + m + i1) * p1
             rhom *= rho
             rhon = rhom
-            for n in (m + i1):Int32(P_active)
+            for n in (m + i1):IT(P_active)
                 rhon /= -TF(n + m)
                 rnp = rhon * p
                 t = ka_l2b_term(ph, ch, node, P_phi, P_active, n, m,
