@@ -90,8 +90,10 @@ end
     i = @index(Global)
     nrow = size(dst, 1)
     @inbounds begin
-        row = (i - 1) % nrow + 1
-        col = (i - 1) ÷ nrow + 1
+        # Int32 decode: a 64-bit divide per element is emulated on Metal (2026-09-01)
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
         s, c = sincos(row_m[row] * phis[col])
         a = src[flat_idx[row], cols[col]]
         b = src[flat_idx[row_pair[row]], cols[col]]
@@ -121,8 +123,10 @@ end
     i = @index(Global)
     nrow = size(slab, 1)
     @inbounds begin
-        row = (i - 1) % nrow + 1
-        col = (i - 1) ÷ nrow + 1
+        # Int32 decode: a 64-bit divide per element is emulated on Metal (2026-09-01)
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
         s, c = sincos(row_m[row] * phis[col])
         v = c * slab[row, col] - row_ssign[row] * s * slab[row_pair[row], col]
         KA.@atomic dest[flat_idx[row], col_targets[col]] += v
@@ -158,14 +162,63 @@ to each backend's own GPU matmul -- Metal's MPS-backed `mul!` for
 ordinary broadcasting. No custom `@kernel` is needed for this stage --
 `mul!`/broadcast are already backend-generic.
 """
+# Slab pointwise kernels. Base broadcasts over ndof-row views ran 3-5x below
+# bandwidth on Metal (49-row slabs, strided views, Int64 index math); these
+# decode (row, col) in Int32 from a flat index instead.
+@kernel function ka_stacked_combine_kernel!(G2, @Const(G), @Const(C), @Const(S), nd::Int32)
+    i = @index(Global)
+    @inbounds if i <= length(G2)
+        i32 = Int32(i) - Int32(1); nr = nd + nd
+        row = i32 % nr + Int32(1)
+        col = i32 ÷ nr + Int32(1)
+        if row <= nd
+            G2[row, col] = C[row, col] * G[row, col] - S[row, col] * G[row + nd, col]
+        else
+            r = row - nd
+            G2[row, col] = S[r, col] * G[r, col] + C[r, col] * G[row, col]
+        end
+    end
+end
+
+@kernel function ka_scale_inplace_kernel!(Y, @Const(Sc))
+    i = @index(Global)
+    @inbounds if i <= length(Y)
+        i32 = Int32(i) - Int32(1); nr = Int32(size(Y, 1))
+        row = i32 % nr + Int32(1)
+        col = i32 ÷ nr + Int32(1)
+        Y[row, col] *= Sc[row, col]
+    end
+end
+
+@kernel function ka_trig_fill_kernel!(C, S, @Const(nu), @Const(theta))
+    i = @index(Global)
+    @inbounds if i <= length(C)
+        i32 = Int32(i) - Int32(1); nr = Int32(size(C, 1))
+        row = i32 % nr + Int32(1)
+        col = i32 ÷ nr + Int32(1)
+        th = nu[row] * theta[col]
+        C[row, col] = cos(th)
+        S[row, col] = sin(th)
+    end
+end
+
+function ka_scale_inplace!(Y, Sc)
+    kernel = _cached_kernel(ka_scale_inplace_kernel!, KA.get_backend(Y), 256)
+    kernel(Y, Sc; ndrange=length(Y))
+    return Y
+end
+
+# C, S = cos/sin(nu * theta') as slabs (ndof x n); `theta` is the plain vector.
+function ka_trig_fill!(C, S, nu, theta)
+    kernel = _cached_kernel(ka_trig_fill_kernel!, KA.get_backend(C), 256)
+    kernel(C, S, nu, theta; ndrange=length(C))
+    return C
+end
+
 function ka_stacked_y_dense!(out_slab, in_slab, Ur, Vs, C, S, G, G2, ndof::Integer)
     mul!(G, Vs, in_slab)
-    Gt = @view G[1:ndof, :]
-    Gb = @view G[(ndof + 1):(2 * ndof), :]
-    G2t = @view G2[1:ndof, :]
-    G2b = @view G2[(ndof + 1):(2 * ndof), :]
-    G2t .= C .* Gt .- S .* Gb
-    G2b .= S .* Gt .+ C .* Gb
+    kernel = _cached_kernel(ka_stacked_combine_kernel!, KA.get_backend(G2), 256)
+    kernel(G2, G, C, S, Int32(ndof); ndrange=length(G2))
     mul!(out_slab, Ur, G2)
     return out_slab
 end
@@ -174,8 +227,10 @@ end
     i = @index(Global)
     nrow = size(dst, 1)
     @inbounds begin
-        row = (i - 1) % nrow + 1
-        col = (i - 1) ÷ nrow + 1
+        # Int32 decode: a 64-bit divide per element is emulated on Metal (2026-09-01)
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
         dst[row, col] = src[rows[row], col]
     end
 end
@@ -259,8 +314,10 @@ end
         @Const(theta), @Const(invr), @Const(rexp), nrow::Int)
     i = @index(Global)
     @inbounds begin
-        row = (i - 1) % nrow + 1
-        col = (i - 1) ÷ nrow + 1
+        # Int32 decode: a 64-bit divide per element is emulated on Metal (2026-09-01)
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
         th = nu[row] * theta[col]
         C[row, col] = cos(th)
         S[row, col] = sin(th)
@@ -294,8 +351,9 @@ end
     i = @index(Global)
     @inbounds begin
         nd = ndphi + ndchi
-        row = (i - 1) % nd + 1
-        col = (i - 1) ÷ nd + 1
+        i32 = Int32(i) - Int32(1); nd32 = Int32(nd)
+        row = i32 % nd32 + Int32(1)
+        col = i32 ÷ nd32 + Int32(1)
         r = rs[col]
         if row <= ndphi
             cphi[row, col] = zphi[row, col] + arow[row] * r * zchi[phi_pair[row], col]
@@ -601,9 +659,7 @@ function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
     S = FastMultipole._matrix_col_view(ystk.Sy, n)
     G = FastMultipole._matrix_col_view(ystk.G, n)
     G2 = FastMultipole._matrix_col_view(ystk.G2, n)
-    thetas_row = transpose(group_thetas)
-    C .= cos.(ystk.nu .* thetas_row)
-    S .= sin.(ystk.nu .* thetas_row)
+    ka_trig_fill!(C, S, ystk.nu, group_thetas)
     ka_gather_rotate_z!(aphi, src.phi, ws.phi_flat_idx, source_idx,
         ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, group_phis, one(eltype(aphi)))
     ka_stacked_y_dense!(yphi, aphi, Ur, Vs, C, S, G, G2, ndof_phi)
@@ -625,8 +681,7 @@ function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
         Sc = FastMultipole._matrix_col_view(ystk_c.Sy, n)
         Gc = FastMultipole._matrix_col_view(ystk_c.G, n)
         G2c = FastMultipole._matrix_col_view(ystk_c.G2, n)
-        Cc .= cos.(ystk_c.nu .* thetas_row)
-        Sc .= sin.(ystk_c.nu .* thetas_row)
+        ka_trig_fill!(Cc, Sc, ystk_c.nu, group_thetas)
         ka_gather_rotate_z!(achi, src.chi, ws.chi_flat_idx, source_idx,
             ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, group_phis, one(eltype(achi)))
         ka_stacked_y_dense!(ychi, achi, Urc, Vsc, Cc, Sc, Gc, G2c, ndof_chi)
@@ -835,9 +890,9 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
             ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis, one(TF))
         ka_stacked_y_dense!(yphi, aphi, ops_phi.yU_mult, ops_phi.yV_mult,
             Cphi, Sphi, Gphi, G2phi, ndof_phi)
-        yphi .*= sphi
+        ka_scale_inplace!(yphi, sphi)
         mul!(zphi, ops_phi.zD, yphi)
-        zphi .*= sphi
+        ka_scale_inplace!(zphi, sphi)
         ret_phi = zphi
 
         if LH
@@ -855,9 +910,9 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
                 ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis, one(TF))
             ka_stacked_y_dense!(ychi, achi, ops_chi.yU_mult, ops_chi.yV_mult,
                 Cchi, Schi, Gchi, G2chi, ndof_chi)
-            ychi .*= schi
+            ka_scale_inplace!(ychi, schi)
             mul!(zchi, ops_chi.zD, ychi)
-            zchi .*= schi
+            ka_scale_inplace!(zchi, schi)
             ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, plan.lh_arow_unit,
                 plan.lh_brow_unit, rs_col, ws.maps_phi.row_pair,
                 ws.maps_chi.row_up)
