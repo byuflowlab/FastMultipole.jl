@@ -2809,6 +2809,137 @@ end
 # kernel body and in uniform control flow, so it can neither live inside a
 # called function nor sit under a per-group `if`. (`ndrange = ncell * WG` gives
 # exactly `ncell` groups, so no group guard is needed either.)
+# B2M's three-in-one harmonic walk, KA-only (session 41).
+#
+# `_resident_vortex_phi_contrib` asks `_resident_vortex_q` for THREE adjacent-m
+# coefficients at one n, and each of those restarts the full O(P^2) recurrence
+# in `_resident_regular_harmonic_coeff`. Same for the chi contribution. With the
+# (n,m) loop outside the body loop, a body pays 189 restarts per B2M call, and
+# the ablation in `test/metal_env/_probe_b2m_ablate.jl` put that recurrence at
+# 88.5% of the stage.
+#
+# One walk reaches all three columns: they differ only in m, and the recurrence
+# is m-outer/n-inner, so it passes through m-1, m and m+1 on its way. That makes
+# the stage cost one restart per (n,m) instead of three -- and the arithmetic
+# reaching each captured value is op-for-op the shared function's, so the
+# coefficients are BIT-IDENTICAL, not merely close. The reduction and the order
+# bodies accumulate in are untouched too, so this kernel should stay bit-exact
+# against both the CPU oracle and the CUDA reference.
+#
+# KA-ONLY BY CONSTRUCTION: `_resident_vortex_*_contrib` and
+# `_resident_regular_harmonic_coeff` in src/ are left alone, so the CPU host
+# kernel and CUDA keep their arithmetic. The duplicated math below must stay in
+# lockstep with src/translate_batched_resident.jl.
+
+# R_{nt,mt-1}, R_{nt,mt}, R_{nt,mt+1} from a single recurrence walk, with the
+# legacy negative-m conjugate rule of `_resident_vortex_q` folded in. Columns
+# outside 0:nt come back zero, exactly as `_resident_vortex_q`'s bound checks do.
+@inline function ka_vortex_q3(setup::NTuple{5,TF}, nt, mt) where TF
+    rho, xc, ys, iei_re, iei_im = setup
+    z = zero(TF)
+    a_re = z; a_im = z   # column mt-1
+    b_re = z; b_im = z   # column mt
+    c_re = z; c_im = z   # column mt+1
+    if rho == z
+        # coincident point: R_{0,0} = 1, everything else zero
+        if nt == 0
+            mt == 0 && (b_re = one(TF))
+            mt == 1 && (a_re = one(TF))
+        end
+    else
+        @inbounds begin
+            fact = one(TF); pn = one(TF); rhom = one(TF)
+            ieim_re = one(TF); ieim_im = z
+            mhi = min(mt + 1, nt)
+            m = 0
+            while m <= mhi
+                p = pn
+                rmp = rhom * p
+                if m == nt
+                    vr = rmp * ieim_re; vi = rmp * ieim_im
+                    if m == mt - 1
+                        a_re = vr; a_im = vi
+                    elseif m == mt
+                        b_re = vr; b_im = vi
+                    elseif m == mt + 1
+                        c_re = vr; c_im = vi
+                    end
+                end
+                p1 = p
+                p = xc * (2m + 1) * p1
+                rhom *= rho
+                rhon = rhom
+                n = m + 1
+                while n <= nt
+                    rhon /= -(n + m)
+                    rnp = rhon * p
+                    if n == nt
+                        vr = rnp * ieim_re; vi = rnp * ieim_im
+                        if m == mt - 1
+                            a_re = vr; a_im = vi
+                        elseif m == mt
+                            b_re = vr; b_im = vi
+                        elseif m == mt + 1
+                            c_re = vr; c_im = vi
+                        end
+                    end
+                    p2 = p1; p1 = p
+                    p = (xc * (2n + 1) * p1 - (n + m) * p2) / (n - m + 1)
+                    rhon *= rho
+                    n += 1
+                end
+                rhom /= -(2m + 2) * (2m + 1)
+                pn = -pn * fact * ys
+                fact += 2
+                tre = ieim_re
+                ieim_re = tre * iei_re - ieim_im * iei_im
+                ieim_im = tre * iei_im + ieim_im * iei_re
+                m += 1
+            end
+        end
+    end
+    if mt == 0
+        # `_resident_vortex_q`: Q_{n,-1} = -conj(Q_{n,1}), and zero for n < 1.
+        # Column 1 is what the walk captured as `c` (it is also mt+1 here).
+        if nt >= 1
+            a_re = -c_re; a_im = c_im
+        else
+            a_re = z; a_im = z
+        end
+    end
+    return a_re, a_im, b_re, b_im, c_re, c_im
+end
+
+# Mirrors `_resident_vortex_phi_contrib` / `_resident_vortex_chi_contrib`, with
+# the three separate `_resident_vortex_q` restarts replaced by one walk.
+@inline function ka_vortex_phi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
+    TF = typeof(mdx)
+    setup = FastMultipole._resident_harmonic_setup(mdx, mdy, mdz)
+    qmm1_re, qmm1_im, qm_re, qm_im, qmp1_re, qmp1_im = ka_vortex_q3(setup, n, m)
+    nmmp1_2 = TF(n - m + 1) * TF(0.5)
+    npmp1_2 = TF(n + m + 1) * TF(0.5)
+    _1_np1 = inv(TF(n + 1))
+    _1_m = isodd(m) ? -one(TF) : one(TF)
+    re = _1_m * ((-vx * qmm1_re + vy * qmm1_im) * nmmp1_2 +
+                 (vx * qmp1_re + vy * qmp1_im) * npmp1_2 - vz * m * qm_im) * _1_np1
+    im = _1_m * ((vx * qmm1_im + vy * qmm1_re) * nmmp1_2 +
+                 (-vx * qmp1_im + vy * qmp1_re) * npmp1_2 - vz * m * qm_re) * _1_np1
+    return re, im
+end
+
+@inline function ka_vortex_chi_contrib(mdx, mdy, mdz, vx, vy, vz, n, m)
+    TF = typeof(mdx)
+    setup = FastMultipole._resident_harmonic_setup(mdx, mdy, mdz)
+    qmm1_re, qmm1_im, qm_re, qm_im, qmp1_re, qmp1_im = ka_vortex_q3(setup, n - 1, m)
+    _1_over_n = inv(TF(n))
+    _1_m = isodd(m) ? -one(TF) : one(TF)
+    re = -_1_m * _1_over_n * (TF(0.5) * (-vy * qmm1_re - vx * qmm1_im +
+        vy * qmp1_re - vx * qmp1_im) - vz * qm_re)
+    im = -_1_m * _1_over_n * (TF(0.5) * (vy * qmm1_im - vx * qmm1_re -
+        vy * qmp1_im - vx * qmp1_re) + vz * qm_im)
+    return re, im
+end
+
 @kernel function ka_b2m_vortex_leaf_nodes_kernel!(phi, chi, @Const(source_bodies),
         @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
         P_phi, P_chi, ncell, ::Type{TF}, ::Val{WG}) where {TF,WG}
@@ -2828,7 +2959,7 @@ end
                 acc_re = zero(TF); acc_im = zero(TF)
                 k = first + tid - 1
                 while k <= first + count - 1
-                    re_, im_ = FastMultipole._resident_vortex_phi_contrib(
+                    re_, im_ = ka_vortex_phi_contrib(
                         cx - source_bodies[1, k], cy - source_bodies[2, k],
                         cz - source_bodies[3, k], source_bodies[5, k],
                         source_bodies[6, k], source_bodies[7, k], n, m)
@@ -2860,7 +2991,7 @@ end
                 acc_re = zero(TF); acc_im = zero(TF)
                 k = first + tid - 1
                 while k <= first + count - 1
-                    re_, im_ = FastMultipole._resident_vortex_chi_contrib(
+                    re_, im_ = ka_vortex_chi_contrib(
                         cx - source_bodies[1, k], cy - source_bodies[2, k],
                         cz - source_bodies[3, k], source_bodies[5, k],
                         source_bodies[6, k], source_bodies[7, k], n, m)
@@ -2941,6 +3072,166 @@ end
 # computed independently of the thread mapping, so this stays bit-exact
 # against the CUDA kernel rather than merely close.
 
+# The regular-harmonic sweep, KA-only (session 41).
+#
+# `_resident_regular_harmonic_coeff` (src/translate_batched_resident.jl) restarts
+# a full O(P^2) associated-Legendre recurrence for EVERY (n,m) it is asked for.
+# L2B's hessian branch asks 4 times per pair, so a body pays ~72 restarts where
+# ONE m-outer/n-inner sweep produces every coefficient it needs. Measured at
+# 72.6% of the L2B stage (`test/metal_env/_probe_l2b_ablate.jl`).
+#
+# `ka_regular_harmonic_sweep` below walks that same recurrence once and emits
+# R_{n,m} as it goes. The arithmetic is op-for-op what the shared function does
+# for each target -- the outer state (`rhom`, `pn`, `fact`, `ieim`) is untouched
+# by the inner n loop, so extending that loop to P_active instead of stopping at
+# each target changes no value. The COEFFICIENTS are therefore bit-identical;
+# only the order in which the 13 outputs accumulate over (n,m) changes, which is
+# a Float32 rounding difference and why the gate scores relerr, not equality.
+#
+# KA-ONLY BY CONSTRUCTION: this lives in the extension and the shared
+# `_resident_local_eval_flat*` are left exactly as they are, so the CPU host
+# kernels and the CUDA path keep their current arithmetic and stay the oracle.
+# The cost of that choice is a second copy of the evaluation math here, which
+# must stay in lockstep with `src/translate_batched_resident.jl`.
+
+# One (n,m) term of the local evaluation: everything the shared
+# `_resident_local_eval_flat_hessian` does inside its two loop bodies at that
+# pair, returned as increments. `HESS=false` drops the second pass (the 4-row
+# kernel), matching `_resident_local_eval_flat`.
+@inline function ka_l2b_term(ph, ch, node, P_phi, P_active, n, m, rre, rim,
+        lhv::Val{LH}, ::Val{HESS}) where {LH,HESS}
+    TF = eltype(ph)
+    z = zero(TF)
+    u = z; vx = z; vy = z; vz = z
+    hxx = z; hxy = z; hxz = z; hyx = z; hyy = z; hyz = z; hzx = z; hzy = z; hzz = z
+    @inbounds begin
+        # ---- pass 1: potential and gradient
+        if m == 0
+            if n <= P_phi && (!LH || n == 0)
+                u += rre * FastMultipole._resident_flat_phi_re(ph, node, P_phi, n, 0) -
+                     rim * FastMultipole._resident_flat_phi_im(ph, node, P_phi, n, 0)
+            end
+            vxr, vxi, vyr, vyi, vzr, vzi =
+                FastMultipole._resident_gradient_coeff(ph, ch, node, P_phi, P_active, n, 0, lhv)
+            vx += vxr * rre - vxi * rim
+            vy += vyr * rre - vyi * rim
+            vz += vzr * rre - vzi * rim
+        else
+            if n <= P_phi && !LH
+                u += 2 * (rre * FastMultipole._resident_flat_phi_re(ph, node, P_phi, n, m) -
+                          rim * FastMultipole._resident_flat_phi_im(ph, node, P_phi, n, m))
+            end
+            vxr, vxi, vyr, vyi, vzr, vzi =
+                FastMultipole._resident_gradient_coeff(ph, ch, node, P_phi, P_active, n, m, lhv)
+            vx += 2 * (vxr * rre - vxi * rim)
+            vy += 2 * (vyr * rre - vyi * rim)
+            vz += 2 * (vzr * rre - vzi * rim)
+        end
+        # ---- pass 2: hessian. The shared version runs n only to P_active-1.
+        if HESS && n <= P_active - 1
+            if m == 0
+                g0x_r, g0x_i, g0y_r, g0y_i, g0z_r, g0z_i =
+                    FastMultipole._resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, 0, lhv)
+                g1x_r, g1x_i, g1y_r, g1y_i, g1z_r, g1z_i =
+                    FastMultipole._resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, 1, lhv)
+                hxx += -g1x_i * rre
+                hyx += -g1x_r * rre
+                hzx += -g0x_r * rre + g0x_i * rim
+                hxy += -g1y_i * rre
+                hyy += -g1y_r * rre
+                hzy += -g0y_r * rre + g0y_i * rim
+                hxz += -g1z_i * rre
+                hyz += -g1z_r * rre
+                hzz += -g0z_r * rre + g0z_i * rim
+            else
+                amx_r, amx_i, amy_r, amy_i, amz_r, amz_i =
+                    FastMultipole._resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, m - 1, lhv)
+                bmx_r, bmx_i, bmy_r, bmy_i, bmz_r, bmz_i =
+                    FastMultipole._resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, m, lhv)
+                cmx_r, cmx_i, cmy_r, cmy_i, cmz_r, cmz_i =
+                    FastMultipole._resident_gradient_coeff(ph, ch, node, P_phi, P_active, n + 1, m + 1, lhv)
+                tr = -(amx_i + cmx_i) * TF(0.5); ti = (amx_r + cmx_r) * TF(0.5)
+                hxx += 2 * (tr * rre - ti * rim)
+                tr = (amx_r - cmx_r) * TF(0.5); ti = (amx_i - cmx_i) * TF(0.5)
+                hyx += 2 * (tr * rre - ti * rim)
+                hzx += 2 * (-bmx_r * rre + bmx_i * rim)
+                tr = -(amy_i + cmy_i) * TF(0.5); ti = (amy_r + cmy_r) * TF(0.5)
+                hxy += 2 * (tr * rre - ti * rim)
+                tr = (amy_r - cmy_r) * TF(0.5); ti = (amy_i - cmy_i) * TF(0.5)
+                hyy += 2 * (tr * rre - ti * rim)
+                hzy += 2 * (-bmy_r * rre + bmy_i * rim)
+                tr = -(amz_i + cmz_i) * TF(0.5); ti = (amz_r + cmz_r) * TF(0.5)
+                hxz += 2 * (tr * rre - ti * rim)
+                tr = (amz_r - cmz_r) * TF(0.5); ti = (amz_i - cmz_i) * TF(0.5)
+                hyz += 2 * (tr * rre - ti * rim)
+                hzz += 2 * (-bmz_r * rre + bmz_i * rim)
+            end
+        end
+    end
+    return u, vx, vy, vz, hxx, hxy, hxz, hyx, hyy, hyz, hzx, hzy, hzz
+end
+
+# Local -> body with ONE recurrence sweep per body. Returns the 13-tuple of the
+# shared `_resident_local_eval_flat_hessian` when HESS, else the 4-tuple of
+# `_resident_local_eval_flat` (the hessian slots are computed as zeros and
+# dropped by the caller, so both share this body).
+@inline function ka_local_eval_flat(ph, ch, node, dx, dy, dz, P_phi, P_active,
+        lhv::Val{LH}, hv::Val{HESS}) where {LH,HESS}
+    TF = eltype(ph)
+    c = inv(TF(4) * TF(pi))
+    z = zero(TF)
+    u = z; vx = z; vy = z; vz = z
+    hxx = z; hxy = z; hxz = z; hyx = z; hyy = z; hyz = z; hzx = z; hzy = z; hzz = z
+    rho, xc, ys, iei_re, iei_im = FastMultipole._resident_harmonic_setup(dx, dy, dz)
+    # rho == 0 needs no special case: the setup returns all-zero, so the sweep
+    # emits (1,0) at (0,0) and zero elsewhere -- exactly what the shared
+    # coefficient function returns for a coincident point.
+    @inbounds begin
+        fact = one(TF); pn = one(TF); rhom = one(TF)
+        ieim_re = one(TF); ieim_im = z
+        for m in 0:P_active
+            # n == m
+            p = pn
+            rmp = rhom * p
+            t = ka_l2b_term(ph, ch, node, P_phi, P_active, m, m,
+                            rmp * ieim_re, rmp * ieim_im, lhv, hv)
+            u += t[1]; vx += t[2]; vy += t[3]; vz += t[4]
+            if HESS
+                hxx += t[5]; hxy += t[6]; hxz += t[7]
+                hyx += t[8]; hyy += t[9]; hyz += t[10]
+                hzx += t[11]; hzy += t[12]; hzz += t[13]
+            end
+            p1 = p
+            p = xc * (2m + 1) * p1
+            rhom *= rho
+            rhon = rhom
+            for n in (m + 1):P_active
+                rhon /= -(n + m)
+                rnp = rhon * p
+                t = ka_l2b_term(ph, ch, node, P_phi, P_active, n, m,
+                                rnp * ieim_re, rnp * ieim_im, lhv, hv)
+                u += t[1]; vx += t[2]; vy += t[3]; vz += t[4]
+                if HESS
+                    hxx += t[5]; hxy += t[6]; hxz += t[7]
+                    hyx += t[8]; hyy += t[9]; hyz += t[10]
+                    hzx += t[11]; hzy += t[12]; hzz += t[13]
+                end
+                p2 = p1; p1 = p
+                p = (xc * (2n + 1) * p1 - (n + m) * p2) / (n - m + 1)
+                rhon *= rho
+            end
+            rhom /= -(2m + 2) * (2m + 1)
+            pn = -pn * fact * ys
+            fact += 2
+            tre = ieim_re
+            ieim_re = tre * iei_re - ieim_im * iei_im
+            ieim_im = tre * iei_im + ieim_im * iei_re
+        end
+    end
+    return u * c, vx * c, vy * c, vz * c,
+        hxx * c, hxy * c, hxz * c, hyx * c, hyy * c, hyz * c, hzx * c, hzy * c, hzz * c
+end
+
 @kernel function ka_l2b_output_kernel!(output, @Const(source_bodies), @Const(cell_centers),
         @Const(cell_ranges), @Const(leaf_to_node), @Const(local_phi), @Const(local_chi),
         P_phi, P_active, ::Val{LHV}, ncell, ::Val{WG}) where {LHV,WG}
@@ -2953,10 +3244,10 @@ end
         cx = cell_centers[1, cell]; cy = cell_centers[2, cell]; cz = cell_centers[3, cell]
         i = first + tid - 1
         while i <= last
-            sp, gx, gy, gz = FastMultipole._resident_local_eval_flat(
+            sp, gx, gy, gz = ka_local_eval_flat(
                 local_phi, local_chi, node,
                 source_bodies[1, i] - cx, source_bodies[2, i] - cy,
-                source_bodies[3, i] - cz, P_phi, P_active, Val(LHV))
+                source_bodies[3, i] - cz, P_phi, P_active, Val(LHV), Val(false))
             output[1, i] += sp
             output[2, i] += gx
             output[3, i] += gy
@@ -2979,10 +3270,10 @@ end
         cx = cell_centers[1, cell]; cy = cell_centers[2, cell]; cz = cell_centers[3, cell]
         i = first + tid - 1
         while i <= last
-            vals = FastMultipole._resident_local_eval_flat_hessian(
+            vals = ka_local_eval_flat(
                 local_phi, local_chi, node,
                 source_bodies[1, i] - cx, source_bodies[2, i] - cy,
-                source_bodies[3, i] - cz, P_phi, P_active, Val(LHV))
+                source_bodies[3, i] - cz, P_phi, P_active, Val(LHV), Val(true))
             Base.Cartesian.@nexprs 13 r -> (output[r, i] += vals[r])
             i += WG
         end

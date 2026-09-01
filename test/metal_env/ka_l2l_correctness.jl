@@ -4,17 +4,18 @@
 # _launch_resident_l2l!), selected by kind=:l2l -- no new KA kernel needed. This test
 # mirrors ka_m2m_correctness.jl but compares against the CPU non-resident
 # l2l_operator_batch! (MaterializedYRotationL2L) reference instead.
-using Metal, KernelAbstractions, FastMultipole, StaticArrays, Random
+include("ka_backend.jl")
+using KernelAbstractions, FastMultipole, StaticArrays, Random
 using FastMultipole: FlatCoefficientBuffer, L2LOperatorScratch, OperatorInvariantCache,
                      MaterializedYRotationL2L
 
-# `FlatCoefficientBuffer.phi .= Metal.MtlArray(host)` silently no-ops (broadcasting a
+# `FlatCoefficientBuffer.phi .= devarray(host)` silently no-ops (broadcasting a
 # host-array destination from a device-array source does not perform the transfer);
 # building the buffer directly over device arrays via the struct's default inner
 # constructor is the correct way to get a Metal-backed FlatCoefficientBuffer.
 function to_metal(buf::FlatCoefficientBuffer{TF,A,B,LH}) where {TF,A,B,LH}
-    phi_dev = Metal.MtlArray(buf.phi)
-    chi_dev = Metal.MtlArray(buf.chi)
+    phi_dev = devarray(buf.phi)
+    chi_dev = devarray(buf.chi)
     return FlatCoefficientBuffer{TF,typeof(phi_dev),B,LH}(phi_dev, chi_dev, buf.basis_info)
 end
 
@@ -23,8 +24,8 @@ function to_cpu(buf::FlatCoefficientBuffer{TF,A,B,LH}) where {TF,A,B,LH}
 end
 
 println("Starting KA L2L correctness test...")
-if !Metal.functional()
-    println("Metal not functional; skipping")
+if !dev_functional()
+    println("$(DEV_NAME) not functional; skipping")
     exit(0)
 end
 
@@ -109,4 +110,4 @@ for P in (4, 8)
     end
 end
 
-println("\n✓✓✓ All KA L2L correctness tests passed on Metal! ✓✓✓")
+println("\n✓✓✓ All KA L2L correctness tests passed on $(DEV_NAME)! ✓✓✓")

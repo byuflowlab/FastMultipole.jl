@@ -8,17 +8,18 @@
 # ResidentM2LConcatPlan on the fly, one geometry class per (source i -> target i) route
 # (no tree required -- isolated per-route check, per the ka-migration plan's step-3 scope)
 # and compares against the CPU non-resident m2l_operator_batch! (MaterializedYRotationM2L).
-using Metal, KernelAbstractions, FastMultipole, StaticArrays, Random
+include("ka_backend.jl")
+using KernelAbstractions, FastMultipole, StaticArrays, Random
 using FastMultipole: FlatCoefficientBuffer, M2LOperatorScratch, OperatorInvariantCache,
                      MaterializedYRotationM2L
 
-# `FlatCoefficientBuffer.phi .= Metal.MtlArray(host)` silently no-ops (broadcasting a
+# `FlatCoefficientBuffer.phi .= devarray(host)` silently no-ops (broadcasting a
 # host-array destination from a device-array source does not perform the transfer);
 # building the buffer directly over device arrays via the struct's default inner
 # constructor is the correct way to get a Metal-backed FlatCoefficientBuffer.
 function to_metal(buf::FlatCoefficientBuffer{TF,A,B,LH}) where {TF,A,B,LH}
-    phi_dev = Metal.MtlArray(buf.phi)
-    chi_dev = Metal.MtlArray(buf.chi)
+    phi_dev = devarray(buf.phi)
+    chi_dev = devarray(buf.chi)
     return FlatCoefficientBuffer{TF,typeof(phi_dev),B,LH}(phi_dev, chi_dev, buf.basis_info)
 end
 
@@ -27,8 +28,8 @@ function to_cpu(buf::FlatCoefficientBuffer{TF,A,B,LH}) where {TF,A,B,LH}
 end
 
 println("Starting KA M2L correctness test...")
-if !Metal.functional()
-    println("Metal not functional; skipping")
+if !dev_functional()
+    println("$(DEV_NAME) not functional; skipping")
     exit(0)
 end
 
@@ -120,4 +121,4 @@ for P in (4, 8)
     end
 end
 
-println("\n✓✓✓ All KA M2L correctness tests passed on Metal! ✓✓✓")
+println("\n✓✓✓ All KA M2L correctness tests passed on $(DEV_NAME)! ✓✓✓")
