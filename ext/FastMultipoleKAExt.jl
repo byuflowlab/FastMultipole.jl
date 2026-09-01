@@ -2834,7 +2834,10 @@ end
 # R_{nt,mt-1}, R_{nt,mt}, R_{nt,mt+1} from a single recurrence walk, with the
 # legacy negative-m conjugate rule of `_resident_vortex_q` folded in. Columns
 # outside 0:nt come back zero, exactly as `_resident_vortex_q`'s bound checks do.
-@inline function ka_vortex_q3(setup::NTuple{5,TF}, nt, mt) where TF
+@inline function ka_vortex_q3(setup::NTuple{5,TF}, nt_::Integer, mt_::Integer) where TF
+    # Int32 counters throughout: on Metal, Int64 arithmetic and Int64->Float32
+    # conversion are emulated on 32-bit ALUs and dominated this walk (2.5x, 2026-09-01).
+    nt = Int32(nt_); mt = Int32(mt_); i1 = one(Int32)
     rho, xc, ys, iei_re, iei_im = setup
     z = zero(TF)
     a_re = z; a_im = z   # column mt-1
@@ -2850,51 +2853,51 @@ end
         @inbounds begin
             fact = one(TF); pn = one(TF); rhom = one(TF)
             ieim_re = one(TF); ieim_im = z
-            mhi = min(mt + 1, nt)
-            m = 0
+            mhi = min(mt + i1, nt)
+            m = zero(Int32)
             while m <= mhi
                 p = pn
                 rmp = rhom * p
                 if m == nt
                     vr = rmp * ieim_re; vi = rmp * ieim_im
-                    if m == mt - 1
+                    if m == mt - i1
                         a_re = vr; a_im = vi
                     elseif m == mt
                         b_re = vr; b_im = vi
-                    elseif m == mt + 1
+                    elseif m == mt + i1
                         c_re = vr; c_im = vi
                     end
                 end
                 p1 = p
-                p = xc * (2m + 1) * p1
+                p = xc * TF(m + m + i1) * p1
                 rhom *= rho
                 rhon = rhom
-                n = m + 1
+                n = m + i1
                 while n <= nt
-                    rhon /= -(n + m)
+                    rhon /= -TF(n + m)
                     rnp = rhon * p
                     if n == nt
                         vr = rnp * ieim_re; vi = rnp * ieim_im
-                        if m == mt - 1
+                        if m == mt - i1
                             a_re = vr; a_im = vi
                         elseif m == mt
                             b_re = vr; b_im = vi
-                        elseif m == mt + 1
+                        elseif m == mt + i1
                             c_re = vr; c_im = vi
                         end
                     end
                     p2 = p1; p1 = p
-                    p = (xc * (2n + 1) * p1 - (n + m) * p2) / (n - m + 1)
+                    p = (xc * TF(n + n + i1) * p1 - TF(n + m) * p2) / TF(n - m + i1)
                     rhon *= rho
-                    n += 1
+                    n += i1
                 end
-                rhom /= -(2m + 2) * (2m + 1)
+                rhom /= -TF(m + m + i1 + i1) * TF(m + m + i1)
                 pn = -pn * fact * ys
-                fact += 2
+                fact += TF(2)
                 tre = ieim_re
                 ieim_re = tre * iei_re - ieim_im * iei_im
                 ieim_im = tre * iei_im + ieim_im * iei_re
-                m += 1
+                m += i1
             end
         end
     end
@@ -2916,14 +2919,15 @@ end
     TF = typeof(mdx)
     setup = FastMultipole._resident_harmonic_setup(mdx, mdy, mdz)
     qmm1_re, qmm1_im, qm_re, qm_im, qmp1_re, qmp1_im = ka_vortex_q3(setup, n, m)
-    nmmp1_2 = TF(n - m + 1) * TF(0.5)
-    npmp1_2 = TF(n + m + 1) * TF(0.5)
-    _1_np1 = inv(TF(n + 1))
+    n32 = Int32(n); m32 = Int32(m); i1 = one(Int32)
+    nmmp1_2 = TF(n32 - m32 + i1) * TF(0.5)
+    npmp1_2 = TF(n32 + m32 + i1) * TF(0.5)
+    _1_np1 = inv(TF(n32 + i1))
     _1_m = isodd(m) ? -one(TF) : one(TF)
     re = _1_m * ((-vx * qmm1_re + vy * qmm1_im) * nmmp1_2 +
-                 (vx * qmp1_re + vy * qmp1_im) * npmp1_2 - vz * m * qm_im) * _1_np1
+                 (vx * qmp1_re + vy * qmp1_im) * npmp1_2 - vz * TF(m32) * qm_im) * _1_np1
     im = _1_m * ((vx * qmm1_im + vy * qmm1_re) * nmmp1_2 +
-                 (-vx * qmp1_im + vy * qmp1_re) * npmp1_2 - vz * m * qm_re) * _1_np1
+                 (-vx * qmp1_im + vy * qmp1_re) * npmp1_2 - vz * TF(m32) * qm_re) * _1_np1
     return re, im
 end
 
@@ -2931,7 +2935,7 @@ end
     TF = typeof(mdx)
     setup = FastMultipole._resident_harmonic_setup(mdx, mdy, mdz)
     qmm1_re, qmm1_im, qm_re, qm_im, qmp1_re, qmp1_im = ka_vortex_q3(setup, n - 1, m)
-    _1_over_n = inv(TF(n))
+    _1_over_n = inv(TF(Int32(n)))
     _1_m = isodd(m) ? -one(TF) : one(TF)
     re = -_1_m * _1_over_n * (TF(0.5) * (-vy * qmm1_re - vx * qmm1_im +
         vy * qmp1_re - vx * qmp1_im) - vz * qm_re)
@@ -3186,10 +3190,13 @@ end
     # rho == 0 needs no special case: the setup returns all-zero, so the sweep
     # emits (1,0) at (0,0) and zero elsewhere -- exactly what the shared
     # coefficient function returns for a coincident point.
+    # Int32 counters: Int64 arithmetic / Int64->Float32 conversion are emulated on
+    # Metal and dominated the B2M walk (ka_vortex_q3); same recurrence here.
+    i1 = one(Int32)
     @inbounds begin
         fact = one(TF); pn = one(TF); rhom = one(TF)
         ieim_re = one(TF); ieim_im = z
-        for m in 0:P_active
+        for m in zero(Int32):Int32(P_active)
             # n == m
             p = pn
             rmp = rhom * p
@@ -3202,11 +3209,11 @@ end
                 hzx += t[11]; hzy += t[12]; hzz += t[13]
             end
             p1 = p
-            p = xc * (2m + 1) * p1
+            p = xc * TF(m + m + i1) * p1
             rhom *= rho
             rhon = rhom
-            for n in (m + 1):P_active
-                rhon /= -(n + m)
+            for n in (m + i1):Int32(P_active)
+                rhon /= -TF(n + m)
                 rnp = rhon * p
                 t = ka_l2b_term(ph, ch, node, P_phi, P_active, n, m,
                                 rnp * ieim_re, rnp * ieim_im, lhv, hv)
@@ -3217,12 +3224,12 @@ end
                     hzx += t[11]; hzy += t[12]; hzz += t[13]
                 end
                 p2 = p1; p1 = p
-                p = (xc * (2n + 1) * p1 - (n + m) * p2) / (n - m + 1)
+                p = (xc * TF(n + n + i1) * p1 - TF(n + m) * p2) / TF(n - m + i1)
                 rhon *= rho
             end
-            rhom /= -(2m + 2) * (2m + 1)
+            rhom /= -TF(m + m + i1 + i1) * TF(m + m + i1)
             pn = -pn * fact * ys
-            fact += 2
+            fact += TF(2)
             tre = ieim_re
             ieim_re = tre * iei_re - ieim_im * iei_im
             ieim_im = tre * iei_im + ieim_im * iei_re
