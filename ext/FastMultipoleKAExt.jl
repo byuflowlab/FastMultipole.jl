@@ -2707,8 +2707,11 @@ function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
     # drive the sigma-adequacy ell gate -- reads the same values as before.
     dpb = size(source_buffer, 1)
     sigma_row = _ka_kernel_sigma_row(options.direct_kernel)
-    inv_sigma_row = sigma_row > 0 ? dpb + 1 : 0
-    source_bodies = KA.zeros(backend, TF, dpb + 1, actx.maxn)
+    # `dpb` rows exactly, as CUDA allocates them (translate_batched_cuda.jl:6409,
+    # :8789). A KA-only extra row makes the array shape disagree between the two
+    # builders, and the shape is what the nearfield launch reads.
+    inv_sigma_row = 0
+    source_bodies = KA.zeros(backend, TF, dpb, actx.maxn)
     ka_pack_body_matrix!(source_bodies, source_buffer, grid.perm, grid.body_system,
         grid.body_index, n; isys=1, sigma_row=sigma_row, inv_sigma_row=inv_sigma_row,
         workgroup=workgroup)
@@ -3125,8 +3128,8 @@ function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B
     # before it crosses into device code (see the "precision-parameterized
     # device functors" block near the end of this file). Singular kernels are
     # returned unchanged, so this is a no-op for every existing suite.
-    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF,
-        _ka_inv_sigma_row(state.options.direct_kernel, state.source_bodies))
+    # inv_sigma_row=0: rho is computed as |r|/sigma, the divide CUDA does
+    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF, 0)
     kern(dkernel, state.output, state.source_bodies,
          state.cell_ranges, state.direct_targets, state.direct_sources,
          npairs, TF, Val(hs), Val(workgroup); ndrange=npairs * workgroup)
@@ -3231,8 +3234,8 @@ function ka_direct_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
     kern = _cached_kernel(ka_direct_all_pairs_kernel!, backend, wg)
     # same TF re-parameterization as ka_launch_nearfield!: the stock
     # regularized functors carry hardcoded Float64 cutoffs
-    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF,
-        _ka_inv_sigma_row(state.options.direct_kernel, state.source_bodies))
+    # inv_sigma_row=0: rho is computed as |r|/sigma, the divide CUDA does
+    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF, 0)
     kern(dkernel, state.output, state.source_bodies, n, TF, Val(hs);
          ndrange=cld(n, wg) * wg)
     KA.synchronize(backend)
@@ -5807,11 +5810,11 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         # ([[reference-ka-workgroup-is-sometimes-team-size]]).
         ka_nearfield_subsort!(ctx, cache, n, n_cells)
     end
-    # The reciprocal-sigma row has to be refilled here, not just at cache build:
-    # this repack runs every step and would otherwise leave it holding the
-    # previous step's sigmas (or zeros on the first step).
     pack_sigma_row = _ka_kernel_sigma_row(cache.options.direct_kernel)
-    pack_inv_sigma_row = pack_sigma_row > 0 ? size(ctx.source_bodies, 1) : 0
+    # no reciprocal-sigma row: `source_bodies` carries exactly the `dpb` rows
+    # CUDA packs, and writing a row past them would land on real data whenever
+    # the state was built by the CUDA allocator
+    pack_inv_sigma_row = 0
     for isys in eachindex(source_buffers)
         ka_pack_body_matrix!(ctx.source_bodies, source_buffers[isys],
             view(grid.perm, 1:n), grid.body_system, grid.body_index, n;
@@ -6064,7 +6067,7 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
     ctx = (;
         multipoles, locals, workspace, invariant, counters, grid,
         counts=FastMultipole.RadixStepCounts(0, 0, 0, 0, 0),
-        source_bodies=_z(TF, dpb + 1, maxn),
+        source_bodies=_z(TF, dpb, maxn),
         output=_z(TF, n_output_rows, maxn),
         cell_at=_z(Int32, 0, 0, 0),
         hierarchical_ctx,
@@ -6807,26 +6810,6 @@ _ka_kernel_sigma_row(::FastMultipole.AbstractDirectKernel) = 0
 _ka_kernel_sigma_row(k::FastMultipole.PartitionedVortex) = k.sigma_row
 _ka_kernel_sigma_row(k::FastMultipole.RegularizedVortex) = k.sigma_row
 _ka_kernel_sigma_row(k::FastMultipole.TwoPassVortex) = k.sigma_row
-
-"""
-    _ka_inv_sigma_row(kernel, source_bodies) -> Int
-
-Row of `source_bodies` holding 1/sigma, or 0 to keep the divide. Both KA
-`source_bodies` allocations carry one row past `data_per_body` unconditionally,
-so the reciprocal row is always the LAST row -- that invariant is what makes
-this derivable at launch instead of threaded through `DeviceResidentRadixState`.
-Singular kernels get 0 (their functors carry no `inv_sigma_row` field at all).
-"""
-@inline function _ka_inv_sigma_row(kernel, source_bodies)
-    sr = _ka_kernel_sigma_row(kernel)
-    sr == 0 && return 0
-    r = size(source_bodies, 1)
-    r > sr || throw(ArgumentError(
-        "source_bodies has $r rows, not more than sigma_row=$sr: the " *
-        "reciprocal-sigma row is missing, so this state was not built by " *
-        "ka_radix_state"))
-    return r
-end
 
 # rho = |r|/sigma for the regularized family, plus the guard value the caller
 # tests for `> 0`. With the reciprocal-sigma row wired (`inv_sigma_row > 0`) this

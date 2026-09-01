@@ -94,12 +94,10 @@ for (case_i, (n, K_max, ell_max, P, lh, dpb, balance)) in pairs(CASES)
     # --- body packing vs FastMultipole's own host packer ---
     ref_bodies = FM._host_radix_body_matrix(hgrid, (source_buffer,))
     @test size(ref_bodies) == (dpb, n)
-    # `ka_radix_state` allocates one row past `data_per_body` to carry 1/sigma for
-    # the regularized nearfield, so only rows 1:dpb mirror the host packer. The
-    # extra row stays zero here: this suite's kernel is singular and has no sigma.
-    @test size(state.source_bodies, 1) == dpb + 1
+    # `source_bodies` carries exactly the dpb rows CUDA packs, so it mirrors the
+    # host packer row for row.
+    @test size(state.source_bodies, 1) == dpb
     @test Array(state.source_bodies)[1:dpb, 1:n] == ref_bodies
-    @test all(iszero, Array(state.source_bodies)[dpb + 1, 1:n])
     @test state.target_bodies === state.source_bodies
 
     # --- M2M/L2L edge list vs FastMultipole's own host route builder ---
