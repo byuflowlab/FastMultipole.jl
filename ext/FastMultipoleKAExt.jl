@@ -5705,6 +5705,85 @@ function _ka_launch_sfs_typed!(state::FastMultipole.DeviceResidentRadixState{TF}
     return state
 end
 
+#------- ζ reconstruction for core spreading (nearfield-only pair sum) -------#
+#
+# Device counterpart of FLOWVPM's host `zeta_fmm`: ζ_i = Σ_j Γ_j ζ(r/σ_j)/σ_j³ over
+# the radix direct list with the Gaussian ζ(ρ) = (2π)^(-3/2) exp(-ρ²/2). Unlike the
+# SFS ζ sweep this keeps the self pair (it is the diagonal of the RBF system the
+# core-spreading conjugate gradient solves), applies no saturation cutoff and no
+# static-particle filter -- exactly what the host loop does.
+@kernel function ka_zeta_pairs_kernel!(om, @Const(source_bodies), @Const(cell_ranges),
+        @Const(direct_targets), @Const(direct_sources), npairs, K1, ::Type{T}, ::Val{WG}) where {T,WG}
+    pair_i = @index(Group)
+    tid = @index(Local)
+    half = T(0.5)
+    @inbounds begin
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + tid - 1
+        while i <= tlast
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            o1 = zero(T); o2 = zero(T); o3 = zero(T)
+            for j in sfirst:slast
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                sigma = source_bodies[8, j]
+                z = K1 * exp(-half * r2 / (sigma * sigma)) / (sigma * sigma * sigma)
+                o1 += z * source_bodies[5, j]
+                o2 += z * source_bodies[6, j]
+                o3 += z * source_bodies[7, j]
+            end
+            KA.@atomic om[1, i] += o1
+            KA.@atomic om[2, i] += o2
+            KA.@atomic om[3, i] += o3
+            i += WG
+        end
+    end
+end
+
+function ka_launch_zeta!(state::FastMultipole.DeviceResidentRadixState{TF}, om;
+        workgroup::Int=64) where TF
+    fill!(om, zero(TF))
+    npairs = state.counts.n_direct
+    npairs == 0 && return om
+    kernel = _cached_kernel(ka_zeta_pairs_kernel!, KA.get_backend(om), workgroup)
+    kernel(om, state.source_bodies, state.cell_ranges, state.direct_targets,
+           state.direct_sources, npairs, TF(FastMultipole._SFS_ZETA_K1), TF, Val(workgroup);
+           ndrange=npairs * workgroup)
+    return om
+end
+
+function FastMultipole.radix_zeta!(cache::FastMultipole.RadixFMMCache{TF,LH}, systems::Tuple,
+        om, out; workgroup::Int=64) where {TF,LH}
+    # repack X/Γ/σ (Γ changes every conjugate-gradient iteration) and refresh the lists
+    ka_update_radix_state!(cache, systems)
+    state = cache.state
+    n = state.counts.n_bodies
+    size(om, 2) >= n || throw(ArgumentError("radix_zeta!: om holds $(size(om, 2)) columns, need $n"))
+    ka_launch_zeta!(state, om; workgroup)
+    backend = KA.get_backend(om)
+    for (isys, target_system) in enumerate(systems)
+        FastMultipole.residency(target_system) isa FastMultipole.DeviceResident || throw(ArgumentError(
+            "radix_zeta!: target system $isys must be device-resident"))
+        nb = FastMultipole.get_n_bodies(target_system)
+        size(out, 2) >= nb || throw(ArgumentError("radix_zeta!: out holds $(size(out, 2)) columns, need $nb"))
+        buf = size(out, 2) == nb ? out : view(out, :, 1:nb)
+        fill!(buf, zero(TF))
+        sk = _cached_kernel(ka_sfs_scatter_kernel!, backend, workgroup)
+        sk(buf, om, state.body_perm, state.body_system_ids, state.body_indices, isys, n; ndrange=n)
+        FastMultipole.zeta_to_target!(target_system, buf, 1:nb)
+    end
+    return out
+end
+
 """
     ka_finalize_radix_sfs_output!(state, target_systems; host_sfs_staging=nothing,
         sfs_target_buffers=nothing, device_sfs_buffers=nothing, workgroup=64)

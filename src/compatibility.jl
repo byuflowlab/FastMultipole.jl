@@ -444,6 +444,35 @@ function sfs_to_target!(target_system, sfs_buffer,
 end
 
 """
+    zeta_to_target!(target_system, zeta_buffer, sort_index=1:get_n_bodies(target_system))
+
+Deliver the regularized-vorticity reconstruction ζ (3 x n_bodies, global body
+order) computed by [`radix_zeta!`](@ref) to the target system. Overload for
+device-resident systems that use core-spreading viscosity; the buffer is
+assigned, not accumulated.
+"""
+function zeta_to_target!(target_system, zeta_buffer,
+        sort_index=1:get_n_bodies(target_system))
+    throw(ArgumentError(
+        "FastMultipole.zeta_to_target!(target_system, zeta_buffer, sort_index) " *
+        "is not implemented for $(typeof(target_system))"))
+end
+
+"""
+    radix_zeta!(cache::RadixFMMCache, systems::Tuple, om, out)
+
+Nearfield-only pair sum ζ_i = Σ_j Γ_j ζ(|x_i - x_j|/σ_j)/σ_j³ over the radix
+direct list (self pair included, no cutoff), the device counterpart of the
+host `zeta_fmm` used by core spreading. `om` is a 3 x (source capacity) sorted-
+order accumulator, `out` a 3 x n_bodies global-order buffer; both are owned by
+the caller. Delivered through [`zeta_to_target!`](@ref). Requires the
+KernelAbstractions extension and a device-resident cache.
+"""
+function radix_zeta!(cache, systems::Tuple, om, out; workgroup::Int=64)
+    throw(ArgumentError("radix_zeta! requires the KernelAbstractions extension and a device-resident RadixFMMCache (got $(typeof(cache)))"))
+end
+
+"""
     extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
 
 Deprecated compatibility hook. New code should overload [`metadata_to_buffer!`](@ref)
