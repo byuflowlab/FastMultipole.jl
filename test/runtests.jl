@@ -104,3 +104,18 @@ include("autotune_cost_test.jl")
 include("solve_test.jl")
 include("transform_solver_test.jl")
 include("fgs_coloring_test.jl")
+
+#--- GPU correctness suites ---#
+# The ka_*_correctness.jl suites live in their own env (test/metal_env) so the
+# main test env stays free of CUDA/Metal. They run only when a device is
+# plausibly present; each suite still checks `dev_functional()` itself.
+# run_suites.sh exits with the number of failing suites; per-suite logs go to
+# test/metal_env/logs/. FASTMULTIPOLE_GPU_TESTS=0|1 overrides detection and
+# FASTMULTIPOLE_GPU_TEST_PROJECT points the suites at another env (the H200
+# checkout runs them under ~/fmauto_env).
+gpu_present = Sys.isapple() || Sys.which("nvidia-smi") !== nothing
+if get(ENV, "FASTMULTIPOLE_GPU_TESTS", gpu_present ? "1" : "0") == "1"
+    @testset "GPU correctness suites" begin
+        @test success(`bash $(joinpath(@__DIR__, "metal_env", "run_suites.sh"))`)
+    end
+end

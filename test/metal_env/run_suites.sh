@@ -40,7 +40,7 @@ for f in "${suites[@]}"; do
     name="${f%.jl}"
     log="logs/$name.log"
     start=$(date +%s)
-    julia --project=. "$f" >"$log" 2>&1
+    julia --project="${FASTMULTIPOLE_GPU_TEST_PROJECT:-.}" "$f" >"$log" 2>&1
     rc=$?
     dt=$(( $(date +%s) - start ))
 
