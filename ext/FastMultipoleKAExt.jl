@@ -3401,6 +3401,18 @@ end
 # per pair striding by 32). Targets of different pairs overlap, so the output
 # accumulation must stay atomic.
 
+# 1/sqrt(r2). Float32: the native path. Float64: a Float32 seed refined by two
+# Newton steps (24 -> 48 -> 53 bits), the same trick as _cuda_fast_rsqrt; a
+# full FP64 sqrt+divide was 1.7x of the Float32 nearfield on an H200.
+@inline _ka_invsqrt(r2::Float32) = inv(sqrt(r2))
+@inline function _ka_invsqrt(r2::Float64)
+    y = Float64(inv(sqrt(Float32(r2))))
+    y = y * (1.5 - 0.5 * r2 * y * y)
+    y = y * (1.5 - 0.5 * r2 * y * y)
+    return y
+end
+@inline _ka_invsqrt(r2) = inv(sqrt(r2))
+
 @kernel function ka_direct_pairs_functor_kernel!(kernel, output, @Const(source_bodies),
         @Const(cell_ranges), @Const(direct_targets), @Const(direct_sources),
         npairs, ::Type{T}, ::Val{HS}, ::Val{WG}) where {T,HS,WG}
@@ -3429,7 +3441,7 @@ end
                     dz = zi - source_bodies[3, j]
                     r2 = dx * dx + dy * dy + dz * dz
                     if r2 > zero(r2)
-                        invr = inv(sqrt(r2))
+                        invr = _ka_invsqrt(r2)
                         if HS
                             du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
                                 FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
