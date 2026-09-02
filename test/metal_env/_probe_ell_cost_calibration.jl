@@ -30,6 +30,9 @@ const CASE   = Symbol(get(ENV, "CASE", "wake"))
 const NPS    = [parse(Int, s) for s in split(get(ENV, "NPS", "15984,63936,115455,248714"), ",")]
 const CALLS  = parse(Int, get(ENV, "CALLS", "9"))
 const P      = parse(Int, get(ENV, "P", "5"))
+# levels past the occupancy cap to enumerate (forced), so the run measures the
+# depths the extended auto rule may now choose
+const ELL_EXTRA = parse(Int, get(ENV, "ELL_EXTRA", "0"))
 
 settings(; kw...) = V.RadixFMMSettings(; m2l_strategy=:concat, kw...)
 
@@ -71,7 +74,7 @@ function candidates(host, bounds)
     L = bounds[2] isa Real ? Float64(bounds[2]) : Float64(maximum(bounds[2]))
     qs = sort!([Int(q) for q in FM._SUPPORTED_RIGID_NEAR_RADII2 if q >= st.near_radius2])
     out = Tuple{Int,Int}[]
-    for ell in max(2, floor(Int, log2(max(host.np, 8)) / 3)):-1:2
+    for ell in min(max(2, floor(Int, log2(max(host.np, 8)) / 3)) + ELL_EXTRA, 8):-1:2
         h = L / 2^ell
         for q in qs
             if FM._ball_stencil_min_gap(q) * h >= reach; push!(out, (ell, q)); break; end
