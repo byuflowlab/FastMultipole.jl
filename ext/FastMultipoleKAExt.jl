@@ -2762,11 +2762,13 @@ function ka_radix_state(actx::KAAdaptiveTreeContext, build, source_buffer,
     # drive the sigma-adequacy ell gate -- reads the same values as before.
     dpb = size(source_buffer, 1)
     sigma_row = _ka_kernel_sigma_row(options.direct_kernel)
-    # `dpb` rows exactly, as CUDA allocates them (translate_batched_cuda.jl:6409,
-    # :8789). A KA-only extra row makes the array shape disagree between the two
-    # builders, and the shape is what the nearfield launch reads.
-    inv_sigma_row = 0
-    source_bodies = KA.zeros(backend, TF, dpb, actx.maxn)
+    # CONVENTION (shared with `ka_radix_cache_device_build` and
+    # `_ka_nf_inv_sigma_row`): for a regularized kernel (sigma_row > 0) the
+    # LAST row of `source_bodies` is one past `dpb` and carries 1/sigma. It was
+    # disabled only to keep the shape identical with the former native CUDA
+    # allocator, which no longer exists.
+    inv_sigma_row = sigma_row > 0 ? dpb + 1 : 0
+    source_bodies = KA.zeros(backend, TF, dpb + (sigma_row > 0), actx.maxn)
     ka_pack_body_matrix!(source_bodies, source_buffer, grid.perm, grid.body_system,
         grid.body_index, n; isys=1, sigma_row=sigma_row, inv_sigma_row=inv_sigma_row,
         workgroup=workgroup)
@@ -3480,8 +3482,146 @@ end
     end
 end
 
+#------- warp-per-pair nearfield (CUDA-shaped launch) -------#
+#
+# The kernel above is a 1:1 port of the native `:pairs` shape EXCEPT for the
+# launch geometry and the reciprocal square root, and on an H200 those two
+# differences cost ~1.5x at np=249k (KA-only 0.109 s vs native 0.067 s, job
+# 13567764 vs 13563393; the native run had silently been what every earlier
+# "KA" H200 number measured). This variant restores the native choices:
+#   * LANES threads per pair (a warp, 32, on CUDA), WG/LANES pairs per block,
+#     so 128-thread blocks carry four pairs instead of one 64-thread block per
+#     pair -- twice the resident warps per SM and a quarter of the blocks;
+#   * `rsqrt.approx` through the NVVM intrinsic instead of IEEE sqrt+divide in
+#     the innermost line (native `_cuda_fast_rsqrt`); Float64 seeds two Newton
+#     steps from it exactly as before;
+#   * the g/h mode as a parameter (native default `:fp32`; identical to
+#     `:shipped` for Float32 fields).
+# Selected by `_nf_config` per backend; env knobs RADIX_NF_SHAPE=pairs|warp,
+# RADIX_NF_WG, RADIX_NF_LANES, RADIX_NF_FAST_RSQRT=0|1, RADIX_NF_GH override it
+# for A/B runs. Non-CUDA backends keep the kernel above unless asked.
+
+# libdevice's rsqrtf (what CUDA.rsqrt and the native `_cuda_fast_rsqrt` call);
+# resolved by the CUDA compiler's libdevice link, so only reachable when
+# `_nf_config` enables it on a CUDABackend.
+@inline _ka_rsqrt_approx(r2::Float32) =
+    ccall("extern __nv_rsqrtf", llvmcall, Cfloat, (Cfloat,), r2)
+@inline _ka_invsqrt(r2::Float32, ::Val{true}) = _ka_rsqrt_approx(r2)
+@inline function _ka_invsqrt(r2::Float64, ::Val{true})
+    y = Float64(_ka_rsqrt_approx(Float32(r2)))
+    y = y * (1.5 - 0.5 * r2 * y * y)
+    y = y * (1.5 - 0.5 * r2 * y * y)
+    return y
+end
+@inline _ka_invsqrt(r2, ::Val{false}) = _ka_invsqrt(r2)
+
+@kernel function ka_direct_pairs_warp_kernel!(kernel, output, @Const(source_bodies),
+        @Const(cell_ranges), @Const(direct_targets), @Const(direct_sources),
+        npairs, ::Type{T}, ::Val{HS}, ::Val{WG}, ::Val{LANES}, ::Val{FR},
+        ::Val{GH}) where {T,HS,WG,LANES,FR,GH}
+    tid = @index(Local)
+    pair_i = (@index(Group) - 1) * (WG ÷ LANES) + (tid - 1) ÷ LANES + 1
+    lane = (tid - 1) % LANES
+    ep = FastMultipole._emits_potential(kernel)
+    ghv = Val(GH)
+    frv = Val(FR)
+    @inbounds if pair_i <= npairs
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + lane
+        while i <= tlast
+            xi = source_bodies[1, i]; yi = source_bodies[2, i]; zi = source_bodies[3, i]
+            u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
+            h1 = zero(T); h2 = zero(T); h3 = zero(T)
+            h4 = zero(T); h5 = zero(T); h6 = zero(T)
+            h7 = zero(T); h8 = zero(T); h9 = zero(T)
+            for j in sfirst:slast
+                if i != j
+                    dx = xi - source_bodies[1, j]
+                    dy = yi - source_bodies[2, j]
+                    dz = zi - source_bodies[3, j]
+                    r2 = dx * dx + dy * dy + dz * dz
+                    if r2 > zero(r2)
+                        invr = _ka_invsqrt(r2, frv)
+                        if HS
+                            du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                                FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
+                                    source_bodies, j, ghv)
+                            u += du; gx += dgx; gy += dgy; gz += dgz
+                            h1 += dh1; h2 += dh2; h3 += dh3
+                            h4 += dh4; h5 += dh5; h6 += dh6
+                            h7 += dh7; h8 += dh8; h9 += dh9
+                        else
+                            du, dgx, dgy, dgz = FastMultipole._direct_pair_ug(kernel,
+                                dx, dy, dz, r2, invr, source_bodies, j, ghv)
+                            u += du; gx += dgx; gy += dgy; gz += dgz
+                        end
+                    end
+                end
+            end
+            if ep
+                KA.@atomic output[1, i] += u
+            end
+            KA.@atomic output[2, i] += gx
+            KA.@atomic output[3, i] += gy
+            KA.@atomic output[4, i] += gz
+            if HS
+                KA.@atomic output[5, i]  += h1
+                KA.@atomic output[6, i]  += h2
+                KA.@atomic output[7, i]  += h3
+                KA.@atomic output[8, i]  += h4
+                KA.@atomic output[9, i]  += h5
+                KA.@atomic output[10, i] += h6
+                KA.@atomic output[11, i] += h7
+                KA.@atomic output[12, i] += h8
+                KA.@atomic output[13, i] += h9
+            end
+            i += LANES
+        end
+    end
+end
+
+_env_int(name, default) = parse(Int, get(ENV, name, string(default)))
+
+# CONVENTION: for a regularized kernel (sigma_row > 0) both allocators size
+# `source_bodies` one row past the packed body rows and the packers fill that
+# LAST row with 1/sigma, so the nearfield can multiply instead of divide per
+# interaction (measured 15.6% of the nearfield at np=248714 when the row was
+# first written). RADIX_NF_INVSIGMA=0 keeps the divide, for A/B runs.
+function _ka_nf_inv_sigma_row(state)
+    _ka_kernel_sigma_row(state.options.direct_kernel) > 0 &&
+        _env_bool("RADIX_NF_INVSIGMA", true) || return 0
+    return size(state.source_bodies, 1)
+end
+_env_bool(name, default) = get(ENV, name, default ? "1" : "0") == "1"
+
+# Per-backend nearfield launch configuration (see the block above). Only the
+# backend TYPE NAME is consulted, so this extension stays free of CUDA.
+#
+# Defaults measured on an H200, NREL wake np=248714 (jobs 13567846/931/8101,
+# 20 calls, median): one block per pair with ALL its lanes on that pair, and
+# the lane count is what matters -- 64 lanes 0.099 s, 128 0.072, 256 0.069,
+# 512 0.074 in Float32 (native CUDA lifecycle: 0.067-0.074); Float64 128 lanes
+# 0.130, 256 0.135 (native 0.18-0.19). The native warp-per-pair geometry
+# (128x32) was SLOWER here, 0.130. The reciprocal-sigma row bought 13% at 64
+# lanes and nothing at 128+, where the divide latency is already hidden.
+function _nf_config(backend, ::Type{TF}) where TF
+    cuda = nameof(typeof(backend)) === :CUDABackend
+    shape = Symbol(get(ENV, "RADIX_NF_SHAPE", cuda ? "warp" : "pairs"))
+    wg = _env_int("RADIX_NF_WG", cuda ? (TF === Float32 ? 256 : 128) : 64)
+    lanes = _env_int("RADIX_NF_LANES", wg)
+    fast = _env_bool("RADIX_NF_FAST_RSQRT", cuda)
+    gh = Symbol(get(ENV, "RADIX_NF_GH", cuda ? "fp32" : "shipped"))
+    wg % lanes == 0 || throw(ArgumentError("RADIX_NF_WG=$wg must be a multiple of RADIX_NF_LANES=$lanes"))
+    return (; shape, wg, lanes, fast, gh)
+end
+
 """
-    ka_launch_nearfield!(state; workgroup=64, clear=true)
+    ka_launch_nearfield!(state; workgroup=nothing, clear=true)
 
 U-list direct nearfield for the KA lifecycle: mirror of
 `_launch_cuda_nearfield_kernel!` restricted to the `:pairs` shape. Zeroes
@@ -3489,20 +3629,37 @@ U-list direct nearfield for the KA lifecycle: mirror of
 `clear=false`.
 """
 function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
-        workgroup::Int=64, clear::Bool=true) where {TF,B,LH}
+        workgroup::Union{Nothing,Int}=nothing, clear::Bool=true) where {TF,B,LH}
     clear && fill!(state.output, zero(TF))
     npairs = state.counts.n_direct
     npairs == 0 && return state
     hs = size(state.output, 1) >= 13
     backend = KA.get_backend(state.output)
+    cfg = _nf_config(backend, TF)
+    if cfg.shape === :warp
+        # `workgroup` is honoured as the block size; the pairs-per-block follow
+        # from RADIX_NF_LANES.
+        wg = workgroup === nothing ? cfg.wg : workgroup
+        lanes = min(cfg.lanes, wg)
+        dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF,
+            _ka_nf_inv_sigma_row(state))
+        kern = _cached_kernel(ka_direct_pairs_warp_kernel!, backend, wg)
+        ppb = wg ÷ lanes
+        kern(dkernel, state.output, state.source_bodies,
+             state.cell_ranges, state.direct_targets, state.direct_sources,
+             npairs, TF, Val(hs), Val(wg), Val(lanes), Val(cfg.fast), Val(cfg.gh);
+             ndrange=cld(npairs, ppb) * wg)
+        return state
+    end
+    workgroup = workgroup === nothing ? cfg.wg : workgroup
     kern = _cached_kernel(ka_direct_pairs_functor_kernel!, backend, workgroup)
     # `state.options.direct_kernel` is the stock functor, whose regularized
     # variants carry hardcoded `Float64` cutoffs; rebuild it with `TF` cutoffs
     # before it crosses into device code (see the "precision-parameterized
     # device functors" block near the end of this file). Singular kernels are
     # returned unchanged, so this is a no-op for every existing suite.
-    # inv_sigma_row=0: rho is computed as |r|/sigma, the divide CUDA does
-    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF, 0)
+    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF,
+        _ka_nf_inv_sigma_row(state))
     kern(dkernel, state.output, state.source_bodies,
          state.cell_ranges, state.direct_targets, state.direct_sources,
          npairs, TF, Val(hs), Val(workgroup); ndrange=npairs * workgroup)
@@ -3893,7 +4050,7 @@ function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
         "ka_lifecycle_body! requires a ResidentOperatorWorkspace in state.scratch"))
 
     # 1. nearfield (clears state.output, as CUDA's fill+nearfield does)
-    ka_launch_nearfield!(state; workgroup=workgroup, clear=true)
+    ka_launch_nearfield!(state; clear=true)   # shape/workgroup from _nf_config
 
     # 2. B2M
     ka_launch_b2m!(state; workgroup=workgroup_b2m)
@@ -6263,10 +6420,9 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         ka_nearfield_subsort!(ctx, cache, n, n_cells)
     end
     pack_sigma_row = _ka_kernel_sigma_row(cache.options.direct_kernel)
-    # no reciprocal-sigma row: `source_bodies` carries exactly the `dpb` rows
-    # CUDA packs, and writing a row past them would land on real data whenever
-    # the state was built by the CUDA allocator
-    pack_inv_sigma_row = 0
+    # reciprocal-sigma row = the last row for a regularized kernel (convention
+    # of the two allocators; see `_ka_nf_inv_sigma_row`)
+    pack_inv_sigma_row = pack_sigma_row > 0 ? size(ctx.source_bodies, 1) : 0
     for isys in eachindex(source_buffers)
         ka_pack_body_matrix!(ctx.source_bodies, source_buffers[isys],
             view(grid.perm, 1:n), grid.body_system, grid.body_index, n;
@@ -6519,7 +6675,8 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
     ctx = (;
         multipoles, locals, workspace, invariant, counters, grid,
         counts=FastMultipole.RadixStepCounts(0, 0, 0, 0, 0),
-        source_bodies=_z(TF, dpb, maxn),
+        # + 1 row of 1/sigma for a regularized kernel (see `_ka_nf_inv_sigma_row`)
+        source_bodies=_z(TF, dpb + (_ka_kernel_sigma_row(options.direct_kernel) > 0), maxn),
         output=_z(TF, n_output_rows, maxn),
         cell_at=_z(Int32, 0, 0, 0),
         hierarchical_ctx,
