@@ -3518,7 +3518,7 @@ end
 @kernel function ka_direct_pairs_warp_kernel!(kernel, output, @Const(source_bodies),
         @Const(cell_ranges), @Const(direct_targets), @Const(direct_sources),
         npairs, ::Type{T}, ::Val{HS}, ::Val{WG}, ::Val{LANES}, ::Val{FR},
-        ::Val{GH}) where {T,HS,WG,LANES,FR,GH}
+        ::Val{GH}, ::Val{ABL}) where {T,HS,WG,LANES,FR,GH,ABL}
     tid = @index(Local)
     pair_i = (@index(Group) - 1) * (WG ÷ LANES) + (tid - 1) ÷ LANES + 1
     lane = (tid - 1) % LANES
@@ -3563,22 +3563,36 @@ end
                     end
                 end
             end
-            if ep
-                KA.@atomic output[1, i] += u
-            end
-            KA.@atomic output[2, i] += gx
-            KA.@atomic output[3, i] += gy
-            KA.@atomic output[4, i] += gz
-            if HS
-                KA.@atomic output[5, i]  += h1
-                KA.@atomic output[6, i]  += h2
-                KA.@atomic output[7, i]  += h3
-                KA.@atomic output[8, i]  += h4
-                KA.@atomic output[9, i]  += h5
-                KA.@atomic output[10, i] += h6
-                KA.@atomic output[11, i] += h7
-                KA.@atomic output[12, i] += h8
-                KA.@atomic output[13, i] += h9
+            if ABL === :noatomic
+                # ABLATION (timing only, results are wrong): plain stores in
+                # place of the 13 atomics, to bound what the atomics cost.
+                if ep
+                    output[1, i] = u
+                end
+                output[2, i] = gx; output[3, i] = gy; output[4, i] = gz
+                if HS
+                    output[5, i] = h1; output[6, i] = h2; output[7, i] = h3
+                    output[8, i] = h4; output[9, i] = h5; output[10, i] = h6
+                    output[11, i] = h7; output[12, i] = h8; output[13, i] = h9
+                end
+            else
+                if ep
+                    KA.@atomic output[1, i] += u
+                end
+                KA.@atomic output[2, i] += gx
+                KA.@atomic output[3, i] += gy
+                KA.@atomic output[4, i] += gz
+                if HS
+                    KA.@atomic output[5, i]  += h1
+                    KA.@atomic output[6, i]  += h2
+                    KA.@atomic output[7, i]  += h3
+                    KA.@atomic output[8, i]  += h4
+                    KA.@atomic output[9, i]  += h5
+                    KA.@atomic output[10, i] += h6
+                    KA.@atomic output[11, i] += h7
+                    KA.@atomic output[12, i] += h8
+                    KA.@atomic output[13, i] += h9
+                end
             end
             i += LANES
         end
@@ -3586,6 +3600,10 @@ end
 end
 
 _env_int(name, default) = parse(Int, get(ENV, name, string(default)))
+
+# (A register-tiled variant -- two targets per thread through one source pass
+# -- was tried and REMOVED: 10% slower at 115k and 249k on the H200 and 4%
+# slower in Float64, job 13569195. The loop is not load-bound.)
 
 # CONVENTION: for a regularized kernel (sigma_row > 0) both allocators size
 # `source_bodies` one row past the packed body rows and the packers fill that
@@ -3611,13 +3629,24 @@ _env_bool(name, default) = get(ENV, name, default ? "1" : "0") == "1"
 # lanes and nothing at 128+, where the divide latency is already hidden.
 function _nf_config(backend, ::Type{TF}) where TF
     cuda = nameof(typeof(backend)) === :CUDABackend
-    shape = Symbol(get(ENV, "RADIX_NF_SHAPE", cuda ? "warp" : "pairs"))
+    # the warp shape at 64 lanes measured identical to the old pairs kernel on
+    # Metal (157-158 ms both, wake 63k), so every backend takes it by default
+    shape = Symbol(get(ENV, "RADIX_NF_SHAPE", "warp"))
     wg = _env_int("RADIX_NF_WG", cuda ? (TF === Float32 ? 256 : 128) : 64)
     lanes = _env_int("RADIX_NF_LANES", wg)
     fast = _env_bool("RADIX_NF_FAST_RSQRT", cuda)
-    gh = Symbol(get(ENV, "RADIX_NF_GH", cuda ? "fp32" : "shipped"))
+    # :shipped = the pair math in the field's own precision. `:fp32` (the old
+    # native default) narrows the WHOLE pair computation to Float32 on a
+    # Float64 field, which the P sweep would see as a ~1e-7 floor; it stays an
+    # opt-in knob, not a default.
+    gh = Symbol(get(ENV, "RADIX_NF_GH", "shipped"))
+    # RADIX_NF_ABLATE=none|noatomic|singular: timing-only ablations (results
+    # are WRONG under either); `singular` swaps in SingularVortex so the
+    # regularized branch is never evaluated.
+    abl = Symbol(get(ENV, "RADIX_NF_ABLATE", "none"))
+    abl in (:none, :noatomic, :singular) || throw(ArgumentError("RADIX_NF_ABLATE=$abl"))
     wg % lanes == 0 || throw(ArgumentError("RADIX_NF_WG=$wg must be a multiple of RADIX_NF_LANES=$lanes"))
-    return (; shape, wg, lanes, fast, gh)
+    return (; shape, wg, lanes, fast, gh, abl)
 end
 
 """
@@ -3641,14 +3670,20 @@ function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B
         # from RADIX_NF_LANES.
         wg = workgroup === nothing ? cfg.wg : workgroup
         lanes = min(cfg.lanes, wg)
-        dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF,
-            _ka_nf_inv_sigma_row(state))
-        kern = _cached_kernel(ka_direct_pairs_warp_kernel!, backend, wg)
+        dkernel = cfg.abl === :singular ? FastMultipole.SingularVortex() :
+            _ka_device_direct_kernel(state.options.direct_kernel, TF,
+                _ka_nf_inv_sigma_row(state))
         ppb = wg ÷ lanes
+        # (An exact per-pair singular shortcut -- whole cell pairs beyond
+        # rho_t*sigma_max taking the SingularVortex path with no per-interaction
+        # rho/compare -- was tried and REMOVED: correct, but 17% SLOWER at 115k
+        # on the H200 and 11% slower on Metal, job 13569241. The selected-path
+        # loop costs more than the branch it removes.)
+        kern = _cached_kernel(ka_direct_pairs_warp_kernel!, backend, wg)
         kern(dkernel, state.output, state.source_bodies,
              state.cell_ranges, state.direct_targets, state.direct_sources,
-             npairs, TF, Val(hs), Val(wg), Val(lanes), Val(cfg.fast), Val(cfg.gh);
-             ndrange=cld(npairs, ppb) * wg)
+             npairs, TF, Val(hs), Val(wg), Val(lanes), Val(cfg.fast), Val(cfg.gh),
+             Val(cfg.abl); ndrange=cld(npairs, ppb) * wg)
         return state
     end
     workgroup = workgroup === nothing ? cfg.wg : workgroup

@@ -49,7 +49,7 @@ const P         = 5
 const STRATEGY  = :concat
 const CALLS     = parse(Int, get(ENV, "CALLS", "12"))
 const WARM      = parse(Int, get(ENV, "WARM", "3"))
-const CPU_CALLS = 5
+const CPU_CALLS = parse(Int, get(ENV, "CPU_CALLS", "5"))   # the CPU arm is the accuracy reference; 1 suffices
 const MAX_PAIRS = parse(Float64, get(ENV, "MAX_PAIRS", "1e11"))
 const NPS = [parse(Int, s) for s in split(get(ENV, "NP", "15984,62792,115455,248714"), ",")]
 # wake dumps: which step holds (at least) np particles; smallest step first

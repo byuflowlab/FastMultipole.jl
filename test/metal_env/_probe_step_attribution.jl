@@ -1,0 +1,99 @@
+# Where does a UJ step actually go? Session 39 left 54% of the step
+# unattributed by M2L + nearfield. Time every top-level segment of
+# `ka_radix_cache_device_step!` (ext:5886) plus each stage of
+# `ka_lifecycle_body!`, on the same warm cache, and check the parts against the
+# whole ([[feedback-ablations-must-isolate-one-variable]]).
+#
+#   update  ka_update_radix_state!   repack + grid rebuild + sort + lists
+#   near / b2m / m2m / m2l / l2l / l2b   the lifecycle body, in its own order
+#   final   ka_finalize_radix_output!  D2H + scatter into FLOWVPM's buffers
+# residue = UJ_fmm - (update + body + final)  is host-side FLOWVPM overhead.
+
+include("ka_backend.jl")
+include("pipeline_field.jl")
+
+using FastMultipole, Printf, Statistics, KernelAbstractions
+const KA = KernelAbstractions
+const FM = FastMultipole
+const V = FLOWVPM
+const ext = Base.get_extension(FastMultipole, :FastMultipoleKAExt)
+
+dev_functional() || (println("$(DEV_NAME) not functional; skipping"); exit(0))
+ext === nothing && error("the KA extension is not loaded")
+
+const TF = getfield(Base, Symbol(get(ENV, "DEV_TF", "Float32")))
+const STEP = parse(Int, get(ENV, "UJ_STEP", "36"))
+const NP = (s = get(ENV, "PROF_NP", ""); isempty(s) ? nothing : parse(Int, s))
+const P = 5
+const NTRIAL = parse(Int, get(ENV, "PROF_TRIALS", "30"))
+
+med_ms(f, n, backend) = begin
+    ts = Float64[]
+    for _ in 1:n
+        t = time(); f(); KA.synchronize(backend); push!(ts, (time() - t) * 1e3)
+    end
+    median(ts)
+end
+
+host = load_wake(STEP; np=NP, TF=Float64, P=P)
+d = V.ParticleField(host.maxparticles, TF; arraytype=devmatrix, np=host.np,
+    fmm=V.FMM(; p=P + 1, autotune_p=false, autotune_ncrit=false,
+                autotune_reg_error=false, default_rho_over_sigma=1.0))
+d.particles .= devarray(TF.(Array(host.particles)))
+V.radix_fmm_settings!(d; m2l_strategy=:concat)
+for _ in 1:6; V._reset_particles(d); V.UJ_fmm(d); end
+
+coupling = V._radix_fmm_coupling!(d)
+cache   = coupling.cache
+state   = cache.state
+ws      = state.scratch
+backend = KA.get_backend(state.output)
+# targets/switches as `fmm!` builds them (src/fmm.jl:893)
+targets  = FM.to_tuple(d)
+switches = FM.DerivativesSwitch(
+    FM.to_vector(false, length(targets)),
+    FM.to_vector(true,  length(targets)),
+    FM.to_vector(true,  length(targets)), targets)
+
+t_step   = med_ms(() -> (V._reset_particles(d); V.UJ_fmm(d)), NTRIAL, backend)
+t_update = med_ms(() -> ext.ka_update_radix_state!(cache, targets), NTRIAL, backend)
+t_body   = med_ms(() -> ext.ka_lifecycle_body!(state), NTRIAL, backend)
+t_near   = med_ms(() -> ext.ka_launch_nearfield!(state; clear=true), NTRIAL, backend)   # production config (_nf_config)
+t_b2m    = med_ms(() -> ext.ka_launch_b2m!(state; workgroup=128), NTRIAL, backend)
+t_m2m    = med_ms(NTRIAL, backend) do
+    FM._zero_resident_nonleaf_multipoles!(state)
+    for g in ws.m2m_groups
+        ext.ka_resident_stage_group_apply!(state.multipoles, state.multipoles, g, ws, :m2m)
+    end
+end
+t_m2l    = med_ms(() -> ext.ka_launch_m2l!(state, ws), NTRIAL, backend)
+t_l2l    = med_ms(NTRIAL, backend) do
+    for g in ws.l2l_groups
+        ext.ka_resident_stage_group_apply!(state.locals, state.locals, g, ws, :l2l)
+    end
+end
+t_l2b    = med_ms(() -> ext.ka_launch_l2b!(state; workgroup=64), NTRIAL, backend)
+t_final  = med_ms(NTRIAL, backend) do
+    ext.ka_finalize_radix_output!(state, targets; derivatives_switches=switches,
+        host_output_staging=cache.device_ctx.host_output,
+        target_buffers=FM._radix_cache_target_buffers!(cache, switches),
+        device_target_buffers=cache.device_ctx.device_target_buffers)
+end
+
+println("=== UJ step attribution: $(DEV_NAME) $(TF) step=$(STEP) ===")
+@printf("np=%d  ell=%d  n_cells=%d  trials=%d\n",
+        V.get_np(d), state.interaction_list.ell, state.counts.n_cells, NTRIAL)
+@printf("%-10s %9s %8s\n", "segment", "ms", "% step")
+row(n, t) = @printf("%-10s %9.3f %7.1f%%\n", n, t, 100t / t_step)
+row("UJ_fmm", t_step)
+row("update", t_update)
+row("body", t_body)
+for (n, t) in (("  near", t_near), ("  b2m", t_b2m), ("  m2m", t_m2m),
+               ("  m2l", t_m2l), ("  l2l", t_l2l), ("  l2b", t_l2b))
+    row(n, t)
+end
+row("final", t_final)
+stages = t_near + t_b2m + t_m2m + t_m2l + t_l2l + t_l2b
+row("body-parts", stages)
+row("residue", t_step - (t_update + t_body + t_final))
+flush(stdout)
