@@ -3497,9 +3497,10 @@ end
 #     steps from it exactly as before;
 #   * the g/h mode as a parameter (native default `:fp32`; identical to
 #     `:shipped` for Float32 fields).
-# Selected by `_nf_config` per backend; env knobs RADIX_NF_SHAPE=pairs|warp,
-# RADIX_NF_WG, RADIX_NF_LANES, RADIX_NF_FAST_RSQRT=0|1, RADIX_NF_GH override it
-# for A/B runs. Non-CUDA backends keep the kernel above unless asked.
+# Launch geometry comes from `_nf_config` (lanes follow the cell population;
+# RADIX_NF_LANES / RADIX_NF_WG override for other hardware). This is the only
+# nearfield kernel the lifecycle launches; the kernel above remains for the
+# all-pairs direct arm and the probes.
 
 # libdevice's rsqrtf (what CUDA.rsqrt and the native `_cuda_fast_rsqrt` call);
 # resolved by the CUDA compiler's libdevice link, so only reachable when
@@ -3518,7 +3519,7 @@ end
 @kernel function ka_direct_pairs_warp_kernel!(kernel, output, @Const(source_bodies),
         @Const(cell_ranges), @Const(direct_targets), @Const(direct_sources),
         npairs, ::Type{T}, ::Val{HS}, ::Val{WG}, ::Val{LANES}, ::Val{FR},
-        ::Val{GH}, ::Val{ABL}) where {T,HS,WG,LANES,FR,GH,ABL}
+        ::Val{GH}) where {T,HS,WG,LANES,FR,GH}
     tid = @index(Local)
     pair_i = (@index(Group) - 1) * (WG ÷ LANES) + (tid - 1) ÷ LANES + 1
     lane = (tid - 1) % LANES
@@ -3563,36 +3564,22 @@ end
                     end
                 end
             end
-            if ABL === :noatomic
-                # ABLATION (timing only, results are wrong): plain stores in
-                # place of the 13 atomics, to bound what the atomics cost.
-                if ep
-                    output[1, i] = u
-                end
-                output[2, i] = gx; output[3, i] = gy; output[4, i] = gz
-                if HS
-                    output[5, i] = h1; output[6, i] = h2; output[7, i] = h3
-                    output[8, i] = h4; output[9, i] = h5; output[10, i] = h6
-                    output[11, i] = h7; output[12, i] = h8; output[13, i] = h9
-                end
-            else
-                if ep
-                    KA.@atomic output[1, i] += u
-                end
-                KA.@atomic output[2, i] += gx
-                KA.@atomic output[3, i] += gy
-                KA.@atomic output[4, i] += gz
-                if HS
-                    KA.@atomic output[5, i]  += h1
-                    KA.@atomic output[6, i]  += h2
-                    KA.@atomic output[7, i]  += h3
-                    KA.@atomic output[8, i]  += h4
-                    KA.@atomic output[9, i]  += h5
-                    KA.@atomic output[10, i] += h6
-                    KA.@atomic output[11, i] += h7
-                    KA.@atomic output[12, i] += h8
-                    KA.@atomic output[13, i] += h9
-                end
+            if ep
+                KA.@atomic output[1, i] += u
+            end
+            KA.@atomic output[2, i] += gx
+            KA.@atomic output[3, i] += gy
+            KA.@atomic output[4, i] += gz
+            if HS
+                KA.@atomic output[5, i]  += h1
+                KA.@atomic output[6, i]  += h2
+                KA.@atomic output[7, i]  += h3
+                KA.@atomic output[8, i]  += h4
+                KA.@atomic output[9, i]  += h5
+                KA.@atomic output[10, i] += h6
+                KA.@atomic output[11, i] += h7
+                KA.@atomic output[12, i] += h8
+                KA.@atomic output[13, i] += h9
             end
             i += LANES
         end
@@ -3608,12 +3595,9 @@ _env_int(name, default) = parse(Int, get(ENV, name, string(default)))
 # CONVENTION: for a regularized kernel (sigma_row > 0) both allocators size
 # `source_bodies` one row past the packed body rows and the packers fill that
 # LAST row with 1/sigma, so the nearfield can multiply instead of divide per
-# interaction (13% at 64 lanes, ~0 at 128+ on the H200). OFF by default so
-# timings against the native lifecycle -- which divides -- compare like with
-# like; RADIX_NF_INVSIGMA=1 turns it on.
+# interaction (13% at 64 lanes, ~0 at 128+ on the H200). Always on.
 function _ka_nf_inv_sigma_row(state)
-    _ka_kernel_sigma_row(state.options.direct_kernel) > 0 &&
-        _env_bool("RADIX_NF_INVSIGMA", false) || return 0
+    _ka_kernel_sigma_row(state.options.direct_kernel) > 0 || return 0
     return size(state.source_bodies, 1)
 end
 _env_bool(name, default) = get(ENV, name, default ? "1" : "0") == "1"
@@ -3630,33 +3614,21 @@ _env_bool(name, default) = get(ENV, name, default ? "1" : "0") == "1"
 # lanes and nothing at 128+, where the divide latency is already hidden.
 function _nf_config(backend, ::Type{TF}; bodies_per_cell::Real=0) where TF
     cuda = nameof(typeof(backend)) === :CUDABackend
-    # the warp shape at 64 lanes measured identical to the old pairs kernel on
-    # Metal (157-158 ms both, wake 63k), so every backend takes it by default
-    shape = Symbol(get(ENV, "RADIX_NF_SHAPE", "warp"))
     # Lanes per pair follow the cell population (the lanes stride a pair's
     # TARGET bodies): a dense field wants a whole block on each pair, a thin
     # one wants warp-sized teams so lanes are not idle. Clamped to [64, 256]
     # (Float64: 128 -- its measured optimum at 249k) and rounded to a power of
-    # two; a fixed RADIX_NF_WG/RADIX_NF_LANES still overrides for A/B runs.
+    # two. RADIX_NF_LANES / RADIX_NF_WG override, for hardware other than the
+    # H200 this was tuned on. Non-CUDA backends: 64 lanes, one pair per block
+    # (measured flat 64-256 on Metal).
     hi = TF === Float32 ? 256 : 128
     auto_lanes = cuda && bodies_per_cell > 0 ?
         clamp(nextpow(2, max(1, ceil(Int, bodies_per_cell))), 64, hi) : (cuda ? hi : 64)
     lanes = _env_int("RADIX_NF_LANES", haskey(ENV, "RADIX_NF_WG") ? _env_int("RADIX_NF_WG", 64) : auto_lanes)
-    wg = _env_int("RADIX_NF_WG", max(128, lanes))
-    cuda || (wg = _env_int("RADIX_NF_WG", 64); lanes = _env_int("RADIX_NF_LANES", wg))
-    fast = _env_bool("RADIX_NF_FAST_RSQRT", cuda)
-    # :shipped = the pair math in the field's own precision. `:fp32` (the old
-    # native default) narrows the WHOLE pair computation to Float32 on a
-    # Float64 field, which the P sweep would see as a ~1e-7 floor; it stays an
-    # opt-in knob, not a default.
-    gh = Symbol(get(ENV, "RADIX_NF_GH", "shipped"))
-    # RADIX_NF_ABLATE=none|noatomic|singular: timing-only ablations (results
-    # are WRONG under either); `singular` swaps in SingularVortex so the
-    # regularized branch is never evaluated.
-    abl = Symbol(get(ENV, "RADIX_NF_ABLATE", "none"))
-    abl in (:none, :noatomic, :singular) || throw(ArgumentError("RADIX_NF_ABLATE=$abl"))
+    wg = _env_int("RADIX_NF_WG", cuda ? max(128, lanes) : lanes)
     wg % lanes == 0 || throw(ArgumentError("RADIX_NF_WG=$wg must be a multiple of RADIX_NF_LANES=$lanes"))
-    return (; shape, wg, lanes, fast, gh, abl)
+    # libdevice rsqrtf is CUDA-only; other backends keep inv(sqrt)
+    return (; wg, lanes, fast=cuda)
 end
 
 """
@@ -3677,39 +3649,15 @@ function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B
     n_cells = Int(state.counts.n_cells)
     cfg = _nf_config(backend, TF;
         bodies_per_cell = n_cells > 0 ? Int(state.counts.n_bodies) / n_cells : 0)
-    if cfg.shape === :warp
-        # `workgroup` is honoured as the block size; the pairs-per-block follow
-        # from RADIX_NF_LANES.
-        wg = workgroup === nothing ? cfg.wg : workgroup
-        lanes = min(cfg.lanes, wg)
-        dkernel = cfg.abl === :singular ? FastMultipole.SingularVortex() :
-            _ka_device_direct_kernel(state.options.direct_kernel, TF,
-                _ka_nf_inv_sigma_row(state))
-        ppb = wg ÷ lanes
-        # (An exact per-pair singular shortcut -- whole cell pairs beyond
-        # rho_t*sigma_max taking the SingularVortex path with no per-interaction
-        # rho/compare -- was tried and REMOVED: correct, but 17% SLOWER at 115k
-        # on the H200 and 11% slower on Metal, job 13569241. The selected-path
-        # loop costs more than the branch it removes.)
-        kern = _cached_kernel(ka_direct_pairs_warp_kernel!, backend, wg)
-        kern(dkernel, state.output, state.source_bodies,
-             state.cell_ranges, state.direct_targets, state.direct_sources,
-             npairs, TF, Val(hs), Val(wg), Val(lanes), Val(cfg.fast), Val(cfg.gh),
-             Val(cfg.abl); ndrange=cld(npairs, ppb) * wg)
-        return state
-    end
-    workgroup = workgroup === nothing ? cfg.wg : workgroup
-    kern = _cached_kernel(ka_direct_pairs_functor_kernel!, backend, workgroup)
-    # `state.options.direct_kernel` is the stock functor, whose regularized
-    # variants carry hardcoded `Float64` cutoffs; rebuild it with `TF` cutoffs
-    # before it crosses into device code (see the "precision-parameterized
-    # device functors" block near the end of this file). Singular kernels are
-    # returned unchanged, so this is a no-op for every existing suite.
+    wg = workgroup === nothing ? cfg.wg : workgroup
+    lanes = min(cfg.lanes, wg)
     dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF,
         _ka_nf_inv_sigma_row(state))
+    kern = _cached_kernel(ka_direct_pairs_warp_kernel!, backend, wg)
     kern(dkernel, state.output, state.source_bodies,
          state.cell_ranges, state.direct_targets, state.direct_sources,
-         npairs, TF, Val(hs), Val(workgroup); ndrange=npairs * workgroup)
+         npairs, TF, Val(hs), Val(wg), Val(lanes), Val(cfg.fast), Val(:shipped);
+         ndrange=cld(npairs, wg ÷ lanes) * wg)
     return state
 end
 
@@ -4207,6 +4155,78 @@ end
 
 # Compact one window into the start of the reusable route buffers. Offsets are
 # the unscaled integer push offsets; endpoints are flat node indices.
+# Base-offset variants for the concatenated-window scan in ka_hier_cache_windows!:
+# every window's flags live at `base+1 : base+used` of one buffer, ONE inclusive
+# scan runs over all of them, and a window's local prefix is
+# prefix[base+idx] - prefix[base].
+@kernel function ka_hier_window_cum_base_kernel!(cum, @Const(prefix), base, n_sources, kn)
+    i = @index(Global)
+    @inbounds if i <= kn
+        pb = base > 0 ? prefix[base] : zero(eltype(prefix))
+        cum[i] = prefix[base + i * n_sources] - pb
+    end
+end
+
+@kernel function ka_hier_route_compact_base_kernel!(route_levels, route_offsets,
+        route_targets, route_sources, route_class, @Const(flags), @Const(prefix), base,
+        @Const(node_at), @Const(node_coords), @Const(push_offsets),
+        level_base_L, first_source, n_sources, first_offset, kn, L, class_base)
+    idx = @index(Global)
+    @inbounds if idx <= kn * n_sources && flags[base + idx] == Int32(1)
+        kloc = (idx - 1) ÷ n_sources + 1
+        s = (idx - 1) % n_sources + 1
+        k = first_offset + kloc - 1
+        source = first_source + s - 1
+        G = 1 << L
+        ox = push_offsets[1, k]
+        oy = push_offsets[2, k]
+        oz = push_offsets[3, k]
+        tx = node_coords[1, source] + ox
+        ty = node_coords[2, source] + oy
+        tz = node_coords[3, source] + oz
+        linear = tx + G * (ty + G * tz)
+        target = Int(node_at[level_base_L + linear + 1])
+        pb = base > 0 ? prefix[base] : zero(eltype(prefix))
+        p = Int(prefix[base + idx] - pb)
+        route_levels[p] = L
+        route_offsets[1, p] = Int(ox)
+        route_offsets[2, p] = Int(oy)
+        route_offsets[3, p] = Int(oz)
+        route_targets[p] = target
+        route_sources[p] = source
+        route_class[p] = Int32(class_base + k)
+    end
+end
+
+# Global-position variant for the concat window cache: with one scan over all
+# windows, prefix[base+idx] IS the route's slot in the concatenated stream, so
+# the compact writes the cache arrays directly -- no per-window staging, no
+# device-to-device copies. Only the three arrays the concat apply reads.
+@kernel function ka_hier_route_compact_global_kernel!(win_targets, win_sources, win_class,
+        @Const(flags), @Const(prefix), base, @Const(node_at), @Const(node_coords),
+        @Const(push_offsets), level_base_L, first_source, n_sources, first_offset, kn, L,
+        class_base)
+    idx = @index(Global)
+    @inbounds if idx <= kn * n_sources && flags[base + idx] == Int32(1)
+        kloc = (idx - 1) ÷ n_sources + 1
+        s = (idx - 1) % n_sources + 1
+        k = first_offset + kloc - 1
+        source = first_source + s - 1
+        G = 1 << L
+        ox = push_offsets[1, k]
+        oy = push_offsets[2, k]
+        oz = push_offsets[3, k]
+        tx = node_coords[1, source] + ox
+        ty = node_coords[2, source] + oy
+        tz = node_coords[3, source] + oz
+        linear = tx + G * (ty + G * tz)
+        p = Int(prefix[base + idx])
+        win_targets[p] = Int(node_at[level_base_L + linear + 1])
+        win_sources[p] = source
+        win_class[p] = Int32(class_base + k)
+    end
+end
+
 @kernel function ka_hier_route_compact_kernel!(route_levels, route_offsets,
         route_targets, route_sources, route_class, @Const(flags), @Const(prefix),
         @Const(node_at), @Const(node_coords), @Const(push_offsets),
@@ -4520,6 +4540,64 @@ function ka_hier_generate_window_core!(route_levels, route_offsets, route_target
         n_sources, first_offset, kn, L, class_base; ndrange=used)
     return n_routes
 end
+# Two-phase window generation for the occupancy-epoch cache: `..._count!`
+# runs flags/scan/cum for one window and stashes its route total on the
+# device; the caller syncs ONCE for all windows, then `..._compact!` reruns
+# the (cheap) flags/scan and compacts with the count already on the host. The
+# single-window core above syncs per window -- one host readback per (level,
+# offset class) -- which on a moving field runs every step; measured 39% of
+# the step at np=16k on Metal, where a sync costs ~200 us.
+function ka_hier_generate_window_count!(grid, hctx::FastMultipole.DeviceHierarchicalM2LContext,
+        L::Int, first_offset::Int, last_offset::Int, win_totals, w::Int;
+        workgroup=KA_AUTO_WORKGROUP)
+    first_source = hctx.level_offsets[L + 1] + 1
+    n_sources = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
+    kn = last_offset - first_offset + 1
+    (n_sources > 0 && kn > 0) || return nothing
+    used = kn * n_sources
+    used <= length(hctx.route_flags) || throw(AssertionError(
+        "device hierarchical window flag buffer exceeded its capacity " *
+        "($(length(hctx.route_flags)) < $used); reduce window_classes"))
+    backend = KA.get_backend(hctx.route_flags)
+    level_base_L = hctx.level_base[L + 1]
+    flags_kernel = _cached_kernel(ka_hier_route_flags_kernel!, backend, workgroup)
+    flags_kernel(hctx.route_flags, hctx.node_at, grid.node_coords,
+        hctx.d_push_offsets, hctx.d_class_of, level_base_L, first_source,
+        n_sources, first_offset, kn, L; ndrange=used)
+    accumulate!(+, view(hctx.route_prefix, 1:used), view(hctx.route_flags, 1:used))
+    cum_kernel = _cached_kernel(ka_hier_window_cum_kernel!, backend, workgroup)
+    cum_kernel(hctx.window_cum, hctx.route_prefix, n_sources, kn; ndrange=kn)
+    copyto!(win_totals, w, hctx.window_cum, kn, 1)   # device -> device, no sync
+    return nothing
+end
+
+function ka_hier_generate_window_compact!(route_levels, route_offsets, route_targets,
+        route_sources, grid, hctx::FastMultipole.DeviceHierarchicalM2LContext,
+        route_class, L::Int, first_offset::Int, last_offset::Int, class_base::Int,
+        n_routes::Int; workgroup=KA_AUTO_WORKGROUP)
+    n_routes == 0 && return 0
+    n_routes <= length(route_targets) || throw(AssertionError(
+        "device hierarchical route window exceeded capacity " *
+        "$(length(route_targets)); increase window storage or reduce window_classes"))
+    first_source = hctx.level_offsets[L + 1] + 1
+    n_sources = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
+    kn = last_offset - first_offset + 1
+    used = kn * n_sources
+    backend = KA.get_backend(hctx.route_flags)
+    level_base_L = hctx.level_base[L + 1]
+    flags_kernel = _cached_kernel(ka_hier_route_flags_kernel!, backend, workgroup)
+    flags_kernel(hctx.route_flags, hctx.node_at, grid.node_coords,
+        hctx.d_push_offsets, hctx.d_class_of, level_base_L, first_source,
+        n_sources, first_offset, kn, L; ndrange=used)
+    accumulate!(+, view(hctx.route_prefix, 1:used), view(hctx.route_flags, 1:used))
+    compact_kernel = _cached_kernel(ka_hier_route_compact_kernel!, backend, workgroup)
+    compact_kernel(route_levels, route_offsets, route_targets, route_sources,
+        route_class, hctx.route_flags, hctx.route_prefix, hctx.node_at,
+        grid.node_coords, hctx.d_push_offsets, level_base_L, first_source,
+        n_sources, first_offset, kn, L, class_base; ndrange=used)
+    return n_routes
+end
+
 """
     ka_hierarchical_m2l!(state, hctx, ws)
 
@@ -6273,30 +6351,62 @@ function ka_hier_cache_windows!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LCo
     # a scale column so 0 is right there, but a concat cache built with 0 would
     # apply every level with level-2 operators.
     dense = plan isa FastMultipole.ResidentM2LDenseCUDAPlan
-    cursor = 0
+    windows = Tuple{Int,Int,Int}[]
+    for L in hctx.first_m2l_level:ell, first_offset in 1:K:noffsets
+        push!(windows, (L, first_offset, min(first_offset + K - 1, noffsets)))
+    end
+    nw = length(windows)
+    _KA_UPDATE_TIMERS[] === nothing || push!(get!(_KA_UPDATE_TIMERS[], :win_n_windows, Float64[]), nw)
+    # One concatenated flag buffer for every window, ONE scan, one sync:
+    # window w's flags occupy bases[w]+1 : bases[w]+used[w].
+    n_src(L) = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
+    used = [n_src(L) * (lo - fo + 1) for (L, fo, lo) in windows]
+    bases = cumsum([0; used[1:end-1]])
+    total_used = sum(used)
+    flags_all = KA.zeros(backend, Int32, max(total_used, 1))
+    prefix_all = KA.zeros(backend, Int32, max(total_used, 1))
+    flags_kernel = _cached_kernel(ka_hier_route_flags_kernel!, backend, workgroup)
+    for (w, (L, fo, lo)) in enumerate(windows)
+        used[w] > 0 || continue
+        kn = lo - fo + 1
+        flags_kernel(view(flags_all, bases[w]+1:bases[w]+used[w]), hctx.node_at,
+            grid.node_coords, hctx.d_push_offsets, hctx.d_class_of, hctx.level_base[L + 1],
+            hctx.level_offsets[L + 1] + 1, n_src(L), fo, kn, L; ndrange=used[w])
+    end
+    total_used > 0 && accumulate!(+, view(prefix_all, 1:total_used), view(flags_all, 1:total_used))
+    _utick!(:win_phase1_count, backend)
+    ends = KA.allocate(backend, Int, max(nw, 1)); copyto!(ends, max.(bases .+ used, 1))
+    host_ends = Array(prefix_all[ends])          # the one D2H sync
+    _utick!(:win_sync_d2h, backend)
+    total_routes = nw > 0 ? Int(host_ends[end]) : 0
+    _ka_hier_win_ensure!(hctx, backend, 0, total_routes)
     fill!(hctx.win_level_starts, 0)
     fill!(hctx.win_level_counts, 0)
     fill!(hctx.routes_per_level, 0)
-    for L in hctx.first_m2l_level:ell
-        hctx.win_level_starts[L + 1] = cursor
-        level_total = 0
-        for first_offset in 1:K:noffsets
-            last_offset = min(first_offset + K - 1, noffsets)
-            class_base = dense ? 0 : (L - hctx.first_m2l_level) * noffsets
-            n = ka_hier_generate_window_core!(ctx.route_levels, ctx.route_offsets,
-                ctx.route_targets, ctx.route_sources, grid, hctx, route_class, L,
-                first_offset, last_offset, class_base; workgroup)
-            n == 0 && continue
-            _ka_hier_win_ensure!(hctx, backend, cursor, cursor + n)
-            copyto!(hctx.win_class, cursor + 1, route_class, 1, n)
-            copyto!(hctx.win_sources, cursor + 1, ctx.route_sources, 1, n)
-            copyto!(hctx.win_targets, cursor + 1, ctx.route_targets, 1, n)
-            cursor += n
-            level_total += n
+    compact_kernel = _cached_kernel(ka_hier_route_compact_global_kernel!, backend, workgroup)
+    cursor = 0; level_total = 0; current_L = -1
+    for (w, (L, first_offset, last_offset)) in enumerate(windows)
+        if L != current_L
+            current_L == -1 || (hctx.win_level_counts[current_L + 1] = level_total;
+                                hctx.routes_per_level[current_L + 1] = level_total)
+            current_L = L; level_total = 0
+            hctx.win_level_starts[L + 1] = cursor
         end
-        hctx.win_level_counts[L + 1] = level_total
-        hctx.routes_per_level[L + 1] = level_total
+        used[w] > 0 || continue
+        n = Int(host_ends[w]) - (w > 1 ? Int(host_ends[w-1]) : 0)
+        n == 0 && continue
+        class_base = dense ? 0 : (L - hctx.first_m2l_level) * noffsets
+        kn = last_offset - first_offset + 1
+        compact_kernel(hctx.win_targets, hctx.win_sources, hctx.win_class,
+            flags_all, prefix_all, bases[w], hctx.node_at, grid.node_coords,
+            hctx.d_push_offsets, hctx.level_base[L + 1], hctx.level_offsets[L + 1] + 1,
+            n_src(L), first_offset, kn, L, class_base; ndrange=used[w])
+        cursor += n
+        level_total += n
     end
+    current_L == -1 || (hctx.win_level_counts[current_L + 1] = level_total;
+                        hctx.routes_per_level[current_L + 1] = level_total)
+    _utick!(:win_phase2_compact, backend)
     hctx.total_routes = cursor
     hctx.last_window_routes = 0
     hctx.win_valid = true
@@ -6364,9 +6474,29 @@ function _ka_identity_perm!(perm, invperm, n::Int; workgroup=KA_AUTO_WORKGROUP)
     return perm
 end
 
+# Settings the former native lifecycle defined (CUDA_NEARFIELD_SUBSORT,
+# CUDA_CACHED_WINDOWS, ...) have no Ref once it is gone, so the KA path uses
+# its own defaults; `_KA_SETTING_OVERRIDES` lets a probe or a user flip one.
+const _KA_SETTING_OVERRIDES = Dict{Symbol,Any}()
 _ka_radix_setting(name::Symbol, default) =
+    haskey(_KA_SETTING_OVERRIDES, name) ? _KA_SETTING_OVERRIDES[name] :
     FastMultipole._radix_setting_ref(name) === nothing ? default :
         FastMultipole.radix_setting(name)
+
+# Optional per-stage timers for ka_update_radix_state!, used by the attribution
+# probe: set `_KA_UPDATE_TIMERS[] = Dict{Symbol,Vector{Float64}}()` and every
+# `_utick!` syncs the backend and records the time since the previous tick.
+# `nothing` (the default) makes each tick a no-op.
+const _KA_UPDATE_TIMERS = Ref{Any}(nothing)
+const _KA_UPDATE_T0 = Ref{Float64}(0.0)
+@inline function _utick!(name::Symbol, backend)
+    d = _KA_UPDATE_TIMERS[]
+    d === nothing && return nothing
+    KA.synchronize(backend)
+    t = time(); push!(get!(d, name, Float64[]), (t - _KA_UPDATE_T0[]) * 1e3); _KA_UPDATE_T0[] = t
+    return nothing
+end
+
 
 function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, systems::Tuple;
         workgroup=KA_AUTO_WORKGROUP, direct_only::Bool=false) where {TF,LH}
@@ -6390,6 +6520,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     first_level = cache.root_level
 
     source_buffers = FastMultipole._radix_cache_refresh_source_buffers!(ctx, systems, TF)
+    _KA_UPDATE_TIMERS[] === nothing || (KA.synchronize(backend); _KA_UPDATE_T0[] = time())
     if direct_only
         # all-pairs arm: no grid, no tree, no routes, no box check. Bodies are
         # packed in identity order -- the perm's only consumer on this arm is
@@ -6404,6 +6535,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
             source_buffers; workgroup)
 
         # ---- grid rebuild, stages 1-4 ----
+    _utick!(:collect_positions, backend)
         ka_radix_keys_checked!(view(ctx.keys, 1:n), ctx.oob_flag, ctx.host_oob,
             ctx.positions, cache.x_min, cache.box_extent, cache.h0, ell; workgroup)
         kv = view(ctx.keys, 1:n)
@@ -6411,6 +6543,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         # branch exactly where `_cuda_update_radix_grid_in_place!` branches: the
         # bounded counting sort when the cache was built with a domain-sized
         # histogram and the setting is on for this `ell`, else the stable sortperm
+    _utick!(:keys, backend)
         ka_radix_sort_bodies!(view(grid.perm, 1:n), sk, grid.invperm, kv; workgroup,
             ell=ell, histogram=ctx.counting_histogram, prefix=ctx.counting_prefix,
             cursor=ctx.counting_cursor)
@@ -6425,12 +6558,14 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         # occupied leaf-cell SET inside the fixed box
         track_epoch = length(ctx.epoch_cell_keys) > 0 &&
             _ka_radix_setting(:CUDA_CACHED_WINDOWS, true)
+    _utick!(:sort_compress, backend)
         occ_changed = true
         if track_epoch && ctx.epoch_have[] && ctx.epoch_prev_n[] == n &&
                 ctx.epoch_prev_n_cells[] == n_cells
             occ_changed = ka_radix_occupancy_changed!(ctx.epoch_flag, ctx.host_epoch_flag,
                 ckv, ctx.epoch_cell_keys, n_cells; workgroup)
         end
+    _utick!(:occ_check, backend)
         if occ_changed
             if track_epoch
                 copyto!(ctx.epoch_cell_keys, 1, grid.cell_keys, 1, n_cells)
@@ -6457,6 +6592,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     # 032a stage C mechanism (a): optional within-cell sub-Morton ordering,
     # composed into the perm before packing (the sorted cell keys, cell ranges
     # and node metadata are unaffected). Same gate as CUDA's at cuda:6807.
+    _utick!(:grid_rebuild, backend)
     if !direct_only && _ka_radix_setting(:CUDA_NEARFIELD_SUBSORT, true) &&
             cache.options.direct_kernel isa Union{FastMultipole.PartitionedVortex,
                                                   FastMultipole.TwoPassVortex}
@@ -6470,6 +6606,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     # reciprocal-sigma row = the last row for a regularized kernel (convention
     # of the two allocators; see `_ka_nf_inv_sigma_row`)
     pack_inv_sigma_row = pack_sigma_row > 0 ? size(ctx.source_bodies, 1) : 0
+    _utick!(:subsort, backend)
     for isys in eachindex(source_buffers)
         ka_pack_body_matrix!(ctx.source_bodies, source_buffers[isys],
             view(grid.perm, 1:n), grid.body_system, grid.body_index, n;
@@ -6482,6 +6619,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         cache.options.direct_kernel, ctx.source_bodies, n)
 
     # host mirrors serve host-resident target finalization only
+    _utick!(:pack, backend)
     if FastMultipole._radix_any_host_resident(systems)
         KA.synchronize(backend)
         copyto!(ctx.host_perm, 1, grid.perm, 1, n)
@@ -6490,6 +6628,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         counters.metadata_downloads += 3
     end
 
+    _utick!(:host_copy, backend)
     if direct_only
         n_routes = 0
         n_direct = 0
@@ -6506,6 +6645,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         hctx === nothing && throw(ArgumentError(
             "ka_update_radix_state! covers the hierarchical stencil path only; " *
             "build the cache with window_classes (FLOWVPM's default)"))
+    _utick!(:tree_routes, backend)
         if occ_changed
             hctx.epoch_id += 1
             hctx.win_valid = false
@@ -6516,6 +6656,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         else
             n_direct = hctx.epoch_n_direct
         end
+    _utick!(:refresh_occ_direct_pairs, backend)
         if isempty(hctx.symmetric_targets)
             hctx.n_symmetric_pairs = 0
         else
@@ -6532,17 +6673,20 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         # the cache stores, and it takes no level argument because the level is
         # already baked into the class. So concat is cacheable on KA even though it
         # is not on CUDA, and the whole epoch collapses to one apply.
+    _utick!(:symmetric, backend)
         if _ka_radix_setting(:CUDA_CACHED_WINDOWS, true) && !hctx.win_valid &&
                 hctx.apply_plan isa FastMultipole.ResidentM2LConcatPlan
             ka_hier_cache_windows!(ctx, hctx, grid; workgroup)
         end
         n_routes = hctx.win_valid ? hctx.total_routes : 0
 
+    _utick!(:cache_windows, backend)
         if occ_changed
             ka_refresh_resident_stage_groups!(ctx.workspace, grid, cache.level_offsets,
                 ell, cache.root_level; workgroup)
         end
     end
+    _utick!(:stage_groups, backend)
     KA.synchronize(backend)
 
     counts = ctx.counts
