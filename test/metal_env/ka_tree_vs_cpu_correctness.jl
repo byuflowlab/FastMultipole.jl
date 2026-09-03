@@ -136,7 +136,7 @@ function cmp_float(label, h, d, name; ulps=4)
     scale = max.(abs.(Float64.(h)), 1e-30)
     rel = dif ./ scale
     worst = isempty(rel) ? 0.0 : maximum(rel)
-    tol = ulps * eps(Float64(one(eltype(h))))
+    tol = ulps * eps(one(eltype(h)))   # ulps of the DATA type, not of Float64
     ok = worst <= tol
     ok || (nfail[] += 1;
         @printf("    FAIL %-14s max rel %.3e > %.3e (%d ulp)\n", name, worst, tol, ulps))
