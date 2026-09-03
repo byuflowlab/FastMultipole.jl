@@ -3608,11 +3608,12 @@ _env_int(name, default) = parse(Int, get(ENV, name, string(default)))
 # CONVENTION: for a regularized kernel (sigma_row > 0) both allocators size
 # `source_bodies` one row past the packed body rows and the packers fill that
 # LAST row with 1/sigma, so the nearfield can multiply instead of divide per
-# interaction (measured 15.6% of the nearfield at np=248714 when the row was
-# first written). RADIX_NF_INVSIGMA=0 keeps the divide, for A/B runs.
+# interaction (13% at 64 lanes, ~0 at 128+ on the H200). OFF by default so
+# timings against the native lifecycle -- which divides -- compare like with
+# like; RADIX_NF_INVSIGMA=1 turns it on.
 function _ka_nf_inv_sigma_row(state)
     _ka_kernel_sigma_row(state.options.direct_kernel) > 0 &&
-        _env_bool("RADIX_NF_INVSIGMA", true) || return 0
+        _env_bool("RADIX_NF_INVSIGMA", false) || return 0
     return size(state.source_bodies, 1)
 end
 _env_bool(name, default) = get(ENV, name, default ? "1" : "0") == "1"
@@ -3627,13 +3628,22 @@ _env_bool(name, default) = get(ENV, name, default ? "1" : "0") == "1"
 # 0.130, 256 0.135 (native 0.18-0.19). The native warp-per-pair geometry
 # (128x32) was SLOWER here, 0.130. The reciprocal-sigma row bought 13% at 64
 # lanes and nothing at 128+, where the divide latency is already hidden.
-function _nf_config(backend, ::Type{TF}) where TF
+function _nf_config(backend, ::Type{TF}; bodies_per_cell::Real=0) where TF
     cuda = nameof(typeof(backend)) === :CUDABackend
     # the warp shape at 64 lanes measured identical to the old pairs kernel on
     # Metal (157-158 ms both, wake 63k), so every backend takes it by default
     shape = Symbol(get(ENV, "RADIX_NF_SHAPE", "warp"))
-    wg = _env_int("RADIX_NF_WG", cuda ? (TF === Float32 ? 256 : 128) : 64)
-    lanes = _env_int("RADIX_NF_LANES", wg)
+    # Lanes per pair follow the cell population (the lanes stride a pair's
+    # TARGET bodies): a dense field wants a whole block on each pair, a thin
+    # one wants warp-sized teams so lanes are not idle. Clamped to [64, 256]
+    # (Float64: 128 -- its measured optimum at 249k) and rounded to a power of
+    # two; a fixed RADIX_NF_WG/RADIX_NF_LANES still overrides for A/B runs.
+    hi = TF === Float32 ? 256 : 128
+    auto_lanes = cuda && bodies_per_cell > 0 ?
+        clamp(nextpow(2, max(1, ceil(Int, bodies_per_cell))), 64, hi) : (cuda ? hi : 64)
+    lanes = _env_int("RADIX_NF_LANES", haskey(ENV, "RADIX_NF_WG") ? _env_int("RADIX_NF_WG", 64) : auto_lanes)
+    wg = _env_int("RADIX_NF_WG", max(128, lanes))
+    cuda || (wg = _env_int("RADIX_NF_WG", 64); lanes = _env_int("RADIX_NF_LANES", wg))
     fast = _env_bool("RADIX_NF_FAST_RSQRT", cuda)
     # :shipped = the pair math in the field's own precision. `:fp32` (the old
     # native default) narrows the WHOLE pair computation to Float32 on a
@@ -3664,7 +3674,9 @@ function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B
     npairs == 0 && return state
     hs = size(state.output, 1) >= 13
     backend = KA.get_backend(state.output)
-    cfg = _nf_config(backend, TF)
+    n_cells = Int(state.counts.n_cells)
+    cfg = _nf_config(backend, TF;
+        bodies_per_cell = n_cells > 0 ? Int(state.counts.n_bodies) / n_cells : 0)
     if cfg.shape === :warp
         # `workgroup` is honoured as the block size; the pairs-per-block follow
         # from RADIX_NF_LANES.
