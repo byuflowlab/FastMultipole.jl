@@ -63,25 +63,20 @@ function direct!(target_systems::Tuple, source_systems::Tuple; target_buffers=no
     gradient = to_vector(gradient, length(target_systems))
     hessian = to_vector(hessian, length(target_systems))
     derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian)
-
-    #check_derivs(target_systems[1].particles[:, :]; label="after passing derivatives back")
-    #check_derivs(target_systems[1].particles[4:6, :]; label="after passing derivatives back")
-    #check_derivs(target_buffers[1][1:3, :]; label="after passing derivatives back")
-    #check_derivs(source_buffers[1][8, :]; label="after passing derivatives back")
-    #check_derivs(source_buffers[1][5:7, :]; label="after passing derivatives back")
+    
+    #check_derivs(source_systems[1].particles; label="after direct interaction")
     for (source_system, source_buffer) in zip(source_systems, source_buffers)
         for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
             direct!(target_buffer, 1:get_n_bodies(target_system), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
         end
     end
-    #check_derivs(target_systems[1].particles[:, :]; label="before passing derivatives back")
-    #check_derivs(target_systems[1].particles[4:6, :]; label="before passing derivatives back")
-    #check_derivs(target_buffers[1][1:3, :]; label="before passing derivatives back")
-    #check_derivs(source_buffers[1][8, :]; label="before passing derivatives back")
-    #check_derivs(source_buffers[1][5:7, :]; label="before passing derivatives back")
+
+    #check_derivs(source_systems[1].particles; label="before direct interaction/after passing derivatives from target to buffer")
 
     # update target systems
     buffer_to_target!(target_systems, target_buffers, derivatives_switches)
+    #check_derivs(target_systems[1].particles; label="before direct interaction")
+    #check_derivs(target_buffers[1]; label="before direct interaction")
 end
 
 function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_threads; target_buffers=nothing, source_buffers=nothing, scalar_potential=fill(false, length(target_systems)), gradient=fill(true, length(target_systems)), hessian=fill(false, length(target_systems)))

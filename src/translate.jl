@@ -509,7 +509,7 @@ function multipole_to_local!(target_weights, target_branch::Branch{TF}, source_w
     weights_tmp_3 = initialize_expansion(expansion_order, TF)
     Ts = zeros(TF, length_Ts(expansion_order))
     eimϕs = zeros(TF, 2, expansion_order+1)
-
+    
     return multipole_to_local!(target_weights, target_branch, source_weights, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, ηs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz, ε)
 end
 
@@ -520,7 +520,6 @@ function multipole_to_local!(target_weights, target_branch, source_weights, sour
     # translation vector
     Δx = target_branch.center - source_branch.center
     r, θ, ϕ = cartesian_to_spherical(Δx)
-
     #--- rotate coordinate system ---#
 
     # rotate about z axis
@@ -830,7 +829,6 @@ function multipole_to_local_PAG!(weights_tmp_1, weights_tmp_2, weights_tmp_3, so
             end
 
             if ε_mp + ε_l * LOCAL_ERROR_SAFETY <= ε * 4 * π
-
                 # tolerance satisfied so set expansion order
                 expansion_order = n
                 error_success = true

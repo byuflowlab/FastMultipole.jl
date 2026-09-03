@@ -699,6 +699,10 @@ end
 function _rotate_multipole_y!(rotated_weights, source_weights, Ts, ζs_mag, P, ::Val{LH}) where LH
     # reset container
     rotated_weights .= zero(eltype(rotated_weights))
+    if eltype(rotated_weights) <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(source_weights)
+        init_rd_array!(rotated_weights, tp)
+    end
 
     # rotate each order
     i_ζ = 0
@@ -809,6 +813,10 @@ function _rotate_multipole_y_n!(rotated_weights, source_weights, Ts, ζs_mag, P,
     # reset container
     in0 = (n * (n+1)) >> 1 + 1
     rotated_weights[:,:,in0:in0+n] .= zero(eltype(rotated_weights))
+    if eltype(rotated_weights) <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(source_weights)
+        init_rd_array!(rotated_weights[:,:,in0:in0+n], tp)
+    end
 
     for m in 0:n
         val1_real = zero(eltype(Ts))
@@ -1014,6 +1022,10 @@ end
 function _rotate_local_y!(rotated_weights, source_weights, Ts, Hs_π2, ηs_mag, P, ::Val{LH}) where LH
     # reset container
     rotated_weights .= zero(eltype(rotated_weights))
+    if eltype(rotated_weights) <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(source_weights)
+        init_rd_array!(rotated_weights, tp)
+    end
 
     i_η = 0
     i_T = 0

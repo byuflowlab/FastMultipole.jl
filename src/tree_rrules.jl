@@ -49,38 +49,111 @@ function ChainRulesCore.rrule(::typeof(max_xyz), x_min, x_max, y_min, y_max, z_m
 
 end
 
-#@grad_from_chainrules_multiple_returns max_xyz(x_min::ReverseDiff.TrackedReal, x_max::ReverseDiff.TrackedReal, y_min::ReverseDiff.TrackedReal, y_max::ReverseDiff.TrackedReal, z_min::ReverseDiff.TrackedReal, z_max::ReverseDiff.TrackedReal, x::ReverseDiff.TrackedReal, y::ReverseDiff.TrackedReal, z::ReverseDiff.TrackedReal)
-#ReverseDiff.@grad_from_chainrules max_xyz(x_min::ReverseDiff.TrackedReal, x_max::ReverseDiff.TrackedReal, y_min::ReverseDiff.TrackedReal, y_max::ReverseDiff.TrackedReal, z_min::ReverseDiff.TrackedReal, z_max::ReverseDiff.TrackedReal, x::ReverseDiff.TrackedReal, y::ReverseDiff.TrackedReal, z::ReverseDiff.TrackedReal)
 
-#=
-function Branch(n_bodies::SVector{<:Any,Int64}, bodies_index, n_branches, branch_index, i_parent::Int, i_leaf_index, source_center::AbstractArray{<:ReverseDiff.TrackedReal}, target_center::AbstractArray{<:ReverseDiff.TrackedReal}, source_radius::ReverseDiff.TrackedReal, target_radius::ReverseDiff.TrackedReal, source_box::AbstractArray{<:ReverseDiff.TrackedReal}, target_box::AbstractArray{<:ReverseDiff.TrackedReal})
+function sort_bodies!(buffer::Matrix{<:ReverseDiff.TrackedReal}, small_buffer::Matrix{<:ReverseDiff.TrackedReal}, sort_index, octant_indices::AbstractVector, sort_index_buffer, bodies_index::UnitRange, center, target::Bool)
 
-    TF = eltype(source_center)
-    for I in (target_center, source_radius, target_radius, source_box, target_box)
-        TF = promote_type(TF, eltype(I))
+    # sort indices
+    for i_body in bodies_index
+        # identify octant
+        i_octant = get_octant(get_position(buffer, i_body), center)
+        this_i = octant_indices[i_octant]
+
+        # update small buffer
+        small_buffer[1,this_i].value = buffer[1, i_body].value
+        small_buffer[2,this_i].value = buffer[2, i_body].value
+        small_buffer[3,this_i].value = buffer[3, i_body].value
+        if target
+            small_buffer[4,this_i].value = buffer[17, i_body].value # copy influence from the buffer to the small buffer
+            small_buffer[5,this_i].value = buffer[18, i_body].value # copy influence from the buffer to the small buffer
+        end
+        # tmp = system[i_body, Body()]
+        # buffer[this_i] = tmp
+
+        # update sort index
+        sort_index_buffer[octant_indices[i_octant]] = sort_index[i_body]
+
+        # increment octant census
+        octant_indices[i_octant] += 1
     end
-    return Branch(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf_index, TF.(source_center), TF.(target_center), TF(source_radius), TF(target_radius), TF.(source_box), TF.(target_box), ReentrantLock(), zero(TF))
+
+    # place buffers
+    for i_body in bodies_index
+        buffer[1, i_body].value = small_buffer[1, i_body].value
+        buffer[2, i_body].value = small_buffer[2, i_body].value
+        buffer[3, i_body].value = small_buffer[3, i_body].value
+    end
+    if target
+        for i_body in bodies_index
+            buffer[17, i_body].value = small_buffer[4, i_body].value
+            buffer[18, i_body].value = small_buffer[5, i_body].value
+        end
+    end
+
+    for i in bodies_index
+        sort_index[i] = sort_index_buffer[i]
+    end
+
+    tp = ReverseDiff.tape(buffer)
+    ReverseDiff.record!(tp,
+                        ReverseDiff.SpecialInstruction,
+                        sort_bodies!,
+                        (buffer, small_buffer, sort_index, octant_indices, sort_index_buffer, bodies_index, center, target),
+                        nothing)
+
 end
 
-"""
-struct Tree{TF,N}
-    branches::Vector{Branch{TF,N}}        # a vector of `Branch` objects composing the tree
-    expansions::Array{TF,4}
-    levels_index::Vector{UnitRange{Int64}}
-    leaf_index::Vector{Int}
-    sort_index_list::NTuple{N,Vector{Int}}
-    inverse_sort_index_list::NTuple{N,Vector{Int}}
-    buffers::NTuple{N,Matrix{TF}}
-    small_buffers::Vector{Matrix{TF}}
-    expansion_order::Int64
-    leaf_size::SVector{N,Int64}    # max number of bodies in a leaf
-    # cost_parameters::MultiCostParameters{N}
-    # cost_parameters::SVector{N,Float64}
-end
-"""
+function ReverseDiff.special_reverse_exec!(instruction::ReverseDiff.SpecialInstruction{typeof(sort_bodies!)})
 
-function Tree(branches::Vector{Branch{<:ReverseDiff.TrackedReal, N}}, expansions::Array{<:ReverseDiff.TrackedReal, 4}, levels_index, leaf_index, sort_index_list::NTuple{N,Vector{Int}}, inverse_sort_index_list::NTuple{N,Vector{Int}}, buffers::NTuple{N, Matrix{<:ReverseDiff.TrackedReal}}, small_buffers::Vector{Matrix{<:ReverseDiff.TrackedReal}}, expansion_order, leaf_size::SVector{N,Int64}) where {N}
-    TF = promote_type(eltype(branches), eltype(expansions), eltype(buffers), eltype(small_buffers))
-    return Tree{TF, N}(TF.(branches), TF.(expansions), levels_index, leaf_index, sort_index_list, inverse_sort_index_list, TF.(buffers), TF.(small_buffers), expansion_order, leaf_size)
+    buffer, small_buffer, sort_index, octant_indices, sort_index_buffer, bodies_index, center, target = instruction.input
+
+    # We need to unsort everything. Luckily this is pretty easy - we just reverse all the assignments.
+    # We also need to map derivatives in the inverse sorting order.
+
+    for i_body in bodies_index
+        for j = 1:3
+            small_buffer[j, i_body].value = buffer[j, i_body].value
+            small_buffer[j, i_body].deriv = buffer[j, i_body].deriv
+        end
+    end
+    if target
+        for i_body in bodies_index
+            for j=1:2
+                small_buffer[3+j, i_body].value = buffer[16+j, i_body].value
+                small_buffer[3+j, i_body].deriv = buffer[16+j, i_body].deriv
+            end
+        end
+    end
+
+    for i in bodies_index
+        sort_index_buffer[i] = sort_index[i]
+    end
+
+    for i_body in bodies_index
+
+        # decrement octant census back to where it was
+        i_octant = get_octant(get_position(buffer, i_body), center)
+        octant_indices[i_octant] -= 1
+        this_i = octant_indices[i_octant]
+
+        # update small buffer
+        for j=1:3
+            buffer[j, i_body].value = small_buffer[j,this_i].value
+            buffer[j, i_body].deriv = small_buffer[j,this_i].deriv
+        end
+        if target
+            for j=1:2
+                buffer[16+j, i_body].value = small_buffer[3+j,this_i].value
+                buffer[16+j, i_body].deriv = small_buffer[3+j,this_i].deriv
+            end
+        end
+        # tmp = system[i_body, Body()]
+        # buffer[this_i] = tmp
+
+        # update sort index
+        sort_index[i_body] = sort_index_buffer[octant_indices[i_octant]]
+
+    end
+
+    return nothing
+    
 end
-=#

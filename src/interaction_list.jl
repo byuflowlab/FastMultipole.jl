@@ -688,7 +688,7 @@ end
 function InteractionList(direct_list, target_systems, target_tree::Tree, source_systems, source_tree::Tree{TF}, derivatives_switches) where TF
     # unpack tree
     leaf_index = source_tree.leaf_index
-
+    
     # preallocate containers
     influence_matrices = Vector{Matrix{TF}}(undef, length(leaf_index))
 

@@ -20,20 +20,16 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         cumulative_octant_census = get_octant_container(systems) # for creating a cumsum of octant populations
         bodies_index = get_bodies_index(systems)
 
-
         # root branch
         center, box = center_box(systems, TF)
         bx, by, bz = box
+        #@show ReverseDiff.value(sum(center))
 
         # initial octree generation uses cubic cells
         #bmax = max(max(bx,by),bz)
         bmax = bx == by ? bx : max(bx, by)
         bmax = bmax == bz ? bz : max(bmax, bz)
         radius = sqrt(bmax*bmax*3.0)
-        #debug
-        if bmax == 0
-            error()
-        end
         box = SVector{3, TF}(bmax, bmax, bmax)
 
         # prepare to divide
@@ -53,9 +49,14 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
 
         # zero buffers
         for buffer in buffers
-            buffer .= zero(TF)
+            if TF <: ReverseDiff.TrackedReal
+                tp = ReverseDiff.tape(systems[1])
+                init_rd_array!(buffer, tp)
+            else
+                buffer .= zero(TF)
+            end
         end
-    # end
+        # end
         # println("Part II: target_to_buffer")
         # @time begin # already multithreaded
 
@@ -151,6 +152,10 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         # allocate expansions
         # @time expansions = initialize_expansions(expansion_order, length(branches), TF)
         expansions = initialize_expansions(expansion_order, length(branches), TF)
+        if TF <: ReverseDiff.TrackedReal
+            tp = ReverseDiff.tape(systems[1])
+            init_rd_array!(expansions, tp)
+        end
 
         # # cost parameters
         # if estimate_cost
@@ -162,6 +167,8 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         # cost_parameters = Threads.nthreads() > 1 ? direct_cost_estimate(systems, leaf_size) : dummy_direct_cost_estimate(systems, leaf_size)
 
         # assemble tree
+        #check_deriv_allocation(small_buffers[1])
+        #check_deriv_allocation(buffers[1])
         tree = Tree(branches, expansions, levels_index, leaf_index, sort_index, inverse_sort_index, buffers, small_buffers, expansion_order, leaf_size)#, cost_parameters)
     else
         tree = EmptyTree(systems)
@@ -222,7 +229,7 @@ end
 Doesn't stop subdividing until ALL child branches have satisfied the leaf size.
 """
 function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerbox=center_box(systems, getTF(systems)), buffers=allocate_buffers(systems, target, TF), small_buffers = allocate_small_buffers(systems, TF), expansion_order=7, n_levels=5)
-
+    
     # ensure `systems` isn't empty; otherwise return an empty tree
     if get_n_bodies(systems) > 0
 
@@ -269,7 +276,12 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerb
 
         # zero buffers
         for buffer in buffers
-            buffer .= zero(TF)
+            if eltype(buffer) <: ReverseDiff.TrackedReal
+                tp = ReverseDiff.tape(buffer)
+                init_rd_array!(buffer, tp)
+            else
+                buffer .= zero(TF)
+            end
         end
 
         # update buffers with system positions
@@ -309,6 +321,10 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerb
 
         # allocate expansions
         expansions = initialize_expansions(expansion_order, length(branches), TF)
+        if TF <: ReverseDiff.TrackedReal
+            tp = ReverseDiff.tape(systems[1])
+            init_rd_array!(expansions, tp)
+        end
 
         # # cost parameters
         # if estimate_cost
@@ -332,12 +348,10 @@ end
 #--- buffers ---#
 
 function allocate_target_buffer(TF, system)
-    buffer = zeros(TF, 16, get_n_bodies(system))
+    buffer = zeros(TF, 18, get_n_bodies(system))
     if TF <: ReverseDiff.TrackedReal
         tp = ReverseDiff.tape(system)
-        for idx in CartesianIndices(buffer)
-            buffer[idx] = ReverseDiff.track(0.0, tp)
-        end
+        init_rd_array!(buffer, tp)
     end
     return buffer
 end
@@ -346,9 +360,7 @@ function allocate_source_buffer(TF, system)
     buffer = zeros(TF, data_per_body(system), get_n_bodies(system))
     if TF <: ReverseDiff.TrackedReal
         tp = ReverseDiff.tape(system)
-        for idx in CartesianIndices(buffer)
-            buffer[idx] = ReverseDiff.track(0.0, tp)
-        end
+        init_rd_array!(buffer, tp)
     end
     return buffer
 end
@@ -400,7 +412,6 @@ function allocate_buffers(systems::Tuple, target::Bool, TF)
     else
         buffers = Tuple(allocate_source_buffer(TF, system) for system in systems)
     end
-
     return buffers
 end
 
@@ -428,7 +439,11 @@ function allocate_small_buffers(systems::Tuple, TF)
     # create buffers
     small_buffers = Vector{Matrix{TF}}(undef, length(systems))
     for i in eachindex(systems)
-        small_buffers[i] = zeros(5, get_n_bodies(systems[i]))
+        small_buffers[i] = zeros(TF, 5, get_n_bodies(systems[i]))
+        if TF <: ReverseDiff.TrackedReal
+            tp = ReverseDiff.tape(systems[i])
+            init_rd_array!(small_buffers[i], tp)
+        end
     end
 
     return small_buffers
@@ -707,7 +722,6 @@ function branch!(buffer, small_buffer, sort_index, octant_container, sort_index_
 
     # count bodies in each octant
     census!(octant_container, buffer, bodies_index, center) # octant_container modified
-    
     # cumsum
     update_octant_accumulator!(octant_container) # octant_container modified
     
@@ -1327,7 +1341,7 @@ end
 
     return x_min, x_max, y_min, y_max, z_min, z_max
 end
-
+#=
 @inline function max_xyz(x_min::ReverseDiff.TrackedReal, x_max::ReverseDiff.TrackedReal, y_min::ReverseDiff.TrackedReal, y_max::ReverseDiff.TrackedReal, z_min::ReverseDiff.TrackedReal, z_max::ReverseDiff.TrackedReal, x::ReverseDiff.TrackedReal, y::ReverseDiff.TrackedReal, z::ReverseDiff.TrackedReal)
 
     x_min = x_min == x ? x_min : min(x_min, x)
@@ -1339,7 +1353,7 @@ end
 
     return x_min, x_max, y_min, y_max, z_min, z_max
 end
-
+=#
 @inline function max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, system, bodies_index)
     
     for i in bodies_index
@@ -1389,7 +1403,6 @@ end
     for (system, bodies_index) in zip(systems, bodies_indices)
         x_min, x_max, y_min, y_max, z_min, z_max = max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, system, bodies_index)
     end
-
     return get_center_box(x_min, x_max, y_min, y_max, z_min, z_max)
 end
 
@@ -1866,7 +1879,15 @@ function update_min_influence_leaf!(branches, i_branch, buffers)
     branch = branches[i_branch]
 
     # initialize min_influence
-    min_potential, min_gradient = zero(eltype(branches[1].min_potential)), zero(eltype(branches[1].min_gradient))
+    # the original is probably safe here, but just in case I'm explicitly handling the ReverseDiff case for now.
+    #min_potential, min_gradient = zero(eltype(branches[1].min_potential)), zero(eltype(branches[1].min_gradient))
+    if eltype(buffers[1]) <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(buffers[1])
+        zeroR = zero(eltype(branches[1].min_potential.value))
+        min_potential, min_gradient = ReverseDiff.track(zeroR, tp), ReverseDiff.track(zeroR, tp)
+    else
+        min_potential, min_gradient = zero(eltype(branches[1].min_potential)), zero(eltype(branches[1].min_gradient))
+    end
     for i_buffer in eachindex(buffers)
         buffer = buffers[i_buffer]
         # extract body index
@@ -2081,7 +2102,7 @@ end
 end
 
 function initialize_expansion(expansion_order, type=Float64)
-    # incrememnt expansion order to make room for error predictions
+    # increment expansion order to make room for error predictions
     # expansion_order += 1
 
     return zeros(type, 2, 2, ((expansion_order+1) * (expansion_order+2)) >> 1)
@@ -2114,6 +2135,11 @@ end
 
 function reset_expansions!(tree)
     tree.expansions .= zero(eltype(tree.expansions))
+end
+
+function reset_expansions!(tree::Tree{<:ReverseDiff.TrackedReal, N}) where N
+    tp = ReverseDiff.tape(tree.expansions[1])
+    init_rd_array!(tree.expansions, tp)
 end
 
 #--- debugging functions ---#

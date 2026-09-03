@@ -30,7 +30,7 @@ function nearfield_loop!(target_buffers, target_branches, source_system, source_
 
             # identify targets
             target_index = target_branches[i_target].bodies_index[i_target_system]
-            
+
             # compute interaction
             direct!(target_system, target_index, derivatives_switch, source_system, source_buffer, source_index)
 
@@ -253,6 +253,10 @@ end
 function upward_pass_singlethread_1!(tree::Tree{TF, <:Any}, systems, expansion_order) where TF
 
     harmonics = initialize_harmonics(expansion_order, TF)
+    if TF <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(systems[1])
+        init_rd_array!(harmonics, tp)
+    end
 
     # body_to_multipole
     for (i_system, system) in enumerate(systems)
@@ -267,6 +271,14 @@ function upward_pass_singlethread_2!(tree::Tree{TF,<:Any}, expansion_order, lamb
     eimϕs = zeros(TF, 2, expansion_order+1)
     weights_tmp_1 = initialize_expansion(expansion_order, TF)
     weights_tmp_2 = initialize_expansion(expansion_order, TF)
+
+    if TF <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(tree.buffers[1])
+        init_rd_array!(Ts, tp)
+        init_rd_array!(eimϕs, tp)
+        init_rd_array!(weights_tmp_1, tp)
+        init_rd_array!(weights_tmp_2, tp)
+    end
 
     # loop over branches
     for i_branch in length(tree.branches):-1:1 # no need to create a multipole expansion at the very top level
@@ -464,6 +476,15 @@ function horizontal_pass_singlethread!(target_tree::Tree{TF1,<:Any}, source_tree
     Ts = zeros(TF, length_Ts(expansion_order))
     eimϕs = zeros(TF, 2, expansion_order + 1)
 
+    if TF <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(target_tree.expansions)
+        init_rd_array!(weights_tmp_1, tp)
+        init_rd_array!(weights_tmp_2, tp)
+        init_rd_array!(weights_tmp_3, tp)
+        init_rd_array!(Ts, tp)
+        init_rd_array!(eimϕs, tp)
+    end
+
     Pmax = 0
     error_success = true
     # Ps = zeros(length(m2l_list))
@@ -607,8 +628,16 @@ function downward_pass_singlethread_1!(tree::Tree{TF,<:Any}, expansion_order, la
     eimϕs = zeros(TF, 2, expansion_order+1)
     weights_tmp_1 = initialize_expansion(expansion_order, TF)
     weights_tmp_2 = initialize_expansion(expansion_order, TF)
+    if TF <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(tree.buffers[1])
+        init_rd_array!(Ts, tp)
+        init_rd_array!(eimϕs, tp)
+        init_rd_array!(weights_tmp_1, tp)
+        init_rd_array!(weights_tmp_2, tp)
+    end
 
     # loop over branches
+    #check_derivs(tree.expansions; label="tree expansion after local to local")
     for i_branch in 1:length(tree.branches)
         branch = tree.branches[i_branch]
         if branch.n_branches > 0 # if branch is a non-leaf target
@@ -620,11 +649,16 @@ function downward_pass_singlethread_1!(tree::Tree{TF,<:Any}, expansion_order, la
             end
         end
     end
+    #check_derivs(tree.expansions; label="tree expansion before local to local")
 end
 
 function downward_pass_singlethread_2!(tree::Tree{TF,<:Any}, systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m) where TF
 
     harmonics = initialize_harmonics(expansion_order, TF)
+    if TF <: ReverseDiff.TrackedReal
+        tp = ReverseDiff.tape(systems[1])
+        init_rd_array!(harmonics, tp)
+    end
     # loop over systems
     for (i_system, system) in enumerate(systems)
         evaluate_local!(system, i_system, tree, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
@@ -881,6 +915,7 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(t
     t_target_tree = @elapsed target_tree = Tree(target_systems, true, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink_recenter, interaction_list_method)
     t_source_tree = @elapsed source_tree = Tree(source_systems, false, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink_recenter, interaction_list_method)
 
+    #check_deriv_allocation(target_tree.small_buffers[1])
     # println("Tree construction times: target = $t_target_tree, source = $t_source_tree")
     # error()
 
@@ -931,6 +966,29 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
     silence_warnings=false,
 )
+
+    #=
+    # development/bugfixing checks for reverse-mode AD
+    # buffer checks pass
+    check_deriv_allocation(target_tree.buffers[1]; label="target tree buffer")
+    check_deriv_allocation(source_tree.buffers[1]; label="source tree buffer")
+    check_deriv_allocation(target_tree.small_buffers[1]; label="target tree small buffer")
+    check_deriv_allocation(source_tree.small_buffers[1]; label="source tree small buffer")
+
+    # expansion checks pass
+    check_deriv_allocation(target_tree.expansions; label="target tree expansions")
+    check_deriv_allocation(source_tree.expansions; label="source tree expansions")
+
+    # checks on branch 1 pass
+    check_deriv_allocation(target_tree.branches[1].center; label="target tree branch 1 center")
+    check_deriv_allocation(target_tree.branches[1].box; label="target tree branch 1 box")
+    check_deriv_allocation(source_tree.branches[1].center; label="source tree branch 1 center")
+    check_deriv_allocation(source_tree.branches[1].box; label="source tree branch 1 box")
+    =#
+
+    # particle field checks are best done in the VPM, since the array entries to check depend on the underlying pfield data strcture
+    #check_deriv_allocation(target_systems[1].particles; label="target system particles") # fails because inactive particles aren't properly allocated yet.
+    #check_deriv_allocation(source_systems[1].particles; label="source system particles")
 
     #--- check if lamb-helmholtz decomposition is required ---#
 
@@ -1014,6 +1072,10 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             reset_expansions!(source_tree)
         end
 
+        # these checks pass
+        #check_deriv_allocation(target_tree.expansions; label="target tree expansions")
+        #check_deriv_allocation(source_tree.expansions; label="source tree expansions")
+
         # declare error success
         error_success = true
 
@@ -1040,9 +1102,20 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             # single threaded
             if n_threads == 1
 
+                #check_deriv_allocation(target_tree.buffers[1])
+                #@show ReverseDiff.value(sum(target_tree.small_buffers[1]))
+                #check_deriv_allocation(target_tree.small_buffers[1])
+                #@show ReverseDiff.value(sum(target_tree.small_buffers[1]))
+                #check_deriv_allocation(target_tree.expansions)
+                #check_deriv_allocation(target_systems[1].particles[10:12, 1:target_systems[1].np])
+                #check_deriv_allocation(target_systems[1].particles[16:24, 1:target_systems[1].np])
                 # perform nearfield calculations
+                #s = ReverseDiff.value(sum(target_tree.buffers[1])) + ReverseDiff.value(sum(target_tree.small_buffers[1])) + ReverseDiff.value(sum(target_systems[1].particles[1]))
                 t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list)
                 # println("Direct interaction time: ", t_direct[1])
+                #s2 = ReverseDiff.value(sum(target_tree.buffers[1])) + ReverseDiff.value(sum(target_tree.small_buffers[1])) + ReverseDiff.value(sum(target_systems[1].particles[1]))
+                #@show s (s2-s)
+                #@show s ReverseDiff.value(sum(target_tree.buffers[1])) - s
 
                 # check number of interactions
                 if tune
@@ -1076,15 +1149,46 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
                 # @time downward_pass && downward_pass_singlethread!(tree.branches, tree.leaf_index, systems, expansion_order, lamb_helmholtz, derivatives_switches)
                 t_dp = 0.0
+
+                # 
                 if downward_pass
+                    #println("started downward pass")
+                    #@show sum(target_tree.expansions) sum(target_tree.branches[1].center)
+                    #check_derivs(target_tree.expansions; label="tree expansions after dps1")
+                    #check_derivs(target_tree.branches[1].center; label="branch center after dps1")
+                    #@show sum(target_tree.branches[1].center)
                     t_dp = @elapsed downward_pass_singlethread_1!(target_tree, expansion_order, lamb_helmholtz)
+                    #@show sum(target_tree.branches[1].center)
+                    #check_derivs(target_tree.expansions; label="tree expansions before dps1")
+                    #check_derivs(target_tree.branches[1].center; label="branch center before dps1")
+
                     t_dp += @elapsed gradient_n_m = initialize_gradient_n_m(expansion_order, eltype(target_tree.branches[1]))
+                    if eltype(target_tree.branches[1]) <: ReverseDiff.TrackedReal
+                        tp = ReverseDiff.tape(target_tree.branches[1])
+                        init_rd_array!(gradient_n_m, tp)
+                    end
+
+                    # derivatives appear to be propagated correctly
+                    #check_derivs(target_tree.buffers[1]; label="tree buffer after dps2")
+                    #check_derivs(target_tree.expansions; label="expansions after dps2")
                     t_dp += @elapsed downward_pass_singlethread_2!(target_tree, target_tree.buffers, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m)
+                    #check_derivs(target_tree.buffers[1]; label="tree buffer before dps2")
+                    #check_derivs(target_tree.expansions; label="expansions before dps2")
                     # println("Downward pass time: ", t_dp)
+                    #@show sum(target_tree.expansions) sum(target_tree.branches[1].center)
+                    #println("finished downward pass")
                 end
 
                 # copy results to target systems
+                # derivatives appear to be propagated correctly
+                #check_derivs(target_systems[1].particles; label="pfield after buffer_to_target")
+                #check_derivs(target_tree.buffers[1]; label="tree buffer after buffer_to_target")
+                #println("running buffer_to_target!")
+                #@show sum(target_systems[1].particles) sum(target_tree.buffers[1])
                 update_target_systems && buffer_to_target!(target_systems, target_tree, derivatives_switches)
+                #@show sum(target_systems[1].particles)
+                #check_derivs(target_systems[1].particles; label="pfield before buffer_to_target")
+                #check_derivs(target_tree.buffers[1]; label="tree buffer before buffer_to_target")
 
                 # finish autotuning
                 if tune

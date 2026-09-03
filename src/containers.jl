@@ -149,7 +149,6 @@ function Branch(bodies_index::SVector{<:Any,UnitRange{Int64}}, args...)
     return Branch(n_bodies, bodies_index, args...)
 end
 
-
 Base.eltype(::Branch{TF,<:Any}) where TF = TF
 
 """
@@ -186,10 +185,6 @@ struct Tree{TF,N}
     leaf_size::SVector{N,Int64}    # max number of bodies in a leaf
     # cost_parameters::MultiCostParameters{N}
     # cost_parameters::SVector{N,Float64}
-end
-
-function Tree(branches, expansions, levels_index, left_index, sort_index_list, inverse_sort_index_list, buffers, small_buffers, expansion_order, leaf_size)
-    return Tree(branches, TF.(expansions), levels_index, left_index, sort_index_list, inverse_sort_index_list, TF.(buffers), TF.(small_buffers), expansion_order, leaf_size)
 end
 
 struct InteractionList{TF}
@@ -296,6 +291,12 @@ function Cache(target_systems::Tuple, source_systems::Tuple)
     source_buffers = allocate_buffers(source_systems, false, TF)
     target_small_buffers = allocate_small_buffers(target_systems, TF)
     source_small_buffers = allocate_small_buffers(source_systems, TF)
+
+    # these all pass
+    #check_deriv_allocation(target_buffers[1]; label="target buffers")
+    #check_deriv_allocation(source_buffers[1]; label="source buffers")
+    #check_deriv_allocation(target_small_buffers[1]; label="target small buffers")
+    #check_deriv_allocation(source_small_buffers[1]; label="source small buffers")
     
     # return cache
     return Cache{TF,length(target_systems),length(source_systems)}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
