@@ -1758,7 +1758,7 @@ function _copy_radix_output_to_host_target_buffer!(target_buffer, output,
         grid::DeviceRadixGrid, isys::Integer, derivatives_switch)
     throw(ArgumentError(
         "DeviceRadixGrid host finalization requires DeviceResidentRadixState host metadata mirrors; " *
-        "call finalize_cuda_radix_output! or pass explicit host metadata",
+        "finalize on the device backend or pass explicit host metadata",
     ))
 end
 
@@ -1781,7 +1781,7 @@ function finalize_radix_output!(state::DeviceResidentRadixState{TF}, target_syst
     length(systems) == length(switches) ||
         throw(ArgumentError("target systems and derivatives switches must have the same length"))
     state.output isa Array ||
-        throw(ArgumentError("finalize_radix_output! requires a host-resident state; use finalize_cuda_radix_output! for device-resident states"))
+        throw(ArgumentError("finalize_radix_output! requires a host-resident state; device-resident states are finalized by the backend extension"))
     for (isys, target_system, switch) in zip(eachindex(systems), systems, switches)
         residency(target_system) isa HostResident ||
             throw(ArgumentError("finalize_radix_output! supports host-resident target systems only"))
@@ -2440,8 +2440,8 @@ is reallocated over the cache's lifetime.
   [`sfs_to_target!`](@ref). Requires `hessian=true` and the raw smoothing
   radius σ in packed row 8 (vortex couplings). `sfs_transposed::Bool=true`
   bakes the FLOWVPM transposed-scheme convention.
-- `device::Bool=false`: run the lifecycle device-resident (CUDA; requires
-  `load_cuda_radix_lifecycle!()`)
+- `device::Bool=false`: run the lifecycle device-resident (requires a registered
+  device backend, i.e. the KernelAbstractions extension)
 - `options::CUDARadixLifecycleOptions`: operator strategies/precision. Omitted, both
   are selected from the measured 024/028 rules (see below); passed explicitly, it is
   used verbatim. The resolved choice is readable as `cache.state.options`.
@@ -2577,11 +2577,10 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     end
     TF = options.precision
     if device
-        cuda_radix_available() || radix_device_backend_available() ||
-            throw(ArgumentError("RadixFMMCache(device=true) requires a functional CUDA " *
-                "radix lifecycle, or a registered non-CUDA device backend; call " *
-                "load_cuda_radix_lifecycle!() first, or load a backend extension " *
-                "($(cuda_radix_status()))"))
+        radix_device_backend_available() ||
+            throw(ArgumentError("RadixFMMCache(device=true) requires a registered " *
+                "device radix backend; load a backend extension " *
+                "($(radix_device_status()))"))
     end
     for system in sources
         data_per_body(system) >= 4 + strength_dims(system) ||
@@ -3432,8 +3431,8 @@ end
 
 #------- backend-agnostic device source-buffer plumbing -------#
 #
-# These four lived in translate_batched_cuda.jl, which is `include`d only when
-# CUDA is available, but none of them contains a CUDA type or a CUDA launch:
+# These four lived in the former native CUDA lifecycle file, which was loaded
+# only when CUDA was available, but none of them contains a CUDA type or launch:
 # they are `source_to_buffer!` dispatch, a `copyto!`, and a residency query, all
 # generic over the array type. Their placement made them CUDA-only at run time
 # — the same defect as `_radix_offsets_matrix` — and
@@ -3485,26 +3484,26 @@ function _radix_cache_refresh_source_buffers!(ctx, systems::Tuple, ::Type{TF}) w
     end
 end
 
-# Device-resident construction/step; redefined by translate_batched_cuda.jl (task
-# 023 step 7) once load_cuda_radix_lifecycle!() has run.
+# Device-resident construction/step; provided by the registered backend
+# extension (register_radix_device_backend!).
 function _radix_cache_device_build(args...; kwargs...)
     hook = _RADIX_DEVICE_BUILD_HOOK[]
-    hook === nothing && throw(CUDARadixUnavailable(cuda_radix_status()))
+    hook === nothing && throw(RadixDeviceUnavailable(radix_device_status()))
     return hook(args...; kwargs...)
 end
 
-# Device-resident dense M2L plan construction (task 023f); redefined by
-# translate_batched_cuda.jl. Reached only from the device-mode branch of
-# _radix_cache_workspace, so on a CPU-only build this stub never runs, but keep it
-# defined so the host method resolves.
+# Device-resident dense M2L plan construction (task 023f). Reached only from the
+# device-mode branch of _radix_cache_workspace, which the registered backend's
+# build hook bypasses, so this stub never runs; keep it defined so the host
+# method resolves.
 function _build_cuda_dense_m2l_plan(args...)
-    throw(CUDARadixUnavailable(cuda_radix_status()))
+    throw(RadixDeviceUnavailable(radix_device_status()))
 end
 
 function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple;
         sfs::Bool=false)
     hook = _RADIX_DEVICE_STEP_HOOK[]
-    hook === nothing && throw(CUDARadixUnavailable(cuda_radix_status()))
+    hook === nothing && throw(RadixDeviceUnavailable(radix_device_status()))
     return hook(cache, targets, switches; sfs)
 end
 

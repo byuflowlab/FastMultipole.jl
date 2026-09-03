@@ -804,15 +804,15 @@ function _rect_validate_panel_sources(sources::AbstractMatrix;
     return nothing
 end
 
-# The host methods below have AbstractMatrix signatures, so a CuMatrix call
-# made BEFORE load_cuda_radix_lifecycle!() installs the CuMatrix methods
-# would land here and die inside Threads.@threads scalar indexing with an
-# opaque error. Fail with the actual fix instead.
+# The host methods below have AbstractMatrix signatures, so a GPU-array call
+# made before a device backend extension installs its methods would land here
+# and die inside Threads.@threads scalar indexing with an opaque error. Fail
+# with the actual fix instead.
 function _rect_assert_host(out, targets, sources)
     (parent(out) isa Array && parent(targets) isa Array &&
         parent(sources) isa Array) || throw(ArgumentError(
         "direct_rectangular! host method called with non-host arrays " *
-        "($(typeof(out))); for GPU arrays call load_cuda_radix_lifecycle!() " *
+        "($(typeof(out))); for GPU arrays load a device backend extension " *
         "first (and pass out/targets/sources all on the same side)"))
     return nothing
 end
@@ -824,8 +824,8 @@ Brute-force rectangular direct evaluation: every source column of `sources`
 influences every target column of `targets`, accumulating (+=) velocity into
 `out[1:3, :]` and, when `gradient=true`, the velocity gradient into
 `out[4:12, :]` (order `out[3 + (j-1)*3 + i] = du_i/dx_j`). Host method is
-threaded over targets; CUDA methods (CuMatrix arguments) are installed by
-`load_cuda_radix_lifecycle!()`. See [`RectangularGaussianErfVortex`](@ref) and
+threaded over targets; GPU-array methods are installed by a device backend
+extension. See [`RectangularGaussianErfVortex`](@ref) and
 [`RectangularPanelInfluence`](@ref) for the source row layouts.
 """
 function direct_rectangular!(out::AbstractMatrix{T}, targets::AbstractMatrix{T},

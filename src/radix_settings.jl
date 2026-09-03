@@ -167,7 +167,7 @@ const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
 )
 
 "Return the `Ref` behind a setting name, or `nothing` if its defining file
-(the lazily-loaded CUDA lifecycle) has not been include'd yet."
+(a device backend extension) has not been loaded yet."
 function _radix_setting_ref(name::Symbol)
     haskey(RADIX_SETTING_SPECS, name) ||
         throw(ArgumentError("unknown radix setting $(repr(name)); known: $(sort!(collect(keys(RADIX_SETTING_SPECS))))"))
@@ -179,12 +179,12 @@ end
     radix_setting(name::Symbol)
 
 Current value of a radix-lifecycle tunable. Throws on unknown names and on
-CUDA-only settings before `load_cuda_radix_lifecycle!()` has run.
+device-only settings before a backend extension has loaded.
 """
 function radix_setting(name::Symbol)
     r = _radix_setting_ref(name)
     r === nothing && throw(ArgumentError(
-        "radix setting $(repr(name)) is defined by the CUDA lifecycle, which is not loaded; call load_cuda_radix_lifecycle!() first"))
+        "radix setting $(repr(name)) is defined by a device backend that is not loaded; load a backend extension first"))
     return r[]
 end
 
@@ -208,7 +208,7 @@ function set_radix_setting!(name::Symbol, value)
     end
     r = _radix_setting_ref(name)
     r === nothing && throw(ArgumentError(
-        "radix setting $(repr(name)) is defined by the CUDA lifecycle, which is not loaded; call load_cuda_radix_lifecycle!() first"))
+        "radix setting $(repr(name)) is defined by a device backend that is not loaded; load a backend extension first"))
     r[] = value
     return value
 end
@@ -238,7 +238,7 @@ function set_radix_settings!(settings::NamedTuple)
         end
         r = _radix_setting_ref(name)
         r === nothing && throw(ArgumentError(
-            "radix setting $(repr(name)) is defined by the CUDA lifecycle, which is not loaded; call load_cuda_radix_lifecycle!() first"))
+            "radix setting $(repr(name)) is defined by a device backend that is not loaded; load a backend extension first"))
         T = typeof(r[])
         value_t = try
             convert(T, value)
@@ -276,7 +276,7 @@ end
     radix_settings()
 
 NamedTuple of all currently-defined radix settings (CUDA-only settings appear
-after `load_cuda_radix_lifecycle!()`). See `RADIX_SETTING_SPECS` for lock
+after a backend extension loads). See `RADIX_SETTING_SPECS` for lock
 classes and docs.
 """
 function radix_settings()

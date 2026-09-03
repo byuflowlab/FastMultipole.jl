@@ -1668,7 +1668,6 @@ m2l_strategy=DenseTranslationM2L()))`, on the CUDA device-resident lifecycle (ta
 lifecycle footprint must not consume: the CUDA construction gate requires the
 complete estimated device footprint to stay within `CUDA.free_memory() -
 cuda_headroom_bytes`, in addition to the shared `max_persistent_bytes` payload gate.
-The one-shot `cuda_radix_state` builders remain unsupported.
 """
 struct DenseTranslationM2L <: AbstractResidentM2LStrategy
     max_persistent_bytes::Int
@@ -1946,9 +1945,8 @@ L2LOperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val, batch_max::Integ
 #------- CUDA device-resident radix lifecycle metadata (task 022) -------#
 #
 # These containers intentionally avoid CUDA-specific types so the CPU package path
-# can load without touching a device runtime. The CUDA implementation fills them
-# with CuArray-backed buffers from src/translate_batched_cuda.jl after the caller
-# opts in via load_cuda_radix_lifecycle!().
+# can load without touching a device runtime. The device backend extension fills
+# them with device-array-backed buffers once it is loaded.
 
 abstract type Residency end
 

@@ -25,7 +25,7 @@ step:
 
 ```julia
 using FastMultipole
-FastMultipole.load_cuda_radix_lifecycle!()   # opt into the CUDA lifecycle
+using KernelAbstractions, CUDA   # loads FastMultipoleKAExt, which registers the device lifecycle
 
 cache = RadixFMMCache(system; expansion_order=4, ell=4,
                       max_n_bodies=n_max, bounds=(x_min, box_size),
@@ -362,10 +362,11 @@ step. Therefore:
 - Body count `≤ max_n_bodies`; positions inside the cache's fixed box (see
   the capacity contract above).
 - Hessian output requires `RadixFMMCache(...; hessian=true)`.
-- The `device=true` cache requires a functional CUDA lifecycle: call
-  `FastMultipole.load_cuda_radix_lifecycle!()` first (returns `false`, with
-  `cuda_radix_status()` explaining why, when CUDA is unavailable — a
-  convenient graceful-skip gate for scripts and tests).
+- The `device=true` cache requires a registered device backend: load
+  `KernelAbstractions` together with a GPU package (CUDA, Metal) so the
+  `FastMultipoleKAExt` extension registers it. `radix_device_backend_available()`
+  is a convenient graceful-skip gate for scripts and tests, and
+  `radix_device_status()` explains the state.
 
 ## Worked example
 

@@ -128,9 +128,7 @@ export FlatCoefficientBuffer, real_basis_index, complex_to_real_basis!, real_to_
 export AbstractM2LOperator, MaterializedYRotationM2L, FactoredRotationM2L, M2LOperatorScratch
 export AbstractM2MOperator, MaterializedYRotationM2M, FactoredRotationM2M, M2MOperatorScratch
 export AbstractL2LOperator, MaterializedYRotationL2L, FactoredRotationL2L, L2LOperatorScratch
-export load_cuda_radix_lifecycle!, cuda_radix_available, cuda_radix_status
-export CUDARadixUnavailable, cuda_radix_state, run_cuda_radix_lifecycle!
-export copy_cuda_radix_output!, finalize_cuda_radix_output!, take_cuda_radix_output!, cuda_radix_grid
+export RadixDeviceUnavailable
 export host_radix_state, run_host_radix_lifecycle!, host_resident_radix_grid
 export finalize_radix_output!
 export RadixFMMCache, update_radix_state!
@@ -140,64 +138,20 @@ export AdaptiveTreePolicy, AdaptiveRadixTree, AdaptiveInteractionLists,
     update_adaptive_tree!, build_adaptive_interaction_lists!,
     adaptive_is_leaf, adaptive_node_range
 
-struct CUDARadixUnavailable <: Exception
+struct RadixDeviceUnavailable <: Exception
     reason::String
 end
 
-Base.showerror(io::IO, err::CUDARadixUnavailable) = print(io, err.reason)
+Base.showerror(io::IO, err::RadixDeviceUnavailable) = print(io, err.reason)
 
-const _CUDA_RADIX_LIFECYCLE_LOADED = Ref(false)
-const _CUDA_RADIX_LIFECYCLE_LOAD_ERROR = Ref{Any}(nothing)
-
-function _cuda_radix_preflight_error()
-    get(ENV, "FASTMULTIPOLE_FORCE_CUDA_LOAD", "0") == "1" && return nothing
-    Sys.isapple() && return "CUDA is not available on macOS in this runtime"
-    if Sys.islinux() && !ispath("/dev/nvidiactl") && !ispath("/proc/driver/nvidia/version")
-        return "no NVIDIA device nodes detected; set FASTMULTIPOLE_FORCE_CUDA_LOAD=1 to force CUDA.jl loading"
-    end
-    return nothing
-end
-
-cuda_radix_available() = false
-function cuda_radix_status()
-    err = _CUDA_RADIX_LIFECYCLE_LOAD_ERROR[]
-    err === nothing && return "CUDA radix lifecycle not loaded; call load_cuda_radix_lifecycle!()"
-    return "CUDA radix lifecycle failed to load: $(err)"
-end
-
-function load_cuda_radix_lifecycle!()
-    # cuda_radix_available/cuda_radix_status are redefined by the include below,
-    # so they must be reached through invokelatest from this (older-world) frame.
-    _CUDA_RADIX_LIFECYCLE_LOADED[] && return Base.invokelatest(cuda_radix_available)::Bool
-    _CUDA_RADIX_LIFECYCLE_LOAD_ERROR[] = nothing
-    preflight = _cuda_radix_preflight_error()
-    if preflight !== nothing
-        _CUDA_RADIX_LIFECYCLE_LOAD_ERROR[] = preflight
-        return false
-    end
-    try
-        include(joinpath(@__DIR__, "translate_batched_cuda.jl"))
-    catch err
-        _CUDA_RADIX_LIFECYCLE_LOAD_ERROR[] = err
-        return false
-    end
-    _CUDA_RADIX_LIFECYCLE_LOADED[] = true
-    return Base.invokelatest(cuda_radix_available)::Bool
-end
-
-#------- device-backend registry: non-CUDA radix lifecycles -------#
+#------- device-backend registry -------#
 #
-# CUDA claims the radix device path by runtime-`include`ing
-# translate_batched_cuda.jl INTO this module, overwriting the stubs in
-# translate_batched_resident.jl outright. A package extension cannot use that
-# mechanism -- redefining a method the parent module already owns is piracy,
-# and Julia's own diagnostic for it is "incremental compilation may be fatally
-# broken". So a non-CUDA backend REGISTERS its entry points here and the stubs
-# consult the registry before throwing.
-#
-# Precedence is by construction: CUDA's include REPLACES the consulting stub,
-# so a CUDA build never reaches the registry and the CUDA path is unchanged.
-
+# The device-resident radix lifecycle is provided by a package extension
+# (ext/FastMultipoleKAExt.jl for KernelAbstractions backends: CUDA, Metal, ...).
+# The extension REGISTERS its entry points here from its `__init__`, and the
+# stubs in translate_batched_resident.jl consult the registry before throwing.
+# The former hand-written CUDA lifecycle (runtime-`include`d into this module)
+# was removed after the KA port reached parity with it (2026-09-02).
 const _RADIX_DEVICE_BACKEND_NAME = Ref{Any}(nothing)
 const _RADIX_DEVICE_BUILD_HOOK = Ref{Any}(nothing)
 const _RADIX_DEVICE_STEP_HOOK = Ref{Any}(nothing)
@@ -225,16 +179,10 @@ radix_device_backend_name() = _RADIX_DEVICE_BACKEND_NAME[]
 
 function radix_device_status()
     name = _RADIX_DEVICE_BACKEND_NAME[]
-    name === nothing && return cuda_radix_status()
+    name === nothing && return "no device radix backend registered; load a backend " *
+        "extension (e.g. `using KernelAbstractions` together with CUDA or Metal)"
     return "device radix lifecycle provided by $(name)"
 end
-
-cuda_radix_state(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
-cuda_radix_grid(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
-run_cuda_radix_lifecycle!(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
-copy_cuda_radix_output!(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
-finalize_cuda_radix_output!(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
-take_cuda_radix_output!(args...; kwargs...) = throw(CUDARadixUnavailable(cuda_radix_status()))
 
 include("compatibility.jl")
 

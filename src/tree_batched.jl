@@ -61,8 +61,8 @@ _radix_sort_permutation(body_keys::AbstractVector{UInt64}, ::AutoRadixSort) =
 
 function _radix_sort_permutation(body_keys::AbstractVector{UInt64}, ::DeviceRadixSort)
     throw(ArgumentError(
-        "DeviceRadixSort is available only after load_cuda_radix_lifecycle!(); " *
-        "use cuda_radix_grid for CUDA-resident construction",
+        "DeviceRadixSort requires a registered device backend; " *
+        "load a backend extension for device-resident construction",
     ))
 end
 

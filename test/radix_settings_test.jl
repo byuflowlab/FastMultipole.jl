@@ -49,9 +49,8 @@ end
         finally
             set_radix_setting!(:CUDA_NEARFIELD_GH_MODE, old)
         end
-        if !FastMultipole.cuda_radix_available() &&
-                !isdefined(FastMultipole, :CUDA_NEARFIELD_BINNING)
-            # CUDA-only settings are named but unreachable before lifecycle load
+        if !isdefined(FastMultipole, :CUDA_NEARFIELD_BINNING)
+            # device-only settings are named but unreachable before a backend loads
             @test_throws ArgumentError radix_setting(:CUDA_NEARFIELD_BINNING)
             @test_throws ArgumentError set_radix_setting!(:CUDA_NEARFIELD_BINNING, :unbinned)
         end
