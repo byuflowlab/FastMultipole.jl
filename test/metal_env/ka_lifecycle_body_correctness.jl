@@ -145,6 +145,7 @@ const TOL = 2e-4  # Float32 whole-lifecycle accumulation; per-stage suites run 1
 npass = Ref(0); nfail = Ref(0)
 
 for (ci, (P, ell, n)) in pairs(CASES)
+    t_case = time()
     TF = Float32
     # Float32 all the way down: `generate_vortex` is Float64, which makes
     # `RadixGrid` Float64 and the grid upload throw on Metal even though
@@ -185,7 +186,7 @@ for (ci, (P, ell, n)) in pairs(CASES)
     e_out = relerr(ds.output, hs.output)
     ok = e_mul < TOL && e_loc < TOL && e_out < TOL
     ok ? (npass[] += 1) : (nfail[] += 1)
-    println("case $ci (P=$P, ell=$ell, n=$n): ", ok ? "PASS" : "FAIL",
+    println("[$(round(Int, time() - t_case))s] case $ci (P=$P, ell=$ell, n=$n): ", ok ? "PASS" : "FAIL",
         "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
 end
 

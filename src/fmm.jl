@@ -865,59 +865,81 @@ path is only selected by passing a `RadixFMMCache`.
   `RadixFMMCache(...; sfs=true, hessian=true)` (`ArgumentError` otherwise)
 - `lamb_helmholtz=nothing`: optional cross-check against the cache's `LH` parameter
 
-v1 restrictions: `target_systems === source_systems`; body count `<= max_n_bodies`;
-positions inside the cache's fixed box.
+The cache's systems must appear in both `target_systems` and `source_systems`
+(same order). Any further target system is an extra target and any further
+source system an extra source, both evaluated by direct rectangular kernels
+(see `radix_extra_systems.jl`); `hessian` may be a per-target vector.
+Restrictions: body count `<= max_n_bodies`; positions inside the cache's fixed box.
 """
 fmm!(system, cache::RadixFMMCache; optargs...) = fmm!(system, system, cache; optargs...)
 
 function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
-        scalar_potential::Bool=false, gradient::Bool=true, hessian::Bool=false,
+        scalar_potential::Bool=false, gradient::Bool=true, hessian=false,
         sfs::Bool=false,
         lamb_helmholtz::Union{Nothing,Bool}=nothing) where {TF,LH}
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
-    _assert_radix_targets_are_sources(targets, sources)
-    hessian && !cache.hessian && throw(ArgumentError(
+    split = _split_radix_systems(cache.n_systems, targets, sources)
+    hessian_v = to_vector(hessian, length(targets))
+    any(hessian_v) && !cache.hessian && throw(ArgumentError(
         "hessian output requested but this RadixFMMCache was built with " *
         "hessian=false (4-row output); construct RadixFMMCache(...; hessian=true)"))
     sfs && !cache.sfs && throw(ArgumentError(
         "sfs output requested but this RadixFMMCache was built with " *
         "sfs=false; construct RadixFMMCache(...; sfs=true, hessian=true)"))
+    sfs && !split.self_induce && throw(ArgumentError(
+        "sfs=true requires the self-inducing call (the SFS pass consumes the " *
+        "lifecycle's direct pairs)"))
     lamb_helmholtz === nothing || Bool(lamb_helmholtz) == LH || throw(ArgumentError(
         "lamb_helmholtz=$(lamb_helmholtz) conflicts with the cache's lamb_helmholtz=$LH; " *
         "the Lamb-Helmholtz channel is fixed at cache construction"))
-    !has_vector_potential(sources) || LH || throw(ArgumentError(
+    !has_vector_potential(split.main) || LH || throw(ArgumentError(
         "source systems carry a vector potential but the cache was built with " *
         "lamb_helmholtz=false; rebuild the cache with lamb_helmholtz=true"))
-
-    switches = DerivativesSwitch(
+    all_switches = DerivativesSwitch(
         to_vector(scalar_potential, length(targets)),
         to_vector(gradient, length(targets)),
-        to_vector(hessian, length(targets)), targets)
+        hessian_v, targets)
+    switches = Tuple(all_switches[i] for i in split.main_index)
+    extra_switches = Tuple(all_switches[i] for i in split.extra_target_index)
+    main = split.main
     if cache.device
-        _radix_cache_device_step!(cache, targets, switches; sfs)
+        _radix_cache_device_step!(cache, main, switches; sfs,
+            extra_targets=split.extra_targets, extra_target_switches=extra_switches,
+            extra_sources=split.extra_sources, self_induce=split.self_induce)
     elseif cache.adaptive === nothing
-        update_radix_state!(cache, sources)
-        run_host_radix_lifecycle!(cache.state)
+        update_radix_state!(cache, main)
+        if split.self_induce
+            run_host_radix_lifecycle!(cache.state)
+        else
+            fill!(cache.state.output, zero(TF))
+        end
         sfs && _run_host_radix_sfs!(cache.state)
-        finalize_radix_output!(cache.state, targets; derivatives_switches=switches,
+        _radix_extra_sources_into_output!(cache.state, split.extra_sources)
+        finalize_radix_output!(cache.state, main; derivatives_switches=switches,
             target_buffers=_radix_cache_target_buffers!(cache, switches))
-        sfs && finalize_radix_sfs_output!(cache.state, targets;
-            sfs_buffers=_radix_cache_sfs_buffers!(cache, targets))
+        sfs && finalize_radix_sfs_output!(cache.state, main;
+            sfs_buffers=_radix_cache_sfs_buffers!(cache, main))
+        split.self_induce &&
+            _radix_extra_targets_evaluate!(cache.state, split.extra_targets, extra_switches)
     else
         # task 040: with an AdaptiveTreePolicy armed, the host branch runs the
         # adaptive resident lifecycle (B2M/M2M/V-M2L/S2L/L2L/direct/L2B/M2T)
         # instead of the uniform one; the adaptive state carries the adaptive
         # sort's permutation metadata, so the finalize path is unchanged.
-        update_radix_state!(cache, sources)
+        update_radix_state!(cache, main)
+        split.self_induce || throw(ArgumentError(
+            "the adaptive radix path has no extra-sources-only mode"))
         run_adaptive_host_radix_lifecycle!(cache)
         adaptive_state = (cache.adaptive_state::AdaptiveResidentLifecycle).state
         sfs && _run_host_radix_sfs!(adaptive_state)
-        finalize_radix_output!(adaptive_state, targets;
+        _radix_extra_sources_into_output!(adaptive_state, split.extra_sources)
+        finalize_radix_output!(adaptive_state, main;
             derivatives_switches=switches,
             target_buffers=_radix_cache_target_buffers!(cache, switches))
-        sfs && finalize_radix_sfs_output!(adaptive_state, targets;
-            sfs_buffers=_radix_cache_sfs_buffers!(cache, targets))
+        sfs && finalize_radix_sfs_output!(adaptive_state, main;
+            sfs_buffers=_radix_cache_sfs_buffers!(cache, main))
+        _radix_extra_targets_evaluate!(adaptive_state, split.extra_targets, extra_switches)
     end
     return cache
 end

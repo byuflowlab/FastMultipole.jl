@@ -98,6 +98,7 @@ include("tree.jl")
 include("tree_batched.jl")
 include("interaction_list_batched.jl")
 include("translate_batched_resident.jl")
+include("radix_extra_systems.jl")
 include("radix_settings.jl")
 include("direct_rectangular.jl")
 

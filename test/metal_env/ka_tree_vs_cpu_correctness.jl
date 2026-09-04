@@ -306,12 +306,12 @@ const CASES = [
     (:clustered,  1024, 3),
     (:planar,     1024, 3),
     (:onboundary, 1024, 3),
-    (:uniform,    4096, 4),
-    (:onboundary, 4096, 4),
+    (:onboundary, 4096, 4),   # the only ell=4 case; uniform 4096 was the same depth for 7 s more
 ]
 
 println("device = $DEV_NAME  threads = $(Threads.nthreads())\n")
 for (kind, n, ell) in CASES
+    t_case = time()
     TF = Float32
     @printf("case %s n=%d ell=%d\n", kind, n, ell); flush(stdout)
     sys_h = make_field(kind, 4242, n, TF)
@@ -321,7 +321,7 @@ for (kind, n, ell) in CASES
     hcache, dcache = build_pair(sys_h, sys_d, 4, ell, TF)
     arm1(kind, hcache, dcache)
     arm2(kind, sys_r, hcache, dcache, ell, TF)
-    @printf("  -> %s\n\n", nfail[] == before ? "PASS" : "FAIL ($(nfail[] - before) checks)")
+    @printf("  -> %s [%.0fs]\n\n", nfail[] == before ? "PASS" : "FAIL ($(nfail[] - before) checks)", time() - t_case)
 end
 @printf("%s: %d failing checks over %d cases\n",
     nfail[] == 0 ? "all cases PASS" : "FAILURES", nfail[], length(CASES))

@@ -2153,6 +2153,22 @@ _direct_kernel_geometry_gate!(cache::RadixFMMCache, ::AbstractDirectKernel,
 @inline _gate_reach_rho(kernel::AbstractRegularizedVortex) = (kernel.rho_t, "rho_t")
 @inline _gate_reach_rho(kernel::TwoPassVortex) = (kernel.rho_c, "rho_c (pass-1 hybrid switch)")
 
+"""
+    _device_row_extrema(A, row, n) -> (lo, hi)
+    _device_row_max(A, row, n)
+
+`extrema(A[row, 1:n])` for a host OR device matrix. The host default is the
+plain view reduction. The KA extension overrides the device case with a
+FIXED-geometry kernel: a GPUArrays `maximum` over an `n`-length strided view
+compiles one reduction kernel per distinct `n` (measured 140 ms each on
+Metal), and a shedding solver changes `n` every step.
+"""
+function _device_row_extrema(A::AbstractMatrix, row::Integer, n::Integer)
+    v = view(A, row, 1:n)
+    return minimum(v), maximum(v)
+end
+_device_row_max(A, row::Integer, n::Integer) = _device_row_extrema(A, row, n)[2]
+
 function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
         kernel::AbstractRegularizedVortex, source_bodies, n::Int)
     n > 0 || return nothing
@@ -2161,7 +2177,7 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
     # the singular far field — the adequacy gate is vacuous.
     isempty(cache.accepted_offsets) && return nothing
     # works for Matrix and CuMatrix alike (device reduction + scalar download)
-    sigma_max = Float64(maximum(view(source_bodies, kernel.sigma_row, 1:n)))
+    sigma_max = Float64(_device_row_max(source_bodies, kernel.sigma_row, n))
     sigma_max > 0 || return nothing
     g_min = _leaf_stencil_min_gap(cache)
     h_leaf = 2 * Float64(cache.h0) / (1 << cache.ell)
@@ -3501,10 +3517,12 @@ function _build_cuda_dense_m2l_plan(args...)
 end
 
 function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple;
-        sfs::Bool=false)
+        sfs::Bool=false, extra_targets::Tuple=(), extra_target_switches::Tuple=(),
+        extra_sources::Tuple=(), self_induce::Bool=true)
     hook = _RADIX_DEVICE_STEP_HOOK[]
     hook === nothing && throw(RadixDeviceUnavailable(radix_device_status()))
-    return hook(cache, targets, switches; sfs)
+    return hook(cache, targets, switches; sfs, extra_targets, extra_target_switches,
+        extra_sources, self_induce)
 end
 
 #------- adaptive octree host resident lifecycle: state assembly + drivers (task 040) -------#

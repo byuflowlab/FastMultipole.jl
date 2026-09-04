@@ -148,10 +148,12 @@ function check_case(n, ell, TF; clustered=false)
 end
 
 println("device = $DEV_NAME\n")
-for (n, ell, cl) in ((1024, 3, false), (4096, 4, false), (4096, 3, true), (8192, 4, false))
+# n=8192 ell=4 uniform was dropped: same branch as the 4096 case, 10 s for no new coverage
+for (n, ell, cl) in ((1024, 3, false), (4096, 4, false), (4096, 3, true))
     before = nfail[]
+    t_case = time()
     check_case(n, ell, Float32; clustered=cl)
-    @printf("  -> %s\n\n", nfail[] == before ? "PASS" : "FAIL")
+    @printf("  -> %s [%.0fs]\n\n", nfail[] == before ? "PASS" : "FAIL", time() - t_case)
 end
 println(nfail[] == 0 ? "gate passed: all counting-sort cases PASS" :
     "FAILURES: $(nfail[]) failing checks")

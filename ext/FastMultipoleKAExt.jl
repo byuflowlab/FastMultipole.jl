@@ -17,6 +17,47 @@ function _cached_kernel(f, backend, workgroup::Int)
     return get!(() -> f(backend, wg), _KERNEL_CACHE, key)
 end
 
+#------- fixed-geometry row extrema (src: _device_row_extrema) -------#
+#
+# One kernel of ROW_EXTREMA_LANES workitems, each striding the row; the lane
+# partials (2 x lanes scalars) cross to the host and finish there. The kernel's
+# specialization does not involve `n`, so it compiles once per (backend, eltype)
+# rather than once per distinct length.
+
+const ROW_EXTREMA_LANES = 1024
+const _ROW_EXTREMA_SCRATCH = Dict{Any,Any}()
+
+@kernel function ka_row_extrema_kernel!(lo, hi, @Const(A), row, n, lanes)
+    i = @index(Global)
+    T = eltype(A)
+    mn = typemax(T); mx = typemin(T)
+    j = i
+    @inbounds while j <= n
+        v = A[row, j]
+        mn = min(mn, v); mx = max(mx, v)
+        j += lanes
+    end
+    @inbounds if i <= lanes
+        lo[i] = mn; hi[i] = mx
+    end
+end
+
+function FastMultipole._device_row_extrema(A::AnyGPUMatrix, row::Integer, n::Integer)
+    n > 0 || throw(ArgumentError("reducing over an empty row prefix"))
+    T = eltype(A)
+    backend = KA.get_backend(A)
+    lo, hi, hlo, hhi = get!(_ROW_EXTREMA_SCRATCH, (typeof(backend), T)) do
+        (KA.allocate(backend, T, ROW_EXTREMA_LANES), KA.allocate(backend, T, ROW_EXTREMA_LANES),
+         Vector{T}(undef, ROW_EXTREMA_LANES), Vector{T}(undef, ROW_EXTREMA_LANES))
+    end
+    wg = resolve_workgroup(backend, KA_AUTO_WORKGROUP)
+    kern = _cached_kernel(ka_row_extrema_kernel!, backend, wg)
+    kern(lo, hi, A, Int(row), Int(n), ROW_EXTREMA_LANES; ndrange=ROW_EXTREMA_LANES)
+    KA.synchronize(backend)
+    copyto!(hlo, lo); copyto!(hhi, hi)
+    return minimum(hlo), maximum(hhi)
+end
+
 #------- backend workgroup policy -------#
 #
 # `workgroup=64` was the unexamined default at most launch sites here. 64 suits
@@ -6525,6 +6566,13 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         # all-pairs arm: no grid, no tree, no routes, no box check. Bodies are
         # packed in identity order -- the perm's only consumer on this arm is
         # `ka_finalize_radix_output!`, which scatters back through it.
+        #
+        # The system/index tags still have to be refreshed: the pack kernel
+        # writes only columns whose tag matches, so bodies added since the
+        # last tagging call were packed as zeros (position at the origin, no
+        # strength) -- exact on a fixed field, wrong on a growing one.
+        ka_collect_positions!(ctx.positions, grid.body_system, grid.body_index,
+            source_buffers; workgroup)
         _ka_identity_perm!(grid.perm, grid.invperm, n; workgroup)
         n_cells = 0
         n_nodes = 0
@@ -6559,9 +6607,14 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         track_epoch = length(ctx.epoch_cell_keys) > 0 &&
             _ka_radix_setting(:CUDA_CACHED_WINDOWS, true)
     _utick!(:sort_compress, backend)
+        # The epoch is keyed on the occupied-cell SET, not on the body count:
+        # bodies added to already-occupied cells (a shedding solver, every step)
+        # leave every route, window and stage group valid. Compare the keys
+        # whenever the cell count matches; a count-only change must not force
+        # the rebuild (measured at ~420 ms per call at 400 bodies on Metal,
+        # against ~15 ms for the evaluation itself).
         occ_changed = true
-        if track_epoch && ctx.epoch_have[] && ctx.epoch_prev_n[] == n &&
-                ctx.epoch_prev_n_cells[] == n_cells
+        if track_epoch && ctx.epoch_have[] && ctx.epoch_prev_n_cells[] == n_cells
             occ_changed = ka_radix_occupancy_changed!(ctx.epoch_flag, ctx.host_epoch_flag,
                 ckv, ctx.epoch_cell_keys, n_cells; workgroup)
         end
@@ -6968,7 +7021,9 @@ armed with `sfs=true` at construction. No CUDA dependency.
 """
 function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         targets::Tuple, switches::Tuple; sfs::Bool=false,
-        workgroup=KA_AUTO_WORKGROUP)
+        workgroup=KA_AUTO_WORKGROUP, extra_targets::Tuple=(),
+        extra_target_switches::Tuple=(), extra_sources::Tuple=(),
+        self_induce::Bool=true)
     # construction-locked settings must not have drifted: a late flip is
     # baked-in-silently otherwise (buffers sized at construction)
     FastMultipole.verify_locked_radix_settings(cache.locked_settings)
@@ -6976,18 +7031,29 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     # all-pairs kernel, and the grid/route refresh is skipped with it (task
     # 053). Same finalize, same SFS hook: only the U/J evaluation differs.
     direct_arm = _ka_radix_setting(:RADIX_DIRECT_ARM, false)
+    # The extra-sources-only call needs no routes, but it DOES need the bodies
+    # repacked and the permutation refreshed: `finalize` de-permutes through
+    # the state's body metadata, and the body count changes between calls in a
+    # shedding solver. `direct_only=true` here left a stale permutation and
+    # scattered the result onto the wrong particles.
     ka_update_radix_state!(cache, targets; workgroup, direct_only=direct_arm)
     state = cache.state
-    if direct_arm
+    if !self_induce
+        fill!(state.output, zero(eltype(state.output)))
+    elseif direct_arm
         ka_direct_body!(state; workgroup)
     else
         ka_lifecycle_body!(state)
     end
+    ka_extra_sources_into_output!(state, extra_sources; workgroup)
     # SFS is a per-evaluation option, not merely a cache capability: an
     # sfs-armed cache runs no TG/zeta kernels on the (default) sfs=false path.
     # Placed after the lifecycle body and before the U/J finalize, which is
     # CUDA's order (translate_batched_cuda.jl:6971-6979).
     if sfs
+        self_induce || throw(ArgumentError(
+            "sfs=true requires the self-inducing call (the SFS pass consumes " *
+            "the lifecycle's direct pairs)"))
         # the SFS pass runs zeta over the U-list direct pairs, which the
         # all-pairs arm never builds; fail loudly rather than drop the term
         direct_arm && throw(ArgumentError(
@@ -7006,7 +7072,173 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         host_sfs_staging=cache.device_ctx.host_sfs_staging,
         sfs_target_buffers=FastMultipole._radix_cache_sfs_buffers!(cache, targets),
         device_sfs_buffers=cache.device_ctx.device_sfs_buffers)
+    self_induce &&
+        ka_extra_targets_evaluate!(state, extra_targets, extra_target_switches; workgroup)
     return cache
+end
+
+#------- extra target / source systems (src/radix_extra_systems.jl) -------#
+#
+# Device counterparts of `_radix_extra_sources_into_output!` and
+# `_radix_extra_targets_evaluate!`: the extra systems are host objects packed
+# on the host, uploaded, evaluated by a thread-per-target rectangular kernel,
+# and (for extra targets) downloaded and scattered through the host
+# `buffer_to_target!`. Nothing here is on the resident lifecycle's zero-copy
+# contract: the extras are a few hundred bodies per call.
+
+# thread per extra target, loop over the packed main bodies with the cache's
+# nearfield functor. `out` is written (one column per thread).
+@kernel function ka_extra_targets_from_main_kernel!(kernel, out, @Const(xt), nt,
+        @Const(source_bodies), nbodies, ::Type{T}, ::Val{HS}) where {T,HS}
+    i = @index(Global)
+    ep = FastMultipole._emits_potential(kernel)
+    ghv = Val(:shipped)
+    @inbounds if i <= nt
+        xi = xt[1, i]; yi = xt[2, i]; zi = xt[3, i]
+        u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
+        h1 = zero(T); h2 = zero(T); h3 = zero(T)
+        h4 = zero(T); h5 = zero(T); h6 = zero(T)
+        h7 = zero(T); h8 = zero(T); h9 = zero(T)
+        for j in 1:nbodies
+            dx = xi - source_bodies[1, j]
+            dy = yi - source_bodies[2, j]
+            dz = zi - source_bodies[3, j]
+            r2 = dx * dx + dy * dy + dz * dz
+            if r2 > zero(r2)
+                invr = inv(sqrt(r2))
+                if HS
+                    du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                        FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
+                            source_bodies, j, ghv)
+                    u += du; gx += dgx; gy += dgy; gz += dgz
+                    h1 += dh1; h2 += dh2; h3 += dh3
+                    h4 += dh4; h5 += dh5; h6 += dh6
+                    h7 += dh7; h8 += dh8; h9 += dh9
+                else
+                    du, dgx, dgy, dgz = FastMultipole._direct_pair_ug(kernel,
+                        dx, dy, dz, r2, invr, source_bodies, j, ghv)
+                    u += du; gx += dgx; gy += dgy; gz += dgz
+                end
+            end
+        end
+        out[1, i] = ep ? u : zero(T)
+        out[2, i] = gx; out[3, i] = gy; out[4, i] = gz
+        if HS
+            out[5, i] = h1; out[6, i] = h2; out[7, i] = h3
+            out[8, i] = h4; out[9, i] = h5; out[10, i] = h6
+            out[11, i] = h7; out[12, i] = h8; out[13, i] = h9
+        end
+    end
+end
+
+# thread per resident body (positions in rows 1:3 of the packed bodies, slot
+# order), loop over an extra source's packed buffer through the source's own
+# functor. ACCUMULATES into the resident output.
+@kernel function ka_targets_from_extra_source_kernel!(kernel, out, @Const(xt), nt,
+        @Const(source_buffer), ns, ::Type{T}, ::Val{HS}) where {T,HS}
+    i = @index(Global)
+    @inbounds if i <= nt
+        xi = xt[1, i]; yi = xt[2, i]; zi = xt[3, i]
+        u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
+        h1 = zero(T); h2 = zero(T); h3 = zero(T)
+        h4 = zero(T); h5 = zero(T); h6 = zero(T)
+        h7 = zero(T); h8 = zero(T); h9 = zero(T)
+        for j in 1:ns
+            if HS
+                du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                    FastMultipole._extra_pair_ugh(kernel, xi, yi, zi, source_buffer, j)
+                u += du; gx += dgx; gy += dgy; gz += dgz
+                h1 += dh1; h2 += dh2; h3 += dh3
+                h4 += dh4; h5 += dh5; h6 += dh6
+                h7 += dh7; h8 += dh8; h9 += dh9
+            else
+                du, dgx, dgy, dgz = FastMultipole._extra_pair_ug(kernel, xi, yi, zi,
+                    source_buffer, j)
+                u += du; gx += dgx; gy += dgy; gz += dgz
+            end
+        end
+        out[1, i] += u
+        out[2, i] += gx; out[3, i] += gy; out[4, i] += gz
+        if HS
+            out[5, i] += h1; out[6, i] += h2; out[7, i] += h3
+            out[8, i] += h4; out[9, i] += h5; out[10, i] += h6
+            out[11, i] += h7; out[12, i] += h8; out[13, i] += h9
+        end
+    end
+end
+
+_ka_upload(backend, host::AbstractMatrix{TF}) where TF =
+    copyto!(KA.allocate(backend, TF, size(host)), host)
+
+function _ka_launch_extra_source!(backend, wg, out, xt, nt::Int, system, ::Type{TF},
+        hs::Bool) where TF
+    ns = FastMultipole.get_n_bodies(system)
+    ns == 0 && return out
+    buffer = _ka_upload(backend, FastMultipole._radix_extra_source_buffer(TF, system))
+    kernel = FastMultipole.direct_kernel(system)
+    kern = _cached_kernel(ka_targets_from_extra_source_kernel!, backend, wg)
+    kern(kernel, out, xt, nt, buffer, ns, TF,
+         Val(hs && FastMultipole._extra_pair_has_hessian(kernel)); ndrange=cld(nt, wg) * wg)
+    return out
+end
+
+"""
+    ka_extra_sources_into_output!(state, extra_sources; workgroup)
+
+Apply every extra source system to the resident bodies, accumulating into
+`state.output` in slot order (slot positions are rows 1:3 of
+`state.source_bodies`), after the lifecycle body and before finalize.
+"""
+function ka_extra_sources_into_output!(state::FastMultipole.DeviceResidentRadixState{TF},
+        extra_sources::Tuple; workgroup=KA_AUTO_WORKGROUP) where TF
+    isempty(extra_sources) && return state
+    n = state.counts.n_bodies
+    n == 0 && return state
+    hs = size(state.output, 1) >= 13
+    backend = KA.get_backend(state.output)
+    wg = resolve_workgroup(backend, workgroup)
+    for system in extra_sources
+        _ka_launch_extra_source!(backend, wg, state.output, state.source_bodies, n,
+            system, TF, hs)
+    end
+    KA.synchronize(backend)
+    return state
+end
+
+"""
+    ka_extra_targets_evaluate!(state, extra_targets, switches; workgroup)
+
+Evaluate every extra target system from the resident bodies on the device,
+then scatter through the target's switch on the host.
+"""
+function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixState{TF},
+        extra_targets::Tuple, switches::Tuple; workgroup=KA_AUTO_WORKGROUP) where TF
+    isempty(extra_targets) && return state
+    n = state.counts.n_bodies
+    backend = KA.get_backend(state.output)
+    wg = resolve_workgroup(backend, workgroup)
+    dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF, 0)
+    kern = _cached_kernel(ka_extra_targets_from_main_kernel!, backend, wg)
+    for (system, switch) in zip(extra_targets, switches)
+        hs = !isempty(FastMultipole.hessian_range(switch))
+        hs && size(state.output, 1) < 13 && throw(ArgumentError(
+            "hessian output requested for an extra target system but the cache " *
+            "was built with hessian=false"))
+        xt_h = FastMultipole._radix_extra_target_positions(TF, system)
+        nt = size(xt_h, 2)
+        nt == 0 && continue
+        xt = _ka_upload(backend, xt_h)
+        out = KA.allocate(backend, TF, hs ? 13 : 4, nt)
+        if n > 0
+            kern(dkernel, out, xt, nt, state.source_bodies, n, TF, Val(hs);
+                 ndrange=cld(nt, wg) * wg)
+        else
+            fill!(out, zero(TF))
+        end
+        KA.synchronize(backend)
+        FastMultipole._radix_scatter_extra_target!(TF, system, switch, Array(out))
+    end
+    return state
 end
 
 
@@ -7049,29 +7281,34 @@ arguments, builds the `DerivativesSwitch` tuple, and dispatches to
 """
 function ka_fmm!(target_systems, source_systems,
         cache::FastMultipole.RadixFMMCache{TF,LH};
-        scalar_potential::Bool=false, gradient::Bool=true, hessian::Bool=false,
+        scalar_potential::Bool=false, gradient::Bool=true, hessian=false,
         sfs::Bool=false, lamb_helmholtz::Union{Nothing,Bool}=nothing,
         workgroup=KA_AUTO_WORKGROUP) where {TF,LH}
     targets = FastMultipole.to_tuple(target_systems)
     sources = FastMultipole.to_tuple(source_systems)
-    FastMultipole._assert_radix_targets_are_sources(targets, sources)
-    hessian && !cache.hessian && throw(ArgumentError(
+    split = FastMultipole._split_radix_systems(cache.n_systems, targets, sources)
+    hessian_v = FastMultipole.to_vector(hessian, length(targets))
+    any(hessian_v) && !cache.hessian && throw(ArgumentError(
         "hessian output requested but this RadixFMMCache was built with " *
         "hessian=false (4-row output); construct RadixFMMCache(...; hessian=true)"))
     lamb_helmholtz === nothing || Bool(lamb_helmholtz) == LH || throw(ArgumentError(
         "lamb_helmholtz=$(lamb_helmholtz) conflicts with the cache's lamb_helmholtz=$LH; " *
         "the Lamb-Helmholtz channel is fixed at cache construction"))
-    !FastMultipole.has_vector_potential(sources) || LH || throw(ArgumentError(
+    !FastMultipole.has_vector_potential(split.main) || LH || throw(ArgumentError(
         "source systems carry a vector potential but the cache was built with " *
         "lamb_helmholtz=false; rebuild the cache with lamb_helmholtz=true"))
     cache.device || throw(ArgumentError(
         "ka_fmm! requires a device-resident cache built by ka_radix_cache_device_build"))
 
-    switches = FastMultipole.DerivativesSwitch(
+    all_switches = FastMultipole.DerivativesSwitch(
         FastMultipole.to_vector(scalar_potential, length(targets)),
         FastMultipole.to_vector(gradient, length(targets)),
-        FastMultipole.to_vector(hessian, length(targets)), targets)
-    ka_radix_cache_device_step!(cache, targets, switches; sfs, workgroup)
+        hessian_v, targets)
+    switches = Tuple(all_switches[i] for i in split.main_index)
+    extra_switches = Tuple(all_switches[i] for i in split.extra_target_index)
+    ka_radix_cache_device_step!(cache, split.main, switches; sfs, workgroup,
+        extra_targets=split.extra_targets, extra_target_switches=extra_switches,
+        extra_sources=split.extra_sources, self_induce=split.self_induce)
     return cache
 end
 
@@ -7969,8 +8206,11 @@ function _ka_radix_device_build_hook(sources::Tuple, args...;
     return ka_radix_cache_device_build(backend, sources, args...; kwargs...)
 end
 
-_ka_radix_device_step_hook(cache, targets, switches; sfs::Bool=false) =
-    ka_radix_cache_device_step!(cache, targets, switches; sfs)
+_ka_radix_device_step_hook(cache, targets, switches; sfs::Bool=false,
+        extra_targets::Tuple=(), extra_target_switches::Tuple=(),
+        extra_sources::Tuple=(), self_induce::Bool=true) =
+    ka_radix_cache_device_step!(cache, targets, switches; sfs, extra_targets,
+        extra_target_switches, extra_sources, self_induce)
 
 function __init__()
     FastMultipole.register_radix_device_backend!("KernelAbstractions",
