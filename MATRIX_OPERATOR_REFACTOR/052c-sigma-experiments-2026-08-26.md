@@ -79,7 +79,61 @@ plateaus ≥ 4.45e-5), max_u tail, CT/Γ gate deltas vs the locked
 tolerances, count-gate deltas, and whether any late-run monitor crash
 recurs.
 
-Results: (pending)
+Results (2026-09-04, trial-1e = job 13582234, mgh GH200; lineage:
+13501691 run 1 passed gates / run 2 died at step 894 on the zero-M2L
+cache bug (since fixed by 052f d938ba68 + 052g 2c6dd60f); trial-1b
+13569052 cancelled (eng full); trial-1c 13569059 died at 4:36 on the
+silo sigma_guard 2-key/3-key skew (ceil support ported into both silo
+FLOWVPMs 2026-09-04, minimal hunk — parser + clamp application at both
+euler call sites; NOT whole-file, local file has splitting_state
+divergence); trial-1d 13582076 ran clean to step 693/1079 then
+NODE_FAIL (mgh-1-2 to maint)):
+
+- **COMPLETED, exit 0, 2:58:15**; launcher printed "artifact and monitor
+  gates passed for indices 0:1079".
+- **Locked correctness gates ALL PASS** (window 720-755, locked
+  tolerances):
+
+  | Gate | Measured | Ceiling | Result |
+  |---|---:|---:|---|
+  | CT cycle-mean | 6.565e-4 | 1.800e-3 | PASS |
+  | Gamma M2 max | 1.317e-3 | 2.934e-3 | PASS |
+  | Gamma M2 RMS | 4.484e-4 | 1.498e-3 | PASS |
+
+- Guard config as designed: SIGMA_DTZ_CAP=0.5, SIGMA_FLOOR_FRAC=0.01
+  (floor 4.451e-5 m), SIGMA_CEIL=Inf (guard=on).
+- **min_sigma trajectory (wake-health monitor04)**: monotone contraction
+  from sigma_shed 4.451e-3 m to min 9.558e-5 m at step 983
+  (min_sigma_ratio 0.0215), recovering to 1.303e-4 m by step 1080. The
+  floor (ratio 0.01) never clamped — min stayed ~2.1x above it. No
+  sign-flip/collapse: the historical step-~1015 blowup (dt*Z 164) did
+  not recur under the cap. max_gamma_over_sigma2 peaked 2.20e4 at step
+  951, ending 1.52e4.
+- **052f/052g fix validated in production**: mid-run the radix-FMM
+  geometry went inadequate (g_min*h_leaf = 0.126 vs rho_t*sigma_max =
+  0.1261 at ell=3) and the 052f demotion warning fired, falling back to
+  the all-direct zero-M2L geometry at ell=2 (q=27) — exactly the
+  scenario that hard-crashed 13501691 run 2 at step 894. Run continued
+  healthy through step 1080.
+- Phase-2e CT convergence: CONVERGED=false (spread 0.0209 vs tol 0.005;
+  within-rev p-p/mean 0.111 vs 0.02) but CYCLE-MEAN CT = 0.072526 ±
+  1.04% over 10 revs, with middle blocks (revs 3-8 of the window) tight
+  at 0.2-0.8% dev — the known pre-existing, non-fatal readout item
+  (same class as 13501691 run 1), flagged to Ryan, not a gate.
+- Reference context: ct_reference_cycle_mean 0.0712209;
+  ct_per_step_max_abs_difference 1.011e-4. Gate report:
+  orc `~/FLOWPanel-052-gh200/data/fm052c_mature_gate_t1_13582234/fm052_gate.md`;
+  run dir `.../data/fm052d_gpu_1080_t1/` (shared data root).
+
+**Trial 1 verdict: PASS.** The dtz_cap=0.5 + floor=1% guard pair keeps
+the 1080-step acceptance alive with locked gates passing and no
+fingerprint impact in the mature-gate window. Commit-plan proposal
+(needs Ryan): (1) commit the silo ceil port upstream (it is already the
+local FLOWVPM state; orc silos now match on the guard hunk); (2) adopt
+dtz_cap=0.5 + floor_frac=0.01 as the 052c-recommended default for GPU
+rotor acceptance runs (ceil=Inf until a binding value is motivated);
+(3) fold the candidate-trials list below into 053 row planning rather
+than running more OFAT now.
 
 ## Candidate future trials (not ruled)
 
@@ -91,3 +145,46 @@ Results: (pending)
   tighten `MERGE_R_FACTOR` / merge acceptance instead of (or with) the
   integrator guard.
 - Guard inside `rungekutta3`/`euler_exp` if a future config needs them.
+
+## Trial 2 — exponential integrator, no clamps (Ryan-ruled 2026-09-05)
+
+Hypothesis: the 026 frozen-gradient geometric integrator (`euler_exp`,
+sigma > 0 by construction for any finite gradient/timestep) resolves the
+step-~1015 sigma collapse WITHOUT the trial-1 cap/floor guards.
+
+Setup (job 13592503, mgh-1-1 GH200, submitted 2026-09-05):
+- `WAKE_EXPINT=true`, SIGMA_* unset (guard=off; `euler_exp` rejects a
+  non-empty sigma_guard by design).
+- Silo port required first: the -gh200 silo FLOWVPM predated 026 Phase 1b
+  Task 1 (commit 8b00dbd, GPU/broadcast path for euler_exp). Ported
+  2026-09-05 as a targeted patch: timeintegration hunks applied clean;
+  the viscous CoreSpreading isa-Array fork was hand-applied because the
+  silo lacks the 75a55d7 splitting_state dsigma2 accumulators (same
+  divergence class as the ceil port). Backups:
+  `~/FLOWVPM-052-gh200/src/{FLOWVPM_timeintegration,FLOWVPM_viscous}.jl.bak-preexp`.
+  Patch archived: `MATRIX_OPERATOR_REFACTOR/scripts/fp052c_trial2_expint_gpu_port.patch`.
+- Launcher: `~/projects/launchers/fp052c_trial2_expint_gh200_run.sh`
+  (archived in `MATRIX_OPERATOR_REFACTOR/scripts/`). Two stages as trial-1,
+  EXCEPT the stage-1 mature gate vs the pinned CPU EULER reference is
+  INFORMATIONAL (a different integrator legitimately shifts the
+  fingerprint; recorded, does not abort). GPU-routing source gates fatal.
+  Stage-2 run_name `fm052d_gpu_1080_t2exp` (t1 + unguarded baseline preserved).
+- Expected failure signature if the instability persists: euler_exp
+  broadcast substep-budget throw (dt*|L| bound) or non-finite-ratio
+  DomainError — either is informative, not a silent blowup.
+
+Infrastructure (Ryan-ruled 2026-09-05, mid-trial): one checkout, no silos.
+- expint GPU port committed to unified `~/projects/FLOWVPM.jl` as 3315b22
+  (files were byte-identical to the silo pre-port state).
+- Frozen-campaign pattern = git worktrees (wt026 precedent): created
+  `~/wt052/{FLOWVPM.jl,FLOWPanel.jl,FastMultipole}` on branch
+  `campaign-052` + env `~/wt052/env-aarch64` (Manifest dev-repointed). Pinned
+  SHAs: FLOWVPM.jl 3315b22, FLOWPanel.jl 4e6b5b7, FastMultipole 3da58a1a.
+- Launcher `~/projects/launchers/fp052c_expint_wt052_run.sh` (archived in
+  scripts/): runs from wt052, run dirs + logs symlinked/written into the
+  consolidated data root `~/projects/FLOWPanel.jl/data`.
+- Trial-2 job 13592503 still runs from the gh200 silo (already in flight;
+  tree-identical to trial-1e for comparability) — the LAST silo run. Silo
+  retirement (gh200 + h100/h200 triples) queued for after it completes.
+
+Results: (pending)
