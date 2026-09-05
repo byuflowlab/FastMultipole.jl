@@ -342,6 +342,198 @@ function cross_l2l_operators(P::Integer, h0::Real, ell_x::Integer)
     return ops
 end
 
+#------- 052h reverse leg: Lamb-Helmholtz dual-channel operator tables -------#
+#
+# The particles→panels leg carries vortex sources, which require BOTH
+# Lamb-Helmholtz channels (velocity = ∇φ plus the χ contribution). The LH
+# tables below mirror the phi-only builders exactly — probed from the SAME
+# production host operators, now with `lamb_helmholtz = Val(true)` and unit
+# vectors over both channels — in the stacked row basis
+#
+#   row = (channel - 1) * D + 2*(harmonic_index - 1) + (1 re | 2 im),
+#   D = (P + 1)(P + 2),  channel 1 = φ, channel 2 = χ,
+#
+# so each operator is a 2×2 grid of D×D channel blocks. The χ→φ mixing of the
+# host translations lands in the off-diagonal (φ-row, χ-col) block
+# automatically; the (χ-row, φ-col) block is structurally zero (φ sources
+# never generate χ).
+#
+# Level rescaling (Stage C): the diagonal blocks obey the same exact
+# `1/t^(n + n' + 1)` covariance as the phi tables, while the φ←χ mixing block
+# scales ONE power weaker, `1/t^(n + n')` (χ carries an extra length unit;
+# verified numerically to machine precision over sampled offsets, probe
+# 2026-08-31). Because χ←φ is zero, the shifted law is still SEPARABLE:
+# assign χ ROWS the exponent `n + 1` and χ COLUMNS the exponent `n - 1` —
+# then (φφ): n+n'+1, (φ←χ): n+n', (χχ): (n+1)+(n'-1)+1 = n+n'+1, all exact,
+# and the kernel keeps the identical `scale_row · pow2lvl · scale_col` form.
+
+"Pack one probed dual-channel expansion into a stacked LH operator column."
+@inline function _cross_pack_lh_col!(col, te, H::Int, D::Int)
+    for ch_out in 1:2, i2 in 1:H
+        col[(ch_out - 1) * D + 2 * (i2 - 1) + 1] = te[1, ch_out, i2]
+        col[(ch_out - 1) * D + 2 * (i2 - 1) + 2] = te[2, ch_out, i2]
+    end
+    return nothing
+end
+
+"""
+    cross_m2m_operators_lh(P, h0, ell_x)
+
+Dual-channel (Lamb-Helmholtz) M2M matrices `ops[row, col, octant, L_child]`
+in the stacked LH row basis (052h header note); same octant/level conventions
+as `cross_m2m_operators`.
+"""
+function cross_m2m_operators_lh(P::Integer, h0::Real, ell_x::Integer)
+    H = ((P + 1) * (P + 2)) >> 1
+    D = 2 * H
+    ops = Array{Float64,4}(undef, 2 * D, 2 * D, 8, ell_x)
+    update_Hs_π2!(Hs_π2, P)
+    update_ζs_mag!(ζs_mag, P)
+    w1 = initialize_expansion(P)
+    w2 = initialize_expansion(P)
+    Ts = zeros(length_Ts(P))
+    eimϕs = zeros(2, P + 1)
+    ce = initialize_expansion(P)
+    pe = initialize_expansion(P)
+    lhv = Val(true)
+    pb = _cross_dummy_branch(SVector(0.0, 0.0, 0.0))
+    for Lc in 1:ell_x
+        wc = 2 * Float64(h0) / (1 << Lc)
+        for phase in 0:7
+            u = SVector(phase & 1, (phase >> 1) & 1, (phase >> 2) & 1)
+            cb = _cross_dummy_branch(SVector{3,Float64}((u .- 0.5) .* wc))
+            for ch_in in 1:2, c in 1:D
+                i = (c + 1) >> 1
+                reim = 2 - (c & 1)
+                fill!(ce, 0.0)
+                ce[reim, ch_in, i] = 1.0
+                fill!(pe, 0.0)
+                multipole_to_multipole!(pe, pb, ce, cb, w1, w2, Ts, eimϕs,
+                    ζs_mag, Hs_π2, Int(P), lhv)
+                _cross_pack_lh_col!(
+                    view(ops, :, (ch_in - 1) * D + c, phase + 1, Lc), pe, H, D)
+            end
+        end
+    end
+    return ops
+end
+
+"""
+    cross_m2l_operators_lh(P, h0, ct)
+
+Dual-channel (Lamb-Helmholtz) M2L matrices `ops[row, col, slot]` at the
+reference level `_CROSS_M2L_L_REF` in the stacked LH row basis, slot-compacted
+over `cross_m2l_class_slots(ct)` (returns `(ops, class_slot)`). Deeper levels
+apply the LH separable rescaling of `cross_m2l_level_scales_lh`.
+"""
+function cross_m2l_operators_lh(P::Integer, h0::Real, ct::CrossStencilTables)
+    H = ((P + 1) * (P + 2)) >> 1
+    D = 2 * H
+    class_slot, n_slots = cross_m2l_class_slots(ct)
+    ops = Array{Float64,3}(undef, 2 * D, 2 * D, n_slots)
+    update_Hs_π2!(Hs_π2, P)
+    update_ζs_mag!(ζs_mag, P)
+    update_ηs_mag!(ηs_mag, P)
+    update_M̃!(M̃, P)
+    update_L̃!(L̃, P)
+    w1 = initialize_expansion(P)
+    w2 = initialize_expansion(P)
+    w3 = initialize_expansion(P)
+    Ts = zeros(length_Ts(P))
+    eimϕs = zeros(2, P + 1)
+    se = initialize_expansion(P)
+    te = initialize_expansion(P)
+    lhv = Val(true)
+    sb = _cross_dummy_branch(SVector(0.0, 0.0, 0.0))
+    w_ref = 2 * Float64(h0) / (1 << _CROSS_M2L_L_REF)
+    for k in 1:length(class_slot)
+        slot = class_slot[k]
+        slot == 0 && continue
+        o = ct.tables.push_offsets[k]
+        tb = _cross_dummy_branch(SVector{3,Float64}(o) * w_ref)
+        for ch_in in 1:2, c in 1:D
+            i = (c + 1) >> 1
+            reim = 2 - (c & 1)
+            fill!(se, 0.0)
+            se[reim, ch_in, i] = 1.0
+            fill!(te, 0.0)
+            multipole_to_local!(te, tb, se, sb, w1, w2, w3, Ts, eimϕs,
+                ζs_mag, ηs_mag, Hs_π2, M̃, L̃, Int(P), lhv, nothing)
+            _cross_pack_lh_col!(view(ops, :, (ch_in - 1) * D + c, slot), te, H, D)
+        end
+    end
+    return ops, class_slot
+end
+
+"""
+    cross_m2l_level_scales_lh(P, ell_x)
+
+Separable level-rescale tables for the LH M2L (052h header note): returns
+`(scale2_row, scale2_col, pow2lvl)`, each spanning the stacked `2D` rows, with
+the χ-block degree shifts baked in (χ rows use `n + 1`, χ columns `n - 1`).
+The full factor on output row `r`, input column `c` of a level-`L` route is
+`scale2_row[r, L+1] * pow2lvl[L+1] * scale2_col[c, L+1]`.
+"""
+function cross_m2l_level_scales_lh(P::Integer, ell_x::Integer)
+    row_n = cross_row_degrees(P)
+    D = length(row_n)
+    scale2_row = Array{Float64,2}(undef, 2 * D, ell_x + 1)
+    scale2_col = Array{Float64,2}(undef, 2 * D, ell_x + 1)
+    pow2lvl = Vector{Float64}(undef, ell_x + 1)
+    for L in 0:ell_x
+        pow2lvl[L + 1] = exp2(L - _CROSS_M2L_L_REF)
+        for r in 1:D
+            n = Int(row_n[r])
+            scale2_row[r, L + 1] = exp2((L - _CROSS_M2L_L_REF) * n)
+            scale2_row[D + r, L + 1] = exp2((L - _CROSS_M2L_L_REF) * (n + 1))
+            scale2_col[r, L + 1] = exp2((L - _CROSS_M2L_L_REF) * n)
+            scale2_col[D + r, L + 1] = exp2((L - _CROSS_M2L_L_REF) * (n - 1))
+        end
+    end
+    return scale2_row, scale2_col, pow2lvl
+end
+
+"""
+    cross_l2l_operators_lh(P, h0, ell_x)
+
+Dual-channel (Lamb-Helmholtz) L2L matrices `ops[row, col, octant, L_child]`
+in the stacked LH row basis; same conventions as `cross_l2l_operators`.
+"""
+function cross_l2l_operators_lh(P::Integer, h0::Real, ell_x::Integer)
+    H = ((P + 1) * (P + 2)) >> 1
+    D = 2 * H
+    ops = Array{Float64,4}(undef, 2 * D, 2 * D, 8, ell_x)
+    update_Hs_π2!(Hs_π2, P)
+    update_ηs_mag!(ηs_mag, P)
+    w1 = initialize_expansion(P)
+    w2 = initialize_expansion(P)
+    Ts = zeros(length_Ts(P))
+    eimϕs = zeros(2, P + 1)
+    se = initialize_expansion(P)
+    te = initialize_expansion(P)
+    lhv = Val(true)
+    pb = _cross_dummy_branch(SVector(0.0, 0.0, 0.0))
+    for Lc in 1:ell_x
+        wc = 2 * Float64(h0) / (1 << Lc)
+        for phase in 0:7
+            u = SVector(phase & 1, (phase >> 1) & 1, (phase >> 2) & 1)
+            cb = _cross_dummy_branch(SVector{3,Float64}((u .- 0.5) .* wc))
+            for ch_in in 1:2, c in 1:D
+                i = (c + 1) >> 1
+                reim = 2 - (c & 1)
+                fill!(se, 0.0)
+                se[reim, ch_in, i] = 1.0
+                fill!(te, 0.0)
+                local_to_local!(te, cb, se, pb, w1, w2, Ts, eimϕs,
+                    ηs_mag, Hs_π2, Int(P), lhv)
+                _cross_pack_lh_col!(
+                    view(ops, :, (ch_in - 1) * D + c, phase + 1, Lc), te, H, D)
+            end
+        end
+    end
+    return ops
+end
+
 "Number of demoted push offsets per level (union over phases), for stage logs."
 function cross_demotion_census(ct::CrossStencilTables)
     census = zeros(Int, ct.ell_x + 1)

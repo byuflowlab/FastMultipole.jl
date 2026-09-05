@@ -2157,7 +2157,13 @@ function _alldirect_geometry_fallback!(cache::RadixFMMCache{TF,LH},
         window_classes=policy.window_classes,
         dense_occupancy_max_bytes=policy.dense_occupancy_max_bytes,
         dense_occupancy_max_ell=policy.dense_occupancy_max_ell)
-    old_sfs = cache.state.sfs
+    # During DEVICE construction the adequacy gate (and thus this fallback)
+    # runs before `cache.state` exists — update_cuda_radix_state! assigns it
+    # only at the end of the first refresh — so the SFS configuration must be
+    # read from the device context instead (same .transposed/.active_row
+    # interface; caught by the stage-7 device testset, job 13518721).
+    old_sfs = cache.state !== nothing ? cache.state.sfs :
+        cache.device_ctx !== nothing ? cache.device_ctx.sfs_ctx : nothing
     fresh = RadixFMMCache(systems, systems;
         expansion_order=cache.expansion_order, ell=2,
         max_n_bodies=cache.max_n_bodies,

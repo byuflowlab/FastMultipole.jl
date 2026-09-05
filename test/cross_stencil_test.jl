@@ -12,6 +12,8 @@ using FastMultipole: _cross_box_gap, _cross_demoted, _cross_b2m_arms,
     cross_row_degrees, _CROSS_M2L_L_REF, multipole_to_local!,
     update_ηs_mag!, update_M̃!, update_L̃!, ηs_mag, M̃, L̃,
     cross_l2l_operators, local_to_local!, evaluate_local, DerivativesSwitch,
+    cross_m2m_operators_lh, cross_m2l_operators_lh, cross_m2l_level_scales_lh,
+    cross_l2l_operators_lh,
     initialize_harmonics, initialize_gradient_n_m, _resident_local_eval_flat,
     flat_basis_index
 using FastMultipole.StaticArrays
@@ -275,6 +277,144 @@ import Random
         @test all(!=(Int32(0)), ct.near_class)
         for k in 1:Kn, L in 0:ell_x, phase in 1:8
             @test ct.near_class[phase, k, L + 1] == Int32(k)
+        end
+    end
+end
+
+@testset "052h LH operator tables (reverse leg)" begin
+    # stacked LH row basis: row = (ch - 1) * D + 2*(harmonic - 1) + re/im
+    lh_vec(e, H, D) = [e[2 - (c & 1), ch, (c + 1) >> 1]
+        for ch in 1:2 for c in 1:D]
+
+    @testset "LH M2M operators match the host M2M (dual channel)" begin
+        Random.seed!(52)
+        P = 4
+        h0t = 0.75
+        H = ((P + 1) * (P + 2)) >> 1
+        D = 2 * H
+        ops = cross_m2m_operators_lh(P, h0t, 3)
+        @test size(ops) == (2D, 2D, 8, 3)
+        update_Hs_π2!(Hs_π2, P); update_ζs_mag!(ζs_mag, P)
+        w1 = initialize_expansion(P); w2 = initialize_expansion(P)
+        Ts = zeros(length_Ts(P)); eimϕs = zeros(2, P + 1)
+        pb = _cross_dummy_branch(SVector(0.0, 0.0, 0.0))
+        for Lc in 1:3, phase in 0:7
+            wc = 2 * h0t / (1 << Lc)
+            u = SVector(phase & 1, (phase >> 1) & 1, (phase >> 2) & 1)
+            cb = _cross_dummy_branch(SVector{3,Float64}((u .- 0.5) .* wc))
+            ce = initialize_expansion(P)
+            ce .= randn(2, 2, H)   # BOTH channels
+            pe = initialize_expansion(P)
+            multipole_to_multipole!(pe, pb, ce, cb, w1, w2, Ts, eimϕs,
+                ζs_mag, Hs_π2, P, Val(true))
+            got = ops[:, :, phase + 1, Lc] * lh_vec(ce, H, D)
+            want = lh_vec(pe, H, D)
+            @test isapprox(got, want; rtol = 1e-12, atol = 1e-14)
+        end
+    end
+
+    @testset "LH M2L operators: ref level + shifted separable scaling" begin
+        Random.seed!(52)
+        P = 4
+        h0t = 1.3
+        q = 3
+        ell_x = 4
+        ct = CrossStencilTables(q, ell_x, h0t, 0.0)
+        H = ((P + 1) * (P + 2)) >> 1
+        D = 2 * H
+        ops, class_slot = cross_m2l_operators_lh(P, h0t, ct)
+        n_slots = maximum(class_slot)
+        @test size(ops) == (2D, 2D, n_slots)
+        # χ←φ block is structurally zero (φ sources never generate χ)
+        @test all(iszero, ops[D+1:2D, 1:D, :])
+        # scale tables: χ rows shift +1, χ cols shift −1
+        scale2_row, scale2_col, pow2lvl = cross_m2l_level_scales_lh(P, ell_x)
+        row_n = cross_row_degrees(P)
+        for L in 0:ell_x, r in 1:D
+            f = Float64(L - _CROSS_M2L_L_REF)
+            @test scale2_row[r, L + 1] == 2.0^(f * row_n[r])
+            @test scale2_row[D + r, L + 1] == 2.0^(f * (row_n[r] + 1))
+            @test scale2_col[D + r, L + 1] == 2.0^(f * (row_n[r] - 1))
+        end
+        # sampled classes at every route level vs the production LH host M2L
+        update_Hs_π2!(Hs_π2, P); update_ζs_mag!(ζs_mag, P)
+        update_ηs_mag!(ηs_mag, P); update_M̃!(M̃, P); update_L̃!(L̃, P)
+        w1 = initialize_expansion(P); w2 = initialize_expansion(P)
+        w3 = initialize_expansion(P)
+        Ts = zeros(length_Ts(P)); eimϕs = zeros(2, P + 1)
+        sb = _cross_dummy_branch(SVector(0.0, 0.0, 0.0))
+        active = findall(!=(Int32(0)), class_slot)
+        sample = active[Random.shuffle(1:length(active))[1:min(12, length(active))]]
+        for k in sample, L in 2:ell_x
+            o = ct.tables.push_offsets[k]
+            w_L = 2 * h0t / (1 << L)
+            se = initialize_expansion(P)
+            se .= randn(2, 2, H)   # BOTH channels
+            te = initialize_expansion(P)
+            tb = _cross_dummy_branch(SVector{3,Float64}(o) * w_L)
+            multipole_to_local!(te, tb, se, sb, w1, w2, w3, Ts, eimϕs,
+                ζs_mag, ηs_mag, Hs_π2, M̃, L̃, P, Val(true), nothing)
+            want = lh_vec(te, H, D)
+            slot = class_slot[k]
+            got = (ops[:, :, slot] * (lh_vec(se, H, D) .* scale2_col[:, L + 1])) .*
+                scale2_row[:, L + 1] .* pow2lvl[L + 1]
+            @test isapprox(got, want; rtol = 1e-11, atol = 1e-13 * norm(want))
+        end
+    end
+
+    @testset "LH L2L operators match the host L2L (dual channel)" begin
+        Random.seed!(52)
+        P = 4
+        h0t = 0.75
+        H = ((P + 1) * (P + 2)) >> 1
+        D = 2 * H
+        ops = cross_l2l_operators_lh(P, h0t, 3)
+        @test size(ops) == (2D, 2D, 8, 3)
+        update_Hs_π2!(Hs_π2, P); update_ηs_mag!(ηs_mag, P)
+        w1 = initialize_expansion(P); w2 = initialize_expansion(P)
+        Ts = zeros(length_Ts(P)); eimϕs = zeros(2, P + 1)
+        pb = _cross_dummy_branch(SVector(0.0, 0.0, 0.0))
+        for Lc in 1:3, phase in 0:7
+            wc = 2 * h0t / (1 << Lc)
+            u = SVector(phase & 1, (phase >> 1) & 1, (phase >> 2) & 1)
+            cb = _cross_dummy_branch(SVector{3,Float64}((u .- 0.5) .* wc))
+            se = initialize_expansion(P)
+            se .= randn(2, 2, H)   # BOTH channels
+            te = initialize_expansion(P)
+            local_to_local!(te, cb, se, pb, w1, w2, Ts, eimϕs,
+                ηs_mag, Hs_π2, P, Val(true))
+            got = ops[:, :, phase + 1, Lc] * lh_vec(se, H, D)
+            want = lh_vec(te, H, D)
+            @test isapprox(got, want; rtol = 1e-12, atol = 1e-14)
+        end
+    end
+
+    @testset "flat local eval handles LH (reverse-leg L2B reuse)" begin
+        # the reverse leg evaluates dual-channel locals at panel control
+        # points via _resident_local_eval_flat(phi, chi, ..., Val(true))
+        Random.seed!(52)
+        P = 4
+        H = ((P + 1) * (P + 2)) >> 1
+        D = 2 * H
+        harmonics = initialize_harmonics(P)
+        gradient_n_m = initialize_gradient_n_m(P)
+        ds = DerivativesSwitch(true, true, false)
+        for trial in 1:8
+            le = initialize_expansion(P)
+            le .= randn(2, 2, H)
+            flat_phi = zeros(D, 1)
+            flat_chi = zeros(D, 1)
+            for c in 1:D
+                flat_phi[c, 1] = le[2 - (c & 1), 1, (c + 1) >> 1]
+                flat_chi[c, 1] = le[2 - (c & 1), 2, (c + 1) >> 1]
+            end
+            Δx = SVector{3}(randn(3) * 0.3)
+            u_ref, g_ref, _ = evaluate_local(Δx, harmonics, gradient_n_m, le,
+                P, Val(true), ds)
+            u, gx, gy, gz = _resident_local_eval_flat(flat_phi, flat_chi, 1,
+                Δx[1], Δx[2], Δx[3], P, P, Val(true))
+            @test isapprox(u, u_ref; rtol = 1e-12, atol = 1e-14)
+            @test isapprox(SVector(gx, gy, gz), g_ref; rtol = 1e-12, atol = 1e-14)
         end
     end
 end

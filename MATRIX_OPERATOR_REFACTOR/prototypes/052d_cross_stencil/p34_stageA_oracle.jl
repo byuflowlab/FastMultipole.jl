@@ -105,7 +105,7 @@ for cfg in CONFIGS
     # device producer
     ct = CrossStencilTables(cfg.q, cfg.ell_x, g.h0, cfg.Rg)
     ctx = FastMultipole.device_cross_producer_context(ct,
-        SVector{3,Float64}(g.x_min), g.h0, ns, nt)
+        SVector{3,Float64}(g.x_min), g.h0, ns, nt; build_reverse = true)
     FastMultipole.refresh_cross_producers!(ctx, d_panels, d_particles)
     CUDA.synchronize()
     t_refresh = CUDA.@elapsed begin
@@ -163,6 +163,37 @@ for cfg in CONFIGS
         total += cnt(lists.panels, b.sources[i]) * cnt(lists.particles, b.targets[i])
     end
     check("count identity Σ|A||B| == ns·nt ($total)", total == Int128(ns) * Int128(nt))
+
+    # (5) 052h REVERSE leg (particles→panels): same checks against the host
+    # sweep with the roles swapped — particles are the explicit sources,
+    # panels the dense-occupancy targets.
+    _, rev_m2l_list, rev_near_list = sweep_config(tq, tgt_levels, src_levels,
+        cfg.ell_x; materialize = true)
+    rhost_all = canon_host(rev_m2l_list, tgt_levels, src_levels)
+    rhost_far = [t for t in rhost_all if !demote_host(t[2], t[3], t[1])]
+    rhost_dem = [t for t in rhost_all if demote_host(t[2], t[3], t[1])]
+    rhost_near = canon_host(rev_near_list, tgt_levels, src_levels)
+    rr = lists.rev_routes; rb = lists.rev_blocks
+    rdev_far = canon(rr.levels, rr.sources, rr.targets, lists.particles, lists.panels)
+    rdev_dem = canon(rb.levels[1:rb.n_demoted], rb.sources[1:rb.n_demoted],
+        rb.targets[1:rb.n_demoted], lists.particles, lists.panels)
+    rdev_near = canon(rb.levels[rb.n_demoted + 1:end], rb.sources[rb.n_demoted + 1:end],
+        rb.targets[rb.n_demoted + 1:end], lists.particles, lists.panels)
+    check("REV far routes == host far (n=$(length(rdev_far)))",
+        sort(rdev_far) == sort(rhost_far))
+    check("REV demoted blocks == host demoted (n=$(length(rdev_dem)))",
+        sort(rdev_dem) == sort(rhost_dem))
+    check("REV near blocks == host near (n=$(length(rdev_near)))",
+        sort(rdev_near) == sort(rhost_near))
+    rtotal = Int128(0)
+    for i in 1:length(rr.levels)
+        rtotal += cnt(lists.particles, rr.sources[i]) * cnt(lists.panels, rr.targets[i])
+    end
+    for i in 1:length(rb.levels)
+        rtotal += cnt(lists.particles, rb.sources[i]) * cnt(lists.panels, rb.targets[i])
+    end
+    check("REV count identity Σ|A||B| == nt·ns ($rtotal)",
+        rtotal == Int128(nt) * Int128(ns))
 end
 
 @printf("\nP3.4 Stage-A oracle: %d PASS, %d FAIL\n", npass, nfail)

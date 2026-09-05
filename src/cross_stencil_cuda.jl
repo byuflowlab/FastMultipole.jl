@@ -112,6 +112,27 @@ mutable struct DeviceCrossProducerContext{TF}
     d_flags_w::CUDA.CuVector{Int32}
     d_prefix_w::CUDA.CuVector{Int32}
     host_scalar32::Vector{Int32}
+    # 052h reverse leg (particles→panels): panel-side dense occupancy (panels
+    # as route TARGETS) and the reversed route/block lists. All 0-length and
+    # inert unless constructed with `build_reverse = true` — the forward-only
+    # user pays nothing.
+    build_reverse::Bool
+    d_node_at_panels::CUDA.CuVector{Int32}
+    rev_route_capacity::Int
+    d_rev_route_levels::CUDA.CuVector{Int}
+    d_rev_route_offsets::CUDA.CuMatrix{Int}
+    d_rev_route_targets::CUDA.CuVector{Int}
+    d_rev_route_sources::CUDA.CuVector{Int}
+    d_rev_route_class::CUDA.CuVector{Int32}
+    n_rev_routes::Int
+    rev_block_capacity::Int
+    d_rev_block_levels::CUDA.CuVector{Int}
+    d_rev_block_offsets::CUDA.CuMatrix{Int}
+    d_rev_block_targets::CUDA.CuVector{Int}
+    d_rev_block_sources::CUDA.CuVector{Int}
+    d_rev_block_class::CUDA.CuVector{Int32}
+    n_rev_demoted::Int
+    n_rev_blocks::Int
     # containment-failure signal: refresh_cross_producers! does NOT mutate the
     # grid in place (frozen h0 keys the cached operator tables AND the stencil
     # demotion masks); it reports the required union box here and the caller
@@ -124,7 +145,9 @@ end
 function device_cross_producer_context(ct::CrossStencilTables,
         x_min::SVector{3,TF}, h0::TF, n_panels::Int, n_particles::Int;
         route_capacity::Int=1 << 20, block_capacity::Int=1 << 20,
-        window_capacity::Int=1 << 22) where {TF}
+        window_capacity::Int=1 << 22, build_reverse::Bool=false,
+        rev_route_capacity::Int=route_capacity,
+        rev_block_capacity::Int=block_capacity) where {TF}
     ell_x = ct.ell_x
     ell_x <= 8 || throw(ArgumentError(
         "dense particle occupancy requires ell_x <= 8 (got $ell_x); the sorted " *
@@ -164,6 +187,23 @@ function device_cross_producer_context(ct::CrossStencilTables,
         CUDA.CuVector{Int32}(undef, window_capacity),
         CUDA.CuVector{Int32}(undef, window_capacity),
         zeros(Int32, 1),
+        build_reverse,
+        build_reverse ? CUDA.zeros(Int32, level_base[end]) :
+            CUDA.CuVector{Int32}(undef, 0),
+        build_reverse ? rev_route_capacity : 0,
+        CUDA.CuVector{Int}(undef, build_reverse ? rev_route_capacity : 0),
+        CUDA.CuMatrix{Int}(undef, 3, build_reverse ? rev_route_capacity : 0),
+        CUDA.CuVector{Int}(undef, build_reverse ? rev_route_capacity : 0),
+        CUDA.CuVector{Int}(undef, build_reverse ? rev_route_capacity : 0),
+        CUDA.CuVector{Int32}(undef, build_reverse ? rev_route_capacity : 0),
+        0,
+        build_reverse ? rev_block_capacity : 0,
+        CUDA.CuVector{Int}(undef, build_reverse ? rev_block_capacity : 0),
+        CUDA.CuMatrix{Int}(undef, 3, build_reverse ? rev_block_capacity : 0),
+        CUDA.CuVector{Int}(undef, build_reverse ? rev_block_capacity : 0),
+        CUDA.CuVector{Int}(undef, build_reverse ? rev_block_capacity : 0),
+        CUDA.CuVector{Int32}(undef, build_reverse ? rev_block_capacity : 0),
+        0, 0,
         false, x_min, h0)
 end
 
@@ -301,11 +341,16 @@ function _cross_node_geometry!(occ::DeviceCrossOccupancy,
     return nothing
 end
 
-"Append one (level, list-kind) sweep to an output list; returns the new count."
+"""
+Append one (level, list-kind) sweep to an output list; returns the new count.
+`src` supplies the explicit SOURCE node set and `d_node_at` the dense TARGET
+occupancy: `(ctx.panels, ctx.d_node_at)` for the forward (panels→particles)
+direction, `(ctx.particles, ctx.d_node_at_panels)` for the 052h reverse leg.
+"""
 function _cross_generate_level!(ctx::DeviceCrossProducerContext, L::Int,
+        src::DeviceCrossOccupancy, d_node_at,
         d_offsets, d_class, out_levels, out_offsets, out_targets, out_sources,
         out_class, capacity::Int, base::Int, what::String)
-    src = ctx.panels
     first_source = src.level_offsets[L + 1] + 1
     n_sources = src.level_offsets[L + 2] - src.level_offsets[L + 1]
     K = size(d_offsets, 2)
@@ -321,7 +366,7 @@ function _cross_generate_level!(ctx::DeviceCrossProducerContext, L::Int,
             "cross window scratch exceeded ($used > $(ctx.window_capacity))"))
         blocks = cld(used, threads)
         CUDA.@cuda threads=threads blocks=blocks _cuda_hier_route_flags_kernel!(
-            ctx.d_flags_w, ctx.d_node_at, src.d_node_coords, d_offsets, d_class,
+            ctx.d_flags_w, d_node_at, src.d_node_coords, d_offsets, d_class,
             level_base_L, first_source, n_sources, first_offset, kn, L)
         fv = view(ctx.d_flags_w, 1:used)
         pv = view(ctx.d_prefix_w, 1:used)
@@ -333,7 +378,7 @@ function _cross_generate_level!(ctx::DeviceCrossProducerContext, L::Int,
                 "cross $what list exceeded capacity $capacity"))
             CUDA.@cuda threads=threads blocks=blocks _cross_route_compact_kernel!(
                 out_levels, out_offsets, out_targets, out_sources, out_class,
-                ctx.d_flags_w, ctx.d_prefix_w, ctx.d_node_at, src.d_node_coords,
+                ctx.d_flags_w, ctx.d_prefix_w, d_node_at, src.d_node_coords,
                 d_offsets, level_base_L, first_source, n_sources, first_offset,
                 kn, L, base)
             base += chunk
@@ -372,6 +417,9 @@ function refresh_cross_producers!(ctx::DeviceCrossProducerContext{TF},
         ctx.n_routes = 0
         ctx.n_demoted = 0
         ctx.n_blocks = 0
+        ctx.n_rev_routes = 0
+        ctx.n_rev_demoted = 0
+        ctx.n_rev_blocks = 0
         return ctx
     end
     ell_x = ctx.ell_x
@@ -392,22 +440,62 @@ function refresh_cross_producers!(ctx::DeviceCrossProducerContext{TF},
     n_routes = 0
     n_blocks = 0
     for L in 2:ell_x
-        n_routes = _cross_generate_level!(ctx, L, ctx.d_push_offsets,
+        n_routes = _cross_generate_level!(ctx, L, ctx.panels, ctx.d_node_at,
+            ctx.d_push_offsets,
             ctx.d_class_far, ctx.d_route_levels, ctx.d_route_offsets,
             ctx.d_route_targets, ctx.d_route_sources, ctx.d_route_class,
             ctx.route_capacity, n_routes, "route")
-        n_blocks = _cross_generate_level!(ctx, L, ctx.d_push_offsets,
+        n_blocks = _cross_generate_level!(ctx, L, ctx.panels, ctx.d_node_at,
+            ctx.d_push_offsets,
             ctx.d_class_demoted, ctx.d_block_levels, ctx.d_block_offsets,
             ctx.d_block_targets, ctx.d_block_sources, ctx.d_block_class,
             ctx.block_capacity, n_blocks, "direct-block")
     end
     ctx.n_demoted = n_blocks
-    n_blocks = _cross_generate_level!(ctx, ell_x, ctx.d_near_offsets,
+    n_blocks = _cross_generate_level!(ctx, ell_x, ctx.panels, ctx.d_node_at,
+        ctx.d_near_offsets,
         ctx.d_near_class, ctx.d_block_levels, ctx.d_block_offsets,
         ctx.d_block_targets, ctx.d_block_sources, ctx.d_block_class,
         ctx.block_capacity, n_blocks, "direct-block")
     ctx.n_routes = n_routes
     ctx.n_blocks = n_blocks
+    if ctx.build_reverse
+        # 052h reverse leg: panels become route TARGETS — scatter their dense
+        # occupancy, then sweep with particle nodes as the explicit sources.
+        # The stencil class masks are per-offset geometry, direction-agnostic.
+        fill!(ctx.d_node_at_panels, Int32(0))
+        n_pnodes = ctx.panels.level_offsets[end]
+        n_pnodes <= typemax(Int32) || throw(AssertionError(
+            "cross occupancy requires node indices to fit Int32"))
+        CUDA.@cuda threads=threads blocks=cld(n_pnodes, threads) _cuda_hier_node_at_scatter_kernel!(
+            ctx.d_node_at_panels, ctx.panels.d_node_levels,
+            ctx.panels.d_node_coords, ctx.d_level_base, n_pnodes)
+        n_routes = 0
+        n_blocks = 0
+        for L in 2:ell_x
+            n_routes = _cross_generate_level!(ctx, L, ctx.particles,
+                ctx.d_node_at_panels, ctx.d_push_offsets,
+                ctx.d_class_far, ctx.d_rev_route_levels, ctx.d_rev_route_offsets,
+                ctx.d_rev_route_targets, ctx.d_rev_route_sources,
+                ctx.d_rev_route_class,
+                ctx.rev_route_capacity, n_routes, "reverse-route")
+            n_blocks = _cross_generate_level!(ctx, L, ctx.particles,
+                ctx.d_node_at_panels, ctx.d_push_offsets,
+                ctx.d_class_demoted, ctx.d_rev_block_levels,
+                ctx.d_rev_block_offsets, ctx.d_rev_block_targets,
+                ctx.d_rev_block_sources, ctx.d_rev_block_class,
+                ctx.rev_block_capacity, n_blocks, "reverse-block")
+        end
+        ctx.n_rev_demoted = n_blocks
+        n_blocks = _cross_generate_level!(ctx, ell_x, ctx.particles,
+            ctx.d_node_at_panels, ctx.d_near_offsets,
+            ctx.d_near_class, ctx.d_rev_block_levels, ctx.d_rev_block_offsets,
+            ctx.d_rev_block_targets, ctx.d_rev_block_sources,
+            ctx.d_rev_block_class,
+            ctx.rev_block_capacity, n_blocks, "reverse-block")
+        ctx.n_rev_routes = n_routes
+        ctx.n_rev_blocks = n_blocks
+    end
     return ctx
 end
 
@@ -878,7 +966,7 @@ function _cross_l2l_kernel!(locals, ops, parent_index, node_coords,
 end
 
 function _cross_l2b_kernel!(out, positions, perm, body_node, node_centers,
-        locals, P, n, lhv)
+        locals_phi, locals_chi, P, n, lhv)
     s = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     s > n && return nothing
     @inbounds begin
@@ -887,7 +975,7 @@ function _cross_l2b_kernel!(out, positions, perm, body_node, node_centers,
         dx = positions[1, col] - node_centers[1, node]
         dy = positions[2, col] - node_centers[2, node]
         dz = positions[3, col] - node_centers[3, node]
-        u, gx, gy, gz = _resident_local_eval_flat(locals, locals, node,
+        u, gx, gy, gz = _resident_local_eval_flat(locals_phi, locals_chi, node,
             dx, dy, dz, P, P, lhv)
         out[1, col] += u
         out[2, col] += gx
@@ -1014,7 +1102,7 @@ function finish_cross_locals!(ls::DeviceCrossLocalState{TF},
         occ.d_body_node, occ.d_node_ranges, leaf_first, n_leaf)
     CUDA.@cuda threads=threads blocks=cld(occ.n, threads) _cross_l2b_kernel!(
         ls.d_out, d_particle_positions, occ.d_perm, occ.d_body_node,
-        occ.d_node_centers, ls.d_locals, ls.P, occ.n, Val(false))
+        occ.d_node_centers, ls.d_locals, ls.d_locals, ls.P, occ.n, Val(false))
     return ls
 end
 
@@ -1195,6 +1283,362 @@ function apply_cross_near!(ls::DeviceCrossLocalState{TF},
     return ls
 end
 
+#------- 052h reverse leg: Stages B/C/D (particles→panels, LH dual channel) -------#
+#
+# The reverse leg carries point-vortex sources, so every expansion is
+# Lamb-Helmholtz dual channel in the STACKED row basis of the LH operator
+# tables (cross_stencil_host.jl 052h header): rows `1:D` = φ, `D+1:2D` = χ,
+# `D = (P+1)(P+2)` per channel. Storage is stacked (the D-agnostic M2M/L2L
+# kernels and the new LH M2L kernel run dense over `2D` rows); the radix
+# vortex B2M kernel and the flat L2B evaluator see the channels through
+# strided row views. Multipoles live on the PARTICLE node set, locals on the
+# PANEL node set; the output is evaluated at panel control points.
+
+"Gather sorted source rows (1:3 position, 5:7 strength) by the occupancy perm."
+function _cross_gather_sorted_kernel!(dst, src, perm, n)
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    i > n && return nothing
+    @inbounds begin
+        col = Int(perm[i])
+        dst[1, i] = src[1, col]
+        dst[2, i] = src[2, col]
+        dst[3, i] = src[3, col]
+        dst[5, i] = src[5, col]
+        dst[6, i] = src[6, col]
+        dst[7, i] = src[7, col]
+    end
+    return nothing
+end
+
+# `_cross_m2l_kernel!` with the LH shifted separable rescaling: distinct row
+# and column scale tables (χ rows carry degree n+1, χ columns n-1 — see
+# cross_m2l_level_scales_lh) instead of the single phi table.
+function _cross_m2l_lh_kernel!(locals, multipoles, ops, class_slot, scale2_row,
+        scale2_col, pow2lvl, route_levels, route_targets, route_sources,
+        route_class, n_routes, D2)
+    idx = (blockIdx().x - 1) * blockDim().x + threadIdx().x
+    idx > n_routes * D2 && return nothing
+    @inbounds begin
+        r = (idx - 1) ÷ D2 + 1
+        row = (idx - 1) % D2 + 1
+        slot = Int(class_slot[route_class[r]])
+        slot == 0 && return nothing   # defensively skip (far mask guarantees > 0)
+        L1 = Int(route_levels[r]) + 1
+        source = route_sources[r]
+        target = route_targets[r]
+        acc = zero(eltype(locals))
+        for j in 1:D2
+            acc = muladd(ops[row, j, slot],
+                multipoles[j, source] * scale2_col[j, L1], acc)
+        end
+        acc *= scale2_row[row, L1] * pow2lvl[L1]
+        CUDA.@atomic locals[row, target] += acc
+    end
+    return nothing
+end
+
+"""
+Device reverse-leg state (052h): stacked LH multipoles over the PARTICLE node
+set, stacked LH locals over the PANEL node set, the uploaded LH operator
+tables (M2M octants, slot-compacted reference-level M2L + shifted separable
+scales, L2L octants), the gathered sorted particle source buffer, and the
+4-row (potential, gradient) output at panel control points in ORIGINAL panel
+column order.
+"""
+mutable struct DeviceCrossReverseState{TF}
+    P::Int
+    D::Int   # per-channel packed length (P+1)(P+2); stacked arrays carry 2D
+    h0_ops::TF
+    # Stage B
+    d_multipoles::CUDA.CuMatrix{TF}        # 2D × particles.max_nodes
+    d_m2m_ops::CUDA.CuArray{TF,4}          # 2D × 2D × 8 × ell_x
+    d_sorted_particles::CUDA.CuMatrix{TF}  # 7 × n_particles, sorted order
+    d_leaf_to_node::CUDA.CuVector{Int32}
+    # Stage C
+    d_m2l_ops::CUDA.CuArray{TF,3}          # 2D × 2D × n_slots (ref level)
+    d_class_slot::CUDA.CuVector{Int32}
+    d_scale2_row::CUDA.CuMatrix{TF}
+    d_scale2_col::CUDA.CuMatrix{TF}
+    d_pow2lvl::CUDA.CuVector{TF}
+    # Stage D
+    d_l2l_ops::CUDA.CuArray{TF,4}          # 2D × 2D × 8 × ell_x
+    d_locals::CUDA.CuMatrix{TF}            # 2D × panels.max_nodes
+    d_out::CUDA.CuMatrix{TF}               # 4 × n_panels, original order
+end
+
+function device_cross_reverse_state(ctx::DeviceCrossProducerContext{TF},
+        P::Integer) where {TF}
+    ctx.build_reverse || throw(ArgumentError(
+        "device_cross_reverse_state requires a producer context constructed " *
+        "with build_reverse = true"))
+    TF === Float64 || throw(ArgumentError(
+        "the reverse-leg vortex B2M kernel scratch is Float64-only; build " *
+        "the producer context with Float64 positions (got $TF)"))
+    D = (Int(P) + 1) * (Int(P) + 2)
+    m2l_ops, class_slot = cross_m2l_operators_lh(P, ctx.h0, ctx.ct)
+    s2r, s2c, p2l = cross_m2l_level_scales_lh(P, ctx.ell_x)
+    max_leaf = min(1 << (3 * ctx.ell_x), max(ctx.particles.n, 1))
+    return DeviceCrossReverseState{TF}(Int(P), D, ctx.h0,
+        CUDA.zeros(TF, 2 * D, ctx.particles.max_nodes),
+        CUDA.CuArray{TF}(cross_m2m_operators_lh(P, ctx.h0, ctx.ell_x)),
+        CUDA.zeros(TF, 7, ctx.particles.n),
+        CUDA.zeros(Int32, max_leaf),
+        CUDA.CuArray{TF}(m2l_ops),
+        CUDA.CuArray{Int32}(class_slot),
+        CUDA.CuArray{TF}(s2r),
+        CUDA.CuArray{TF}(s2c),
+        CUDA.CuArray{TF}(p2l),
+        CUDA.CuArray{TF}(cross_l2l_operators_lh(P, ctx.h0, ctx.ell_x)),
+        CUDA.zeros(TF, 2 * D, ctx.panels.max_nodes),
+        CUDA.zeros(TF, 4, ctx.panels.n))
+end
+
+"""
+    refresh_cross_reverse_multipoles!(rs, ctx, d_particle_buffer)
+
+Reverse Stage-B per-step device pass: point-vortex B2M at the cross leaf
+cells of the PARTICLE occupancy + dense octant-class LH M2M up the particle
+node set. Requires `refresh_cross_producers!` to have run this step.
+`d_particle_buffer` is a device matrix with ≥ 7 rows, columns = particles in
+original order, rows 1:3 = position and 5:7 = vector strength (the standard
+FMM source-buffer layout the radix vortex B2M consumes).
+"""
+function refresh_cross_reverse_multipoles!(rs::DeviceCrossReverseState{TF},
+        ctx::DeviceCrossProducerContext{TF}, d_particle_buffer) where {TF}
+    occ = ctx.particles
+    ell_x = ctx.ell_x
+    if rs.h0_ops != ctx.h0   # defensive: ctx.h0 is frozen post-construction
+        copyto!(rs.d_m2m_ops, cross_m2m_operators_lh(rs.P, ctx.h0, ell_x))
+        m2l_ops, _ = cross_m2l_operators_lh(rs.P, ctx.h0, ctx.ct)
+        copyto!(rs.d_m2l_ops, m2l_ops)
+        copyto!(rs.d_l2l_ops, cross_l2l_operators_lh(rs.P, ctx.h0, ell_x))
+        rs.h0_ops = ctx.h0
+    end
+    (size(d_particle_buffer, 1) >= 7 && size(d_particle_buffer, 2) == occ.n) ||
+        throw(ArgumentError("particle buffer must be ≥7 × n_particles " *
+            "(got $(size(d_particle_buffer)); n_particles = $(occ.n))"))
+    fill!(rs.d_multipoles, zero(TF))
+    occ.n > 0 || return rs
+    threads = 256
+    leaf_first = occ.level_offsets[ell_x + 1] + 1
+    n_leaf = occ.level_offsets[ell_x + 2] - occ.level_offsets[ell_x + 1]
+    n_leaf > 0 || return rs
+    # leaf-node membership + parent links (idempotent with the forward Stage B
+    # equivalents on the OTHER occupancy; the reverse leg computes its own)
+    CUDA.@cuda threads=threads blocks=cld(n_leaf, threads) _cross_body_node_kernel!(
+        occ.d_body_node, occ.d_node_ranges, leaf_first, n_leaf)
+    max_per_level = maximum(occ.level_offsets[L + 2] - occ.level_offsets[L + 1]
+        for L in 0:ell_x)
+    CUDA.@cuda threads=threads blocks=(cld(max_per_level, threads), ell_x + 1) _cuda_parent_index_kernel!(
+        occ.d_parent_index, occ.d_node_keys, occ.d_level_offsets, ell_x, 0)
+    # gather the sorted 7-row source buffer, then reuse the radix vortex B2M
+    # kernel bit-for-bit (block per cell, body-parallel reduction)
+    CUDA.@cuda threads=threads blocks=cld(occ.n, threads) _cross_gather_sorted_kernel!(
+        rs.d_sorted_particles, d_particle_buffer, occ.d_perm, occ.n)
+    copyto!(view(rs.d_leaf_to_node, 1:n_leaf),
+        collect(Int32, leaf_first:leaf_first + n_leaf - 1))
+    D = rs.D
+    phi = view(rs.d_multipoles, 1:D, :)
+    chi = view(rs.d_multipoles, D + 1:2 * D, :)
+    CUDA.@cuda threads=CUDA_B2M_BLOCK blocks=n_leaf _cuda_b2m_vortex_leaf_nodes_kernel!(
+        phi, chi, rs.d_sorted_particles,
+        view(occ.d_node_centers, :, leaf_first:leaf_first + n_leaf - 1),
+        view(occ.d_node_ranges, :, leaf_first:leaf_first + n_leaf - 1),
+        rs.d_leaf_to_node, rs.P, rs.P, n_leaf)
+    # upward: dense octant-class LH M2M, bottom-up (D-agnostic kernel, 2D rows)
+    for Lc in ell_x:-1:1
+        first_child = occ.level_offsets[Lc + 1] + 1
+        n_children = occ.level_offsets[Lc + 2] - occ.level_offsets[Lc + 1]
+        n_children > 0 || continue
+        CUDA.@cuda threads=threads blocks=cld(n_children * 2 * D, threads) _cross_m2m_kernel!(
+            rs.d_multipoles, rs.d_m2m_ops, occ.d_parent_index, occ.d_node_coords,
+            first_child, n_children, Lc, 2 * D)
+    end
+    return rs
+end
+
+"""
+    refresh_cross_reverse_locals!(rs, ctx)
+
+Reverse Stage-C per-step device pass: LH M2L over the reverse far-route list
+(particle nodes → panel nodes). Zero routes publishes zeroed locals and skips
+every launch (052g discipline).
+"""
+function refresh_cross_reverse_locals!(rs::DeviceCrossReverseState{TF},
+        ctx::DeviceCrossProducerContext{TF}) where {TF}
+    fill!(rs.d_locals, zero(TF))
+    ctx.n_rev_routes > 0 || return rs
+    D2 = 2 * rs.D
+    threads = 256
+    CUDA.@cuda threads=threads blocks=cld(ctx.n_rev_routes * D2, threads) _cross_m2l_lh_kernel!(
+        rs.d_locals, rs.d_multipoles, rs.d_m2l_ops, rs.d_class_slot,
+        rs.d_scale2_row, rs.d_scale2_col, rs.d_pow2lvl,
+        ctx.d_rev_route_levels, ctx.d_rev_route_targets,
+        ctx.d_rev_route_sources, ctx.d_rev_route_class, ctx.n_rev_routes, D2)
+    return rs
+end
+
+"""
+    finish_cross_reverse_locals!(rs, ctx, d_panel_positions)
+
+Reverse Stage-D per-step device pass: dense octant-class LH L2L top-down over
+the PANEL node set (child levels `3:ell_x`), then leaf L2B at the panel
+control points into `rs.d_out` (rows potential, gx, gy, gz; columns = panels
+in original order). Requires `refresh_cross_reverse_locals!` this step.
+`d_panel_positions` must be the same `3 × n` device matrix the producers were
+refreshed with.
+"""
+function finish_cross_reverse_locals!(rs::DeviceCrossReverseState{TF},
+        ctx::DeviceCrossProducerContext{TF}, d_panel_positions) where {TF}
+    occ = ctx.panels
+    ell_x = ctx.ell_x
+    threads = 256
+    D2 = 2 * rs.D
+    fill!(rs.d_out, zero(TF))
+    occ.n > 0 || return rs
+    leaf_first = occ.level_offsets[ell_x + 1] + 1
+    n_leaf = occ.level_offsets[ell_x + 2] - occ.level_offsets[ell_x + 1]
+    n_leaf > 0 || return rs
+    # panel-side body_node + parent links (idempotent; the reverse leg must
+    # not assume the forward Stage B ran this step)
+    CUDA.@cuda threads=threads blocks=cld(n_leaf, threads) _cross_body_node_kernel!(
+        occ.d_body_node, occ.d_node_ranges, leaf_first, n_leaf)
+    max_per_level = maximum(occ.level_offsets[L + 2] - occ.level_offsets[L + 1]
+        for L in 0:ell_x)
+    max_per_level > 0 || return rs
+    CUDA.@cuda threads=threads blocks=(cld(max_per_level, threads), ell_x + 1) _cuda_parent_index_kernel!(
+        occ.d_parent_index, occ.d_node_keys, occ.d_level_offsets, ell_x, 0)
+    # L2L top-down: locals begin at the coarsest route level 2
+    for Lc in 3:ell_x
+        first_child = occ.level_offsets[Lc + 1] + 1
+        n_children = occ.level_offsets[Lc + 2] - occ.level_offsets[Lc + 1]
+        n_children > 0 || continue
+        CUDA.@cuda threads=threads blocks=cld(n_children * D2, threads) _cross_l2l_kernel!(
+            rs.d_locals, rs.d_l2l_ops, occ.d_parent_index, occ.d_node_coords,
+            first_child, n_children, Lc, D2)
+    end
+    # leaf L2B at panel control points, dual channel
+    CUDA.@cuda threads=threads blocks=cld(occ.n, threads) _cross_l2b_kernel!(
+        rs.d_out, d_panel_positions, occ.d_perm, occ.d_body_node,
+        occ.d_node_centers, view(rs.d_locals, 1:rs.D, :),
+        view(rs.d_locals, rs.D + 1:D2, :), rs.P, occ.n, Val(true))
+    return rs
+end
+
+#------- 052h reverse leg: Stage E (vortex near blocks) -------#
+
+# `_cross_near_kernel!` with point-vortex sources: block-per-route over the
+# REVERSE block list, tiling the PARTICLE sources (rows 1:3 position,
+# 4:6 strength, 7 sigma in shared memory) against panel-control-point
+# targets. Velocity only (the vortex kernel has no scalar potential).
+# `REG` = true applies the gaussianerf regularization g(ρ = r/σ) exactly as
+# the radix near field does; false is the singular kernel.
+function _cross_near_vortex_kernel!(out, particle_buffer, sigma_row,
+        positions, t_perm, s_perm, t_node_ranges, s_node_ranges,
+        block_targets, block_sources, n_blocks, ::Val{REG}) where {REG}
+    T = eltype(out)
+    tid = threadIdx().x
+    sh = CUDA.CuStaticSharedArray(T, (7, _CROSS_NEAR_TILE))
+    b = blockIdx().x
+    @inbounds while b <= n_blocks
+        tnode = Int(block_targets[b])
+        snode = Int(block_sources[b])
+        tfirst = Int(t_node_ranges[1, tnode])
+        tcount = Int(t_node_ranges[2, tnode])
+        sfirst = Int(s_node_ranges[1, snode])
+        scount = Int(s_node_ranges[2, snode])
+        ntiles = cld(scount, _CROSS_NEAR_TILE)
+        for tc in 1:cld(tcount, blockDim().x)
+            ti = tfirst + (tc - 1) * blockDim().x + tid - 1
+            active = ti <= tfirst + tcount - 1
+            col = 1
+            xt = zero(T); yt = zero(T); zt = zero(T)
+            if active
+                col = Int(t_perm[ti])
+                xt = positions[1, col]
+                yt = positions[2, col]
+                zt = positions[3, col]
+            end
+            ux = zero(T); uy = zero(T); uz = zero(T)
+            for t in 1:ntiles
+                q0 = (t - 1) * _CROSS_NEAR_TILE
+                q = q0 + tid
+                if tid <= _CROSS_NEAR_TILE && q <= scount
+                    scol = Int(s_perm[sfirst + q - 1])
+                    sh[1, tid] = particle_buffer[1, scol]
+                    sh[2, tid] = particle_buffer[2, scol]
+                    sh[3, tid] = particle_buffer[3, scol]
+                    sh[4, tid] = particle_buffer[5, scol]
+                    sh[5, tid] = particle_buffer[6, scol]
+                    sh[6, tid] = particle_buffer[7, scol]
+                    sh[7, tid] = REG ? particle_buffer[sigma_row, scol] : one(T)
+                end
+                CUDA.sync_threads()
+                if active
+                    for k in 1:min(_CROSS_NEAR_TILE, scount - q0)
+                        dx = xt - sh[1, k]
+                        dy = yt - sh[2, k]
+                        dz = zt - sh[3, k]
+                        r2 = dx * dx + dy * dy + dz * dz
+                        r2 > zero(T) || continue
+                        invr = _cuda_fast_rsqrt(r2)
+                        g = one(T)
+                        if REG
+                            rho = r2 * invr / sh[7, k]
+                            g, _ = _gaussianerf_g_h(rho, Val(:shipped))
+                        end
+                        _, vx, vy, vz = _vortex_pair_ug(dx, dy, dz, invr,
+                            sh[4, k], sh[5, k], sh[6, k], g)
+                        ux += vx
+                        uy += vy
+                        uz += vz
+                    end
+                end
+                CUDA.sync_threads()
+            end
+            if active
+                CUDA.@atomic out[2, col] += ux
+                CUDA.@atomic out[3, col] += uy
+                CUDA.@atomic out[4, col] += uz
+            end
+        end
+        b += gridDim().x
+    end
+    return nothing
+end
+
+"""
+    apply_cross_reverse_near!(rs, ctx, d_particle_buffer, d_panel_positions;
+        sigma_row=8, reg=true)
+
+Reverse Stage-E per-step device pass: direct point-vortex evaluation of the
+reverse demoted + near blocks, accumulating velocity into `rs.d_out` on top
+of the Stage-D far field. `d_particle_buffer` is the same ≥7-row matrix as
+reverse Stage B (rows 1:3 position, 5:7 strength); `sigma_row` names the
+smoothing-radius row consumed when `reg = true` (gaussianerf, matching the
+radix near field); `reg = false` is the singular kernel. Zero blocks skips
+every launch (052g discipline).
+"""
+function apply_cross_reverse_near!(rs::DeviceCrossReverseState{TF},
+        ctx::DeviceCrossProducerContext{TF}, d_particle_buffer,
+        d_panel_positions; sigma_row::Int=8, reg::Bool=true) where {TF}
+    ctx.n_rev_blocks > 0 || return rs
+    (size(d_particle_buffer, 1) >= (reg ? sigma_row : 7) &&
+        size(d_particle_buffer, 2) == ctx.particles.n) ||
+        throw(ArgumentError("particle buffer must be ≥$(reg ? sigma_row : 7)" *
+            " × n_particles (got $(size(d_particle_buffer)); n_particles = " *
+            "$(ctx.particles.n))"))
+    threads = _CROSS_NEAR_TILE
+    blocks = min(ctx.n_rev_blocks, _RECT_MAX_BLOCKS)
+    CUDA.@cuda threads=threads blocks=blocks _cross_near_vortex_kernel!(
+        rs.d_out, d_particle_buffer, sigma_row, d_panel_positions,
+        ctx.panels.d_perm, ctx.particles.d_perm,
+        ctx.panels.d_node_ranges, ctx.particles.d_node_ranges,
+        ctx.d_rev_block_targets, ctx.d_rev_block_sources, ctx.n_rev_blocks,
+        Val(reg))
+    return rs
+end
+
 #------- oracle download -------#
 
 """
@@ -1224,6 +1668,17 @@ function download_cross_lists(ctx::DeviceCrossProducerContext)
             sources = Array(ctx.d_block_sources)[1:nb],
             class = Array(ctx.d_block_class)[1:nb],
             n_demoted = ctx.n_demoted),
+        rev_routes = (; levels = Array(ctx.d_rev_route_levels)[1:ctx.n_rev_routes],
+            offsets = Array(ctx.d_rev_route_offsets)[:, 1:ctx.n_rev_routes],
+            targets = Array(ctx.d_rev_route_targets)[1:ctx.n_rev_routes],
+            sources = Array(ctx.d_rev_route_sources)[1:ctx.n_rev_routes],
+            class = Array(ctx.d_rev_route_class)[1:ctx.n_rev_routes]),
+        rev_blocks = (; levels = Array(ctx.d_rev_block_levels)[1:ctx.n_rev_blocks],
+            offsets = Array(ctx.d_rev_block_offsets)[:, 1:ctx.n_rev_blocks],
+            targets = Array(ctx.d_rev_block_targets)[1:ctx.n_rev_blocks],
+            sources = Array(ctx.d_rev_block_sources)[1:ctx.n_rev_blocks],
+            class = Array(ctx.d_rev_block_class)[1:ctx.n_rev_blocks],
+            n_demoted = ctx.n_rev_demoted),
         panels = occ_host(ctx.panels),
         particles = occ_host(ctx.particles),
         x_min = ctx.x_min, h0 = ctx.h0,

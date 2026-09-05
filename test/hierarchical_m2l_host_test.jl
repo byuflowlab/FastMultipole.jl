@@ -406,7 +406,9 @@ _hier_step_allocated(sys, cache) =
     # Stencil constructor negatives and cache keyword conflicts must throw.
     conflict_sys = generate_gravitational(26035, 20)
     @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; near_radius2=7)
-    @test_throws ArgumentError RigidHierarchicalTables(21)
+    # 23 is not a sum of three squares (like 7 and 15) so it can never enter
+    # the supported set; 21 was promoted to supported by the 052f widening
+    @test_throws ArgumentError RigidHierarchicalTables(23)
     @test_throws ArgumentError rigid_stencil_epsilon(4, 0.5, 3, 7)
     @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; window_classes=0)
     @test_throws ArgumentError HIER_FM._hierarchical_stencil_with_schedule(
