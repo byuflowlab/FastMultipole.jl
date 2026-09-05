@@ -54,3 +54,10 @@ MATRIX_OPERATOR_REFACTOR/data/figures/*.fdb_latexmk
 MATRIX_OPERATOR_REFACTOR/data/figures/*.synctex.gz
 MATRIX_OPERATOR_REFACTOR/data/rotor_wake/rotor_snapshot_n*.bin
 *.bin
+
+# local tooling/system
+.DS_Store
+.CondaPkg/
+profile.pb.gz
+# large experiment dumps (never read directly per CLAUDE.md)
+MATRIX_OPERATOR_REFACTOR/data/
