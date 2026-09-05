@@ -187,4 +187,45 @@ Infrastructure (Ryan-ruled 2026-09-05, mid-trial): one checkout, no silos.
   tree-identical to trial-1e for comparability) — the LAST silo run. Silo
   retirement (gh200 + h100/h200 triples) queued for after it completes.
 
-Results: (pending)
+Results (2026-09-05, trial-2 = job 13592503, mgh-1-1 GH200):
+
+- **COMPLETED, exit 0, 2:48:20** (vs trial-1e 2:58:15); launcher printed
+  "artifact and monitor gates passed for indices 0:1079" and the stage-d
+  COMPLETE line; source paths CPU-S=0 GPU-S=1080 backend=0; GPU-S
+  cleanup verified.
+- **Stage-1 mature gate (informational): PASSED OUTRIGHT** vs the pinned
+  CPU euler reference — the expint fingerprint stayed within the locked
+  tolerances despite the integrator change, and all three gates are
+  TIGHTER than trial-1e:
+
+  | Gate | Trial-2 (expint) | Trial-1e (guards) | Ceiling | Result |
+  |---|---:|---:|---:|---|
+  | CT cycle-mean | 5.655e-4 | 6.565e-4 | 1.800e-3 | PASS |
+  | Gamma M2 max | 1.134e-3 | 1.317e-3 | 2.934e-3 | PASS |
+  | Gamma M2 RMS | 3.331e-4 | 4.484e-4 | 1.498e-3 | PASS |
+
+- Config confirmed in log banner: `WAKE_EXPINT=true`, SIGMA_DTZ_CAP=Inf,
+  SIGMA_FLOOR_FRAC=0.0, SIGMA_CEIL=Inf (**guard=off**).
+- **Hypothesis confirmed — no sigma collapse without clamps.** No
+  substep-budget throw, no DomainError, all finite = true.
+  min_sigma (wake-health monitor04): bottom **8.872e-5 m at step 1051**
+  (ratio 0.0199 of sigma_shed 4.451e-3), 9.16e-5 at the historical
+  step-1015 blowup point, ending 9.06e-5 at step 1079 — same ~2%
+  contraction plateau trial-1e reached (9.558e-5 at step 983) but held
+  by the integrator's positivity instead of a floor.
+- max_gamma_over_sigma2 peaked **1.135e5 at step 841** — ~5x trial-1e's
+  2.20e4 peak — yet the run stayed stable and the window CT/Gamma gates
+  tightened; max_u peak 44.1 at step 478.
+- Phase-2e CT convergence: CONVERGED=false (per-rev spread 0.033 vs tol
+  0.005, driven by the first window rev 721:756; revs 901–1080 tight at
+  0.0012–0.0018), CYCLE-MEAN CT = **0.0732227 ± 1.54%** over 10 revs
+  (trial-1e: 0.072526 ± 1.04%) — same known non-fatal readout item.
+- Artifacts: gate dir `~/FLOWPanel-052-gh200/data/fm052c_mature_gate_t2exp_13592503/`,
+  run dir `.../data/fm052d_gpu_1080_t2exp/` (shared data root),
+  log `.../data/fm052d_gpu_1080_t2exp.log`.
+
+**Trial 2 verdict: PASS.** euler_exp alone (no guards) survives the full
+1080-step acceptance with all locked gates passing and a cleaner
+mature-window fingerprint than the guarded euler of trial-1e. Both
+candidate defaults are now validated; decision (expint vs guards vs
+both) goes to Ryan per the open-decisions list.
