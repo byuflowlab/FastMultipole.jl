@@ -1,8 +1,11 @@
 # 052e accuracy-sweep plan draft (2026-09-03) — pre-registered tolerances + comparison-run matrix
 
-Groundwork for `052e-impl-hybrid-wake-potential-experimental.md` steps 2–3
-(step 1 — host regressions — remains BLOCKED until 052b closes; nothing in
-this file authorizes runs, deployment, or promotion). All tolerance values
+> **SUPERSEDED 2026-09-05** by `052e-accuracy-plan-v2-draft-2026-09-05.md` (Ryan ruling: rework around doublet-wake ground-truth verification). Retained for the Stage B run matrix and rationale history.
+
+Archived groundwork for the Stage B portion of
+`052e-impl-hybrid-wake-potential-experimental.md` (host regressions remain
+BLOCKED until 052b closes; nothing in this file authorizes runs, deployment,
+or promotion). All tolerance values
 below are PROPOSED and NEED RYAN's ratification before any sweep is run —
 pre-registration means locking them BEFORE looking at sweep results.
 
