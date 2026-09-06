@@ -229,3 +229,44 @@ Results (2026-09-05, trial-2 = job 13592503, mgh-1-1 GH200):
 mature-window fingerprint than the guarded euler of trial-1e. Both
 candidate defaults are now validated; decision (expint vs guards vs
 both) goes to Ryan per the open-decisions list.
+
+## Defaults ruling (Ryan, 2026-09-05)
+
+Ryan approved the trial-2 recommendation:
+
+1. **expint (`euler_exp`, `WAKE_EXPINT=true`, no sigma guards) is the
+   052c default** for GPU rotor acceptance runs — tighter gates than
+   guarded euler, no tuned clamp parameters, loud failure modes.
+2. **Trial-1 guards (dtz_cap=0.5 + floor_frac=0.01) are the documented
+   fallback** for configs where euler_exp's constraints don't hold
+   (requires ReformulatedVPM f==0; rejects non-empty sigma_guard).
+3. Upstream ports already committed in unified FLOWVPM: expint GPU path
+   3315b22; sigma_guard :ceil 6c8cda4. Nothing further to port.
+4. Operationally in force: the wt052 launcher
+   `fp052c_expint_wt052_run.sh` hardwires `WAKE_EXPINT=true` with
+   SIGMA_* unset, and (with the silos retired, below) it is the ONLY
+   052c launch path.
+5. The candidate-trials OFAT list above is folded into 053 row planning
+   (see `053-defaults-enumeration-draft-2026-09-03.md`); no further
+   OFAT runs under 052c.
+
+## Silo retirement (executed 2026-09-05, Ryan-approved)
+
+- Campaign data moved from the gh200 silo to the consolidated data root
+  `~/projects/FLOWPanel.jl/data/`: all `fm052c_*`/`fm052d_*` trial run
+  dirs, gate dirs, and logs (incl. trial-1e `fm052d_gpu_1080_t1`, 29G,
+  and trial-2 `fm052d_gpu_1080_t2exp`, 29G). A stale Aug-27 dir of the
+  same name in the root was renamed `fm052d_gpu_1080_t1.prev.20260827`
+  (148M) rather than clobbered. Silo root logs → 
+  `data/retired_052_silos/{gh200,h100,h200}/` (gh200 logs/ +
+  slurm-13592503.out; h200 xverify logs).
+- Deleted: `~/{FLOWVPM,FLOWPanel,FastMultipole}-052-{gh200,h100,h200}`
+  (9 checkouts, git-clean) and `~/fm052env-{052d,b200,gh200,h100,h200,l40s}`.
+- Kept: `~/fm052depot-gh200` (6.8G — wt052 launcher's JULIA_DEPOT_PATH)
+  and `~/wt052/` worktrees.
+- NOT deleted (older 052 debris outside the ruling, flagged for a later
+  sweep): `~/{FastMultipole-052d,FastMultipole-052h,FLOWPanel-052,
+  FLOWPanel-052d,FLOWPanel-052h-spot,snapshot472-052d}`, envs
+  `~/{fm052env,fm052henv,fm052spotenv,fm052env_cuda63_geoiofree,
+  fm052env_sfsdiag}`, `~/fm052a_env_dumps`, and loose
+  `fm052*/fp052*` debug `.out`/`.jl` files + archiver logs in `~`.

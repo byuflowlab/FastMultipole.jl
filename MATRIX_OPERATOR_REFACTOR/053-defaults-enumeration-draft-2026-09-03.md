@@ -44,3 +44,20 @@ to the 052f demotion contract (warn, not throw); FLOWPanel 656/658 —
 A/jump trajectory broken; likely 7fbd68a; not caused by this session —
 see 2026-09-02 §Decision log). A `Logging` test dep was also added to
 FLOWPanel test/Project.toml (was a hard load error masking the suite).
+
+## Folded in from 052c (Ryan ruling 2026-09-05): sigma-guard/integrator OFAT candidates
+
+052c closed with expint (`euler_exp`, no guards) as the GPU-rotor
+acceptance default and the dtz_cap=0.5 + floor_frac=0.01 guard pair as
+documented fallback (see `052c-sigma-experiments-2026-08-26.md`,
+"Defaults ruling"). Its un-run OFAT candidates become 053 planning rows
+rather than 052c runs:
+
+- Guard cap values 0.2 / 0.8; floor fractions 5% / 10% (fallback-path
+  tuning only).
+- Per-particle clip of Z's SFS contribution vs the composite dt·Z cap.
+- Merge-policy interaction: provenance print at guard engagement to test
+  whether strained outliers are merge-born; if so tune `MERGE_R_FACTOR`
+  / merge acceptance instead of (or with) the integrator guard.
+- Guard support inside `rungekutta3`/`euler_exp` if a future config
+  needs a guarded non-euler integrator.
