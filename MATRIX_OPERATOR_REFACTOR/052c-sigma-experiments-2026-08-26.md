@@ -270,3 +270,18 @@ Ryan approved the trial-2 recommendation:
   `~/{fm052env,fm052henv,fm052spotenv,fm052env_cuda63_geoiofree,
   fm052env_sfsdiag}`, `~/fm052a_env_dumps`, and loose
   `fm052*/fp052*` debug `.out`/`.jl` files + archiver logs in `~`.
+
+## Debris sweep + campaign tags (2026-09-05, Ryan-approved)
+
+- Older 052 debris deleted from orc `~`: checkouts `FastMultipole-052d`,
+  `FastMultipole-052h`, `FLOWPanel-052`, `FLOWPanel-052d`,
+  `FLOWPanel-052h-spot`, `snapshot472-052d` (all verified to contain no
+  run data); envs `fm052env`, `fm052henv`, `fm052spotenv`,
+  `fm052env_cuda63_geoiofree`, `fm052env_sfsdiag`, `fm052a_env_dumps`;
+  loose `fm052*`/`fp052*` debug `.out`/`.jl` files, 052 archiver logs,
+  `install_052b_pin.sh`, `launch_052b.sh`, `patch_052{f,g}.py`,
+  `instantiate_052g.log`, `fp052d_probe_state`. Only `~/fm052depot-gh200`
+  and `~/wt052` remain of the 052 family in `~`.
+- wt052 pins now cited per the annotated-tag policy — tag
+  `campaign/052-expint-20260905` created in each orc unified repo:
+  FLOWVPM.jl (3315b22), FLOWPanel.jl (4e6b5b7), FastMultipole (3da58a1a).
