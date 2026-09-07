@@ -162,15 +162,18 @@ end
     P_eval = cinfo.orders.P_active
     h1 = initialize_harmonics(P_eval)
     h2 = initialize_harmonics(P_eval)
-    g1 = initialize_gradient_n_m(P_eval)
-    g2 = initialize_gradient_n_m(P_eval)
-    sw = LHbool ? DerivativesSwitch(false, true, true) : DerivativesSwitch(true, true, true)
+    g1 = initialize_gradient_n_m(P_eval; third_derivative=true)
+    g2 = initialize_gradient_n_m(P_eval; third_derivative=true)
+    sw = LHbool ? DerivativesSwitch(false, true, true; third_derivative=true) :
+        DerivativesSwitch(true, true, true; third_derivative=true)
 
     ref = FastMultipole.evaluate_local(Δx, h1, g1, complex_flat_to_legacy(csrc), P_eval, lh, sw)
     got = FastMultipole.evaluate_local(Δx, h2, g2, rbuf, P, lh, sw)
     @test isapprox(got[1], ref[1]; atol=REAL_BASIS_TOL, rtol=REAL_BASIS_TOL)
     @test isapprox(got[2], ref[2]; atol=REAL_BASIS_TOL, rtol=REAL_BASIS_TOL)
     @test isapprox(got[3], ref[3]; atol=REAL_BASIS_TOL, rtol=REAL_BASIS_TOL)
+    @test isapprox(packed_data(got[4]), packed_data(ref[4]);
+        atol=REAL_BASIS_TOL, rtol=REAL_BASIS_TOL)
 end
 
 end

@@ -772,7 +772,8 @@ function downward_pass_multithread_2!(tree::Tree{TF,<:Any}, systems, derivatives
     #--- preallocate memory ---#
 
     harmonics = [initialize_harmonics(expansion_order, TF) for _ in 1:n_threads]
-    gradient_n_m = [initialize_gradient_n_m(expansion_order, TF) for _ in 1:n_threads]
+    needs_third = any(_requests_third_derivative, derivatives_switches)
+    gradient_n_m = [initialize_gradient_n_m(expansion_order, TF; third_derivative=needs_third) for _ in 1:n_threads]
 
     #--- compute multipole expansion coefficients ---#
 
@@ -838,9 +839,28 @@ end
     return SVector{n}(input...)
 end
 
-fmm!(system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...) = fmm!(system, Cache(to_tuple(system), to_tuple(system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(system); extra_outputs, metadata)); scalar_potential, gradient, hessian, leaf_size, extra_outputs, metadata, optargs...)
+function fmm!(system; scalar_potential=false, gradient=true, hessian=false,
+        third_derivative=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...)
+    systems = to_tuple(system)
+    switches = DerivativesSwitch(scalar_potential, gradient, hessian, systems;
+        third_derivative, extra_outputs, metadata)
+    _check_third_derivative_support(systems, systems, switches)
+    return fmm!(system, Cache(systems, systems, switches); scalar_potential, gradient,
+        hessian, third_derivative, leaf_size, extra_outputs, metadata, optargs...)
+end
 
-fmm!(target_system, source_system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...) = fmm!(target_system, source_system, Cache(to_tuple(target_system), to_tuple(source_system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(target_system); extra_outputs, metadata)); scalar_potential, gradient, hessian, leaf_size_source=leaf_size, leaf_size_target=nothing, extra_outputs, metadata, optargs...)
+function fmm!(target_system, source_system; scalar_potential=false, gradient=true,
+        hessian=false, third_derivative=false, leaf_size=20, extra_outputs=0,
+        metadata=nothing, optargs...)
+    targets, sources = to_tuple(target_system), to_tuple(source_system)
+    switches = DerivativesSwitch(scalar_potential, gradient, hessian, targets;
+        third_derivative, extra_outputs, metadata)
+    _check_third_derivative_support(targets, sources, switches)
+    return fmm!(target_system, source_system, Cache(targets, sources, switches);
+        scalar_potential, gradient, hessian, third_derivative,
+        leaf_size_source=leaf_size, leaf_size_target=nothing, extra_outputs, metadata,
+        optargs...)
+end
 
 fmm!(system, cache::Cache; leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
 
@@ -872,11 +892,14 @@ fmm!(system, cache::RadixFMMCache; optargs...) = fmm!(system, system, cache; opt
 
 function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         scalar_potential::Bool=false, gradient::Bool=true, hessian::Bool=false,
+        third_derivative::Bool=false,
         sfs::Bool=false,
         lamb_helmholtz::Union{Nothing,Bool}=nothing) where {TF,LH}
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
     _assert_radix_targets_are_sources(targets, sources)
+    third_derivative && throw(ArgumentError(
+        "third_derivative output is not yet supported by RadixFMMCache"))
     hessian && !cache.hessian && throw(ArgumentError(
         "hessian output requested but this RadixFMMCache was built with " *
         "hessian=false (4-row output); construct RadixFMMCache(...; hessian=true)"))
@@ -1009,6 +1032,8 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 - `scalar_potential::Union{Bool,AbstractVector{Bool}}`: whether to compute the scalar potential; default is `false`
 - `gradient::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector field; default is `true`
 - `hessian::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector gradient; default is `false`
+- `third_derivative::Union{Bool,AbstractVector{Bool}}`: whether to compute its packed
+  second spatial derivative; default is `false`
 - `extra_outputs::Union{Int,AbstractVector{Int}}`: number of extra accumulated target output rows; default is `0`
 - `metadata::Union{Nothing,Int,AbstractVector{Int}}`: number of metadata rows carried with target positions; `nothing` infers [`metadata_per_body`](@ref)
 - `extra_farfield::Bool`: whether to compute extra farfield interactions; default is `false`
@@ -1016,21 +1041,23 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 
 """
 function fmm!(target_systems::Tuple, source_systems::Tuple;
-    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing, optargs...
+    scalar_potential=false, gradient=true, hessian=false, third_derivative=false, extra_outputs=0, metadata=nothing, optargs...
 )
     # allocate cache with actual derivatives switches
     scalar_potential_v = to_vector(scalar_potential, length(target_systems))
     gradient_v = to_vector(gradient, length(target_systems))
     hessian_v = to_vector(hessian, length(target_systems))
-    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; extra_outputs, metadata)
+    third_derivative_v = to_vector(third_derivative, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; third_derivative=third_derivative_v, extra_outputs, metadata)
+    _check_third_derivative_support(target_systems, source_systems, derivatives_switches)
     cache = Cache(target_systems, source_systems, derivatives_switches)
-    return fmm!(target_systems, source_systems, cache; scalar_potential, gradient, hessian, extra_outputs, metadata, optargs...)
+    return fmm!(target_systems, source_systems, cache; scalar_potential, gradient, hessian, third_derivative, extra_outputs, metadata, optargs...)
 end
 
 function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     leaf_size_target=nothing,
     leaf_size_source=default_leaf_size(source_systems),
-    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing,
+    scalar_potential=false, gradient=true, hessian=false, third_derivative=false, extra_outputs=0, metadata=nothing,
     expansion_order=5,
     error_tolerance=nothing,
     shrink=true, recenter=false,
@@ -1045,9 +1072,11 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     scalar_potential = to_vector(scalar_potential, length(target_systems))
     gradient = to_vector(gradient, length(target_systems))
     hessian = to_vector(hessian, length(target_systems))
+    third_derivative = to_vector(third_derivative, length(target_systems))
 
     # assemble derivatives switch
-    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems; extra_outputs, metadata)
+    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems; third_derivative, extra_outputs, metadata)
+    _check_third_derivative_support(target_systems, source_systems, derivatives_switches)
 
     validate_cache_compatibility(cache, target_systems, source_systems, derivatives_switches)
 
@@ -1144,12 +1173,12 @@ interaction lists (as opposed to a per-apply option). Used to split a caller's
 `FmmPlan` has no catch-all `optargs...`, so an unrecognized key is an error
 rather than a silent no-op. Keep in sync with the `FmmPlan` signature below.
 """
-const FMMPLAN_STRUCTURAL_KWARGS = (:scalar_potential, :gradient, :hessian,
+const FMMPLAN_STRUCTURAL_KWARGS = (:scalar_potential, :gradient, :hessian, :third_derivative,
     :extra_outputs, :metadata, :leaf_size_target, :shrink, :recenter,
     :interaction_list_method, :farfield, :nearfield, :self_induced)
 
 function FmmPlan(target_systems::Tuple, source_systems::Tuple;
-    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing,
+    scalar_potential=false, gradient=true, hessian=false, third_derivative=false, extra_outputs=0, metadata=nothing,
     leaf_size_target=nothing,
     leaf_size_source=default_leaf_size(source_systems),
     expansion_order=5,
@@ -1164,7 +1193,9 @@ function FmmPlan(target_systems::Tuple, source_systems::Tuple;
     scalar_potential_v = to_vector(scalar_potential, length(target_systems))
     gradient_v = to_vector(gradient, length(target_systems))
     hessian_v = to_vector(hessian, length(target_systems))
-    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; extra_outputs, metadata)
+    third_derivative_v = to_vector(third_derivative, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; third_derivative=third_derivative_v, extra_outputs, metadata)
+    _check_third_derivative_support(target_systems, source_systems, derivatives_switches)
     cache = Cache(target_systems, source_systems, derivatives_switches)
 
     leaf_size_source = to_vector(leaf_size_source, length(source_systems))
@@ -1234,8 +1265,8 @@ end
 # a switch whose requested outputs are direction-carrying: cached near-field
 # blocks for these rows would need a per-block rotation after rigid motion.
 # extra outputs are treated as sensitive (their semantics are user-defined).
-@inline _rotation_sensitive_outputs(::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM} =
-    GS || HS || NO > 0
+@inline _rotation_sensitive_outputs(::DerivativesSwitch{PS,GS,HS,NO,NM,TS}) where {PS,GS,HS,NO,NM,TS} =
+    GS || HS || TS || NO > 0
 
 """
     transform_plan!(plan::FmmPlan, target_systems::Tuple, R, t)
@@ -1531,7 +1562,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 t_dp = 0.0
                 if downward_pass
                     t_dp = @elapsed downward_pass_singlethread_1!(target_tree, expansion_order, lamb_helmholtz)
-                    t_dp += @elapsed gradient_n_m = initialize_gradient_n_m(expansion_order, eltype(target_tree.branches[1]))
+                    needs_third = any(_requests_third_derivative, derivatives_switches)
+                    t_dp += @elapsed gradient_n_m = initialize_gradient_n_m(expansion_order, eltype(target_tree.branches[1]); third_derivative=needs_third)
                     t_dp += @elapsed downward_pass_singlethread_2!(target_tree, target_tree.buffers, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m)
                     # println("Downward pass time: ", t_dp)
                 end

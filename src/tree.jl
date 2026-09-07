@@ -390,8 +390,7 @@ end
 
 #--- buffers ---#
 
-function allocate_target_buffer(TF, system, ::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM}
-    switch = DerivativesSwitch{PS,GS,HS,NO,NM}()
+function allocate_target_buffer(TF, system, switch::DerivativesSwitch)
     buffer = zeros(TF, target_buffer_rows(switch), get_n_bodies(system))
     return buffer
 end
@@ -2144,13 +2143,13 @@ end
     return zeros(type, 2, 2, ((expansion_order+1) * (expansion_order+2)) >> 1, n_branches)
 end
 
-function initialize_gradient_n_m(expansion_order, type=Float64)
+function initialize_gradient_n_m(expansion_order, type=Float64; third_derivative=false)
     # incrememnt expansion order to make room for error predictions
     # expansion_order += 1
 
     p = expansion_order
     n_harmonics = harmonic_index(p,p)
-    return zeros(type, 2, 3, n_harmonics)
+    return zeros(type, 2, third_derivative ? 12 : 3, n_harmonics)
 end
 
 function initialize_harmonics(expansion_order, type=Float64)

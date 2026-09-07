@@ -91,7 +91,7 @@ println("Optimal parameters: ", opt_params)
 This will return a named tuple of the optimal parameters, which can then be passed to the `fmm!` function. The `cache` is a preallocated buffer that can be used to reduce memory allocations during the FMM call.
 
 !!! warning
-    A cache is compatible only with the target buffer layout it was allocated for. Changing `scalar_potential`, `gradient`, `hessian`, `metadata`, or `extra_outputs` requires a matching cache or a newly allocated cache.
+    A cache is compatible only with the target buffer layout it was allocated for. Changing `scalar_potential`, `gradient`, `hessian`, `third_derivative`, `metadata`, or `extra_outputs` requires a matching cache or a newly allocated cache.
 
 ```@example advancedex2
 # run FMM without default parameters

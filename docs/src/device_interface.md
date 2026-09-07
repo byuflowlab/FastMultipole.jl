@@ -135,6 +135,10 @@ max_n_bodies`:
 | `2:4` | gradient |
 | `5:13` | hessian (column-major 3×3, matching the legacy `set_hessian!` order) |
 
+The CPU switch-relative interface additionally supports 18 packed third-derivative rows,
+ordered `(xx,xy,xz,yy,yz,zz)` for each vector component. The current Radix/device cache
+supports only its existing 4- or 13-row levels and rejects `third_derivative=true`.
+
 The per-system scatter buffer actually handed to `buffer_to_target!` is
 **switch-relative**: it carries only the channels the `DerivativesSwitch`
 requested, so consumers that skip the potential or the hessian pay no

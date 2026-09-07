@@ -43,15 +43,15 @@ abstract type Panel{NS,TK} <: AbstractElement{TK} end
 #------- dispatch convenience functions to determine which derivatives are desired -------#
 
 """
-    DerivativesSwitch{PS,GS,HS,NO,NM}
+    DerivativesSwitch{PS,GS,HS,NO,NM,TS}
 
-Switch indicating whether scalar potential (`PS`), gradient (`GS`), and hessian (`HS`)
-outputs should be computed for a target system. `NO` is the number of extra
+Switch indicating whether scalar potential (`PS`), gradient (`GS`), hessian (`HS`), and
+third-derivative (`TS`) outputs should be computed for a target system. `NO` is the number of extra
 accumulated output rows requested by the caller, and `NM` is the number of
 metadata rows carried with target positions through tree sorting.
 
 Target buffers use a compact row layout: positions in rows `1:3`, metadata in
-rows `4:3+NM`, enabled standard outputs in scalar/gradient/hessian order, and
+rows `4:3+NM`, enabled standard outputs in scalar/gradient/hessian/third-derivative order, and
 then `NO` extra output rows. Disabled standard outputs do not reserve rows, so
 custom target-buffer code should use switch-aware layout helpers.
 
@@ -60,7 +60,62 @@ metadata=0)` for a single switch, or pass target systems as the fourth argument
 to infer `metadata_per_body(system)` when `metadata=nothing`. Existing calls
 such as `DerivativesSwitch(true, true, false)` remain valid.
 """
-struct DerivativesSwitch{PS,GS,HS,NO,NM} end
+struct DerivativesSwitch{PS,GS,HS,NO,NM,TS} end
+
+"""
+    ThirdDerivativeTensor{T} <: AbstractArray{T,3}
+
+A compressed third-order tensor with `T[i,j,k] = ∂H[i,j]/∂x[k]`. The last two
+indices are symmetric and are stored in component-major `(xx,xy,xz,yy,yz,zz)` order.
+Use [`packed_data`](@ref) to access the canonical 18 values and [`dense`](@ref) for an
+explicit dense `3×3×3` static array.
+"""
+struct ThirdDerivativeTensor{T} <: AbstractArray{T,3}
+    data::SVector{18,T}
+end
+
+ThirdDerivativeTensor(data::NTuple{18,T}) where T = ThirdDerivativeTensor(SVector{18,T}(data))
+
+Base.size(::ThirdDerivativeTensor) = (3, 3, 3)
+Base.axes(::ThirdDerivativeTensor) = (Base.OneTo(3), Base.OneTo(3), Base.OneTo(3))
+Base.length(::ThirdDerivativeTensor) = 27
+Base.eltype(::Type{ThirdDerivativeTensor{T}}) where T = T
+Base.IndexStyle(::Type{<:ThirdDerivativeTensor}) = IndexCartesian()
+
+@inline function _third_pair_slot(j::Int, k::Int)
+    j > k && ((j, k) = (k, j))
+    return j == 1 ? k : (j == 2 ? k + 2 : 6)
+end
+
+@inline function Base.getindex(t::ThirdDerivativeTensor, i::Int, j::Int, k::Int)
+    @boundscheck checkbounds(t, i, j, k)
+    return @inbounds t.data[6 * (i - 1) + _third_pair_slot(j, k)]
+end
+
+"""
+    packed_data(tensor)
+
+Returns the canonical 18 packed values of a [`ThirdDerivativeTensor`](@ref) as an
+`SVector{18}`: the symmetric derivative pairs `(xx,xy,xz,yy,yz,zz)` for each vector
+component `i`, in component-major order.
+"""
+@inline packed_data(t::ThirdDerivativeTensor) = t.data
+
+"""
+    dense(tensor)
+
+Explicitly materializes a [`ThirdDerivativeTensor`](@ref) as a dense `3×3×3` static array
+of all 27 values, expanding the symmetric `(j,k)` derivative pairs.
+"""
+function dense(t::ThirdDerivativeTensor{T}) where T
+    values = ntuple(Val(27)) do n
+        i = (n - 1) % 3 + 1
+        j = ((n - 1) ÷ 3) % 3 + 1
+        k = (n - 1) ÷ 9 + 1
+        t[i, j, k]
+    end
+    return SArray{Tuple{3,3,3},T,3,27}(values)
+end
 
 #------- error predictors -------#
 
@@ -1010,6 +1065,7 @@ Convenience system for defining locations at which the potential, vector field, 
 * `scalar_potential::Vector{TF}`: vector of scalar potential values at the positions
 * `gradient::Vector{SVector{3,TF}}`: vector of vector field values at the positions
 * `hessian::Vector{SMatrix{3,3,TF,9}}`: vector of Hessian matrices at the positions
+* `third_derivative`: packed/static or dense-array third spatial derivatives at the positions
 """
 abstract type ProbeSystem{TF} end
 
@@ -1018,6 +1074,7 @@ struct ProbeSystemStatic{TF} <: ProbeSystem{TF}
     scalar_potential::Vector{TF}
     gradient::Vector{SVector{3,TF}}
     hessian::Vector{SMatrix{3,3,TF,9}}
+    third_derivative::Vector{ThirdDerivativeTensor{TF}}
 end
 
 struct ProbeSystemArray{TF} <: ProbeSystem{TF}
@@ -1025,6 +1082,7 @@ struct ProbeSystemArray{TF} <: ProbeSystem{TF}
     scalar_potential::Vector{TF}   # n_bodies
     gradient::Matrix{TF}           # 3 x n_bodies
     hessian::Array{TF,3}           # 3 x 3 x n_bodies
+    third_derivative::Array{TF,4}  # 3 x 3 x 3 x n_bodies
 end
 
 #------- SOLVERS -------#

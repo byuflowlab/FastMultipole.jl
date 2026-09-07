@@ -11,6 +11,29 @@ return [`DeviceResident()`](@ref).
 residency(system) = HostResident()
 
 """
+    supports_third_derivative(target_system, source_system) -> Bool
+
+Opt-in trait for a target/source pair whose direct interaction and target writeback
+implement packed third-derivative output. It defaults to `false` so legacy kernels cannot
+silently return incomplete near-field results.
+"""
+supports_third_derivative(target_system, source_system) = false
+
+@inline _requests_third_derivative(::DerivativesSwitch{PS,GS,HS,NO,NM,TS}) where {PS,GS,HS,NO,NM,TS} = TS
+
+function _check_third_derivative_support(target_systems, source_systems, switches)
+    for (target, switch) in zip(target_systems, switches)
+        _requests_third_derivative(switch) || continue
+        for source in source_systems
+            supports_third_derivative(target, source) || throw(ArgumentError(
+                "third_derivative=true requires supports_third_derivative(target, source) == true; " *
+                "unsupported pair: $(typeof(target)) <- $(typeof(source))"))
+        end
+    end
+    return nothing
+end
+
+"""
     body_type(system)
 
 Return the element type used to form multipole expansions from `system` on the
@@ -730,6 +753,26 @@ end
 get_hessian(system::AbstractMatrix, ::DerivativesSwitch{<:Any,<:Any,false}, i) =
     throw(ArgumentError("hessian output is disabled for this target buffer"))
 
+"""
+    get_third_derivative(target_buffer, i_body)
+    get_third_derivative(target_buffer, derivatives_switch, i_body)
+
+Returns the third derivative `T[i,j,k] = ∂H[i,j]/∂x[k]` induced at the `i_body`th body of
+`target_buffer` as a [`ThirdDerivativeTensor`](@ref). The two-argument form assumes the
+default layout (rows 17:34, no metadata or extra outputs); the switch-aware form reads the
+rows given by [`third_derivative_range`](@ref) and throws an `ArgumentError` if the switch
+did not request third derivatives.
+"""
+function get_third_derivative(system::AbstractMatrix{TF}, i) where TF
+    return ThirdDerivativeTensor(SVector{18,TF}(ntuple(n -> @inbounds(system[16 + n, i]), Val(18))))
+end
+function get_third_derivative(system::AbstractMatrix{TF}, switch::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,true}, i) where TF
+    first_row = first(third_derivative_range(switch))
+    return ThirdDerivativeTensor(SVector{18,TF}(ntuple(n -> @inbounds(system[first_row + n - 1, i]), Val(18))))
+end
+get_third_derivative(system::AbstractMatrix, ::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,false}, i) =
+    throw(ArgumentError("third-derivative output is disabled for this target buffer"))
+
 get_n_bodies(sys::AbstractMatrix) = size(sys, 2)
 
 #--- setters ---#
@@ -800,6 +843,35 @@ function set_hessian!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,true
 end
 set_hessian!(system::Matrix, ::DerivativesSwitch{<:Any,<:Any,false}, i, hessian) =
     throw(ArgumentError("hessian output is disabled for this target buffer"))
+
+@inline function _set_third_derivative_packed!(system::Matrix, first_row, i, data::SVector{18})
+    @inbounds for n in 1:18
+        system[first_row + n - 1, i] += data[n]
+    end
+    return nothing
+end
+
+"""
+    set_third_derivative!(target_buffer, i_body, value)
+    set_third_derivative!(target_buffer, derivatives_switch, i_body, value)
+
+Accumulates the packed third derivative `value` — a [`ThirdDerivativeTensor`](@ref) or an
+`SVector{18}` in the packed `(xx,xy,xz,yy,yz,zz)`-per-component order — into the 18
+third-derivative rows for the `i_body`th body of `target_buffer`. The three-argument form
+assumes the default layout (rows 17:34); the switch-aware form uses
+[`third_derivative_range`](@ref) and throws an `ArgumentError` if the switch did not
+request third derivatives.
+"""
+set_third_derivative!(system::Matrix, i, tensor::ThirdDerivativeTensor) =
+    _set_third_derivative_packed!(system, 17, i, packed_data(tensor))
+set_third_derivative!(system::Matrix, i, data::SVector{18}) =
+    _set_third_derivative_packed!(system, 17, i, data)
+set_third_derivative!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,true}, i, tensor::ThirdDerivativeTensor) =
+    _set_third_derivative_packed!(system, first(third_derivative_range(switch)), i, packed_data(tensor))
+set_third_derivative!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,true}, i, data::SVector{18}) =
+    _set_third_derivative_packed!(system, first(third_derivative_range(switch)), i, data)
+set_third_derivative!(system::Matrix, ::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,false}, i, value) =
+    throw(ArgumentError("third-derivative output is disabled for this target buffer"))
 
 #--- auxilliary functions ---#
 

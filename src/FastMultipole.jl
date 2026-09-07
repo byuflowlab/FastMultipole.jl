@@ -220,10 +220,12 @@ export direct!
 
 include("derivativesswitch.jl")
 
-export DerivativesSwitch, metadata_range, metadata_index, tree_carried_range
-export scalar_potential_index, gradient_range, hessian_range
+export DerivativesSwitch, ThirdDerivativeTensor, packed_data, dense
+export metadata_range, metadata_index, tree_carried_range
+export scalar_potential_index, gradient_range, hessian_range, third_derivative_range
 export standard_output_range, extra_output_range, output_range
 export get_extra_output, set_extra_output!, extra_output_view, output_view
+export get_third_derivative, set_third_derivative!, supports_third_derivative
 
 include("error.jl")
 

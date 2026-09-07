@@ -1,5 +1,9 @@
 # 052e theory — recovering a body potential trace from velocity
 
+**Status: ACCEPTED by Ryan 2026-09-07** (acceptance given after review of the
+area-mean closure rationale; closes the theory gate required by
+`052e-accuracy-plan-v2-draft-2026-09-05.md` before Tier 0B interpretation).
+
 ## Purpose
 
 This note derives what `HybridWakePotential` can and cannot "solve" when a
@@ -105,14 +109,9 @@ reconstructed trace has the expected surface gradient.
 
 The velocity is unchanged by $\psi\mapsto\psi+c$, so the trace is determined
 only modulo a constant. Correspondingly, $I-B$ has the constant mode in its
-nullspace in the continuum problem. Let
-
-$$
-a_i=A_i
-$$
-
-be the panel-area vector. The production `:area_mean` route selects
-$a^Tq=0$ (equivalently $\langle q\rangle_A=0$) with the bordered system
+nullspace in the continuum problem. Let $a_i=A_i$ be the panel-area vector.
+The production `:area_mean` route selects $a^Tq=0$ (equivalently
+$\langle q\rangle_A=0$) with the bordered system
 
 $$
 \begin{bmatrix}
@@ -125,8 +124,13 @@ a^T & 0
 $$
 
 The multiplier $\lambda$ records discrete incompatibility in the null mode;
-it is telemetry, not a physical potential. The `:lsq` route instead solves
-the overdetermined constrained problem
+it is telemetry, not a physical potential. This full area-augmented system is
+the authoritative 052e formulation through the Tier 0B proof against directly
+evaluated doublet-panel-wake induced potential. Keeping it unchanged during
+that proof separates validation of the Green reconstruction from validation
+of a different algebraic representation.
+
+The existing `:lsq` route solves the overdetermined constrained problem
 
 $$
 \min_q\left\|
@@ -135,10 +139,102 @@ $$
 \right\|_2.
 $$
 
-Both routes recover the same physical object only up to body-panel
-discretization and compatibility errors. For multiple disconnected
-Dirichlet bodies, the construction and gauge are applied independently to
-each body because each interior domain has its own constant mode.
+Least squares is not part of 052e certification or its required tests; this
+restriction does not require removal of the existing API. For multiple
+disconnected Dirichlet bodies, the construction and gauge are applied
+independently to each body because each interior domain has its own constant
+mode.
+
+### 3.1 Orthogonal reduction after the Tier 0B proof
+
+The border is a convenient way to impose the gauge, but increasing the system
+dimension is not mathematically necessary. After the bordered formulation
+passes Tier 0B, replace its production representation with a square solve on
+the area-mean-zero subspace
+
+$$
+\mathcal V=\{q\in\mathbb R^N:a^Tq=0\}.
+$$
+
+Write $A=I-B$, $b=S\sigma$, and normalize $\widehat a=a/\|a\|_2$.
+Choose a numerically stable Householder reflector $H=I-2vv^T$ satisfying
+
+$$
+H\widehat a=s e_N,\qquad s\in\{-1,1\},
+$$
+
+with the sign chosen by the usual cancellation-avoiding Householder rule.
+If $Z=H[:,1:N-1]$, then $Z^TZ=I$, $Z^Ta=0$, and every admissible trace has
+the unique representation $q=Zy$. Premultiplying the bordered physical
+equations by $Z^T$ eliminates the multiplier and gives
+
+$$
+\boxed{(Z^TAZ)y=Z^Tb,\qquad q=Zy.}
+$$
+
+This is an exact $(N-1)\times(N-1)$ square coordinate reduction of the
+bordered equations, not a least-squares problem. It also preserves the
+bordered treatment of a discretely incompatible right-hand side.
+
+No dense $Z$ need be formed or stored. Transform $A$ once as
+$\widetilde A=HAH^T$ using the reflector's rank-one form, factor its leading
+$(N-1)\times(N-1)$ block, and transform each right-hand side as
+$\widetilde b=Hb$. After solving for $y$, set $\widetilde q=[y;0]$ and recover
+$q=H^T\widetilde q$. Because $H$ is symmetric, the forward and inverse vector
+transforms use the same dot product and scaled vector update. The omitted
+last equation retains the incompatibility telemetry:
+
+$$
+\lambda=\frac{s}{\|a\|_2}
+\left(\widetilde b_N-\widetilde A_{N,1:N-1}y\right).
+$$
+
+Reflector construction and each vector projection cost $O(N)$. The one-time
+two-sided dense transform costs $O(N^2)$, small beside the $O(N^3)$ LU
+factorization; recurring triangular solves remain $O(N^2)$. Reducing the
+dimension by two relative to the border saves only $O(N)$ storage. A material
+peak-memory benefit is possible only if the assembled $B$ buffer is reused in
+place for $A$, its transform, and the reduced LU.
+
+Advantages of the reduced formulation are an ordinary square solve, exact
+enforcement of the area gauge by coordinates, 2-norm-stable orthogonal
+transforms, preservation and recovery of $\lambda$, and negligible recurring
+projection cost. Its disadvantages are more complicated setup and indexing,
+less transparent operator storage, and the need to prove parity with the
+already validated bordered reference before adoption.
+
+Important pitfalls are:
+
+- Forming $P=I-aa^T/(a^Ta)$ and factoring the full $N\times N$ matrix $PAP$
+  does not work: it remains singular in full coordinates.
+- Projecting only the unknown, or only the right-hand side, does not reproduce
+  the bordered treatment of discrete incompatibility; both trial and equation
+  spaces must use $Z$.
+- Replacing the bordered solve before its Tier 0B oracle passes would conflate
+  formulation validation with representation validation.
+- The reflector must use a cancellation-avoiding sign and normalized area
+  vector; an explicitly constructed dense basis is unnecessary.
+
+### 3.2 Alternatives considered
+
+- **Area-augmented bordered LU:** clearest robust reference and returns
+  $\lambda$ directly; costs one extra row and column and has saddle-point
+  structure.
+- **Householder orthogonal reduction:** exact $(N-1)$ square equivalent with
+  cheap, stable projections; adds setup complexity and requires bordered
+  parity proof.
+- **Rank-one completion:** retains an $N\times N$ square matrix and is simple
+  for exactly compatible data; can change the selected discrete result or
+  obscure incompatibility telemetry when compatibility is imperfect.
+- **Replace one equation or pin one potential:** simple $N\times N$ solve;
+  arbitrarily discards or localizes one residual equation and can be
+  mesh/order dependent.
+- **Projected matrix-free Krylov/fixed-point solve:** can remove dense matrix
+  storage; introduces convergence, stopping-criterion, and preconditioning
+  obligations and must match the bordered incompatibility convention.
+- **Constrained least squares:** tolerates inconsistency, but solves a
+  different optimization problem and is explicitly excluded from 052e
+  certification.
 
 ## 4. Doublet-sheet and filament equivalence
 
@@ -197,9 +293,13 @@ than evidence for or against the Green identity.
 ## 7. Consequences for 052e
 
 The accuracy campaign must compare reconstructed values only on closed-body
-control points, align each body's trace by a constant, and test both supported
-gauges. Standalone doublet solid-angle checks remain useful for kernel signs
-and normalization, but wake-alone field-point potential and branch-jump tests
-do not exercise `HybridWakePotential`. Promotion claims are limited to
-gauge-invariant circulation, exterior velocity, and integrated loads until a
-separate global gauge method is available and verified.
+control points, align each body's trace by a constant, and certify only the
+area-mean gauge. The full bordered solve remains authoritative through the
+direct doublet-panel-wake Tier 0B proof. Only after that explicit pass may the
+Householder-reduced solve be implemented; reduced-versus-bordered parity is a
+separate gate before later tiers. Standalone doublet solid-angle checks remain
+useful for kernel signs and normalization, but wake-alone field-point
+potential and branch-jump tests do not exercise `HybridWakePotential`.
+Promotion claims are limited to gauge-invariant circulation, exterior
+velocity, and integrated loads until a separate global gauge method is
+available and verified.

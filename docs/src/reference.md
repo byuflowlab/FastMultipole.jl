@@ -61,6 +61,13 @@ FastMultipole.tree_carried_range
 FastMultipole.scalar_potential_index
 FastMultipole.gradient_range
 FastMultipole.hessian_range
+FastMultipole.third_derivative_range
+FastMultipole.ThirdDerivativeTensor
+FastMultipole.packed_data
+FastMultipole.dense
+FastMultipole.get_third_derivative
+FastMultipole.set_third_derivative!
+FastMultipole.supports_third_derivative
 FastMultipole.standard_output_range
 FastMultipole.extra_output_range
 FastMultipole.output_range

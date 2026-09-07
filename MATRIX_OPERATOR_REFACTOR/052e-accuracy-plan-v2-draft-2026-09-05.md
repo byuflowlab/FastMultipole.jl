@@ -5,6 +5,14 @@ incorporates the 2026-09-05 technical review; it is not yet ratified. Nothing
 in this file authorizes runs, deployment, or promotion. Numerical gates marked
 PROPOSED must be locked before results are inspected.
 
+**Ryan ruling 2026-09-07 (Green-solver sequencing):** retain the full
+area-augmented bordered `:area_mean` solve through the direct
+doublet-panel-wake Tier 0B proof. Only after an explicit pass may 052e
+implement the orthogonally reduced $(N-1)\times(N-1)$ solve and attempt its
+separate bordered-parity gate. Least squares is excluded from 052e testing and
+certification. This ruling does not ratify the numerical gates still marked
+PROPOSED below.
+
 ## 0. Preliminary theory gate — velocity to potential trace
 
 Before fixtures or thresholds are ratified, review and accept
@@ -66,10 +74,16 @@ precondition is satisfied by construction in Tier 1 and in production.
 Still evaluate and report the leakage bound for near-limit cases.
 
 The reconstructed trace is accepted modulo one constant per connected body.
-Both implemented gauges are tested directly:
+052e certifies only `:area_mean`, for which the area-weighted mean of each
+body's trace is zero. The existing `:lsq` API need not be removed, but least
+squares is excluded from this campaign's required tests and certification
+claims.
 
-- `:area_mean`: the area-weighted mean of each body's trace is zero;
-- `:lsq`: the dense least-squares route with the same area constraint.
+The full area-augmented bordered solve is authoritative through Tier 0B. Only
+after it passes the directly evaluated doublet-panel-wake oracle may the
+Householder-reduced $(N-1)\times(N-1)$ representation described in the theory
+note be implemented. Reduced-versus-bordered parity is then a distinct gate
+before Tiers 1, 1.5, 2, or Stage B.
 
 All reference traces are aligned independently on each body by subtracting
 their area-weighted means. Adding an arbitrary constant to each body trace
@@ -153,25 +167,38 @@ $4\pi$ solid-angle branch ambiguity. Sample neither the sheet nor its rim.
 
 ## 5. Tier 0B — manufactured Green-trace oracle
 
-Use a closed, simply connected test body and an external vortex ring/doublet
-disk. Its singular support, or its effective regularized core under the
-leakage criterion in section 2, remains outside the body for every case.
-Choose one continuous potential branch over the whole body surface. Directly
-evaluate the reference trace $q_{\rm ref}$ and reference normal velocity at
-the same body control points, then run the production reconstruction
-$(I-B)q=S\sigma$.
+Use a closed, simply connected test body and an external doublet-panel wake
+(including the vortex-ring/doublet-disk fixture). Its singular support, or its
+effective regularized core under the leakage criterion in section 2, remains
+outside the body for every case. Choose one continuous potential branch over
+the whole body surface. Directly evaluate the doublet panels' induced
+potential $q_{\rm ref}$ and normal velocity at the same body control points,
+then run the production bordered reconstruction $(I-B)q=S\sigma$. This direct
+doublet-panel-wake comparison is the required formulation proof; no reduced
+system may replace the border before it passes.
 
 Decompose the error sequentially, changing one representation at a time:
 
-1. analytic/reference normal velocity;
+1. directly evaluated doublet-panel potential and its analytic/reference
+   normal velocity;
 2. a finely integrated singular filament with demonstrated quadrature error;
 3. discretized singular filament elements;
 4. regularized particles;
 5. production total-minus-retained-panel particle-velocity extraction.
 
 Sweep body-panel and filament/particle resolution independently. Sweep core
-ratio and at least two azimuthal particle offsets. Run both `:area_mean` and
-`:lsq` gauges. Report convergence rates and, for every case:
+ratio and at least two azimuthal particle offsets. Run the bordered
+`:area_mean` route.
+
+**Scheduling of the decomposition (ratified 2026-09-07):** the 052e.2a
+formulation-proof ruling gates on stage 1 only (direct doublet-panel oracle;
+pre-registered in `052e2a-tier0b-preregistration-2026-09-07.md`). Stages 2–4
+(filament and particle representations) run as a **052e.2a continuation
+addendum** on the same fixture after the stage-1 ruling; they do not require
+the reduced solver and may proceed in parallel with .2b. Stage 5
+(total-minus-retained-panel extraction) is additionally exercised on the
+production path in the Tier 1.5 hybrid fixture under 052e.3. This paragraph
+exists so stages 2–5 are not lost when reading the stage-1 pre-registration. Report convergence rates and, for every case:
 
 - flux compatibility $|\sum_i A_i\sigma_i|$, with its declared scale;
 - the bordered-system Lagrange multiplier where applicable;
@@ -189,6 +216,26 @@ the analytic-normal-velocity reconstruction exceeds 20% on the finest body
 mesh or fails to improve under body-mesh refinement. Particle error above 20%
 that improves with refinement is a discretization finding, not structural
 failure.
+
+### Tier 0B-R — reduced-system parity gate
+
+Only after an explicit Tier 0B pass, implement the implicit-Householder
+$(N-1)\times(N-1)$ solve from the theory note. Keep the bordered route as the
+reference and compare, at roundoff-scaled tolerances:
+
+- reconstructed traces and area-gauge defects;
+- physical Green residuals and recovered $\lambda$ values;
+- compatible analytic data and deliberately incompatible discrete right-hand
+  sides;
+- refined and distorted-area meshes, with each disconnected body reduced
+  independently;
+- paired-edge circulation, exterior velocity, and loads.
+
+Also measure setup time, recurring solve time, persistent storage, and peak
+construction memory. Adoption requires parity without regression in the
+direct doublet-panel-wake oracle. If parity or conditioning fails, retain the
+bordered route; do not automatically substitute least squares, rank-one
+completion, row replacement, or an iterative method.
 
 ## 6. Tier 1 — prescribed flat wake and body solve
 
@@ -257,9 +304,10 @@ production interval separately; lagging creates a staircase trace.
 
 ## 9. Stage B — production evidence
 
-Only after Tiers 0B–2 pass, run independent identically configured Hybrid and
-VTS rotor cases from the v1 matrix. Add a direct or demonstrably over-resolved
-reference for at least one reduced rotor case; Hybrid/VTS agreement alone is
+Only after Tier 0B, Tier 0B-R, and Tiers 1–2 pass, run independent identically
+configured Hybrid and VTS rotor cases from the v1 matrix. Add a direct or
+demonstrably over-resolved reference for at least one reduced rotor case;
+Hybrid/VTS agreement alone is
 not correctness evidence. Pre-register Stage-B tolerances before those runs,
 using Tier results only to choose meaningful scales.
 
@@ -278,11 +326,15 @@ The promotion package must include:
 1. Review and accept `052e-theory-velocity-to-potential-trace.md`.
 2. Ratify and pre-register the metrics, fixtures, sweeps, and numerical gates.
 3. Run Tier 0A as a kernel convention check.
-4. Run Tier 0B in the five diagnostic stages; apply the structural kill rule.
-5. Run Tier 1, including the two-body and gauge-invariance fixtures.
-6. Run Tier 1.5 and Tier 2.
-7. Rule whether to retire, remain experimental, or proceed to Stage B.
-8. If Stage B passes, seek a separate promotion ruling. Absolute-pressure
+4. Run Tier 0B with the full bordered `:area_mean` system in the five
+   diagnostic stages; apply the structural kill rule and record an explicit
+   pass/continue ruling.
+5. Only after that pass, implement the Householder reduction and pass Tier
+   0B-R reduced-versus-bordered parity.
+6. Run Tier 1, including the two-body and gauge-invariance fixtures.
+7. Run Tier 1.5 and Tier 2.
+8. Rule whether to retire, remain experimental, or proceed to Stage B.
+9. If Stage B passes, seek a separate promotion ruling. Absolute-pressure
    promotion remains blocked without verified global gauge recovery.
 
 ## 11. Subitem mapping (adopted by Ryan 2026-09-06)
@@ -290,5 +342,6 @@ The promotion package must include:
 The ruling order in section 10 executes as subitems 052e.0–.6; see the
 subitem-structure section of
 `052e-impl-hybrid-wake-potential-experimental.md` for definitions and the
-dependency chain (.0 → .2 → {.3, .4} → .5; .1 feeds .2; .6 parallel).
+dependency chain (.0 → .2a bordered proof → .2b reduced parity → {.3, .4} →
+.5; .1 feeds .2a; .6 parallel).
 Gate ratification is per subitem, immediately before that subitem runs.

@@ -4,7 +4,10 @@ version = "2.3.0"
 authors = ["Ryan Anderson <rymanderson@gmail.com> and contributors"]
 
 [deps]
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
@@ -12,7 +15,7 @@ WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 
 [compat]
-CUDA = "5.8, 6"  # CUDA 6.3 resolves with the GeoIO-free FLOWPanel stack; retain 5.8/6.2 until the H200 qualification gate passes.
+CUDA = "5.8, 6"
 ForwardDiff = "1.0.1"
 LegendrePolynomials = "0.4"
 SpecialFunctions = "2.5.1"
