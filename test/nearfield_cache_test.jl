@@ -301,3 +301,98 @@ end
         direct_conditioning=rule)
 
 end
+
+@testset "NearfieldInfluenceCache: parallel build is bit-identical" begin
+
+    n_bodies = 1500
+    plan_kwargs = (; expansion_order=6, multipole_acceptance=0.4,
+                   leaf_size_source=25, scalar_potential=true, gradient=true,
+                   hessian=false)
+
+    sys = generate_gravitational(77, n_bodies)
+    plan = FastMultipole.FmmPlan((sys,), (sys,); plan_kwargs...)
+    @test length(plan.direct_list) > 0
+
+    tt, st, switches = plan.target_tree, plan.source_tree, plan.derivatives_switches
+
+    serial = NearfieldInfluenceCache((sys,), tt, (sys,), st, plan.direct_list,
+        switches; n_threads=1)
+    parallel = NearfieldInfluenceCache((sys,), tt, (sys,), st, plan.direct_list,
+        switches; n_threads=4)
+
+    # every matrix entry is computed independently, so the parallel build must
+    # reproduce the serial build EXACTLY, not just to a tolerance
+    @test serial.matrices.data == parallel.matrices.data
+    @test serial.matrices.sizes == parallel.matrices.sizes
+    @test serial.entries == parallel.entries
+    @test serial.bytes == parallel.bytes
+
+    # buffers untouched by the build (strengths restored, outputs zeroed) —
+    # matvec through both caches agrees bitwise
+    FastMultipole.reset!(tt.buffers)
+    nearfield_matvec!(tt.buffers, serial, st.buffers)
+    out_serial = deepcopy(tt.buffers)
+    FastMultipole.reset!(tt.buffers)
+    nearfield_matvec!(tt.buffers, parallel, st.buffers)
+    for i in eachindex(tt.buffers)
+        @test tt.buffers[i] == out_serial[i]
+    end
+end
+
+@testset "NearfieldInfluenceCache: donor retarget" begin
+
+    n_bodies = 1200
+    plan_kwargs = (; expansion_order=6, multipole_acceptance=0.4,
+                   leaf_size_source=25, scalar_potential=true, gradient=true,
+                   hessian=false)
+
+    sys = generate_gravitational(88, n_bodies)
+    plan_a = FastMultipole.FmmPlan((sys,), (sys,); plan_kwargs...)
+    cache_a = NearfieldInfluenceCache((sys,), plan_a.target_tree, (sys,),
+        plan_a.source_tree, plan_a.direct_list, plan_a.derivatives_switches)
+    donor = NearfieldCacheDonor(cache_a, plan_a.target_tree,
+        plan_a.source_tree, (sys,))
+
+    # rebuild at IDENTICAL knobs: retarget must succeed, alias the donor's
+    # matrices, pass the tree-identity check for the NEW trees, and evaluate
+    # bitwise-identically to a fresh build
+    plan_b = FastMultipole.FmmPlan((sys,), (sys,); plan_kwargs...)
+    tt_b, st_b = plan_b.target_tree, plan_b.source_tree
+    re = retarget_nearfield_cache(donor, tt_b, st_b, plan_b.direct_list,
+        plan_b.derivatives_switches, (sys,))
+    @test re isa NearfieldInfluenceCache
+    @test re.matrices.data === cache_a.matrices.data       # no re-probe
+    @test re.target_tree_id == objectid(tt_b)
+    FastMultipole.check_cache_trees(re, tt_b, st_b)        # throws on failure
+    @test_throws ArgumentError FastMultipole.check_cache_trees(cache_a, tt_b, st_b)
+
+    fresh_b = NearfieldInfluenceCache((sys,), tt_b, (sys,), st_b,
+        plan_b.direct_list, plan_b.derivatives_switches)
+    @test re.matrices.data == fresh_b.matrices.data
+
+    FastMultipole.reset!(tt_b.buffers)
+    nearfield_matvec!(tt_b.buffers, fresh_b, st_b.buffers)
+    out_fresh = deepcopy(tt_b.buffers)
+    FastMultipole.reset!(tt_b.buffers)
+    nearfield_matvec!(tt_b.buffers, re, st_b.buffers)
+    for i in eachindex(tt_b.buffers)
+        @test tt_b.buffers[i] == out_fresh[i]
+    end
+
+    # different leaf size -> different block specs -> retarget refuses
+    plan_c = FastMultipole.FmmPlan((sys,), (sys,);
+        plan_kwargs..., leaf_size_source=40)
+    @test retarget_nearfield_cache(donor, plan_c.target_tree,
+        plan_c.source_tree, plan_c.direct_list, plan_c.derivatives_switches,
+        (sys,)) === nothing
+
+    # perturbed geometry -> non-strength buffer rows differ -> retarget refuses
+    sys_moved = generate_gravitational(88, n_bodies)
+    b1 = sys_moved.bodies[1]
+    sys_moved.bodies[1] = typeof(b1)(b1.position + SVector{3}(1e-7, 0.0, 0.0),
+        b1.radius, b1.strength)
+    plan_d = FastMultipole.FmmPlan((sys_moved,), (sys_moved,); plan_kwargs...)
+    @test retarget_nearfield_cache(donor, plan_d.target_tree,
+        plan_d.source_tree, plan_d.direct_list, plan_d.derivatives_switches,
+        (sys_moved,)) === nothing
+end

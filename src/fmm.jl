@@ -1226,10 +1226,11 @@ change) and dies with the plan's trees. Returns the cache.
 """
 function build_nearfield_cache!(plan::FmmPlan, target_systems::Tuple, source_systems::Tuple;
         max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
-        max_build_time::Real=Inf)
+        max_build_time::Real=Inf,
+        n_threads::Integer=Threads.nthreads())
     cache = NearfieldInfluenceCache(target_systems, plan.target_tree,
         source_systems, plan.source_tree, plan.direct_list,
-        plan.derivatives_switches; max_bytes, max_build_time)
+        plan.derivatives_switches; max_bytes, max_build_time, n_threads)
     plan.nearfield_cache[] = cache
     return cache
 end
@@ -1503,14 +1504,14 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 _refuse_conditioning(direct_conditioning, "tune_nearfield_cache")
                 est = estimate_nearfield_cache(target_tree, source_tree,
                     direct_list, derivatives_switches, source_systems;
-                    sample=isfinite(nearfield_cache_max_build_time))
+                    sample=isfinite(nearfield_cache_max_build_time), n_threads)
                 if est.bytes <= nearfield_cache_max_bytes &&
                         !(isfinite(nearfield_cache_max_build_time) &&
                           est.est_build_time > nearfield_cache_max_build_time)
                     nearfield_cache = NearfieldInfluenceCache(target_systems,
                         target_tree, source_systems, source_tree, direct_list,
                         derivatives_switches;
-                        max_bytes=nearfield_cache_max_bytes)
+                        max_bytes=nearfield_cache_max_bytes, n_threads)
                     nearfield_cache_build_time = nearfield_cache.build_time
                 else
                     nearfield_cache_feasible = false
