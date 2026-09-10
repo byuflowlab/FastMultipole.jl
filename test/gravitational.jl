@@ -149,6 +149,101 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch::
     end
 end
 
+#------- opt-in dense influence-block assembly (BRAINSTORM 030) -------#
+
+# Assigns the per-unit-strength kernel values directly instead of probing
+# through `direct!`: every entry is a pure function of buffer positions, so
+# the cache builder shares buffers across build threads (nothing is mutated)
+# and the result is deterministic at any thread count. Rows follow
+# `output_range(switch)` exactly as the probe stores them; columns are one
+# per source body (strength_dims == 1). NO extra-output rows are zeroed to
+# match the probe (`direct!` never writes them).
+function FastMultipole.assemble_influence_block!(block::AbstractMatrix,
+        target_buffer::AbstractMatrix, target_range::UnitRange{Int},
+        switch::FastMultipole.DerivativesSwitch{PS,GS,HS,NO,NM,TS},
+        source_system::Gravitational, source_buffer::AbstractMatrix,
+        source_range::UnitRange{Int}) where {PS,GS,HS,NO,NM,TS}
+    TF = eltype(block)
+    n_out = (PS ? 1 : 0) + (GS ? 3 : 0) + (HS ? 9 : 0) + (TS ? 18 : 0) + NO
+    @inbounds for (j, i_source) in enumerate(source_range)
+        source_x = source_buffer[1, i_source]
+        source_y = source_buffer[2, i_source]
+        source_z = source_buffer[3, i_source]
+        for (it, i_target) in enumerate(target_range)
+            dx = target_buffer[1, i_target] - source_x
+            dy = target_buffer[2, i_target] - source_y
+            dz = target_buffer[3, i_target] - source_z
+            r2 = dx*dx + dy*dy + dz*dz
+            dϕ = zero(TF)
+            d∇ϕ = zero(SVector{3,TF})
+            dH = zero(SMatrix{3,3,TF,9})
+            dT = zero(MVector{18,TF})
+            if r2 > 0
+                r = sqrt(r2)
+                # unit strength: same expressions as direct! above with
+                # source_strength = 1
+                tmp = one(TF) / r * FastMultipole.ONE_OVER_4π
+                if PS
+                    dϕ = tmp
+                end
+                if GS
+                    d∇ϕ = -SVector{3}(dx, dy, dz) * tmp / r2
+                end
+                if HS || TS
+                    q5 = one(TF) * FastMultipole.ONE_OVER_4π / (r2 * r2 * r)
+                    x = SVector(dx, dy, dz)
+                    if HS
+                        dH = SMatrix{3,3}(ntuple(Val(9)) do n
+                            ii = (n - 1) % 3 + 1
+                            jj = (n - 1) ÷ 3 + 1
+                            q5 * (3x[ii] * x[jj] - (ii == jj ? r2 : zero(r2)))
+                        end)
+                    end
+                    if TS
+                        q7 = q5 / r2
+                        slot = 0
+                        for ii in 1:3, (jj, kk) in ((1,1), (1,2), (1,3), (2,2), (2,3), (3,3))
+                            slot += 1
+                            delta_terms = (ii == jj ? x[kk] : zero(r2)) +
+                                (ii == kk ? x[jj] : zero(r2)) +
+                                (jj == kk ? x[ii] : zero(r2))
+                            dT[slot] = q7 * (3r2 * delta_terms - 15x[ii] * x[jj] * x[kk])
+                        end
+                    end
+                end
+            end
+            r0 = (it - 1) * n_out
+            o = 0
+            if PS
+                block[r0+1, j] = dϕ
+                o = 1
+            end
+            if GS
+                block[r0+o+1, j] = d∇ϕ[1]
+                block[r0+o+2, j] = d∇ϕ[2]
+                block[r0+o+3, j] = d∇ϕ[3]
+                o += 3
+            end
+            if HS
+                for h in 1:9
+                    block[r0+o+h, j] = dH[h]
+                end
+                o += 9
+            end
+            if TS
+                for h in 1:18
+                    block[r0+o+h, j] = dT[h]
+                end
+                o += 18
+            end
+            for rr in o+1:n_out   # extra-output rows: direct! never writes them
+                block[r0+rr, j] = zero(TF)
+            end
+        end
+    end
+    return block
+end
+
 function FastMultipole.buffer_to_target_system!(target_system::Gravitational, i_target, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS,NO,NM,TS}, target_buffer, i_buffer) where {PS,GS,HS,NO,NM,TS}
     # get values
     TF = eltype(target_buffer)

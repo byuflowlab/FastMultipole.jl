@@ -1,11 +1,21 @@
 #------- matrix storage -------#
 
+# calloc-backed zeros: pairs with assemble_influence_block!'s assignment
+# semantics — zero pages come free from the OS and are first-touched by the
+# worker that fills each block (non-bits eltypes fall back to zeros())
+function _calloc_vector(::Type{TF}, n::Integer) where TF
+    (isbitstype(TF) && n > 0) || return zeros(TF, n)
+    ptr = Ptr{TF}(Libc.calloc(n, sizeof(TF)))
+    ptr == C_NULL && throw(OutOfMemoryError())
+    return unsafe_wrap(Array, ptr, Int(n); own=true)
+end
+
 function Matrices(sizes::Vector{Tuple{Int,Int}}, TF=Float64)
-    # preallocate matrix storage
+    # preallocate matrix storage (zero-initialized; see _calloc_vector)
     n_matrix = sum(m * n for (m, n) in sizes)
     n_rhs = sum(m for (m,_) in sizes)
-    data = Vector{TF}(undef, n_matrix)
-    rhs = Vector{TF}(undef, n_rhs)
+    data = _calloc_vector(TF, n_matrix)
+    rhs = _calloc_vector(TF, n_rhs)
 
     # offsets
     matrix_offsets = Vector{Int}(undef, length(sizes))

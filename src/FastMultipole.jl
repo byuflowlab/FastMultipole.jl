@@ -249,6 +249,7 @@ include("nearfield_cache.jl")
 
 export NearfieldInfluenceCache, nearfield_matvec!, build_nearfield_cache!, estimate_nearfield_cache
 export NearfieldCacheDonor, retarget_nearfield_cache
+export assemble_influence_block!, overrides_block_assembly
 
 include("extra_farfield.jl")
 
