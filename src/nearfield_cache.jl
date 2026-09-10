@@ -36,8 +36,11 @@ end
         direct_list, derivatives_switches; max_bytes, direct_conditioning=())
 
 Build a dense near-field cache for the (target-sorted) `direct_list`: one block
-per direct-list entry and system pair, probed column-by-column with unit
-strengths through `direct!`. Blocks are stored in target-major order so
+per direct-list entry and system pair, filled through
+[`assemble_influence_block!`](@ref) — a system-specific direct-assembly
+overload when one exists, otherwise column-by-column unit-strength probing
+through `direct!` (`use_block_assembly=false` forces the probe everywhere; a
+diagnostic/testing knob). Blocks are stored in target-major order so
 owner-partitioned parallel evaluation accumulates race-free and
 deterministically.
 
@@ -51,6 +54,7 @@ function NearfieldInfluenceCache(target_systems::Tuple, target_tree::Tree,
         max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
         max_build_time::Real=Inf,
         n_threads::Integer=Threads.nthreads(),
+        use_block_assembly::Bool=true,
         direct_conditioning=())
 
     _refuse_conditioning(direct_conditioning, "build")
@@ -61,7 +65,8 @@ function NearfieldInfluenceCache(target_systems::Tuple, target_tree::Tree,
     return _build_nearfield_cache(entries, target_ranges, source_ranges,
         target_tree.buffers, source_systems, source_tree.buffers,
         derivatives_switches, max_bytes, max_build_time,
-        objectid(target_tree), objectid(source_tree); n_threads)
+        objectid(target_tree), objectid(source_tree);
+        n_threads, use_block_assembly)
 end
 
 # block specs in target-major (direct-list) order
@@ -99,6 +104,7 @@ function NearfieldInfluenceCache(target_systems::Tuple, target_buffers,
         max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
         max_build_time::Real=Inf,
         n_threads::Integer=Threads.nthreads(),
+        use_block_assembly::Bool=true,
         direct_conditioning=())
 
     _refuse_conditioning(direct_conditioning, "build")
@@ -121,7 +127,7 @@ function NearfieldInfluenceCache(target_systems::Tuple, target_buffers,
     return _build_nearfield_cache(entries, target_ranges, source_ranges,
         target_buffers, source_systems, source_buffers,
         derivatives_switches, max_bytes, max_build_time, UInt(0), UInt(0);
-        n_threads)
+        n_threads, use_block_assembly)
 end
 
 # one size pass shared by the builder and the estimator (no drift):
@@ -226,43 +232,114 @@ end
     return nothing
 end
 
-# probe every source column owned by the keys in `key_range`, filling their
-# blocks' matrix columns. `target_buffers` may be the caller's buffers (serial)
-# or a thread-private copy (parallel build): the probe writes target output
-# rows, so concurrent probes must not share them. Matrix-column writes are
-# disjoint across keys (each block belongs to exactly one key) and strength
-# pokes touch disjoint source-buffer columns, so the shared `matrices` and
-# `source_buffers` need no synchronization.
-function _probe_source_keys!(matrices, keys_sorted, key_range, blocks_by_source,
-        entries, target_ranges, source_ranges, output_ranges,
+#------- generic influence-block assembly hook (BRAINSTORM 030) -------#
+
+"""
+    assemble_influence_block!(block, target_buffer, target_range, switch,
+        source_system, source_buffer, source_range)
+
+Fill the dense influence `block` mapping unit strengths of
+`source_buffer[:, source_range]` to the raw output rows
+(`output_range(switch)`) of `target_buffer[:, target_range]`. Column
+`j = (i_body - first(source_range)) * strength_dims(source_system) + i_comp`
+holds the influence of a unit value in strength component `i_comp` of source
+body `i_body`; rows are laid out as
+`vec(target_buffer[output_range(switch), target_range])`.
+
+Every entry of `block` must be ASSIGNED (not accumulated). The kernel
+contract this asserts is linearity of `direct!` in the declared strength rows
+(`5:4+strength_dims`) — the same contract unit-strength probing certifies
+implicitly.
+
+The DEFAULT method reproduces the probe: one `direct!` call per source
+column over zeroed output rows, then a column copy. It requires all strength
+rows of `source_buffer` to be ZERO on entry (the cache builder guarantees
+this), and it temporarily pokes strengths and writes target output rows, so
+concurrent callers must pass private buffer copies.
+
+Systems may opt in by overloading on their own source-system type. Overloads
+must NOT mutate `target_buffer` or `source_buffer` (the builder then shares
+the buffers across build threads), must assign every entry independently
+(deterministic at any thread count), and should type the remaining arguments
+no more concretely than `(AbstractMatrix, AbstractMatrix, UnitRange{Int},
+DerivativesSwitch, ::MySystem, AbstractMatrix, UnitRange{Int})` so
+[`overrides_block_assembly`](@ref) detects them. Mandatory per opt-in: an
+assembled-vs-probed exactness test at rtol 1e-12 (bitwise equality is not
+expected — accumulation order may differ).
+"""
+function assemble_influence_block!(block::AbstractMatrix,
+        target_buffer::AbstractMatrix, target_range::UnitRange{Int},
+        switch::DerivativesSwitch, source_system,
+        source_buffer::AbstractMatrix, source_range::UnitRange{Int})
+    return _probe_influence_block!(block, target_buffer, target_range, switch,
+        source_system, source_buffer, source_range)
+end
+
+# the universal fallback: unit-strength probing through direct!
+function _probe_influence_block!(block, target_buffer, target_range, switch,
+        source_system, source_buffer, source_range)
+    TF = eltype(block)
+    sd = strength_dims(source_system)
+    out_range = output_range(switch)
+    for i_body in source_range
+        for i_comp in 1:sd
+            source_buffer[4+i_comp, i_body] = one(TF)
+            j = (i_body - first(source_range)) * sd + i_comp
+            @views target_buffer[out_range, target_range] .= zero(TF)
+            direct!(target_buffer, target_range, switch, source_system,
+                source_buffer, i_body:i_body)
+            @views block[:, j] .= vec(target_buffer[out_range, target_range])
+            source_buffer[4+i_comp, i_body] = zero(TF)
+        end
+    end
+    return block
+end
+
+"""
+    overrides_block_assembly(source_system)
+
+`true` when `source_system`'s type carries its own
+[`assemble_influence_block!`](@ref) method (compared against the probe
+default via `which` on the widest signature the builder calls with).
+Misdetection in either direction remains CORRECT — overloads never mutate
+the buffers and the probe always runs on private copies — it only decides
+whether build workers can skip the per-worker buffer copies.
+"""
+function overrides_block_assembly(source_system)
+    default_method = which(assemble_influence_block!,
+        Tuple{AbstractMatrix, AbstractMatrix, UnitRange{Int}, DerivativesSwitch,
+              Any, AbstractMatrix, UnitRange{Int}})
+    system_method = which(assemble_influence_block!,
+        Tuple{AbstractMatrix, AbstractMatrix, UnitRange{Int}, DerivativesSwitch,
+              typeof(source_system), AbstractMatrix, UnitRange{Int}})
+    return system_method !== default_method
+end
+
+# assemble every block owned by the keys in `key_range` through `assemble!`
+# (`assemble_influence_block!`, or `_probe_influence_block!` when the
+# diagnostic knob forces probing). `target_buffers`/`source_buffers` may be
+# the caller's buffers (serial build, or a parallel build whose source
+# systems all opt in) or thread-private copies (parallel build with a probe
+# fallback): the probe writes target output rows and pokes strengths, and
+# source branch body ranges can OVERLAP across tree levels, so concurrent
+# probes must not share buffers. Opted-in overloads never mutate the buffers.
+# Matrix writes are disjoint across keys (each block belongs to exactly one
+# key), so the shared `matrices` needs no synchronization.
+function _assemble_source_keys!(assemble!::F, matrices, keys_sorted, key_range,
+        blocks_by_source, entries, target_ranges, source_ranges,
         target_buffers, source_systems, source_buffers,
-        derivatives_switches, ::Type{TF}) where TF
+        derivatives_switches) where F
     for i_key in key_range
         key = keys_sorted[i_key]
         _, i_ss = key
-        block_list = blocks_by_source[key]
         source_system = source_systems[i_ss]
         source_buffer = source_buffers[i_ss]
-        sd = strength_dims(source_system)
-        source_range = source_ranges[block_list[1]]
-        for i_body in source_range
-            for i_comp in 1:sd
-                source_buffer[4+i_comp, i_body] = one(TF)
-                j = (i_body - first(source_range)) * sd + i_comp
-                for k in block_list
-                    i_ts = entries[k][3]
-                    switch = derivatives_switches[i_ts]
-                    target_buffer = target_buffers[i_ts]
-                    target_range = target_ranges[k]
-                    out_range = output_ranges[k]
-                    @views target_buffer[out_range, target_range] .= zero(TF)
-                    direct!(target_buffer, target_range, switch, source_system,
-                        source_buffer, i_body:i_body)
-                    block, _ = get_matrix_vector(matrices, k)
-                    @views block[:, j] .= vec(target_buffer[out_range, target_range])
-                end
-                source_buffer[4+i_comp, i_body] = zero(TF)
-            end
+        for k in blocks_by_source[key]
+            i_ts = entries[k][3]
+            block, _ = get_matrix_vector(matrices, k)
+            assemble!(block, target_buffers[i_ts], target_ranges[k],
+                derivatives_switches[i_ts], source_system, source_buffer,
+                source_ranges[k])
         end
     end
     return nothing
@@ -293,7 +370,8 @@ end
 function _build_nearfield_cache(entries, target_ranges, source_ranges,
         target_buffers, source_systems, source_buffers, derivatives_switches,
         max_bytes, max_build_time, target_tree_id::UInt, source_tree_id::UInt;
-        n_threads::Integer=Threads.nthreads())
+        n_threads::Integer=Threads.nthreads(),
+        use_block_assembly::Bool=true)
 
     start_time = time_ns()
     TF = promote_type(eltype.(source_buffers)...)
@@ -354,32 +432,43 @@ function _build_nearfield_cache(entries, target_ranges, source_ranges,
         source_buffers[i][5:4+sd, :] .= zero(TF)
     end
 
-    # column-by-column unit-strength probing, parallel over key chunks. Each
-    # task probes with PRIVATE copies of both buffer sets: direct! writes
-    # target output rows, and the strength pokes are NOT disjoint across keys
-    # (the direct list can hold source branches at multiple tree levels, whose
-    # body ranges overlap). Matrix writes are disjoint (each block belongs to
+    # per-block assembly through the assemble_influence_block! hook, parallel
+    # over key chunks. The probe default writes target output rows and pokes
+    # strengths, and the strength pokes are NOT disjoint across keys (the
+    # direct list can hold source branches at multiple tree levels, whose
+    # body ranges overlap) — so whenever any source system falls back to the
+    # probe, each parallel task works on PRIVATE copies of both buffer sets.
+    # Opted-in overloads never mutate the buffers, so an all-opted-in build
+    # skips the copies. Matrix writes are disjoint (each block belongs to
     # exactly one key) and every entry is computed independently, so the
-    # result is bit-identical at any thread count.
+    # result is bit-identical at any thread count either way.
+    # `use_block_assembly=false` is a diagnostic/testing knob that forces the
+    # probe everywhere.
+    assemble! = use_block_assembly ? assemble_influence_block! :
+                                     _probe_influence_block!
+    # method-table reflection: once per SOURCE SYSTEM per build, never per block
+    system_opts_in = map(overrides_block_assembly, source_systems)
+    any_fallback = !use_block_assembly || !all(system_opts_in)
     if n_workers <= 1
-        _probe_source_keys!(matrices, keys_sorted, 1:length(keys_sorted),
-            blocks_by_source, entries, target_ranges, source_ranges,
-            output_ranges, target_buffers, source_systems, source_buffers,
-            derivatives_switches, TF)
+        _assemble_source_keys!(assemble!, matrices, keys_sorted,
+            1:length(keys_sorted), blocks_by_source, entries, target_ranges,
+            source_ranges, target_buffers, source_systems, source_buffers,
+            derivatives_switches)
     else
         next_chunk = Threads.Atomic{Int}(0)
         @sync for _ in 1:n_workers
             Threads.@spawn begin
-                local_targets = map(copy, target_buffers)
-                local_sources = map(copy, source_buffers)
+                local_targets = any_fallback ? map(copy, target_buffers) :
+                                               target_buffers
+                local_sources = any_fallback ? map(copy, source_buffers) :
+                                               source_buffers
                 while true
                     i = Threads.atomic_add!(next_chunk, 1) + 1
                     i > length(chunks) && break
-                    _probe_source_keys!(matrices, keys_sorted, chunks[i],
-                        blocks_by_source, entries, target_ranges,
-                        source_ranges, output_ranges, local_targets,
-                        source_systems, local_sources,
-                        derivatives_switches, TF)
+                    _assemble_source_keys!(assemble!, matrices, keys_sorted,
+                        chunks[i], blocks_by_source, entries, target_ranges,
+                        source_ranges, local_targets, source_systems,
+                        local_sources, derivatives_switches)
                 end
             end
         end

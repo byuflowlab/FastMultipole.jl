@@ -339,6 +339,121 @@ end
     end
 end
 
+@testset "NearfieldInfluenceCache: assemble_influence_block! hook (030)" begin
+
+    n_bodies = 1500
+    plan_kwargs = (; expansion_order=6, multipole_acceptance=0.4,
+                   leaf_size_source=25, scalar_potential=true, gradient=true,
+                   hessian=false)
+
+    sys = generate_gravitational(55, n_bodies)
+    plan = FastMultipole.FmmPlan((sys,), (sys,); plan_kwargs...)
+
+    # premise guards: real near field, and the gravitational test system DOES
+    # carry an assemble_influence_block! overload while the probe default is
+    # detected for a system without one
+    @test length(plan.direct_list) > 0
+    @test FastMultipole.overrides_block_assembly(sys)
+
+    tt, st, switches = plan.target_tree, plan.source_tree, plan.derivatives_switches
+
+    #--- assembled vs probed block data, rtol 1e-12 per block ---#
+
+    assembled = NearfieldInfluenceCache((sys,), tt, (sys,), st,
+        plan.direct_list, switches)
+    probed = NearfieldInfluenceCache((sys,), tt, (sys,), st,
+        plan.direct_list, switches; use_block_assembly=false)
+
+    @test assembled.entries == probed.entries
+    @test assembled.matrices.sizes == probed.matrices.sizes
+    @test any(!iszero, probed.matrices.data)   # non-vacuous
+    for k in eachindex(assembled.entries)
+        block_a, _ = FastMultipole.get_matrix_vector(assembled.matrices, k)
+        block_p, _ = FastMultipole.get_matrix_vector(probed.matrices, k)
+        @test isapprox(block_a, block_p; rtol=1e-12)
+    end
+
+    # cached matvec through the assembled cache matches the kernel near field
+    out_range = FastMultipole.output_range(switches[1])
+    FastMultipole.reset!(tt.buffers)
+    FastMultipole.nearfield_singlethread!(tt.buffers, tt.branches, (sys,),
+        st.buffers, st.branches, switches, plan.direct_list)
+    ref = deepcopy(tt.buffers[1][out_range, :])
+    @test any(!iszero, ref)
+    FastMultipole.reset!(tt.buffers)
+    nearfield_matvec!(tt.buffers, assembled, st.buffers)
+    @test isapprox(tt.buffers[1][out_range, :], ref; rtol=1e-12)
+
+    #--- parallel build is bit-identical: opted-in AND fallback paths ---#
+
+    for use_block_assembly in (true, false)
+        serial = NearfieldInfluenceCache((sys,), tt, (sys,), st,
+            plan.direct_list, switches; n_threads=1, use_block_assembly)
+        parallel = NearfieldInfluenceCache((sys,), tt, (sys,), st,
+            plan.direct_list, switches; n_threads=4, use_block_assembly)
+        @test serial.matrices.data == parallel.matrices.data
+        @test serial.entries == parallel.entries
+    end
+
+    #--- buffers untouched by the all-opted-in shared-buffer build ---#
+    # (the builder zeroes target output rows at the end by design, so start
+    # from reset outputs: any other mutation would show as a diff)
+
+    FastMultipole.reset!(tt.buffers)
+    tt_before = deepcopy(tt.buffers)
+    st_before = deepcopy(st.buffers)
+    NearfieldInfluenceCache((sys,), tt, (sys,), st, plan.direct_list,
+        switches; n_threads=4)
+    @test all(tt.buffers[i] == tt_before[i] for i in eachindex(tt.buffers))
+    @test all(st.buffers[i] == st_before[i] for i in eachindex(st.buffers))
+
+end
+
+@testset "NearfieldInfluenceCache: mixed opted-in + fallback build (030)" begin
+
+    n_targets = 300
+    sys_t = generate_gravitational(31, n_targets)
+    sys_t_ref = generate_gravitational(31, n_targets)
+    grav_s = generate_gravitational(32, 350)
+    grav_s_ref = generate_gravitational(32, 350)
+    vort_s = generate_vortex(33, 250)
+    vort_s_ref = generate_vortex(33, 250)
+
+    # premise: one source system opts in, the other falls back to the probe
+    @test FastMultipole.overrides_block_assembly(grav_s)
+    @test !FastMultipole.overrides_block_assembly(vort_s)
+
+    targets = (sys_t,)
+    sources = (grav_s, vort_s)
+    switch_kwargs = (; scalar_potential=true, gradient=true, hessian=false)
+
+    switches = FastMultipole.DerivativesSwitch([true], [true], [false], targets)
+    target_buffers = FastMultipole.allocate_buffers(targets, true, Float64, switches)
+    FastMultipole.target_to_buffer!(target_buffers, targets,
+        SVector{1}([1:n_targets]), switches)
+    source_buffers = FastMultipole.allocate_buffers(sources, false, Float64, switches)
+    FastMultipole.system_to_buffer!(source_buffers, sources)
+    cache = NearfieldInfluenceCache(targets, target_buffers, sources,
+        source_buffers, switches)
+    # premise: both systems contributed blocks
+    @test any(e -> e[4] == 1, cache.entries) && any(e -> e[4] == 2, cache.entries)
+
+    sys_t.potential .= 0
+    sys_t_ref.potential .= 0
+    direct!(targets, sources; switch_kwargs..., n_threads=1,
+        target_buffers, source_buffers, nearfield_cache=cache)
+    direct!((sys_t_ref,), (grav_s_ref, vort_s_ref); switch_kwargs..., n_threads=1)
+    @test any(!iszero, sys_t_ref.potential)   # non-vacuous
+    @test isapprox(sys_t.potential, sys_t_ref.potential; rtol=1e-12)
+
+    # blocks match a forced-probe build of the same mixed cache
+    cache_probe = NearfieldInfluenceCache(targets, target_buffers, sources,
+        source_buffers, switches; use_block_assembly=false)
+    @test cache.entries == cache_probe.entries
+    @test isapprox(cache.matrices.data, cache_probe.matrices.data; rtol=1e-12)
+
+end
+
 @testset "NearfieldInfluenceCache: donor retarget" begin
 
     n_bodies = 1200

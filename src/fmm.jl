@@ -1227,10 +1227,12 @@ change) and dies with the plan's trees. Returns the cache.
 function build_nearfield_cache!(plan::FmmPlan, target_systems::Tuple, source_systems::Tuple;
         max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
         max_build_time::Real=Inf,
-        n_threads::Integer=Threads.nthreads())
+        n_threads::Integer=Threads.nthreads(),
+        use_block_assembly::Bool=true)
     cache = NearfieldInfluenceCache(target_systems, plan.target_tree,
         source_systems, plan.source_tree, plan.direct_list,
-        plan.derivatives_switches; max_bytes, max_build_time, n_threads)
+        plan.derivatives_switches; max_bytes, max_build_time, n_threads,
+        use_block_assembly)
     plan.nearfield_cache[] = cache
     return cache
 end
