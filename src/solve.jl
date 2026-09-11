@@ -52,6 +52,15 @@ end
     return rhs_offset:rhs_offset + m - 1
 end
 
+# internal: block k's storage as a plain Matrix (no ReshapedArray/SubArray
+# indirection — measurably faster for scalar-indexed assembly). The caller
+# must GC.@preserve `ms` (or ms.data) for the wrapper's lifetime and must not
+# let it escape.
+@inline function unsafe_get_block_matrix(ms::Matrices, k::Int)
+    m, n = ms.sizes[k]
+    return unsafe_wrap(Array, pointer(ms.data, ms.matrix_offsets[k]), (m, n))
+end
+
 function get_matrix_vector(ms::Matrices, k::Int)
     m, n = ms.sizes[k]
     vrange = get_rhs_range(ms, k, m)

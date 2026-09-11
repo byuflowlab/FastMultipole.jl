@@ -179,18 +179,20 @@ function FastMultipole.assemble_influence_block!(block::AbstractMatrix,
             dH = zero(SMatrix{3,3,TF,9})
             dT = zero(MVector{18,TF})
             if r2 > 0
-                r = sqrt(r2)
-                # unit strength: same expressions as direct! above with
-                # source_strength = 1
-                tmp = one(TF) / r * FastMultipole.ONE_OVER_4π
+                # unit strength: same values as direct! above with
+                # source_strength = 1, computed with one division + one sqrt
+                # (rtol-1e-12 agreement with the probe, not bitwise)
+                rinv2 = @fastmath one(TF) / r2
+                rinv = @fastmath sqrt(rinv2)
+                tmp = rinv * FastMultipole.ONE_OVER_4π
                 if PS
                     dϕ = tmp
                 end
                 if GS
-                    d∇ϕ = -SVector{3}(dx, dy, dz) * tmp / r2
+                    d∇ϕ = SVector{3}(dx, dy, dz) * (-tmp * rinv2)
                 end
                 if HS || TS
-                    q5 = one(TF) * FastMultipole.ONE_OVER_4π / (r2 * r2 * r)
+                    q5 = tmp * rinv2 * rinv2   # ONE_OVER_4π / (r2 * r2 * r)
                     x = SVector(dx, dy, dz)
                     if HS
                         dH = SMatrix{3,3}(ntuple(Val(9)) do n
@@ -200,7 +202,7 @@ function FastMultipole.assemble_influence_block!(block::AbstractMatrix,
                         end)
                     end
                     if TS
-                        q7 = q5 / r2
+                        q7 = q5 * rinv2
                         slot = 0
                         for ii in 1:3, (jj, kk) in ((1,1), (1,2), (1,3), (2,2), (2,3), (3,3))
                             slot += 1

@@ -329,14 +329,17 @@ function _assemble_source_keys!(assemble!::F, matrices, keys_sorted, key_range,
         blocks_by_source, entries, target_ranges, source_ranges,
         target_buffers, source_systems, source_buffers,
         derivatives_switches) where F
-    for i_key in key_range
+    GC.@preserve matrices for i_key in key_range
         key = keys_sorted[i_key]
         _, i_ss = key
         source_system = source_systems[i_ss]
         source_buffer = source_buffers[i_ss]
         for k in blocks_by_source[key]
             i_ts = entries[k][3]
-            block, _ = get_matrix_vector(matrices, k)
+            # plain-Matrix wrapper: scalar-indexed assembly through the
+            # ReshapedArray{SubArray} that get_matrix_vector returns pays an
+            # indirection per write
+            block = unsafe_get_block_matrix(matrices, k)
             assemble!(block, target_buffers[i_ts], target_ranges[k],
                 derivatives_switches[i_ts], source_system, source_buffer,
                 source_ranges[k])
