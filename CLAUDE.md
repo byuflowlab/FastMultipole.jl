@@ -115,3 +115,5 @@ All passes have single-thread and multi-thread variants.
 ## Cluster Jobs
 
 - Combine GPU HPC jobs where appropriate: queue wait on the H200 partition is often long, so when multiple GPU workloads are ready at the same time (e.g. device testsets + a benchmark + a parity harness), prefer staging them into ONE sbatch script (the `cuda_048_run.sh` multi-stage pattern) over submitting separate jobs — unless they need different envs/resources or a stage's outcome should gate whether the next is worth running.
+
+For ORC execution read `BYU_ORC_AGENTS.md`.
