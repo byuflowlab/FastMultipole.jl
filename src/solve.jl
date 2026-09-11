@@ -140,51 +140,7 @@ function restore_strengths!(source_buffers::AbstractVector{<:Matrix}, source_sys
     end
 end
 
-# BRAINSTORM 030 Phase 3 (route A, project-after-assembly): fill one
-# (target system × source system) sub-block of an FGS influence matrix by
-# assembling the RAW influence block through `assemble_influence_block!` into
-# a reusable scratch, then collapsing each source body's strength-component
-# columns through the SAME `influence!` call the probe uses. The combined raw
-# column (weighted by the unit-value strength vector `set_unit_strength!`
-# already placed in the source buffer via `value_to_strength!`) is written
-# into the target buffer's output rows, so `influence!` remains the single
-# owner of projection semantics — no re-derived math. Equivalent to the probe
-# by linearity of `direct!` in the strength rows (the contract the hook
-# asserts); agreement is rtol-1e-12, not bitwise (accumulation order differs).
-function _assemble_projected_subblock!(this_matrix, this_influence,
-        raw_scratch, target_buffer, target_index, targets_view, normals_view,
-        derivatives_switch, source_system, source_buffer, source_index)
-    TF = eltype(this_matrix)
-    out_range = output_range(derivatives_switch)
-    n_out = length(out_range)
-    sd = strength_dims(source_system)
-    n_t = length(target_index)
-    n_s = length(source_index)
-    raw = view(raw_scratch, 1:n_out*n_t, 1:sd*n_s)
-    assemble_influence_block!(raw, target_buffer, target_index,
-        derivatives_switch, source_system, source_buffer, source_index)
-    for (isb, i_source_body) in enumerate(source_index)
-        # same zeroed-target state the probe establishes before `direct!`
-        reset!(target_buffer, target_index)
-        j0 = (isb - 1) * sd
-        for (it, i_target) in enumerate(target_index)
-            r0 = (it - 1) * n_out
-            for (ro, r) in enumerate(out_range)
-                acc = zero(TF)
-                for c in 1:sd
-                    acc += source_buffer[4+c, i_source_body] * raw[r0+ro, j0+c]
-                end
-                target_buffer[r, i_target] = acc
-            end
-        end
-        influence!(this_influence, targets_view, derivatives_switch,
-            source_system, normals_view)
-        this_matrix[:, isb] .= this_influence
-    end
-    return nothing
-end
-
-function nonself_influence_matrices(target_buffers::AbstractVector{<:Matrix}, source_buffers::AbstractVector{<:Matrix}, source_systems::Tuple, target_tree::Tree{TF,<:Any}, source_tree::Tree, direct_list, derivatives_switches; use_block_assembly::Bool=true) where TF
+function nonself_influence_matrices(target_buffers::AbstractVector{<:Matrix}, source_buffers::AbstractVector{<:Matrix}, source_systems::Tuple, target_tree::Tree{TF,<:Any}, source_tree::Tree, direct_list, derivatives_switches) where TF
 
     #--- sort by source ---#
 
@@ -282,33 +238,6 @@ function nonself_influence_matrices(target_buffers::AbstractVector{<:Matrix}, so
         # construct influence matrices
         matrices = Matrices(sizes, TF)
 
-        # BRAINSTORM 030 Phase 3: per-source-system opt-in for route-A block
-        # assembly (method-table reflection once per system, never per block);
-        # one raw-block scratch sized to the largest sub-block, reused across
-        # blocks
-        system_opts_in = map(overrides_block_assembly, source_systems)
-        use_hook = use_block_assembly && any(system_opts_in)
-        raw_scratch = if use_hook
-            max_rows = 0
-            max_cols = 0
-            for (i_target, j_source) in sorted_list
-                for i_ts in eachindex(target_buffers)
-                    n_out = length(output_range(derivatives_switches[i_ts]))
-                    n_t = length(target_branches[i_target].bodies_index[i_ts])
-                    max_rows = max(max_rows, n_out * n_t)
-                end
-                for i_ss in eachindex(source_systems)
-                    system_opts_in[i_ss] || continue
-                    sd = strength_dims(source_systems[i_ss])
-                    n_s = length(source_branches[j_source].bodies_index[i_ss])
-                    max_cols = max(max_cols, sd * n_s)
-                end
-            end
-            Matrix{TF}(undef, max_rows, max_cols)
-        else
-            Matrix{TF}(undef, 0, 0)
-        end
-
         #--- populate influence matrices ---#
 
         # store strengths for later
@@ -365,15 +294,6 @@ function nonself_influence_matrices(target_buffers::AbstractVector{<:Matrix}, so
                     this_source_buffer = view(target_source_buffer, :, target_index)
                     derivatives_switch = derivatives_switches[i_target_system]
 
-                    if use_hook && system_opts_in[i_source_system]
-                        # 030 route A: raw block via the hook, projected
-                        # through the same influence! call as the probe
-                        _assemble_projected_subblock!(this_matrix,
-                            this_influence, raw_scratch, target_buffer,
-                            target_index, this_target_buffer,
-                            this_source_buffer, derivatives_switch,
-                            source_system, source_buffer, source_index)
-                    else
                     # loop over source bodies
                     for (isb,i_source_body) in enumerate(source_index)
 
@@ -389,7 +309,6 @@ function nonself_influence_matrices(target_buffers::AbstractVector{<:Matrix}, so
                         # update matrix
                         this_matrix[:,isb] .= this_influence
 
-                    end
                     end
 
                     # update target starting index
@@ -505,7 +424,7 @@ end
 
 Constructs influence matrices for all leaves of the tree. (Assumes source tree and target trees are identical.)
 """
-function self_influence_matrices(target_buffers, source_buffers, source_systems, target_tree::Tree{TF,<:Any}, source_tree, derivatives_switches; use_block_assembly::Bool=true) where TF
+function self_influence_matrices(target_buffers, source_buffers, source_systems, target_tree::Tree{TF,<:Any}, source_tree, derivatives_switches) where TF
 
     #--- pre-allocate influence matrices ---#
 
@@ -518,33 +437,6 @@ function self_influence_matrices(target_buffers, source_buffers, source_systems,
 
     # construct influence matrices
     matrices = Matrices(sizes, TF)
-
-    # BRAINSTORM 030 Phase 3: per-source-system opt-in for route-A block
-    # assembly (reflection once per system); one raw-block scratch sized to
-    # the largest sub-block, reused across leaves
-    system_opts_in = map(overrides_block_assembly, source_systems)
-    use_hook = use_block_assembly && any(system_opts_in)
-    raw_scratch = if use_hook
-        max_rows = 0
-        max_cols = 0
-        for i_branch in source_tree.leaf_index
-            branch = source_tree.branches[i_branch]
-            for i_ts in eachindex(target_buffers)
-                n_out = length(output_range(derivatives_switches[i_ts]))
-                n_t = length(branch.bodies_index[i_ts])
-                max_rows = max(max_rows, n_out * n_t)
-            end
-            for i_ss in eachindex(source_systems)
-                system_opts_in[i_ss] || continue
-                sd = strength_dims(source_systems[i_ss])
-                n_s = length(branch.bodies_index[i_ss])
-                max_cols = max(max_cols, sd * n_s)
-            end
-        end
-        Matrix{TF}(undef, max_rows, max_cols)
-    else
-        Matrix{TF}(undef, 0, 0)
-    end
 
     #--- populate influence matrices ---#
 
@@ -588,15 +480,6 @@ function self_influence_matrices(target_buffers, source_buffers, source_systems,
                 targets_view = view(target_buffer, :, target_bodies_index)
                 sources_view = view(source_buffer, :, source_bodies_index)
                 this_matrix_block = view(matrix, i_target_start:i_target_start + n_targets - 1, i_source_start + 1:i_source_start + length(source_bodies_index))
-                if use_hook && system_opts_in[i_source_system]
-                    # 030 route A: raw block via the hook, projected through
-                    # the same influence! call as the probe
-                    _assemble_projected_subblock!(this_matrix_block,
-                        this_influence, raw_scratch, target_buffer,
-                        target_bodies_index, targets_view, sources_view,
-                        derivatives_switch, source_system, source_buffer,
-                        source_bodies_index)
-                else
                 for (isb, i_source_body) in enumerate(source_bodies_index)
 
                     # reset targets
@@ -610,7 +493,6 @@ function self_influence_matrices(target_buffers, source_buffers, source_systems,
 
                     # update matrix
                     this_matrix_block[:, isb] .= this_influence
-                end
                 end
 
                 # update target starting index
@@ -731,8 +613,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     interaction_list_method=Barba(), shrink=true, recenter=false,
     derivatives_switches=DerivativesSwitch(true, true, false, target_systems),
     extra_farfield=false, cache_leaf_lu::Bool=true,
-    sweep_order::Symbol=:lexicographic,
-    use_block_assembly::Bool=true  # 030 Phase 3 diagnostic knob: false forces the probe
+    sweep_order::Symbol=:lexicographic
 )
     sweep_order in (:lexicographic, :colored) || throw(ArgumentError(
         "sweep_order must be :lexicographic or :colored (got $(repr(sweep_order)))"))
@@ -787,7 +668,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
 
     #--- build non-self influence matrices ---#
 
-    nonself_matrices, sorted_list = nonself_influence_matrices(target_tree.buffers, source_tree.buffers, source_systems, target_tree, source_tree, direct_list, derivatives_switches; use_block_assembly)
+    nonself_matrices, sorted_list = nonself_influence_matrices(target_tree.buffers, source_tree.buffers, source_systems, target_tree, source_tree, direct_list, derivatives_switches)
     old_influence_storage = similar(nonself_matrices.rhs)
 
     #--- full direct list includes leaf-on-self interactions ---#
@@ -800,7 +681,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
 
     #--- build self-influence matrices ---#
 
-    self_matrices = self_influence_matrices(target_tree.buffers, source_tree.buffers, source_systems, target_tree, source_tree, derivatives_switches; use_block_assembly)
+    self_matrices = self_influence_matrices(target_tree.buffers, source_tree.buffers, source_systems, target_tree, source_tree, derivatives_switches)
     leaf_lu_cache = cache_leaf_lu ? build_leaf_lu_cache(self_matrices) : nothing
 
     #--- source strength vector ---#
