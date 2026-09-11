@@ -502,6 +502,35 @@ function metadata_to_buffer!(buffer, switch, i_buffer, system, i_body)
 end
 
 """
+    farfield_extra_outputs!(target_buffer, switch, i_buffer, target_system::{UserDefinedSystem},
+                            scalar_potential, gradient, hessian, third_derivative)
+
+Optional user overload that accumulates user-defined **extra outputs** from the **farfield**
+(local expansion) contribution at a target body. Called once per target body at the end of the
+local-to-body (L2B) evaluation, and only when the target's `DerivativesSwitch` requests extra
+output rows (`NO > 0`). Defaults to a no-op, so systems that do not overload it are unaffected.
+
+The four field arguments are the local-expansion increment *just evaluated at this body* — **not**
+the total field, which at this point in the pipeline also contains the nearfield contribution and
+would double-count. Quantities whose switch is disabled are passed as zeros, and
+`third_derivative` is `nothing` unless `TS` is set.
+
+* read per-target metadata with `metadata_range(switch)` / `metadata_index(switch, j)`
+* read the target position with `get_position(target_buffer, i_buffer)`
+* write with `set_extra_output!(target_buffer, switch, i_buffer, j, value)` (accumulates)
+
+The **nearfield** half of the same quantity is the user's responsibility inside [`direct!`](@ref).
+For a linear functional of the field (a curl, a contraction with a metadata-supplied normal, etc.)
+the nearfield and farfield contributions simply add, so implementing the same expression in both
+places yields the correct total.
+
+Not to be confused with [`extra_farfield!`](@ref), which injects additional source-driven farfield
+influence over `(target branch, source branch)` pairs after the entire downward pass.
+"""
+farfield_extra_outputs!(target_buffer, switch, i_buffer, target_system,
+                        scalar_potential, gradient, hessian, third_derivative) = nothing
+
+"""
     metadata_per_body(system)
 
 Returns the number of per-target metadata rows that should be carried through
