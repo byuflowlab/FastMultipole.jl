@@ -1,6 +1,9 @@
 # 052e.2a Tier 0B results — 2026-09-07 (run 2)
 
-**Status: DRAFT — awaiting Ryan's explicit PASS / CONTINUE / RETIRE ruling.**
+**Status: RULED — PASS, accepted by Ryan 2026-09-07** ("accept the pass").
+The B3/C1 and B5/C2 gate artifacts are adjudicated in
+`052e2a-tier0b-gate-supersession-2026-09-07.md`; the locked prereg is
+unedited.
 Preregistration: `052e2a-tier0b-preregistration-2026-09-07.md` (locked).
 Theory gate: `052e-theory-velocity-to-potential-trace.md` (accepted 2026-09-07).
 
