@@ -200,8 +200,8 @@ FastMultipole.multipole_to_local!(local_coefficients_3, tree.branches[3], multip
 
 gradient_n_m = FastMultipole.initialize_gradient_n_m(expansion_order)
 
-FastMultipole.evaluate_local!(target_buffer, 1, tree, 2, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
-FastMultipole.evaluate_local!(target_buffer, 1, tree, 3, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
+FastMultipole.evaluate_local!(target_buffer, target_buffer, 1, tree, 2, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
+FastMultipole.evaluate_local!(target_buffer, target_buffer, 1, tree, 3, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
 
 # update system
 FastMultipole.buffer_to_target!(vortexparticles, target_buffer, switch, 1:FastMultipole.get_n_bodies(vortexparticles))
@@ -328,8 +328,8 @@ gradient_n_m = FastMultipole.initialize_gradient_n_m(expansion_order)
 harmonics = FastMultipole.initialize_harmonics(expansion_order)
 derivatives_switches = DerivativesSwitch(false, true, true, (vortex_particles,))
 
-FastMultipole.evaluate_local!(target_buffer, 1, tree, 2, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
-FastMultipole.evaluate_local!(target_buffer, 1, tree, 3, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
+FastMultipole.evaluate_local!(target_buffer, target_buffer, 1, tree, 2, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
+FastMultipole.evaluate_local!(target_buffer, target_buffer, 1, tree, 3, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
 
 FastMultipole.buffer_to_target!(vortex_particles, target_buffer, switch, 1:FastMultipole.get_n_bodies(vortex_particles))
 

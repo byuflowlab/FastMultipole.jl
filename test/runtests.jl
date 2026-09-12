@@ -54,6 +54,7 @@ end
 
 include("auxilliary_test.jl")
 include("metadata_extra_test.jl")
+include("farfield_extra_outputs_test.jl")
 include("third_derivative_test.jl")
 include("operator_cache_types_test.jl")
 include("coefficient_buffer_layout_test.jl")

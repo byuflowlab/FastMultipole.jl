@@ -1,15 +1,23 @@
-function evaluate_local!(system, i_system, tree::Tree, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
+#=
+`system` is the target BUFFER (a `Matrix`); `target_system` is the corresponding user-defined
+system object, carried along solely so `farfield_extra_outputs!` has something to dispatch on.
+These methods are the function barrier: the caller extracts `target_systems[i_system]` from a
+possibly heterogeneous tuple (one type-unstable index per system per pass), and from here on
+`target_system` is concretely typed, so the per-body hook call is statically dispatched. This is
+the same barrier pattern used by `nearfield_singlethread!`/`nearfield_loop!` in fmm.jl.
+=#
+function evaluate_local!(system, target_system, i_system, tree::Tree, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
 
     # loop over leaf branches
     for i_branch in tree.leaf_index
-        evaluate_local!(system, i_system, tree, i_branch, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
+        evaluate_local!(system, target_system, i_system, tree, i_branch, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
     end
 end
 
-function evaluate_local!(system, i_system, tree::Tree, i_branch, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
+function evaluate_local!(system, target_system, i_system, tree::Tree, i_branch, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
     branch = tree.branches[i_branch]
     local_expansion = view(tree.expansions, :, :, :, i_branch)
-    evaluate_local!(system, branch.bodies_index[i_system], harmonics, gradient_n_m, local_expansion, branch.center, expansion_order, lamb_helmholtz, derivatives_switches[i_system])
+    evaluate_local!(system, target_system, branch.bodies_index[i_system], harmonics, gradient_n_m, local_expansion, branch.center, expansion_order, lamb_helmholtz, derivatives_switches[i_system])
 end
 
 # function evaluate_local!(systems::Tuple, branch::Branch, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
@@ -30,7 +38,7 @@ end
 #     evaluate_local!(system, branch.bodies_index, harmonics, gradient_n_m, branch.local_expansion, branch.center, expansion_order, lamb_helmholtz, derivatives_switch)
 # end
 
-function evaluate_local!(system, bodies_index, harmonics, gradient_n_m, local_expansion, expansion_center, expansion_order, lamb_helmholtz, derivatives_switch::DerivativesSwitch{PS,GS,HS,NO,NM,TS}) where {PS,GS,HS,NO,NM,TS}
+function evaluate_local!(system, target_system, bodies_index, harmonics, gradient_n_m, local_expansion, expansion_center, expansion_order, lamb_helmholtz, derivatives_switch::DerivativesSwitch{PS,GS,HS,NO,NM,TS}) where {PS,GS,HS,NO,NM,TS}
     for i_body in bodies_index
         pos = get_position(system, i_body)
         result = evaluate_local(pos - expansion_center, harmonics, gradient_n_m, local_expansion, expansion_order, lamb_helmholtz, derivatives_switch)
@@ -42,6 +50,11 @@ function evaluate_local!(system, bodies_index, harmonics, gradient_n_m, local_ex
 
         HS && set_hessian!(system, derivatives_switch, i_body, hessian)
         TS && set_third_derivative!(system, derivatives_switch, i_body, result[4])
+
+        # user-defined farfield augmentation of the extra output rows; `NO` is a
+        # compile-time type parameter, so this branch vanishes entirely when NO == 0
+        NO > 0 && farfield_extra_outputs!(system, derivatives_switch, i_body, target_system,
+            scalar_potential, gradient, hessian, TS ? result[4] : nothing)
     end
 end
 

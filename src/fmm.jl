@@ -654,21 +654,42 @@ function downward_pass_singlethread_1!(tree::Tree{TF,<:Any}, expansion_order, la
     end
 end
 
-function downward_pass_singlethread_2!(tree::Tree{TF,<:Any}, systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m) where TF
+#=
+`target_systems` is the tuple of user-defined target systems, carried alongside the target buffers
+purely so `farfield_extra_outputs!` has a concrete type to dispatch on. It is generally
+HETEROGENEOUS, so indexing it with a runtime loop index would be type-unstable: the element would
+be boxed (one allocation per system per pass) and the `evaluate_local!` call would go through
+dynamic dispatch.
+
+The loop is therefore unrolled by PEELING the tuple one element at a time, so `first(target_systems)`
+is always concretely typed. Termination is by DISPATCH on the empty-tuple method below, NOT by a
+runtime `if i > N` branch -- a runtime guard still allocates (measured: 32 B vs 0 B). The result is
+zero allocations and static dispatch, i.e. codegen identical to the pre-hook version when the user
+does not overload the hook.
+
+`systems` (the target buffers) is a homogeneous `Vector{Matrix}`, so indexing it with the runtime
+counter `i_system` is already type-stable and it is not peeled.
+=#
+@inline l2b_systems!(tree, systems, target_systems::Tuple{}, i_system, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches) = nothing
+
+@inline function l2b_systems!(tree, systems, target_systems::Tuple, i_system, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
+    evaluate_local!(systems[i_system], first(target_systems), i_system, tree, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
+    l2b_systems!(tree, systems, Base.tail(target_systems), i_system + 1, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
+end
+
+function downward_pass_singlethread_2!(tree::Tree{TF,<:Any}, systems, target_systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m) where TF
 
     harmonics = initialize_harmonics(expansion_order, TF)
-    # loop over systems
-    for (i_system, system) in enumerate(systems)
-        evaluate_local!(system, i_system, tree, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
-    end
+    # loop over systems (unrolled by tuple peeling; see l2b_systems!)
+    l2b_systems!(tree, systems, target_systems, 1, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
 
 end
 
-@inline function downward_pass_singlethread!(tree, systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m)
+@inline function downward_pass_singlethread!(tree, systems, target_systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m)
 
     downward_pass_singlethread_1!(tree, expansion_order, lamb_helmholtz)
 
-    downward_pass_singlethread_2!(tree, systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m)
+    downward_pass_singlethread_2!(tree, systems, target_systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m)
 
 end
 
@@ -733,7 +754,31 @@ function downward_pass_multithread_1!(tree::Tree{TF,<:Any}, expansion_order, lam
     end
 end
 
-function downward_pass_multithread_2!(tree::Tree{TF,<:Any}, systems, derivatives_switches, expansion_order, lamb_helmholtz, n_threads) where TF
+#=
+Multithreaded counterpart of `l2b_systems!`, unrolled the same way (see its comment): peeling keeps
+`first(target_systems)` concretely typed, so the `Threads.@threads` closure in
+`l2b_multithread_system!` does not capture a boxed, dynamically-typed value.
+=#
+@inline l2b_systems_multithread!(tree, systems, target_systems::Tuple{}, i_system, leaf_index, leaf_assignments, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches, n_threads) = nothing
+
+@inline function l2b_systems_multithread!(tree, systems, target_systems::Tuple, i_system, leaf_index, leaf_assignments, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches, n_threads)
+    l2b_multithread_system!(systems[i_system], first(target_systems), i_system, tree, leaf_index, leaf_assignments, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches, n_threads)
+    l2b_systems_multithread!(tree, systems, Base.tail(target_systems), i_system + 1, leaf_index, leaf_assignments, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches, n_threads)
+end
+
+function l2b_multithread_system!(system, target_system, i_system, tree, leaf_index, leaf_assignments, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches, n_threads)
+    Threads.@threads :static for i_thread in 1:n_threads
+        leaf_assignment = leaf_assignments[i_system,i_thread]
+        these_harmonics = harmonics[i_thread]
+        these_gradient_n_m = gradient_n_m[i_thread]
+        for i_leaf in leaf_assignment
+            i_branch = leaf_index[i_leaf]
+            evaluate_local!(system, target_system, i_system, tree, i_branch, these_harmonics, these_gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
+        end
+    end
+end
+
+function downward_pass_multithread_2!(tree::Tree{TF,<:Any}, systems, target_systems, derivatives_switches, expansion_order, lamb_helmholtz, n_threads) where TF
     
     #--- load balance ---#
 
@@ -777,26 +822,16 @@ function downward_pass_multithread_2!(tree::Tree{TF,<:Any}, systems, derivatives
 
     #--- compute multipole expansion coefficients ---#
 
-    for (i_system, system) in enumerate(systems)
-        Threads.@threads :static for i_thread in 1:n_threads
-            leaf_assignment = leaf_assignments[i_system,i_thread]
-            these_harmonics = harmonics[i_thread]
-            these_gradient_n_m = gradient_n_m[i_thread]
-            for i_leaf in leaf_assignment
-                i_branch = leaf_index[i_leaf]
-                evaluate_local!(system, i_system, tree, i_branch, these_harmonics, these_gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
-            end
-        end
-    end
+    l2b_systems_multithread!(tree, systems, target_systems, 1, leaf_index, leaf_assignments, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches, n_threads)
 end
 
-function downward_pass_multithread!(tree, systems, derivatives_switch, expansion_order, lamb_helmholtz, n_threads)
+function downward_pass_multithread!(tree, systems, target_systems, derivatives_switch, expansion_order, lamb_helmholtz, n_threads)
 
     # m2m translation
     downward_pass_multithread_1!(tree, expansion_order, lamb_helmholtz, n_threads)
 
     # local to body interaction
-    downward_pass_multithread_2!(tree, systems, derivatives_switch, expansion_order, lamb_helmholtz, n_threads)
+    downward_pass_multithread_2!(tree, systems, target_systems, derivatives_switch, expansion_order, lamb_helmholtz, n_threads)
 
 end
 
@@ -1490,7 +1525,10 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             fetch(t2)
 
             # local to body interaction
-            downward_pass && downward_pass_multithread_2!(target_tree.branches, target_systems, derivatives_switches, Pmax, lamb_helmholtz, tree.leaf_index, n_threads)
+            # NOTE: the surrounding upward_pass_multithread!/downward_pass_multithread_1! calls in
+            # this device branch are still on stale signatures (they pass `.branches`/`levels_index`
+            # and reference an undefined `tree`); this call is updated to the current signature.
+            downward_pass && downward_pass_multithread_2!(target_tree, target_tree.buffers, target_systems, derivatives_switches, expansion_order, lamb_helmholtz, n_threads)
 
         else # use CPU
 
@@ -1565,7 +1603,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                     t_dp = @elapsed downward_pass_singlethread_1!(target_tree, expansion_order, lamb_helmholtz)
                     needs_third = any(_requests_third_derivative, derivatives_switches)
                     t_dp += @elapsed gradient_n_m = initialize_gradient_n_m(expansion_order, eltype(target_tree.branches[1]); third_derivative=needs_third)
-                    t_dp += @elapsed downward_pass_singlethread_2!(target_tree, target_tree.buffers, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m)
+                    t_dp += @elapsed downward_pass_singlethread_2!(target_tree, target_tree.buffers, target_systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m)
                     # println("Downward pass time: ", t_dp)
                 end
 
@@ -1652,7 +1690,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 # @time downward_pass && downward_pass_singlethread!(tree.branches, tree.leaf_index, systems, expansion_order, lamb_helmholtz, derivatives_switches)
                 t_dp = 0.0
                 if downward_pass
-                    t_dp = @elapsed downward_pass_multithread!(target_tree, target_tree.buffers, derivatives_switches, expansion_order, lamb_helmholtz, n_threads)
+                    t_dp = @elapsed downward_pass_multithread!(target_tree, target_tree.buffers, target_systems, derivatives_switches, expansion_order, lamb_helmholtz, n_threads)
                     # println("Downward pass time: $t_dp")
                 end
 
