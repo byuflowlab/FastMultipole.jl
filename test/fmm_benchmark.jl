@@ -135,8 +135,8 @@ function benchmark_fmm_passes(;
                     FastMultipole.downward_pass_singlethread_1!(target_tree, expansion_order, lamb_helmholtz)
                     gradient_n_m = FastMultipole.initialize_gradient_n_m(expansion_order, eltype(target_tree.branches[1]))
                     FastMultipole.downward_pass_singlethread_2!(
-                        target_tree, target_tree.buffers, expansion_order, lamb_helmholtz,
-                        derivatives_switches, gradient_n_m
+                        target_tree, target_tree.buffers, (system,), expansion_order,
+                        lamb_helmholtz, derivatives_switches, gradient_n_m
                     )
                 end
 

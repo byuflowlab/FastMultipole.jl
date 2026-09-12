@@ -133,7 +133,7 @@ function benchmark_m2l(;
 
             # L2B: evaluate local expansion at target body positions
             FastMultipole.evaluate_local!(
-                target_buffer, bodies_index, harmonics, gradient_n_m,
+                target_buffer, target_system, bodies_index, harmonics, gradient_n_m,
                 target_expansion, target_branch.center,
                 expansion_order, lamb_helmholtz, derivatives_switch
             )
