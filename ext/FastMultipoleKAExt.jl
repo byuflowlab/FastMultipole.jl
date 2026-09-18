@@ -7086,20 +7086,26 @@ end
 # `buffer_to_target!`. Nothing here is on the resident lifecycle's zero-copy
 # contract: the extras are a few hundred bodies per call.
 
-# thread per extra target, loop over the packed main bodies with the cache's
-# nearfield functor. `out` is written (one column per thread).
-@kernel function ka_extra_targets_from_main_kernel!(kernel, out, @Const(xt), nt,
-        @Const(source_bodies), nbodies, ::Type{T}, ::Val{HS}) where {T,HS}
-    i = @index(Global)
+# thread per (extra target, source chunk): a target loops over one chunk of the
+# packed main bodies with the cache's nearfield functor and writes its partial
+# sums to `part[:, i, c]`; the wrapper reduces over chunks. A thread per target
+# alone leaves the device idle for the usual few hundred targets, and the wall
+# time is then the serial loop over every body (~25 ms per call at 44k bodies
+# on an H200, whatever the target count).
+@kernel function ka_extra_targets_from_main_kernel!(kernel, part, @Const(xt), nt,
+        @Const(source_bodies), nbodies, chunk, ::Type{T}, ::Val{HS}) where {T,HS}
+    i, c = @index(Global, NTuple)
     ep = FastMultipole._emits_potential(kernel)
     ghv = Val(:shipped)
-    @inbounds if i <= nt
+    jlo = (c - 1) * chunk + 1
+    jhi = min(c * chunk, nbodies)
+    @inbounds if i <= nt && jlo <= jhi
         xi = xt[1, i]; yi = xt[2, i]; zi = xt[3, i]
         u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
         h1 = zero(T); h2 = zero(T); h3 = zero(T)
         h4 = zero(T); h5 = zero(T); h6 = zero(T)
         h7 = zero(T); h8 = zero(T); h9 = zero(T)
-        for j in 1:nbodies
+        for j in jlo:jhi
             dx = xi - source_bodies[1, j]
             dy = yi - source_bodies[2, j]
             dz = zi - source_bodies[3, j]
@@ -7121,12 +7127,12 @@ end
                 end
             end
         end
-        out[1, i] = ep ? u : zero(T)
-        out[2, i] = gx; out[3, i] = gy; out[4, i] = gz
+        part[1, i, c] = ep ? u : zero(T)
+        part[2, i, c] = gx; part[3, i, c] = gy; part[4, i, c] = gz
         if HS
-            out[5, i] = h1; out[6, i] = h2; out[7, i] = h3
-            out[8, i] = h4; out[9, i] = h5; out[10, i] = h6
-            out[11, i] = h7; out[12, i] = h8; out[13, i] = h9
+            part[5, i, c] = h1; part[6, i, c] = h2; part[7, i, c] = h3
+            part[8, i, c] = h4; part[9, i, c] = h5; part[10, i, c] = h6
+            part[11, i, c] = h7; part[12, i, c] = h8; part[13, i, c] = h9
         end
     end
 end
@@ -7228,12 +7234,19 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
         nt = size(xt_h, 2)
         nt == 0 && continue
         xt = _ka_upload(backend, xt_h)
-        out = KA.allocate(backend, TF, hs ? 13 : 4, nt)
+        rows = hs ? 13 : 4
         if n > 0
-            kern(dkernel, out, xt, nt, state.source_bodies, n, TF, Val(hs);
-                 ndrange=cld(nt, wg) * wg)
+            # enough (target, chunk) threads to fill the device: ~64k, chunks of
+            # at least 256 bodies so the per-thread loop still amortizes its setup
+            nchunk = max(1, min(cld(n, 256), cld(65_536, nt)))
+            chunk = cld(n, nchunk)
+            part = KA.allocate(backend, TF, rows, nt, nchunk)
+            kern(dkernel, part, xt, nt, state.source_bodies, n, chunk, TF, Val(hs);
+                 ndrange=(cld(nt, wg) * wg, nchunk))
+            KA.synchronize(backend)
+            out = nchunk == 1 ? reshape(part, rows, nt) : dropdims(sum(part; dims=3); dims=3)
         else
-            fill!(out, zero(TF))
+            out = KA.allocate(backend, TF, rows, nt); fill!(out, zero(TF))
         end
         KA.synchronize(backend)
         FastMultipole._radix_scatter_extra_target!(TF, system, switch, Array(out))
