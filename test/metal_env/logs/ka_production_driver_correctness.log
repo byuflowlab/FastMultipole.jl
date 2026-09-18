@@ -1,0 +1,8 @@
+  PASS  P=4 lh=false nbatch=64 m=64  relerr phi=1.7e-7 chi=0.0
+  PASS  P=4 lh=true nbatch=64 m=64  relerr phi=2.13e-7 chi=4.39e-7
+  PASS  P=8 lh=false nbatch=256 m=256  relerr phi=2.62e-6 chi=0.0
+  PASS  P=8 lh=true nbatch=256 m=256  relerr phi=2.62e-6 chi=5.09e-6
+  PASS  P=12 lh=true nbatch=512 m=512  relerr phi=3.81e-5 chi=9.75e-5
+
+Production stage driver over Metal: 5 passed, 0 failed
+✓✓✓ Steps 1+2 gate passed on Metal ✓✓✓

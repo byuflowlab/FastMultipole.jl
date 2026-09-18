@@ -1,0 +1,11 @@
+Starting KA M2M correctness test...
+✓ P=4, LHbool=true, nbatch=5: phi_err=3.5762787e-6 (relerr=1.1179426e-6), chi_err=1.4543533e-5 (relerr=5.0494255e-6)
+✓ P=4, LHbool=true, nbatch=10: phi_err=6.4373016e-6 (relerr=1.6312802e-6), chi_err=1.5974045e-5 (relerr=4.913657e-6)
+✓ P=4, LHbool=false, nbatch=5: phi_err=5.1259995e-6 (relerr=1.8404728e-6), chi_err=0.0 (relerr=0.0)
+✓ P=4, LHbool=false, nbatch=10: phi_err=4.7534704e-6 (relerr=1.5043603e-6), chi_err=0.0 (relerr=0.0)
+✓ P=8, LHbool=true, nbatch=5: phi_err=0.00014144182 (relerr=3.099265e-5), chi_err=0.00018340349 (relerr=4.7226273e-5)
+✓ P=8, LHbool=true, nbatch=10: phi_err=0.00020056963 (relerr=4.761446e-5), chi_err=0.00022146106 (relerr=5.860072e-5)
+✓ P=8, LHbool=false, nbatch=5: phi_err=0.0002695918 (relerr=5.8460573e-5), chi_err=0.0 (relerr=0.0)
+✓ P=8, LHbool=false, nbatch=10: phi_err=0.00023889542 (relerr=5.9413e-5), chi_err=0.0 (relerr=0.0)
+
+✓✓✓ All KA M2M correctness tests passed on Metal! ✓✓✓

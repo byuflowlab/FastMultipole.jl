@@ -1,0 +1,9 @@
+Starting KA flat radix route generation test on Metal...
+✓ seed=1 ell=3 n_cells=64 r=2 chunk=1000000: 496 routes, 262 direct pairs match the host builder
+✓ seed=2 ell=3 n_cells=200 r=2 chunk=7: 4242 routes, 1628 direct pairs match the host builder
+✓ seed=3 ell=4 n_cells=500 r=2 chunk=1000000: 4408 routes, 1806 direct pairs match the host builder
+✓ seed=4 ell=4 n_cells=300 r=3 chunk=5: 4918 routes, 830 direct pairs match the host builder
+✓ seed=5 ell=2 n_cells=1 r=2 chunk=1000000: 0 routes, 1 direct pairs match the host builder
+✓ seed=6 ell=3 n_cells=512 r=2 chunk=3: 28656 routes, 10648 direct pairs match the host builder
+
+✓✓✓ KA flat radix route gate passed on Metal ✓✓✓

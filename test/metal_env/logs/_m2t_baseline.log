@@ -1,0 +1,19 @@
+ERROR: LoadError: M2T gate failed
+Stacktrace:
+ [1] error(s::String)
+   @ Base ./error.jl:35
+ [2] top-level scope
+   @ ~/Library/CloudStorage/Box-Box/Research/FLOWUnsteady-update/FastMultipole/test/metal_env/ka_m2t_correctness.jl:83
+in expression starting at /Users/bvarela/Library/CloudStorage/Box-Box/Research/FLOWUnsteady-update/FastMultipole/test/metal_env/ka_m2t_correctness.jl:83
+  FAIL case 1: kernel threw: KernelException: An exception was thrown on device Apple M1 Pro
+For more details, run Julia with `-g2`, or launch the kernel with `@metal debug_level=2`
+  FAIL case 2: kernel threw: KernelException: An exception was thrown on device Apple M1 Pro
+For more details, run Julia with `-g2`, or launch the kernel with `@metal debug_level=2`
+  FAIL case 3: kernel threw: KernelException: An exception was thrown on device Apple M1 Pro
+For more details, run Julia with `-g2`, or launch the kernel with `@metal debug_level=2`
+  FAIL case 4: kernel threw: KernelException: An exception was thrown on device Apple M1 Pro
+For more details, run Julia with `-g2`, or launch the kernel with `@metal debug_level=2`
+  FAIL case 5: kernel threw: KernelException: An exception was thrown on device Apple M1 Pro
+For more details, run Julia with `-g2`, or launch the kernel with `@metal debug_level=2`
+
+KA M2T on Metal: 0 passed, 5 failed, 0 skipped

@@ -1,0 +1,13 @@
+  PASS  n=200 P=4 n_w=503 LH=true rows=4  relerr=7.92e-7
+  PASS  n=200 P=4 n_w=503 LH=false rows=13  relerr=7.49e-7
+  PASS  n=400 P=4 n_w=672 LH=true rows=4  relerr=6.46e-7
+  PASS  n=400 P=4 n_w=672 LH=false rows=13  relerr=7.64e-7
+  PASS  n=400 P=2 n_w=598 LH=true rows=4  relerr=2.25e-7
+  PASS  n=400 P=2 n_w=598 LH=false rows=13  relerr=8.57e-7
+  PASS  n=1000 P=4 n_w=1342 LH=true rows=4  relerr=1.23e-6
+  PASS  n=1000 P=4 n_w=1342 LH=false rows=13  relerr=7.91e-7
+  PASS  n=2000 P=4 n_w=7136 LH=true rows=4  relerr=1.08e-6
+  PASS  n=2000 P=4 n_w=7136 LH=false rows=13  relerr=1.53e-6
+
+KA M2T on Metal: 10 passed, 0 failed, 0 skipped
+✓✓✓ Step 6b (M2T) gate passed on Metal ✓✓✓

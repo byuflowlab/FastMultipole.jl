@@ -63,6 +63,10 @@ for f in suites
     log = joinpath("logs", name * ".log")
     t0 = time()
     status = run_suite(joinpath(@__DIR__, f), log)
+    # each suite runs in its own module, so its device buffers stay reachable
+    # until that module is collected; without this the GPU allocations of every
+    # suite pile up in the one process and the later suites thrash
+    GC.gc(); GC.gc()
     dt = round(Int, time() - t0)
     text = read(log, String)
     if status == :pass && !occursin(FAIL_RE, text)

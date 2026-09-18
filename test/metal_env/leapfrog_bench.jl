@@ -56,6 +56,8 @@ println("=== leapfrog: MODE=$(MODE) TF=$(DEV_TF) np=$n (Nphi=$NPHI nc=$NC) steps
 # NATIVE_NF_UNBINNED=1 (native arm only): plain functor kernel over every pair
 if MODE === :native && get(ENV, "NATIVE_NF_UNBINNED", "0") == "1"
     vpm.fmm.set_radix_setting!(:CUDA_NEARFIELD_BINNING, :unbinned)
+    haskey(ENV, "NATIVE_NF_MAXBLOCKS") &&
+        vpm.fmm.set_radix_setting!(:DIRECT_CUDA_MAX_BLOCKS, parse(Int, ENV["NATIVE_NF_MAXBLOCKS"]))
 end
 
 function device_field(h, TF)

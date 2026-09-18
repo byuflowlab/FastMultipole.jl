@@ -1,0 +1,12 @@
+Starting KA grid level-nodes correctness test on Metal...
+✓ seed=1 n=1000 ell=3 clusters=1 first_level=0: 1 cells -> 4 nodes, level_offsets/node_keys/max_count exact
+✓ seed=2 n=1000 ell=3 clusters=8 first_level=0: 24 cells -> 41 nodes, level_offsets/node_keys/max_count exact
+✓ seed=3 n=5000 ell=4 clusters=40 first_level=0: 180 cells -> 315 nodes, level_offsets/node_keys/max_count exact
+✓ seed=4 n=20000 ell=5 clusters=200 first_level=0: 1951 cells -> 3113 nodes, level_offsets/node_keys/max_count exact
+✓ seed=5 n=1 ell=3 clusters=1 first_level=0: 1 cells -> 4 nodes, level_offsets/node_keys/max_count exact
+✓ seed=6 n=4096 ell=2 clusters=64 first_level=0: 53 cells -> 62 nodes, level_offsets/node_keys/max_count exact
+✓ seed=7 n=5000 ell=4 clusters=40 first_level=2: 179 cells -> 297 nodes, level_offsets/node_keys/max_count exact
+✓ seed=8 n=20000 ell=5 clusters=200 first_level=3: 1948 cells -> 3074 nodes, level_offsets/node_keys/max_count exact
+✓ seed=9 n=5000 ell=4 clusters=40 first_level=4: 186 cells -> 186 nodes, level_offsets/node_keys/max_count exact
+
+✓✓✓ KA grid level-nodes gate passed on Metal ✓✓✓

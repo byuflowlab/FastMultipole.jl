@@ -80,7 +80,7 @@ end
 
 using HDF5
 
-const WAKE_DIR = "/Users/bvarela/Downloads/for_ryan/NREL_50_36_2_1.125"
+const WAKE_DIR = get(ENV, "WAKE_DIR", "/Users/bvarela/Downloads/for_ryan/NREL_50_36_2_1.125")
 const WAKE_CASE = "NREL_50_36_2_1.125"
 
 wake_path(step::Int) = joinpath(WAKE_DIR, "$(WAKE_CASE)_pfield.$(step).h5")

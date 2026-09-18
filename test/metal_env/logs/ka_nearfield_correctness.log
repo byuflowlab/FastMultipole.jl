@@ -1,0 +1,8 @@
+  PASS  n=200 P=4 q=3 rows=13 pairs=931  relerr=1.26e-7
+  PASS  n=400 P=4 q=3 rows=13 pairs=1346  relerr=5.89e-7
+  PASS  n=400 P=4 q=1 rows=4 pairs=1201  relerr=1.59e-7
+  PASS  n=2000 P=4 q=3 rows=13 pairs=10325  relerr=3.96e-7
+  PASS  n=2000 P=2 q=3 rows=13 pairs=16149  relerr=2.37e-7
+
+KA nearfield on Metal: 5 passed, 0 failed
+✓✓✓ Step 5 (nearfield) gate passed on Metal ✓✓✓

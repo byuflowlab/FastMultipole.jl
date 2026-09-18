@@ -1,0 +1,11 @@
+Starting KA L2L correctness test...
+✓ P=4, LHbool=true, nbatch=5: phi_err=8.106232e-6 (relerr=1.7506521e-6), chi_err=1.0967255e-5 (relerr=3.2185742e-6)
+✓ P=4, LHbool=true, nbatch=10: phi_err=5.722046e-6 (relerr=1.401417e-6), chi_err=6.914139e-6 (relerr=1.5644034e-6)
+✓ P=4, LHbool=false, nbatch=5: phi_err=6.198883e-6 (relerr=1.90764e-6), chi_err=0.0 (relerr=0.0)
+✓ P=4, LHbool=false, nbatch=10: phi_err=4.2915344e-6 (relerr=1.1978609e-6), chi_err=0.0 (relerr=0.0)
+✓ P=8, LHbool=true, nbatch=5: phi_err=0.000108122826 (relerr=2.621092e-5), chi_err=0.00022339821 (relerr=5.9706803e-5)
+✓ P=8, LHbool=true, nbatch=10: phi_err=0.00014013052 (relerr=2.455654e-5), chi_err=0.00020265579 (relerr=4.213159e-5)
+✓ P=8, LHbool=false, nbatch=5: phi_err=4.9710274e-5 (relerr=9.569497e-6), chi_err=0.0 (relerr=0.0)
+✓ P=8, LHbool=false, nbatch=10: phi_err=6.3061714e-5 (relerr=1.4462136e-5), chi_err=0.0 (relerr=0.0)
+
+✓✓✓ All KA L2L correctness tests passed on Metal! ✓✓✓

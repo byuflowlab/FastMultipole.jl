@@ -1,0 +1,9 @@
+  PASS  n=400 P=4 lh=true rows=4 cells=123  relerr=1.9e-7
+  PASS  n=400 P=4 lh=true rows=13 cells=118  relerr=1.44e-7
+  PASS  n=2000 P=4 lh=true rows=13 cells=502  relerr=2.12e-7
+  PASS  n=2000 P=2 lh=false rows=13 cells=1088  relerr=1.33e-7
+  PASS  n=5000 P=6 lh=true rows=13 cells=512  relerr=2.11e-7
+  PASS  n=1 P=2 lh=true rows=13 cells=1  relerr=1.52e-7
+
+KA L2B on Metal: 6 passed, 0 failed
+✓✓✓ Step 4 (L2B) gate passed on Metal ✓✓✓

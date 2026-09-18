@@ -1,0 +1,8 @@
+Starting KA source-position extraction test on Metal...
+✓ dpb=8 sizes=(1000,): 1000 bodies extracted and attributed correctly
+✓ dpb=8 sizes=(500, 300): 800 bodies extracted and attributed correctly
+✓ dpb=12 sizes=(7, 1024, 33): 1064 bodies extracted and attributed correctly
+✓ dpb=8 sizes=(1,): 1 bodies extracted and attributed correctly
+✓ dpb=8 sizes=(2048, 1): 2049 bodies extracted and attributed correctly
+
+✓✓✓ KA source-position gate passed on Metal ✓✓✓

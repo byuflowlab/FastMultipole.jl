@@ -1,0 +1,9 @@
+Starting KA grid epoch/centers correctness test on Metal...
+✓ seed=1 n=1000 ell=3 clusters=1: 1 cells, coords/centers exact, epoch check exact in both directions
+✓ seed=2 n=1000 ell=3 clusters=8: 24 cells, coords/centers exact, epoch check exact in both directions
+✓ seed=3 n=5000 ell=4 clusters=40: 180 cells, coords/centers exact, epoch check exact in both directions
+✓ seed=4 n=20000 ell=5 clusters=200: 1951 cells, coords/centers exact, epoch check exact in both directions
+✓ seed=5 n=1 ell=3 clusters=1: 1 cells, coords/centers exact, epoch check exact in both directions
+✓ seed=6 n=4096 ell=2 clusters=64: 53 cells, coords/centers exact, epoch check exact in both directions
+
+✓✓✓ KA grid epoch/centers gate passed on Metal ✓✓✓

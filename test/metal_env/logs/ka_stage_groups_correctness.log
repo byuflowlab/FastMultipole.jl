@@ -1,0 +1,7 @@
+Starting KA stage-group refresh test on Metal...
+✓ seed=26041 n=500 ell=3 P=4: 4 nonempty groups, 780 edges match the host refresh
+✓ seed=26042 n=2000 ell=3 P=4: 4 nonempty groups, 1132 edges match the host refresh
+✓ seed=26043 n=2000 ell=4 P=4: 6 nonempty groups, 4210 edges match the host refresh
+✓ seed=26044 n=8000 ell=5 P=6: 8 nonempty groups, 22040 edges match the host refresh
+
+✓✓✓ KA stage-group refresh gate passed on Metal ✓✓✓
