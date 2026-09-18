@@ -3421,16 +3421,19 @@ end
 update_radix_state!(cache::RadixFMMCache, systems) =
     update_radix_state!(cache, to_tuple(systems))
 
-# Preallocated per-switch-layout scatter buffers for the recurring finalize; the
-# buffers are rebuilt only when the requested derivatives layout changes (rare).
+# Preallocated per-switch-layout scatter buffers for the recurring finalize,
+# one set per distinct layout. A caller that alternates layouts every step
+# (a self-induction pass with probe systems as extra targets, then a
+# sources-only pass on the main system alone) keeps both sets instead of
+# reallocating capacity-sized buffers at each switch.
 function _radix_cache_target_buffers!(cache::RadixFMMCache{TF}, switches::Tuple) where TF
     tb = cache.target_buffers
-    if tb === nothing || tb.switches != switches
-        buffers = Tuple(zeros(TF, target_buffer_rows(switch), cache.max_n_bodies)
-                        for switch in switches)
-        cache.target_buffers = (; switches, buffers)
+    if !(tb isa Dict)
+        tb = Dict{Any,Any}(); cache.target_buffers = tb
     end
-    return cache.target_buffers.buffers
+    return get!(tb, switches) do
+        Tuple(zeros(TF, target_buffer_rows(switch), cache.max_n_bodies) for switch in switches)
+    end
 end
 
 # task 048: lazy per-system 3-row host SFS scatter buffers (allocated once at
