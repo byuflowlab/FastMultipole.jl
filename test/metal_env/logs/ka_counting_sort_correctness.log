@@ -2,14 +2,10 @@ device = Metal
 
 case n=1024 ell=3 uniform
     perm identical across runs: false (expected: unstable)
-  -> PASS [232s]
+  -> PASS [27s]
 
-case n=4096 ell=4 uniform
+case n=1024 ell=3 clustered
     perm identical across runs: false (expected: unstable)
-  -> PASS [1144s]
-
-case n=4096 ell=3 clustered
-    perm identical across runs: false (expected: unstable)
-  -> PASS [1s]
+  -> PASS [4s]
 
 gate passed: all counting-sort cases PASS

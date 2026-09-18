@@ -111,12 +111,20 @@ function make_probes(seed, nprobe, TF)
     p
 end
 
-const CASES = [
+# A unit run takes the short case list; FM_FULL_SWEEP=1 takes the full one.
+# The sweep is a robustness study, not a check: it belongs in a debugging pass
+# (debug/run_full_sweeps.sh), not in every run.
+const CASES_FULL = [
     # P, ell, n, wc, nprobe, nseg
     (4, 3,  256,  8, 16,  8),
     (4, 4, 4096,  8, 64, 32),
     (4, 4, 4096, 64, 128, 64),   # P stays 4: the extras kernels are P-independent, and a P=6 Metal compile alone cost 40 s
 ]
+const CASES_SHORT = [
+    (4, 3, 256, 8, 16, 8),
+    (4, 4, 512, 64, 64, 32),   # more probes and segments than cells
+]
+const CASES = haskey(ENV, "FM_FULL_SWEEP") ? CASES_FULL : CASES_SHORT
 const TOL_HOST = 2e-3   # Float32 host lifecycle vs Float64 references
 const TOL_DEV  = 3e-4   # device vs host, both Float32 (ka_device_cache_correctness)
 

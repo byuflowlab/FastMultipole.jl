@@ -132,13 +132,22 @@ end
 
 # (P, ell, n) -- Float32 throughout, the precision Metal supports and the one
 # the CUDA arm runs for FLOWVPM.
-const CASES = [
+# A unit run takes the short case list; FM_FULL_SWEEP=1 takes the full one.
+# The sweep is a robustness study, not a check: it belongs in a debugging pass
+# (debug/run_full_sweeps.sh), not in every run.
+const CASES_FULL = [
     (2, 3,   64),
     (4, 3,  256),
     (4, 4, 1024),
     (6, 3,  256),
     (8, 4, 2048),
 ]
+const CASES_SHORT = [
+    (4, 3, 256),
+    (8, 4, 512),   # a second expansion order and a deeper tree: the
+                   # operator tables are built per order
+]
+const CASES = haskey(ENV, "FM_FULL_SWEEP") ? CASES_FULL : CASES_SHORT
 
 const TOL = 2e-4  # Float32 whole-lifecycle accumulation; per-stage suites run 1e-4/1e-5
 

@@ -1,7 +1,4 @@
-[3s] case 1 (P=2, ell=3, n=64): PASS  multipoles=2.403235e-7  locals=1.4098889e-7  output=4.4138403e-8
-[1s] case 2 (P=4, ell=3, n=256): PASS  multipoles=2.4502268e-7  locals=5.6462153e-7  output=1.4493374e-7
-[5s] case 3 (P=4, ell=4, n=1024): PASS  multipoles=4.1325114e-7  locals=4.752294e-7  output=9.7042694e-8
-[1s] case 4 (P=6, ell=3, n=256): PASS  multipoles=2.8551142e-7  locals=5.246351e-7  output=1.2344015e-7
-[31s] case 5 (P=8, ell=4, n=2048): PASS  multipoles=4.0284596e-7  locals=4.0592246e-7  output=6.135809e-8
+[3s] case 1 (P=4, ell=3, n=256): PASS  multipoles=3.6164695e-7  locals=2.1313849e-7  output=4.6988543e-8
+[5s] case 2 (P=8, ell=4, n=512): PASS  multipoles=1.6850207e-7  locals=8.505625e-7  output=4.1754486e-8
 
-ka_lifecycle_body! vs run_host_radix_lifecycle!: 5/5 pass
+ka_lifecycle_body! vs run_host_radix_lifecycle!: 2/2 pass

@@ -1,8 +1,6 @@
 case 1 (P=4, ell=3, n=256, probes=16, segs=8): start
-  [6s] PASS  host: probes<-particles=7.18e-07 probes-unchanged=0.00e+00 particles<-segs=3.70e-07 sources-only=3.70e-07 | device vs host: self=1.43e-07 probes=2.40e-07 probes2=8.99e-08 particles2=1.23e-07 sources-only=0.00e+00
-case 2 (P=4, ell=4, n=4096, probes=64, segs=32): start
-  [14s] PASS  host: probes<-particles=2.06e-06 probes-unchanged=0.00e+00 particles<-segs=6.89e-06 sources-only=6.89e-06 | device vs host: self=1.47e-07 probes=9.50e-07 probes2=9.50e-07 particles2=1.48e-07 sources-only=0.00e+00
-case 3 (P=4, ell=4, n=4096, probes=128, segs=64): start
-  [12s] PASS  host: probes<-particles=3.78e-06 probes-unchanged=0.00e+00 particles<-segs=3.31e-06 sources-only=3.30e-06 | device vs host: self=2.18e-07 probes=1.07e-06 probes2=1.18e-06 particles2=3.27e-07 sources-only=0.00e+00
+  [5s] PASS  host: probes<-particles=7.18e-07 probes-unchanged=0.00e+00 particles<-segs=3.70e-07 sources-only=3.70e-07 | device vs host: self=1.43e-07 probes=2.40e-07 probes2=1.20e-07 particles2=9.20e-08 sources-only=0.00e+00
+case 2 (P=4, ell=4, n=512, probes=64, segs=32): start
+  [2s] PASS  host: probes<-particles=1.76e-06 probes-unchanged=0.00e+00 particles<-segs=1.11e-05 sources-only=5.02e-06 | device vs host: self=7.37e-08 probes=3.50e-07 probes2=3.50e-07 particles2=7.37e-08 sources-only=0.00e+00
 
-radix extra target/source systems, host and Metal: 3/3 pass
+radix extra target/source systems, host and Metal: 2/2 pass

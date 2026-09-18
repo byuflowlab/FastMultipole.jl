@@ -98,7 +98,7 @@ function check_case(n, ell, TF; clustered=false)
     hsets = cellsets(hg, nc, nb)
 
     prev = nothing
-    for rep in 1:3
+    for rep in 1:2   # a repeat catches a nondeterministic sort; three did not add coverage
         ext.ka_update_radix_state!(dcache, (sys_d,))
         KernelAbstractions.synchronize(DEV_BACKEND)
         dg = dcache.state.grid
@@ -149,7 +149,11 @@ end
 
 println("device = $DEV_NAME\n")
 # n=8192 ell=4 uniform was dropped: same branch as the 4096 case, 10 s for no new coverage
-for (n, ell, cl) in ((1024, 3, false), (4096, 4, false), (4096, 3, true))
+# FM_FULL_SWEEP=1 adds the larger and deeper cases (debug/run_full_sweeps.sh)
+const SORT_CASES = haskey(ENV, "FM_FULL_SWEEP") ?
+    ((1024, 3, false), (4096, 4, false), (4096, 3, true)) :
+    ((1024, 3, false), (1024, 3, true))
+for (n, ell, cl) in SORT_CASES
     before = nfail[]
     t_case = time()
     check_case(n, ell, Float32; clustered=cl)

@@ -7,7 +7,7 @@ case uniform n=512 ell=2
   arm2 radix: perm ok, partition ok, containment worst=0.999842 of half-cell PASS
   arm2 octree: 64 leaves, pop min/med/max 3/8/14, containment worst=1.000000 of box PASS
   arm2 radix : 64 cells,  pop min/med/max 2/8/15  (uniform grid, not comparable elementwise)
-  -> PASS [3s]
+  -> PASS [4s]
 
 case uniform n=1024 ell=3
   arm1 device-vs-host-radix: n_bodies=1024 n_cells=434 n_nodes=506
@@ -52,6 +52,6 @@ case onboundary n=4096 ell=4
   arm2 radix: perm ok, partition ok, containment worst=0.999999 of half-cell PASS
   arm2 octree: 512 leaves, pop min/med/max 2/8/17, containment worst=1.000000 of box PASS
   arm2 radix : 2547 cells,  pop min/med/max 1/1/7  (uniform grid, not comparable elementwise)
-  -> PASS [6s]
+  -> PASS [9s]
 
 all cases PASS: 0 failing checks over 6 cases

@@ -1,17 +1,10 @@
 1. slab layout against the resident Point{Vortex} kernel
-  PASS  phi 8.7e-18, chi 1.4e-17
-2. filament sources against the all-direct reference
-   P= 4 ell=1: 8 cells, 0 loose, relative 2.675e-15
-   P= 4 ell=3: 511 cells, 0 loose, relative 1.279e-04
-   P= 6 ell=3: 511 cells, 0 loose, relative 1.876e-05
-   P= 8 ell=3: 511 cells, 0 loose, relative 6.581e-06
-   P=10 ell=3: 511 cells, 0 loose, relative 1.482e-06
-  PASS  every pair near is exact (2.7e-15)
-  PASS  far field converges with order (1.3e-04 -> 1.5e-06)
+  PASS  phi 3.5e-18, chi 6.9e-18
+2. filament sources: near-only exact, and the far field carried
+  PASS  every pair near is exact (7.1e-16, 0 loose)
+  PASS  far field carried (tree 1.6e-04 vs near-only 6.3e-02)
 3. the device path against the verified host path
-   determinism of two identical runs: 2.384e-07 (|base| 1.754e+00)
-   |ref| 1.1934e-01  |new| 1.1934e-01  |new-ref| 1.6948e-05
-  PASS  device tree matches device all-direct (1.42e-04, tol 5e-03)
+  PASS  device tree matches device all-direct (1.48e-04, tol 5e-03)
 
 4 passed, 0 failed
 gate passed: extra sources carried by the resident tree

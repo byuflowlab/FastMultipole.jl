@@ -75,13 +75,21 @@ end
 # combined -- so each new P costs more than every other axis put together. Three
 # P=4 cases sweep ell, n and window_classes for free on one compile; the single
 # P=6 case is what proves the sweep is not P-specific.
-const CASES = [
+# A unit run takes the short case list; FM_FULL_SWEEP=1 takes the full one.
+# The sweep is a robustness study, not a check: it belongs in a debugging pass
+# (debug/run_full_sweeps.sh), not in every run.
+const CASES_FULL = [
     (4, 3,  256, 8),
     (4, 4, 1024, 8),
     (4, 4, 4096, 8),
     (4, 4, 4096, 256),
     (6, 4, 1024, 4),
 ]
+const CASES_SHORT = [
+    (4, 3, 256, 8),
+    (4, 4, 512, 64),   # deeper tree and wider window classes
+]
+const CASES = haskey(ENV, "FM_FULL_SWEEP") ? CASES_FULL : CASES_SHORT
 
 const TOL = 3e-4   # Float32 whole-lifecycle accumulation, as in ka_lifecycle_body
 
