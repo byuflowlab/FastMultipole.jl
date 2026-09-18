@@ -4446,15 +4446,23 @@ function ResidentM2LDensePlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
 
     # No operator or slab allocation occurs before the configured persistent gate.
     operators = [Matrix{TF}(undef, D, D) for _ in 1:noperators]
-    workspace = DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
     operator_offsets = hierarchical ?
         @view(accepted_offsets[(nclasses - hno + 1):nclasses]) : accepted_offsets
-    @inbounds for (i, offset) in enumerate(operator_offsets)
-        delta = TF(cell_width) * SVector{3,TF}(offset)
-        r, theta, phi = cartesian_to_spherical(delta)
-        build_dense_m2l_operator!(operators[i], r, theta, phi, invariant, workspace,
-            Val(LH))
-        _check_dense_m2l_operator_finite!(operators[i], basis_info, offset)
+    # independent per offset: built in parallel, a builder workspace per task
+    # (the serial loop was most of a cache build, ~0.5 s regardless of the
+    # particle count)
+    nops = length(operator_offsets)
+    nt = max(1, min(Threads.nthreads(), nops))
+    Threads.@threads :static for t in 1:nt
+        workspace = DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
+        @inbounds for i in t:nt:nops
+            offset = operator_offsets[i]
+            delta = TF(cell_width) * SVector{3,TF}(offset)
+            r, theta, phi = cartesian_to_spherical(delta)
+            build_dense_m2l_operator!(operators[i], r, theta, phi, invariant, workspace,
+                Val(LH))
+            _check_dense_m2l_operator_finite!(operators[i], basis_info, offset)
+        end
     end
     class_operator = hierarchical ?
         [mod1(i, hno) for i in 1:nclasses] : collect(1:nclasses)

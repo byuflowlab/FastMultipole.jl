@@ -8009,16 +8009,25 @@ function ka_build_dense_m2l_plan(backend, ::Type{TF},
     W = max(min(chunk, nroutes), 1)
 
     build_width = strategy.build_chunk > 0 ? min(D, strategy.build_chunk) : D
-    workspace = FastMultipole.DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
-    Kbuf = Matrix{TF}(undef, D, D)
     ops_host = Array{TF,3}(undef, D, D, nclasses)
-    @inbounds for (i, offset) in enumerate(accepted_offsets)
-        delta = TF(cell_width) * SVector{3,TF}(offset)
-        r, theta, phi = FastMultipole.cartesian_to_spherical(delta)
-        FastMultipole.build_dense_m2l_operator!(Kbuf, r, theta, phi, invariant,
-            workspace, Val(LH))
-        FastMultipole._check_dense_m2l_operator_finite!(Kbuf, basis_info, offset)
-        ops_host[:, :, i] .= Kbuf
+    # one dense operator per offset class, thousands of them for a wide
+    # stencil, each a batch of host translations: this loop WAS the cache
+    # build (0.57 s of it on a 16-core node, independent of the particle
+    # count). Offsets are independent, so they are built in parallel with a
+    # workspace per task.
+    nt = max(1, min(Threads.nthreads(), nclasses))
+    Threads.@threads :static for t in 1:nt
+        workspace = FastMultipole.DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
+        Kbuf = Matrix{TF}(undef, D, D)
+        @inbounds for i in t:nt:nclasses
+            offset = accepted_offsets[i]
+            delta = TF(cell_width) * SVector{3,TF}(offset)
+            r, theta, phi = FastMultipole.cartesian_to_spherical(delta)
+            FastMultipole.build_dense_m2l_operator!(Kbuf, r, theta, phi, invariant,
+                workspace, Val(LH))
+            FastMultipole._check_dense_m2l_operator_finite!(Kbuf, basis_info, offset)
+            ops_host[:, :, i] .= Kbuf
+        end
     end
     _dev(A) = (d = KA.allocate(backend, eltype(A), size(A)...); copyto!(d, A); d)
     _zeros(T, dims...) = (z = KA.allocate(backend, T, dims...); fill!(z, zero(T)); z)
