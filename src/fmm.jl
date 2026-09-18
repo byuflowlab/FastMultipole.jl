@@ -875,7 +875,7 @@ fmm!(system, cache::RadixFMMCache; optargs...) = fmm!(system, system, cache; opt
 
 function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         scalar_potential::Bool=false, gradient::Bool=true, hessian=false,
-        sfs::Bool=false,
+        sfs::Bool=false, tree_sources::Tuple=(),
         lamb_helmholtz::Union{Nothing,Bool}=nothing) where {TF,LH}
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
@@ -906,13 +906,17 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
     if cache.device
         _radix_cache_device_step!(cache, main, switches; sfs,
             extra_targets=split.extra_targets, extra_target_switches=extra_switches,
-            extra_sources=split.extra_sources, self_induce=split.self_induce)
+            extra_sources=split.extra_sources, extra_tree_sources=tree_sources,
+            self_induce=split.self_induce)
     elseif cache.adaptive === nothing
         update_radix_state!(cache, main)
         if split.self_induce
-            run_host_radix_lifecycle!(cache.state)
+            # `tree_sources` join the leaf multipoles before the upward pass;
+            # a sources-only call has no tree to join, so they stay direct
+            run_host_radix_lifecycle_with_extra_tree!(cache.state, tree_sources)
         else
             fill!(cache.state.output, zero(TF))
+            _radix_extra_sources_into_output!(cache.state, tree_sources)
         end
         sfs && _run_host_radix_sfs!(cache.state)
         _radix_extra_sources_into_output!(cache.state, split.extra_sources)

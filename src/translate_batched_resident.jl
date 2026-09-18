@@ -3521,11 +3521,11 @@ end
 
 function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple;
         sfs::Bool=false, extra_targets::Tuple=(), extra_target_switches::Tuple=(),
-        extra_sources::Tuple=(), self_induce::Bool=true)
+        extra_sources::Tuple=(), extra_tree_sources::Tuple=(), self_induce::Bool=true)
     hook = _RADIX_DEVICE_STEP_HOOK[]
     hook === nothing && throw(RadixDeviceUnavailable(radix_device_status()))
     return hook(cache, targets, switches; sfs, extra_targets, extra_target_switches,
-        extra_sources, self_induce)
+        extra_sources, extra_tree_sources, self_induce)
 end
 
 #------- adaptive octree host resident lifecycle: state assembly + drivers (task 040) -------#

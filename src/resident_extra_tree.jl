@@ -244,3 +244,35 @@ function resident_extra_multipole_columns(::Type{TF}, system, buffer, cell_range
     nodes = Int[leaf_to_node[i] for i in touched]
     return nodes, phi, chi
 end
+
+"""
+    run_host_radix_lifecycle_with_extra_tree!(state, systems)
+
+The resident host lifecycle with `systems` carried by the tree: their
+multipoles join the leaves before the upward pass, their near cell pairs are
+swept afterwards, and any body held out of the tree is summed against every
+resident body.
+"""
+function run_host_radix_lifecycle_with_extra_tree!(state::DeviceResidentRadixState{TF},
+        systems::Tuple) where TF
+    isempty(systems) && return run_host_radix_lifecycle!(state)
+    n_cells = Int(state.counts.n_cells)
+    n = Int(state.counts.n_bodies)
+    hs = size(state.output, 1) >= 13
+    prepared = map(systems) do sys
+        binned, loose = bin_resident_extra_source(TF, sys, state.grid, n_cells)
+        (binned, loose, direct_kernel(sys))
+    end
+    _launch_host_b2m!(state)
+    for (binned, _, _) in prepared
+        resident_extra_b2m!(state, binned)
+    end
+    _launch_host_resident_operator_pipeline!(state)
+    for (binned, loose, kernel) in prepared
+        resident_extra_near!(state, binned, kernel)
+        size(loose, 2) == 0 && continue
+        _host_targets_from_extra_source!(state.output, kernel, state.source_bodies, n,
+            loose, Val(hs && _extra_pair_has_hessian(kernel)))
+    end
+    return state
+end

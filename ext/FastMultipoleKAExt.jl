@@ -8382,9 +8382,10 @@ end
 
 _ka_radix_device_step_hook(cache, targets, switches; sfs::Bool=false,
         extra_targets::Tuple=(), extra_target_switches::Tuple=(),
-        extra_sources::Tuple=(), self_induce::Bool=true) =
+        extra_sources::Tuple=(), extra_tree_sources::Tuple=(),
+        self_induce::Bool=true) =
     ka_radix_cache_device_step!(cache, targets, switches; sfs, extra_targets,
-        extra_target_switches, extra_sources, self_induce)
+        extra_target_switches, extra_sources, extra_tree_sources, self_induce)
 
 function __init__()
     FastMultipole.register_radix_device_backend!("KernelAbstractions",
