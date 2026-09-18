@@ -69,9 +69,12 @@ function check_case(n, ell, TF; clustered=false)
     sys_d = make_field(77, n, TF; clustered)
     opts = FM.CUDARadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Vortex})
+    # this gate compares the sort and the grid it produces: the window-class
+    # count and a full evaluation cost operator tables and a whole FMM pass
+    # that nothing here reads
     hcache = RadixFMMCache(sys_h; expansion_order=4, ell=ell,
-        window_classes=256, options=opts)
-    fmm!(sys_h, hcache)
+        window_classes=8, options=opts)
+    FM.update_radix_state!(hcache, (sys_h,))
     a = device_build_args(hcache); LH = typeof(hcache).parameters[2]
     dcache = ext.ka_radix_cache_device_build(DEV_BACKEND, (sys_d,),
         hcache.expansion_order, ell, hcache.x_min, hcache.h0, hcache.max_n_bodies,
