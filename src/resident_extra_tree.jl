@@ -218,3 +218,29 @@ function resident_extra_near!(state::DeviceResidentRadixState{TF},
     end
     return state
 end
+
+"""
+    resident_extra_multipole_columns(TF, system, buffer, cell_ranges, cell_centers,
+                                     leaf_to_node, P_phi, P_chi, n_cells, Val(LH), rows)
+
+The extra bodies' multipoles as a compact `(nodes, phi, chi)`: one column per
+cell that holds an extra body, and the node each column belongs to. This is
+what a device path uploads, since only a few cells are usually touched.
+"""
+function resident_extra_multipole_columns(::Type{TF}, system, buffer, cell_ranges,
+        cell_centers, leaf_to_node, P_phi::Int, P_chi::Int, n_cells::Int,
+        ::Val{LH}, rows::Int) where {TF,LH}
+    touched = [i for i in 1:n_cells if cell_ranges[2, i] > 0]
+    column_of = zeros(Int, n_cells)
+    for (k, i) in enumerate(touched)
+        column_of[i] = k
+    end
+    phi = zeros(TF, rows, length(touched))
+    chi = zeros(TF, rows, length(touched))
+    # `column_of` stands in for `leaf_to_node`, so the kernel writes compact
+    # columns instead of scattering into a full slab
+    _resident_extra_b2m_kernel!(phi, chi, system, buffer, cell_ranges, cell_centers,
+        column_of, P_phi, P_chi, n_cells, Val(LH))
+    nodes = Int[leaf_to_node[i] for i in touched]
+    return nodes, phi, chi
+end

@@ -128,6 +128,56 @@ let n = 4000, ns = 400
           @sprintf("far field converges with order (%.1e -> %.1e)", errs[2], errs[end]))
 end
 
+println("3. the device path against the verified host path")
+include(joinpath(@__DIR__, "ka_backend.jl"))
+if !dev_functional()
+    println("  $(DEV_NAME) not functional; device check skipped")
+else
+    let n = 4000, ns = 400, P = 4, ell = 3, DTF = (DEV_NAME == "Metal" ? Float32 : Float64)
+        Random.seed!(1)
+        pos = DTF.(rand(3, n)); str = DTF.(randn(3, n) ./ n)
+        mk() = VortexParticles(copy(pos), copy(str), fill(DTF(0.01), n);
+            potential = zeros(DTF, 13, n), gradient_stretching = zeros(DTF, 6, n))
+        Random.seed!(2)
+        r1 = [SVector{3,DTF}(rand(3)) for _ in 1:ns]
+        ex = Segs(r1, [r1[i] + SVector{3,DTF}(0.01 .* randn(3)) for i in 1:ns],
+                  DTF.(randn(ns) ./ ns), fill(DTF(0.005), ns))
+        opts = FM.CUDARadixLifecycleOptions(; precision = DTF,
+            m2l_strategy = FM.ConcatenatedFixedZM2L(), body_type = FM.Point{FM.Vortex})
+        FM.device_backend(::VortexParticles) = DEV_BACKEND
+        extmod = Base.get_extension(FastMultipole, :FastMultipoleKAExt)
+        function run(kw)
+            sysd = mk()
+            cd_ = RadixFMMCache(sysd; expansion_order = P, ell = ell, window_classes = 64,
+                                options = opts, hessian = true, device = true)
+            sw = FM.DerivativesSwitch(false, true, true, (sysd,))
+            extmod.ka_radix_cache_device_step!(cd_, (sysd,), sw; kw...)
+            # de-permute: the device sort's within-cell order is not
+            # reproducible between runs, so slot order cannot be compared
+            st = cd_.state
+            nb = Int(st.counts.n_bodies)
+            out = Array(st.output)
+            idx = Array(st.host_body_indices)
+            res = zeros(DTF, 3, n)
+            inv = Array(cd_.state.grid.invperm)
+            for i in 1:nb
+                res[:, i] .= out[2:4, inv[i]]
+            end
+            return res
+        end
+        base = run((;)); base2 = run((;))
+        @printf("   determinism of two identical runs: %.3e (|base| %.3e)\n",
+                maximum(abs.(base2 .- base)), maximum(abs, base))
+        ref = run((; extra_sources = (ex,))) .- base        # all-direct extra
+        new = run((; extra_tree_sources = (ex,))) .- base   # carried by the tree
+        e = maximum(abs.(new .- ref)) / maximum(abs, ref)
+        @printf("   |ref| %.4e  |new| %.4e  |new-ref| %.4e\n",
+                maximum(abs, ref), maximum(abs, new), maximum(abs.(new .- ref)))
+        tol = DTF === Float32 ? 5e-3 : 1e-3
+        check(e <= tol, @sprintf("device tree matches device all-direct (%.2e, tol %.0e)", e, tol))
+    end
+end
+
 @printf("\n%d passed, %d failed\n", npass[], nfail[])
 nfail[] == 0 || error("$(nfail[]) check(s) failed")
 println("gate passed: extra sources carried by the resident tree")

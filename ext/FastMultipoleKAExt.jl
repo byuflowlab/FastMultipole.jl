@@ -4080,7 +4080,8 @@ existing `RadixFMMCache(device=true)` -- which is how the KA-vs-native
 comparison runs both arms over identical data with no second cache build.
 """
 function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
-        workgroup_b2m::Int=128, workgroup::Int=64, sync::Bool=true) where {TF,B,LH}
+        workgroup_b2m::Int=128, workgroup::Int=64, sync::Bool=true,
+        extra_tree::Tuple=()) where {TF,B,LH}
     ws = state.scratch
     ws isa FastMultipole.ResidentOperatorWorkspace || throw(ArgumentError(
         "ka_lifecycle_body! requires a ResidentOperatorWorkspace in state.scratch"))
@@ -4088,8 +4089,12 @@ function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
     # 1. nearfield (clears state.output, as CUDA's fill+nearfield does)
     ka_launch_nearfield!(state; clear=true)   # shape/workgroup from _nf_config
 
-    # 2. B2M
+    # 2. B2M, then any extra source system the tree carries (before M2M, so the
+    #    upward pass picks it up)
     ka_launch_b2m!(state; workgroup=workgroup_b2m)
+    for prepared in extra_tree
+        ka_extra_tree_b2m!(state, prepared)
+    end
 
     # 3. far field: M2M -> M2L -> L2L, then L2B
     FastMultipole._zero_resident_nonleaf_multipoles!(state)
@@ -7005,11 +7010,137 @@ uniform lifecycle body, and scatter the output back into the target systems.
 Runs the SFS pass and its delivery when `sfs=true`, which requires a cache
 armed with `sfs=true` at construction. No CUDA dependency.
 """
+#------- extra source systems carried by the resident tree (KA) -------#
+#
+# Host mirror: src/resident_extra_tree.jl. The binning and the multipoles are
+# computed on the host -- an extra system is small next to the resident field,
+# and the multipole recursions are the octree's own -- and only two kernels run
+# on the device: one adds the per-cell coefficients into the leaf multipoles
+# before M2M, the other sweeps the near cell pairs.
+
+"""
+    ka_extra_tree_prepare(state, system)
+
+Bin `system` onto the resident grid and pack everything the two device kernels
+need: the binned bodies and their per-cell ranges, the multipole columns and
+the nodes they belong to, and the bodies held out of the tree.
+"""
+function ka_extra_tree_prepare(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        system) where {TF,B,LH}
+    n_cells = Int(state.counts.n_cells)
+    binned, loose = FastMultipole.bin_resident_extra_source(TF, system, state.grid, n_cells)
+    orders = state.invariant_cache.basis_info.orders
+    rows = size(FastMultipole.phi_slab(state.multipoles), 1)
+    nodes, phi, chi = FastMultipole.resident_extra_multipole_columns(TF, system,
+        binned.buffer, binned.cell_ranges, Array(state.cell_centers),
+        Array(state.grid.leaf_to_node), orders.P_phi, orders.P_active, n_cells,
+        Val(LH), rows)
+    backend = KA.get_backend(state.output)
+    up(A) = (d = KA.allocate(backend, eltype(A), size(A)...); copyto!(d, A); d)
+    return (; buffer = up(binned.buffer), cell_ranges = up(binned.cell_ranges),
+            nodes = up(nodes), phi = up(phi), chi = up(chi), loose,
+            kernel = FastMultipole.direct_kernel(system))
+end
+
+# one thread per (row, touched cell): the nodes are distinct, so no atomics
+@kernel function ka_extra_tree_add_multipoles_kernel!(ph, ch, @Const(phi_add), @Const(chi_add),
+        @Const(nodes), nrows, ncols, ::Val{LH}) where LH
+    idx = @index(Global)
+    @inbounds if idx <= nrows * ncols
+        row = (idx - 1) % nrows + 1
+        col = (idx - 1) ÷ nrows + 1
+        node = nodes[col]
+        ph[row, node] += phi_add[row, col]
+        if LH
+            ch[row, node] += chi_add[row, col]
+        end
+    end
+end
+
+"""
+    ka_extra_tree_b2m!(state, prepared; workgroup)
+
+Add the extra bodies' multipoles to the leaf multipoles. Must run after the
+resident B2M and before M2M.
+"""
+function ka_extra_tree_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        prepared; workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
+    ncols = size(prepared.phi, 2)
+    ncols == 0 && return state
+    ph = FastMultipole.phi_slab(state.multipoles)
+    ch = FastMultipole.chi_slab(state.multipoles)
+    nrows = size(prepared.phi, 1)
+    backend = KA.get_backend(state.output)
+    wg = resolve_workgroup(backend, workgroup)
+    kern = _cached_kernel(ka_extra_tree_add_multipoles_kernel!, backend, wg)
+    n = nrows * ncols
+    kern(ph, ch, prepared.phi, prepared.chi, prepared.nodes, nrows, ncols, Val(LH);
+         ndrange=cld(n, wg) * wg)
+    return state
+end
+
+# one workgroup per near cell pair, threads striding over the target cell's
+# bodies; a target body is written by several pairs, hence the atomics
+@kernel function ka_extra_tree_near_kernel!(kernel, output, @Const(bodies), @Const(cell_ranges),
+        @Const(ex_buffer), @Const(ex_ranges), @Const(direct_targets), @Const(direct_sources),
+        n_direct, ::Type{T}, ::Val{HS}, ::Val{WG}) where {T,HS,WG}
+    tid = @index(Local)
+    pair_i = @index(Group)
+    ep = FastMultipole._emits_potential(kernel)
+    @inbounds if pair_i <= n_direct
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        scount = ex_ranges[2, source_cell]
+        if scount > 0
+            sfirst = ex_ranges[1, source_cell]
+            tfirst = cell_ranges[1, target_cell]
+            tcount = cell_ranges[2, target_cell]
+            i = tfirst + tid - 1
+            while i <= tfirst + tcount - 1
+                xi = bodies[1, i]; yi = bodies[2, i]; zi = bodies[3, i]
+                u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
+                for j in sfirst:(sfirst + scount - 1)
+                    du, dgx, dgy, dgz = FastMultipole._extra_pair_ug(kernel, xi, yi, zi, ex_buffer, j)
+                    u += du; gx += dgx; gy += dgy; gz += dgz
+                end
+                if ep
+                    KA.@atomic output[1, i] += u
+                end
+                KA.@atomic output[2, i] += gx
+                KA.@atomic output[3, i] += gy
+                KA.@atomic output[4, i] += gz
+                i += WG
+            end
+        end
+    end
+end
+
+"""
+    ka_extra_tree_near!(state, prepared; workgroup)
+
+Sweep the near cell pairs, summing the binned extra bodies of each source cell
+against the resident bodies of the paired target cell.
+"""
+function ka_extra_tree_near!(state::FastMultipole.DeviceResidentRadixState{TF},
+        prepared; workgroup::Int=128) where TF
+    n_direct = Int(state.counts.n_direct)
+    n_direct == 0 && return state
+    backend = KA.get_backend(state.output)
+    wg = resolve_workgroup(backend, workgroup)
+    hs = size(state.output, 1) >= 13
+    dkernel = _ka_device_direct_kernel(prepared.kernel, TF, 0)
+    kern = _cached_kernel(ka_extra_tree_near_kernel!, backend, wg)
+    kern(dkernel, state.output, state.source_bodies, state.cell_ranges,
+         prepared.buffer, prepared.cell_ranges, state.direct_targets, state.direct_sources,
+         n_direct, TF, Val(hs), Val(wg); ndrange=n_direct * wg)
+    return state
+end
+
 function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         targets::Tuple, switches::Tuple; sfs::Bool=false,
         workgroup=KA_AUTO_WORKGROUP, extra_targets::Tuple=(),
         extra_target_switches::Tuple=(), extra_sources::Tuple=(),
-        self_induce::Bool=true)
+        extra_tree_sources::Tuple=(), self_induce::Bool=true)
     # construction-locked settings must not have drifted: a late flip is
     # baked-in-silently otherwise (buffers sized at construction)
     FastMultipole.verify_locked_radix_settings(cache.locked_settings)
@@ -7029,7 +7160,12 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     elseif direct_arm
         ka_direct_body!(state; workgroup)
     else
-        ka_lifecycle_body!(state)
+        prepared = isempty(extra_tree_sources) ? () :
+            Tuple(ka_extra_tree_prepare(state, sys) for sys in extra_tree_sources)
+        ka_lifecycle_body!(state; extra_tree=prepared)
+        for p in prepared
+            ka_extra_tree_finish!(state, p; workgroup)
+        end
     end
     ka_extra_sources_into_output!(state, extra_sources; workgroup)
     # SFS is a per-evaluation option, not merely a cache capability: an
@@ -7181,6 +7317,36 @@ Apply every extra source system to the resident bodies, accumulating into
 `state.output` in slot order (slot positions are rows 1:3 of
 `state.source_bodies`), after the lifecycle body and before finalize.
 """
+# the bodies held out of the tree: a packed buffer rather than a whole system
+function _ka_launch_extra_buffer!(backend, wg, out, xt, nt::Int, host_buffer, kernel,
+        ::Type{TF}, hs::Bool) where TF
+    ns = size(host_buffer, 2)
+    ns == 0 && return out
+    buffer = _ka_upload(backend, host_buffer)
+    kern = _cached_kernel(ka_targets_from_extra_source_kernel!, backend, wg)
+    kern(kernel, out, xt, nt, buffer, ns, TF,
+         Val(hs && FastMultipole._extra_pair_has_hessian(kernel)); ndrange=cld(nt, wg) * wg)
+    return out
+end
+
+"""
+    ka_extra_tree_finish!(state, prepared; workgroup)
+
+The near sweep and the held-out bodies, after the lifecycle has run.
+"""
+function ka_extra_tree_finish!(state::FastMultipole.DeviceResidentRadixState{TF},
+        prepared; workgroup=KA_AUTO_WORKGROUP) where TF
+    ka_extra_tree_near!(state, prepared)
+    n = Int(state.counts.n_bodies)
+    if n > 0 && size(prepared.loose, 2) > 0
+        backend = KA.get_backend(state.output)
+        wg = resolve_workgroup(backend, workgroup)
+        _ka_launch_extra_buffer!(backend, wg, state.output, state.source_bodies, n,
+            prepared.loose, prepared.kernel, TF, size(state.output, 1) >= 13)
+    end
+    return state
+end
+
 function ka_extra_sources_into_output!(state::FastMultipole.DeviceResidentRadixState{TF},
         extra_sources::Tuple; workgroup=KA_AUTO_WORKGROUP) where TF
     isempty(extra_sources) && return state
