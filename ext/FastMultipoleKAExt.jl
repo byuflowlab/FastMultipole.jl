@@ -5480,16 +5480,25 @@ end
 # -- stage 3 compared the part of its output stage 3 owns, this stage compares
 # the rest.
 
-@kernel function ka_node_geometry_levels_kernel!(node_levels, node_coords, node_centers,
-        @Const(node_keys), @Const(level_offsets), x_min, h0, min_level, max_count)
+# One pass over (level, node) filling every per-node array: the three kernels
+# this replaces decoded the same index, read the same node_keys and
+# level_offsets, wrote disjoint outputs and ran back to back with no
+# synchronization between them, so they were three launches and three index
+# decodes for one pass of work.
+@kernel function ka_node_arrays_levels_kernel!(node_levels, node_coords, node_centers,
+        parent_index, child_ranges, @Const(node_keys), @Const(level_offsets),
+        x_min, h0, max_level, min_level, max_count)
     idx = @index(Global)
     @inbounds begin
         level = min_level + (idx - 1) ÷ max_count
         node = level_offsets[level + 1] + (idx - 1) % max_count + 1
         if node <= level_offsets[level + 2]
             TF = eltype(node_centers)
+            key = node_keys[node]
+
+            # geometry
             delta = (2 * h0) / (1 << level)
-            ix, iy, iz = ka_decode_morton_key(node_keys[node], level)
+            ix, iy, iz = ka_decode_morton_key(key, level)
             node_levels[node] = level
             node_coords[1, node] = ix
             node_coords[2, node] = iy
@@ -5497,45 +5506,27 @@ end
             node_centers[1, node] = x_min[1] + delta * (TF(ix) + TF(0.5))
             node_centers[2, node] = x_min[2] + delta * (TF(iy) + TF(0.5))
             node_centers[3, node] = x_min[3] + delta * (TF(iz) + TF(0.5))
-        end
-    end
-end
 
-@kernel function ka_parent_index_levels_kernel!(parent_index, @Const(node_keys),
-        @Const(level_offsets), min_level, max_count)
-    idx = @index(Global)
-    @inbounds begin
-        level = min_level + (idx - 1) ÷ max_count
-        node = level_offsets[level + 1] + (idx - 1) % max_count + 1
-        if node <= level_offsets[level + 2]
+            # parent
             if level == min_level
                 parent_index[node] = 0
             else
-                parent_key = node_keys[node] >> 3
+                parent_key = key >> 3
                 parent_first = level_offsets[level] + 1
                 parent_stop = level_offsets[level + 1]
                 parent = ka_lower_bound(node_keys, parent_first, parent_stop, parent_key)
                 parent_index[node] =
                     (parent <= parent_stop && node_keys[parent] == parent_key) ? parent : 0
             end
-        end
-    end
-end
 
-@kernel function ka_child_ranges_levels_kernel!(child_ranges, @Const(node_keys),
-        @Const(level_offsets), max_level, min_level, max_count)
-    idx = @index(Global)
-    @inbounds begin
-        level = min_level + (idx - 1) ÷ max_count
-        node = level_offsets[level + 1] + (idx - 1) % max_count + 1
-        if node <= level_offsets[level + 2]
+            # children
             if level == max_level
                 child_ranges[1, node] = 0
                 child_ranges[2, node] = 0
             else
                 child_first = level_offsets[level + 2] + 1
                 child_stop = level_offsets[level + 3]
-                lo_key = node_keys[node] << 3
+                lo_key = key << 3
                 hi_key = lo_key + UInt64(7)
                 lo = ka_lower_bound(node_keys, child_first, child_stop, lo_key)
                 hi = ka_upper_bound(node_keys, child_first, child_stop, hi_key)
@@ -5576,14 +5567,9 @@ function ka_radix_node_topology!(node_levels, node_coords, node_centers,
     if max_count > 0
         n_levels = ell - first_level + 1
         flat = max_count * n_levels
-        geom = _cached_kernel(ka_node_geometry_levels_kernel!, backend, workgroup)
-        geom(node_levels, node_coords, node_centers, node_keys, d_level_offsets,
-            x_min, h0, first_level, max_count; ndrange=flat)
-        par = _cached_kernel(ka_parent_index_levels_kernel!, backend, workgroup)
-        par(parent_index, node_keys, d_level_offsets, first_level, max_count;
-            ndrange=flat)
-        chi = _cached_kernel(ka_child_ranges_levels_kernel!, backend, workgroup)
-        chi(child_ranges, node_keys, d_level_offsets, ell, first_level, max_count;
+        nodes = _cached_kernel(ka_node_arrays_levels_kernel!, backend, workgroup)
+        nodes(node_levels, node_coords, node_centers, parent_index, child_ranges,
+            node_keys, d_level_offsets, x_min, h0, ell, first_level, max_count;
             ndrange=flat)
     end
     if n_cells > 0
