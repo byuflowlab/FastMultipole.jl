@@ -149,6 +149,8 @@ const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
         "Occupancy-epoch window caching (checked per step; also gates graph eligibility)."),
     :KA_EXTRA_TARGETS_GRID => RadixSettingSpec(:runtime, _rs_bool,
         "Evaluate extra targets through the resident grid instead of all-pairs (opt-in: open per-call race, 2026-09-19)."),
+    :KA_EXTRA_TARGETS_SYNC => RadixSettingSpec(:runtime, _rs_bool,
+        "Synchronize after every upload and launch in the grid extra-target path (race bisection)."),
     :CUDA_GRAPH_LIFECYCLE => RadixSettingSpec(:runtime, _rs_bool,
         "CUDA-graph capture/replay of the lifecycle (checked per step at entry)."),
     :CUDA_OVERLAP_NEARFIELD => RadixSettingSpec(:construction, _rs_bool,

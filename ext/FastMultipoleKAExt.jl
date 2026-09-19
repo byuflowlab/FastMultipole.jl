@@ -7553,6 +7553,10 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
                 FastMultipole.bin_resident_extra_targets(xt_h, state.grid, n_cells)
             nb = length(order_h)
             if nb > 0
+                # :KA_EXTRA_TARGETS_SYNC synchronizes after every upload and
+                # launch here (a bisection switch for the open per-call race)
+                syn = _ka_radix_setting(:KA_EXTRA_TARGETS_SYNC, false)
+                syn && KA.synchronize(backend)
                 xt = _ka_upload(backend, xt_h)
                 cellk_h = zeros(Int32, nb)
                 for c in 1:n_cells, k in tr_h[1, c]:(tr_h[1, c] + tr_h[2, c] - 1)
@@ -7561,13 +7565,16 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
                 order = up(Int32.(order_h))
                 cellk = up(cellk_h)
                 tranges = up(Int32.(tr_h))
+                syn && KA.synchronize(backend)
                 far(out, xt, order, cellk, nb, state.cell_centers, state.grid.leaf_to_node,
                     state.locals.phi, state.locals.chi, orders.P_phi, orders.P_active,
                     Val(LH), Val(hs); ndrange=cld(nb, wg) * wg)
+                syn && KA.synchronize(backend)
                 nd = Int(state.counts.n_direct)
                 nd > 0 && near(dkernel, out, xt, order, tranges, state.source_bodies,
                     state.cell_ranges, state.direct_targets, state.direct_sources, nd,
                     TF, Val(hs), Val(wg), Val(ep); ndrange=nd * wg)
+                syn && KA.synchronize(backend)
             end
             if !isempty(loose)
                 # no cell to read: all-pairs, as before, over the loose subset
