@@ -7,7 +7,9 @@
 #   2. at a depth where every cell pair is near, the tree carries nothing and
 #      the result must equal the all-direct reference to roundoff,
 #   3. deeper, the difference from the all-direct reference is the multipole
-#      truncation of the far field and must fall with the expansion order.
+#      truncation of the far field and must fall with the expansion order,
+#   4. sources-only (the particles are targets but not sources) must deliver
+#      the extra system's field alone, through the tree, to the same tolerance.
 using FastMultipole, Random, Printf, LinearAlgebra, Test
 using FastMultipole.StaticArrays
 const FM = FastMultipole
@@ -142,6 +144,18 @@ else
         e = maximum(abs.(new .- ref)) / maximum(abs, ref)
         tol = DTF === Float32 ? 5e-3 : 1e-3
         check(e <= tol, @sprintf("device tree matches device all-direct (%.2e, tol %.0e)", e, tol))
+
+        # 4. sources-only: the particles contribute nothing as sources, so the
+        # whole result is the extra system's field. This is the "body on wake"
+        # direction, where the self-induction was evaluated earlier in the step.
+        so_ref = run((; extra_sources = (ex,), self_induce = false))
+        so_new = run((; extra_tree_sources = (ex,), self_induce = false))
+        e2 = maximum(abs.(so_new .- so_ref)) / maximum(abs, so_ref)
+        check(e2 <= tol,
+              @sprintf("sources-only tree matches sources-only all-direct (%.2e, tol %.0e)", e2, tol))
+        # and it must be the extra field alone, not the self-induction again
+        check(maximum(abs.(so_ref .- ref)) / maximum(abs, ref) <= tol,
+              "sources-only carries the extra field alone")
     end
 end
 
