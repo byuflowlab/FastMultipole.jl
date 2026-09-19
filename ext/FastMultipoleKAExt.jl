@@ -7090,10 +7090,13 @@ end
 # bodies; a target body is written by several pairs, hence the atomics
 @kernel function ka_extra_tree_near_kernel!(kernel, output, @Const(bodies), @Const(cell_ranges),
         @Const(ex_buffer), @Const(ex_ranges), @Const(direct_targets), @Const(direct_sources),
-        n_direct, ::Type{T}, ::Val{HS}, ::Val{WG}) where {T,HS,WG}
+        n_direct, ::Type{T}, ::Val{HS}, ::Val{WG}, ::Val{EP}) where {T,HS,WG,EP}
     tid = @index(Local)
     pair_i = @index(Group)
-    ep = FastMultipole._emits_potential(kernel)
+    # `kernel` here is the caller's own direct kernel, not one of the cache's
+    # functors, so querying it on the device is a dynamic dispatch that fails
+    # to compile; the host resolves it and passes the answer as a type parameter
+    ep = EP
     @inbounds if pair_i <= n_direct
         target_cell = direct_targets[pair_i]
         source_cell = direct_sources[pair_i]
@@ -7139,7 +7142,8 @@ function ka_extra_tree_near!(state::FastMultipole.DeviceResidentRadixState{TF},
     kern = _cached_kernel(ka_extra_tree_near_kernel!, backend, wg)
     kern(dkernel, state.output, state.source_bodies, state.cell_ranges,
          prepared.buffer, prepared.cell_ranges, state.direct_targets, state.direct_sources,
-         n_direct, TF, Val(hs), Val(wg); ndrange=n_direct * wg)
+         n_direct, TF, Val(hs), Val(wg),
+         Val(FastMultipole._emits_potential(prepared.kernel)); ndrange=n_direct * wg)
     return state
 end
 
