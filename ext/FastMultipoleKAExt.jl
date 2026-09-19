@@ -4086,26 +4086,34 @@ function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
     ws isa FastMultipole.ResidentOperatorWorkspace || throw(ArgumentError(
         "ka_lifecycle_body! requires a ResidentOperatorWorkspace in state.scratch"))
 
+    backend = KA.get_backend(state.output)
     # 1. nearfield (clears state.output, as CUDA's fill+nearfield does)
     ka_launch_nearfield!(state; clear=true)   # shape/workgroup from _nf_config
+    _utick!(:lc_near, backend)
 
     # 2. B2M, then any extra source system the tree carries (before M2M, so the
     #    upward pass picks it up)
     ka_launch_b2m!(state; workgroup=workgroup_b2m)
+    _utick!(:lc_b2m, backend)
     for prepared in extra_tree
         ka_extra_tree_b2m!(state, prepared)
     end
+    isempty(extra_tree) || _utick!(:lc_extra_b2m, backend)
 
     # 3. far field: M2M -> M2L -> L2L, then L2B
     FastMultipole._zero_resident_nonleaf_multipoles!(state)
     for group in ws.m2m_groups
         ka_resident_stage_group_apply!(state.multipoles, state.multipoles, group, ws, :m2m)
     end
+    _utick!(:lc_m2m, backend)
     ka_launch_m2l!(state, ws)
+    _utick!(:lc_m2l, backend)
     for group in ws.l2l_groups
         ka_resident_stage_group_apply!(state.locals, state.locals, group, ws, :l2l)
     end
+    _utick!(:lc_l2l, backend)
     ka_launch_l2b!(state; workgroup=workgroup)
+    _utick!(:lc_l2b, backend)
 
     sync && KA.synchronize(KA.get_backend(state.output))
     return state
@@ -7164,8 +7172,12 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     # the state's body metadata, and the body count changes between calls in a
     # shedding solver. `direct_only=true` here left a stale permutation and
     # scattered the result onto the wrong particles.
+    # per-stage timers (see _KA_UPDATE_TIMERS): `outside` is the host time
+    # since the previous device call ended, i.e. everything the caller did
+    _utick!(:outside, KA.get_backend(cache.state.output))
     ka_update_radix_state!(cache, targets; workgroup, direct_only=direct_arm)
     state = cache.state
+    _utick!(:update_total, KA.get_backend(state.output))
     if !self_induce
         # Sources-only: the resident bodies are targets but not sources, so
         # there is no resident field to build and `extra_tree_sources` are
@@ -7182,12 +7194,15 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     else
         prepared = isempty(extra_tree_sources) ? () :
             Tuple(ka_extra_tree_prepare(state, sys) for sys in extra_tree_sources)
+        isempty(prepared) || _utick!(:extra_prepare, KA.get_backend(state.output))
         ka_lifecycle_body!(state; extra_tree=prepared)
         for p in prepared
             ka_extra_tree_finish!(state, p; workgroup)
         end
+        isempty(prepared) || _utick!(:extra_finish, KA.get_backend(state.output))
     end
     ka_extra_sources_into_output!(state, extra_sources; workgroup)
+    isempty(extra_sources) || _utick!(:extra_sources, KA.get_backend(state.output))
     # SFS is a per-evaluation option, not merely a cache capability: an
     # sfs-armed cache runs no TG/zeta kernels on the (default) sfs=false path.
     # Placed after the lifecycle body and before the U/J finalize, which is
@@ -7205,6 +7220,7 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         state.sfs === nothing && throw(ArgumentError(
             "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
         ka_launch_sfs!(state)
+        _utick!(:sfs, KA.get_backend(state.output))
     end
     ka_finalize_radix_output!(state, targets; derivatives_switches=switches,
         host_output_staging=cache.device_ctx.host_output,
@@ -7214,8 +7230,10 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         host_sfs_staging=cache.device_ctx.host_sfs_staging,
         sfs_target_buffers=FastMultipole._radix_cache_sfs_buffers!(cache, targets),
         device_sfs_buffers=cache.device_ctx.device_sfs_buffers)
+    _utick!(:finalize, KA.get_backend(state.output))
     self_induce &&
         ka_extra_targets_evaluate!(state, extra_targets, extra_target_switches; workgroup)
+    isempty(extra_targets) || _utick!(:extra_targets, KA.get_backend(state.output))
     return cache
 end
 
