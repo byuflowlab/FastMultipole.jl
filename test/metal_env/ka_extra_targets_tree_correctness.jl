@@ -103,6 +103,8 @@ else
         opts = FM.CUDARadixLifecycleOptions(; precision = DTF,
             m2l_strategy = FM.ConcatenatedFixedZM2L(), body_type = FM.Point{FM.Vortex})
         FM.device_backend(::VortexParticles) = DEV_BACKEND
+        extmod = Base.get_extension(FastMultipole, :FastMultipoleKAExt)
+        extmod._KA_SETTING_OVERRIDES[:KA_EXTRA_TARGETS_GRID] = true   # the grid path is opt-in
         xt = targets(nt, DTF)
         mkp() = (p = FM.ProbeSystem(nt, DTF); for i in 1:nt; p.position[i] = SVector{3,DTF}(xt[:, i]); end; p)
         probes_h = mkp(); probes_d = mkp()

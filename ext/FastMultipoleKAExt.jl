@@ -7231,9 +7231,17 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         sfs_target_buffers=FastMultipole._radix_cache_sfs_buffers!(cache, targets),
         device_sfs_buffers=cache.device_ctx.device_sfs_buffers)
     _utick!(:finalize, KA.get_backend(state.output))
+    # Extra targets are summed all-pairs unless :KA_EXTRA_TARGETS_GRID is set.
+    # The grid-carried path (bin, local expansion, near sweep) has a per-call
+    # race: on the NREL 5MW, a check every step from the step-450 checkpoint
+    # returned probe velocities 2-3x the exact sum on a quarter of the steps,
+    # differently on each repeat of the identical call, and the all-pairs
+    # kernel on the same steps was at 2e-4 everywhere (2026-09-19). Until the
+    # race is found the grid path is opt-in; all-pairs was a wash for speed.
     self_induce &&
         ka_extra_targets_evaluate!(state, extra_targets, extra_target_switches; workgroup,
-                                   allpairs_only=direct_arm)
+                                   allpairs_only=direct_arm ||
+                                       !_ka_radix_setting(:KA_EXTRA_TARGETS_GRID, false))
     isempty(extra_targets) || _utick!(:extra_targets, KA.get_backend(state.output))
     return cache
 end
