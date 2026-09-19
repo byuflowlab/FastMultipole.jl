@@ -7030,11 +7030,12 @@ function ka_extra_tree_prepare(state::FastMultipole.DeviceResidentRadixState{TF,
     n_cells = Int(state.counts.n_cells)
     binned, loose = FastMultipole.bin_resident_extra_source(TF, system, state.grid, n_cells)
     orders = state.invariant_cache.basis_info.orders
-    rows = size(FastMultipole.phi_slab(state.multipoles), 1)
+    rows_phi = size(FastMultipole.phi_slab(state.multipoles), 1)
+    rows_chi = LH ? size(FastMultipole.chi_slab(state.multipoles), 1) : rows_phi
     nodes, phi, chi = FastMultipole.resident_extra_multipole_columns(TF, system,
         binned.buffer, binned.cell_ranges, Array(state.cell_centers),
         Array(state.grid.leaf_to_node), orders.P_phi, orders.P_active, n_cells,
-        Val(LH), rows)
+        Val(LH), rows_phi, rows_chi)
     backend = KA.get_backend(state.output)
     up(A) = (d = KA.allocate(backend, eltype(A), size(A)...); copyto!(d, A); d)
     return (; buffer = up(binned.buffer), cell_ranges = up(binned.cell_ranges),
@@ -7044,14 +7045,18 @@ end
 
 # one thread per (row, touched cell): the nodes are distinct, so no atomics
 @kernel function ka_extra_tree_add_multipoles_kernel!(ph, ch, @Const(phi_add), @Const(chi_add),
-        @Const(nodes), nrows, ncols, ::Val{LH}) where LH
+        @Const(nodes), nrows_phi, nrows_chi, nrows, ncols, ::Val{LH}) where LH
     idx = @index(Global)
+    # phi and chi are ragged (phi to P_phi, chi to P_active): stride over the
+    # taller of the two and guard each channel by its own row count
     @inbounds if idx <= nrows * ncols
         row = (idx - 1) % nrows + 1
         col = (idx - 1) ÷ nrows + 1
         node = nodes[col]
-        ph[row, node] += phi_add[row, col]
-        if LH
+        if row <= nrows_phi
+            ph[row, node] += phi_add[row, col]
+        end
+        if LH && row <= nrows_chi
             ch[row, node] += chi_add[row, col]
         end
     end
@@ -7069,13 +7074,15 @@ function ka_extra_tree_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
     ncols == 0 && return state
     ph = FastMultipole.phi_slab(state.multipoles)
     ch = FastMultipole.chi_slab(state.multipoles)
-    nrows = size(prepared.phi, 1)
+    nrows_phi = size(prepared.phi, 1)
+    nrows_chi = LH ? size(prepared.chi, 1) : nrows_phi
+    nrows = max(nrows_phi, nrows_chi)
     backend = KA.get_backend(state.output)
     wg = resolve_workgroup(backend, workgroup)
     kern = _cached_kernel(ka_extra_tree_add_multipoles_kernel!, backend, wg)
     n = nrows * ncols
-    kern(ph, ch, prepared.phi, prepared.chi, prepared.nodes, nrows, ncols, Val(LH);
-         ndrange=cld(n, wg) * wg)
+    kern(ph, ch, prepared.phi, prepared.chi, prepared.nodes, nrows_phi, nrows_chi,
+         nrows, ncols, Val(LH); ndrange=cld(n, wg) * wg)
     return state
 end
 

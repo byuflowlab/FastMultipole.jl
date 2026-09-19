@@ -26,14 +26,34 @@ let n = 40, P = 6
     buffer = zeros(TF, 8, n)
     for i in 1:n; FM.source_system_to_buffer!(buffer, i, sys, i); end
     ranges = reshape([1, n], 2, 1); centers = reshape(TF[0.5, 0.5, 0.5], 3, 1)
-    rows = 2 * FM.harmonic_index(P, P)
-    ph_ref = zeros(TF, rows, 1); ch_ref = zeros(TF, rows, 1)
-    FM._host_b2m_vortex_kernel!(ph_ref, ch_ref, buffer, ranges, centers, [1], P, P, 1)
-    ph = zeros(TF, rows, 1); ch = zeros(TF, rows, 1)
-    FM._resident_extra_b2m_kernel!(ph, ch, sys, buffer, ranges, centers, [1], P, P, 1, Val(true))
+    # ragged, as the real slabs are under Lamb-Helmholtz: P_chi = P_active = P_phi + 1
+    P_chi = P + 1
+    rows_phi = 2 * FM.harmonic_index(P, P)
+    rows_chi = 2 * FM.harmonic_index(P_chi, P_chi)
+    ph_ref = zeros(TF, rows_phi, 1); ch_ref = zeros(TF, rows_chi, 1)
+    FM._host_b2m_vortex_kernel!(ph_ref, ch_ref, buffer, ranges, centers, [1], P, P_chi, 1)
+    ph = zeros(TF, rows_phi, 1); ch = zeros(TF, rows_chi, 1)
+    FM._resident_extra_b2m_kernel!(ph, ch, sys, buffer, ranges, centers, [1], P, P_chi, 1, Val(true))
     tol = 1e-12 * max(maximum(abs, ph_ref), maximum(abs, ch_ref))
     check(maximum(abs.(ph .- ph_ref)) <= tol && maximum(abs.(ch .- ch_ref)) <= tol,
           @sprintf("phi %.1e, chi %.1e", maximum(abs.(ph .- ph_ref)), maximum(abs.(ch .- ch_ref))))
+    # a chi slab sized to P_phi must be rejected, not written past: that
+    # overflow corrupted the heap before the ragged fix
+    short = zeros(TF, rows_phi, 1)
+    threw = try
+        FM._resident_extra_b2m_kernel!(zeros(TF, rows_phi, 1), short, sys, buffer,
+            ranges, centers, [1], P, P_chi, 1, Val(true))
+        false
+    catch err
+        err isa DimensionMismatch
+    end
+    check(threw, "an undersized chi slab raises DimensionMismatch")
+    # the compact device columns must be ragged the same way
+    _, cphi, cchi = FM.resident_extra_multipole_columns(TF, sys, buffer, ranges,
+        centers, [1], P, P_chi, 1, Val(true), rows_phi, rows_chi)
+    check(size(cphi, 1) == rows_phi && size(cchi, 1) == rows_chi &&
+          maximum(abs.(cchi[:, 1] .- ch_ref[:, 1])) <= tol,
+          "device multipole columns are ragged and match")
 end
 
 println("2. filament sources: near-only exact, and the far field carried")

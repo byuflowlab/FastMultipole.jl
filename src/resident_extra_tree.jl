@@ -142,6 +142,14 @@ function _resident_extra_b2m_kernel!(ph::AbstractMatrix{TF}, ch, system, buffer,
         cell_ranges, cell_centers, leaf_to_node, P_phi::Int, P_chi::Int,
         n_cells::Int, ::Val{LH}) where {TF,LH}
     P = max(P_phi, P_chi)
+    # the slabs are ragged: phi is sized to P_phi, chi to P_chi = P_active, and
+    # the scatter below is @inbounds, so check the row counts once per call
+    size(ph, 1) >= (P_phi + 1) * (P_phi + 2) ||
+        throw(DimensionMismatch("phi slab has $(size(ph, 1)) rows, needs $((P_phi + 1) * (P_phi + 2)) for P_phi=$P_phi"))
+    if LH
+        size(ch, 1) >= (P_chi + 1) * (P_chi + 2) ||
+            throw(DimensionMismatch("chi slab has $(size(ch, 1)) rows, needs $((P_chi + 1) * (P_chi + 2)) for P_chi=$P_chi"))
+    end
     coefficients = initialize_expansion(P, TF)
     harmonics = initialize_harmonics(P, TF)
     @inbounds for i_cell in 1:n_cells
@@ -221,7 +229,8 @@ end
 
 """
     resident_extra_multipole_columns(TF, system, buffer, cell_ranges, cell_centers,
-                                     leaf_to_node, P_phi, P_chi, n_cells, Val(LH), rows)
+                                     leaf_to_node, P_phi, P_chi, n_cells, Val(LH),
+                                     rows_phi, rows_chi)
 
 The extra bodies' multipoles as a compact `(nodes, phi, chi)`: one column per
 cell that holds an extra body, and the node each column belongs to. This is
@@ -229,14 +238,15 @@ what a device path uploads, since only a few cells are usually touched.
 """
 function resident_extra_multipole_columns(::Type{TF}, system, buffer, cell_ranges,
         cell_centers, leaf_to_node, P_phi::Int, P_chi::Int, n_cells::Int,
-        ::Val{LH}, rows::Int) where {TF,LH}
+        ::Val{LH}, rows_phi::Int, rows_chi::Int) where {TF,LH}
     touched = [i for i in 1:n_cells if cell_ranges[2, i] > 0]
     column_of = zeros(Int, n_cells)
     for (k, i) in enumerate(touched)
         column_of[i] = k
     end
-    phi = zeros(TF, rows, length(touched))
-    chi = zeros(TF, rows, length(touched))
+    # ragged, like the slabs they are added into: phi to P_phi, chi to P_chi
+    phi = zeros(TF, rows_phi, length(touched))
+    chi = zeros(TF, rows_chi, length(touched))
     # `column_of` stands in for `leaf_to_node`, so the kernel writes compact
     # columns instead of scattering into a full slab
     _resident_extra_b2m_kernel!(phi, chi, system, buffer, cell_ranges, cell_centers,
