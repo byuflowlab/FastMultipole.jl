@@ -9,7 +9,8 @@
 #   3. deeper, the difference from the all-direct reference is the multipole
 #      truncation of the far field and must fall with the expansion order,
 #   4. sources-only (the particles are targets but not sources) must deliver
-#      the extra system's field alone, through the tree, to the same tolerance.
+#      the extra system's field alone, whether it arrives as `extra_sources`
+#      or as `extra_tree_sources`.
 using FastMultipole, Random, Printf, LinearAlgebra, Test
 using FastMultipole.StaticArrays
 const FM = FastMultipole
@@ -148,11 +149,13 @@ else
         # 4. sources-only: the particles contribute nothing as sources, so the
         # whole result is the extra system's field. This is the "body on wake"
         # direction, where the self-induction was evaluated earlier in the step.
+        # `extra_tree_sources` were silently DROPPED here before 2026-09-19 --
+        # the device branch zeroed the output and applied only `extra_sources`.
         so_ref = run((; extra_sources = (ex,), self_induce = false))
         so_new = run((; extra_tree_sources = (ex,), self_induce = false))
         e2 = maximum(abs.(so_new .- so_ref)) / maximum(abs, so_ref)
         check(e2 <= tol,
-              @sprintf("sources-only tree matches sources-only all-direct (%.2e, tol %.0e)", e2, tol))
+              @sprintf("sources-only carries tree sources (%.2e, tol %.0e)", e2, tol))
         # and it must be the extra field alone, not the self-induction again
         check(maximum(abs.(so_ref .- ref)) / maximum(abs, ref) <= tol,
               "sources-only carries the extra field alone")

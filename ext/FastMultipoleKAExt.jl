@@ -4081,34 +4081,17 @@ comparison runs both arms over identical data with no second cache build.
 """
 function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
         workgroup_b2m::Int=128, workgroup::Int=64, sync::Bool=true,
-        extra_tree::Tuple=(), sources_only::Bool=false) where {TF,B,LH}
+        extra_tree::Tuple=()) where {TF,B,LH}
     ws = state.scratch
     ws isa FastMultipole.ResidentOperatorWorkspace || throw(ArgumentError(
         "ka_lifecycle_body! requires a ResidentOperatorWorkspace in state.scratch"))
-    sources_only && isempty(extra_tree) && throw(ArgumentError(
-        "sources_only=true evaluates only `extra_tree`, so at least one " *
-        "prepared extra source system is required"))
 
-    # 1. nearfield (clears state.output, as CUDA's fill+nearfield does).
-    #    `sources_only` leaves the resident bodies out of the source set, so
-    #    the resident near pairs are skipped and only the output is cleared;
-    #    the extra systems' own near pairs still run in ka_extra_tree_finish!.
-    if sources_only
-        fill!(state.output, zero(eltype(state.output)))
-    else
-        ka_launch_nearfield!(state; clear=true)   # shape/workgroup from _nf_config
-    end
+    # 1. nearfield (clears state.output, as CUDA's fill+nearfield does)
+    ka_launch_nearfield!(state; clear=true)   # shape/workgroup from _nf_config
 
     # 2. B2M, then any extra source system the tree carries (before M2M, so the
-    #    upward pass picks it up). Under `sources_only` the resident B2M is
-    #    skipped, and with it the fill! it would have done, so the leaf
-    #    multipoles are cleared here instead.
-    if sources_only
-        fill!(state.multipoles.phi, zero(TF))
-        LH && fill!(state.multipoles.chi, zero(TF))
-    else
-        ka_launch_b2m!(state; workgroup=workgroup_b2m)
-    end
+    #    upward pass picks it up)
+    ka_launch_b2m!(state; workgroup=workgroup_b2m)
     for prepared in extra_tree
         ka_extra_tree_b2m!(state, prepared)
     end
@@ -7184,20 +7167,16 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     ka_update_radix_state!(cache, targets; workgroup, direct_only=direct_arm)
     state = cache.state
     if !self_induce
-        # Sources-only. With tree-carried extra sources this still runs the
-        # whole far-field pipeline, just with the resident bodies contributing
-        # nothing as sources: their multipoles are zeroed instead of built and
-        # the resident near pairs are skipped. That turns what was an
-        # all-pairs `n_filaments * n_particles` sweep into a tree pass.
-        if isempty(extra_tree_sources)
-            fill!(state.output, zero(eltype(state.output)))
-        else
-            prepared = Tuple(ka_extra_tree_prepare(state, sys) for sys in extra_tree_sources)
-            ka_lifecycle_body!(state; extra_tree=prepared, sources_only=true)
-            for p in prepared
-                ka_extra_tree_finish!(state, p; workgroup)
-            end
-        end
+        # Sources-only: the resident bodies are targets but not sources, so
+        # there is no resident field to build and `extra_tree_sources` are
+        # applied directly, which is what the host path does (src/fmm.jl).
+        # Carrying them in the tree instead is possible -- zero the leaf
+        # multipoles, skip the resident near pairs, run the pipeline -- but it
+        # costs a second full far-field pass to save an all-pairs sweep that
+        # measured 0.88 s of a 9.9 s step at four rotors and 1.94 s of 34 s at
+        # sixteen. It lost both times, and by more at the larger size.
+        fill!(state.output, zero(eltype(state.output)))
+        ka_extra_sources_into_output!(state, extra_tree_sources; workgroup)
     elseif direct_arm
         ka_direct_body!(state; workgroup)
     else
