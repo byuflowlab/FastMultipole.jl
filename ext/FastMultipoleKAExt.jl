@@ -7232,7 +7232,8 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         device_sfs_buffers=cache.device_ctx.device_sfs_buffers)
     _utick!(:finalize, KA.get_backend(state.output))
     self_induce &&
-        ka_extra_targets_evaluate!(state, extra_targets, extra_target_switches; workgroup)
+        ka_extra_targets_evaluate!(state, extra_targets, extra_target_switches; workgroup,
+                                   allpairs_only=direct_arm)
     isempty(extra_targets) || _utick!(:extra_targets, KA.get_backend(state.output))
     return cache
 end
@@ -7509,7 +7510,8 @@ end
 end
 
 function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
-        extra_targets::Tuple, switches::Tuple; workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
+        extra_targets::Tuple, switches::Tuple; workgroup=KA_AUTO_WORKGROUP,
+        allpairs_only::Bool=false) where {TF,B,LH}
     isempty(extra_targets) && return state
     n = Int(state.counts.n_bodies)
     n_cells = Int(state.counts.n_cells)
@@ -7533,7 +7535,14 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
         rows = hs ? 13 : 4
         out = KA.allocate(backend, TF, rows, nt); fill!(out, zero(TF))
         if n > 0
-            order_h, tr_h, loose = FastMultipole.bin_resident_extra_targets(xt_h, state.grid, n_cells)
+            # The all-pairs direct arm runs no lifecycle, so the local
+            # expansions and the near-pair list are whatever the previous
+            # call left: every target is then loose. Reading them anyway gave
+            # the 5MW spot check reference errors of 30 to 3500 at random
+            # steps (2026-09-19) while the FMM arm itself was at 1e-5.
+            order_h, tr_h, loose = allpairs_only ?
+                (Int[], zeros(Int, 2, n_cells), collect(1:nt)) :
+                FastMultipole.bin_resident_extra_targets(xt_h, state.grid, n_cells)
             nb = length(order_h)
             if nb > 0
                 xt = _ka_upload(backend, xt_h)

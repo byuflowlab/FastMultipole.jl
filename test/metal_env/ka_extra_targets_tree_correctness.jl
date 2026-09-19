@@ -118,6 +118,25 @@ else
         e = relerr(gd, gh)
         tol = DTF === Float32 ? 3e-4 : 1e-10
         check(e <= tol, @sprintf("device tree targets match host (%.2e, tol %.0e)", e, tol))
+
+        # 5. the all-pairs direct arm runs no lifecycle, so its probes must not
+        # read local expansions or near lists (they are stale there); they are
+        # summed all-pairs and must match the exact host sum to roundoff
+        sysa = mk(); probes_a = mkp()
+        ca = RadixFMMCache(sysa; expansion_order = P, ell = ell, window_classes = 64,
+                           options = opts, hessian = true, device = true)
+        FM.set_radix_setting!(:RADIX_DIRECT_ARM, true)
+        try
+            FM.fmm!((sysa, probes_a), (sysa,), ca; scalar_potential = false, gradient = true, hessian = (true, false))
+        finally
+            FM.set_radix_setting!(:RADIX_DIRECT_ARM, false)
+        end
+        ga = reduce(hcat, probes_a.gradient)
+        sysr = mk(); probes_r = mkp()
+        FM.direct!((probes_r,), (sysr,); gradient = true)      # generic exact sum, the system's own kernel
+        ea = relerr(ga, reduce(hcat, probes_r.gradient))
+        tol_a = 5e-4                                            # the partitioned kernel's regularization tail
+        check(ea <= tol_a, @sprintf("direct-arm probes are the all-pairs sum (%.2e, tol %.0e)", ea, tol_a))
     end
 end
 
