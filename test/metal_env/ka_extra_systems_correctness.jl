@@ -127,6 +127,13 @@ const CASES_SHORT = [
 const CASES = haskey(ENV, "FM_FULL_SWEEP") ? CASES_FULL : CASES_SHORT
 const TOL_HOST = 2e-3   # Float32 host lifecycle vs Float64 references
 const TOL_DEV  = 3e-4   # device vs host, both Float32 (ka_device_cache_correctness)
+# Probes are evaluated through the grid since 2026-09-19 (their cell's local
+# expansion plus the near cells directly), so against the exact sum they carry
+# the lifecycle's own truncation: at P=4, ell=3, n=256 the particles' own
+# error is 1.3e-3 and the probes' 1.3e-4 to 3.2e-3 depending on where they
+# fall. The all-pairs probes this tolerance was set for were exact.
+# ka_extra_targets_tree_correctness sweeps P and checks the error falls.
+const TOL_PROBE = 5e-3
 
 npass = Ref(0); nfail = Ref(0)
 for (ci, (P, ell, n, wc, nprobe, nseg)) in pairs(CASES)
@@ -202,7 +209,7 @@ for (ci, (P, ell, n, wc, nprobe, nseg)) in pairs(CASES)
     e_only_h = relerr(sys_h.gradient_stretching[1:3, :], seg_on_particles_ref)
     e_only_d = relerr(sys_d.gradient_stretching[1:3, :], sys_h.gradient_stretching[1:3, :])
 
-    ok = e_probe_h < TOL_HOST && e_segp_h < TOL_HOST && e_segs_h < TOL_HOST &&
+    ok = e_probe_h < TOL_PROBE && e_segp_h < TOL_HOST && e_segs_h < TOL_HOST &&
          e_only_h < TOL_HOST && e_only_d < TOL_DEV &&
          e_probe_d < TOL_DEV && e_self_d < TOL_DEV && e_segp_d < TOL_DEV && e_segs_d < TOL_DEV
     ok ? (npass[] += 1) : (nfail[] += 1)

@@ -218,6 +218,146 @@ function _radix_scatter_extra_target!(::Type{TF}, system, switch, out::AbstractM
 end
 
 """
+    bin_resident_extra_targets(xt, grid, n_cells) -> (order, cell_ranges, loose)
+
+Bin target positions `xt` (3 x n) onto the resident grid's OCCUPIED cells.
+`order` lists the binned targets sorted by cell, `cell_ranges[:, c]` is
+`(first, count)` into `order`, and `loose` holds the targets that fall outside
+the box or in a cell no body occupies: those have no local expansion to read
+and are summed all-pairs instead.
+"""
+function bin_resident_extra_targets(xt::AbstractMatrix, grid, n_cells::Integer)
+    n = size(xt, 2)
+    ell = grid.ell
+    cell_keys = Array(grid.cell_keys)      # a device grid keeps its keys on the device
+    nk = min(Int(n_cells), length(cell_keys))
+    side = 1 << ell
+    L = 2 * Float64(grid.h0)
+    delta = L / side
+    x0 = (Float64(grid.x_min[1]), Float64(grid.x_min[2]), Float64(grid.x_min[3]))
+    cell_of = zeros(Int, n)
+    loose = Int[]
+    @inbounds for i in 1:n
+        x = Float64(xt[1, i]); y = Float64(xt[2, i]); z = Float64(xt[3, i])
+        # outside the box there is no cell whose expansion converges at the
+        # point, so it is loose rather than clamped to an edge cell
+        if !(x0[1] <= x < x0[1] + L && x0[2] <= y < x0[2] + L && x0[3] <= z < x0[3] + L)
+            push!(loose, i); continue
+        end
+        ix = clamp(floor(Int, (x - x0[1]) / delta), 0, side - 1)
+        iy = clamp(floor(Int, (y - x0[2]) / delta), 0, side - 1)
+        iz = clamp(floor(Int, (z - x0[3]) / delta), 0, side - 1)
+        key = morton_key(SVector{3,Int}(ix, iy, iz), ell)
+        j = searchsortedfirst(view(cell_keys, 1:nk), key)
+        if j <= nk && cell_keys[j] == key
+            cell_of[i] = j
+        else
+            push!(loose, i)
+        end
+    end
+    counts = zeros(Int, n_cells)
+    @inbounds for i in 1:n
+        c = cell_of[i]; c == 0 || (counts[c] += 1)
+    end
+    cell_ranges = zeros(Int, 2, n_cells)
+    cursor = 1
+    @inbounds for c in 1:n_cells
+        cell_ranges[1, c] = cursor; cell_ranges[2, c] = counts[c]; cursor += counts[c]
+    end
+    order = zeros(Int, cursor - 1)
+    fill!(counts, 0)
+    @inbounds for i in 1:n
+        c = cell_of[i]; c == 0 && continue
+        order[cell_ranges[1, c] + counts[c]] = i; counts[c] += 1
+    end
+    return order, cell_ranges, loose
+end
+
+"""
+    _host_extra_targets_tree!(out, state, xt, Val(HS))
+
+Extra targets evaluated the way the resident bodies are: each binned target
+reads its cell's local expansion and sums its cell's near source cells
+directly; targets the grid cannot place are summed all-pairs. Replaces an
+all-pairs sweep over every body, which at sixteen rotors was a third of the
+step-start pass. ACCUMULATES into `out`.
+"""
+function _host_extra_targets_tree!(out::AbstractMatrix{TF},
+        state::DeviceResidentRadixState{TF,B,LH}, xt::AbstractMatrix,
+        ::Val{HS}) where {TF,B,LH,HS}
+    n = Int(state.counts.n_bodies)
+    n_cells = Int(state.counts.n_cells)
+    kernel = state.options.direct_kernel
+    order, t_ranges, loose = bin_resident_extra_targets(xt, state.grid, n_cells)
+    orders = state.invariant_cache.basis_info.orders
+    ph = phi_slab(state.locals); ch = chi_slab(state.locals)
+    leaf_to_node = state.grid.leaf_to_node
+    centers = state.cell_centers
+    # far field: the cell's local expansion at the target (the L2B step, at a
+    # point that is not a body)
+    @inbounds for c in 1:n_cells
+        cnt = t_ranges[2, c]; cnt == 0 && continue
+        node = leaf_to_node[c]
+        cx = centers[1, c]; cy = centers[2, c]; cz = centers[3, c]
+        for k in t_ranges[1, c]:(t_ranges[1, c] + cnt - 1)
+            i = order[k]
+            dx = TF(xt[1, i]) - cx; dy = TF(xt[2, i]) - cy; dz = TF(xt[3, i]) - cz
+            if HS
+                vals = _resident_local_eval_flat_hessian(ph, ch, node, dx, dy, dz,
+                    orders.P_phi, orders.P_active, Val(LH))
+                for r in 1:13
+                    out[r, i] += vals[r]
+                end
+            else
+                sp, gx, gy, gz = _resident_local_eval_flat(ph, ch, node, dx, dy, dz,
+                    orders.P_phi, orders.P_active, Val(LH))
+                out[1, i] += sp; out[2, i] += gx; out[3, i] += gy; out[4, i] += gz
+            end
+        end
+    end
+    # near field: the resident near pairs, the target cell's targets against
+    # the source cell's bodies
+    bodies = state.source_bodies; b_ranges = state.cell_ranges
+    dt = state.direct_targets; ds = state.direct_sources
+    ep = _emits_potential(kernel)
+    ghv = Val(:shipped)
+    @inbounds for p in 1:Int(state.counts.n_direct)
+        c = Int(dt[p]); s = Int(ds[p])
+        tcnt = t_ranges[2, c]; tcnt == 0 && continue
+        sfirst = Int(b_ranges[1, s]); scnt = Int(b_ranges[2, s]); scnt == 0 && continue
+        for k in t_ranges[1, c]:(t_ranges[1, c] + tcnt - 1)
+            i = order[k]
+            xi = TF(xt[1, i]); yi = TF(xt[2, i]); zi = TF(xt[3, i])
+            for j in sfirst:(sfirst + scnt - 1)
+                dx = xi - bodies[1, j]; dy = yi - bodies[2, j]; dz = zi - bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                r2 == zero(TF) && continue
+                invr = inv(sqrt(r2))
+                if HS
+                    u, gx, gy, gz, h1, h2, h3, h4, h5, h6, h7, h8, h9 =
+                        _direct_pair_ugh(kernel, dx, dy, dz, r2, invr, bodies, j, ghv)
+                    ep && (out[1, i] += u)
+                    out[2, i] += gx; out[3, i] += gy; out[4, i] += gz
+                    out[5, i] += h1; out[6, i] += h2; out[7, i] += h3
+                    out[8, i] += h4; out[9, i] += h5; out[10, i] += h6
+                    out[11, i] += h7; out[12, i] += h8; out[13, i] += h9
+                else
+                    u, gx, gy, gz = _direct_pair_ug(kernel, dx, dy, dz, r2, invr, bodies, j, ghv)
+                    ep && (out[1, i] += u)
+                    out[2, i] += gx; out[3, i] += gy; out[4, i] += gz
+                end
+            end
+        end
+    end
+    if !isempty(loose)
+        ol = zeros(TF, size(out, 1), length(loose))
+        _host_extra_targets_from_main!(ol, kernel, xt[:, loose], bodies, n, Val(HS))
+        out[:, loose] .+= ol
+    end
+    return out
+end
+
+"""
     _radix_extra_targets_evaluate!(state, extra_targets, switches)
 
 Host cache: evaluate every extra target system from the resident bodies, then
@@ -234,8 +374,9 @@ function _radix_extra_targets_evaluate!(state::DeviceResidentRadixState{TF},
             "was built with hessian=false"))
         xt = _radix_extra_target_positions(TF, system)
         out = zeros(TF, HS ? 13 : 4, size(xt, 2))
-        _host_extra_targets_from_main!(out, state.options.direct_kernel, xt,
-            state.source_bodies, n, Val(HS))
+        if n > 0
+            _host_extra_targets_tree!(out, state, xt, Val(HS))
+        end
         _radix_scatter_extra_target!(TF, system, switch, out)
     end
     return state

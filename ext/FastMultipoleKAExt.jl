@@ -7389,14 +7389,121 @@ end
 Evaluate every extra target system from the resident bodies on the device,
 then scatter through the target's switch on the host.
 """
-function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixState{TF},
-        extra_targets::Tuple, switches::Tuple; workgroup=KA_AUTO_WORKGROUP) where TF
+# Extra targets through the resident grid (host mirror: `_host_extra_targets_tree!`
+# in src/radix_extra_systems.jl). Binning is on the host -- a few hundred to a
+# few thousand probes -- and two kernels run on the device: one reads each
+# binned target's cell local expansion, the other sweeps the resident near
+# pairs. Targets the grid cannot place go through the all-pairs kernel above.
+
+# one thread per binned target: no two threads share a target, so no atomics
+@kernel function ka_extra_targets_far_kernel!(out, @Const(xt), @Const(order), @Const(cellk), nb,
+        @Const(cell_centers), @Const(leaf_to_node), @Const(local_phi), @Const(local_chi),
+        P_phi, P_active, ::Val{LHV}, ::Val{HS}) where {LHV,HS}
+    k = @index(Global)
+    @inbounds if k <= nb
+        i = order[k]
+        cell = cellk[k]
+        node = leaf_to_node[cell]
+        dx = xt[1, i] - cell_centers[1, cell]
+        dy = xt[2, i] - cell_centers[2, cell]
+        dz = xt[3, i] - cell_centers[3, cell]
+        if HS
+            vals = ka_local_eval_flat(local_phi, local_chi, node, dx, dy, dz,
+                P_phi, P_active, Val(LHV), Val(true))
+            Base.Cartesian.@nexprs 13 r -> (out[r, i] += vals[r])
+        else
+            sp, gx, gy, gz = ka_local_eval_flat(local_phi, local_chi, node, dx, dy, dz,
+                P_phi, P_active, Val(LHV), Val(false))
+            out[1, i] += sp
+            out[2, i] += gx
+            out[3, i] += gy
+            out[4, i] += gz
+        end
+    end
+end
+
+# one workgroup per near cell pair, threads striding over the target cell's
+# binned targets; a target is written by several pairs, hence the atomics
+@kernel function ka_extra_targets_near_kernel!(kernel, out, @Const(xt), @Const(order),
+        @Const(tranges), @Const(bodies), @Const(cell_ranges), @Const(direct_targets),
+        @Const(direct_sources), n_direct, ::Type{T}, ::Val{HS}, ::Val{WG}, ::Val{EP}) where {T,HS,WG,EP}
+    tid = @index(Local)
+    pair_i = @index(Group)
+    ghv = Val(:shipped)
+    @inbounds if pair_i <= n_direct
+        c = direct_targets[pair_i]
+        s = direct_sources[pair_i]
+        tcnt = tranges[2, c]
+        if tcnt > 0
+            sfirst = cell_ranges[1, s]
+            scnt = cell_ranges[2, s]
+            k = tranges[1, c] + tid - 1
+            while k <= tranges[1, c] + tcnt - 1
+                i = order[k]
+                xi = xt[1, i]; yi = xt[2, i]; zi = xt[3, i]
+                u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
+                h1 = zero(T); h2 = zero(T); h3 = zero(T)
+                h4 = zero(T); h5 = zero(T); h6 = zero(T)
+                h7 = zero(T); h8 = zero(T); h9 = zero(T)
+                for j in sfirst:(sfirst + scnt - 1)
+                    dx = xi - bodies[1, j]
+                    dy = yi - bodies[2, j]
+                    dz = zi - bodies[3, j]
+                    r2 = dx * dx + dy * dy + dz * dz
+                    if r2 > zero(r2)
+                        invr = inv(sqrt(r2))
+                        if HS
+                            du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                                FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
+                                    bodies, j, ghv)
+                            u += du; gx += dgx; gy += dgy; gz += dgz
+                            h1 += dh1; h2 += dh2; h3 += dh3
+                            h4 += dh4; h5 += dh5; h6 += dh6
+                            h7 += dh7; h8 += dh8; h9 += dh9
+                        else
+                            du, dgx, dgy, dgz = FastMultipole._direct_pair_ug(kernel,
+                                dx, dy, dz, r2, invr, bodies, j, ghv)
+                            u += du; gx += dgx; gy += dgy; gz += dgz
+                        end
+                    end
+                end
+                if EP
+                    KA.@atomic out[1, i] += u
+                end
+                KA.@atomic out[2, i] += gx
+                KA.@atomic out[3, i] += gy
+                KA.@atomic out[4, i] += gz
+                if HS
+                    KA.@atomic out[5, i] += h1
+                    KA.@atomic out[6, i] += h2
+                    KA.@atomic out[7, i] += h3
+                    KA.@atomic out[8, i] += h4
+                    KA.@atomic out[9, i] += h5
+                    KA.@atomic out[10, i] += h6
+                    KA.@atomic out[11, i] += h7
+                    KA.@atomic out[12, i] += h8
+                    KA.@atomic out[13, i] += h9
+                end
+                k += WG
+            end
+        end
+    end
+end
+
+function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        extra_targets::Tuple, switches::Tuple; workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
     isempty(extra_targets) && return state
-    n = state.counts.n_bodies
+    n = Int(state.counts.n_bodies)
+    n_cells = Int(state.counts.n_cells)
     backend = KA.get_backend(state.output)
     wg = resolve_workgroup(backend, workgroup)
     dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF, 0)
-    kern = _cached_kernel(ka_extra_targets_from_main_kernel!, backend, wg)
+    ep = FastMultipole._emits_potential(state.options.direct_kernel)
+    orders = state.invariant_cache.basis_info.orders
+    allpairs = _cached_kernel(ka_extra_targets_from_main_kernel!, backend, wg)
+    far = _cached_kernel(ka_extra_targets_far_kernel!, backend, wg)
+    near = _cached_kernel(ka_extra_targets_near_kernel!, backend, wg)
+    up(A) = (d = KA.allocate(backend, eltype(A), size(A)...); copyto!(d, A); d)
     for (system, switch) in zip(extra_targets, switches)
         hs = !isempty(FastMultipole.hessian_range(switch))
         hs && size(state.output, 1) < 13 && throw(ArgumentError(
@@ -7405,20 +7512,45 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
         xt_h = FastMultipole._radix_extra_target_positions(TF, system)
         nt = size(xt_h, 2)
         nt == 0 && continue
-        xt = _ka_upload(backend, xt_h)
         rows = hs ? 13 : 4
+        out = KA.allocate(backend, TF, rows, nt); fill!(out, zero(TF))
         if n > 0
-            # enough (target, chunk) threads to fill the device: ~64k, chunks of
-            # at least 256 bodies so the per-thread loop still amortizes its setup
-            nchunk = max(1, min(cld(n, 256), cld(65_536, nt)))
-            chunk = cld(n, nchunk)
-            part = KA.allocate(backend, TF, rows, nt, nchunk)
-            kern(dkernel, part, xt, nt, state.source_bodies, n, chunk, TF, Val(hs);
-                 ndrange=(cld(nt, wg) * wg, nchunk))
-            KA.synchronize(backend)
-            out = nchunk == 1 ? reshape(part, rows, nt) : dropdims(sum(part; dims=3); dims=3)
-        else
-            out = KA.allocate(backend, TF, rows, nt); fill!(out, zero(TF))
+            order_h, tr_h, loose = FastMultipole.bin_resident_extra_targets(xt_h, state.grid, n_cells)
+            nb = length(order_h)
+            if nb > 0
+                xt = _ka_upload(backend, xt_h)
+                cellk_h = zeros(Int32, nb)
+                for c in 1:n_cells, k in tr_h[1, c]:(tr_h[1, c] + tr_h[2, c] - 1)
+                    cellk_h[k] = c
+                end
+                order = up(Int32.(order_h))
+                cellk = up(cellk_h)
+                tranges = up(Int32.(tr_h))
+                far(out, xt, order, cellk, nb, state.cell_centers, state.grid.leaf_to_node,
+                    state.locals.phi, state.locals.chi, orders.P_phi, orders.P_active,
+                    Val(LH), Val(hs); ndrange=cld(nb, wg) * wg)
+                nd = Int(state.counts.n_direct)
+                nd > 0 && near(dkernel, out, xt, order, tranges, state.source_bodies,
+                    state.cell_ranges, state.direct_targets, state.direct_sources, nd,
+                    TF, Val(hs), Val(wg), Val(ep); ndrange=nd * wg)
+            end
+            if !isempty(loose)
+                # no cell to read: all-pairs, as before, over the loose subset
+                nl = length(loose)
+                xl = _ka_upload(backend, xt_h[:, loose])
+                nchunk = max(1, min(cld(n, 256), cld(65_536, nl)))
+                chunk = cld(n, nchunk)
+                part = KA.allocate(backend, TF, rows, nl, nchunk)
+                allpairs(dkernel, part, xl, nl, state.source_bodies, n, chunk, TF, Val(hs);
+                         ndrange=(cld(nl, wg) * wg, nchunk))
+                KA.synchronize(backend)
+                outl = nchunk == 1 ? reshape(part, rows, nl) : dropdims(sum(part; dims=3); dims=3)
+                KA.synchronize(backend)
+                out_h = Array(out)
+                out_h[:, loose] .+= Array(outl)
+                FastMultipole._radix_scatter_extra_target!(TF, system, switch, out_h)
+                continue
+            end
         end
         KA.synchronize(backend)
         FastMultipole._radix_scatter_extra_target!(TF, system, switch, Array(out))
