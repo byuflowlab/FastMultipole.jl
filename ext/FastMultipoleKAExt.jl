@@ -7520,6 +7520,7 @@ end
 # The last checked call's device output and its all-pairs reference, for a
 # caller to compare against what it received (race bisection).
 const _KA_LAST_EXTRA_CHECK = Ref{Any}(nothing)
+const _KA_LAST_EXTRA_BINNING = Ref{Any}(nothing)
 
 # Host re-evaluation of the grid extra-target path from device inputs: the far
 # part from the local expansions, the near part over the direct pair list.
@@ -7652,6 +7653,8 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
                 (Int[], zeros(Int, 2, n_cells), collect(1:nt)) :
                 FastMultipole.bin_resident_extra_targets(xt_h, state.grid, n_cells)
             nb = length(order_h)
+            # which branch this call takes, for the caller's seam comparison
+            _KA_LAST_EXTRA_BINNING[] = (nt = nt, nb = nb, nloose = length(loose), allpairs_only = allpairs_only)
             if nb > 0
                 # :KA_EXTRA_TARGETS_SYNC synchronizes after every upload and
                 # launch here (a bisection switch for the open per-call race)
@@ -7690,7 +7693,17 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
                 xl = _ka_upload(backend, xt_h[:, loose])
                 nchunk = max(1, min(cld(n, 256), cld(65_536, nl)))
                 chunk = cld(n, nchunk)
+                # The kernel writes part[:, i, c] only for chunks that hold a
+                # body. With nchunk chosen first and chunk rounded up, the last
+                # chunk can be EMPTY ((nchunk-1)*chunk >= n), and its slab of
+                # the uninitialized buffer was summed in: garbage from the pool,
+                # different on every call, only for target counts whose chunk
+                # arithmetic leaves that gap (53-69 loose probes at 326k
+                # particles did; 180 did not). That was the "race" of
+                # 2026-09-19. Size the chunk count from the chunk, and zero.
+                nchunk = cld(n, chunk)
                 part = KA.allocate(backend, TF, rows, nl, nchunk)
+                fill!(part, zero(TF))
                 allpairs(dkernel, part, xl, nl, state.source_bodies, n, chunk, TF, Val(hs);
                          ndrange=(cld(nl, wg) * wg, nchunk))
                 KA.synchronize(backend)
