@@ -7358,6 +7358,30 @@ function _ka_launch_extra_source!(backend, wg, out, xt, nt::Int, system, ::Type{
 end
 
 """
+    ka_points_from_extra_source(backend, xt, system, TF; hessian=false, workgroup) -> Matrix
+
+Velocity of an extra source system at arbitrary points `xt` (3 x n, host),
+summed all-pairs on the device with the system's own direct kernel; returns
+a host `(4 or 13) x n` matrix in the radix output layout (row 1 potential,
+rows 2:4 velocity). Independent of any resident cache: a device port of a
+host all-pairs loop, for callers whose source count times point count has
+outgrown the host (the wake ring rows onto every body's control points are
+O(bodies^2) and were 17% of a step at sixty-four rotors).
+"""
+function ka_points_from_extra_source(backend, xt_h::AbstractMatrix, system, ::Type{TF};
+        hessian::Bool=false, workgroup=KA_AUTO_WORKGROUP) where TF
+    nt = size(xt_h, 2)
+    rows = hessian ? 13 : 4
+    out = KA.allocate(backend, TF, rows, nt); fill!(out, zero(TF))
+    nt == 0 && return Array(out)
+    wg = resolve_workgroup(backend, workgroup)
+    xt = _ka_upload(backend, TF.(xt_h))
+    _ka_launch_extra_source!(backend, wg, out, xt, nt, system, TF, hessian)
+    KA.synchronize(backend)
+    return Array(out)
+end
+
+"""
     ka_extra_sources_into_output!(state, extra_sources; workgroup)
 
 Apply every extra source system to the resident bodies, accumulating into
