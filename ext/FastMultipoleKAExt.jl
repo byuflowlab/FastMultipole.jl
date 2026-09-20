@@ -5861,15 +5861,24 @@ function ka_nearfield_subsort!(ctx, cache::FastMultipole.RadixFMMCache, n::Int,
     (sub > 0 && n > 0 && n_cells > 0) || return nothing
     grid = ctx.grid
     backend = KA.get_backend(grid.perm)
+    if _KA_TICK_TRACE[]
+        # the largest cell, so a trace of a stall here says whether the
+        # per-cell sort (bounded by KA_SUBSORT_CAPACITY) is the stage at fault
+        cnt_max = maximum(Array(view(grid.cell_ranges, 2, 1:n_cells)))
+        println("subsort: n=$n cells=$n_cells sub=$sub max cell count=$cnt_max"); flush(stdout)
+    end
     kk = _cached_kernel(ka_subsort_keys_kernel!, backend, 128)
     kk(ctx.subsort_keys, ctx.positions, grid.perm, cache.x_min, cache.h0,
        cache.ell, sub, n; ndrange=n)
+    _utick!(:subsort_keys, backend)
     n_groups = min(n_cells, 8192)
     sk = _cached_kernel(ka_subsort_cell_sort_kernel!, backend, workgroup)
     sk(grid.perm, ctx.subsort_keys, grid.cell_ranges, n_cells, n_groups,
        eltype(grid.perm), Val(KA_SUBSORT_CAPACITY), Val(workgroup);
        ndrange=n_groups * workgroup)
+    _utick!(:subsort_cells, backend)
     ka_fill_invperm!(grid.invperm, view(grid.perm, 1:n))
+    _utick!(:subsort_invperm, backend)
     return nothing
 end
 
@@ -6529,13 +6538,28 @@ _ka_radix_setting(name::Symbol, default) =
 # `nothing` (the default) makes each tick a no-op.
 const _KA_UPDATE_TIMERS = Ref{Any}(nothing)
 const _KA_UPDATE_T0 = Ref{Float64}(0.0)
+# FM_SLOW_STAGE=<seconds>: with the timers armed, a stage that takes longer
+# than this is printed as it completes, so a runaway stage in a run that
+# never reaches its summary is still named in the log.
+# (set from the environment in `__init__`, not here: a top-level read is
+# evaluated when the extension precompiles and would bake that process's
+# environment into the image)
+const _KA_SLOW_STAGE = Ref{Float64}(Inf)
 @inline function _utick!(name::Symbol, backend)
     d = _KA_UPDATE_TIMERS[]
     d === nothing && return nothing
     KA.synchronize(backend)
-    t = time(); push!(get!(d, name, Float64[]), (t - _KA_UPDATE_T0[]) * 1e3); _KA_UPDATE_T0[] = t
+    t = time(); dt = t - _KA_UPDATE_T0[]
+    push!(get!(d, name, Float64[]), dt * 1e3); _KA_UPDATE_T0[] = t
+    if dt > _KA_SLOW_STAGE[]
+        println("SLOW device stage $name: $(round(dt; digits=1)) s"); flush(stdout)
+    end
+    # FM_TICK_TRACE=1: every tick, so the stage a run never returns from is
+    # the one after the last line printed
+    _KA_TICK_TRACE[] && (println("tick $name $(round(dt * 1e3; digits=1)) ms"); flush(stdout))
     return nothing
 end
+const _KA_TICK_TRACE = Ref{Bool}(false)
 
 
 function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, systems::Tuple;
@@ -8756,6 +8780,8 @@ _ka_radix_device_step_hook(cache, targets, switches; sfs::Bool=false,
         extra_target_switches, extra_sources, extra_tree_sources, self_induce)
 
 function __init__()
+    _KA_SLOW_STAGE[] = parse(Float64, get(ENV, "FM_SLOW_STAGE", "Inf"))
+    _KA_TICK_TRACE[] = get(ENV, "FM_TICK_TRACE", "0") == "1"
     FastMultipole.register_radix_device_backend!("KernelAbstractions",
         _ka_radix_device_build_hook, _ka_radix_device_step_hook)
     return nothing
