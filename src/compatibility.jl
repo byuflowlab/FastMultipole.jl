@@ -86,6 +86,17 @@ function data_per_body(system)
     throw("data_per_body not overloaded for type $(typeof(system))")
 end
 
+"""
+    source_revision(system::{UserDefinedSystem})
+
+A value that changes whenever the system's bodies change, or `nothing` (the
+default). A device radix cache reuses the binned bodies and multipole columns
+of an extra tree source across calls while its revision and the resident grid's
+occupancy epoch are both unchanged -- the RK3 stages of a solver whose bodies
+are frozen over the step. `nothing` disables the reuse for that system.
+"""
+source_revision(system) = nothing
+
 #--- getters ---#
 
 """

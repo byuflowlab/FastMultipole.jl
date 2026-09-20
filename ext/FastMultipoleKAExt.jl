@@ -6619,6 +6619,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         end
     _utick!(:occ_check, backend)
         if occ_changed
+            ctx.epoch_id[] += 1
             if track_epoch
                 copyto!(ctx.epoch_cell_keys, 1, grid.cell_keys, 1, n_cells)
                 ctx.epoch_prev_n[] = n
@@ -6965,6 +6966,11 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         epoch_prev_n=Ref(0),
         epoch_prev_n_cells=Ref(0),
         epoch_have=Ref(false),
+        epoch_id=Ref(0),                 # bumps whenever the occupied-cell set changes
+        # extra tree sources prepared on the current epoch, by objectid (see
+        # `_ka_extra_tree_prepared!`)
+        extra_tree_cache=Dict{UInt,Any}(),
+        extra_tree_hits=Ref(0), extra_tree_misses=Ref(0),   # reuse accounting, for profiles
         m2m_parent_routes=_z(Int, n_edges_capacity),
         m2m_child_routes=_z(Int, n_edges_capacity),
         l2l_parent_routes=_z(Int, n_edges_capacity),
@@ -7155,6 +7161,29 @@ function ka_extra_tree_near!(state::FastMultipole.DeviceResidentRadixState{TF},
     return state
 end
 
+# The prepared form of an extra tree source is a pure function of its bodies
+# and of the resident grid's occupied-cell set (binning, cell centers, leaf to
+# node map). While the source reports the same `source_revision` and the
+# occupancy epoch has not moved, the previous call's arrays are reused: the
+# RK3 stages of a solver freeze the bodies over the step, and preparing them
+# on the host every stage measured 16% of a sixty-four-rotor step. A source
+# with revision `nothing` is prepared every call.
+function _ka_extra_tree_prepared!(cache::FastMultipole.RadixFMMCache, sys)
+    rev = FastMultipole.source_revision(sys)
+    rev === nothing && return ka_extra_tree_prepare(cache.state, sys)
+    ctx = cache.device_ctx
+    key = objectid(sys)
+    hit = get(ctx.extra_tree_cache, key, nothing)
+    if hit !== nothing && hit.revision == rev && hit.epoch == ctx.epoch_id[]
+        ctx.extra_tree_hits[] += 1
+        return hit.prepared
+    end
+    ctx.extra_tree_misses[] += 1
+    prepared = ka_extra_tree_prepare(cache.state, sys)
+    ctx.extra_tree_cache[key] = (; revision = rev, epoch = ctx.epoch_id[], prepared)
+    return prepared
+end
+
 function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         targets::Tuple, switches::Tuple; sfs::Bool=false,
         workgroup=KA_AUTO_WORKGROUP, extra_targets::Tuple=(),
@@ -7193,7 +7222,7 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         ka_direct_body!(state; workgroup)
     else
         prepared = isempty(extra_tree_sources) ? () :
-            Tuple(ka_extra_tree_prepare(state, sys) for sys in extra_tree_sources)
+            Tuple(_ka_extra_tree_prepared!(cache, sys) for sys in extra_tree_sources)
         isempty(prepared) || _utick!(:extra_prepare, KA.get_backend(state.output))
         ka_lifecycle_body!(state; extra_tree=prepared)
         for p in prepared
