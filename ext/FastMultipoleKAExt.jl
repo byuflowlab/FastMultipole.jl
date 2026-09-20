@@ -7517,6 +7517,10 @@ end
     end
 end
 
+# The last checked call's device output and its all-pairs reference, for a
+# caller to compare against what it received (race bisection).
+const _KA_LAST_EXTRA_CHECK = Ref{Any}(nothing)
+
 # Host re-evaluation of the grid extra-target path from device inputs: the far
 # part from the local expansions, the near part over the direct pair list.
 function _ka_extra_targets_host_check(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
@@ -7594,6 +7598,7 @@ function _ka_extra_targets_host_check(state::FastMultipole.DeviceResidentRadixSt
         d = sqrt(sum((host[r, i] - allp[r, i])^2 for r in 2:4)) / nrm
         d > wa && (wa = d)
     end
+    _KA_LAST_EXTRA_CHECK[] = (out = copy(out_dev), allpairs = allp, n_bodies = Int(state.counts.n_bodies))
     if nbad_cells > 0 || wa > 1e-3
         println("    extra-target binning check: $nbad_cells of $nb binned targets sit in a cell whose bodies are not in that cell's box",
                 " ($example); far+near vs all-pairs over the packed bodies $(round(wa; sigdigits=3));",
