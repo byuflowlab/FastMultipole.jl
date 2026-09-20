@@ -375,7 +375,20 @@ function _radix_extra_targets_evaluate!(state::DeviceResidentRadixState{TF},
         xt = _radix_extra_target_positions(TF, system)
         out = zeros(TF, HS ? 13 : 4, size(xt, 2))
         if n > 0
-            _host_extra_targets_tree!(out, state, xt, Val(HS))
+            # the same default as the device step: all-pairs unless
+            # :KA_EXTRA_TARGETS_GRID opts the probes into the grid path. The
+            # host went through the grid unconditionally after fd15433 while
+            # the device was reverted to all-pairs (d5bcb93), so the two arms
+            # of a device gate differed by the grid's truncation (~1e-6 on
+            # the coupled-rotor gate) and the extra-systems Metal suite
+            # failed on the host arm.
+            r = _radix_setting_ref(:KA_EXTRA_TARGETS_GRID)
+            if r !== nothing && r[]
+                _host_extra_targets_tree!(out, state, xt, Val(HS))
+            else
+                _host_extra_targets_from_main!(out, state.options.direct_kernel, xt,
+                    state.source_bodies, n, Val(HS))
+            end
         end
         _radix_scatter_extra_target!(TF, system, switch, out)
     end
