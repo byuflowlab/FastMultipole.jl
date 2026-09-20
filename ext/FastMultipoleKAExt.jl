@@ -7561,6 +7561,45 @@ function _ka_extra_targets_host_check(state::FastMultipole.DeviceResidentRadixSt
         d = sqrt(sum((out_dev[r, i] - host[r, i])^2 for r in 2:4)) / nrm
         d > worst && (worst = d; iw = i)
     end
+    # Binning consistency, against the packed bodies themselves: every binned
+    # target's cell must contain bodies that lie inside that cell's box on the
+    # grid the target was binned with, and the passive all-pairs sum over the
+    # same packed bodies must agree with far + near. A cell whose bodies fall
+    # outside its box means the host grid parameters and the device sort
+    # disagree, i.e. the target was binned on a different grid.
+    grid = state.grid
+    ell = grid.ell; side = 1 << ell
+    delta = 2 * Float64(grid.h0) / side
+    x0 = (Float64(grid.x_min[1]), Float64(grid.x_min[2]), Float64(grid.x_min[3]))
+    n_cells = Int(state.counts.n_cells)
+    keys = Array(grid.cell_keys)
+    nbad_cells = 0; example = ""
+    for k in 1:nb
+        c = cellk[k]
+        first = Int(branges[1, c]); cnt = Int(branges[2, c]); cnt == 0 && continue
+        j = first + (cnt >> 1)
+        ix = clamp(floor(Int, (Float64(bodies[1, j]) - x0[1]) / delta), 0, side - 1)
+        iy = clamp(floor(Int, (Float64(bodies[2, j]) - x0[2]) / delta), 0, side - 1)
+        iz = clamp(floor(Int, (Float64(bodies[3, j]) - x0[3]) / delta), 0, side - 1)
+        kb = FastMultipole.morton_key(FastMultipole.SVector{3,Int}(ix, iy, iz), ell)
+        if c > n_cells || keys[c] != kb
+            nbad_cells += 1
+            isempty(example) && (example = "cell $c key $(keys[min(c, length(keys))]) body-key $kb probe $(order[k])")
+        end
+    end
+    allp = zeros(TF, 4, nt)
+    FastMultipole._host_extra_targets_from_main!(allp, kernel, xt, bodies, Int(state.counts.n_bodies), Val(false))
+    wa = 0.0
+    for i in binned
+        d = sqrt(sum((host[r, i] - allp[r, i])^2 for r in 2:4)) / nrm
+        d > wa && (wa = d)
+    end
+    if nbad_cells > 0 || wa > 1e-3
+        println("    extra-target binning check: $nbad_cells of $nb binned targets sit in a cell whose bodies are not in that cell's box",
+                " ($example); far+near vs all-pairs over the packed bodies $(round(wa; sigdigits=3));",
+                " n_cells $n_cells keys $(length(keys)) n_direct $nd ell $ell x_min $(round.(x0; sigdigits=4)) h0 $(round(Float64(grid.h0); sigdigits=4))")
+        flush(stdout)
+    end
     if worst > 1e-3
         println("    extra-target host check: device vs host-from-device-inputs $(round(worst; sigdigits=3)) at probe $iw",
                 "  device ", round.(Float64.(out_dev[2:4, iw]); sigdigits=3),
