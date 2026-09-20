@@ -7517,6 +7517,62 @@ end
     end
 end
 
+# Host re-evaluation of the grid extra-target path from device inputs: the far
+# part from the local expansions, the near part over the direct pair list.
+function _ka_extra_targets_host_check(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        xt, order, tr, cellk, out_dev, nd, orders, ::Val{LHV}, ep) where {TF,B,LH,LHV}
+    ph = Array(state.locals.phi); ch = Array(state.locals.chi)
+    centers = Array(state.cell_centers); l2n = Array(state.grid.leaf_to_node)
+    bodies = Array(state.source_bodies); branges = Array(state.cell_ranges)
+    dt = Array(state.direct_targets); ds = Array(state.direct_sources)
+    kernel = state.options.direct_kernel
+    nb = length(order); nt = size(xt, 2)
+    far = zeros(TF, 4, nt); near = zeros(TF, 4, nt)
+    @inbounds for k in 1:nb
+        i = order[k]; c = cellk[k]; node = l2n[c]
+        sp, gx, gy, gz = FastMultipole._resident_local_eval_flat(ph, ch, node,
+            TF(xt[1, i]) - centers[1, c], TF(xt[2, i]) - centers[2, c], TF(xt[3, i]) - centers[3, c],
+            orders.P_phi, orders.P_active, Val(LHV))
+        far[1, i] += sp; far[2, i] += gx; far[3, i] += gy; far[4, i] += gz
+    end
+    ghv = Val(:shipped)
+    @inbounds for p in 1:nd
+        c = Int(dt[p]); sc = Int(ds[p])
+        tcnt = tr[2, c]; tcnt == 0 && continue
+        sfirst = Int(branges[1, sc]); scnt = Int(branges[2, sc]); scnt == 0 && continue
+        for k in tr[1, c]:(tr[1, c] + tcnt - 1)
+            i = order[k]
+            xi = TF(xt[1, i]); yi = TF(xt[2, i]); zi = TF(xt[3, i])
+            for j in sfirst:(sfirst + scnt - 1)
+                dx = xi - bodies[1, j]; dy = yi - bodies[2, j]; dz = zi - bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                r2 == zero(TF) && continue
+                u, gx, gy, gz = FastMultipole._direct_pair_ug(kernel, dx, dy, dz, r2, inv(sqrt(r2)), bodies, j, ghv)
+                ep && (near[1, i] += u)
+                near[2, i] += gx; near[3, i] += gy; near[4, i] += gz
+            end
+        end
+    end
+    host = far .+ near
+    binned = unique(order)
+    nrm = maximum(sqrt(host[2, i]^2 + host[3, i]^2 + host[4, i]^2) for i in binned)
+    worst = 0.0; iw = 0
+    for i in binned
+        d = sqrt(sum((out_dev[r, i] - host[r, i])^2 for r in 2:4)) / nrm
+        d > worst && (worst = d; iw = i)
+    end
+    if worst > 1e-3
+        println("    extra-target host check: device vs host-from-device-inputs $(round(worst; sigdigits=3)) at probe $iw",
+                "  device ", round.(Float64.(out_dev[2:4, iw]); sigdigits=3),
+                "  host ", round.(Float64.(host[2:4, iw]); sigdigits=3),
+                "  far ", round.(Float64.(far[2:4, iw]); sigdigits=3),
+                "  near ", round.(Float64.(near[2:4, iw]); sigdigits=3),
+                "  n_direct $nd  n_cells $(Int(state.counts.n_cells))  n_bodies $(Int(state.counts.n_bodies))")
+        flush(stdout)
+    end
+    return worst
+end
+
 function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
         extra_targets::Tuple, switches::Tuple; workgroup=KA_AUTO_WORKGROUP,
         allpairs_only::Bool=false) where {TF,B,LH}
@@ -7575,6 +7631,14 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
                     state.cell_ranges, state.direct_targets, state.direct_sources, nd,
                     TF, Val(hs), Val(wg), Val(ep); ndrange=nd * wg)
                 syn && KA.synchronize(backend)
+                # :KA_EXTRA_TARGETS_CHECK re-evaluates the binned targets on the
+                # host from copies of the device inputs the kernels read, and
+                # reports the worst disagreement: kernels vs inputs (race bisection)
+                if _ka_radix_setting(:KA_EXTRA_TARGETS_CHECK, false) && !hs
+                    KA.synchronize(backend)
+                    _ka_extra_targets_host_check(state, xt_h, order_h, tr_h, cellk_h,
+                        Array(out), nd, orders, Val(LH), ep)
+                end
             end
             if !isempty(loose)
                 # no cell to read: all-pairs, as before, over the loose subset
