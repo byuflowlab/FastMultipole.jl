@@ -6237,7 +6237,14 @@ function _ka_launch_sfs_dsigma_typed!(state::FastMultipole.DeviceResidentRadixSt
     fused = state.sfs.dj_valid[]          # the near field of this pass filled dj
     fused || fill!(view(dj, :, 1:n), zero(TF))
     npairs = state.counts.n_direct
-    if npairs > 0 && !fused
+    if npairs > 0 && !fused && SFS_TARGET_MAJOR[]
+        n_cells = Int(state.counts.n_cells)
+        off = _sfs_pair_offsets!(state, backend, workgroup)
+        djk = _cached_kernel(ka_sfs_dj_cells_kernel!, backend, workgroup)
+        djk(dj, state.source_bodies, state.cell_ranges, state.direct_sources, off, n_cells,
+            FastMultipole._sfs_saturation_rc2(TF), TF(FastMultipole._GAUSSERF_A), active_row,
+            TF, Val(workgroup); ndrange=n_cells * workgroup)
+    elseif npairs > 0 && !fused
         djk = _cached_kernel(ka_sfs_dj_pairs_kernel!, backend, workgroup)
         djk(dj, state.source_bodies, state.cell_ranges, state.direct_targets,
             state.direct_sources, npairs, FastMultipole._sfs_saturation_rc2(TF),
@@ -6246,7 +6253,14 @@ function _ka_launch_sfs_dsigma_typed!(state::FastMultipole.DeviceResidentRadixSt
     end
     tk = _cached_kernel(ka_sfs_dsigma_tg_kernel!, backend, workgroup)
     tk(dt, dom, dq, dj, state.source_bodies, TF, tv, n; ndrange=n)
-    if npairs > 0
+    if npairs > 0 && SFS_TARGET_MAJOR[]
+        n_cells = Int(state.counts.n_cells)
+        off = _sfs_pair_offsets!(state, backend, workgroup)
+        dzk = _cached_kernel(ka_sfs_dzeta_cells_kernel!, backend, workgroup)
+        dzk(dom, dq, tg, dt, state.source_bodies, state.cell_ranges, state.direct_sources, off,
+            n_cells, FastMultipole._sfs_saturation_rc2(TF), TF(FastMultipole._SFS_ZETA_K1),
+            active_row, TF, Val(workgroup); ndrange=n_cells * workgroup)
+    elseif npairs > 0
         dzk = _cached_kernel(ka_sfs_dzeta_pairs_kernel!, backend, workgroup)
         dzk(dom, dq, tg, dt, state.source_bodies, state.cell_ranges,
             state.direct_targets, state.direct_sources, npairs,
@@ -6254,6 +6268,208 @@ function _ka_launch_sfs_dsigma_typed!(state::FastMultipole.DeviceResidentRadixSt
             active_row, TF, Val(workgroup); ndrange=npairs * workgroup)
     end
     return state
+end
+
+#------- target-major SFS sweeps (2026-09-22) -------#
+#
+# The pair-shape ζ kernels above give one workgroup to each cell PAIR and
+# accumulate into the targets with atomics (targets are shared between pairs).
+# The directed pair list is written target-cell-major by the compaction
+# (`ka_hier_direct_compact_kernel!` indexes its flags cell-major and the prefix
+# sum keeps that order), so with per-cell pair offsets a workgroup can own one
+# target CELL, walk its source cells, and store each target's sums once: no
+# atomics, no contention, deterministic. `SFS_TARGET_MAJOR[]` (env
+# FM_SFS_TARGET_MAJOR=0 restores the pair shape) selects it.
+
+const SFS_TARGET_MAJOR = Ref{Bool}(true)
+const _sfs_pair_offsets = IdDict{Any,Any}()
+
+# offsets[c] = first pair whose target cell is c (n_cells + 1 entries, the last = n_direct + 1);
+# valid only because the directed list is non-decreasing in its target cell
+@kernel function ka_pair_offsets_kernel!(offsets, @Const(direct_targets), n_direct, n_cells)
+    p = @index(Global)
+    @inbounds if p <= n_direct
+        t = Int(direct_targets[p])
+        tprev = p == 1 ? 0 : Int(direct_targets[p - 1])
+        c = tprev + 1
+        while c <= t
+            offsets[c] = Int32(p)
+            c += 1
+        end
+        if p == n_direct
+            c = t + 1
+            while c <= n_cells + 1
+                offsets[c] = Int32(n_direct + 1)
+                c += 1
+            end
+        end
+    end
+end
+
+function _sfs_pair_offsets!(state, backend, workgroup)
+    n_cells = Int(state.counts.n_cells)
+    n_direct = Int(state.counts.n_direct)
+    cap = size(state.cell_ranges, 2) + 1
+    off = get(_sfs_pair_offsets, state, nothing)
+    if off === nothing || length(off) < cap
+        off = KA.zeros(backend, Int32, cap); _sfs_pair_offsets[state] = off
+    end
+    fill!(view(off, 1:n_cells + 1), Int32(n_direct + 1))
+    if n_direct > 0
+        k = _cached_kernel(ka_pair_offsets_kernel!, backend, workgroup)
+        k(off, state.direct_targets, n_direct, n_cells; ndrange=n_direct)
+    end
+    return off
+end
+
+@kernel function ka_sfs_zeta_cells_kernel!(om, q, @Const(tg), @Const(source_bodies),
+        @Const(cell_ranges), @Const(direct_sources), @Const(offsets),
+        n_cells, rc2, K1, active_row, ::Type{T}, ::Val{WG}) where {T,WG}
+    c = @index(Group)
+    tid = @index(Local)
+    half = T(0.5)
+    @inbounds begin
+        tfirst = cell_ranges[1, c]
+        tlast = tfirst + cell_ranges[2, c] - 1
+        p0 = offsets[c]; p1 = offsets[c + 1] - 1
+        i = tfirst + tid - 1
+        while i <= tlast
+            if active_row == 0 || !iszero(source_bodies[active_row, i])
+                xi = source_bodies[1, i]; yi = source_bodies[2, i]; zi = source_bodies[3, i]
+                o1 = zero(T); o2 = zero(T); o3 = zero(T)
+                q1 = zero(T); q2 = zero(T); q3 = zero(T)
+                for p in p0:p1
+                    sc = direct_sources[p]
+                    sfirst = cell_ranges[1, sc]
+                    slast = sfirst + cell_ranges[2, sc] - 1
+                    for j in sfirst:slast
+                        if i != j && (active_row == 0 || !iszero(source_bodies[active_row, j]))
+                            dx = xi - source_bodies[1, j]
+                            dy = yi - source_bodies[2, j]
+                            dz = zi - source_bodies[3, j]
+                            r2 = dx * dx + dy * dy + dz * dz
+                            sigma = source_bodies[8, j]
+                            rho2 = r2 / (sigma * sigma)
+                            if rho2 <= rc2
+                                z = K1 * exp(-half * rho2) / (sigma * sigma * sigma)
+                                o1 += z * source_bodies[5, j]
+                                o2 += z * source_bodies[6, j]
+                                o3 += z * source_bodies[7, j]
+                                q1 += z * tg[1, j]
+                                q2 += z * tg[2, j]
+                                q3 += z * tg[3, j]
+                            end
+                        end
+                    end
+                end
+                om[1, i] = o1; om[2, i] = o2; om[3, i] = o3
+                q[1, i] = q1; q[2, i] = q2; q[3, i] = q3
+            end
+            i += WG
+        end
+    end
+end
+
+@kernel function ka_sfs_dj_cells_kernel!(dj, @Const(source_bodies), @Const(cell_ranges),
+        @Const(direct_sources), @Const(offsets), n_cells, rc2, A, active_row,
+        ::Type{T}, ::Val{WG}) where {T,WG}
+    c = @index(Group)
+    tid = @index(Local)
+    half = T(0.5)
+    @inbounds begin
+        tfirst = cell_ranges[1, c]
+        tlast = tfirst + cell_ranges[2, c] - 1
+        p0 = offsets[c]; p1 = offsets[c + 1] - 1
+        i = tfirst + tid - 1
+        while i <= tlast
+            if active_row == 0 || !iszero(source_bodies[active_row, i])
+                xi = source_bodies[1, i]; yi = source_bodies[2, i]; zi = source_bodies[3, i]
+                d1 = zero(T); d2 = zero(T); d3 = zero(T)
+                d4 = zero(T); d5 = zero(T); d6 = zero(T)
+                d7 = zero(T); d8 = zero(T); d9 = zero(T)
+                for p in p0:p1
+                    sc = direct_sources[p]
+                    sfirst = cell_ranges[1, sc]
+                    slast = sfirst + cell_ranges[2, sc] - 1
+                    for j in sfirst:slast
+                        sigma = source_bodies[8, j]
+                        if i != j && sigma > zero(T)
+                            dx = xi - source_bodies[1, j]
+                            dy = yi - source_bodies[2, j]
+                            dz = zi - source_bodies[3, j]
+                            r2 = dx * dx + dy * dy + dz * dz
+                            rho2 = r2 / (sigma * sigma)
+                            if rho2 <= rc2 && r2 > zero(T)
+                                invr = inv(sqrt(r2))
+                                G = A * rho2 * sqrt(rho2) * exp(-half * rho2)
+                                _, _, _, _, h1, h2, h3, h4, h5, h6, h7, h8, h9 =
+                                    FastMultipole._vortex_pair_ugh(dx, dy, dz, r2, invr,
+                                        source_bodies[5, j], source_bodies[6, j],
+                                        source_bodies[7, j], -G, rho2 * G)
+                                d1 += h1; d2 += h2; d3 += h3
+                                d4 += h4; d5 += h5; d6 += h6
+                                d7 += h7; d8 += h8; d9 += h9
+                            end
+                        end
+                    end
+                end
+                dj[1, i] = d1; dj[2, i] = d2; dj[3, i] = d3
+                dj[4, i] = d4; dj[5, i] = d5; dj[6, i] = d6
+                dj[7, i] = d7; dj[8, i] = d8; dj[9, i] = d9
+            end
+            i += WG
+        end
+    end
+end
+
+@kernel function ka_sfs_dzeta_cells_kernel!(dom, dq, @Const(tg), @Const(dt), @Const(source_bodies),
+        @Const(cell_ranges), @Const(direct_sources), @Const(offsets),
+        n_cells, rc2, K1, active_row, ::Type{T}, ::Val{WG}) where {T,WG}
+    c = @index(Group)
+    tid = @index(Local)
+    half = T(0.5)
+    three = T(3)
+    @inbounds begin
+        tfirst = cell_ranges[1, c]
+        tlast = tfirst + cell_ranges[2, c] - 1
+        p0 = offsets[c]; p1 = offsets[c + 1] - 1
+        i = tfirst + tid - 1
+        while i <= tlast
+            if active_row == 0 || !iszero(source_bodies[active_row, i])
+                xi = source_bodies[1, i]; yi = source_bodies[2, i]; zi = source_bodies[3, i]
+                o1 = zero(T); o2 = zero(T); o3 = zero(T)
+                q1 = zero(T); q2 = zero(T); q3 = zero(T)
+                for p in p0:p1
+                    sc = direct_sources[p]
+                    sfirst = cell_ranges[1, sc]
+                    slast = sfirst + cell_ranges[2, sc] - 1
+                    for j in sfirst:slast
+                        if i != j && (active_row == 0 || !iszero(source_bodies[active_row, j]))
+                            dx = xi - source_bodies[1, j]
+                            dy = yi - source_bodies[2, j]
+                            dz = zi - source_bodies[3, j]
+                            r2 = dx * dx + dy * dy + dz * dz
+                            sigma = source_bodies[8, j]
+                            rho2 = r2 / (sigma * sigma)
+                            if rho2 <= rc2
+                                z = K1 * exp(-half * rho2) / (sigma * sigma * sigma)
+                                dz_ = z * (rho2 - three)
+                                o1 += dz_ * source_bodies[5, j]
+                                o2 += dz_ * source_bodies[6, j]
+                                o3 += dz_ * source_bodies[7, j]
+                                q1 += dz_ * tg[1, j] + z * dt[1, j]
+                                q2 += dz_ * tg[2, j] + z * dt[2, j]
+                                q3 += dz_ * tg[3, j] + z * dt[3, j]
+                            end
+                        end
+                    end
+                end
+                dom[1, i] = o1; dom[2, i] = o2; dom[3, i] = o3
+                dq[1, i] = q1; dq[2, i] = q2; dq[3, i] = q3
+            end
+            i += WG
+        end
+    end
 end
 
 """
@@ -6287,7 +6503,14 @@ function _ka_launch_sfs_typed!(state::FastMultipole.DeviceResidentRadixState{TF}
     tgk = _cached_kernel(ka_sfs_tg_kernel!, backend, workgroup)
     tgk(tg, om, q, state.output, state.source_bodies, TF, tv, n; ndrange=n)
     npairs = state.counts.n_direct
-    if npairs > 0
+    if npairs > 0 && SFS_TARGET_MAJOR[]
+        n_cells = Int(state.counts.n_cells)
+        off = _sfs_pair_offsets!(state, backend, workgroup)
+        zk = _cached_kernel(ka_sfs_zeta_cells_kernel!, backend, workgroup)
+        zk(om, q, tg, state.source_bodies, state.cell_ranges, state.direct_sources, off,
+           n_cells, FastMultipole._sfs_saturation_rc2(TF), TF(FastMultipole._SFS_ZETA_K1),
+           active_row, TF, Val(workgroup); ndrange=n_cells * workgroup)
+    elseif npairs > 0
         zk = _cached_kernel(ka_sfs_zeta_pairs_kernel!, backend, workgroup)
         zk(om, q, tg, state.source_bodies, state.cell_ranges,
            state.direct_targets, state.direct_sources, npairs,
@@ -9169,6 +9392,7 @@ function __init__()
     _KA_SLOW_STAGE[] = parse(Float64, get(ENV, "FM_SLOW_STAGE", "Inf"))
     _KA_TICK_TRACE[] = get(ENV, "FM_TICK_TRACE", "0") == "1"
     _KA_FUSE_DJ[] = get(ENV, "FM_FUSE_DJ", "1") == "1"
+    SFS_TARGET_MAJOR[] = get(ENV, "FM_SFS_TARGET_MAJOR", "1") == "1"
     FastMultipole.register_radix_device_backend!("KernelAbstractions",
         _ka_radix_device_build_hook, _ka_radix_device_step_hook)
     FastMultipole._RADIX_DEVICE_SFS_REPASS_HOOK[] = _ka_radix_device_sfs_repass_hook
