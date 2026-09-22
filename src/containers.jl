@@ -339,23 +339,10 @@ function Cache(target_systems::Tuple, source_systems::Tuple, switches::Tuple)
     TF = get_type(target_systems, source_systems)
 
     # allocate buffers
-<<<<<<< HEAD
-    target_buffers = allocate_buffers(target_systems, true, TF)
-    source_buffers = allocate_buffers(source_systems, false, TF)
-    target_small_buffers = allocate_small_buffers(target_systems, TF)
-    source_small_buffers = allocate_small_buffers(source_systems, TF)
-
-    # these all pass
-    #check_deriv_allocation(target_buffers[1]; label="target buffers")
-    #check_deriv_allocation(source_buffers[1]; label="source buffers")
-    #check_deriv_allocation(target_small_buffers[1]; label="target small buffers")
-    #check_deriv_allocation(source_small_buffers[1]; label="source small buffers")
-=======
     target_buffers = allocate_buffers(target_systems, true, TF, switches)
     source_buffers = allocate_buffers(source_systems, false, TF, switches)
     target_small_buffers = allocate_small_buffers(target_systems, TF, switches; target=true)
     source_small_buffers = allocate_small_buffers(source_systems, TF, DerivativesSwitch(false, false, false, source_systems); target=false)
->>>>>>> main
     
     # return cache
     return Cache{TF}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)

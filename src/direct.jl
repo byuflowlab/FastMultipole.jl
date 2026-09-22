@@ -67,18 +67,6 @@ function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; targ
         system_to_buffer!(source_buffers, source_systems)
     end
 
-<<<<<<< HEAD
-    # ensure derivative switch information is a vector
-    scalar_potential = to_vector(scalar_potential, length(target_systems))
-    gradient = to_vector(gradient, length(target_systems))
-    hessian = to_vector(hessian, length(target_systems))
-    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian)
-    
-    #check_derivs(source_systems[1].particles; label="after direct interaction")
-    for (source_system, source_buffer) in zip(source_systems, source_buffers)
-        for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
-            direct!(target_buffer, 1:get_n_bodies(target_system), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
-=======
     direct_conditioning = normalize_direct_conditioning(direct_conditioning)
 
     if has_direct_conditioning(direct_conditioning)
@@ -94,7 +82,6 @@ function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; targ
             for (target_system, target_buffer, derivatives_switch) in zip(target_systems, target_buffers, derivatives_switches)
                 direct!(target_buffer, 1:get_n_bodies(target_system), derivatives_switch, source_system, source_buffer, 1:get_n_bodies(source_system))
             end
->>>>>>> main
         end
     end
 

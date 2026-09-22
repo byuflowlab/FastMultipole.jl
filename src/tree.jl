@@ -57,13 +57,8 @@ function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buff
                 buffer .= zero(TF)
             end
         end
-<<<<<<< HEAD
-        # end
-        # println("Part II: target_to_buffer")
-=======
     # end
         # println("Part II: position data to buffer")
->>>>>>> main
         # @time begin # already multithreaded
 
         # update buffers with system positions and max influence
@@ -236,13 +231,8 @@ end
 """
 Doesn't stop subdividing until ALL child branches have satisfied the leaf size.
 """
-<<<<<<< HEAD
-function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerbox=center_box(systems, getTF(systems)), buffers=allocate_buffers(systems, target, TF), small_buffers = allocate_small_buffers(systems, TF), expansion_order=7, n_levels=5)
-    
-=======
 function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems), switches=DerivativesSwitch(true, true, false, systems); centerbox=center_box(systems, getTF(systems)), buffers=allocate_buffers(systems, target, TF, switches), small_buffers = allocate_small_buffers(systems, TF, switches; target), expansion_order=7, n_levels=5)
 
->>>>>>> main
     # ensure `systems` isn't empty; otherwise return an empty tree
     if get_n_bodies(systems) > 0
 
@@ -365,18 +355,9 @@ end
 
 #--- buffers ---#
 
-<<<<<<< HEAD
-function allocate_target_buffer(TF, system)
-    buffer = zeros(TF, 18, get_n_bodies(system))
-    if TF <: ReverseDiff.TrackedReal
-        tp = ReverseDiff.tape(system)
-        init_rd_array!(buffer, tp)
-    end
-=======
 function allocate_target_buffer(TF, system, ::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM}
     switch = DerivativesSwitch{PS,GS,HS,NO,NM}()
     buffer = zeros(TF, target_buffer_rows(switch), get_n_bodies(system))
->>>>>>> main
     return buffer
 end
 
@@ -465,18 +446,9 @@ function allocate_small_buffers(systems::Tuple, TF, switches=DerivativesSwitch(t
     # create buffers
     @assert length(switches) == length(systems) "small-buffer switches must match systems"
     small_buffers = Vector{Matrix{TF}}(undef, length(systems))
-<<<<<<< HEAD
-    for i in eachindex(systems)
-        small_buffers[i] = zeros(TF, 5, get_n_bodies(systems[i]))
-        if TF <: ReverseDiff.TrackedReal
-            tp = ReverseDiff.tape(systems[i])
-            init_rd_array!(small_buffers[i], tp)
-        end
-=======
     for (i, (system, switch)) in enumerate(zip(systems, switches))
         n_rows = target ? length(tree_carried_range(switch)) : 4
         small_buffers[i] = zeros(n_rows, get_n_bodies(system))
->>>>>>> main
     end
 
     return small_buffers
@@ -754,12 +726,8 @@ end
 function branch!(buffer, small_buffer, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, i_parent, i_leaf, leaf_size, interaction_list_method, target::Bool)
 
     # count bodies in each octant
-<<<<<<< HEAD
-    census!(octant_container, buffer, bodies_index, center) # octant_container modified
-=======
     max_body_radius = census!(octant_container, buffer, bodies_index, center) # octant_container modified
     
->>>>>>> main
     # cumsum
     update_octant_accumulator!(octant_container) # octant_container modified
     
@@ -1459,12 +1427,9 @@ function center_box(systems, bodies_indices, TF)
     for (system, bodies_index) in zip(systems, bodies_indices)
         x_min, x_max, y_min, y_max, z_min, z_max = max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, system, bodies_index)
     end
-<<<<<<< HEAD
-=======
 
     x_min, x_max, y_min, y_max, z_min, z_max = TF(x_min), TF(x_max), TF(y_min), TF(y_max), TF(z_min), TF(z_max)
 
->>>>>>> main
     return get_center_box(x_min, x_max, y_min, y_max, z_min, z_max)
 end
 

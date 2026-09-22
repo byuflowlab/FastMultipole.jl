@@ -9,12 +9,6 @@ end
 @inline function cartesian_to_spherical(x::R, y::R, z::R; EPSILON=1e-10) where R
     x2y2 = x*x + y*y
     r2 = x2y2 + z*z
-<<<<<<< HEAD
-    r = iszero(r2) ? r2 : sqrt(r2)
-    z_r = z/r
-    if r > 0
-        theta = x2y2 > 0 ? acos(z_r) : R(π) * (z < 0)
-=======
     epsilon_squared = EPSILON*EPSILON
     r = sqrt(r2)
     if r2 > epsilon_squared
@@ -25,7 +19,6 @@ end
         else
             theta = π * (z < 0)
         end
->>>>>>> main
     else
         theta = zero(r)
     end

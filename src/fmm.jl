@@ -687,13 +687,6 @@ end
 function downward_pass_singlethread_2!(tree::Tree{TF,<:Any}, systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m) where TF
 
     harmonics = initialize_harmonics(expansion_order, TF)
-<<<<<<< HEAD
-    if TF <: ReverseDiff.TrackedReal
-        tp = ReverseDiff.tape(systems[1])
-        init_rd_array!(harmonics, tp)
-    end
-=======
->>>>>>> main
     # loop over systems
     for (i_system, system) in enumerate(systems)
         evaluate_local!(system, i_system, tree, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
@@ -1216,12 +1209,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 #check_deriv_allocation(target_systems[1].particles[10:12, 1:target_systems[1].np])
                 #check_deriv_allocation(target_systems[1].particles[16:24, 1:target_systems[1].np])
                 # perform nearfield calculations
-<<<<<<< HEAD
-                #s = ReverseDiff.value(sum(target_tree.buffers[1])) + ReverseDiff.value(sum(target_tree.small_buffers[1])) + ReverseDiff.value(sum(target_systems[1].particles[1]))
-                t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list)
-=======
                 t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, direct_conditioning)
->>>>>>> main
                 # println("Direct interaction time: ", t_direct[1])
                 #s2 = ReverseDiff.value(sum(target_tree.buffers[1])) + ReverseDiff.value(sum(target_tree.small_buffers[1])) + ReverseDiff.value(sum(target_systems[1].particles[1]))
                 #@show s (s2-s)
