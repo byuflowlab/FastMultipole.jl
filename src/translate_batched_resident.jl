@@ -1830,6 +1830,9 @@ const _SFS_ZETA_K1 = 0.06349363593424097  # (2π)^(-3/2)
 _host_sfs_context(::Type{TF}, maxn::Int, transposed::Bool,
         active_row::Int=0) where TF =
     (; tg=zeros(TF, 3, maxn), om=zeros(TF, 3, maxn), q=zeros(TF, 3, maxn),
+       # analytic core-scaling derivative channel (see `_host_sfs_dj_pairs!`)
+       dj=zeros(TF, 9, maxn), dt=zeros(TF, 3, maxn), dom=zeros(TF, 3, maxn),
+       dq=zeros(TF, 3, maxn), dj_valid=Ref(false),   # set by a fused device near field
        transposed, active_row)
 
 @inline function _sfs_apply_op(J5, J6, J7, J8, J9, J10, J11, J12, J13,
@@ -1908,6 +1911,191 @@ function _host_sfs_zeta_pairs!(om::AbstractMatrix{TF}, q, tg, source_bodies,
     return om
 end
 
+#------- analytic core-scaling derivative for the dynamic SFS procedure (2026-09-21) -------#
+#
+# The dynamic procedure's coefficient is C = <Γ⋅L>/<Γ⋅m> with L = (Γ⋅∇)∂U/∂σ and
+# m = σ³/ζ(0) ∂E/∂σ: the derivatives of the resolved stretching and of the
+# estimator with respect to a UNIFORM scaling σ → ασ of every core, at α = 1
+# (Alvarez 2022 §4.7, two-level procedure). The pseudo-three-level
+# implementation approximates them by a finite difference over a second full
+# evaluation at 0.999σ; here they are accumulated exactly over the same direct
+# pairs. With ρ = r/σ_j and G(ρ) = ρ g′(ρ) = A ρ³ e^{−ρ²/2}, A = √(2/π):
+#   ∂g/∂α = −G,   ∂h/∂α = ρ² G   (h = ρg′ − 3g),   ∂ζ_σ/∂α = (ρ² − 3) ζ_σ,
+# so ∂J/∂α reuses the U/J pair assembly with (g, h) → (−G, ρ²G), and from
+# E_i = op(J_i) Ω_i − Q_i,
+#   ∂E_i = op(∂J_i) Ω_i + op(J_i) ∂Ω_i − ∂Q_i,
+#   ∂Ω_i = Σ_j ∂ζ Γ_j,   ∂Q_i = Σ_j (∂ζ T_j + ζ ∂T_j),   ∂T_j = op(∂J_j) Γ_j = L_j.
+# The far field (multipoles) carries no σ dependence, so the derivative is a
+# near-field quantity; the ζ saturation cutoff bounds it (G < 3e-7 beyond).
+# Sources include the static bodies (they induce velocity); a source with
+# σ = 0 (an oversize-masked particle) contributes nothing, matching its
+# absence from the ζ sweep. Delivered as a 6-row slab: rows 1:3 L = ∂T,
+# rows 4:6 ∂E, through `sfs_dsigma_to_target!`.
+
+function _host_sfs_dj_pairs!(dj::AbstractMatrix{TF}, source_bodies, cell_ranges,
+        direct_targets, direct_sources, n_direct::Int, n::Int,
+        active_row::Int=0) where TF
+    rc2 = _sfs_saturation_rc2(TF)
+    A = TF(_GAUSSERF_A)
+    half = TF(0.5)
+    fill!(view(dj, :, 1:n), zero(TF))
+    @inbounds for pair_i in 1:n_direct
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tcount = cell_ranges[2, target_cell]
+        sfirst = cell_ranges[1, source_cell]
+        scount = cell_ranges[2, source_cell]
+        for i in tfirst:(tfirst + tcount - 1)
+            active_row != 0 && iszero(source_bodies[active_row, i]) && continue
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            d1 = zero(TF); d2 = zero(TF); d3 = zero(TF)
+            d4 = zero(TF); d5 = zero(TF); d6 = zero(TF)
+            d7 = zero(TF); d8 = zero(TF); d9 = zero(TF)
+            for j in sfirst:(sfirst + scount - 1)
+                i == j && continue
+                sigma = source_bodies[8, j]
+                sigma > zero(TF) || continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                r2 == zero(TF) && continue
+                rho2 = r2 / (sigma * sigma)
+                rho2 <= rc2 || continue
+                invr = inv(sqrt(r2))
+                G = A * rho2 * sqrt(rho2) * exp(-half * rho2)
+                _, _, _, _, h1, h2, h3, h4, h5, h6, h7, h8, h9 = _vortex_pair_ugh(
+                    dx, dy, dz, r2, invr, source_bodies[5, j], source_bodies[6, j],
+                    source_bodies[7, j], -G, rho2 * G)
+                d1 += h1; d2 += h2; d3 += h3
+                d4 += h4; d5 += h5; d6 += h6
+                d7 += h7; d8 += h8; d9 += h9
+            end
+            dj[1, i] += d1; dj[2, i] += d2; dj[3, i] += d3
+            dj[4, i] += d4; dj[5, i] += d5; dj[6, i] += d6
+            dj[7, i] += d7; dj[8, i] += d8; dj[9, i] += d9
+        end
+    end
+    return dj
+end
+
+# ∂T_i = op(∂J_i) Γ_i (= L_i) and the ∂Ω/∂Q accumulators zeroed
+function _host_sfs_dsigma_tg_and_zero!(dt, dom, dq, dj::AbstractMatrix{TF},
+        source_bodies, transposed::Bool, n::Int) where TF
+    @inbounds for i in 1:n
+        t1, t2, t3 = _sfs_apply_op(
+            dj[1, i], dj[2, i], dj[3, i], dj[4, i], dj[5, i], dj[6, i],
+            dj[7, i], dj[8, i], dj[9, i],
+            source_bodies[5, i], source_bodies[6, i], source_bodies[7, i], transposed)
+        dt[1, i] = t1; dt[2, i] = t2; dt[3, i] = t3
+        dom[1, i] = zero(TF); dom[2, i] = zero(TF); dom[3, i] = zero(TF)
+        dq[1, i] = zero(TF); dq[2, i] = zero(TF); dq[3, i] = zero(TF)
+    end
+    return dt
+end
+
+# ∂Ω_i = Σ_j ∂ζ Γ_j and ∂Q_i = Σ_j (∂ζ T_j + ζ ∂T_j) over the ζ sweep's pairs
+function _host_sfs_dzeta_pairs!(dom::AbstractMatrix{TF}, dq, tg, dt, source_bodies,
+        cell_ranges, direct_targets, direct_sources, n_direct::Int,
+        active_row::Int=0) where TF
+    rc2 = _sfs_saturation_rc2(TF)
+    K1 = TF(_SFS_ZETA_K1)
+    half = TF(0.5)
+    three = TF(3)
+    @inbounds for pair_i in 1:n_direct
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tcount = cell_ranges[2, target_cell]
+        sfirst = cell_ranges[1, source_cell]
+        scount = cell_ranges[2, source_cell]
+        for i in tfirst:(tfirst + tcount - 1)
+            active_row != 0 && iszero(source_bodies[active_row, i]) && continue
+            xi = source_bodies[1, i]
+            yi = source_bodies[2, i]
+            zi = source_bodies[3, i]
+            o1 = zero(TF); o2 = zero(TF); o3 = zero(TF)
+            q1 = zero(TF); q2 = zero(TF); q3 = zero(TF)
+            for j in sfirst:(sfirst + scount - 1)
+                i == j && continue
+                active_row != 0 && iszero(source_bodies[active_row, j]) && continue
+                dx = xi - source_bodies[1, j]
+                dy = yi - source_bodies[2, j]
+                dz = zi - source_bodies[3, j]
+                r2 = dx * dx + dy * dy + dz * dz
+                sigma = source_bodies[8, j]
+                rho2 = r2 / (sigma * sigma)
+                if rho2 <= rc2
+                    z = K1 * exp(-half * rho2) / (sigma * sigma * sigma)
+                    dz_ = z * (rho2 - three)
+                    o1 += dz_ * source_bodies[5, j]
+                    o2 += dz_ * source_bodies[6, j]
+                    o3 += dz_ * source_bodies[7, j]
+                    q1 += dz_ * tg[1, j] + z * dt[1, j]
+                    q2 += dz_ * tg[2, j] + z * dt[2, j]
+                    q3 += dz_ * tg[3, j] + z * dt[3, j]
+                end
+            end
+            dom[1, i] += o1; dom[2, i] += o2; dom[3, i] += o3
+            dq[1, i] += q1; dq[2, i] += q2; dq[3, i] += q3
+        end
+    end
+    return dom
+end
+
+# ∂E_i = op(∂J_i) Ω_i + op(J_i) ∂Ω_i − ∂Q_i, formed in place into `dq`
+function _host_sfs_form_de!(dq, dj, om, dom, output::AbstractMatrix,
+        transposed::Bool, n::Int)
+    @inbounds for i in 1:n
+        a1, a2, a3 = _sfs_apply_op(
+            dj[1, i], dj[2, i], dj[3, i], dj[4, i], dj[5, i], dj[6, i],
+            dj[7, i], dj[8, i], dj[9, i], om[1, i], om[2, i], om[3, i], transposed)
+        b1, b2, b3 = _sfs_apply_op(
+            output[5, i], output[6, i], output[7, i], output[8, i],
+            output[9, i], output[10, i], output[11, i], output[12, i],
+            output[13, i], dom[1, i], dom[2, i], dom[3, i], transposed)
+        dq[1, i] = a1 + b1 - dq[1, i]
+        dq[2, i] = a2 + b2 - dq[2, i]
+        dq[3, i] = a3 + b3 - dq[3, i]
+    end
+    return dq
+end
+
+# sorted -> global permute of the (L, ∂E) pair into one 6-row per-system buffer
+function _scatter_dsfs_host!(buf::AbstractMatrix, dt, de, perm, body_system,
+        body_index, isys::Int, n::Int)
+    fill!(buf, zero(eltype(buf)))
+    @inbounds for sorted_i in 1:n
+        global_i = perm[sorted_i]
+        body_system[global_i] == isys || continue
+        ibody = body_index[global_i]
+        buf[1, ibody] = dt[1, sorted_i]
+        buf[2, ibody] = dt[2, sorted_i]
+        buf[3, ibody] = dt[3, sorted_i]
+        buf[4, ibody] = de[1, sorted_i]
+        buf[5, ibody] = de[2, sorted_i]
+        buf[6, ibody] = de[3, sorted_i]
+    end
+    return buf
+end
+
+"""
+    sfs_dsigma_to_target!(target_system, buf, sort_index)
+
+Deliver the analytic core-scaling derivatives of one `fmm!(...; sfs=true,
+sfs_dsigma=true)` evaluation: `buf` is `6 x n_bodies` in the target's own body
+order, rows 1:3 the derivative of the resolved stretching L = (Γ⋅∇)∂U/∂α and
+rows 4:6 the derivative ∂E/∂α of the SFS estimator, both with respect to a
+uniform scaling of every core at α = 1. A target system defines it for its own
+storage; the values REPLACE (never accumulate).
+"""
+sfs_dsigma_to_target!(target_system, buf, sort_index) =
+    throw(ArgumentError("sfs_dsigma=true requires FastMultipole.sfs_dsigma_to_target! " *
+        "for $(typeof(target_system))"))
+
 """
     _run_host_radix_sfs!(state)
 
@@ -1916,7 +2104,7 @@ over the full direct list. Requires a state built with `sfs=true` (13-row
 output). Call after `run_host_radix_lifecycle!` (U/J complete), before
 `finalize_radix_sfs_output!`.
 """
-function _run_host_radix_sfs!(state::DeviceResidentRadixState)
+function _run_host_radix_sfs!(state::DeviceResidentRadixState; dsigma::Bool=false)
     sfs = state.sfs
     sfs === nothing && throw(ArgumentError(
         "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
@@ -1928,6 +2116,16 @@ function _run_host_radix_sfs!(state::DeviceResidentRadixState)
     _host_sfs_zeta_pairs!(sfs.om, sfs.q, sfs.tg, state.source_bodies,
         state.cell_ranges, state.direct_targets, state.direct_sources,
         state.counts.n_direct, sfs.active_row)
+    if dsigma
+        _host_sfs_dj_pairs!(sfs.dj, state.source_bodies, state.cell_ranges,
+            state.direct_targets, state.direct_sources, state.counts.n_direct, n,
+            sfs.active_row)
+        _host_sfs_dsigma_tg_and_zero!(sfs.dt, sfs.dom, sfs.dq, sfs.dj,
+            state.source_bodies, sfs.transposed, n)
+        _host_sfs_dzeta_pairs!(sfs.dom, sfs.dq, sfs.tg, sfs.dt, state.source_bodies,
+            state.cell_ranges, state.direct_targets, state.direct_sources,
+            state.counts.n_direct, sfs.active_row)
+    end
     return state
 end
 
@@ -1970,13 +2168,17 @@ Form E = op(J)Ω − Q from the host SFS accumulators, de-permute into per-syste
 per system) to keep recurring steps allocation-free.
 """
 function finalize_radix_sfs_output!(state::DeviceResidentRadixState{TF},
-        target_systems; sfs_buffers=nothing) where TF
+        target_systems; sfs_buffers=nothing, dsigma::Bool=false,
+        dsfs_buffers=nothing) where TF
     sfs = state.sfs
     sfs === nothing && throw(ArgumentError(
         "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
     systems = to_tuple(target_systems)
     n = state.counts.n_bodies
     _host_sfs_form_e!(sfs.tg, sfs.om, sfs.q, state.output, sfs.transposed, n)
+    # ∂E needs Ω intact: formed after E, before any buffer is reused
+    dsigma && _host_sfs_form_de!(sfs.dq, sfs.dj, sfs.om, sfs.dom, state.output,
+        sfs.transposed, n)
     for (isys, target_system) in enumerate(systems)
         nb = get_n_bodies(target_system)
         buf_full = sfs_buffers === nothing ? Matrix{TF}(undef, 3, nb) :
@@ -1986,11 +2188,75 @@ function finalize_radix_sfs_output!(state::DeviceResidentRadixState{TF},
         _scatter_sfs_host!(buf, sfs.tg, state.host_body_perm,
             state.host_body_system_ids, state.host_body_indices, isys, n)
         sfs_to_target!(target_system, buf, 1:nb)
+        if dsigma
+            dbuf_full = dsfs_buffers === nothing ? Matrix{TF}(undef, 6, nb) :
+                dsfs_buffers[isys]
+            dbuf = size(dbuf_full, 2) == nb ? dbuf_full : view(dbuf_full, :, 1:nb)
+            _scatter_dsfs_host!(dbuf, sfs.dt, sfs.dq, state.host_body_perm,
+                state.host_body_system_ids, state.host_body_indices, isys, n)
+            sfs_dsigma_to_target!(target_system, dbuf, 1:nb)
+        end
     end
     return target_systems
 end
 
 #------- RadixFMMCache: fixed-box recurring driver (task 023) -------#
+
+"""
+    output_from_target!(system, output, perm, body_system, body_index, isys, n)
+
+Inverse of the finalize scatter for one target system: write the system's
+CURRENT velocity (rows 2:4) and velocity gradient (rows 5:13) into the resident
+`output` matrix in sorted body order (`perm[sorted_i]` is the global body,
+`body_index` its index within `system` when `body_system` says `isys`). A
+target system that supports `radix_sfs_repass!` defines it for its own storage
+(host arrays here, device arrays through the backend extension).
+"""
+output_from_target!(system, output, perm, body_system, body_index, isys, n) =
+    throw(ArgumentError("radix_sfs_repass! requires FastMultipole.output_from_target! " *
+        "for $(typeof(system))"))
+
+"""
+    radix_sfs_repass!(cache, target_systems)
+
+Recompute the SFS estimator of every target from the targets' CURRENT velocity
+gradient, over the direct pair lists and packed sources of the last `fmm!`
+call on this cache, and ACCUMULATE it into the targets (the caller resets the
+SFS rows first, as for `fmm!`). For a caller that reuses the last pass's U/J
+as an RK stage and then adds another source's field to them (LiftingLines,
+2026-09-21: the bound filaments on the wake) this delivers the estimator that
+matches the summed gradient at the cost of the estimator sweep alone, instead
+of a second full evaluation.
+"""
+function radix_sfs_repass!(cache::RadixFMMCache{TF}, target_systems;
+        dsigma::Bool=false) where TF
+    systems = to_tuple(target_systems)
+    state = cache.adaptive === nothing ? cache.state :
+        (cache.adaptive_state::AdaptiveResidentLifecycle).state
+    state.sfs === nothing && throw(ArgumentError(
+        "radix_sfs_repass! requires a cache built with sfs=true"))
+    n = state.counts.n_bodies
+    n > 0 || return target_systems
+    if cache.device
+        _radix_cache_device_sfs_repass!(cache, systems; dsigma)
+    else
+        for (isys, system) in enumerate(systems)
+            output_from_target!(system, state.output, state.host_body_perm,
+                state.host_body_system_ids, state.host_body_indices, isys, n)
+        end
+        _run_host_radix_sfs!(state; dsigma)
+        finalize_radix_sfs_output!(state, systems;
+            sfs_buffers=_radix_cache_sfs_buffers!(cache, systems), dsigma,
+            dsfs_buffers=dsigma ? _radix_cache_dsfs_buffers!(cache, systems) : nothing)
+    end
+    return target_systems
+end
+function _radix_cache_device_sfs_repass!(args...; kwargs...)
+    hook = _RADIX_DEVICE_SFS_REPASS_HOOK[]
+    hook === nothing && throw(RadixDeviceUnavailable(radix_device_status()))
+    return hook(args...; kwargs...)
+end
+const _RADIX_DEVICE_SFS_REPASS_HOOK = Ref{Any}(nothing)
 
 function _assert_radix_targets_are_sources(targets::Tuple, sources::Tuple)
     length(targets) == length(sources) ||
@@ -3441,11 +3707,23 @@ end
 # them; the finalize writes only the per-system body prefix)
 function _radix_cache_sfs_buffers!(cache::RadixFMMCache{TF}, targets::Tuple) where TF
     sb = cache.sfs_target_buffers
-    if !(sb isa Tuple) || length(sb) != length(targets)
-        sb = Tuple(zeros(TF, 3, cache.max_n_bodies) for _ in targets)
+    if !(sb isa NamedTuple) || length(sb.e) != length(targets)
+        sb = (; e=Tuple(zeros(TF, 3, cache.max_n_bodies) for _ in targets), d=nothing)
         cache.sfs_target_buffers = sb
     end
-    return sb
+    return sb.e
+end
+
+# the 6-row (L, ∂E) scatter buffers of the sfs_dsigma channel, allocated on the
+# first evaluation that asks for it
+function _radix_cache_dsfs_buffers!(cache::RadixFMMCache{TF}, targets::Tuple) where TF
+    _radix_cache_sfs_buffers!(cache, targets)
+    sb = cache.sfs_target_buffers
+    if sb.d === nothing
+        sb = (; e=sb.e, d=Tuple(zeros(TF, 6, cache.max_n_bodies) for _ in targets))
+        cache.sfs_target_buffers = sb
+    end
+    return sb.d
 end
 
 #------- backend-agnostic device source-buffer plumbing -------#
@@ -3520,12 +3798,13 @@ function _build_cuda_dense_m2l_plan(args...)
 end
 
 function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple;
-        sfs::Bool=false, extra_targets::Tuple=(), extra_target_switches::Tuple=(),
-        extra_sources::Tuple=(), extra_tree_sources::Tuple=(), self_induce::Bool=true)
+        sfs::Bool=false, sfs_dsigma::Bool=false, extra_targets::Tuple=(),
+        extra_target_switches::Tuple=(), extra_sources::Tuple=(),
+        extra_tree_sources::Tuple=(), self_induce::Bool=true)
     hook = _RADIX_DEVICE_STEP_HOOK[]
     hook === nothing && throw(RadixDeviceUnavailable(radix_device_status()))
-    return hook(cache, targets, switches; sfs, extra_targets, extra_target_switches,
-        extra_sources, extra_tree_sources, self_induce)
+    return hook(cache, targets, switches; sfs, sfs_dsigma, extra_targets,
+        extra_target_switches, extra_sources, extra_tree_sources, self_induce)
 end
 
 #------- adaptive octree host resident lifecycle: state assembly + drivers (task 040) -------#

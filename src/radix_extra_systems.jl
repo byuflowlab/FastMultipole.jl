@@ -98,6 +98,34 @@ inside a device kernel is a compile error, not a runtime one.)
 """
 _extra_pair_has_hessian(kernel) = false
 
+# Regularized vortex particles as an all-pairs extra source (FLOWVPM's oversize
+# particles, 2026-09-21): the buffer is the particle source layout -- rows 1:3
+# position, 5:7 strength, `sigma_row` the core -- so the resident near-field pair
+# math applies verbatim. A coincident pair (r = 0: the source is also a target)
+# contributes nothing, as in the near-field kernels.
+@inline function _extra_pair_ug(kernel::Union{PartitionedVortex,RegularizedVortex},
+        tx, ty, tz, source_buffer, j)
+    T = typeof(tx)
+    @inbounds dx = tx - source_buffer[1, j]
+    @inbounds dy = ty - source_buffer[2, j]
+    @inbounds dz = tz - source_buffer[3, j]
+    r2 = dx * dx + dy * dy + dz * dz
+    r2 > zero(T) || return zero(T), zero(T), zero(T), zero(T)
+    return _direct_pair_ug(kernel, dx, dy, dz, r2, inv(sqrt(r2)), source_buffer, j)
+end
+@inline function _extra_pair_ugh(kernel::Union{PartitionedVortex,RegularizedVortex},
+        tx, ty, tz, source_buffer, j)
+    T = typeof(tx)
+    @inbounds dx = tx - source_buffer[1, j]
+    @inbounds dy = ty - source_buffer[2, j]
+    @inbounds dz = tz - source_buffer[3, j]
+    r2 = dx * dx + dy * dy + dz * dz
+    z = zero(T)
+    r2 > z || return z, z, z, z, z, z, z, z, z, z, z, z, z
+    return _direct_pair_ugh(kernel, dx, dy, dz, r2, inv(sqrt(r2)), source_buffer, j)
+end
+_extra_pair_has_hessian(::Union{PartitionedVortex,RegularizedVortex}) = true
+
 #------- host packing -------#
 
 function _radix_extra_target_positions(::Type{TF}, system) where TF

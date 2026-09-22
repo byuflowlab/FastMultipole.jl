@@ -3560,7 +3560,7 @@ end
 @kernel function ka_direct_pairs_warp_kernel!(kernel, output, @Const(source_bodies),
         @Const(cell_ranges), @Const(direct_targets), @Const(direct_sources),
         npairs, ::Type{T}, ::Val{HS}, ::Val{WG}, ::Val{LANES}, ::Val{FR},
-        ::Val{GH}) where {T,HS,WG,LANES,FR,GH}
+        ::Val{GH}, dj, rc2, ::Val{DJ}) where {T,HS,WG,LANES,FR,GH,DJ}
     tid = @index(Local)
     pair_i = (@index(Group) - 1) * (WG ÷ LANES) + (tid - 1) ÷ LANES + 1
     lane = (tid - 1) % LANES
@@ -3581,6 +3581,9 @@ end
             h1 = zero(T); h2 = zero(T); h3 = zero(T)
             h4 = zero(T); h5 = zero(T); h6 = zero(T)
             h7 = zero(T); h8 = zero(T); h9 = zero(T)
+            d1 = zero(T); d2 = zero(T); d3 = zero(T)
+            d4 = zero(T); d5 = zero(T); d6 = zero(T)
+            d7 = zero(T); d8 = zero(T); d9 = zero(T)
             for j in sfirst:slast
                 if i != j
                     dx = xi - source_bodies[1, j]
@@ -3597,6 +3600,13 @@ end
                             h1 += dh1; h2 += dh2; h3 += dh3
                             h4 += dh4; h5 += dh5; h6 += dh6
                             h7 += dh7; h8 += dh8; h9 += dh9
+                            if DJ
+                                e1, e2, e3, e4, e5, e6, e7, e8, e9 = _ka_pair_dj(kernel,
+                                    dx, dy, dz, r2, invr, source_bodies, j, rc2)
+                                d1 += e1; d2 += e2; d3 += e3
+                                d4 += e4; d5 += e5; d6 += e6
+                                d7 += e7; d8 += e8; d9 += e9
+                            end
                         else
                             du, dgx, dgy, dgz = FastMultipole._direct_pair_ug(kernel,
                                 dx, dy, dz, r2, invr, source_bodies, j, ghv)
@@ -3621,6 +3631,17 @@ end
                 KA.@atomic output[11, i] += h7
                 KA.@atomic output[12, i] += h8
                 KA.@atomic output[13, i] += h9
+            end
+            if DJ
+                KA.@atomic dj[1, i] += d1
+                KA.@atomic dj[2, i] += d2
+                KA.@atomic dj[3, i] += d3
+                KA.@atomic dj[4, i] += d4
+                KA.@atomic dj[5, i] += d5
+                KA.@atomic dj[6, i] += d6
+                KA.@atomic dj[7, i] += d7
+                KA.@atomic dj[8, i] += d8
+                KA.@atomic dj[9, i] += d9
             end
             i += LANES
         end
@@ -3681,8 +3702,15 @@ U-list direct nearfield for the KA lifecycle: mirror of
 `clear=false`.
 """
 function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
-        workgroup::Union{Nothing,Int}=nothing, clear::Bool=true) where {TF,B,LH}
+        workgroup::Union{Nothing,Int}=nothing, clear::Bool=true,
+        dsigma::Bool=false) where {TF,B,LH}
     clear && fill!(state.output, zero(TF))
+    # the fused dJ/dα channel: valid only for the pass that filled it
+    sfs = state.sfs
+    dj = sfs === nothing ? state.output : sfs.dj
+    dsigma = dsigma && sfs !== nothing && size(state.output, 1) >= 13 && _KA_FUSE_DJ[]
+    sfs === nothing || (sfs.dj_valid[] = dsigma)
+    dsigma && fill!(view(dj, :, 1:state.counts.n_bodies), zero(TF))
     npairs = state.counts.n_direct
     npairs == 0 && return state
     hs = size(state.output, 1) >= 13
@@ -3697,7 +3725,8 @@ function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B
     kern = _cached_kernel(ka_direct_pairs_warp_kernel!, backend, wg)
     kern(dkernel, state.output, state.source_bodies,
          state.cell_ranges, state.direct_targets, state.direct_sources,
-         npairs, TF, Val(hs), Val(wg), Val(lanes), Val(cfg.fast), Val(:shipped);
+         npairs, TF, Val(hs), Val(wg), Val(lanes), Val(cfg.fast), Val(:shipped),
+         dj, FastMultipole._sfs_saturation_rc2(TF), Val(dsigma);
          ndrange=cld(npairs, wg ÷ lanes) * wg)
     return state
 end
@@ -4081,14 +4110,14 @@ comparison runs both arms over identical data with no second cache build.
 """
 function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
         workgroup_b2m::Int=128, workgroup::Int=64, sync::Bool=true,
-        extra_tree::Tuple=()) where {TF,B,LH}
+        extra_tree::Tuple=(), dsigma::Bool=false) where {TF,B,LH}
     ws = state.scratch
     ws isa FastMultipole.ResidentOperatorWorkspace || throw(ArgumentError(
         "ka_lifecycle_body! requires a ResidentOperatorWorkspace in state.scratch"))
 
     backend = KA.get_backend(state.output)
     # 1. nearfield (clears state.output, as CUDA's fill+nearfield does)
-    ka_launch_nearfield!(state; clear=true)   # shape/workgroup from _nf_config
+    ka_launch_nearfield!(state; clear=true, dsigma)   # shape/workgroup from _nf_config
     _utick!(:lc_near, backend)
 
     # 2. B2M, then any extra source system the tree carries (before M2M, so the
@@ -5871,7 +5900,28 @@ function ka_nearfield_subsort!(ctx, cache::FastMultipole.RadixFMMCache, n::Int,
     kk(ctx.subsort_keys, ctx.positions, grid.perm, cache.x_min, cache.h0,
        cache.ell, sub, n; ndrange=n)
     _utick!(:subsort_keys, backend)
-    n_groups = min(n_cells, 8192)
+    # ONE GROUP PER CELL, no grid-stride (2026-09-22). The CUDA port's 8192-block
+    # cap made groups loop over a second cell, and `@synchronize` inside that
+    # loop deadlocks on the KA backends: the HVAB hover at 8349 cells hung at
+    # step 1561 on the H200, the dumped inputs hang standalone on Metal (watchdog
+    # kill) and run clean with n_groups = n_cells (each half of the cell list
+    # alone -- under the cap -- always ran). KA has no grid-dimension limit that
+    # needs the cap.
+    n_groups = n_cells
+    dump = get(ENV, "FM_SUBSORT_DUMP", "")
+    if !isempty(dump)
+        KA.synchronize(backend)
+        # plain binary (no Serialization dependency): header of 5 Int64, then the
+        # UInt32 keys, the perm (its eltype's bits) and the Int32 cell ranges
+        open(dump, "w") do io
+            write(io, Int64(n), Int64(n_cells), Int64(n_groups), Int64(workgroup),
+                  Int64(sizeof(eltype(grid.perm))))
+            write(io, Array(view(ctx.subsort_keys, 1:n)))
+            write(io, Array(view(grid.perm, 1:n)))
+            write(io, Int32.(Array(view(grid.cell_ranges, :, 1:n_cells))))
+        end
+        println("subsort: inputs written to $dump"); flush(stdout)
+    end
     sk = _cached_kernel(ka_subsort_cell_sort_kernel!, backend, workgroup)
     sk(grid.perm, ctx.subsort_keys, grid.cell_ranges, n_cells, n_groups,
        eltype(grid.perm), Val(KA_SUBSORT_CAPACITY), Val(workgroup);
@@ -6006,6 +6056,206 @@ end
     end
 end
 
+#------- sfs_dsigma channel: analytic core-scaling derivative kernels -------#
+#
+# Ports of `_host_sfs_dj_pairs!`, `_host_sfs_dsigma_tg_and_zero!`,
+# `_host_sfs_dzeta_pairs!` and `_host_sfs_form_de!` (src/translate_batched_resident.jl,
+# where the math is documented). Same launch shape as the ζ sweep: one
+# workgroup per direct pair, targets strided by the workgroup, atomics into the
+# per-body accumulators. The pair math is `FastMultipole._vortex_pair_ugh` with
+# (g, h) → (−G, ρ²G), shared verbatim with the host.
+
+@kernel function ka_sfs_dj_pairs_kernel!(dj, @Const(source_bodies),
+        @Const(cell_ranges), @Const(direct_targets), @Const(direct_sources),
+        npairs, rc2, A, active_row, ::Type{T}, ::Val{WG}) where {T,WG}
+    pair_i = @index(Group)
+    tid = @index(Local)
+    half = T(0.5)
+    @inbounds begin
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + tid - 1
+        while i <= tlast
+            if active_row == 0 || !iszero(source_bodies[active_row, i])
+                xi = source_bodies[1, i]
+                yi = source_bodies[2, i]
+                zi = source_bodies[3, i]
+                d1 = zero(T); d2 = zero(T); d3 = zero(T)
+                d4 = zero(T); d5 = zero(T); d6 = zero(T)
+                d7 = zero(T); d8 = zero(T); d9 = zero(T)
+                for j in sfirst:slast
+                    sigma = source_bodies[8, j]
+                    if i != j && sigma > zero(T)
+                        dx = xi - source_bodies[1, j]
+                        dy = yi - source_bodies[2, j]
+                        dz = zi - source_bodies[3, j]
+                        r2 = dx * dx + dy * dy + dz * dz
+                        rho2 = r2 / (sigma * sigma)
+                        if rho2 <= rc2 && r2 > zero(T)
+                            invr = inv(sqrt(r2))
+                            G = A * rho2 * sqrt(rho2) * exp(-half * rho2)
+                            _, _, _, _, h1, h2, h3, h4, h5, h6, h7, h8, h9 =
+                                FastMultipole._vortex_pair_ugh(dx, dy, dz, r2, invr,
+                                    source_bodies[5, j], source_bodies[6, j],
+                                    source_bodies[7, j], -G, rho2 * G)
+                            d1 += h1; d2 += h2; d3 += h3
+                            d4 += h4; d5 += h5; d6 += h6
+                            d7 += h7; d8 += h8; d9 += h9
+                        end
+                    end
+                end
+                KA.@atomic dj[1, i] += d1
+                KA.@atomic dj[2, i] += d2
+                KA.@atomic dj[3, i] += d3
+                KA.@atomic dj[4, i] += d4
+                KA.@atomic dj[5, i] += d5
+                KA.@atomic dj[6, i] += d6
+                KA.@atomic dj[7, i] += d7
+                KA.@atomic dj[8, i] += d8
+                KA.@atomic dj[9, i] += d9
+            end
+            i += WG
+        end
+    end
+end
+
+@kernel function ka_sfs_dsigma_tg_kernel!(dt, dom, dq, @Const(dj), @Const(source_bodies),
+        ::Type{T}, ::Val{TRANSPOSED}, n_bodies) where {T,TRANSPOSED}
+    i = @index(Global)
+    @inbounds if i <= n_bodies
+        t1, t2, t3 = FastMultipole._sfs_apply_op(
+            dj[1, i], dj[2, i], dj[3, i], dj[4, i], dj[5, i], dj[6, i],
+            dj[7, i], dj[8, i], dj[9, i],
+            source_bodies[5, i], source_bodies[6, i], source_bodies[7, i], TRANSPOSED)
+        dt[1, i] = t1; dt[2, i] = t2; dt[3, i] = t3
+        dom[1, i] = zero(T); dom[2, i] = zero(T); dom[3, i] = zero(T)
+        dq[1, i] = zero(T); dq[2, i] = zero(T); dq[3, i] = zero(T)
+    end
+end
+
+@kernel function ka_sfs_dzeta_pairs_kernel!(dom, dq, @Const(tg), @Const(dt),
+        @Const(source_bodies), @Const(cell_ranges), @Const(direct_targets),
+        @Const(direct_sources), npairs, rc2, K1, active_row, ::Type{T},
+        ::Val{WG}) where {T,WG}
+    pair_i = @index(Group)
+    tid = @index(Local)
+    half = T(0.5)
+    three = T(3)
+    @inbounds begin
+        target_cell = direct_targets[pair_i]
+        source_cell = direct_sources[pair_i]
+        tfirst = cell_ranges[1, target_cell]
+        tlast = tfirst + cell_ranges[2, target_cell] - 1
+        sfirst = cell_ranges[1, source_cell]
+        slast = sfirst + cell_ranges[2, source_cell] - 1
+        i = tfirst + tid - 1
+        while i <= tlast
+            if active_row == 0 || !iszero(source_bodies[active_row, i])
+                xi = source_bodies[1, i]
+                yi = source_bodies[2, i]
+                zi = source_bodies[3, i]
+                o1 = zero(T); o2 = zero(T); o3 = zero(T)
+                q1 = zero(T); q2 = zero(T); q3 = zero(T)
+                for j in sfirst:slast
+                    if i != j && (active_row == 0 || !iszero(source_bodies[active_row, j]))
+                        dx = xi - source_bodies[1, j]
+                        dy = yi - source_bodies[2, j]
+                        dz = zi - source_bodies[3, j]
+                        r2 = dx * dx + dy * dy + dz * dz
+                        sigma = source_bodies[8, j]
+                        rho2 = r2 / (sigma * sigma)
+                        if rho2 <= rc2
+                            z = K1 * exp(-half * rho2) / (sigma * sigma * sigma)
+                            dz_ = z * (rho2 - three)
+                            o1 += dz_ * source_bodies[5, j]
+                            o2 += dz_ * source_bodies[6, j]
+                            o3 += dz_ * source_bodies[7, j]
+                            q1 += dz_ * tg[1, j] + z * dt[1, j]
+                            q2 += dz_ * tg[2, j] + z * dt[2, j]
+                            q3 += dz_ * tg[3, j] + z * dt[3, j]
+                        end
+                    end
+                end
+                KA.@atomic dom[1, i] += o1
+                KA.@atomic dom[2, i] += o2
+                KA.@atomic dom[3, i] += o3
+                KA.@atomic dq[1, i] += q1
+                KA.@atomic dq[2, i] += q2
+                KA.@atomic dq[3, i] += q3
+            end
+            i += WG
+        end
+    end
+end
+
+# ∂E formed in place into `dq` (Ω must still be intact: launched before any reuse)
+@kernel function ka_sfs_form_de_kernel!(dq, @Const(dj), @Const(om), @Const(dom),
+        @Const(output), ::Val{TRANSPOSED}, n_bodies) where TRANSPOSED
+    i = @index(Global)
+    @inbounds if i <= n_bodies
+        a1, a2, a3 = FastMultipole._sfs_apply_op(
+            dj[1, i], dj[2, i], dj[3, i], dj[4, i], dj[5, i], dj[6, i],
+            dj[7, i], dj[8, i], dj[9, i], om[1, i], om[2, i], om[3, i], TRANSPOSED)
+        b1, b2, b3 = FastMultipole._sfs_apply_op(
+            output[5, i], output[6, i], output[7, i], output[8, i],
+            output[9, i], output[10, i], output[11, i], output[12, i],
+            output[13, i], dom[1, i], dom[2, i], dom[3, i], TRANSPOSED)
+        dq[1, i] = a1 + b1 - dq[1, i]
+        dq[2, i] = a2 + b2 - dq[2, i]
+        dq[3, i] = a3 + b3 - dq[3, i]
+    end
+end
+
+@kernel function ka_dsfs_scatter_kernel!(target_buffer, @Const(dt), @Const(de),
+        @Const(perm), @Const(body_system), @Const(body_index), isys, n_bodies)
+    sorted_i = @index(Global)
+    @inbounds if sorted_i <= n_bodies
+        global_i = perm[sorted_i]
+        if body_system[global_i] == isys
+            ibody = body_index[global_i]
+            target_buffer[1, ibody] = dt[1, sorted_i]
+            target_buffer[2, ibody] = dt[2, sorted_i]
+            target_buffer[3, ibody] = dt[3, sorted_i]
+            target_buffer[4, ibody] = de[1, sorted_i]
+            target_buffer[5, ibody] = de[2, sorted_i]
+            target_buffer[6, ibody] = de[3, sorted_i]
+        end
+    end
+end
+
+function _ka_launch_sfs_dsigma_typed!(state::FastMultipole.DeviceResidentRadixState{TF},
+        tg::AbstractMatrix{TF}, dj::AbstractMatrix{TF}, dt::AbstractMatrix{TF},
+        dom::AbstractMatrix{TF}, dq::AbstractMatrix{TF}, tv::Val, active_row::Int,
+        workgroup::Int) where TF
+    n = state.counts.n_bodies
+    n > 0 || return state
+    backend = KA.get_backend(state.output)
+    fused = state.sfs.dj_valid[]          # the near field of this pass filled dj
+    fused || fill!(view(dj, :, 1:n), zero(TF))
+    npairs = state.counts.n_direct
+    if npairs > 0 && !fused
+        djk = _cached_kernel(ka_sfs_dj_pairs_kernel!, backend, workgroup)
+        djk(dj, state.source_bodies, state.cell_ranges, state.direct_targets,
+            state.direct_sources, npairs, FastMultipole._sfs_saturation_rc2(TF),
+            TF(FastMultipole._GAUSSERF_A), active_row, TF, Val(workgroup);
+            ndrange=npairs * workgroup)
+    end
+    tk = _cached_kernel(ka_sfs_dsigma_tg_kernel!, backend, workgroup)
+    tk(dt, dom, dq, dj, state.source_bodies, TF, tv, n; ndrange=n)
+    if npairs > 0
+        dzk = _cached_kernel(ka_sfs_dzeta_pairs_kernel!, backend, workgroup)
+        dzk(dom, dq, tg, dt, state.source_bodies, state.cell_ranges,
+            state.direct_targets, state.direct_sources, npairs,
+            FastMultipole._sfs_saturation_rc2(TF), TF(FastMultipole._SFS_ZETA_K1),
+            active_row, TF, Val(workgroup); ndrange=npairs * workgroup)
+    end
+    return state
+end
+
 """
     ka_launch_sfs!(state; workgroup=64)
 
@@ -6015,13 +6265,15 @@ for `sfs=true`, after the U/J lifecycle has completed, so `state.output` carries
 a finished J.
 """
 function ka_launch_sfs!(state::FastMultipole.DeviceResidentRadixState{TF};
-        workgroup::Int=64) where TF
+        workgroup::Int=64, dsigma::Bool=false) where TF
     sfs = state.sfs
     sfs === nothing && return state
     size(state.output, 1) >= 13 || throw(AssertionError(
         "the SFS pass requires the 13-row (hessian) output"))
-    _ka_launch_sfs_typed!(state, sfs.tg, sfs.om, sfs.q,
-        sfs.transposed ? Val(true) : Val(false), sfs.active_row, workgroup)
+    tv = sfs.transposed ? Val(true) : Val(false)
+    _ka_launch_sfs_typed!(state, sfs.tg, sfs.om, sfs.q, tv, sfs.active_row, workgroup)
+    dsigma && _ka_launch_sfs_dsigma_typed!(state, sfs.tg, sfs.dj, sfs.dt, sfs.dom,
+        sfs.dq, tv, sfs.active_row, workgroup)
     return state
 end
 
@@ -6139,7 +6391,9 @@ outside the lifecycle, next to `ka_finalize_radix_output!`.
 """
 function ka_finalize_radix_sfs_output!(state::FastMultipole.DeviceResidentRadixState{TF},
         target_systems; host_sfs_staging=nothing, sfs_target_buffers=nothing,
-        device_sfs_buffers=nothing, workgroup::Int=64) where TF
+        device_sfs_buffers=nothing, workgroup::Int=64, dsigma::Bool=false,
+        host_dsfs_staging=nothing, dsfs_target_buffers=nothing,
+        device_dsfs_buffers=nothing) where TF
     sfs = state.sfs
     sfs === nothing && throw(ArgumentError(
         "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
@@ -6147,10 +6401,15 @@ function ka_finalize_radix_sfs_output!(state::FastMultipole.DeviceResidentRadixS
     n = state.counts.n_bodies
     n > 0 || return target_systems
     backend = KA.get_backend(state.output)
+    tv = sfs.transposed ? Val(true) : Val(false)
     ek = _cached_kernel(ka_sfs_form_e_kernel!, backend, workgroup)
-    ek(sfs.tg, sfs.om, sfs.q, state.output,
-       sfs.transposed ? Val(true) : Val(false), n; ndrange=n)
+    ek(sfs.tg, sfs.om, sfs.q, state.output, tv, n; ndrange=n)
+    if dsigma
+        dek = _cached_kernel(ka_sfs_form_de_kernel!, backend, workgroup)
+        dek(sfs.dq, sfs.dj, sfs.om, sfs.dom, state.output, tv, n; ndrange=n)
+    end
     host_e = nothing
+    host_d = nothing
     for (isys, target_system) in enumerate(systems)
         nb = FastMultipole.get_n_bodies(target_system)
         if FastMultipole.residency(target_system) isa FastMultipole.DeviceResident
@@ -6160,6 +6419,14 @@ function ka_finalize_radix_sfs_output!(state::FastMultipole.DeviceResidentRadixS
             sk(buf, sfs.tg, state.body_perm, state.body_system_ids,
                state.body_indices, isys, n; ndrange=n)
             FastMultipole.sfs_to_target!(target_system, buf, 1:nb)
+            if dsigma
+                dbuf = _ka_cached_target_buffer(device_dsfs_buffers, backend, isys, TF, 6, nb)
+                fill!(dbuf, zero(TF))
+                dsk = _cached_kernel(ka_dsfs_scatter_kernel!, backend, workgroup)
+                dsk(dbuf, sfs.dt, sfs.dq, state.body_perm, state.body_system_ids,
+                    state.body_indices, isys, n; ndrange=n)
+                FastMultipole.sfs_dsigma_to_target!(target_system, dbuf, 1:nb)
+            end
         else
             if host_e === nothing
                 if host_sfs_staging === nothing
@@ -6177,6 +6444,27 @@ function ka_finalize_radix_sfs_output!(state::FastMultipole.DeviceResidentRadixS
             FastMultipole._scatter_sfs_host!(buf, host_e, state.host_body_perm,
                 state.host_body_system_ids, state.host_body_indices, isys, n)
             FastMultipole.sfs_to_target!(target_system, buf, 1:nb)
+            if dsigma
+                if host_d === nothing
+                    KA.synchronize(backend)
+                    host_dt = host_dsfs_staging === nothing ? Array(sfs.dt) :
+                        (copyto!(host_dsfs_staging, 1, sfs.dt, 1, 3 * n);
+                         view(host_dsfs_staging, 1:3, :))
+                    host_de = host_dsfs_staging === nothing ? Array(sfs.dq) :
+                        (copyto!(host_dsfs_staging, 3 * size(host_dsfs_staging, 2) + 1,
+                                 sfs.dq, 1, 3 * n);
+                         view(host_dsfs_staging, 4:6, :))
+                    host_d = (host_dt, host_de)
+                    state.counters.influence_downloads += 1
+                end
+                dbuf_full = dsfs_target_buffers === nothing ?
+                    Matrix{TF}(undef, 6, nb) : dsfs_target_buffers[isys]
+                dbuf = size(dbuf_full, 2) == nb ? dbuf_full : view(dbuf_full, :, 1:nb)
+                FastMultipole._scatter_dsfs_host!(dbuf, host_d[1], host_d[2],
+                    state.host_body_perm, state.host_body_system_ids,
+                    state.host_body_indices, isys, n)
+                FastMultipole.sfs_dsigma_to_target!(target_system, dbuf, 1:nb)
+            end
         end
     end
     return target_systems
@@ -6560,6 +6848,9 @@ const _KA_SLOW_STAGE = Ref{Float64}(Inf)
     return nothing
 end
 const _KA_TICK_TRACE = Ref{Bool}(false)
+# FM_FUSE_DJ=0: compute the sfs_dsigma dJ/dα channel by its own pair sweep
+# instead of inside the near-field kernel (timing bisection)
+const _KA_FUSE_DJ = Ref{Bool}(true)
 
 
 function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, systems::Tuple;
@@ -6670,6 +6961,10 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     # composed into the perm before packing (the sorted cell keys, cell ranges
     # and node metadata are unaffected). Same gate as CUDA's at cuda:6807.
     _utick!(:grid_rebuild, backend)
+    # (2026-09-22: hung above 8192 cells through the grid-stride loop in
+    # `ka_subsort_cell_sort_kernel!`'s launch; fixed there, one group per cell.
+    # FM_SUBSORT_DUMP=path writes the kernel's inputs before the launch for a
+    # standalone reproduction.)
     if !direct_only && _ka_radix_setting(:CUDA_NEARFIELD_SUBSORT, true) &&
             cache.options.direct_kernel isa Union{FastMultipole.PartitionedVortex,
                                                   FastMultipole.TwoPassVortex}
@@ -7014,9 +7309,14 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         device_target_buffers=Dict{Int,Any}(),
         sfs_ctx=sfs ?
             (; tg=_z(TF, 3, maxn), om=_z(TF, 3, maxn), q=_z(TF, 3, maxn),
+               dj=_z(TF, 9, maxn), dt=_z(TF, 3, maxn), dom=_z(TF, 3, maxn),
+               dq=_z(TF, 3, maxn), dj_valid=Ref(false),
                transposed=sfs_transposed, active_row=sfs_active_row) : nothing,
         host_sfs_staging=sfs ? zeros(TF, 3, maxn) : nothing,
         device_sfs_buffers=Dict{Int,Any}(),
+        # sfs_dsigma channel: 6-row (L, ∂E) staging and per-system device buffers
+        host_dsfs_staging=sfs ? zeros(TF, 6, maxn) : nothing,
+        device_dsfs_buffers=Dict{Int,Any}(),
     )
     cache = FastMultipole.RadixFMMCache{TF,LH}(
         P, ell, x_min, h0, ell_axes, box_extent, root_level, maxn, true, hessian,
@@ -7209,7 +7509,7 @@ function _ka_extra_tree_prepared!(cache::FastMultipole.RadixFMMCache, sys)
 end
 
 function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
-        targets::Tuple, switches::Tuple; sfs::Bool=false,
+        targets::Tuple, switches::Tuple; sfs::Bool=false, sfs_dsigma::Bool=false,
         workgroup=KA_AUTO_WORKGROUP, extra_targets::Tuple=(),
         extra_target_switches::Tuple=(), extra_sources::Tuple=(),
         extra_tree_sources::Tuple=(), self_induce::Bool=true)
@@ -7248,7 +7548,7 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         prepared = isempty(extra_tree_sources) ? () :
             Tuple(_ka_extra_tree_prepared!(cache, sys) for sys in extra_tree_sources)
         isempty(prepared) || _utick!(:extra_prepare, KA.get_backend(state.output))
-        ka_lifecycle_body!(state; extra_tree=prepared)
+        ka_lifecycle_body!(state; extra_tree=prepared, dsigma=sfs_dsigma)
         for p in prepared
             ka_extra_tree_finish!(state, p; workgroup)
         end
@@ -7272,7 +7572,7 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
             "U-list direct pairs, which this arm does not build"))
         state.sfs === nothing && throw(ArgumentError(
             "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
-        ka_launch_sfs!(state)
+        ka_launch_sfs!(state; dsigma=sfs_dsigma)
         _utick!(:sfs, KA.get_backend(state.output))
     end
     ka_finalize_radix_output!(state, targets; derivatives_switches=switches,
@@ -7282,7 +7582,8 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     sfs && ka_finalize_radix_sfs_output!(state, targets;
         host_sfs_staging=cache.device_ctx.host_sfs_staging,
         sfs_target_buffers=FastMultipole._radix_cache_sfs_buffers!(cache, targets),
-        device_sfs_buffers=cache.device_ctx.device_sfs_buffers)
+        device_sfs_buffers=cache.device_ctx.device_sfs_buffers,
+        _ka_dsfs_finalize_kw(cache, targets, sfs_dsigma)...)
     _utick!(:finalize, KA.get_backend(state.output))
     # Extra targets are summed all-pairs unless :KA_EXTRA_TARGETS_GRID is set.
     # The grid-carried path (bin, local expansion, near sweep) has a per-call
@@ -7403,7 +7704,10 @@ function _ka_launch_extra_source!(backend, wg, out, xt, nt::Int, system, ::Type{
     ns = FastMultipole.get_n_bodies(system)
     ns == 0 && return out
     buffer = _ka_upload(backend, FastMultipole._radix_extra_source_buffer(TF, system))
-    kernel = FastMultipole.direct_kernel(system)
+    # the typed device mirror for the regularized vortex kernels (Float64 fields
+    # do not compile on Metal); other kernels pass through unchanged. The extra
+    # buffer carries no inverse-sigma row, so the mirror divides (inv_sigma_row 0).
+    kernel = _ka_device_direct_kernel(FastMultipole.direct_kernel(system), TF, 0)
     kern = _cached_kernel(ka_targets_from_extra_source_kernel!, backend, wg)
     kern(kernel, out, xt, nt, buffer, ns, TF,
          Val(hs && FastMultipole._extra_pair_has_hessian(kernel)); ndrange=cld(nt, wg) * wg)
@@ -8425,6 +8729,32 @@ _ka_kernel_sigma_row(k::FastMultipole.TwoPassVortex) = k.sigma_row
     end
 end
 
+# The fused sfs_dsigma channel (2026-09-22): dJ/dα of one pair from the ρ the
+# near field already computes, the same (g, h) -> (−G, ρ²G) assembly as the
+# standalone `ka_sfs_dj_pairs_kernel!` and the same ζ saturation cutoff, so
+# fused and swept results are identical. A singular source (no sigma) carries
+# no sigma dependence.
+@inline function _ka_pair_dj(kernel::KARegularizedFunctor, dx, dy, dz, r2::T, invr::T,
+        source_bodies, j, rc2) where T
+    rho, guard = _ka_rho_and_guard(kernel, source_bodies, j, r2, invr)
+    z = zero(T)
+    guard > z || return (z, z, z, z, z, z, z, z, z)
+    rho2 = rho * rho
+    rho2 <= rc2 || return (z, z, z, z, z, z, z, z, z)
+    G = T(FastMultipole._GAUSSERF_A) * rho2 * rho * exp(-T(0.5) * rho2)
+    @inbounds gsx = source_bodies[5, j]
+    @inbounds gsy = source_bodies[6, j]
+    @inbounds gsz = source_bodies[7, j]
+    _, _, _, _, h1, h2, h3, h4, h5, h6, h7, h8, h9 = FastMultipole._vortex_pair_ugh(
+        dx, dy, dz, r2, invr, gsx, gsy, gsz, -G, rho2 * G)
+    return (h1, h2, h3, h4, h5, h6, h7, h8, h9)
+end
+@inline function _ka_pair_dj(::FastMultipole.AbstractDirectKernel, dx, dy, dz, r2::T, invr::T,
+        source_bodies, j, rc2) where T
+    z = zero(T)
+    return (z, z, z, z, z, z, z, z, z)
+end
+
 # Port of `_direct_pair_ug(::Union{PartitionedVortex,TwoPassVortex}, ...)`
 # (src/translate_batched_resident.jl:833-848). Statement for statement identical;
 # the only difference is that the cutoff needs no `T(...)` because it is already
@@ -8446,6 +8776,29 @@ end
 end
 
 # Port of `_direct_pair_ugh(...)` (src/translate_batched_resident.jl:850-866).
+# all-pairs extra-source hooks for the mirror kernels (oversize particles): the
+# host definitions in src/radix_extra_systems.jl, on the typed functor
+@inline function FastMultipole._extra_pair_ug(kernel::KARegularizedFunctor, tx, ty, tz, source_buffer, j)
+    T = typeof(tx)
+    @inbounds dx = tx - source_buffer[1, j]
+    @inbounds dy = ty - source_buffer[2, j]
+    @inbounds dz = tz - source_buffer[3, j]
+    r2 = dx * dx + dy * dy + dz * dz
+    r2 > zero(T) || return zero(T), zero(T), zero(T), zero(T)
+    return FastMultipole._direct_pair_ug(kernel, dx, dy, dz, r2, inv(sqrt(r2)), source_buffer, j)
+end
+@inline function FastMultipole._extra_pair_ugh(kernel::KARegularizedFunctor, tx, ty, tz, source_buffer, j)
+    T = typeof(tx)
+    @inbounds dx = tx - source_buffer[1, j]
+    @inbounds dy = ty - source_buffer[2, j]
+    @inbounds dz = tz - source_buffer[3, j]
+    r2 = dx * dx + dy * dy + dz * dz
+    z = zero(T)
+    r2 > z || return z, z, z, z, z, z, z, z, z, z, z, z, z
+    return FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, inv(sqrt(r2)), source_buffer, j)
+end
+FastMultipole._extra_pair_has_hessian(::KARegularizedFunctor) = true
+
 @inline function FastMultipole._direct_pair_ugh(kernel::KARegularizedFunctor,
         dx, dy, dz, r2, invr, source_bodies, j)
     T = typeof(r2)
@@ -8759,6 +9112,38 @@ end
 # unaffected -- its runtime `include` replaces the consulting stub outright, so
 # a CUDA build never reaches the registry.
 
+# keyword set of the sfs_dsigma channel for `ka_finalize_radix_sfs_output!`
+# (empty when the evaluation did not ask for it, so nothing is allocated)
+function _ka_dsfs_finalize_kw(cache::FastMultipole.RadixFMMCache, systems::Tuple, dsigma::Bool)
+    dsigma || return (;)
+    ctx = cache.device_ctx
+    return (; dsigma=true,
+        host_dsfs_staging=hasproperty(ctx, :host_dsfs_staging) ? ctx.host_dsfs_staging : nothing,
+        dsfs_target_buffers=FastMultipole._radix_cache_dsfs_buffers!(cache, systems),
+        device_dsfs_buffers=hasproperty(ctx, :device_dsfs_buffers) ? ctx.device_dsfs_buffers : nothing)
+end
+
+# SFS repass on the resident state (see FastMultipole.radix_sfs_repass!): the
+# targets' current U/J gathered into `state.output` in sorted order, then the
+# lifecycle's own SFS pass and delivery.
+function _ka_radix_device_sfs_repass_hook(cache::FastMultipole.RadixFMMCache{TF}, systems::Tuple;
+        workgroup::Int=64, dsigma::Bool=false) where TF
+    state = cache.state
+    n = state.counts.n_bodies
+    for (isys, system) in enumerate(systems)
+        FastMultipole.output_from_target!(system, state.output, state.body_perm,
+            state.body_system_ids, state.body_indices, isys, n)
+    end
+    ka_launch_sfs!(state; workgroup, dsigma)
+    ka_finalize_radix_sfs_output!(state, systems;
+        host_sfs_staging=cache.device_ctx.host_sfs_staging,
+        sfs_target_buffers=FastMultipole._radix_cache_sfs_buffers!(cache, systems),
+        device_sfs_buffers=cache.device_ctx.device_sfs_buffers, workgroup,
+        _ka_dsfs_finalize_kw(cache, systems, dsigma)...)
+    _utick!(:sfs_repass, KA.get_backend(state.output))   # its own line in the stage table
+    return systems
+end
+
 function _ka_radix_device_build_hook(sources::Tuple, args...;
         adaptive_policy=nothing, dpb_adaptive::Int=0, kwargs...)
     adaptive_policy === nothing || throw(ArgumentError(
@@ -8773,17 +9158,20 @@ function _ka_radix_device_build_hook(sources::Tuple, args...;
 end
 
 _ka_radix_device_step_hook(cache, targets, switches; sfs::Bool=false,
+        sfs_dsigma::Bool=false,
         extra_targets::Tuple=(), extra_target_switches::Tuple=(),
         extra_sources::Tuple=(), extra_tree_sources::Tuple=(),
         self_induce::Bool=true) =
-    ka_radix_cache_device_step!(cache, targets, switches; sfs, extra_targets,
+    ka_radix_cache_device_step!(cache, targets, switches; sfs, sfs_dsigma, extra_targets,
         extra_target_switches, extra_sources, extra_tree_sources, self_induce)
 
 function __init__()
     _KA_SLOW_STAGE[] = parse(Float64, get(ENV, "FM_SLOW_STAGE", "Inf"))
     _KA_TICK_TRACE[] = get(ENV, "FM_TICK_TRACE", "0") == "1"
+    _KA_FUSE_DJ[] = get(ENV, "FM_FUSE_DJ", "1") == "1"
     FastMultipole.register_radix_device_backend!("KernelAbstractions",
         _ka_radix_device_build_hook, _ka_radix_device_step_hook)
+    FastMultipole._RADIX_DEVICE_SFS_REPASS_HOOK[] = _ka_radix_device_sfs_repass_hook
     return nothing
 end
 

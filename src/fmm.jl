@@ -860,6 +860,9 @@ path is only selected by passing a `RadixFMMCache`.
 - `scalar_potential::Bool=false`, `gradient::Bool=true`: which outputs to write back
 - `hessian::Bool=false`: write back the 9-component hessian; requires a cache
   built with `RadixFMMCache(...; hessian=true)` (`ArgumentError` otherwise)
+- `sfs_dsigma::Bool=false`: with `sfs=true`, also deliver the analytic
+  derivatives of the resolved stretching and of E_str with respect to a uniform
+  core scaling through [`sfs_dsigma_to_target!`](@ref) (dynamic SFS, two-level)
 - `sfs::Bool=false`: deliver the subfilter-scale vortex-stretching term E_str
   through [`sfs_to_target!`](@ref) (task 048); requires a cache built with
   `RadixFMMCache(...; sfs=true, hessian=true)` (`ArgumentError` otherwise)
@@ -875,7 +878,7 @@ fmm!(system, cache::RadixFMMCache; optargs...) = fmm!(system, system, cache; opt
 
 function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         scalar_potential::Bool=false, gradient::Bool=true, hessian=false,
-        sfs::Bool=false, tree_sources::Tuple=(),
+        sfs::Bool=false, sfs_dsigma::Bool=false, tree_sources::Tuple=(),
         lamb_helmholtz::Union{Nothing,Bool}=nothing) where {TF,LH}
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
@@ -890,6 +893,8 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
     sfs && !split.self_induce && throw(ArgumentError(
         "sfs=true requires the self-inducing call (the SFS pass consumes the " *
         "lifecycle's direct pairs)"))
+    sfs_dsigma && !sfs && throw(ArgumentError(
+        "sfs_dsigma=true is a channel of the SFS pass; pass sfs=true as well"))
     lamb_helmholtz === nothing || Bool(lamb_helmholtz) == LH || throw(ArgumentError(
         "lamb_helmholtz=$(lamb_helmholtz) conflicts with the cache's lamb_helmholtz=$LH; " *
         "the Lamb-Helmholtz channel is fixed at cache construction"))
@@ -904,7 +909,7 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
     extra_switches = Tuple(all_switches[i] for i in split.extra_target_index)
     main = split.main
     if cache.device
-        _radix_cache_device_step!(cache, main, switches; sfs,
+        _radix_cache_device_step!(cache, main, switches; sfs, sfs_dsigma,
             extra_targets=split.extra_targets, extra_target_switches=extra_switches,
             extra_sources=split.extra_sources, extra_tree_sources=tree_sources,
             self_induce=split.self_induce)
@@ -918,12 +923,13 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
             fill!(cache.state.output, zero(TF))
             _radix_extra_sources_into_output!(cache.state, tree_sources)
         end
-        sfs && _run_host_radix_sfs!(cache.state)
+        sfs && _run_host_radix_sfs!(cache.state; dsigma=sfs_dsigma)
         _radix_extra_sources_into_output!(cache.state, split.extra_sources)
         finalize_radix_output!(cache.state, main; derivatives_switches=switches,
             target_buffers=_radix_cache_target_buffers!(cache, switches))
         sfs && finalize_radix_sfs_output!(cache.state, main;
-            sfs_buffers=_radix_cache_sfs_buffers!(cache, main))
+            sfs_buffers=_radix_cache_sfs_buffers!(cache, main), dsigma=sfs_dsigma,
+            dsfs_buffers=sfs_dsigma ? _radix_cache_dsfs_buffers!(cache, main) : nothing)
         split.self_induce &&
             _radix_extra_targets_evaluate!(cache.state, split.extra_targets, extra_switches)
     else
@@ -936,13 +942,14 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
             "the adaptive radix path has no extra-sources-only mode"))
         run_adaptive_host_radix_lifecycle!(cache)
         adaptive_state = (cache.adaptive_state::AdaptiveResidentLifecycle).state
-        sfs && _run_host_radix_sfs!(adaptive_state)
+        sfs && _run_host_radix_sfs!(adaptive_state; dsigma=sfs_dsigma)
         _radix_extra_sources_into_output!(adaptive_state, split.extra_sources)
         finalize_radix_output!(adaptive_state, main;
             derivatives_switches=switches,
             target_buffers=_radix_cache_target_buffers!(cache, switches))
         sfs && finalize_radix_sfs_output!(adaptive_state, main;
-            sfs_buffers=_radix_cache_sfs_buffers!(cache, main))
+            sfs_buffers=_radix_cache_sfs_buffers!(cache, main), dsigma=sfs_dsigma,
+            dsfs_buffers=sfs_dsigma ? _radix_cache_dsfs_buffers!(cache, main) : nothing)
         _radix_extra_targets_evaluate!(adaptive_state, split.extra_targets, extra_switches)
     end
     return cache
