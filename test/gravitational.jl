@@ -75,46 +75,57 @@ end
 
 FastMultipole.get_n_bodies(g::Gravitational) = length(g.bodies)
 
-FastMultipole.body_to_multipole!(system::Gravitational, args...) = FastMultipole.body_to_multipole!(Point{Source}, system, args...)
+FastMultipole.body_to_multipole!(system::Gravitational, args...) = FastMultipole.body_to_multipole!(Point{Source}, system, args...; scale_strength=-1.0)
 
 function FastMultipole.has_vector_potential(system::Gravitational)
     return false
 end
 
-function FastMultipole.get_previous_influence(system::Gravitational, i)
-    phi_last = system.potential[1,i]
-    gradient_last = SVector{3}(system.potential[5,i], system.potential[6,i], system.potential[7,i])
+FastMultipole.metadata_per_body(system::Gravitational) = 2
+FastMultipole.previous_potential_metadata_index(system::Gravitational) = 1
+FastMultipole.previous_gradient_metadata_index(system::Gravitational) = 2
 
-    return phi_last, norm(gradient_last)
+function FastMultipole.metadata_to_buffer!(buffer, switch, i_buffer, system::Gravitational, i_body)
+    previous_potential = system.potential[1, i_body]
+    previous_gradient = norm(SVector{3}(system.potential[5, i_body], system.potential[6, i_body], system.potential[7, i_body]))
+    buffer[FastMultipole.metadata_index(switch, 1), i_buffer] = previous_potential
+    buffer[FastMultipole.metadata_index(switch, 2), i_buffer] = previous_gradient
 end
 
-function FastMultipole.direct!(target_system, target_index, derivatives_switch, source_system::Gravitational, source_buffer, source_index)
-    @inbounds for i_source in source_index
-        source_x, source_y, source_z = FastMultipole.get_position(source_buffer, i_source)
-        source_strength = FastMultipole.get_strength(source_buffer, source_system, i_source)[1]
-        @inbounds for j_target in target_index
-            target_x, target_y, target_z = FastMultipole.get_position(target_system, j_target)
+function FastMultipole.direct!(target_system, target_index, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, source_system::Gravitational, source_buffer, source_index) where {PS,GS,HS}
+    @inbounds for j_target in target_index
+        target_x, target_y, target_z = FastMultipole.get_position(target_system, j_target)
+        dϕ = zero(eltype(target_system))
+        d∇ϕ = zero(SVector{3,eltype(target_system)})
+        @inbounds for i_source in source_index
+            source_x, source_y, source_z = FastMultipole.get_position(source_buffer, i_source)
+            source_strength = FastMultipole.get_strength(source_buffer, source_system, i_source)[1]
             dx = target_x - source_x
             dy = target_y - source_y
             dz = target_z - source_z
             r2 = dx*dx + dy*dy + dz*dz
             if r2 > 0
                 r = sqrt(r2)
-                dϕ = source_strength / r * FastMultipole.ONE_OVER_4π
-                FastMultipole.set_scalar_potential!(target_system, j_target, dϕ)
-                dF = SVector{3}(dx,dy,dz) * source_strength / (r2 * r) * FastMultipole.ONE_OVER_4π
-                FastMultipole.set_gradient!(target_system, j_target, dF)
+                tmp = source_strength / r * FastMultipole.ONE_OVER_4π
+                if PS
+                    dϕ += tmp
+                end 
+                if GS
+                    d∇ϕ -= SVector{3}(dx,dy,dz) * tmp / r2
+                end
             end
         end
+        PS && FastMultipole.set_scalar_potential!(target_system, derivatives_switch, j_target, dϕ)
+        GS && FastMultipole.set_gradient!(target_system, derivatives_switch, j_target, d∇ϕ)
     end
 end
 
-function FastMultipole.buffer_to_target_system!(target_system::Gravitational, i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+function FastMultipole.buffer_to_target_system!(target_system::Gravitational, i_target, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
     # get values
     TF = eltype(target_buffer)
-    scalar_potential = PS ? FastMultipole.get_scalar_potential(target_buffer, i_buffer) : zero(TF)
-    gradient = GS ? FastMultipole.get_gradient(target_buffer, i_buffer) : zero(SVector{3,TF})
-    hessian = HS ? FastMultipole.get_hessian(target_buffer, i_buffer) : zero(SMatrix{3,3,TF,9})
+    scalar_potential = PS ? FastMultipole.get_scalar_potential(target_buffer, derivatives_switch, i_buffer) : zero(TF)
+    gradient = GS ? FastMultipole.get_gradient(target_buffer, derivatives_switch, i_buffer) : zero(SVector{3,TF})
+    hessian = HS ? FastMultipole.get_hessian(target_buffer, derivatives_switch, i_buffer) : zero(SMatrix{3,3,TF,9})
 
     # update system
     target_system.potential[i_POTENTIAL[1], i_target] = scalar_potential

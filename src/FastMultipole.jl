@@ -25,18 +25,18 @@ const DEBUG = Array{Bool,0}(undef)
 DEBUG[] = false
 
 # multithreading parameters
-const MIN_NPT_B2M = 100
-const MIN_NPT_M2M = 100
-const MIN_NPT_M2L = 100
-const MIN_NPT_L2L = 100
-const MIN_NPT_L2B = 100
-const MIN_NPT_NF = 100
-const MIN_NPT_BRANCH = 9 # if fewer branches than this, multithread over bodies instead of branches
+const MIN_NPT_B2M = 10
+const MIN_NPT_M2M = 10
+const MIN_NPT_M2L = 10
+const MIN_NPT_L2L = 10
+const MIN_NPT_L2B = 10
+const MIN_NPT_NF = 10
+const MIN_NPT_BRANCH = 1 # if fewer branches than this, multithread over bodies instead of branches
                          # TODO: this should probably be a function of the number of threads
-const MIN_NPT_SORT = 10000
-const MIN_NPT_MUL_SORT = 100
-const MIN_NPT = 100
-const MIN_BODIES = 1000
+const MIN_NPT_SORT = 1
+const MIN_NPT_MUL_SORT = 1
+const MIN_NPT = 1
+const MIN_BODIES = 100
 
 # preallocate y-axis rotation matrices by π/2
 const Hs_π2 = Float64[1.0]
@@ -113,6 +113,11 @@ export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Pane
 export PowerAbsolutePotential, PowerAbsoluteGradient, RotatedCoefficientsAbsoluteGradient
 # export PowerRelativePotential, PowerRelativeGradient, RotatedCoefficientsRelativeGradient
 export get_n_bodies, buffer_element, body_to_multipole!, direct!, direct_gpu!
+export source_to_buffer!, source_to_buffer
+
+include("direct_conditioning.jl")
+
+export DirectConditioningRule, SelfPairs, PairSet, AllPairs, applies
 
 include("bodytomultipole.jl")
 
@@ -124,7 +129,10 @@ export direct!
 
 include("derivativesswitch.jl")
 
-export DerivativesSwitch
+export DerivativesSwitch, metadata_range, metadata_index, tree_carried_range
+export scalar_potential_index, gradient_range, hessian_range
+export standard_output_range, extra_output_range, output_range
+export get_extra_output, set_extra_output!, extra_output_view, output_view
 
 include("error.jl")
 
@@ -150,7 +158,9 @@ include("probes.jl")
 
 include("solve.jl")
 
-export FastGaussSeidel
+include("extra_farfield.jl")
+
+export FastGaussSeidel, JacobiPreconditioner
 
 #------- PRECALCULATIONS -------#
 

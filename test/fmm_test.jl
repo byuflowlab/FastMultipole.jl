@@ -125,7 +125,8 @@ Gammas = [
 
 vortexparticles = VortexParticles(xs, Gammas)
 source_buffer = FastMultipole.system_to_buffer(vortexparticles)
-target_buffer = FastMultipole.target_to_buffer(vortexparticles, true)
+switch = DerivativesSwitch(true, true, true)
+target_buffer = FastMultipole.target_to_buffer(vortexparticles, switch)
 
 # using direct method
 direct!((vortexparticles,); hessian=true)
@@ -165,7 +166,7 @@ multipole_coefficients_3 = FastMultipole.initialize_expansion(expansion_order)
 dummy_index = (zeros(Int64,FastMultipole.get_n_bodies(vortexparticles)),)
 dummy_leaf_index = collect(1:3)
 expansions = FastMultipole.initialize_expansions(expansion_order, 3)
-tree = FastMultipole.Tree([branch_1, branch_2, branch_3], expansions, [1:1,2:3], dummy_leaf_index, dummy_index, dummy_index, (source_buffer,), FastMultipole.allocate_small_buffers((vortexparticles,), eltype(vortexparticles)), expansion_order, leaf_size)#, dummy_cost_parameter)
+tree = FastMultipole.Tree([branch_1, branch_2, branch_3], expansions, [1:1,2:3], dummy_leaf_index, dummy_index, dummy_index, [source_buffer], FastMultipole.allocate_small_buffers((vortexparticles,), eltype(vortexparticles)), expansion_order, leaf_size)#, dummy_cost_parameter)
 multipole_coefficients_2 = FastMultipole.initialize_expansion(expansion_order)
 multipole_coefficients_3 = FastMultipole.initialize_expansion(expansion_order)
 local_coefficients_2 = view(expansions, :, :, :, 2)
@@ -203,7 +204,7 @@ FastMultipole.evaluate_local!(target_buffer, 1, tree, 2, harmonics, gradient_n_m
 FastMultipole.evaluate_local!(target_buffer, 1, tree, 3, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
 
 # update system
-FastMultipole.buffer_to_target!(vortexparticles, target_buffer, DerivativesSwitch(false, true, true), 1:FastMultipole.get_n_bodies(vortexparticles))
+FastMultipole.buffer_to_target!(vortexparticles, target_buffer, switch, 1:FastMultipole.get_n_bodies(vortexparticles))
 
 update_gradient_stretching!(vortexparticles)
 
@@ -232,7 +233,8 @@ bodies = [
 
 vortex_particles = VortexParticles(bodies)
 source_buffer = FastMultipole.system_to_buffer(vortex_particles)
-target_buffer = FastMultipole.target_to_buffer(vortex_particles, true)
+switch = DerivativesSwitch(true, true, true)
+target_buffer = FastMultipole.target_to_buffer(vortex_particles, switch)
 
 #####
 ##### obtain psi, u, and stretching analytically
@@ -292,7 +294,7 @@ dummy_index = (zeros(Int,length(vortex_particles.bodies)),)
 dummy_leaf_index = collect(1:3)
 # dummy_cost_parameter = FastMultipole.dummy_direct_cost_estimate((vortex_particles,), leaf_size)
 expansions = FastMultipole.initialize_expansions(expansion_order, 3)
-tree = FastMultipole.Tree([branch_1, branch_2, branch_3], expansions, [1:1,2:3], dummy_leaf_index, dummy_index, dummy_index, (source_buffer,), FastMultipole.allocate_small_buffers((vortex_particles,), eltype(vortex_particles)), expansion_order, leaf_size_source)#, dummy_cost_parameter)
+tree = FastMultipole.Tree([branch_1, branch_2, branch_3], expansions, [1:1,2:3], dummy_leaf_index, dummy_index, dummy_index, [source_buffer], FastMultipole.allocate_small_buffers((vortex_particles,), eltype(vortex_particles)), expansion_order, leaf_size_source)#, dummy_cost_parameter)
 local_coefficients_2 = view(expansions, :, :, :, 2)
 local_coefficients_3 = view(expansions, :, :, :, 3)
 harmonics = FastMultipole.initialize_harmonics(expansion_order)
@@ -324,12 +326,12 @@ FastMultipole.multipole_to_local!(local_coefficients_3, branch_3, multipole_coef
 # evaluate multipoles
 gradient_n_m = FastMultipole.initialize_gradient_n_m(expansion_order)
 harmonics = FastMultipole.initialize_harmonics(expansion_order)
-derivatives_switches = DerivativesSwitch(true, true, true, (vortex_particles,))
+derivatives_switches = DerivativesSwitch(false, true, true, (vortex_particles,))
 
 FastMultipole.evaluate_local!(target_buffer, 1, tree, 2, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
 FastMultipole.evaluate_local!(target_buffer, 1, tree, 3, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, (FastMultipole.DerivativesSwitch(),))
 
-FastMultipole.buffer_to_target!(vortex_particles, target_buffer, DerivativesSwitch(false, true, true), 1:FastMultipole.get_n_bodies(vortex_particles))
+FastMultipole.buffer_to_target!(vortex_particles, target_buffer, switch, 1:FastMultipole.get_n_bodies(vortex_particles))
 
 update_gradient_stretching!(vortex_particles)
 # hessians_fmm.= deepcopy(reshape(vortex_particles.potential[i_POTENTIAL_HESSIAN[10:end],:],3,3,3,2))
@@ -353,7 +355,7 @@ vortex_particles.gradient_stretching .*= 0
 
 # run fmm
 multipole_acceptance = 0.7
-tree, m2l_list, direct_list, derivatives_switches = fmm!((vortex_particles,); expansion_order, leaf_size_source, multipole_acceptance, shrink_recenter=true, scalar_potential=false, hessian=true)
+optimized_args, cache, target_tree, source_tree, m2l_list, direct_list, derivatives_switches, error_success = fmm!((vortex_particles,); expansion_order, leaf_size_source, multipole_acceptance, shrink=true, recenter=true, scalar_potential=false, hessian=true)
 update_gradient_stretching!(vortex_particles)
 
 # test vector
@@ -384,7 +386,8 @@ bodies = [
 
 vortex_particles = VortexParticles(bodies)
 source_buffer = FastMultipole.system_to_buffer(vortex_particles)
-target_buffer = FastMultipole.target_to_buffer(vortex_particles, true)
+switch = DerivativesSwitch(true, true, true)
+target_buffer = FastMultipole.target_to_buffer(vortex_particles, switch)
 
 psis = zeros(3,3)
 psis[:,1] = psi(bodies[1:3,1], bodies[1:3,2], bodies[5:7,2]) + psi(bodies[1:3,1], bodies[1:3,3], bodies[5:7,3])
@@ -434,10 +437,11 @@ vortex_particles.gradient_stretching .*= 0
 expansion_order = 20
 leaf_size = SVector{1}(1)
 
-source_tree = FastMultipole.Tree((vortex_particles,), false; expansion_order, leaf_size, shrink_recenter=false)
-target_tree = FastMultipole.Tree((vortex_particles,), true; expansion_order, leaf_size, shrink_recenter=false)
+switches = DerivativesSwitch(false, true, true, (vortex_particles,))
+source_tree = FastMultipole.Tree((vortex_particles,), false, switches; expansion_order, leaf_size, shrink=false, recenter=false)
+target_tree = FastMultipole.Tree((vortex_particles,), true, switches; expansion_order, leaf_size, shrink=false, recenter=false)
 
-m2l_list, direct_list, derivatives_switches = FastMultipole.fmm!((vortex_particles,), target_tree, (vortex_particles,), source_tree; expansion_order, multipole_acceptance=0.8, scalar_potential=false, hessian=true)
+m2l_list, direct_list, derivatives_switches = FastMultipole.fmm!((vortex_particles,), target_tree, (vortex_particles,), source_tree; expansion_order, multipole_acceptance=0.8, derivatives_switches=switches)
 
 update_gradient_stretching!(vortex_particles)
 
@@ -461,36 +465,36 @@ end
 expansion_order, leaf_size_source, multipole_acceptance = 12, SVector{1}(1), 0.99
 n_bodies = 4
 
-shrink_recenter = true
+shrink = true
+recenter = true
 seed = 2
 system = generate_gravitational(seed, n_bodies; radius_factor=0.1)
 FastMultipole.direct!(system; scalar_potential=true)
 validation_potential = system.potential[1,:]
 
 system.potential .= zero(eltype(system.potential))
-optargs, _ = FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, shrink_recenter, scalar_potential=true)
+optargs, _ = FastMultipole.fmm!(system; expansion_order, leaf_size_source, multipole_acceptance, shrink, recenter, scalar_potential=true)
 potential3 = system.potential[1,:]
 @test isapprox(maximum(abs.(potential3 - validation_potential)), 0.0; atol=1e-10)
 
 system.potential .= zero(eltype(system.potential))
-FastMultipole.fmm!((system,); expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink_recenter, scalar_potential=true)
+FastMultipole.fmm!((system,); expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink, recenter, scalar_potential=true)
 potential4 = system.potential[1,:]
 @test isapprox(maximum(abs.(potential4 - validation_potential)), 0.0; atol=1e-10)
 
 system.potential .= zero(eltype(system.potential))
-FastMultipole.fmm!(system, system; expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink_recenter, scalar_potential=true)
+FastMultipole.fmm!(system, system; expansion_order, leaf_size_source, multipole_acceptance, nearfield=true, farfield=true, shrink, recenter, scalar_potential=true)
 potential5 = system.potential[1,:]
 @test isapprox(maximum(abs.(potential5 - validation_potential)), 0.0; atol=1e-10)
 
 system.potential .= zero(eltype(system.potential))
-FastMultipole.fmm!((system,), system; expansion_order, leaf_size_source, multipole_acceptance, shrink_recenter, scalar_potential=true)
+FastMultipole.fmm!((system,), system; expansion_order, leaf_size_source, multipole_acceptance, shrink, recenter, scalar_potential=true)
 potential6 = system.potential[1,:]
 @test isapprox(maximum(abs.(potential6 - validation_potential)), 0.0; atol=1e-10)
 
 system.potential .= zero(eltype(system.potential))
-FastMultipole.fmm!((system,), (system,); expansion_order, leaf_size_source, multipole_acceptance, shrink_recenter, scalar_potential=true)
+FastMultipole.fmm!((system,), (system,); expansion_order, leaf_size_source, multipole_acceptance, shrink, recenter, scalar_potential=true)
 potential7 = system.potential[1,:]
 @test isapprox(maximum(abs.(potential7 - validation_potential)), 0.0; atol=1e-10)
 
 end
-

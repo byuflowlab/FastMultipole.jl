@@ -43,11 +43,24 @@ abstract type Panel{NS,TK} <: AbstractElement{TK} end
 #------- dispatch convenience functions to determine which derivatives are desired -------#
 
 """
-    DerivativesSwitch
+    DerivativesSwitch{PS,GS,HS,NO,NM}
 
-Switch indicating whether the scalar potential, vector potential, gradient, and/or hessian should be computed for a target system. Information is stored as type parameters, allowing the compiler to compile away if statements.
+Switch indicating whether scalar potential (`PS`), gradient (`GS`), and hessian (`HS`)
+outputs should be computed for a target system. `NO` is the number of extra
+accumulated output rows requested by the caller, and `NM` is the number of
+metadata rows carried with target positions through tree sorting.
+
+Target buffers use a compact row layout: positions in rows `1:3`, metadata in
+rows `4:3+NM`, enabled standard outputs in scalar/gradient/hessian order, and
+then `NO` extra output rows. Disabled standard outputs do not reserve rows, so
+custom target-buffer code should use switch-aware layout helpers.
+
+Use `DerivativesSwitch(scalar_potential, gradient, hessian; extra_outputs=0,
+metadata=0)` for a single switch, or pass target systems as the fourth argument
+to infer `metadata_per_body(system)` when `metadata=nothing`. Existing calls
+such as `DerivativesSwitch(true, true, false)` remain valid.
 """
-struct DerivativesSwitch{PS,GS,HS} end
+struct DerivativesSwitch{PS,GS,HS,NO,NM} end
 
 #------- error predictors -------#
 
@@ -58,6 +71,28 @@ abstract type AbsoluteErrorMethod{AET,BE} <: ErrorMethod{BE} end
 abstract type RelativeErrorMethod{RET,AET,BE} <: ErrorMethod{BE} end
 
 struct UnequalSpheres{BE} <: ErrorMethod{BE} end
+UnequalSpheres(BE=false) = UnequalSpheres{BE}()
+
+struct PringleAbsolutePotential{BE} <: ErrorMethod{BE} end
+PringleAbsolutePotential(BE=false) = PringleAbsolutePotential{BE}()
+
+struct PringleRelativePotential{BE} <: ErrorMethod{BE} end
+PringleRelativePotential(BE=false) = PringleRelativePotential{BE}()
+
+struct DehnenAbsoluteGradient{BE} <: ErrorMethod{BE} end
+DehnenAbsoluteGradient(BE=false) = DehnenAbsoluteGradient{BE}()
+
+struct UnequalSpheresMultipoleGradient{BE} <: ErrorMethod{BE} end
+UnequalSpheresMultipoleGradient() = UnequalSpheresMultipoleGradient{false}()
+
+struct UnequalSpheresGradient{BE} <: ErrorMethod{BE} end
+UnequalSpheresGradient() = UnequalSpheresGradient{false}()
+
+struct HeuristicRelativePotential{BE} <: ErrorMethod{BE} end
+HeuristicRelativePotential(BE=false) = HeuristicRelativePotential{BE}()
+
+struct HeuristicAbsolutePotential{BE} <: ErrorMethod{BE} end
+HeuristicAbsolutePotential(BE=false) = HeuristicAbsolutePotential{BE}()
 
 struct UnequalBoxes{BE} <: ErrorMethod{BE} end
 
@@ -74,6 +109,9 @@ struct RotatedCoefficients{BE} <: ErrorMethod{BE} end
 
 struct PowerAbsolutePotential{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsolutePotential(ε, BE::Bool=true) = PowerAbsolutePotential{ε,BE}()
+
+struct PowerAbsolutePotentialMultipole{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
+PowerAbsolutePotentialMultipole(ε, BE::Bool=true) = PowerAbsolutePotentialMultipole{ε,BE}()
 
 struct PowerAbsoluteGradient{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsoluteGradient(ε, BE::Bool=true) = PowerAbsoluteGradient{ε,BE}()
@@ -149,6 +187,10 @@ function Branch(bodies_index::SVector{<:Any,UnitRange{Int64}}, args...)
     return Branch(n_bodies, bodies_index, args...)
 end
 
+function Branch(bodies_index::UnitRange{Int64}, args...)
+    return Branch(SVector{1,UnitRange{Int64}}((bodies_index,)), args...)
+end
+
 Base.eltype(::Branch{TF,<:Any}) where TF = TF
 
 """
@@ -164,7 +206,7 @@ Tree object used to sort `N` systems into an octree.
 * `leaf_index::Vector{Int}`: vector of indices of branches that are leaves
 * `sort_index_list::NTuple{N,Vector{Int}}`: tuple of vectors of indices used to sort the bodies in each system into the tree
 * `inverse_sort_index_list::NTuple{N,Vector{Int}}`: tuple of vectors of indices used to undo the sort operation performed by `sort_index_list`
-* `buffers::NTuple{N,Matrix{TF}}`: tuple of buffers used to store the bodies computed influence of each system in the tree, as explained in [`FastMultipole.allocate_buffers`](@ref)
+* `buffers::Vector{Matrix{TF}}`: vector of buffers used to store the bodies computed influence of each system in the tree, as explained in [`FastMultipole.allocate_buffers`](@ref)
 * `small_buffers::Vector{Matrix{TF}}`: vector of buffers used to pidgeon-hole sort bodies into the tree, as explained in [`FastMultipole.allocate_small_buffers`](@ref)
 * `expansion_order::Int64`: the maximum storable expansion order
 * `leaf_size::SVector{N,Int64}`: maximum number of bodies in a leaf for each system; if multiple systems are represented, the actual maximum depends on the `InteractionListMethod` used to create the tree
@@ -179,7 +221,7 @@ struct Tree{TF,N}
     leaf_index::Vector{Int}
     sort_index_list::NTuple{N,Vector{Int}}
     inverse_sort_index_list::NTuple{N,Vector{Int}}
-    buffers::NTuple{N,Matrix{TF}}
+    buffers::Vector{Matrix{TF}}
     small_buffers::Vector{Matrix{TF}}
     expansion_order::Int64
     leaf_size::SVector{N,Int64}    # max number of bodies in a leaf
@@ -212,11 +254,20 @@ Convenience system for defining locations at which the potential, vector field, 
 * `gradient::Vector{SVector{3,TF}}`: vector of vector field values at the positions
 * `hessian::Vector{SMatrix{3,3,TF,9}}`: vector of Hessian matrices at the positions
 """
-struct ProbeSystem{TF}
+abstract type ProbeSystem{TF} end
+
+struct ProbeSystemStatic{TF} <: ProbeSystem{TF}
     position::Vector{SVector{3,TF}}
     scalar_potential::Vector{TF}
     gradient::Vector{SVector{3,TF}}
     hessian::Vector{SMatrix{3,3,TF,9}}
+end
+
+struct ProbeSystemArray{TF} <: ProbeSystem{TF}
+    position::Matrix{TF}           # 3 x n_bodies
+    scalar_potential::Vector{TF}   # n_bodies
+    gradient::Matrix{TF}           # 3 x n_bodies
+    hessian::Array{TF,3}           # 3 x 3 x n_bodies
 end
 
 #------- SOLVERS -------#
@@ -249,6 +300,7 @@ struct FastGaussSeidel{TF,Nsys,TIL} <: AbstractSolver
     extra_right_hand_side::Vector{TF}
     influences_per_system::Vector{Vector{TF}}
     residual_vector::Vector{TF}
+    extra_farfield::Bool
 end
 
 #--- memory cache ---#
@@ -260,33 +312,34 @@ Cache object used to store system buffers to avoid repeated allocations.
 
 **Fields**
 
-* `target_buffers::NTuple{NT, Matrix{TF}}`: tuple of length `NT` containing buffers for target systems
-* `source_buffers::NTuple{NS, Matrix{TF}}`: tuple of length `NS` containing buffers for source systems
+* `target_buffers::Vector{Matrix{TF}}`: vector of buffers for target systems
+* `source_buffers::Vector{Matrix{TF}}`: vector of buffers for source systems
 * `target_small_buffers::Vector{Matrix{TF}}`: vector of small buffers used for pidgeon-hole sorting target systems into the octree
 * `source_small_buffers::Vector{Matrix{TF}}`: vector of small buffers used for pidgeon-hole sorting source systems into the octree
 
 """
-struct Cache{TF,NT,NS}
-    target_buffers::NTuple{NT, Matrix{TF}}
-    source_buffers::NTuple{NS, Matrix{TF}}
+struct Cache{TF}
+    target_buffers::Vector{Matrix{TF}}
+    source_buffers::Vector{Matrix{TF}}
     target_small_buffers::Vector{Matrix{TF}}
     source_small_buffers::Vector{Matrix{TF}}
 end
 
-function Cache(; 
-    target_buffers::NTuple{NT,Matrix{TF}}, 
-    source_buffers::NTuple{NS,Matrix{TF}}, 
-    target_small_buffers::Vector{Matrix{TF}}, 
+function Cache(;
+    target_buffers::Vector{Matrix{TF}},
+    source_buffers::Vector{Matrix{TF}},
+    target_small_buffers::Vector{Matrix{TF}},
     source_small_buffers::Vector{Matrix{TF}}
-        ) where {TF,NT,NS}
-    return Cache{TF,NT,NS}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
+        ) where {TF}
+    return Cache{TF}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
 end
 
-function Cache(target_systems::Tuple, source_systems::Tuple)
+function Cache(target_systems::Tuple, source_systems::Tuple, switches::Tuple)
     # get float type
     TF = get_type(target_systems, source_systems)
 
     # allocate buffers
+<<<<<<< HEAD
     target_buffers = allocate_buffers(target_systems, true, TF)
     source_buffers = allocate_buffers(source_systems, false, TF)
     target_small_buffers = allocate_small_buffers(target_systems, TF)
@@ -297,7 +350,13 @@ function Cache(target_systems::Tuple, source_systems::Tuple)
     #check_deriv_allocation(source_buffers[1]; label="source buffers")
     #check_deriv_allocation(target_small_buffers[1]; label="target small buffers")
     #check_deriv_allocation(source_small_buffers[1]; label="source small buffers")
+=======
+    target_buffers = allocate_buffers(target_systems, true, TF, switches)
+    source_buffers = allocate_buffers(source_systems, false, TF, switches)
+    target_small_buffers = allocate_small_buffers(target_systems, TF, switches; target=true)
+    source_small_buffers = allocate_small_buffers(source_systems, TF, DerivativesSwitch(false, false, false, source_systems); target=false)
+>>>>>>> main
     
     # return cache
-    return Cache{TF,length(target_systems),length(source_systems)}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
+    return Cache{TF}(target_buffers, source_buffers, target_small_buffers, source_small_buffers)
 end

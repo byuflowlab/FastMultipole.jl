@@ -2,7 +2,7 @@ const DEBUG_COUNTER = [0]
 
 #------- tree constructor -------#
 
-function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=allocate_buffers(systems, target, TF), small_buffers = allocate_small_buffers(systems, TF), expansion_order=7, leaf_size=default_leaf_size(systems), n_divisions=20, shrink_recenter=false, allocation_safety_factor=1.0, estimate_cost=false, read_cost_file=false, write_cost_file=false, interaction_list_method=SelfTuning())
+function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buffers=allocate_buffers(systems, target, TF, switches), small_buffers = allocate_small_buffers(systems, TF, switches; target), expansion_order=7, leaf_size=default_leaf_size(systems), n_divisions=20, shrink=false, recenter=false, allocation_safety_factor=1.0, estimate_cost=false, read_cost_file=false, write_cost_file=false, interaction_list_method=SelfTuning())
 
     # ensure `systems` isn't empty; otherwise return an empty tree
     if get_n_bodies(systems) > 0
@@ -10,9 +10,9 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         # println("Part I:")
         # @time begin # most time at center_box
         # determine float type
-        TF = Float32
+        # TF = Float32
         for system in systems
-            TF = promote_type(TF, eltype(system))
+            TF = promote_type(TF, numtype(system))
         end
 
         # initialize variables
@@ -40,9 +40,10 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         # check buffer size
         for (system, buffer) in zip(systems, buffers)
             @assert get_n_bodies(system) == size(buffer, 2) "Buffer doesn't match system size"
-            if target
-                @assert size(buffer, 1) == 18
-            else
+            # if target
+            #     @assert size(buffer, 1) == 18
+            # else
+            if !target
                 @assert size(buffer, 1) == data_per_body(system)
             end
         end
@@ -56,18 +57,27 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
                 buffer .= zero(TF)
             end
         end
+<<<<<<< HEAD
         # end
         # println("Part II: target_to_buffer")
+=======
+    # end
+        # println("Part II: position data to buffer")
+>>>>>>> main
         # @time begin # already multithreaded
 
         # update buffers with system positions and max influence
-        target_to_buffer!(buffers, systems, target)
+        if target
+            target_to_buffer!(buffers, systems, SVector{length(systems)}([1:get_n_bodies(system) for system in systems]), switches)
+        else
+            source_to_buffer!(buffers, systems)
+        end
         # end
 
         # println("Part III: branch!")
         # @time begin
         # grow root branch
-        if Threads.nthreads() > 1
+        if Threads.nthreads() > 1 && get_n_bodies(systems) > MIN_BODIES
             root_branch, n_children, i_leaf = branch_multithread!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target)
         else
             root_branch, n_children, i_leaf = branch!(buffers, small_buffers, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, 0, 1, leaf_size, interaction_list_method, target) # even though no sorting needed for creating this branch, it will be needed later on; so `branch!` not ony_min creates the root_branch, but also sorts itself into octants and returns the number of children it will have so we can plan array size
@@ -90,23 +100,21 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         # end
 
         # check depth
-        if n_children > 0
-            while n_children > 0
-                parents_index, n_children, i_leaf = child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
-                push!(levels_index, parents_index)
-            end
-            # if WARNING_FLAG_LEAF_SIZE[]
-            #     @warn "leaf_size not reached in for loop, so while loop used to build octree; to improve performance, increase `n_divisions` > $(length(levels_index))"
-            #     WARNING_FLAG_LEAF_SIZE[] = false
-            # end
+        while n_children > 0
+            parents_index, n_children, i_leaf = child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
+            push!(levels_index, parents_index)
         end
+        # if WARNING_FLAG_LEAF_SIZE[]
+        #     @warn "leaf_size not reached in for loop, so while loop used to build octree; to improve performance, increase `n_divisions` > $(length(levels_index))"
+        #     WARNING_FLAG_LEAF_SIZE[] = false
+        # end
 
     # end
         # println("Part V: source/target specific updates")
         # @time begin #already threaded
         # source/target specific updates
         if target # zero min_influence from buffers
-            update_min_influence!(branches, levels_index, buffers)
+            update_min_influence!(branches, levels_index, buffers, systems, switches)
         else # update buffers with full system data
             system_to_buffer!(buffers, systems, sort_index)
         end
@@ -121,11 +129,11 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
         # println("Part VII: shrink and recenter branches")
         # @time begin #already threaded
         # shrink and recenter branches to account for bodies of nonzero radius
-        if shrink_recenter 
+        if shrink
             if target
-                shrink_recenter_target!(branches, levels_index, buffers)
+                shrink_recenter_target!(branches, levels_index, buffers, recenter)
             else
-                shrink_recenter_source!(branches, levels_index, buffers)
+                shrink_recenter_source!(branches, levels_index, buffers, recenter)
             end
         end
     # end
@@ -177,7 +185,7 @@ function Tree(systems::Tuple, target::Bool, TF=get_type(systems); buffers=alloca
     return tree
 end
 
-function Tree(system, target::Bool, TF=eltype(system); optargs...)
+function Tree(system, target::Bool, TF=numtype(system); optargs...)
     return Tree((system,), target, TF; optargs...)
 end
 
@@ -208,7 +216,7 @@ function EmptyTree(system::Tuple)
     leaf_index = Int[]
     sort_index_list = Tuple(Int[] for _ in 1:N)
     inverse_sort_index_list = Tuple(Int[] for _ in 1:N)
-    buffer = (Matrix{TF}(undef,0,0),)
+    buffer = [Matrix{TF}(undef,0,0) for _ in 1:N]
     small_buffer = [Matrix{TF}(undef,0,0)]
     expansion_order = -1
     leaf_size = SVector{N}(-1 for _ in 1:N)
@@ -220,7 +228,7 @@ end
 function getTF(systems::Tuple)
     TF = Float32
     for system in systems
-        TF = promote_type(TF, eltype(system))
+        TF = promote_type(TF, numtype(system))
     end
     return TF
 end
@@ -228,15 +236,20 @@ end
 """
 Doesn't stop subdividing until ALL child branches have satisfied the leaf size.
 """
+<<<<<<< HEAD
 function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerbox=center_box(systems, getTF(systems)), buffers=allocate_buffers(systems, target, TF), small_buffers = allocate_small_buffers(systems, TF), expansion_order=7, n_levels=5)
     
+=======
+function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems), switches=DerivativesSwitch(true, true, false, systems); centerbox=center_box(systems, getTF(systems)), buffers=allocate_buffers(systems, target, TF, switches), small_buffers = allocate_small_buffers(systems, TF, switches; target), expansion_order=7, n_levels=5)
+
+>>>>>>> main
     # ensure `systems` isn't empty; otherwise return an empty tree
     if get_n_bodies(systems) > 0
 
         # determine float type
         TF = Float32
         for system in systems
-            TF = promote_type(TF, eltype(system))
+            TF = promote_type(TF, numtype(system))
         end
 
         # initialize variables
@@ -267,9 +280,10 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerb
         # check buffer size
         for (system, buffer) in zip(systems, buffers)
             @assert get_n_bodies(system) == size(buffer, 2) "Buffer doesn't match system size"
-            if target
-                @assert size(buffer, 1) == 18
-            else
+            # if target
+            #     @assert size(buffer, 1) == 18
+            # else
+            if !target
                 @assert size(buffer, 1) == data_per_body(system)
             end
         end
@@ -285,7 +299,11 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerb
         end
 
         # update buffers with system positions
-        target_to_buffer!(buffers, systems, target)
+        if target
+            target_to_buffer!(buffers, systems, SVector{length(systems)}([1:get_n_bodies(system) for system in systems]), switches)
+        else
+            source_to_buffer!(buffers, systems)
+        end
 
         # grow root branch
         leaf_size = @SVector zeros(Int, length(systems))
@@ -313,8 +331,8 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems); centerb
         inverse_sort_index = sort_index_buffer # reuse the buffer as the inverse index
 
         # shrink and recenter branches to account for bodies of nonzero radius
-        shrink_recenter = false
-        shrink_recenter && shrink_recenter!(branches, levels_index, buffers)
+        shrink = recenter = false
+        shrink && shrink_recenter!(branches, levels_index, buffers, recenter)
 
         # store leaves
         leaf_index = collect(levels_index[end])
@@ -347,12 +365,18 @@ end
 
 #--- buffers ---#
 
+<<<<<<< HEAD
 function allocate_target_buffer(TF, system)
     buffer = zeros(TF, 18, get_n_bodies(system))
     if TF <: ReverseDiff.TrackedReal
         tp = ReverseDiff.tape(system)
         init_rd_array!(buffer, tp)
     end
+=======
+function allocate_target_buffer(TF, system, ::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM}
+    switch = DerivativesSwitch{PS,GS,HS,NO,NM}()
+    buffer = zeros(TF, target_buffer_rows(switch), get_n_bodies(system))
+>>>>>>> main
     return buffer
 end
 
@@ -366,9 +390,9 @@ function allocate_source_buffer(TF, system)
 end
 
 function get_type(systems::Tuple)
-    TF = eltype(first(systems))
+    TF = numtype(first(systems))
     for system in systems
-        TF = promote_type(TF, eltype(system))
+        TF = promote_type(TF, numtype(system))
     end
     return TF
 end
@@ -378,6 +402,8 @@ function get_type(target_systems::Tuple, source_systems::Tuple)
     return TF
 end
 
+numtype(system) = eltype(system)
+
 """
     allocate_buffers(systems::Tuple, target::Bool)
 
@@ -386,31 +412,31 @@ Allocates buffers for the given systems.
 **Arguments**
 
 * `systems::Tuple`: tuple of systems for which to allocate buffers
-* `target::Bool`: if `true`, allocates space for body position, scalar potential, gradient, hessian matrix, and previous influence for relative error tolerance; otherwise, allocates space for information provided by the user-defined `source_system_to_buffer!`
+* `target::Bool`: if `true`, allocates space for body position, metadata, and accumulated outputs; otherwise, allocates space for information provided by the user-defined `source_system_to_buffer!`
 * `TF`: element type of the buffers
 
 **Returns**
 
-* `buffers::NTuple{N,Matrix{TF}}`: tuple of `N` matrices, one for each system, as follows:
+* `buffers::Vector{Matrix{TF}}`: vector of matrices, one for each system, as follows:
 
-    * if `target==true`, each matrix has size `(18,N)`, where `N` is the number of bodies in the system; indices correspond to:
+    * if `target==true`, each matrix has size `(3 + NM + (PS ? 1 : 0) + (GS ? 3 : 0) + (HS ? 9 : 0) + NO,N)`, where `N` is the number of bodies in the system, `PS`, `GS`, and `HS` are the standard output switches, `NO` is the number of extra output rows, and `NM` is the number of metadata rows. Indices correspond to:
 
         * `(1:3,i)` - x, y, and z coordinates of the `i`th body
-        * `(4,i)` - scalar potential induced at the `i`th body
-        * `(5:7,i)` - x, y, and z components of the vector field induced at the `i`th body
-        * `(8:16,i)` - hessian of the scalar potential induced at the `i`th body
-        * `(17,i)` - estimate of the scalar potential induced at the `i`th body used for relative error tolerance
-        * `(18,i)` - estimate of the vector field magnitude induced at the `i`th body used for relative error tolerance
+        * `metadata_range(switch)` - metadata carried with target positions through tree sorting
+        * `scalar_potential_index(switch)` - scalar potential induced at the `i`th body
+        * `gradient_range(switch)` - x, y, and z components of the vector field induced at the `i`th body
+        * `hessian_range(switch)` - hessian of the scalar potential induced at the `i`th body
+        * `extra_output_range(switch)` - caller-requested extra accumulated outputs
 
     * if `target==false`, each matrix has size `(M,N)`, where `N` is the number of bodies in the system, and `M` is determined by the user-defined [`source_system_to_buffer!`](@ref FastMultipole.source_system_to_buffer!) function
 
 """
-function allocate_buffers(systems::Tuple, target::Bool, TF)
+function allocate_buffers(systems::Tuple, target::Bool, TF, switches)
     # create buffers
     if target
-        buffers = Tuple(allocate_target_buffer(TF, system) for system in systems)
+        buffers = [allocate_target_buffer(TF, system, switch) for (system, switch) in zip(systems, switches)]
     else
-        buffers = Tuple(allocate_source_buffer(TF, system) for system in systems)
+        buffers = [allocate_source_buffer(TF, system) for system in systems]
     end
     return buffers
 end
@@ -435,15 +461,22 @@ Allocates small buffers for the given systems to be used in pidgeon-hole sorting
     * index `(5,i)` corresponds to the estimated vector field magnitude of the `i`th body
 
 """
-function allocate_small_buffers(systems::Tuple, TF)
+function allocate_small_buffers(systems::Tuple, TF, switches=DerivativesSwitch(true, true, true, systems); target=false)
     # create buffers
+    @assert length(switches) == length(systems) "small-buffer switches must match systems"
     small_buffers = Vector{Matrix{TF}}(undef, length(systems))
+<<<<<<< HEAD
     for i in eachindex(systems)
         small_buffers[i] = zeros(TF, 5, get_n_bodies(systems[i]))
         if TF <: ReverseDiff.TrackedReal
             tp = ReverseDiff.tape(systems[i])
             init_rd_array!(small_buffers[i], tp)
         end
+=======
+    for (i, (system, switch)) in enumerate(zip(systems, switches))
+        n_rows = target ? length(tree_carried_range(switch)) : 4
+        small_buffers[i] = zeros(n_rows, get_n_bodies(system))
+>>>>>>> main
     end
 
     return small_buffers
@@ -464,7 +497,7 @@ end
 
 function child_branches!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target::Bool)
     
-    # if Threads.nthreads() > 1
+    # if Threads.nthreads() > 1 && get_n_bodies(buffers) > MIN_BODIES
     #     return child_branches_multithread!(branches, buffers, sort_index, small_buffers, sort_index_buffer, i_leaf, leaf_size, parents_index, cumulative_octant_census, octant_container, n_children, expansion_order, interaction_list_method, target)
     # end
 
@@ -477,11 +510,11 @@ function child_branches!(branches, buffers, sort_index, small_buffers, sort_inde
             child_box = parent_branch.box * 0.5
 
             # count bodies per octant
-            census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
+            max_body_radius = census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
             update_octant_accumulator!(cumulative_octant_census)
 
             # number of child branches
-            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method)
+            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method) && (target || child_radius >= max_body_radius)
                 for i_octant in 1:8
                     if get_population(cumulative_octant_census, i_octant) > 0
                         bodies_index = get_bodies_index(cumulative_octant_census, parent_branch.bodies_index, i_octant)
@@ -548,11 +581,11 @@ function child_branches_multithread_parents!(branches, buffers, sort_index, smal
                 
                 # count bodies per octant
                 # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
-                census!(this_cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # this overwrites this_cumulative_octant_census
+                max_body_radius = census!(this_cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # this overwrites this_cumulative_octant_census
                 update_octant_accumulator!(this_cumulative_octant_census)
                 
                 # number of child branches
-                if exceeds(this_cumulative_octant_census, leaf_size, target, interaction_list_method)
+                if exceeds(this_cumulative_octant_census, leaf_size, target, interaction_list_method) && (target || child_radius >= max_body_radius)
                     for i_octant in 1:8
                         if get_population(this_cumulative_octant_census, i_octant) > 0
                             bodies_index = get_bodies_index(this_cumulative_octant_census, parent_branch.bodies_index, i_octant)
@@ -643,11 +676,11 @@ function child_branches_multithread_bodies!(branches, buffers, sort_index, small
             child_box = parent_branch.box * 0.5
 
             # count bodies per octant
-            census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
+            max_body_radius = census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
             update_octant_accumulator!(cumulative_octant_census)
 
             # number of child branches
-            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method)
+            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method) && (target || child_radius >= max_body_radius)
                 for i_octant in 1:8
                     if get_population(cumulative_octant_census, i_octant) > 0
                         bodies_index = get_bodies_index(cumulative_octant_census, parent_branch.bodies_index, i_octant)
@@ -676,11 +709,11 @@ function child_branches_level!(branches, buffers, sort_index, small_buffers, sor
             child_box = parent_branch.box * 0.5
 
             # count bodies per octant
-            census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
+            max_body_radius = census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
             update_octant_accumulator!(cumulative_octant_census)
 
             # number of child branches
-            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method)
+            if exceeds(cumulative_octant_census, leaf_size, target, interaction_list_method) && (target || child_radius >= max_body_radius)
                 for i_octant in 1:8
                     if get_population(cumulative_octant_census, i_octant) > 0
                         bodies_index = get_bodies_index(cumulative_octant_census, parent_branch.bodies_index, i_octant)
@@ -721,12 +754,20 @@ end
 function branch!(buffer, small_buffer, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, i_parent, i_leaf, leaf_size, interaction_list_method, target::Bool)
 
     # count bodies in each octant
+<<<<<<< HEAD
     census!(octant_container, buffer, bodies_index, center) # octant_container modified
+=======
+    max_body_radius = census!(octant_container, buffer, bodies_index, center) # octant_container modified
+    
+>>>>>>> main
     # cumsum
     update_octant_accumulator!(octant_container) # octant_container modified
     
     # number of child branches
     n_children = get_n_children(octant_container, leaf_size, target, interaction_list_method) # nothing modified
+    if n_children > 0 && !target && radius * 0.5 < max_body_radius
+        n_children = 0
+    end
     
     if n_children > 0
         # get beginning index of sorted bodies
@@ -754,13 +795,16 @@ end
 
 function branch_multithread!(buffer, small_buffer, sort_index, octant_container, sort_index_buffer, i_first_branch, bodies_index, center, radius, box, i_parent, i_leaf, leaf_size, interaction_list_method, target::Bool)
     # count bodies in each octant
-    census!(octant_container, buffer, bodies_index, center)
+    max_body_radius = census!(octant_container, buffer, bodies_index, center)
 
     # cumsum
     update_octant_accumulator!(octant_container)
 
     # number of child branches
     n_children = get_n_children(octant_container, leaf_size, target, interaction_list_method)
+    if n_children > 0 && !target && radius * 0.5 < max_body_radius
+        n_children = 0
+    end
 
     if n_children > 0
         # get beginning index of sorted bodies
@@ -970,23 +1014,29 @@ end
 
 function census!(octant_container::AbstractVector, system::Matrix, bodies_index, center)
     octant_container .= zero(eltype(octant_container))
+    max_body_radius = zero(eltype(center))
     # for position in get_body_positions(system, bodies_index)
     for i_body in bodies_index
         position = get_position(system, i_body)
         i_octant = get_octant(position, center)
         octant_container[i_octant] += 1
+        max_body_radius = max(max_body_radius, system[4, i_body])
     end
+    return max_body_radius
 end
 
 function census!(octant_container::AbstractMatrix, systems, bodies_indices, center)
     octant_container .= zero(eltype(octant_container))
+    max_body_radius = zero(eltype(center))
     for (i_system, (system, bodies_index)) in enumerate(zip(systems, bodies_indices))
         for i_body in bodies_index
             position = get_position(system, i_body)
             i_octant = get_octant(position, center)
             octant_container[i_system, i_octant] += 1
+            max_body_radius = max(max_body_radius, system[4, i_body])
         end
     end
+    return max_body_radius
 end
 
 # @inline update_octant_accumulator!(octant_population::AbstractMatrix) = cumsum!(octant_population, octant_population, dims=2)
@@ -1098,7 +1148,8 @@ end
 function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_indices::AbstractVector, sort_index_buffer, bodies_index::UnitRange, center, target::Bool)
 
     # sort indices
-     for i_body in bodies_index
+    ncarried = size(small_buffer, 1)
+    for i_body in bodies_index
         # identify octant
         i_octant = get_octant(get_position(buffer, i_body), center)
         this_i = octant_indices[i_octant]
@@ -1107,9 +1158,10 @@ function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_i
         small_buffer[1,this_i] = buffer[1, i_body]
         small_buffer[2,this_i] = buffer[2, i_body]
         small_buffer[3,this_i] = buffer[3, i_body]
-        if target
-            small_buffer[4,this_i] = buffer[17, i_body] # copy influence from the buffer to the small buffer
-            small_buffer[5,this_i] = buffer[18, i_body] # copy influence from the buffer to the small buffer
+        if ncarried > 3
+            for k in 4:ncarried
+                small_buffer[k, this_i] = buffer[k, i_body]
+            end
         end
         # tmp = system[i_body, Body()]
         # buffer[this_i] = tmp
@@ -1122,19 +1174,20 @@ function sort_bodies!(buffer::Matrix, small_buffer::Matrix, sort_index, octant_i
     end
 
     # place buffers
-     for i_body in bodies_index
+    for i_body in bodies_index
         buffer[1, i_body] = small_buffer[1, i_body]
         buffer[2, i_body] = small_buffer[2, i_body]
         buffer[3, i_body] = small_buffer[3, i_body]
     end
-    if target
+    if ncarried > 3
          for i_body in bodies_index
-            buffer[17, i_body] = small_buffer[4, i_body]
-            buffer[18, i_body] = small_buffer[5, i_body]
+            for k in 4:ncarried
+                buffer[k, i_body] = small_buffer[k, i_body]
+            end
         end
     end
 
-     for i in bodies_index
+    for i in bodies_index
         sort_index[i] = sort_index_buffer[i]
     end
 end
@@ -1178,6 +1231,7 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
 
     # println("sort indices: ")
     # sort indices
+    ncarried = size(small_buffer, 1)
     Threads.@threads :static for i_thread in 1:n_threads
         this_bodies_index = i_start_0 + (i_thread-1) * n : min(i_start_0 + i_thread * n - 1, i_end_0)
         this_octant_indices = octant_indices_per_thread[i_thread]
@@ -1191,9 +1245,10 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
             small_buffer[1,this_i] = buffer[1, i_body]
             small_buffer[2,this_i] = buffer[2, i_body]
             small_buffer[3,this_i] = buffer[3, i_body]
-            if target
-                small_buffer[4,this_i] = buffer[17, i_body] # copy influence from the buffer to the small buffer
-                small_buffer[5,this_i] = buffer[18, i_body] # copy influence from the buffer to the small buffer
+            if ncarried > 3
+                for k in 4:ncarried
+                    small_buffer[k, this_i] = buffer[k, i_body]
+                end
             end
 
             # update sort index
@@ -1207,14 +1262,15 @@ function sort_bodies_multithread!(buffer::Matrix, small_buffer::Matrix, sort_ind
     # place buffers
     # println("place buffers")
     Threads.@threads :static for i_body in bodies_index
-         buffer[1, i_body] = small_buffer[1, i_body]
-         buffer[2, i_body] = small_buffer[2, i_body]
-         buffer[3, i_body] = small_buffer[3, i_body]
-        if target
-             buffer[17, i_body] = small_buffer[4, i_body]
-             buffer[18, i_body] = small_buffer[5, i_body]
+        buffer[1, i_body] = small_buffer[1, i_body]
+        buffer[2, i_body] = small_buffer[2, i_body]
+        buffer[3, i_body] = small_buffer[3, i_body]
+        if ncarried > 3
+            for k in 4:ncarried
+                buffer[k, i_body] = small_buffer[k, i_body]
+            end
         end
-         sort_index[i_body] = sort_index_buffer[i_body]
+        sort_index[i_body] = sort_index_buffer[i_body]
     end
 end
 
@@ -1397,12 +1453,18 @@ end
     return center_box(systems, bodies_indices, TF)
 end
 
-@inline function center_box(systems::Tuple, bodies_indices, TF)
+function center_box(systems, bodies_indices, TF)
     x_min, y_min, z_min = first_body_position(systems, bodies_indices, TF)
     x_max, y_max, z_max = x_min, y_min, z_min
     for (system, bodies_index) in zip(systems, bodies_indices)
         x_min, x_max, y_min, y_max, z_min, z_max = max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, system, bodies_index)
     end
+<<<<<<< HEAD
+=======
+
+    x_min, x_max, y_min, y_max, z_min, z_max = TF(x_min), TF(x_max), TF(y_min), TF(y_max), TF(z_min), TF(z_max)
+
+>>>>>>> main
     return get_center_box(x_min, x_max, y_min, y_max, z_min, z_max)
 end
 
@@ -1495,12 +1557,14 @@ end
     return x_min, x_max, y_min, y_max, z_min, z_max
 end
 
-function source_center_box(systems::Tuple, bodies_indices, TF)
+function source_center_box(systems, bodies_indices, TF)
     x_min, y_min, z_min = first_body_position(systems, bodies_indices, TF)
     x_max, y_max, z_max = x_min, y_min, z_min
     for (system, bodies_index) in zip(systems, bodies_indices)
         x_min, x_max, y_min, y_max, z_min, z_max = source_max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, system, bodies_index)
     end
+
+    x_min, x_max, y_min, y_max, z_min, z_max = TF(x_min), TF(x_max), TF(y_min), TF(y_max), TF(z_min), TF(z_max)
 
     return get_center_box(x_min, x_max, y_min, y_max, z_min, z_max)
 end
@@ -1535,7 +1599,7 @@ end
 #     return system[bodies_index[1],POSITION]
 # end
 
-@inline function first_body_position(systems::Tuple, bodies_indices, TF)
+function first_body_position(systems, bodies_indices, TF)
     for (system, bodies_index) in zip(systems, bodies_indices)
         length(bodies_index) > 0 && (return get_position(system, bodies_index[1]))
     end
@@ -1596,7 +1660,7 @@ end
 #     return target_radius, source_radius
 # end
 
-@inline function shrink_radius_source(source_radius, source_center, systems::Tuple, bodies_indices)
+@inline function shrink_radius_source(source_radius, source_center, systems::Union{Tuple, AbstractVector{<:Matrix}}, bodies_indices)
     # loop over systems
     for (system, bodies_index) in zip(systems, bodies_indices)
         source_radius = shrink_radius_source(source_radius, source_center, system, bodies_index)
@@ -1631,7 +1695,7 @@ end
     return source_radius
 end
 
-@inline function shrink_radius_target(target_radius, target_center, systems::Tuple, bodies_indices)
+@inline function shrink_radius_target(target_radius, target_center, systems::Union{Tuple, AbstractVector{<:Matrix}}, bodies_indices)
     # loop over systems
     for (system, bodies_index) in zip(systems, bodies_indices)
         target_radius = shrink_radius_target(target_radius, target_center, system, bodies_index)
@@ -1727,13 +1791,16 @@ end
     return radius
 end
 
-function shrink_leaf_source!(branches::Vector{Branch{TF,N}}, i_branch, system) where {TF,N}
+function shrink_leaf_source!(branches::Vector{Branch{TF,N}}, i_branch, system, recenter::Bool) where {TF,N}
     # unpack
     branch = branches[i_branch]
     bodies_index = branch.bodies_index
 
     # recenter and target box
     new_source_center, new_source_box = source_center_box(system, bodies_index, TF)
+    if !recenter
+        new_source_center = branch.center
+    end
 
     # shrink radii and create source box
     new_source_radius = shrink_radius_source(new_source_center, system, bodies_index)
@@ -1743,13 +1810,16 @@ function shrink_leaf_source!(branches::Vector{Branch{TF,N}}, i_branch, system) w
 
 end
 
-function shrink_leaf_target!(branches::Vector{Branch{TF,N}}, i_branch, system) where {TF,N}
+function shrink_leaf_target!(branches::Vector{Branch{TF,N}}, i_branch, system, recenter) where {TF,N}
     # unpack
     branch = branches[i_branch]
     bodies_index = branch.bodies_index
 
     # recenter and target box
     new_target_center, new_target_box = center_box(system, bodies_index, TF)
+    if !recenter
+        new_target_center = branch.center
+    end
 
     # shrink radii and create source box
     new_target_radius = shrink_radius_target(new_target_center, system, bodies_index)
@@ -1781,11 +1851,14 @@ Computes the smallest bounding box to completely bound all child boxes.
 
 Shrunk radii are merely the distance from the center to the corner of the box.
 """
-function shrink_branch!(branches, i_branch, child_index)
+function shrink_branch!(branches, i_branch, child_index, recenter::Bool)
 
     # recenter and target box
     new_center, new_box = center_box(branches, child_index)
     # new_source_center, new_source_box = source_center_box(branches, child_index)
+    if !recenter
+        new_center = branches[i_branch].center
+    end
 
     # shrink radii and create source box
     new_radius = shrink_radius(new_center, branches, child_index)
@@ -1794,10 +1867,10 @@ function shrink_branch!(branches, i_branch, child_index)
     replace_branch!(branches, i_branch, new_center, new_radius, new_box)
 end
 
-function shrink_recenter_source!(branches, levels_index, system)
+function shrink_recenter_source!(branches, levels_index, system, recenter::Bool)
     n_threads = Threads.nthreads()
-    if n_threads > 1 && length(branches) > MIN_NPT
-        return shrink_recenter_source_multithread!(branches, levels_index, system)
+    if n_threads > 1 && get_n_bodies(system) > MIN_BODIES
+        return shrink_recenter_source_multithread!(branches, levels_index, system, recenter)
     end
 
     for i_level in length(levels_index):-1:1 # start at the bottom level
@@ -1805,32 +1878,32 @@ function shrink_recenter_source!(branches, levels_index, system)
         for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
-                shrink_leaf_source!(branches, i_branch, system)
+                shrink_leaf_source!(branches, i_branch, system, recenter)
             else
-                shrink_branch!(branches, i_branch, branch.branch_index)
+                shrink_branch!(branches, i_branch, branch.branch_index, recenter)
             end
         end
     end
 end
 
-function shrink_recenter_source_multithread!(branches, levels_index, system)
+function shrink_recenter_source_multithread!(branches, levels_index, system, recenter::Bool)
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
         Threads.@threads for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
-                shrink_leaf_source!(branches, i_branch, system)
+                shrink_leaf_source!(branches, i_branch, system, recenter)
             else
-                shrink_branch!(branches, i_branch, branch.branch_index)
+                shrink_branch!(branches, i_branch, branch.branch_index, recenter)
             end
         end
     end
 end
 
-function shrink_recenter_target!(branches, levels_index, system)
+function shrink_recenter_target!(branches, levels_index, system, recenter)
     n_threads = Threads.nthreads()
-    if n_threads > 1 && length(branches) > MIN_NPT
-        return shrink_recenter_target_multithread!(branches, levels_index, system)
+    if n_threads > 1 && get_n_bodies(system) > MIN_BODIES
+        return shrink_recenter_target_multithread!(branches, levels_index, system, recenter)
     end
 
     for i_level in length(levels_index):-1:1 # start at the bottom level
@@ -1838,35 +1911,35 @@ function shrink_recenter_target!(branches, levels_index, system)
         for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
-                shrink_leaf_target!(branches, i_branch, system)
+                shrink_leaf_target!(branches, i_branch, system, recenter)
             else
-                shrink_branch!(branches, i_branch, branch.branch_index)
+                shrink_branch!(branches, i_branch, branch.branch_index, recenter)
             end
         end
     end
 end
 
-function shrink_recenter_target_multithread!(branches, levels_index, system)
+function shrink_recenter_target_multithread!(branches, levels_index, system, recenter::Bool)
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
         Threads.@threads :static for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
-                shrink_leaf_target!(branches, i_branch, system)
+                shrink_leaf_target!(branches, i_branch, system, recenter)
             else
-                shrink_branch!(branches, i_branch, branch.branch_index)
+                shrink_branch!(branches, i_branch, branch.branch_index, recenter)
             end
         end
     end
 end
 
-function update_min_influence!(branches, levels_index, buffers)
+function update_min_influence!(branches, levels_index, buffers, systems, switches)
     for i_level in length(levels_index):-1:1 # start at the bottom level
         level_index = levels_index[i_level]
         for i_branch in level_index
             branch = branches[i_branch]
             if branch.n_branches == 0 # leaf
-                update_min_influence_leaf!(branches, i_branch, buffers)
+                update_min_influence_leaf!(branches, i_branch, buffers, systems, switches)
             else
                 update_min_influence_branch!(branches, i_branch, branch.branch_index)
             end
@@ -1874,9 +1947,17 @@ function update_min_influence!(branches, levels_index, buffers)
     end
 end
 
-function update_min_influence_leaf!(branches, i_branch, buffers)
+@inline get_prev_metadata_indices(systems::Tuple{}) = ()
+@inline get_prev_metadata_indices(systems::Tuple) =
+    ((previous_potential_metadata_index(systems[1]), previous_gradient_metadata_index(systems[1])),
+     get_prev_metadata_indices(Base.tail(systems))...)
+
+function update_min_influence_leaf!(branches, i_branch, buffers, systems, switches)
     # extract branch
     branch = branches[i_branch]
+
+    # precompute per-system metadata indices without indexing into the heterogeneous `systems` tuple at runtime
+    prev_indices = get_prev_metadata_indices(systems)
 
     # initialize min_influence
     # the original is probably safe here, but just in case I'm explicitly handling the ReverseDiff case for now.
@@ -1890,25 +1971,27 @@ function update_min_influence_leaf!(branches, i_branch, buffers)
     end
     for i_buffer in eachindex(buffers)
         buffer = buffers[i_buffer]
+        i_prev_potential, i_prev_gradient = prev_indices[i_buffer]
         # extract body index
         bodies_index = branch.bodies_index[i_buffer]
         if length(bodies_index) > 0
-            min_potential = max(min_potential, buffer[17, bodies_index[1]])
-            min_gradient = max(min_gradient, buffer[18, bodies_index[1]])
+            min_potential = max(min_potential, metadata_value(buffer, i_prev_potential, bodies_index[1]))
+            min_gradient = max(min_gradient, metadata_value(buffer, i_prev_gradient, bodies_index[1]))
         end
     end
 
     # loop over buffers
     for i_buffer in eachindex(buffers)
         buffer = buffers[i_buffer]
+        i_prev_potential, i_prev_gradient = prev_indices[i_buffer]
 
         # extract body index
         bodies_index = branch.bodies_index[i_buffer]
 
         # compute max influence
         for i_body in bodies_index
-            min_potential = min(min_potential, buffer[17,i_body])
-            min_gradient = min(min_gradient, buffer[18,i_body])
+            min_potential = min(min_potential, metadata_value(buffer, i_prev_potential, i_body))
+            min_gradient = min(min_gradient, metadata_value(buffer, i_prev_gradient, i_body))
         end
     end
 

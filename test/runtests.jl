@@ -53,6 +53,8 @@ end
 #--- run tests ---#
 
 include("auxilliary_test.jl")
+include("metadata_extra_test.jl")
+include("direct_conditioning_test.jl")
 include("direct_test.jl")
 include("harmonics_test.jl")
 include("rotate_test.jl")
@@ -68,4 +70,3 @@ include("dynamic_expansion_order_test.jl")
 include("interaction_list_test.jl")
 include("fmm_test.jl")
 include("solve_test.jl")
-

@@ -348,10 +348,6 @@ function FastMultipole.reset!(system::VortexPanels)
     system.hessian .= zero(eltype(system.hessian))
 end
 
-function Branch(bodies_index::UnitRange, n_branches, branch_index, i_parent, i_leaf_index, center, radius, box)
-    return Branch(SVector{1}(length(bodies_index)), SVector{1}([bodies_index]), n_branches, branch_index, i_parent, i_leaf_index, center, radius, box)
-end
-
 @testset "body-to-multipole: point source" begin
 
 x = SVector{3}(0.1,0.2,-0.3)
@@ -511,7 +507,7 @@ x_point = FastMultipole.get_position(system,1)
 Δx = xt - x_point
 Δx̂ = Δx / norm(Δx)
 r = norm(Δx)
-ϕ_point = 1/4/pi/r^2 * dot(q,Δx̂)
+ϕ_point = -1/4/pi/r^2 * dot(q,Δx̂)
 
 @test isapprox(ϕ_point, ϕ_l2b; atol=1e-12)
 
@@ -1209,4 +1205,3 @@ FastMultipole.update_ηs_mag!(ηs_mag, 0, expansion_order)
 @test isapprox(v_check, v_l2b; atol=1e-12)
 
 end
-

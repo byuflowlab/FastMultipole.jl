@@ -68,3 +68,100 @@ Note that `scalar_potential`, `gradient`, and `hessian` can be passed as a singl
 
 !!! tip
     The `fmm!` keyword arguments `scalar_potential`, `gradient`, and `hessian` can be passed as a single boolean or as a tuple of booleans, one for each target system. This allows the user to specify which values are desired for each target system, and avoids unnecessary calculations for values that are not needed.
+
+## Direct Conditioning
+
+Some multi-system models need a source system to be temporarily transformed for
+particular source-target system pairs. For example, a source may need a
+different representation only when it acts on the target system with the same
+index. Use a [`DirectConditioningRule`](@ref) for this:
+
+```julia
+function condition_self!(source_buffer, source_system, i_source_system, target_buffer, i_target_system)
+    source_buffer[5:4+FastMultipole.strength_dims(source_system), :] .*= 2
+end
+
+function restore_self!(source_buffer, source_system, i_source_system, target_buffer, i_target_system)
+    source_buffer[5:4+FastMultipole.strength_dims(source_system), :] .*= 0.5
+end
+
+rule = DirectConditioningRule(SelfPairs(), condition_self!, restore_self!)
+
+fmm!(systems; direct_conditioning=rule)
+direct!(systems; direct_conditioning=rule)
+```
+
+`direct_conditioning` accepts either one rule or a tuple of rules. Rules are
+checked once per `(i_source_system, i_target_system)` pair, not inside the
+body-body direct interaction loop. Matching `before!` callbacks run in the
+order supplied; matching `after!` callbacks run in reverse order and are called
+with `try`/`finally` around the direct work.
+
+The built-in matchers are:
+
+- `SelfPairs()`: applies when `i_source_system == i_target_system`
+- `PairSet(((1, 2), (3, 1)))`: applies to explicit source-target index pairs
+- `AllPairs()`: applies to every source-target system pair
+
+Custom matchers can be used by defining:
+
+```julia
+struct AdjacentPairs end
+FastMultipole.applies(::AdjacentPairs, i_source_system, i_target_system) =
+    i_source_system + 1 == i_target_system
+```
+
+The callbacks mutate `source_buffer`, not the original source object. Direct
+kernels read source data from the sorted source buffer, so conditioning the
+buffer is both the fastest and the most direct way to affect the interaction.
+Conditioning is supported for CPU `fmm!` nearfield work and `direct!`; it is not
+currently used with custom device nearfield overloads (`nearfield_device=true`).
+
+## Metadata and Extra Outputs
+
+Target buffers have two distinct extension areas. Metadata rows are copied from
+the target system and sorted with positions, so they are available during
+nearfield interactions. Extra output rows are additional fields induced by neighboring bodies besides the scalar potential, gradient, and hessian. Note that extra outputs are not included in far-field interactions; as such, they are typically kernels with compact or near-compact support, meaning their far-field influence vanishes. An example of an appropriate extra output would be the vorticity induced by a gaussian vortex blob. Its velocity is approximated by multipole expansions, but the vorticity drops off exponentially.
+
+Request extra accumulated rows with `extra_outputs`:
+
+```julia
+direct!(target_system, source_system;
+    scalar_potential=true, gradient=false, hessian=false, extra_outputs=3)
+```
+
+!!! tip
+    Request `extra_outputs=N` for accumulated custom output rows. Access those rows with [`FastMultipole.extra_output_range`](@ref), [`FastMultipole.get_extra_output`](@ref), [`FastMultipole.set_extra_output!`](@ref), or [`FastMultipole.extra_output_view`](@ref).
+
+A custom `direct!` overload should use switch-aware helpers:
+
+```julia
+function FastMultipole.direct!(target_buffer, target_index, switch::DerivativesSwitch{PS,GS,HS}, source_system::MySources, source_buffer, source_index) where {PS,GS,HS}
+    for i_target in target_index
+        PS && FastMultipole.set_scalar_potential!(target_buffer, switch, i_target, potential)
+        FastMultipole.set_extra_output!(target_buffer, switch, i_target, 1, diagnostic)
+    end
+end
+```
+
+Target systems declare sorted metadata with:
+
+```julia
+FastMultipole.metadata_per_body(system::MyTargets) = 2
+
+function FastMultipole.metadata_to_buffer!(buffer, switch, i_buffer, system::MyTargets, i_body)
+    buffer[FastMultipole.metadata_index(switch, 1), i_buffer] = system.previous_potential[i_body]
+    buffer[FastMultipole.metadata_index(switch, 2), i_buffer] = system.previous_gradient_norm[i_body]
+end
+```
+
+Then copy extra outputs back in `buffer_to_target_system!`:
+
+```julia
+function FastMultipole.buffer_to_target_system!(target_system::MyTargets, i_target, switch::DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+    target_system.extra[:, i_target] .+= FastMultipole.extra_output_view(target_buffer, switch, i_buffer)
+end
+```
+
+!!! warning
+    Target buffers are compact. Hard-coded target rows `4`, `5:7`, and `8:16` are valid only when `metadata=0` and only when all preceding standard outputs are enabled. Custom target code should use switch-aware getters, setters, and range helpers.

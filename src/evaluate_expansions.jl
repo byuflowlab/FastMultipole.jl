@@ -32,13 +32,14 @@ end
 
 function evaluate_local!(system, bodies_index, harmonics, gradient_n_m, local_expansion, expansion_center, expansion_order, lamb_helmholtz, derivatives_switch::DerivativesSwitch{PS,GS,HS}) where {PS,GS,HS}
     for i_body in bodies_index
-        scalar_potential, gradient, hessian = evaluate_local(get_position(system, i_body) - expansion_center, harmonics, gradient_n_m, local_expansion, expansion_order, lamb_helmholtz, derivatives_switch)
-        
-        PS && set_scalar_potential!(system, i_body, scalar_potential)
+        pos = get_position(system, i_body)
+        scalar_potential, gradient, hessian = evaluate_local(pos - expansion_center, harmonics, gradient_n_m, local_expansion, expansion_order, lamb_helmholtz, derivatives_switch)
 
-        GS && set_gradient!(system, i_body, gradient)
-        
-        HS && set_hessian!(system, i_body, hessian)
+        PS && set_scalar_potential!(system, derivatives_switch, i_body, scalar_potential)
+
+        GS && set_gradient!(system, derivatives_switch, i_body, gradient)
+
+        HS && set_hessian!(system, derivatives_switch, i_body, hessian)
     end
 end
 
@@ -344,7 +345,6 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
             vg_zz_imag = -gradient_n_m[2,3,i_n_m+n+1]
             vzz += vg_zz_real * Rnm_real - vg_zz_imag * Rnm_imag
 
-
             #--- m > 0 ---#
 
             for m in 1:n
@@ -395,6 +395,5 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
         end
     end
 
-    return -u * ONE_OVER_4π, SVector{3}(vx,vy,vz) * ONE_OVER_4π, SMatrix{3,3,eltype(local_expansion),9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz) * ONE_OVER_4π
+    return u * ONE_OVER_4π, SVector{3}(vx,vy,vz) * ONE_OVER_4π, SMatrix{3,3,eltype(local_expansion),9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz) * ONE_OVER_4π
 end
-

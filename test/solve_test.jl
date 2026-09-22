@@ -8,12 +8,12 @@
 #--- define influence function ---#
 
 # just the scalar potential
-function FastMultipole.influence!(influence, target_buffer, ::Gravitational, source_buffer)
-    influence .= view(target_buffer, 4, :)
+function FastMultipole.influence!(influence, target_buffer, derivatives_switch::FastMultipole.DerivativesSwitch, ::Gravitational, source_buffer)
+    influence .= view(target_buffer, FastMultipole.scalar_potential_index(derivatives_switch), :)
 end
 
-function FastMultipole.target_influence_to_buffer!(target_buffer, i_buffer, derivatives_switch, target_system::Gravitational, i_target)
-    target_buffer[4, i_buffer] = target_system.potential[1, i_target]
+function FastMultipole.target_influence_to_buffer!(target_buffer, i_buffer, derivatives_switch::FastMultipole.DerivativesSwitch{PS}, target_system::Gravitational, i_target) where PS
+    PS && (target_buffer[FastMultipole.scalar_potential_index(derivatives_switch), i_buffer] = target_system.potential[1, i_target])
 end
 
 function FastMultipole.value_to_strength!(source_buffer, ::Gravitational, i_body, value)
@@ -199,7 +199,7 @@ FastMultipole.target_influence_to_buffer!(target_buffers, (system,), derivatives
 
 # run influence function on buffers
 FastMultipole.reset!(extra_right_hand_side)
-FastMultipole.influence!(extra_right_hand_side, influences_per_system, target_buffers, (system,), source_buffers, source_tree)
+FastMultipole.influence!(extra_right_hand_side, influences_per_system, target_buffers, (system,), source_buffers, source_tree, derivatives_switches)
 
 #--- check influence function ---#
 
@@ -257,7 +257,7 @@ source_index = source_tree.branches[i_branch].bodies_index[1]
 target_index = target_tree.branches[i_target].bodies_index[1]
 direct!(target_buffers[1], target_index, derivatives_switches[1], system, source_buffers[1], source_index)
 test_influence = zero(extra_right_hand_side)
-FastMultipole.influence!(test_influence, influences_per_system, target_buffers, (system,), source_buffers, source_tree)
+FastMultipole.influence!(test_influence, influences_per_system, target_buffers, (system,), source_buffers, source_tree, derivatives_switches)
 manual_influence = test_influence[targets_by_branch[i_target]]
 
 @test isapprox(branch_influence, manual_influence; atol=1e-6)
@@ -283,7 +283,7 @@ FastMultipole.nearfield_singlethread!(target_buffers, target_tree.branches, (sys
 # get influence from target buffers
 test_influence = similar(extra_right_hand_side)
 test_influence .= zero(eltype(test_influence))
-FastMultipole.influence!(test_influence, influences_per_system, target_buffers, (system,), source_buffers, source_tree)
+FastMultipole.influence!(test_influence, influences_per_system, target_buffers, (system,), source_buffers, source_tree, derivatives_switches)
 
 # check that the influence is the same as the right-hand side
 @test isapprox(test_influence, right_hand_side; atol=1e-6)
@@ -332,11 +332,11 @@ end
 
 #--- create FGS solver ---#
 
-fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_acceptance=0.5, leaf_size=n_bodies, shrink_recenter=false) # try with leaf_size=3 for sources with no non-self influence
+fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order=4, multipole_acceptance=0.5, leaf_size=n_bodies, shrink=false, recenter=false) # try with leaf_size=3 for sources with no non-self influence
 
 #--- test solve! ---#
 
-FastMultipole.solve!(system, fgs; max_iterations=10, tolerance=1e-3)
+FastMultipole.solve!(system, fgs; scalar_potential=true, gradient=false, max_iterations=10, tolerance=1e-3)
 
 #--- check strengths ---#
 
@@ -366,7 +366,8 @@ derivatives_switches = FastMultipole.DerivativesSwitch(true, false, false, (syst
 systems = (system,)
 target = false
 TF = eltype(system)
-source_tree = Tree(systems, target; buffers=FastMultipole.allocate_buffers(systems, target, TF), small_buffers = FastMultipole.allocate_small_buffers(systems, TF), expansion_order=4, leaf_size=SVector{1}(20), n_divisions=20, shrink_recenter=false, interaction_list_method=Barba())
+switches = DerivativesSwitch(true, true, true, systems)
+source_tree = Tree(systems, target, switches; buffers=FastMultipole.allocate_buffers(systems, target, TF, switches), small_buffers = FastMultipole.allocate_small_buffers(systems, TF), expansion_order=4, leaf_size=SVector{1}(20), n_divisions=20, shrink=false, recenter=false, interaction_list_method=Barba())
 
 #--- modify the buffer strengths ---#
 

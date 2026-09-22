@@ -1,41 +1,50 @@
 #------- direct interactions -------#
 
-function nearfield_singlethread!(target_buffers, target_branches, source_systems, source_buffers, source_branches, derivatives_switches, direct_list)
+function nearfield_singlethread!(target_buffers, target_branches, source_systems, source_buffers, source_branches, derivatives_switches, direct_list, direct_conditioning=())
     # loop over sources
     t_nf = @MVector zeros(length(source_systems))
+    direct_conditioning = normalize_direct_conditioning(direct_conditioning)
     for i_source_system in eachindex(source_systems)
         source_system = source_systems[i_source_system]
         source_buffer = source_buffers[i_source_system]
 
         # perform direct interactions
-        t_elapsed = @elapsed nearfield_loop!(target_buffers, target_branches, source_system, source_buffer, i_source_system, source_branches, direct_list, derivatives_switches)
+        t_elapsed = @elapsed nearfield_loop!(target_buffers, target_branches, source_system, source_buffer, i_source_system, source_branches, direct_list, derivatives_switches, direct_conditioning)
         t_nf[i_source_system] = t_elapsed
     end
 
     return t_nf
 end
 
-function nearfield_loop!(target_buffers, target_branches, source_system, source_buffer, i_source_system, source_branches, direct_list, derivatives_switches)
+function nearfield_loop!(target_buffers, target_branches, source_system, source_buffer, i_source_system, source_branches, direct_list, derivatives_switches, direct_conditioning=())
     # loop over target systems
     for (i_target_system, target_system) in enumerate(target_buffers)
 
         # extract derivatives switch
         derivatives_switch = derivatives_switches[i_target_system]
 
-        # loop over direct list
-        for (i_target, i_source) in direct_list
-
-            # identify sources
-            source_index = source_branches[i_source].bodies_index[i_source_system]
-
-            # identify targets
-            target_index = target_branches[i_target].bodies_index[i_target_system]
-
-            # compute interaction
-            direct!(target_system, target_index, derivatives_switch, source_system, source_buffer, source_index)
-
+        if has_direct_conditioning(direct_conditioning)
+            with_direct_conditioning!(direct_conditioning, source_buffer, source_system, i_source_system, target_system, i_target_system) do
+                nearfield_direct_list_loop!(target_system, i_target_system, target_branches, derivatives_switch, source_system, source_buffer, i_source_system, source_branches, direct_list)
+            end
+        else
+            nearfield_direct_list_loop!(target_system, i_target_system, target_branches, derivatives_switch, source_system, source_buffer, i_source_system, source_branches, direct_list)
         end
+    end
+end
 
+function nearfield_direct_list_loop!(target_system, i_target_system, target_branches, derivatives_switch, source_system, source_buffer, i_source_system, source_branches, direct_list)
+    # loop over direct list
+    for (i_target, i_source) in direct_list
+
+        # identify sources
+        source_index = source_branches[i_source].bodies_index[i_source_system]
+
+        # identify targets
+        target_index = target_branches[i_target].bodies_index[i_target_system]
+
+        # compute interaction
+        direct!(target_system, target_index, derivatives_switch, source_system, source_buffer, source_index)
     end
 end
 
@@ -88,7 +97,14 @@ function make_direct_assignments!(assignments, i_target_system, target_branches,
         end
         
         # get the last assignment
-        assignments[i_thread] = i_start:i_end
+        if i_start <= length(direct_list)
+            i_end = length(direct_list)
+            if i_thread <= n_threads
+                assignments[i_thread] = i_start:i_end
+            else
+                assignments[end] = assignments[end][1]:i_end
+            end
+        end
 
     end
 end
@@ -110,14 +126,23 @@ function execute_assignment!(target_buffer, i_target_buffer, target_branches, de
     end
 end
 
-function nearfield_multithread!(target_systems, target_branches, source_systems::Tuple, source_buffers, source_branches, derivatives_switches, direct_list, interaction_list_method, n_threads)
+function nearfield_multithread!(target_systems, target_branches, source_systems::Tuple, source_buffers, source_branches, derivatives_switches, direct_list, interaction_list_method, n_threads, direct_conditioning=())
     # benchmark for auto-tuning
     t_nf = @MVector zeros(length(source_systems))
+    direct_conditioning = normalize_direct_conditioning(direct_conditioning)
 
     for (i_source_system, source_system) in enumerate(source_systems)
         source_buffer = source_buffers[i_source_system]
         for (i_target_buffer, target_buffer) in enumerate(target_systems)
-            t = @elapsed nearfield_multithread!(target_buffer, i_target_buffer, target_branches, source_system, source_buffer, i_source_system, source_branches, derivatives_switches[i_target_buffer], direct_list, interaction_list_method, n_threads)
+            t = @elapsed begin
+                if has_direct_conditioning(direct_conditioning)
+                    with_direct_conditioning!(direct_conditioning, source_buffer, source_system, i_source_system, target_buffer, i_target_buffer) do
+                        nearfield_multithread!(target_buffer, i_target_buffer, target_branches, source_system, source_buffer, i_source_system, source_branches, derivatives_switches[i_target_buffer], direct_list, interaction_list_method, n_threads)
+                    end
+                else
+                    nearfield_multithread!(target_buffer, i_target_buffer, target_branches, source_system, source_buffer, i_source_system, source_branches, derivatives_switches[i_target_buffer], direct_list, interaction_list_method, n_threads)
+                end
+            end
             t_nf[i_source_system] += t
         end
     end
@@ -301,7 +326,7 @@ function upward_pass_singlethread!(tree::Tree, systems, expansion_order, lamb_he
     upward_pass_singlethread_2!(tree, expansion_order, lamb_helmholtz)
 end
 
-function upward_pass_multithread_1!(source_tree::Tree, systems::Tuple, expansion_order, n_threads)
+function upward_pass_multithread_1!(source_tree::Tree{TF}, systems::Tuple, expansion_order, n_threads) where TF
     
     #--- load balance ---#
 
@@ -340,7 +365,7 @@ function upward_pass_multithread_1!(source_tree::Tree, systems::Tuple, expansion
 
     #--- preallocate memory ---#
 
-    harmonics = [initialize_harmonics(expansion_order) for _ in 1:n_threads]
+    harmonics = [initialize_harmonics(expansion_order, TF) for _ in 1:n_threads]
 
     #--- compute multipole expansion coefficients ---#
 
@@ -542,7 +567,14 @@ function assign_m2l!(assignments, m2l_list, n_threads, n_per_thread, interaction
         end
 
         # get the last assignment
-        assignments[i_thread] = i_start:i_end
+        if i_start <= length(m2l_list)
+            i_end = length(m2l_list)
+            if i_thread <= n_threads
+                assignments[i_thread] = i_start:i_end
+            else
+                assignments[end] = assignments[end][1]:i_end
+            end
+        end
 
     end
 end
@@ -655,10 +687,13 @@ end
 function downward_pass_singlethread_2!(tree::Tree{TF,<:Any}, systems, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m) where TF
 
     harmonics = initialize_harmonics(expansion_order, TF)
+<<<<<<< HEAD
     if TF <: ReverseDiff.TrackedReal
         tp = ReverseDiff.tape(systems[1])
         init_rd_array!(harmonics, tp)
     end
+=======
+>>>>>>> main
     # loop over systems
     for (i_system, system) in enumerate(systems)
         evaluate_local!(system, i_system, tree, harmonics, gradient_n_m, expansion_order, lamb_helmholtz, derivatives_switches)
@@ -816,6 +851,7 @@ function warn_scalar_potential_with_lh(derivatives_switches::Tuple, lamb_helmhol
     end
     if WARNING_FLAG_LH_POTENTIAL[] && !success
         @warn "\nScalar potential was requested for a source system inducing a vector potential; this may result in nonsensical scalar potential predictions.\nIf you really need the scalar_potential, check which system results in has_vector_potential(system)==true, and remove it."
+        WARNING_FLAG_LH_POTENTIAL[] = false
     end
 end
 
@@ -839,14 +875,53 @@ end
     return SVector{n}(input...)
 end
 
-fmm!(system, cache::Cache=Cache(to_tuple(system), to_tuple(system)); leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
+fmm!(system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...) = fmm!(system, Cache(to_tuple(system), to_tuple(system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(system); extra_outputs, metadata)); scalar_potential, gradient, hessian, leaf_size, extra_outputs, metadata, optargs...)
 
-function fmm!(target_systems, source_systems, cache::Cache=Cache(to_tuple(target_systems), to_tuple(source_systems)); optargs...)
-    # promote arguments to Tuples
-    target_systems = to_tuple(target_systems)
-    source_systems = to_tuple(source_systems)
+fmm!(target_system, source_system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...) = fmm!(target_system, source_system, Cache(to_tuple(target_system), to_tuple(source_system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(target_system); extra_outputs, metadata)); scalar_potential, gradient, hessian, leaf_size_source=leaf_size, leaf_size_target=nothing, extra_outputs, metadata, optargs...)
 
-    return fmm!(target_systems, source_systems, cache; optargs...)
+fmm!(system, cache::Cache; leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
+
+function fmm!(target_systems, source_systems, cache::Cache; optargs...)
+    # promote arguments to Tuples and dispatch to the main method
+    return fmm!(to_tuple(target_systems), to_tuple(source_systems), cache; optargs...)
+end
+
+function validate_cache_compatibility(cache::Cache, target_systems::Tuple, source_systems::Tuple, switches::Tuple)
+    length(cache.target_buffers) == length(target_systems) ||
+        throw(ArgumentError("cache target buffer count does not match target systems"))
+    length(cache.target_small_buffers) == length(target_systems) ||
+        throw(ArgumentError("cache target small-buffer count does not match target systems"))
+    length(cache.source_buffers) == length(source_systems) ||
+        throw(ArgumentError("cache source buffer count does not match source systems"))
+    length(cache.source_small_buffers) == length(source_systems) ||
+        throw(ArgumentError("cache source small-buffer count does not match source systems"))
+
+    for (i, (system, switch, buffer, small_buffer)) in enumerate(zip(target_systems, switches, cache.target_buffers, cache.target_small_buffers))
+        expected_rows = target_buffer_rows(switch)
+        size(buffer, 1) == expected_rows ||
+            throw(ArgumentError("cache target buffer $i has $(size(buffer, 1)) rows, expected $expected_rows for the requested derivative switch layout"))
+        size(buffer, 2) == get_n_bodies(system) ||
+            throw(ArgumentError("cache target buffer $i has $(size(buffer, 2)) bodies, expected $(get_n_bodies(system))"))
+
+        expected_small_rows = length(tree_carried_range(switch))
+        size(small_buffer, 1) == expected_small_rows ||
+            throw(ArgumentError("cache target small buffer $i has $(size(small_buffer, 1)) rows, expected $expected_small_rows for the requested metadata layout"))
+        size(small_buffer, 2) == get_n_bodies(system) ||
+            throw(ArgumentError("cache target small buffer $i has $(size(small_buffer, 2)) bodies, expected $(get_n_bodies(system))"))
+    end
+
+    for (i, (system, buffer, small_buffer)) in enumerate(zip(source_systems, cache.source_buffers, cache.source_small_buffers))
+        size(buffer, 1) == data_per_body(system) ||
+            throw(ArgumentError("cache source buffer $i has $(size(buffer, 1)) rows, expected $(data_per_body(system))"))
+        size(buffer, 2) == get_n_bodies(system) ||
+            throw(ArgumentError("cache source buffer $i has $(size(buffer, 2)) bodies, expected $(get_n_bodies(system))"))
+        size(small_buffer, 1) == 4 ||
+            throw(ArgumentError("cache source small buffer $i has $(size(small_buffer, 1)) rows, expected 4"))
+        size(small_buffer, 2) == get_n_bodies(system) ||
+            throw(ArgumentError("cache source small buffer $i has $(size(small_buffer, 2)) bodies, expected $(get_n_bodies(system))"))
+    end
+
+    return nothing
 end
 
 """
@@ -878,7 +953,8 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 
 **Optional Arguments: Tree Options**
 
-- `shrink_recenter::Bool`: whether to shrink and recenter branches around their bodies, accounting for finite body radius; default is `true`
+- `shrink::Bool`: whether to shrink branches around their bodies, accounting for finite body radius; default is `true`
+- `recenter::Bool`: whether to recenter branches around their bodies, accounting for finite body radius; default is `false`
 - `interaction_list_method::InteractionListMethod`: method for building interaction lists; default is `SelfTuningTargetStop()`
 
 **Optional Arguments: Additional Options**
@@ -892,14 +968,31 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 - `scalar_potential::Union{Bool,AbstractVector{Bool}}`: whether to compute the scalar potential; default is `false`
 - `gradient::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector field; default is `true`
 - `hessian::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector gradient; default is `false`
+- `extra_outputs::Union{Int,AbstractVector{Int}}`: number of extra accumulated target output rows; default is `0`
+- `metadata::Union{Nothing,Int,AbstractVector{Int}}`: number of metadata rows carried with target positions; `nothing` infers [`metadata_per_body`](@ref)
+- `extra_farfield::Bool`: whether to compute extra farfield interactions; default is `false`
+- `direct_conditioning`: a `DirectConditioningRule` or tuple of rules used to temporarily condition source buffers for selected source-target system pairs during CPU nearfield interactions
 
 """
-function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(target_systems, source_systems);
+function fmm!(target_systems::Tuple, source_systems::Tuple;
+    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing, optargs...
+)
+    # allocate cache with actual derivatives switches
+    scalar_potential_v = to_vector(scalar_potential, length(target_systems))
+    gradient_v = to_vector(gradient, length(target_systems))
+    hessian_v = to_vector(hessian, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; extra_outputs, metadata)
+    cache = Cache(target_systems, source_systems, derivatives_switches)
+    return fmm!(target_systems, source_systems, cache; scalar_potential, gradient, hessian, extra_outputs, metadata, optargs...)
+end
+
+function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     leaf_size_target=nothing,
     leaf_size_source=default_leaf_size(source_systems),
+    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing,
     expansion_order=5,
     error_tolerance=nothing,
-    shrink_recenter=true,
+    shrink=true, recenter=false,
     interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
     optargs...
 )
@@ -907,37 +1000,43 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache=Cache(t
     # get float type
     TF = get_type(target_systems, source_systems)
 
+    # promote derivative arguments to a vector
+    scalar_potential = to_vector(scalar_potential, length(target_systems))
+    gradient = to_vector(gradient, length(target_systems))
+    hessian = to_vector(hessian, length(target_systems))
+
+    # assemble derivatives switch
+    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems; extra_outputs, metadata)
+
+    validate_cache_compatibility(cache, target_systems, source_systems, derivatives_switches)
+
+    warn_missing_previous_influence_metadata(target_systems, error_tolerance)
+
     # promote leaf_size to vector
     leaf_size_source = to_vector(leaf_size_source, length(source_systems))
     leaf_size_target = to_vector(isnothing(leaf_size_target) ? minimum(leaf_size_source) : leaf_size_target, length(target_systems))
 
     # create trees
-    t_target_tree = @elapsed target_tree = Tree(target_systems, true, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink_recenter, interaction_list_method)
-    t_source_tree = @elapsed source_tree = Tree(source_systems, false, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink_recenter, interaction_list_method)
+    t_target_tree = @elapsed target_tree = Tree(target_systems, true, derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
+    t_source_tree = @elapsed source_tree = Tree(source_systems, false, derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
 
     #check_deriv_allocation(target_tree.small_buffers[1])
     # println("Tree construction times: target = $t_target_tree, source = $t_source_tree")
     # error()
 
-    return fmm!(target_systems, target_tree, source_systems, source_tree; expansion_order, leaf_size_source, error_tolerance, t_source_tree, t_target_tree, interaction_list_method, optargs...)
+    return fmm!(target_systems, target_tree, source_systems, source_tree; 
+        expansion_order, leaf_size_source, error_tolerance, t_source_tree, t_target_tree, 
+        interaction_list_method, derivatives_switches, optargs...)
 end
 
 function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, source_tree::Tree;
     leaf_size_source=default_leaf_size(source_systems), multipole_acceptance=0.4,
-    scalar_potential=false, gradient=true, hessian=false,
+    derivatives_switches=DerivativesSwitch(false, true, false, target_systems),
     farfield=true, nearfield=true, self_induced=true,
     interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
     t_source_tree=0.0, t_target_tree=0.0,
     optargs...
 )
-
-    # promote derivative arguments to a vector
-    scalar_potential = to_vector(scalar_potential, length(target_systems))
-    gradient = to_vector(gradient, length(target_systems))
-    hessian = to_vector(hessian, length(target_systems))
-    
-    # assemble derivatives switch
-    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
 
     # create interaction lists
     t_lists_build = @elapsed m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
@@ -962,9 +1061,12 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     horizontal_pass_verbose::Bool=false,
     reset_target_tree::Bool=true, reset_source_tree::Bool=true,
     nearfield_device::Bool=false,
+    nearfield::Bool=true,
     tune=false, update_target_systems=true, multipole_acceptance=0.5,
     t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
     silence_warnings=false,
+    extra_farfield=false,
+    direct_conditioning=(),
 )
 
     #=
@@ -993,6 +1095,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     #--- check if lamb-helmholtz decomposition is required ---#
 
     lamb_helmholtz = has_vector_potential(source_systems)
+    direct_conditioning = normalize_direct_conditioning(direct_conditioning)
 
     #--- check for datarace condition ---#
 
@@ -1081,6 +1184,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
         # begin FMM
         if nearfield_device # use GPU
+            if has_direct_conditioning(direct_conditioning)
+                throw(ArgumentError("direct_conditioning is only supported for CPU nearfield; use nearfield_device=false"))
+            end
 
             # allow nearfield_device! to be called concurrently with upward and horizontal passes
             t1 = Threads.@spawn nearfield && nearfield_device!(target_systems, target_tree, derivatives_switches, source_systems, source_tree, direct_list)
@@ -1110,8 +1216,12 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 #check_deriv_allocation(target_systems[1].particles[10:12, 1:target_systems[1].np])
                 #check_deriv_allocation(target_systems[1].particles[16:24, 1:target_systems[1].np])
                 # perform nearfield calculations
+<<<<<<< HEAD
                 #s = ReverseDiff.value(sum(target_tree.buffers[1])) + ReverseDiff.value(sum(target_tree.small_buffers[1])) + ReverseDiff.value(sum(target_systems[1].particles[1]))
                 t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list)
+=======
+                t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, direct_conditioning)
+>>>>>>> main
                 # println("Direct interaction time: ", t_direct[1])
                 #s2 = ReverseDiff.value(sum(target_tree.buffers[1])) + ReverseDiff.value(sum(target_tree.small_buffers[1])) + ReverseDiff.value(sum(target_systems[1].particles[1]))
                 #@show s (s2-s)
@@ -1179,6 +1289,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                     #println("finished downward pass")
                 end
 
+                # extra farfield function
+                extra_farfield && ( extra_farfield!(target_tree, source_tree, source_systems, m2l_list, derivatives_switches) )
+
                 # copy results to target systems
                 # derivatives appear to be propagated correctly
                 #check_derivs(target_systems[1].particles; label="pfield after buffer_to_target")
@@ -1213,7 +1326,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             else
 
                 # perform nearfield calculations
-                t_direct = nearfield_multithread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, n_threads)
+                t_direct = nearfield_multithread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, n_threads, direct_conditioning)
                 # println("Direct interaction time: ", t_direct[1])
                 # check number of interactions
                 if tune
@@ -1265,7 +1378,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                     t_dp = @elapsed downward_pass_multithread!(target_tree, target_tree.buffers, derivatives_switches, expansion_order, lamb_helmholtz, n_threads)
                     # println("Downward pass time: $t_dp")
                 end
-                
+
+                # extra farfield function
+                extra_farfield && ( extra_farfield!(target_tree, source_tree, source_systems, m2l_list, derivatives_switches) )
                 # copy results to target systems
                 update_target_systems && buffer_to_target!(target_systems, target_tree, derivatives_switches)
 
