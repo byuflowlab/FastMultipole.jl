@@ -6279,9 +6279,14 @@ end
 # sum keeps that order), so with per-cell pair offsets a workgroup can own one
 # target CELL, walk its source cells, and store each target's sums once: no
 # atomics, no contention, deterministic. `SFS_TARGET_MAJOR[]` (env
-# FM_SFS_TARGET_MAJOR=0 restores the pair shape) selects it.
+# FM_SFS_TARGET_MAJOR=1 selects it) is OFF by default: on the H200 at 800k
+# particles (5MW, 2026-09-23, job 13869555) the target-major sweep was 4.7x
+# SLOWER than the pair shape (sfs 138 s vs 29 s, repass 70 s vs 15 s per
+# 72 steps), whereas on Metal at 400k it was 6-9x faster. The cell-major walk
+# serialises the near-field work per target cell; on a GPU with many more SMs
+# the pair-parallel shape wins.
 
-const SFS_TARGET_MAJOR = Ref{Bool}(true)
+const SFS_TARGET_MAJOR = Ref{Bool}(false)
 const _sfs_pair_offsets = IdDict{Any,Any}()
 
 # offsets[c] = first pair whose target cell is c (n_cells + 1 entries, the last = n_direct + 1);
@@ -9392,7 +9397,7 @@ function __init__()
     _KA_SLOW_STAGE[] = parse(Float64, get(ENV, "FM_SLOW_STAGE", "Inf"))
     _KA_TICK_TRACE[] = get(ENV, "FM_TICK_TRACE", "0") == "1"
     _KA_FUSE_DJ[] = get(ENV, "FM_FUSE_DJ", "1") == "1"
-    SFS_TARGET_MAJOR[] = get(ENV, "FM_SFS_TARGET_MAJOR", "1") == "1"
+    SFS_TARGET_MAJOR[] = get(ENV, "FM_SFS_TARGET_MAJOR", "0") == "1"
     FastMultipole.register_radix_device_backend!("KernelAbstractions",
         _ka_radix_device_build_hook, _ka_radix_device_step_hook)
     FastMultipole._RADIX_DEVICE_SFS_REPASS_HOOK[] = _ka_radix_device_sfs_repass_hook
