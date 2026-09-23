@@ -4518,7 +4518,7 @@ end
 function ka_hierarchical_context(::Type{TF}, backend, tables, class_level,
         class_offset, effective_offsets, level_class_of::Array{Int32,3},
         level_radii2, plan, ell::Int, first_m2l_level::Int, max_level_nodes::Int,
-        occupancy; window_classes::Int=typemax(Int),
+        occupancy; window_classes::Int=typemax(Int), window_staging::Bool=true,
         dense_scales=nothing) where {TF}
     plan isa Union{FastMultipole.ResidentM2LConcatPlan,
                    FastMultipole.ResidentM2LDenseCUDAPlan} || throw(ArgumentError(
@@ -4528,7 +4528,12 @@ function ka_hierarchical_context(::Type{TF}, backend, tables, class_level,
         "ka_hierarchical_context requires the dense per-level occupancy lookup"))
     noffsets = length(tables.push_offsets)
     K = max(min(window_classes, noffsets), 1)
-    flag_capacity = max(K * max_level_nodes, 1)
+    # Per-window flag/prefix scratch (K x max_level_nodes Int32 each) is only read
+    # by the per-window generators; with the concat plan and cached windows
+    # (`ka_hier_cache_windows!` allocates its own epoch-sized scratch) it is dead,
+    # so `window_staging=false` shrinks it to one entry. At ell 5 that is 67 MB,
+    # 8x per level (2026-09-23 device memory accounting).
+    flag_capacity = window_staging ? max(K * max_level_nodes, 1) : 1
     size(level_class_of) == (8, noffsets, ell + 1) || throw(ArgumentError(
         "invalid hierarchical per-level class table dimensions $(size(level_class_of))"))
     _dev(A) = KA.allocate(backend, eltype(A), size(A)...) |> d -> (copyto!(d, A); d)
@@ -4590,7 +4595,9 @@ function ka_hier_generate_window_core!(route_levels, route_offsets, route_target
     used = kn * n_sources
     used <= length(hctx.route_flags) || throw(AssertionError(
         "device hierarchical window flag buffer exceeded its capacity " *
-        "($(length(hctx.route_flags)) < $used); reduce window_classes"))
+        "($(length(hctx.route_flags)) < $used); reduce window_classes, or, if the " *
+        "cache was built with the concat plan and cached windows (staging size 1), " *
+        "set :CUDA_CACHED_WINDOWS=false BEFORE building the cache"))
     backend = KA.get_backend(hctx.route_flags)
     level_base_L = hctx.level_base[L + 1]
 
@@ -4614,7 +4621,9 @@ function ka_hier_generate_window_core!(route_levels, route_offsets, route_target
     n_routes == 0 && return 0
     n_routes <= length(route_targets) || throw(AssertionError(
         "device hierarchical route window exceeded capacity " *
-        "$(length(route_targets)); increase window storage or reduce window_classes"))
+        "$(length(route_targets)); increase window storage or reduce window_classes " *
+        "(size 1 means the cache was built for cached concat windows; set " *
+        ":CUDA_CACHED_WINDOWS=false before building it to use per-window generation)"))
 
     compact_kernel = _cached_kernel(ka_hier_route_compact_kernel!, backend, workgroup)
     compact_kernel(route_levels, route_offsets, route_targets, route_sources,
@@ -4640,7 +4649,9 @@ function ka_hier_generate_window_count!(grid, hctx::FastMultipole.DeviceHierarch
     used = kn * n_sources
     used <= length(hctx.route_flags) || throw(AssertionError(
         "device hierarchical window flag buffer exceeded its capacity " *
-        "($(length(hctx.route_flags)) < $used); reduce window_classes"))
+        "($(length(hctx.route_flags)) < $used); reduce window_classes, or, if the " *
+        "cache was built with the concat plan and cached windows (staging size 1), " *
+        "set :CUDA_CACHED_WINDOWS=false BEFORE building the cache"))
     backend = KA.get_backend(hctx.route_flags)
     level_base_L = hctx.level_base[L + 1]
     flags_kernel = _cached_kernel(ka_hier_route_flags_kernel!, backend, workgroup)
@@ -4661,7 +4672,9 @@ function ka_hier_generate_window_compact!(route_levels, route_offsets, route_tar
     n_routes == 0 && return 0
     n_routes <= length(route_targets) || throw(AssertionError(
         "device hierarchical route window exceeded capacity " *
-        "$(length(route_targets)); increase window storage or reduce window_classes"))
+        "$(length(route_targets)); increase window storage or reduce window_classes " *
+        "(size 1 means the cache was built for cached concat windows; set " *
+        ":CUDA_CACHED_WINDOWS=false before building it to use per-window generation)"))
     first_source = hctx.level_offsets[L + 1] + 1
     n_sources = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
     kn = last_offset - first_offset + 1
@@ -7455,11 +7468,21 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
             max_cells, 1 << ell, dense_strategy, invariant)
         (plan, _ka_hier_dense_scales(TF, basis_info, ell, plan.ndof, first_m2l_level))
     end
+    # The per-window route staging (`route_levels/offsets/targets/sources`, 48 B
+    # per entry at `route_capacity` = window_classes x max_level_nodes) is only
+    # consumed by the per-window M2L drivers. The concat plan with cached windows
+    # compacts straight into the epoch cache (`hctx.win_*`, sized to the measured
+    # route total), so on that path the staging is never touched: allocate one
+    # entry. 400 MB at ell 5, 8x per level. Flipping :CUDA_CACHED_WINDOWS off
+    # AFTER construction is caught by the generators' capacity checks.
+    window_staging = !(dense_strategy === nothing &&
+                       _ka_radix_setting(:CUDA_CACHED_WINDOWS, true))
+    staging_capacity = window_staging ? route_capacity : 1
     hierarchical_ctx = ka_hierarchical_context(TF, backend, hierarchical_tables,
         class_level, class_offset, accepted, hierarchical_level_class_of,
         hierarchical_level_radii2, apply_plan, ell, first_m2l_level,
         max_level_nodes, occupancy; window_classes=stencil_policy.window_classes,
-        dense_scales)
+        dense_scales, window_staging)
 
     dpb = maximum(FastMultipole.data_per_body(system) for system in sources)
     n_output_rows = hessian ? 13 : 4
@@ -7472,10 +7495,10 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         cell_at=_z(Int32, 0, 0, 0),
         hierarchical_ctx,
         d_accepted, d_rejected, class_chunk=1,
-        route_levels=_z(Int, route_capacity),
-        route_offsets=_z(Int, 3, route_capacity),
-        route_targets=_z(Int, route_capacity),
-        route_sources=_z(Int, route_capacity),
+        route_levels=_z(Int, staging_capacity),
+        route_offsets=_z(Int, 3, staging_capacity),
+        route_targets=_z(Int, staging_capacity),
+        route_sources=_z(Int, staging_capacity),
         direct_targets=_z(Int, direct_capacity),
         direct_sources=_z(Int, direct_capacity),
         route_flags=_z(Int32, 0),
