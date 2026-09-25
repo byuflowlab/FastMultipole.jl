@@ -1,9 +1,0 @@
-  PASS  n=50 P=2 cells=36 maxocc=4  relerr phi=9.75e-8 chi=6.7e-8
-  PASS  n=400 P=4 cells=137 maxocc=8  relerr phi=1.38e-7 chi=9.74e-8
-  PASS  n=2000 P=4 cells=505 maxocc=12  relerr phi=1.25e-7 chi=7.65e-8
-  PASS  n=2000 P=2 cells=1088 maxocc=4  relerr phi=1.5e-7 chi=7.43e-8
-  PASS  n=5000 P=6 cells=512 maxocc=20  relerr phi=2.12e-7 chi=1.34e-7
-  PASS  n=1 P=2 cells=1 maxocc=1  relerr phi=0.0 chi=0.0
-
-KA B2M (vortex) on Metal: 6 passed, 0 failed
-✓✓✓ Step 3 (B2M vortex) gate passed on Metal ✓✓✓

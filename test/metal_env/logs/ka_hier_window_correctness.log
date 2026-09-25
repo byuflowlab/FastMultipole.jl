@@ -1,7 +1,0 @@
-Starting KA hierarchical window correctness test on Metal...
-✓ seed=26031 n=500 ell=3 P=4: 325 nonempty windows match the host builder
-✓ seed=26032 n=2000 ell=3 P=4: 325 nonempty windows match the host builder
-✓ seed=26033 n=2000 ell=4 P=4: 533 nonempty windows match the host builder
-✓ seed=26034 n=5000 ell=4 P=8: 533 nonempty windows match the host builder
-
-✓✓✓ KA hierarchical window gate passed on Metal (1716 nonempty windows) ✓✓✓

@@ -1,9 +1,0 @@
-ERROR: LoadError: type RadixFMMCache has no field stencil_policy
-Stacktrace:
- [1] getproperty
-   @ ./Base.jl:37 [inlined]
- [2] device_build_args(hcache::RadixFMMCache{Float32, true})
-   @ Main ~/Library/CloudStorage/Box-Box/Research/FLOWUnsteady-update/FastMultipole/test/metal_env/ka_device_cache_correctness.jl:56
- [3] top-level scope
-   @ ~/Library/CloudStorage/Box-Box/Research/FLOWUnsteady-update/FastMultipole/test/metal_env/ka_device_cache_correctness.jl:95
-in expression starting at /Users/bvarela/Library/CloudStorage/Box-Box/Research/FLOWUnsteady-update/FastMultipole/test/metal_env/ka_device_cache_correctness.jl:84

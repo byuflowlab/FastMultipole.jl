@@ -1,6 +1,0 @@
-case 1 (P=4, ell=3, n=256, wc=8): start
-  [8s] case 1 (P=4, ell=3, n=256, wc=8): PASS  velocity=7.967833e-8  counts=(256,205,277) host=(256,205,277)
-case 2 (P=4, ell=4, n=512, wc=64): start
-  [1s] case 2 (P=4, ell=4, n=512, wc=64): PASS  velocity=5.0497956e-8  counts=(512,490,893) host=(512,490,893)
-
-KA device cache build+step vs host RadixFMMCache fmm!: 2/2 pass

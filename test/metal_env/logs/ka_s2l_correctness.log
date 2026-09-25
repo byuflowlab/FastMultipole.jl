@@ -1,8 +1,0 @@
-  PASS  n=200 P=4 n_x=483  relerr phi=7.13e-7 chi=7.94e-7
-  PASS  n=400 P=4 n_x=541  relerr phi=4.53e-7 chi=1.26e-6
-  PASS  n=400 P=2 n_x=550  relerr phi=4.29e-7 chi=8.47e-7
-  PASS  n=1000 P=4 n_x=1337  relerr phi=5.63e-7 chi=1.04e-6
-  PASS  n=2000 P=4 n_x=6900  relerr phi=8.73e-7 chi=1.18e-6
-
-KA S2L on Metal: 5 passed, 0 failed, 0 skipped
-✓✓✓ Step 6a (S2L) gate passed on Metal ✓✓✓

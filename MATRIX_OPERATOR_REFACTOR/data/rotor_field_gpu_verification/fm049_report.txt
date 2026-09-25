@@ -1,9 +1,0 @@
-HISTORICAL / SUPERSEDED — H200 job 13247848 is not task-049 acceptance evidence.
-
-Its SFS boundary, marginal timing, per-pass budget, and arithmetic residency
-estimate were invalidated by the 048/049 reviews. Do not use its numerical
-timings to choose a default or identify the binding production pass.
-
-Acceptance evidence must come from the corrected 710:719 harness: both
-rho_t candidates, corrected references and contracts, supported stage timing,
-and the true same-job residency A/B followed by the user's explicit choice.
