@@ -1,9 +1,11 @@
-_third_index(t) = t[2,3,2]
-_third_construct(data) = ThirdDerivativeTensor(data)
-_third_get(buffer, switch) = get_third_derivative(buffer, switch, 1)
-_third_packed(t) = packed_data(t)
-_third_set_tensor!(buffer, switch, t) = set_third_derivative!(buffer, switch, 1, t)
-_third_set_packed!(buffer, switch, data) = set_third_derivative!(buffer, switch, 1, data)
+# allocation probes measured inside typed functions (a top-level @allocated on
+# captured testset variables boxes them and reports their size)
+_alloc_third_index(t) = @allocated t[2,3,2]
+_alloc_third_construct(data) = @allocated ThirdDerivativeTensor(data)
+_alloc_third_get(buffer, switch) = @allocated get_third_derivative(buffer, switch, 1)
+_alloc_third_packed(t) = @allocated packed_data(t)
+_alloc_third_set_tensor!(buffer, switch, t) = @allocated set_third_derivative!(buffer, switch, 1, t)
+_alloc_third_set_packed!(buffer, switch, data) = @allocated set_third_derivative!(buffer, switch, 1, data)
 
 @testset "packed third derivative API" begin
     data = SVector{18,Float64}(1:18)
@@ -33,15 +35,15 @@ _third_set_packed!(buffer, switch, data) = set_third_derivative!(buffer, switch,
     @test packed_data(get_third_derivative(buffer, switch, 1)) == data
     @test get_third_derivative(buffer, 1) == tensor
 
-    _third_construct(data); _third_get(buffer, switch); _third_index(tensor)
-    _third_packed(tensor); _third_set_tensor!(buffer, switch, tensor)
-    _third_set_packed!(buffer, switch, data)
-    @test @allocated(_third_construct(data)) == 0
-    @test @allocated(_third_get(buffer, switch)) == 0
-    @test @allocated(_third_index(tensor)) == 0
-    @test @allocated(_third_packed(tensor)) == 0
-    @test @allocated(_third_set_tensor!(buffer, switch, tensor)) == 0
-    @test @allocated(_third_set_packed!(buffer, switch, data)) == 0
+    _alloc_third_construct(data); _alloc_third_get(buffer, switch); _alloc_third_index(tensor)
+    _alloc_third_packed(tensor); _alloc_third_set_tensor!(buffer, switch, tensor)
+    _alloc_third_set_packed!(buffer, switch, data)
+    @test _alloc_third_construct(data) == 0
+    @test _alloc_third_get(buffer, switch) == 0
+    @test _alloc_third_index(tensor) == 0
+    @test _alloc_third_packed(tensor) == 0
+    @test _alloc_third_set_tensor!(buffer, switch, tensor) == 0
+    @test _alloc_third_set_packed!(buffer, switch, data) == 0
 end
 
 @testset "third derivative direct and preflight" begin
