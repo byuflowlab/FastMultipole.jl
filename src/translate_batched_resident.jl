@@ -1214,8 +1214,8 @@ end
 #------- planar triangular panels -------#
 #
 # Source and dipole panels use the closed forms of direct_rectangular.jl
-# (`_rect_panel_pair` for velocity and its gradient with the self-pair limits,
-# `_rect_panel_potential` for the potential). Those follow FLOWPanel's sign
+# (`_rect_panel_pair` with `Val(true)` for the potential: velocity, gradient and
+# potential from one pass over the edges, with the self-pair limits). Those follow FLOWPanel's sign
 # convention, in which a source panel's potential is −σ/(4π) ∫ dA/r; the
 # resident lifecycle's sources are +q/(4π r), so the panel results are negated
 # to be the area integrals of the point kernels.
@@ -1232,9 +1232,8 @@ end
     T = typeof(dx)
     @inbounds target = SVector{3,T}(source_bodies[1, j] + dx, source_bodies[2, j] + dy, source_bodies[3, j] + dz)
     v1, v2, v3 = _panel_vertices(source_bodies, j, v1row, T)
-    u, g = _rect_panel_pair(RectangularPanelInfluence(), target, tag, 3, v1, v2, v3, v3,
-        T(s1), T(s2), zero(T), Val(GRAD), Val(1))
-    p = _rect_panel_potential(target, tag, 3, v1, v2, v3, T(s1), T(s2))
+    u, g, p = _rect_panel_pair(RectangularPanelInfluence(), target, tag, 3, v1, v2, v3, v3,
+        T(s1), T(s2), zero(T), Val(GRAD), Val(1), Val(true))
     return -p, -u, -g
 end
 

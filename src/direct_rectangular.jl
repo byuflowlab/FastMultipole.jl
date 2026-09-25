@@ -353,8 +353,10 @@ end
     tan_term = _rect_solid_angle_tan(tRx, tRy, tRz, ei, hi, ri, eip1, hip1, rip1,
         ds, dx, dy, R_dot_s)
     u = SVector{3,T}(dy/ds*log_term, -dx/ds*log_term, tan_term)  # elements_fmm.jl:471-475
+    # potential term of this edge (PS block of compute_source_dipole), from the same prelims
+    pe = ((tRx - vx_i)*dy - (tRy - vy_i)*dx) / ds * log_term + tRz * tan_term
     if !GRAD
-        return u, zero(SMatrix{3,3,T,9})
+        return u, zero(SMatrix{3,3,T,9}), pe
     end
     d2 = ds*ds                                             # elements_fmm.jl:480-508
     r_plus_rp1 = ri + rip1
@@ -377,7 +379,7 @@ end
     g = SMatrix{3,3,T,9}(phi_xx, phi_xy, phi_xz,
                          phi_xy, phi_yy, phi_yz,
                          phi_xz, phi_yz, phi_zz)
-    return u, g
+    return u, g, pe
 end
 
 # ConstantDoublet per-edge velocity/gradient in the panel frame
@@ -396,8 +398,9 @@ end
     lambda = (tRx - vx_i)*(tRy - vy_ip1) - (tRx - vx_ip1)*(tRy - vy_i)
     val4v = r_plus_rp1 / (r_times_rp1 * rho + reg_term)    # elements_fmm.jl:545
     u = -SVector{3,T}(tRz*dy*val4v, -tRz*dx*val4v, lambda*val4v)  # elements_fmm.jl:546-550
+    pe = -tan_term                                         # potential term (unregularized)
     if !GRAD
-        return u, zero(SMatrix{3,3,T,9})
+        return u, zero(SMatrix{3,3,T,9}), pe
     end
     r_plus_rp1_2 = r_plus_rp1 * r_plus_rp1                 # elements_fmm.jl:554-586
     val1 = r_times_rp1 * r_plus_rp1_2 + rho * rip1 * rip1
@@ -419,7 +422,7 @@ end
     g = SMatrix{3,3,T,9}(psi_xx, psi_xy, psi_xz,
                          psi_xy, psi_yy, psi_yz,
                          psi_xz, psi_yz, psi_zz)
-    return u, g
+    return u, g, pe
 end
 
 # planar tri source/doublet influence (_induced for
@@ -437,6 +440,7 @@ end
     tRz = nz[1]*tc[1] + nz[2]*tc[2] + nz[3]*tc[3]
     u = zero(SVector{3,T})
     g = zero(SMatrix{3,3,T,9})
+    p = zero(T)
     # panel-frame vertex coordinates (elements_fmm.jl:722-741)
     w1 = v1 - centroid
     w2 = v2 - centroid
@@ -459,19 +463,20 @@ end
             # reg_term from the side's minimum distance (elements_fmm.jl:743-746)
             m_dist = _rect_minimum_distance(wa, wb, tc)
             reg_term = _rect_regularize(m_dist, core_size)
-            ue, ge = _rect_edge_doublet(tRx, tRy, tRz, vxa, vya, vxb, vyb, reg_term, Val(GRAD))
+            ue, ge, pe = _rect_edge_doublet(tRx, tRy, tRz, vxa, vya, vxb, vyb, reg_term, Val(GRAD))
         else
-            ue, ge = _rect_edge_source(tRx, tRy, tRz, vxa, vya, vxb, vyb, Val(GRAD))
+            ue, ge, pe = _rect_edge_source(tRx, tRy, tRz, vxa, vya, vxb, vyb, Val(GRAD))
         end
         u += ue
         GRAD && (g += ge)
+        p += pe
     end
     # rotate back with the -1/(4pi) factor (elements_fmm.jl:796-803)
     c = -T(ONE_OVER_4π)
     R = SMatrix{3,3,T,9}(nx[1], nx[2], nx[3], ny[1], ny[2], ny[3], nz[1], nz[2], nz[3])
     u_out = c * (R * u)
     g_out = GRAD ? c * (R * g * transpose(R)) : zero(SMatrix{3,3,T,9})
-    return u_out, g_out
+    return u_out, g_out, c * p                             # potential shares the edge prelims
 end
 
 # Scalar potential for one planar source/doublet triangle. This follows the
@@ -681,21 +686,24 @@ end
 @inline function _rect_panel_pair(::RectangularPanelInfluence, target::SVector{3,T},
         tag::Int, nv::Int, v1::SVector{3,T}, v2::SVector{3,T}, v3::SVector{3,T},
         v4::SVector{3,T}, s1::T, s2::T, core_size::T, ::Val{GRAD},
-        ::Val{REG}=Val(1)) where {T,GRAD,REG}
+        ::Val{REG}=Val(1), ::Val{POT}=Val(false)) where {T,GRAD,REG,POT}
     u = zero(SVector{3,T})
     g = zero(SMatrix{3,3,T,9})
+    p = zero(T)
     if tag == 1 || tag == 4 || tag == 5      # ConstantSource part
-        us, gs = _rect_tri_source_doublet(target, v1, v2, v3, core_size,
+        us, gs, ps = _rect_tri_source_doublet(target, v1, v2, v3, core_size,
             Val(false), Val(GRAD))
         u += s1 * us
         GRAD && (g += s1 * gs)
+        POT && (p += s1 * ps)
     end
     if tag == 2 || tag == 5                  # ConstantDoublet part
         mu = tag == 2 ? s1 : s2
-        ud, gd = _rect_tri_source_doublet(target, v1, v2, v3, core_size,
+        ud, gd, pd = _rect_tri_source_doublet(target, v1, v2, v3, core_size,
             Val(true), Val(GRAD))
         u += mu * ud
         GRAD && (g += mu * gd)
+        POT && (p += mu * pd)
     end
     if tag == 3 || tag == 4                  # VortexRing part
         gam = tag == 3 ? s1 : s2
@@ -703,6 +711,9 @@ end
         ur, gr = _rect_ring(target, v1, v2, v3, v4, nvr, core_size, Val(GRAD), Val(REG))
         u += gam * ur
         GRAD && (g += gam * gr)
+        if POT                               # ring potential = doublet of the triangle
+            p += nv == 3 ? gam * _rect_tri_potential(target, v1, v2, v3, Val(true)) : T(NaN)
+        end
     end
     # self-pair short-circuit (elements_fmm.jl:250-253 / 299-304 + 156-198):
     # velocity gets the fixed exterior surface limit for the source component;
@@ -720,35 +731,15 @@ end
         end
         # tags 2, 3: velocity is continuous at the centroid (u unchanged)
         g = zero(SMatrix{3,3,T,9})           # gradient self-limit zeroed
-    end
-    return u, g
-end
-
-@inline function _rect_panel_potential(target::SVector{3,T}, tag::Int, nv::Int,
-        v1::SVector{3,T}, v2::SVector{3,T}, v3::SVector{3,T},
-        s1::T, s2::T) where T
-    p = zero(T)
-    if tag == 1 || tag == 4 || tag == 5
-        p += s1 * _rect_tri_potential(target, v1, v2, v3, Val(false))
-    end
-    if tag == 2 || tag == 5
-        mu = tag == 2 ? s1 : s2
-        p += mu * _rect_tri_potential(target, v1, v2, v3, Val(true))
-    end
-    if tag == 3 || tag == 4
-        nv == 3 || return T(NaN)
-        gamma = tag == 3 ? s1 : s2
-        p += gamma * _rect_tri_potential(target, v1, v2, v3, Val(true))
-    end
-    control_point = (v1 + v2 + v3) * T(0.3333333333333333)
-    if _rect_is_self_pair(target, control_point, v1, v2, v3)
-        if tag == 2 || tag == 3
-            p = s1 * T(0.5)
-        elseif tag == 4 || tag == 5
-            p += s2 * T(0.5)
+        if POT                               # potential self limits (mu/2 on the panel)
+            if tag == 2 || tag == 3
+                p = (tag == 3 && nv != 3) ? T(NaN) : s1 * T(0.5)   # ring potential is tri-only
+            elseif tag == 4 || tag == 5
+                p += s2 * T(0.5)
+            end
         end
     end
-    return p
+    return u, g, p
 end
 
 #------- host implementation (threaded) -------#
@@ -918,12 +909,11 @@ function _rect_panels_host!(out, targets, sources, n_targets, n_sources,
             for q in 1:n_sources
                 tag, nv, v1, v2, v3, v4, s1, s2, koff =
                     _rect_load_panel_source(sources, q, T)
-                uq, gq = _rect_panel_pair(RectangularPanelInfluence(), target,
-                    tag, nv, v1, v2, v3, v4, s1, s2, koff, Val(GRAD), Val(REG))
+                uq, gq, pq = _rect_panel_pair(RectangularPanelInfluence(), target,
+                    tag, nv, v1, v2, v3, v4, s1, s2, koff, Val(GRAD), Val(REG), Val(POT))
                 u += uq
                 GRAD && (g += gq)
-                POT && (p += _rect_panel_potential(target, tag, nv,
-                    v1, v2, v3, s1, s2))
+                POT && (p += pq)
             end
             out[1, i] += u[1]; out[2, i] += u[2]; out[3, i] += u[3]
             if GRAD
