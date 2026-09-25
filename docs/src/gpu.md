@@ -129,6 +129,7 @@ the login node first; compute nodes rarely have network access.
 ## Restrictions
 
 * One body type and one `strength_dims` per cache.
+* One GPU per cache, one queue (stream) per lifecycle: a wake lives on a single device and the stages run back to back with no transfer/compute overlap. Multi-GPU memory pooling and stream overlap are planned (needed for AD through the vortex particle method, which multiplies device memory) but not available.
 * The domain box and `ell` are fixed; the capacity `max_n_bodies` is fixed.
 * No third derivatives. Panels are planar triangles (`Panel{3,TK}`); quadrilaterals only as extra sources with host-side expansions (see [Device Interface](device_interface.md)). The vortex sheet nearfield is a Dunavant quadrature (`VortexSheetPanelKernel(; order)`: 7 points at the default order 2, 13 at order 3), approximate within about one panel size.
 * An element (filament or panel) must fit its cell: its packed radius in row 4 has to

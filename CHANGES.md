@@ -15,6 +15,7 @@
   `RegularizedVortex`, `PartitionedVortex`, `TwoPassVortex`, `RectangularGaussianErfVortex`,
   the filament nearfield kernels `SourceFilamentKernel`, `DipoleFilamentKernel`, `VortexFilamentKernel`
   and the panel nearfield kernels `SourcePanelKernel`, `DipolePanelKernel`, `SourceDipolePanelKernel`, `VortexSheetPanelKernel`.
+- Known limit: one GPU and one stream per cache; multi-GPU and stream overlap are future work.
 - `RectangularPanelInfluence` accepts Float32 (its singularity guards and the LineGauss
   series/axis crossovers scale with the precision; LineGauss in Float32 tracks Float64 to
   about 3e-5 in velocity and 2e-3 in gradient of the field scale near the segment axis); `VortexSheetPanelKernel(; order=3)`
