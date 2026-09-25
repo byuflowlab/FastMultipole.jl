@@ -327,10 +327,15 @@ end
 # a panel take the same branch and the PV cannot flip with the sign of FMA
 # junk (device defect, job 13309929 stage 0c, 2026-08-22: den < 0 on 2 of 3
 # edges at a centroid makes atan(num, den) jump by ±π with the sign of num).
+# relative tolerance of the singularity guards (extension line, on-plane snap,
+# self pair): 1e-12 in Float64, 1e-5 in Float32 (roundoff there is ~1e-7)
+@inline _rect_guard_tol(::Type{Float64}) = 1e-12
+@inline _rect_guard_tol(::Type{T}) where T = T(1e-5)
+
 @inline function _rect_solid_angle_tan(tRx::T, tRy, tRz, ei, hi, ri, eip1, hip1, rip1,
         ds, dx, dy, R_dot_s) where T
     if tRz == zero(T) ||
-       abs(abs(R_dot_s) - ri*ds) <= T(1e-12) * ri * ds
+       abs(abs(R_dot_s) - ri*ds) <= _rect_guard_tol(T) * ri * ds
         return zero(T)
     else
         arg1 = (dy*ei - hi*dx) / ri
@@ -455,7 +460,7 @@ end
     L2 = w1[1]*w1[1] + w1[2]*w1[2] + w1[3]*w1[3] +
          w2[1]*w2[1] + w2[2]*w2[2] + w2[3]*w2[3] +
          w3[1]*w3[1] + w3[2]*w3[2] + w3[3]*w3[3]
-    tRz = ifelse(tRz*tRz <= T(1e-24) * L2, zero(T), tRz)
+    tRz = ifelse(tRz*tRz <= _rect_guard_tol(T)^2 * L2, zero(T), tRz)
     for i in 1:3
         vxa, vya, wa = i == 1 ? (vx1, vy1, w1) : (i == 2 ? (vx2, vy2, w2) : (vx3, vy3, w3))
         vxb, vyb, wb = i == 1 ? (vx2, vy2, w2) : (i == 2 ? (vx3, vy3, w3) : (vx1, vy1, w1))
@@ -500,7 +505,7 @@ end
     vx3 = nx[1]*w3[1] + nx[2]*w3[2] + nx[3]*w3[3]
     vy3 = ny[1]*w3[1] + ny[2]*w3[2] + ny[3]*w3[3]
     L2 = sum(abs2, w1) + sum(abs2, w2) + sum(abs2, w3)
-    tRz = ifelse(tRz*tRz <= T(1e-24) * L2, zero(T), tRz)
+    tRz = ifelse(tRz*tRz <= _rect_guard_tol(T)^2 * L2, zero(T), tRz)
     p = zero(T)
     for i in 1:3
         vxa, vya = i == 1 ? (vx1, vy1) : (i == 2 ? (vx2, vy2) : (vx3, vy3))
@@ -667,7 +672,7 @@ end
     nzc = e1[1]*e2[2] - e1[2]*e2[1]
     area = T(0.5) * sqrt(nxc*nxc + nyc*nyc + nzc*nzc)
     d = target - control_point
-    return (d[1]*d[1] + d[2]*d[2] + d[3]*d[3]) < T(1e-12)*T(1e-12)*area
+    return (d[1]*d[1] + d[2]*d[2] + d[3]*d[3]) < _rect_guard_tol(T)^2 * area
 end
 
 @inline function _rect_panel_normal(v1::SVector{3,T}, v2::SVector{3,T}, v3::SVector{3,T}) where T
@@ -762,12 +767,7 @@ function _rect_check_args(out, targets, kernel, sources, gradient::Bool,
         throw(ArgumentError("scalar potential is available only for " *
             "RectangularPanelInfluence"))
     if kernel isa RectangularPanelInfluence
-        # the panel functor's absolute guards (1e-12-scaled extension-
-        # singularity / self-pair / series-limit thresholds) sit below
-        # eps(Float32), so sub-F64 precision silently disables them
-        eltype(out) === Float64 || throw(ArgumentError(
-            "RectangularPanelInfluence requires Float64 (its singularity " *
-            "guards are inert below Float64 resolution); got $(eltype(out))"))
+        # the singularity guards scale with _rect_guard_tol(eltype), so Float32 is accepted
         _rect_validate_panel_sources(sources; scalar_potential)
     end
     return nothing

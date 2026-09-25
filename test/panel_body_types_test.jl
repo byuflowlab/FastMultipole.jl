@@ -168,3 +168,27 @@ end
         end
     end
 end
+
+# Dunavant rules: exact for monomials up to their degree (1, 5, 7) on the
+# reference triangle, where ∫ x^a y^b = a! b! / (a+b+2)!; the vortex sheet
+# kernel at order 3 agrees with order 2 to expansion accuracy away from the panel
+@testset "Dunavant rules and vortex sheet order 3" begin
+    for (order, degree) in ((1, 1), (2, 5), (3, 7))
+        rule = FastMultipole._dunavant(Val(order), Float64)
+        @test isapprox(sum(w for (_, w) in rule), 1.0; atol = 1e-14)
+        for a in 0:degree, b in 0:(degree - a)
+            exact = factorial(a) * factorial(b) / factorial(a + b + 2)
+            # barycentric (l1, l2, l3) -> (x, y) = (l2, l3) on the reference triangle, area 1/2
+            q = 0.5 * sum(w * lam[2]^a * lam[3]^b for (lam, w) in rule)
+            @test isapprox(q, exact; atol = 1e-13)
+        end
+    end
+    v1 = [0.0, 0.0, 0.0]; v2 = [0.01, 0.002, 0.0]; v3 = [0.003, 0.009, 0.0]
+    data = pack_panels(reshape(v1, 3, 1), reshape(v2, 3, 1), reshape(v3, 3, 1), reshape([1.0, 0.5, 0.0], 3, 1))
+    for xt in ([0.05, 0.02, 0.03], [0.004, 0.003, 0.02])
+        dx, dy, dz = xt .- data[1:3, 1]; r2 = dx * dx + dy * dy + dz * dz
+        v2q = FastMultipole._direct_pair_ugh(VortexSheetPanelKernel(; order = 2), dx, dy, dz, r2, inv(sqrt(r2)), data, 1)
+        v3q = FastMultipole._direct_pair_ugh(VortexSheetPanelKernel(; order = 3), dx, dy, dz, r2, inv(sqrt(r2)), data, 1)
+        @test maximum(abs.(v3q[2:13] .- v2q[2:13])) <= 1e-4 * maximum(abs.(v2q[2:13]))   # order-2 error at ~2 panel sizes
+    end
+end

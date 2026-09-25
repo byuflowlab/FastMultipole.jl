@@ -2273,8 +2273,8 @@ struct SourceDipolePanelKernel <: AbstractDirectKernel end
 
 Nearfield of a planar triangular panel of uniform sheet vorticity (packed rows
 5:7), vertices in rows 8:10, 11:13, 14:16: Biot-Savart of the sheet integrated
-with a Dunavant quadrature of the given order over the triangle (7 points at
-order 2), which is exact to expansion accuracy away from the panel and
+with a Dunavant quadrature of the given order over the triangle (1 point at
+order 1, 7 points / degree 5 at order 2, 13 points / degree 7 at order 3), which is exact to expansion accuracy away from the panel and
 approximate within about one panel size of it. No scalar potential.
 """
 struct VortexSheetPanelKernel <: AbstractDirectKernel

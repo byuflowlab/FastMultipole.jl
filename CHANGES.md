@@ -15,6 +15,8 @@
   `RegularizedVortex`, `PartitionedVortex`, `TwoPassVortex`, `RectangularGaussianErfVortex`,
   the filament nearfield kernels `SourceFilamentKernel`, `DipoleFilamentKernel`, `VortexFilamentKernel`
   and the panel nearfield kernels `SourcePanelKernel`, `DipolePanelKernel`, `SourceDipolePanelKernel`, `VortexSheetPanelKernel`.
+- `RectangularPanelInfluence` accepts Float32 (its singularity guards scale with the
+  precision); `VortexSheetPanelKernel(; order=3)` selects a 13-point degree-7 Dunavant rule.
 - Minimum Julia version 1.11.
 
 ## v0.1.0 - 2024 August

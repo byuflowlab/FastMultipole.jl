@@ -1267,6 +1267,18 @@ end
             (SVector{3,T}(a, b, b), wa), (SVector{3,T}(b, a, b), wa), (SVector{3,T}(b, b, a), wa),
             (SVector{3,T}(c, c, d), wc), (SVector{3,T}(c, d, c), wc), (SVector{3,T}(d, c, c), wc))
 end
+# degree 7, 13 points (Dunavant 1985 table 7; one negative weight)
+@inline function _dunavant(::Val{3}, ::Type{T}) where T
+    a1 = T(0.479308067841923); b1 = T(0.260345966079038)
+    a2 = T(0.869739794195568); b2 = T(0.065130102902216)
+    p = T(0.638444188569809); q = T(0.312865496004875); r = T(0.048690315425316)
+    w0 = T(-0.149570044467670); w1 = T(0.175615257433204); w2 = T(0.053347235608839); w3 = T(0.077113760890257)
+    return ((SVector{3,T}(1/3, 1/3, 1/3), w0),
+            (SVector{3,T}(a1, b1, b1), w1), (SVector{3,T}(b1, a1, b1), w1), (SVector{3,T}(b1, b1, a1), w1),
+            (SVector{3,T}(a2, b2, b2), w2), (SVector{3,T}(b2, a2, b2), w2), (SVector{3,T}(b2, b2, a2), w2),
+            (SVector{3,T}(p, q, r), w3), (SVector{3,T}(p, r, q), w3), (SVector{3,T}(q, p, r), w3),
+            (SVector{3,T}(q, r, p), w3), (SVector{3,T}(r, p, q), w3), (SVector{3,T}(r, q, p), w3))
+end
 
 # uniform vortex sheet: Biot-Savart of γ over the triangle by quadrature
 @inline function _vortex_sheet_pair(kernel::VortexSheetPanelKernel, dx, dy, dz, source_bodies, j, ::Val{GRAD}) where GRAD
@@ -1280,7 +1292,9 @@ end
     nx = e1[2] * e2[3] - e1[3] * e2[2]; ny = e1[3] * e2[1] - e1[1] * e2[3]; nz = e1[1] * e2[2] - e1[2] * e2[1]
     area = T(0.5) * sqrt(nx * nx + ny * ny + nz * nz)
     # one rule type per branch: a runtime-selected tuple would be a union on the device
-    if kernel.order >= 2
+    if kernel.order >= 3
+        return _vortex_sheet_quadrature(_dunavant(Val(3), T), target, v1, v2, v3, area, gx, gy, gz, Val(GRAD))
+    elseif kernel.order >= 2
         return _vortex_sheet_quadrature(_dunavant(Val(2), T), target, v1, v2, v3, area, gx, gy, gz, Val(GRAD))
     else
         return _vortex_sheet_quadrature(_dunavant(Val(1), T), target, v1, v2, v3, area, gx, gy, gz, Val(GRAD))

@@ -606,9 +606,14 @@ end
     bad = copy(psrc); bad[2, 2] = 2.0   # tag 1 with nv == 2
     @test_throws ArgumentError direct_rectangular!(out17, tgt,
         RectangularPanelInfluence(), bad)
-    # panel functor is F64-only: its absolute singularity guards are inert in F32
-    @test_throws ArgumentError direct_rectangular!(zeros(Float32, 12, 3),
-        Float32.(tgt), RectangularPanelInfluence(), Float32.(psrc))
+    # panel functor in Float32: the singularity guards scale with the precision,
+    # so the result tracks Float64 (velocity and gradient, 2e-3 relative)
+    ref = zeros(12, 3); direct_rectangular!(ref, tgt, RectangularPanelInfluence(), psrc; gradient=true)
+    o32 = zeros(Float32, 12, 3)
+    direct_rectangular!(o32, Float32.(tgt), RectangularPanelInfluence(), Float32.(psrc); gradient=true)
+    @test all(isfinite, o32)
+    @test maximum(abs.(o32[1:3, :] .- ref[1:3, :])) <= 2e-3 * maximum(abs.(ref[1:3, :]))
+    @test maximum(abs.(o32[4:12, :] .- ref[4:12, :])) <= 2e-3 * maximum(abs.(ref[4:12, :]))
 end
 
 @testset "direct rectangular: CUDA device parity" begin
