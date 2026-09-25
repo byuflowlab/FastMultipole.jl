@@ -139,3 +139,32 @@ end
         @test maximum(abs.(sys.potential[5:13, :] .- ref[5:13, :])) < 1e-2 * maximum(abs.(ref[5:13, :]))
     end
 end
+
+# Float32 panels on the resident path: the closed forms carry guards scaled at
+# 1e-12 relative (inert below Float64), so check that a Float32 evaluation of
+# the pair kernels tracks Float64 for targets in general position, on the panel
+# plane outside the triangle, and near the plane on both sides.
+@testset "panel pair kernels in Float32" begin
+    Random.seed!(11)
+    v1 = [0.0, 0.0, 0.0]; v2 = [0.01, 0.002, 0.0]; v3 = [0.003, 0.009, 0.0]
+    c = (v1 .+ v2 .+ v3) ./ 3
+    targets = ([0.004, 0.003, 0.006], [0.03, -0.01, 0.0], [-0.02, 0.05, 0.0],
+               c .+ [0.0, 0.0, 1e-4], c .- [0.0, 0.0, 1e-4], [0.02, 0.01, 1e-6])
+    for (label, kernel, strengths) in (("source", SourcePanelKernel(), reshape([1.0], 1, 1)),
+                                       ("dipole", DipolePanelKernel(), reshape([1.0], 1, 1)),
+                                       ("source-dipole", SourceDipolePanelKernel(), reshape([1.0, -0.5], 2, 1)),
+                                       ("vortex sheet", VortexSheetPanelKernel(), reshape([1.0, 0.5, 0.0], 3, 1)))
+        d64 = pack_panels(reshape(v1, 3, 1), reshape(v2, 3, 1), reshape(v3, 3, 1), strengths)
+        d32 = Float32.(d64)
+        for xt in targets
+            dx, dy, dz = xt .- d64[1:3, 1]
+            r2 = dx * dx + dy * dy + dz * dz
+            v64 = FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, inv(sqrt(r2)), d64, 1)
+            v32 = FastMultipole._direct_pair_ugh(kernel, Float32(dx), Float32(dy), Float32(dz), Float32(r2), inv(sqrt(Float32(r2))), d32, 1)
+            @test all(isfinite, v32)
+            scale = max(maximum(abs, v64[2:4]), 1e-30)
+            @test maximum(abs.(v32[2:4] .- v64[2:4])) <= 2e-3 * scale     # velocity, 2e-3 relative
+            kernel isa VortexSheetPanelKernel || @test abs(v32[1] - v64[1]) <= 2e-3 * max(abs(v64[1]), 1e-30)
+        end
+    end
+end

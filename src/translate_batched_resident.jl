@@ -1041,6 +1041,7 @@ end
     c = inv(T(4) * T(π))
     S = r1 + r2
     A = S + L
+    A <= zero(T) && return ntuple(_ -> zero(T), Val(13))     # collapsed segment at the target
     B = _line_source_B(ax, ay, az, bx, by, bz, r1, r2, A)
     B <= zero(T) && return ntuple(_ -> zero(T), Val(13))     # exactly on the segment: no finite value
     u = c * log(A / B)
@@ -1099,6 +1100,7 @@ end
     c = inv(T(4) * T(π))
     S = r1 + r2
     A = S + L
+    A <= zero(T) && return ntuple(_ -> zero(T), Val(13))       # collapsed segment at the target
     B = _line_source_B(ax, ay, az, bx, by, bz, r1, r2, A)
     B <= zero(T) && return ntuple(_ -> zero(T), Val(13))       # exactly on the segment
     f1 = inv(A) - inv(B)

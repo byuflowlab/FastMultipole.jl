@@ -108,4 +108,59 @@ for (ci,(n,K_max,ell_max,P,q,rows)) in pairs(CASES)
 end
 println("\nKA nearfield on $(DEV_NAME): $(npass[]) passed, $(nfail[]) failed")
 nfail[]==0 || error("nearfield gate failed")
+
+# --- filaments and triangular panels: same traversal, the element pair kernels ---
+for (ci,(n,K_max,ell_max,P,q,rows)) in pairs(CASES[[1, 4]]),
+        (label, BT, sd, nv, lh) in (("source filament", FM.Filament{FM.Source}, 1, 2, false),
+                                    ("dipole filament", FM.Filament{FM.Dipole}, 3, 2, false),
+                                    ("vortex filament", FM.Filament{FM.Vortex}, 3, 2, true),
+                                    ("source panel", FM.Panel{3,FM.Source}, 1, 3, false),
+                                    ("dipole panel", FM.Panel{3,FM.Dipole}, 1, 3, false),
+                                    ("source-dipole panel", FM.Panel{3,FM.SourceDipole}, 2, 3, false),
+                                    ("vortex sheet panel", FM.Panel{3,FM.Vortex}, 3, 3, true))
+    Random.seed!(7800+ci)
+    TF=Float32
+    positions=rand(TF,3,n); dpb=4+sd+3*nv
+    sb=rand(TF,dpb,n); sb[1:3,:].=positions
+    dirs=randn(TF,3,n); dirs./=sqrt.(sum(dirs.^2;dims=1))
+    sb[5+sd:7+sd,:].=positions.-TF(0.002).*dirs
+    sb[8+sd:10+sd,:].=positions.+TF(0.002).*dirs
+    nv==3 && (sb[11+sd:13+sd,:].=positions.+TF(0.002).*randn(TF,3,n))
+    sb[5:4+sd,:].-=TF(0.5)
+    nl=max(2*n÷K_max,16); leaf_capacity=10*nl+256; node_capacity=100*nl+256
+    actx=ext.ka_allocate_adaptive_context(DEV_BACKEND,TF,n;
+        leaf_capacity, frontier_capacity=64*node_capacity, node_capacity)
+    devb=devarray(sb)
+    build=ext.ka_build_adaptive_tree!(actx,devarray(positions),ell_max,K_max,true,(TF(0),TF(0),TF(0)),TF(1))
+    reach=1<<ell_max
+    lut, lcls, noff = build_luts(reach,q,ell_max)
+    cap=max(4096, 4*build.n_nodes^2)
+    lctx=ext.ka_allocate_lists_context(actx, devarray(lut), devarray(lcls);
+        u_capacity=cap, v_capacity=cap, wx_capacity=cap, lut_reach=reach,
+        noffsets=noff, first_m2l_level=0, ell_max=ell_max, leaf_capacity=leaf_capacity, maxn=n)
+    lists=ext.ka_refresh_adaptive_lists!(lctx,actx,build;
+        near_radius2=q, ell_max=ell_max, rho_t=0.0f0, sigma_armed=false)
+    opts=FM.CUDARadixLifecycleOptions(;precision=TF, body_type=BT)
+    state=ext.ka_radix_state(actx,build,devb,P,Val(lh); options=opts, lists=lists, output_rows=rows)
+    try
+        ext.ka_launch_nearfield!(state); KernelAbstractions.synchronize(DEV_BACKEND)
+    catch e
+        nfail[]+=1; println("  FAIL $label case $ci: kernel threw: ", sprint(showerror,e)[1:min(end,300)]); continue
+    end
+    np = state.counts.n_direct
+    hout = host_nearfield(opts.direct_kernel, Array(state.source_bodies),
+        Array(state.cell_ranges), Array(state.direct_targets), Array(state.direct_sources),
+        np, rows, size(state.output,2), TF)
+    e = relerr(Array(state.output), hout)
+    tol = 2e-5
+    if np == 0
+        println("  SKIP $label case $ci: no direct pairs")
+    elseif e <= tol
+        npass[]+=1; println("  PASS  $label n=$n pairs=$np  relerr=$(round(e,sigdigits=3))")
+    else
+        nfail[]+=1; println("  FAIL  $label n=$n pairs=$np  relerr=$e (tol $tol)")
+    end
+end
+println("\nKA nearfield (elements) on $(DEV_NAME): $(npass[]) passed, $(nfail[]) failed")
+nfail[]==0 || error("nearfield element gate failed")
 println("✓✓✓ Step 5 (nearfield) gate passed on $(DEV_NAME) ✓✓✓")

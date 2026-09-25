@@ -147,6 +147,11 @@ end
     v = FastMultipole._direct_pair_ugh(SourceFilamentKernel(), xt[1] - src[1, 1], xt[2] - src[2, 1], xt[3] - src[3, 1], 0.0, 0.0, src, 1)
     @test isfinite(v[1]) && v[1] > 0
     @test abs(v[1] - log(1e14) / (4pi)) / v[1] < 1e-6   # ln(A/B) with A = 2 + 2h^2, B = 2h^2, h = 1e-7
+    # collapsed segments (all three points coincident, or a zero-length vortex segment) return zero, not NaN
+    z = pack_filaments(zeros(3, 1), zeros(3, 1), reshape([1.0], 1, 1))
+    @test all(iszero, FastMultipole._direct_pair_ugh(SourceFilamentKernel(), 0.0, 0.0, 0.0, 0.0, Inf, z, 1))
+    zv = pack_filaments(zeros(3, 1), zeros(3, 1), reshape([1.0, 0.0, 0.0], 3, 1))
+    @test all(iszero, FastMultipole._direct_pair_ugh(VortexFilamentKernel(), 0.3, 0.0, 0.0, 0.09, inv(0.3), zv, 1))
     # on the segment: singular core returns zero for vortex, nothing finite for the source
     vsrc = pack_filaments(reshape(x1, 3, 1), reshape(x2, 3, 1), reshape([1.0, 0.0, 0.0], 3, 1))
     on = FastMultipole._direct_pair_ugh(VortexFilamentKernel(), 0.25, 0.0, 0.0, 0.0625, 4.0, vsrc, 1)

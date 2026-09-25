@@ -316,6 +316,36 @@ end
         direct_rectangular!(o2, tgts4, kernf, segs; gradient=true)
         @test isapprox(o1, o2; rtol=1e-12, atol=1e-13)
     end
+
+    # --- gate 6: scalar potential (computed in the velocity edge pass) ---
+    # self-pair limits per tag, source-dipole = source + dipole, ring = doublet
+    # of the triangle, ring potential undefined (NaN) for a quad
+    let
+        v1 = SVector(0.0, 0.0, 0.0); v2 = SVector(1.0, 0.2, 0.0); v3 = SVector(0.3, 0.9, 0.0)
+        c = (v1 + v2 + v3) / 3
+        sigma = 1.3; mu = -0.7
+        pot(tag, s1, s2, tgt; verts = (v1, v2, v3)) = begin
+            A = zeros(T, 17, 1); _pack_panel!(A, 1, tag, verts, s1, s2, 0.0)
+            o = zeros(T, 4, 1)
+            direct_rectangular!(o, reshape(collect(tgt), 3, 1), RectangularPanelInfluence(), A; scalar_potential=true)
+            o[4, 1]
+        end
+        far = SVector(0.4, 0.3, 0.8)
+        # doublet at its own centroid: mu/2 (one-sided limit), ring the same, source-dipole adds mu/2
+        @test pot(2, mu, 0.0, c) == mu / 2
+        @test pot(3, mu, 0.0, c) == mu / 2
+        @test isapprox(pot(5, sigma, mu, c), pot(1, sigma, 0.0, c) + mu / 2; rtol=1e-12)
+        @test isapprox(pot(4, sigma, mu, c), pot(1, sigma, 0.0, c) + mu / 2; rtol=1e-12)
+        # source at its own centroid is continuous: the limit from above matches
+        @test isapprox(pot(1, sigma, 0.0, c), pot(1, sigma, 0.0, c + SVector(0, 0, 1e-6)); rtol=1e-4)
+        # off the panel: linear superposition and ring = doublet
+        @test isapprox(pot(5, sigma, mu, far), pot(1, sigma, 0.0, far) + pot(2, mu, 0.0, far); rtol=1e-12)
+        @test isapprox(pot(3, mu, 0.0, far), pot(2, mu, 0.0, far); rtol=1e-12)
+        # doublet potential jumps by mu across the panel; source potential is continuous
+        up = pot(2, mu, 0.0, c + SVector(0, 0, 1e-7)); dn = pot(2, mu, 0.0, c - SVector(0, 0, 1e-7))
+        @test isapprox(up - dn, -mu; rtol=1e-4) || isapprox(up - dn, mu; rtol=1e-4)
+        @test isapprox(pot(1, sigma, 0.0, c + SVector(0, 0, 1e-7)), pot(1, sigma, 0.0, c - SVector(0, 0, 1e-7)); rtol=1e-6)
+    end
 end
 
 @testset "direct rectangular: panel functor vs FLOWPanel" begin
