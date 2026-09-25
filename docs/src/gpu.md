@@ -2,10 +2,13 @@
 
 FastMultipole's FMM runs on a GPU through a
 [KernelAbstractions.jl](https://github.com/JuliaGPU/KernelAbstractions.jl)
-extension, so the same code serves NVIDIA hardware through CUDA.jl and Apple
-hardware through Metal.jl. The extension is a package extension: it loads
-automatically when `KernelAbstractions` is loaded next to `FastMultipole`, and
-the GPU package supplies the backend.
+extension, so the same kernels run on any backend KernelAbstractions supports:
+NVIDIA through CUDA.jl, Apple through Metal.jl, AMD through AMDGPU.jl and Intel
+through oneAPI.jl. Only CUDA and Metal have been tested; the other backends
+should work but may need modification (Metal, for example, required Float32-only
+constants and closure-free kernels). The extension is a package extension: it
+loads automatically when `KernelAbstractions` is loaded next to `FastMultipole`,
+and the GPU package supplies the backend.
 
 ```julia
 using FastMultipole, KernelAbstractions

@@ -2,7 +2,7 @@
 
 ## v2.3.0
 
-- GPU execution through a KernelAbstractions package extension (CUDA and Metal): the
+- GPU execution through a KernelAbstractions package extension (any KA backend; CUDA and Metal tested, AMDGPU and oneAPI untested and may need modification): the
   device-resident radix FMM lifecycle (`RadixFMMCache(...; device=true)`) for
   the four point body types (`Point{Source}`, `Point{Dipole}`, `Point{Vortex}`,
   `Point{SourceVortex}`), the three straight filament types and the four planar triangular panel
