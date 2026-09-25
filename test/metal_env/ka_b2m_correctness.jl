@@ -233,23 +233,29 @@ println("\nKA B2M (Point{Dipole}, Point{SourceVortex}) on $(DEV_NAME): $(npass[]
 nfail[] == 0 || error("B2M dipole/source-vortex gate failed")
 println("✓✓✓ Step 3 (B2M dipole, source-vortex) gate passed on $(DEV_NAME) ✓✓✓")
 
-# --- straight filaments: against the host filament B2M kernel ---
+# --- straight filaments and triangular panels: against the host element B2M kernel ---
 filament_host!(BT) = (phi, chi, sb, cr, cc, l2n, P_phi, P_chi, ncell) ->
     FM._host_b2m_filament_kernel!(BT, phi, chi, sb, cr, cc, l2n, P_phi, P_chi, ncell)
 npass[] = 0; nfail[] = 0
 for (case_i, (n, K_max, ell_max, P, balance)) in pairs(CASES),
-        (label, BT, sd, lh) in (("source filament", FM.Filament{FM.Source}, 1, false),
-                               ("dipole filament", FM.Filament{FM.Dipole}, 3, false),
-                               ("vortex filament", FM.Filament{FM.Vortex}, 3, true))
+        (label, BT, sd, nv, lh) in (("source filament", FM.Filament{FM.Source}, 1, 2, false),
+                               ("dipole filament", FM.Filament{FM.Dipole}, 3, 2, false),
+                               ("vortex filament", FM.Filament{FM.Vortex}, 3, 2, true),
+                               ("source panel", FM.Panel{3,FM.Source}, 1, 3, false),
+                               ("dipole panel", FM.Panel{3,FM.Dipole}, 1, 3, false),
+                               ("source-dipole panel", FM.Panel{3,FM.SourceDipole}, 2, 3, false),
+                               ("vortex sheet panel", FM.Panel{3,FM.Vortex}, 3, 3, true))
     Random.seed!(5600 + case_i)
     TF = Float32
     positions = rand(TF, 3, n)
-    dpb = 4 + sd + 6
+    dpb = 4 + sd + 3 * nv
     source_buffer = rand(TF, dpb, n); source_buffer[1:3, :] .= positions
-    # short segments about the packed position: vertices at rows 5+sd : 10+sd
+    # short segments (nv = 2) or small triangles (nv = 3) about the packed position:
+    # vertices at rows 5+sd : 4+sd+3nv
     dirs = randn(TF, 3, n); dirs ./= sqrt.(sum(dirs .^ 2; dims = 1))
     source_buffer[5+sd:7+sd, :] .= positions .- TF(0.002) .* dirs
     source_buffer[8+sd:10+sd, :] .= positions .+ TF(0.002) .* dirs
+    nv == 3 && (source_buffer[11+sd:13+sd, :] .= positions .+ TF(0.002) .* randn(TF, 3, n))
     source_buffer[5:4+sd, :] .-= TF(0.5)
     nl = max(2 * n ÷ K_max, 16)
     actx = ext.ka_allocate_adaptive_context(DEV_BACKEND, TF, n;
@@ -282,6 +288,6 @@ for (case_i, (n, K_max, ell_max, P, balance)) in pairs(CASES),
         println("  FAIL  $label n=$n P=$P cells=$ncell  relerr phi=$ep chi=$ec (tol $tol)")
     end
 end
-println("\nKA B2M (filaments) on $(DEV_NAME): $(npass[]) passed, $(nfail[]) failed")
+println("\nKA B2M (filaments, panels) on $(DEV_NAME): $(npass[]) passed, $(nfail[]) failed")
 nfail[] == 0 || error("B2M filament gate failed")
 println("✓✓✓ Step 3 (B2M filaments) gate passed on $(DEV_NAME) ✓✓✓")

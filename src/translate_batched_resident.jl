@@ -1255,15 +1255,16 @@ for (K, tag, v1row, srow, drow) in ((:SourcePanelKernel, 1, 6, 5, 5), (:DipolePa
 end
 
 # Dunavant rules on the reference triangle (barycentric points, weights summing to 1)
-@inline function _dunavant(::Val{1})
-    return ((SVector(1/3, 1/3, 1/3), 1.0),)
+# (typed on T so no Float64 constant reaches a Float32 device kernel)
+@inline function _dunavant(::Val{1}, ::Type{T}) where T
+    return ((SVector{3,T}(1/3, 1/3, 1/3), one(T)),)
 end
-@inline function _dunavant(::Val{2})
-    a = 0.797426985353087; b = 0.101286507323456; c = 0.470142064105115; d = 0.059715871789770
-    wa = 0.125939180544827; wc = 0.132394152788506
-    return ((SVector(1/3, 1/3, 1/3), 0.225),
-            (SVector(a, b, b), wa), (SVector(b, a, b), wa), (SVector(b, b, a), wa),
-            (SVector(c, c, d), wc), (SVector(c, d, c), wc), (SVector(d, c, c), wc))
+@inline function _dunavant(::Val{2}, ::Type{T}) where T
+    a = T(0.797426985353087); b = T(0.101286507323456); c = T(0.470142064105115); d = T(0.059715871789770)
+    wa = T(0.125939180544827); wc = T(0.132394152788506)
+    return ((SVector{3,T}(1/3, 1/3, 1/3), T(0.225)),
+            (SVector{3,T}(a, b, b), wa), (SVector{3,T}(b, a, b), wa), (SVector{3,T}(b, b, a), wa),
+            (SVector{3,T}(c, c, d), wc), (SVector{3,T}(c, d, c), wc), (SVector{3,T}(d, c, c), wc))
 end
 
 # uniform vortex sheet: Biot-Savart of γ over the triangle by quadrature
@@ -1277,16 +1278,24 @@ end
     e1 = v2 - v1; e2 = v3 - v1
     nx = e1[2] * e2[3] - e1[3] * e2[2]; ny = e1[3] * e2[1] - e1[1] * e2[3]; nz = e1[1] * e2[2] - e1[2] * e2[1]
     area = T(0.5) * sqrt(nx * nx + ny * ny + nz * nz)
+    # one rule type per branch: a runtime-selected tuple would be a union on the device
+    if kernel.order >= 2
+        return _vortex_sheet_quadrature(_dunavant(Val(2), T), target, v1, v2, v3, area, gx, gy, gz, Val(GRAD))
+    else
+        return _vortex_sheet_quadrature(_dunavant(Val(1), T), target, v1, v2, v3, area, gx, gy, gz, Val(GRAD))
+    end
+end
+
+@inline function _vortex_sheet_quadrature(rule, target, v1, v2, v3, area::T, gx, gy, gz, ::Val{GRAD}) where {T,GRAD}
     ux = zero(T); uy = zero(T); uz = zero(T)
     j11 = zero(T); j21 = zero(T); j31 = zero(T); j12 = zero(T); j22 = zero(T); j32 = zero(T); j13 = zero(T); j23 = zero(T); j33 = zero(T)
-    rule = kernel.order >= 2 ? _dunavant(Val(2)) : _dunavant(Val(1))
     for (lam, w) in rule
-        y = T(lam[1]) * v1 + T(lam[2]) * v2 + T(lam[3]) * v3
+        y = lam[1] * v1 + lam[2] * v2 + lam[3] * v3
         d = target - y
         r2 = d[1] * d[1] + d[2] * d[2] + d[3] * d[3]
         r2 == zero(T) && continue
         invr = inv(sqrt(r2))
-        s = T(w) * area
+        s = w * area
         if GRAD
             v = _vortex_pair_ugh(d[1], d[2], d[3], r2, invr, gx * s, gy * s, gz * s, one(T), -T(3))
             ux += v[2]; uy += v[3]; uz += v[4]

@@ -3433,7 +3433,6 @@ end
         cy = cell_centers[2, i_cell]
         cz = cell_centers[3, i_cell]
         node = leaf_to_node[i_cell]
-        v1 = 5 + SD
         ndof = size(coef, 3)
         k = first + tid - 1
         while k <= first + count - 1
@@ -3443,12 +3442,7 @@ end
                 cv[1, 1, i] = zero(TF); cv[2, 1, i] = zero(TF)
                 cv[1, 2, i] = zero(TF); cv[2, 2, i] = zero(TF)
             end
-            x0 = SVector{3,TF}(source_bodies[v1, k] - cx, source_bodies[v1 + 1, k] - cy, source_bodies[v1 + 2, k] - cz)
-            xu = SVector{3,TF}(source_bodies[v1 + 3, k] - source_bodies[v1, k],
-                               source_bodies[v1 + 4, k] - source_bodies[v1 + 1, k],
-                               source_bodies[v1 + 5, k] - source_bodies[v1 + 2, k])
-            strength = FastMultipole._res_packed_strength(source_bodies, k, Val(SD))
-            FastMultipole._res_filament_b2m!(BT, cv, hv, x0, xu, strength, P)
+            FastMultipole._res_element_b2m!(BT, cv, hv, source_bodies, k, cx, cy, cz, P, Val(SD))
             k += WG
         end
         @synchronize()
@@ -3478,9 +3472,9 @@ end
 end
 
 function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
-        ::Type{BT}; workgroup::Int=128) where {TF,B,LH,BT<:FastMultipole.Filament}
-    (BT <: FastMultipole.Filament{FastMultipole.Vortex} && !LH) && throw(ArgumentError(
-        "Filament{Vortex} sources require the Lamb-Helmholtz channel; construct the " *
+        ::Type{BT}; workgroup::Int=128) where {TF,B,LH,BT<:Union{FastMultipole.Filament,FastMultipole.Panel}}
+    ((BT <: FastMultipole.Filament{FastMultipole.Vortex} || BT <: FastMultipole.Panel{3,FastMultipole.Vortex}) && !LH) && throw(ArgumentError(
+        "$BT sources require the Lamb-Helmholtz channel; construct the " *
         "cache with lamb_helmholtz=true"))
     ispow2(workgroup) || throw(ArgumentError(
         "ka_launch_b2m! workgroup must be a power of two"))
@@ -3508,7 +3502,7 @@ end
 function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState, ::Type{BT};
         workgroup::Int=128) where BT
     throw(ArgumentError("the KernelAbstractions device lifecycle implements body-to-multipole " *
-        "for Point{Source}, Point{Vortex}, Point{Dipole}, Point{SourceVortex} and the three Filament types; got body_type $BT"))
+        "for Point{Source}, Point{Vortex}, Point{Dipole}, Point{SourceVortex}, the three Filament types and the four Panel{3,TK} types; got body_type $BT"))
 end
 
 function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},

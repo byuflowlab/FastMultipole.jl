@@ -35,8 +35,8 @@ accepts, compared with the host FMM:
 | `Point{Vortex}` | yes | yes (Lamb-Helmholtz channel required) |
 | `Point{SourceVortex}` | yes | yes (Lamb-Helmholtz channel required) |
 | `Filament{Source}`, `Filament{Dipole}`, `Filament{Vortex}` | yes | yes (vortex: Lamb-Helmholtz channel required) |
-| panels | yes | only as extra sources, expanded on the host |
-| nearfield kernels | any user `direct!` | `SingularSource`, `SingularDipole`, `SingularVortex`, `SingularSourceVortex`, `RegularizedVortex`, `PartitionedVortex`, `TwoPassVortex`, `SourceFilamentKernel`, `DipoleFilamentKernel`, `VortexFilamentKernel` |
+| `Panel{3,Source}`, `Panel{3,Dipole}`, `Panel{3,SourceDipole}`, `Panel{3,Vortex}` (planar triangles) | yes | yes (vortex sheet: Lamb-Helmholtz channel required) |
+| nearfield kernels | any user `direct!` | `SingularSource`, `SingularDipole`, `SingularVortex`, `SingularSourceVortex`, `RegularizedVortex`, `PartitionedVortex`, `TwoPassVortex`, `SourceFilamentKernel`, `DipoleFilamentKernel`, `VortexFilamentKernel`, `SourcePanelKernel`, `DipolePanelKernel`, `SourceDipolePanelKernel`, `VortexSheetPanelKernel` |
 | outputs | potential, gradient, hessian | potential, gradient, hessian (with the Lamb-Helmholtz channel on, the potential is the monopole term only) |
 
 Every source system sharing one cache must report the same body type.
@@ -126,9 +126,8 @@ nodes rarely have network access.
 
 * One body type and one `strength_dims` per cache.
 * The domain box and `ell` are fixed; the capacity `max_n_bodies` is fixed.
-* No third derivatives; panels only as extra sources with host-side
-  expansions (see [Device Interface](device_interface.md)).
-* An element (filament) must fit its cell: its packed radius in row 4 has to
+* No third derivatives. Panels are planar triangles (`Panel{3,TK}`); quadrilaterals only as extra sources with host-side expansions (see [Device Interface](device_interface.md)).
+* An element (filament or panel) must fit its cell: its packed radius in row 4 has to
   be small against the leaf cell, as the expansion about the cell center is
   only valid outside the element.
 * Metal: Float32 only.

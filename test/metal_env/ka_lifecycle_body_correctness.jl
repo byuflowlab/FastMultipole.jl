@@ -312,25 +312,35 @@ FM.data_per_body(s::PackedFilaments) = size(s.data, 1)
 FM.strength_dims(::PackedFilaments{TF,BT}) where {TF,BT} = FM.element_strength_dims(BT)
 FM.get_position(s::PackedFilaments{TF}, i) where TF = SVector{3,TF}(s.data[1, i], s.data[2, i], s.data[3, i])
 FM.body_type(::PackedFilaments{TF,BT}) where {TF,BT} = BT
-FM.has_vector_potential(::PackedFilaments{TF,BT}) where {TF,BT} = BT <: FM.Filament{FM.Vortex}
+FM.has_vector_potential(::PackedFilaments{TF,BT}) where {TF,BT} = BT <: FM.Filament{FM.Vortex} || BT <: FM.Panel{3,FM.Vortex}
 FM.source_system_to_buffer!(buffer, i_buffer, s::PackedFilaments, i_body) =
     (buffer[1:size(s.data, 1), i_buffer] .= view(s.data, :, i_body))
 npass[] = 0; nfail[] = 0; ncase = 0
 for (ci, (P, ell, n)) in pairs(CASES),
-        (label, BT, sd, lh) in (("source filament", FM.Filament{FM.Source}, 1, false),
-                               ("dipole filament", FM.Filament{FM.Dipole}, 3, false),
-                               ("vortex filament", FM.Filament{FM.Vortex}, 3, true))
+        (label, BT, sd, nv, lh) in (("source filament", FM.Filament{FM.Source}, 1, 2, false),
+                               ("dipole filament", FM.Filament{FM.Dipole}, 3, 2, false),
+                               ("vortex filament", FM.Filament{FM.Vortex}, 3, 2, true),
+                               ("source panel", FM.Panel{3,FM.Source}, 1, 3, false),
+                               ("dipole panel", FM.Panel{3,FM.Dipole}, 1, 3, false),
+                               ("source-dipole panel", FM.Panel{3,FM.SourceDipole}, 2, 3, false),
+                               ("vortex sheet panel", FM.Panel{3,FM.Vortex}, 3, 3, true))
     global ncase += 1
     t_case = time()
     TF = Float32
     Random.seed!(4700 + ci)
     mids = rand(TF, 3, n); dirs = randn(TF, 3, n); dirs ./= sqrt.(sum(dirs .^ 2; dims = 1))
     len = TF(0.004)
-    data = zeros(TF, 4 + sd + 6, n)
+    data = zeros(TF, 4 + sd + 3 * nv, n)
     data[1:3, :] .= mids; data[4, :] .= len / 2
     data[5:4+sd, :] .= (rand(TF, sd, n) .- TF(0.5)) ./ TF(n)
     BT <: FM.Filament{FM.Vortex} && (data[5:7, :] .= dirs .* ((rand(TF, 1, n) .- TF(0.5)) ./ TF(n)))
     data[5+sd:7+sd, :] .= mids .- dirs .* (len / 2); data[8+sd:10+sd, :] .= mids .+ dirs .* (len / 2)
+    if nv == 3
+        # third vertex off the segment; a vortex sheet strength lies in the triangle plane
+        e2 = randn(TF, 3, n); e2 .-= sum(e2 .* dirs; dims = 1) .* dirs; e2 ./= sqrt.(sum(e2 .^ 2; dims = 1))
+        data[11+sd:13+sd, :] .= mids .+ e2 .* len
+        BT <: FM.Panel{3,FM.Vortex} && (data[5:7, :] .= (dirs .* rand(TF, 1, n) .+ e2 .* rand(TF, 1, n)) ./ TF(n))
+    end
     system = PackedFilaments{TF,BT}(data)
     grid = FM.RadixGrid(system, ell)
     list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
@@ -362,5 +372,5 @@ for (ci, (P, ell, n)) in pairs(CASES),
     println("[$(round(Int, time() - t_case))s] $label case $ci (P=$P, ell=$ell, n=$n): ", ok ? "PASS" : "FAIL",
         "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
 end
-println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (filaments): $(npass[])/$ncase pass")
+println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (filaments, panels): $(npass[])/$ncase pass")
 nfail[] == 0 || error("$(nfail[]) filament case(s) failed")
