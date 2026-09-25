@@ -7,6 +7,25 @@ The following functions are the primary user-facing API of the `FastMultipole` p
 ```@docs
 fmm!
 tune_fmm
+FastMultipole.FmmPlan
+RadixFMMCache
+CUDARadixLifecycleOptions
+DeviceResidentRadixState
+recenter!
+Residency
+HostResident
+DeviceResident
+SingularSource
+SingularDipole
+SingularVortex
+SingularSourceVortex
+RegularizedVortex
+PartitionedVortex
+TwoPassVortex
+SourceFilamentKernel
+DipoleFilamentKernel
+VortexFilamentKernel
+FastMultipole.element_strength_dims
 direct!(::Tuple)
 DirectConditioningRule
 SelfPairs
@@ -20,6 +39,12 @@ FastMultipole.applies
 The following functions must be overloaded by the user to interface their code with the `FastMultipole` package.
 
 ```@docs
+FastMultipole.body_type
+FastMultipole.direct_kernel
+FastMultipole.residency
+FastMultipole.device_backend
+FastMultipole.source_to_buffer!
+FastMultipole.buffer_to_target!
 FastMultipole.source_system_to_buffer!
 FastMultipole.data_per_body
 FastMultipole.get_position
@@ -66,4 +91,5 @@ FastMultipole.extra_output_range
 FastMultipole.output_range
 FastMultipole.get_extra_output
 FastMultipole.set_extra_output!
+FastMultipole.extra_output_view
 ```

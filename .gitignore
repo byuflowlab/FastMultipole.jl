@@ -55,3 +55,11 @@ MATRIX_OPERATOR_REFACTOR/data/figures/*.synctex.gz
 MATRIX_OPERATOR_REFACTOR/data/rotor_wake/rotor_snapshot_n*.bin
 *.bin
 .trash/
+
+# working notes and run logs stay local
+plans/
+.claude/
+logs/
+test/metal_env/logs/
+MATRIX_OPERATOR_REFACTOR/
+THEORY.md/

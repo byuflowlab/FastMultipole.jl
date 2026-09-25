@@ -223,6 +223,165 @@ function _launch_host_b2m!(state::DeviceResidentRadixState{TF,B,LH},
     return state
 end
 
+function _launch_host_b2m!(state::DeviceResidentRadixState{TF},
+        ::Type{<:Point{Dipole}}) where TF
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    P = state.invariant_cache.basis_info.orders.P_phi
+    _host_b2m_dipole_kernel!(phi_slab(state.multipoles), state.source_bodies,
+        state.cell_ranges, state.cell_centers, state.grid.leaf_to_node, P,
+        state.counts.n_cells)
+    return state
+end
+
+function _launch_host_b2m!(state::DeviceResidentRadixState{TF,B,LH},
+        ::Type{<:Point{SourceVortex}}) where {TF,B,LH}
+    LH || throw(ArgumentError(
+        "Point{SourceVortex} sources require the Lamb-Helmholtz channel; construct the " *
+        "cache with lamb_helmholtz=true"))
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    orders = state.invariant_cache.basis_info.orders
+    _host_b2m_sourcevortex_kernel!(phi_slab(state.multipoles), chi_slab(state.multipoles),
+        state.source_bodies, state.cell_ranges, state.cell_centers,
+        state.grid.leaf_to_node, orders.P_phi, orders.P_active,
+        state.counts.n_cells)
+    return state
+end
+
+# Elements (filaments and planar triangles): the shared per-body expansion of
+# src/resident_elements.jl, run per cell into scratch and added into the slabs.
+function _launch_host_b2m!(state::DeviceResidentRadixState{TF,B,LH},
+        ::Type{BT}) where {TF,B,LH,BT<:Union{Filament,Panel}}
+    ((BT <: Filament{Vortex} || BT <: Panel{3,Vortex}) && !LH) && throw(ArgumentError(
+        "$BT sources require the Lamb-Helmholtz channel; construct the cache with lamb_helmholtz=true"))
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    orders = state.invariant_cache.basis_info.orders
+    _host_b2m_element_kernel!(BT, phi_slab(state.multipoles), chi_slab(state.multipoles),
+        state.source_bodies, state.cell_ranges, state.cell_centers,
+        state.grid.leaf_to_node, orders.P_phi, orders.P_active, state.counts.n_cells)
+    return state
+end
+
+function _host_b2m_element_kernel!(::Type{BT}, ph::AbstractMatrix{TF}, ch, source_bodies,
+        cell_ranges, cell_centers, leaf_to_node, P_phi::Int, P_chi::Int, n_cells::Int) where {BT,TF}
+    P = max(P_phi, P_chi)
+    coef = zeros(TF, 2, 2, harmonic_index(P, P))
+    harmonics = zeros(TF, 2, 2, _res_element_harmonics_rows(P))
+    ndof_phi = harmonic_index(P_phi, P_phi)
+    # no chi slab without the Lamb-Helmholtz channel (P_active is passed as P_chi)
+    ndof_chi = (P_chi >= 1 && size(ch, 2) > 0) ? harmonic_index(P_chi, P_chi) : 0
+    sdv = Val(element_strength_dims(BT))
+    @inbounds for i_cell in 1:n_cells
+        first_body = cell_ranges[1, i_cell]
+        count = cell_ranges[2, i_cell]
+        node = leaf_to_node[i_cell]
+        cx = cell_centers[1, i_cell]; cy = cell_centers[2, i_cell]; cz = cell_centers[3, i_cell]
+        for k in first_body:(first_body + count - 1)
+            fill!(coef, zero(TF))
+            _res_element_b2m!(BT, coef, harmonics, source_bodies, k, cx, cy, cz, P, sdv)
+            for i in 1:ndof_phi
+                ph[2i - 1, node] += coef[1, 1, i]
+                ph[2i, node] += coef[2, 1, i]
+            end
+            for i in 1:ndof_chi
+                ch[2i - 1, node] += coef[1, 2, i]
+                ch[2i, node] += coef[2, 2, i]
+            end
+        end
+    end
+    return ph
+end
+# the filament-only name the device suites call
+_host_b2m_filament_kernel!(::Type{BT}, args...) where BT = _host_b2m_element_kernel!(BT, args...)
+
+function _launch_host_b2m!(state::DeviceResidentRadixState, ::Type{BT}) where BT
+    throw(ArgumentError("the resident radix lifecycle implements body-to-multipole for the " *
+        "four Point types, the three Filament types and the four triangular Panel{3,TK} types; got body_type $BT"))
+end
+
+
+# Point{Dipole}: the dipole vector in rows 5:7; same sign/conjugation as the scalar B2M.
+function _host_b2m_dipole_kernel!(ph::AbstractMatrix{TF}, source_bodies, cell_ranges,
+        cell_centers, leaf_to_node, P::Int, n_cells::Int) where TF
+    @inbounds for i_cell in 1:n_cells
+        first_body = cell_ranges[1, i_cell]
+        count = cell_ranges[2, i_cell]
+        node = leaf_to_node[i_cell]
+        cx = cell_centers[1, i_cell]
+        cy = cell_centers[2, i_cell]
+        cz = cell_centers[3, i_cell]
+        for n in 0:P, m in 0:n
+            acc_re = zero(TF)
+            acc_im = zero(TF)
+            sgn = isodd(n + m) ? -one(TF) : one(TF)
+            for k in first_body:(first_body + count - 1)
+                re, im = _resident_dipole_contrib(source_bodies[1, k] - cx,
+                    source_bodies[2, k] - cy, source_bodies[3, k] - cz,
+                    source_bodies[5, k], source_bodies[6, k], source_bodies[7, k], n, m)
+                acc_re += re * sgn
+                acc_im -= im * sgn
+            end
+            row = flat_basis_index(n, m, 1)
+            ph[row, node] = acc_re
+            ph[row + 1, node] = acc_im
+        end
+    end
+    return ph
+end
+
+# Point{SourceVortex}: source strength in row 5 (scalar B2M) plus vortex strength
+# in rows 6:8 (mirrored vortex B2M), on the same body.
+function _host_b2m_sourcevortex_kernel!(ph::AbstractMatrix{TF}, ch::AbstractMatrix{TF},
+        source_bodies, cell_ranges, cell_centers, leaf_to_node, P_phi::Int, P_chi::Int,
+        n_cells::Int) where TF
+    @inbounds for i_cell in 1:n_cells
+        first_body = cell_ranges[1, i_cell]
+        count = cell_ranges[2, i_cell]
+        node = leaf_to_node[i_cell]
+        cx = cell_centers[1, i_cell]
+        cy = cell_centers[2, i_cell]
+        cz = cell_centers[3, i_cell]
+        for n in 0:P_phi, m in 0:n
+            acc_re = zero(TF)
+            acc_im = zero(TF)
+            sgn = isodd(n + m) ? -one(TF) : one(TF)
+            for k in first_body:(first_body + count - 1)
+                dx = source_bodies[1, k] - cx
+                dy = source_bodies[2, k] - cy
+                dz = source_bodies[3, k] - cz
+                rre, rim = _resident_regular_harmonic_coeff(dx, dy, dz, n, m)
+                scale = sgn * source_bodies[5, k]
+                acc_re += rre * scale
+                acc_im -= rim * scale
+                re, im = _resident_vortex_phi_contrib(-dx, -dy, -dz,
+                    source_bodies[6, k], source_bodies[7, k], source_bodies[8, k], n, m)
+                acc_re += re
+                acc_im += im
+            end
+            row = flat_basis_index(n, m, 1)
+            ph[row, node] = acc_re
+            ph[row + 1, node] = acc_im
+        end
+        for n in 1:P_chi, m in 0:n
+            acc_re = zero(TF)
+            acc_im = zero(TF)
+            for k in first_body:(first_body + count - 1)
+                re, im = _resident_vortex_chi_contrib(cx - source_bodies[1, k],
+                    cy - source_bodies[2, k], cz - source_bodies[3, k],
+                    source_bodies[6, k], source_bodies[7, k], source_bodies[8, k], n, m)
+                acc_re += re
+                acc_im += im
+            end
+            row = flat_basis_index(n, m, 1)
+            ch[row, node] = acc_re
+            ch[row + 1, node] = acc_im
+        end
+    end
+    return ch
+end
+
 function _host_b2m_kernel!(ph::AbstractMatrix{TF}, source_bodies, cell_ranges,
         cell_centers, leaf_to_node, P::Int, n_cells::Int) where TF
     @inbounds for i_cell in 1:n_cells
@@ -300,6 +459,26 @@ end
                  (vx * qmp1_re + vy * qmp1_im) * npmp1_2 - vz * m * qm_im) * _1_np1
     im = _1_m * ((vx * qmm1_im + vy * qmm1_re) * nmmp1_2 +
                  (-vx * qmp1_im + vy * qmp1_re) * npmp1_2 - vz * m * qm_re) * _1_np1
+    return re, im
+end
+
+# Point dipole phi contribution: the legacy `source_to_dipole!` recurrence
+# (bodytomultipole.jl) on the resident regular harmonics of the offset x − c
+# (the SOURCE convention, no mirroring): order-n coefficient from the order
+# n−1 harmonics at m−1, m, m+1, with `_resident_vortex_q`'s bound and
+# conjugate-symmetry rules standing in for legacy `get_nm1`. Returns the term
+# BEFORE the scalar B2M's (−1)^(n+m) sign and conjugation, which the caller
+# applies exactly as for a source. No strength negation, matching the resident
+# scalar B2M. n = 0 contributes nothing.
+@inline function _resident_dipole_contrib(dx, dy, dz, px, py, pz, n, m)
+    TF = typeof(dx)
+    n == 0 && return zero(TF), zero(TF)
+    setup = _resident_harmonic_setup(dx, dy, dz)
+    pmm1_re, pmm1_im = _resident_vortex_q(setup, n - 1, m - 1)
+    pm_re, pm_im = _resident_vortex_q(setup, n - 1, m)
+    pmp1_re, pmp1_im = _resident_vortex_q(setup, n - 1, m + 1)
+    re = -px * TF(0.5) * (pmp1_im + pmm1_im) + py * TF(0.5) * (pmp1_re - pmm1_re) - pz * pm_re
+    im = px * TF(0.5) * (pmp1_re + pmm1_re) + py * TF(0.5) * (pmp1_im - pmm1_im) - pz * pm_im
     return re, im
 end
 
@@ -777,6 +956,356 @@ end
         q3invr5 * dz * dx, q3invr5 * dz * dy, q3invr5 * dz * dz - qinvr3)
 end
 
+# Point dipole: u = p·d / (4π r³) with d = target − source, the source-position
+# derivative of the SingularSource potential; g = ∇u, h = ∇∇u.
+@inline function _direct_pair_ug(::SingularDipole, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    c = inv(T(4) * T(π))
+    @inbounds px = source_bodies[5, j] * c
+    @inbounds py = source_bodies[6, j] * c
+    @inbounds pz = source_bodies[7, j] * c
+    invr2 = invr * invr
+    invr3 = invr * invr2
+    pd = px * dx + py * dy + pz * dz
+    u = pd * invr3
+    t = 3 * pd * invr3 * invr2
+    return u, px * invr3 - t * dx, py * invr3 - t * dy, pz * invr3 - t * dz
+end
+
+@inline function _direct_pair_ugh(::SingularDipole, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    c = inv(T(4) * T(π))
+    @inbounds px = source_bodies[5, j] * c
+    @inbounds py = source_bodies[6, j] * c
+    @inbounds pz = source_bodies[7, j] * c
+    invr2 = invr * invr
+    invr3 = invr * invr2
+    invr5 = invr3 * invr2
+    pd = px * dx + py * dy + pz * dz
+    u = pd * invr3
+    t = 3 * pd * invr5
+    gx = px * invr3 - t * dx
+    gy = py * invr3 - t * dy
+    gz = pz * invr3 - t * dz
+    # ∂_j g_i = −3 (p_i d_j + p_j d_i) / r⁵ − 3 (p·d) δ_ij / r⁵ + 15 (p·d) d_i d_j / r⁷
+    a = 3 * invr5
+    b = 15 * pd * invr5 * invr2
+    return (u, gx, gy, gz,
+        -a * (2 * px * dx + pd) + b * dx * dx, -a * (px * dy + py * dx) + b * dx * dy, -a * (px * dz + pz * dx) + b * dx * dz,
+        -a * (py * dx + px * dy) + b * dy * dx, -a * (2 * py * dy + pd) + b * dy * dy, -a * (py * dz + pz * dy) + b * dy * dz,
+        -a * (pz * dx + px * dz) + b * dz * dx, -a * (pz * dy + py * dz) + b * dz * dy, -a * (2 * pz * dz + pd) + b * dz * dz)
+end
+
+#------- straight filaments -------#
+#
+# Line-source derivatives. With r1, r2 the distances from the target to the
+# endpoints, S = r1 + r2, L the length, A = S + L, B = S - L, the unit-strength
+# potential is u = c ln(A/B), c = 1/(4π). Its derivatives follow the chain
+# through S: f1 = 1/A - 1/B, f2 = -1/A^2 + 1/B^2, f3 = 2/A^3 - 2/B^3, with
+# grad S = e1 + e2 (unit vectors to the endpoints), hess S = sum (I - e e')/r and
+# the third derivative sum (3 e_i e_j e_k - d_ij e_k - d_ik e_j - d_jk e_i)/r^2.
+# The dipole filament is -p . grad of this, so its hessian needs the third order.
+@inline function _line_source_setup(tx, ty, tz, source_bodies, j, v1row)
+    @inbounds begin
+        ax = tx - source_bodies[v1row, j]; ay = ty - source_bodies[v1row + 1, j]; az = tz - source_bodies[v1row + 2, j]
+        bx = tx - source_bodies[v1row + 3, j]; by = ty - source_bodies[v1row + 4, j]; bz = tz - source_bodies[v1row + 5, j]
+        Lx = source_bodies[v1row + 3, j] - source_bodies[v1row, j]
+        Ly = source_bodies[v1row + 4, j] - source_bodies[v1row + 1, j]
+        Lz = source_bodies[v1row + 5, j] - source_bodies[v1row + 2, j]
+    end
+    r1 = sqrt(ax * ax + ay * ay + az * az)
+    r2 = sqrt(bx * bx + by * by + bz * bz)
+    L = sqrt(Lx * Lx + Ly * Ly + Lz * Lz)
+    return ax, ay, az, bx, by, bz, r1, r2, L
+end
+
+# B = S - L without cancellation: (S-L)(S+L) = 2(r1 r2 + a.b), and near the
+# segment (a.b < 0) r1 r2 + a.b = |a x b|^2 / (r1 r2 - a.b)
+@inline function _line_source_B(ax, ay, az, bx, by, bz, r1, r2, A)
+    p = r1 * r2
+    d = ax * bx + ay * by + az * bz
+    if d < zero(d)
+        cx = ay * bz - az * by; cy = az * bx - ax * bz; cz = ax * by - ay * bx
+        s = (cx * cx + cy * cy + cz * cz) / (p - d)
+    else
+        s = p + d
+    end
+    return 2 * s / A
+end
+
+# potential, gradient and hessian of the unit line source (13 values)
+@inline function _line_source_ugh(ax, ay, az, bx, by, bz, r1, r2, L)
+    T = typeof(ax)
+    c = inv(T(4) * T(π))
+    S = r1 + r2
+    A = S + L
+    B = _line_source_B(ax, ay, az, bx, by, bz, r1, r2, A)
+    B <= zero(T) && return ntuple(_ -> zero(T), Val(13))     # exactly on the segment: no finite value
+    u = c * log(A / B)
+    f1 = inv(A) - inv(B)
+    f2 = -inv(A * A) + inv(B * B)
+    i1 = inv(r1); i2 = inv(r2)
+    e1x = ax * i1; e1y = ay * i1; e1z = az * i1
+    e2x = bx * i2; e2y = by * i2; e2z = bz * i2
+    Sx = e1x + e2x; Sy = e1y + e2y; Sz = e1z + e2z
+    gx = c * f1 * Sx; gy = c * f1 * Sy; gz = c * f1 * Sz
+    Sxx = (1 - e1x * e1x) * i1 + (1 - e2x * e2x) * i2
+    Syy = (1 - e1y * e1y) * i1 + (1 - e2y * e2y) * i2
+    Szz = (1 - e1z * e1z) * i1 + (1 - e2z * e2z) * i2
+    Sxy = -(e1x * e1y) * i1 - (e2x * e2y) * i2
+    Sxz = -(e1x * e1z) * i1 - (e2x * e2z) * i2
+    Syz = -(e1y * e1z) * i1 - (e2y * e2z) * i2
+    hxx = c * (f2 * Sx * Sx + f1 * Sxx); hyy = c * (f2 * Sy * Sy + f1 * Syy); hzz = c * (f2 * Sz * Sz + f1 * Szz)
+    hxy = c * (f2 * Sx * Sy + f1 * Sxy); hxz = c * (f2 * Sx * Sz + f1 * Sxz); hyz = c * (f2 * Sy * Sz + f1 * Syz)
+    return (u, gx, gy, gz, hxx, hxy, hxz, hxy, hyy, hyz, hxz, hyz, hzz)
+end
+
+@inline function _direct_pair_ug(::SourceFilamentKernel, dx, dy, dz, r2_, invr,
+        source_bodies, j)
+    @inbounds tx = source_bodies[1, j] + dx; ty = source_bodies[2, j] + dy; tz = source_bodies[3, j] + dz
+    @inbounds q = source_bodies[5, j]
+    v = _line_source_ugh(_line_source_setup(tx, ty, tz, source_bodies, j, 6)...)
+    return q * v[1], q * v[2], q * v[3], q * v[4]
+end
+
+@inline function _direct_pair_ugh(::SourceFilamentKernel, dx, dy, dz, r2_, invr,
+        source_bodies, j)
+    @inbounds tx = source_bodies[1, j] + dx; ty = source_bodies[2, j] + dy; tz = source_bodies[3, j] + dz
+    @inbounds q = source_bodies[5, j]
+    v = _line_source_ugh(_line_source_setup(tx, ty, tz, source_bodies, j, 6)...)
+    return ntuple(i -> q * v[i], Val(13))
+end
+
+# the dipole filament: u = -p . grad(u_s), g_j = -p_i H_ij, h_jk = -p_i T_ijk
+# (no closures: a kernel must not capture a reassigned accumulator)
+@inline _ls_delta(i, k, ::Type{T}) where T = i == k ? one(T) : zero(T)
+@inline _ls_e(e1, e2, i, w1, w2) = e1[i] * w1 + e2[i] * w2
+# S_ij and S_ijk summed over the two endpoints
+@inline function _ls_Sij(e1, e2, i1, i2, i, k)
+    T = typeof(i1)
+    d = _ls_delta(i, k, T)
+    return (d - e1[i] * e1[k]) * i1 + (d - e2[i] * e2[k]) * i2
+end
+@inline function _ls_Sijk(e1, e2, i1, i2, i, k, l)
+    T = typeof(i1)
+    dik = _ls_delta(i, k, T); dil = _ls_delta(i, l, T); dkl = _ls_delta(k, l, T)
+    return (3 * e1[i] * e1[k] * e1[l] - dik * e1[l] - dil * e1[k] - dkl * e1[i]) * i1 * i1 +
+           (3 * e2[i] * e2[k] * e2[l] - dik * e2[l] - dil * e2[k] - dkl * e2[i]) * i2 * i2
+end
+@inline function _line_source_dipole(ax, ay, az, bx, by, bz, r1, r2, L, px, py, pz)
+    T = typeof(ax)
+    c = inv(T(4) * T(π))
+    S = r1 + r2
+    A = S + L
+    B = _line_source_B(ax, ay, az, bx, by, bz, r1, r2, A)
+    B <= zero(T) && return ntuple(_ -> zero(T), Val(13))       # exactly on the segment
+    f1 = inv(A) - inv(B)
+    f2 = -inv(A * A) + inv(B * B)
+    f3 = 2 * inv(A * A * A) - 2 * inv(B * B * B)
+    i1 = inv(r1); i2 = inv(r2)
+    e1 = SVector{3,T}(ax * i1, ay * i1, az * i1)
+    e2 = SVector{3,T}(bx * i2, by * i2, bz * i2)
+    Sg = e1 + e2
+    pv = SVector{3,T}(px, py, pz)
+    pS = pv[1] * Sg[1] + pv[2] * Sg[2] + pv[3] * Sg[3]
+    u = -c * f1 * pS
+    # g_j = -c sum_i p_i (f2 S_i S_j + f1 S_ij)
+    g1 = zero(T); g2 = zero(T); g3 = zero(T)
+    @inbounds for i in 1:3
+        g1 += pv[i] * (f2 * Sg[i] * Sg[1] + f1 * _ls_Sij(e1, e2, i1, i2, i, 1))
+        g2 += pv[i] * (f2 * Sg[i] * Sg[2] + f1 * _ls_Sij(e1, e2, i1, i2, i, 2))
+        g3 += pv[i] * (f2 * Sg[i] * Sg[3] + f1 * _ls_Sij(e1, e2, i1, i2, i, 3))
+    end
+    g1 *= -c; g2 *= -c; g3 *= -c
+    # h_jk = -c sum_i p_i (f3 S_i S_j S_k + f2 (S_ik S_j + S_i S_jk + S_ij S_k) + f1 S_ijk), column-major (j fast)
+    h11 = zero(T); h21 = zero(T); h31 = zero(T)
+    h12 = zero(T); h22 = zero(T); h32 = zero(T)
+    h13 = zero(T); h23 = zero(T); h33 = zero(T)
+    @inbounds for i in 1:3
+        p = pv[i]; Si = Sg[i]
+        Si1 = _ls_Sij(e1, e2, i1, i2, i, 1); Si2 = _ls_Sij(e1, e2, i1, i2, i, 2); Si3 = _ls_Sij(e1, e2, i1, i2, i, 3)
+        S11 = _ls_Sij(e1, e2, i1, i2, 1, 1); S12 = _ls_Sij(e1, e2, i1, i2, 1, 2); S13 = _ls_Sij(e1, e2, i1, i2, 1, 3)
+        S22 = _ls_Sij(e1, e2, i1, i2, 2, 2); S23 = _ls_Sij(e1, e2, i1, i2, 2, 3); S33 = _ls_Sij(e1, e2, i1, i2, 3, 3)
+        h11 += p * (f3 * Si * Sg[1] * Sg[1] + f2 * (Si1 * Sg[1] + Si * S11 + Si1 * Sg[1]) + f1 * _ls_Sijk(e1, e2, i1, i2, i, 1, 1))
+        h21 += p * (f3 * Si * Sg[2] * Sg[1] + f2 * (Si1 * Sg[2] + Si * S12 + Si2 * Sg[1]) + f1 * _ls_Sijk(e1, e2, i1, i2, i, 2, 1))
+        h31 += p * (f3 * Si * Sg[3] * Sg[1] + f2 * (Si1 * Sg[3] + Si * S13 + Si3 * Sg[1]) + f1 * _ls_Sijk(e1, e2, i1, i2, i, 3, 1))
+        h12 += p * (f3 * Si * Sg[1] * Sg[2] + f2 * (Si2 * Sg[1] + Si * S12 + Si1 * Sg[2]) + f1 * _ls_Sijk(e1, e2, i1, i2, i, 1, 2))
+        h22 += p * (f3 * Si * Sg[2] * Sg[2] + f2 * (Si2 * Sg[2] + Si * S22 + Si2 * Sg[2]) + f1 * _ls_Sijk(e1, e2, i1, i2, i, 2, 2))
+        h32 += p * (f3 * Si * Sg[3] * Sg[2] + f2 * (Si2 * Sg[3] + Si * S23 + Si3 * Sg[2]) + f1 * _ls_Sijk(e1, e2, i1, i2, i, 3, 2))
+        h13 += p * (f3 * Si * Sg[1] * Sg[3] + f2 * (Si3 * Sg[1] + Si * S13 + Si1 * Sg[3]) + f1 * _ls_Sijk(e1, e2, i1, i2, i, 1, 3))
+        h23 += p * (f3 * Si * Sg[2] * Sg[3] + f2 * (Si3 * Sg[2] + Si * S23 + Si2 * Sg[3]) + f1 * _ls_Sijk(e1, e2, i1, i2, i, 2, 3))
+        h33 += p * (f3 * Si * Sg[3] * Sg[3] + f2 * (Si3 * Sg[3] + Si * S33 + Si3 * Sg[3]) + f1 * _ls_Sijk(e1, e2, i1, i2, i, 3, 3))
+    end
+    return (u, g1, g2, g3, -c * h11, -c * h21, -c * h31, -c * h12, -c * h22, -c * h32, -c * h13, -c * h23, -c * h33)
+end
+
+@inline function _direct_pair_ug(::DipoleFilamentKernel, dx, dy, dz, r2_, invr,
+        source_bodies, j)
+    @inbounds tx = source_bodies[1, j] + dx; ty = source_bodies[2, j] + dy; tz = source_bodies[3, j] + dz
+    @inbounds px = source_bodies[5, j]; py = source_bodies[6, j]; pz = source_bodies[7, j]
+    v = _line_source_dipole(_line_source_setup(tx, ty, tz, source_bodies, j, 8)..., px, py, pz)
+    return v[1], v[2], v[3], v[4]
+end
+
+@inline function _direct_pair_ugh(::DipoleFilamentKernel, dx, dy, dz, r2_, invr,
+        source_bodies, j)
+    @inbounds tx = source_bodies[1, j] + dx; ty = source_bodies[2, j] + dy; tz = source_bodies[3, j] + dz
+    @inbounds px = source_bodies[5, j]; py = source_bodies[6, j]; pz = source_bodies[7, j]
+    return _line_source_dipole(_line_source_setup(tx, ty, tz, source_bodies, j, 8)..., px, py, pz)
+end
+
+# vortex filament: the bound-vortex functions of direct_rectangular.jl, with
+# r1 = x1 - target, r2 = x2 - target and the circulation Γ . d/|d| (Γ points
+# along the segment; a reversed Γ flips the sign)
+@inline function _vortex_filament_pair(kernel::VortexFilamentKernel, dx, dy, dz, source_bodies, j, ::Val{GRAD}) where GRAD
+    T = typeof(dx)
+    @inbounds begin
+        tx = source_bodies[1, j] + dx; ty = source_bodies[2, j] + dy; tz = source_bodies[3, j] + dz
+        gx = source_bodies[5, j]; gy = source_bodies[6, j]; gz = source_bodies[7, j]
+        x1 = SVector{3,T}(source_bodies[8, j], source_bodies[9, j], source_bodies[10, j])
+        x2 = SVector{3,T}(source_bodies[11, j], source_bodies[12, j], source_bodies[13, j])
+        core = kernel.core_row == 0 ? zero(T) : T(source_bodies[kernel.core_row, j])
+    end
+    d = x2 - x1
+    Ld = sqrt(d[1] * d[1] + d[2] * d[2] + d[3] * d[3])
+    Ld == zero(T) && return zero(SVector{3,T}), zero(SMatrix{3,3,T,9})   # collapsed segment (0 * NaN otherwise)
+    gamma = (gx * d[1] + gy * d[2] + gz * d[3]) / Ld
+    target = SVector{3,T}(tx, ty, tz)
+    r1 = x1 - target; r2 = x2 - target
+    # singular core: a target on the segment's line (its own midpoint, a shared
+    # vertex, a colinear neighbour) has no finite value; return nothing there.
+    # A regularized core is finite on the line (the gradient is not zero), so
+    # the guard applies only for core == 0.
+    cr = (r1[2] * r2[3] - r1[3] * r2[2])^2 + (r1[3] * r2[1] - r1[1] * r2[3])^2 + (r1[1] * r2[2] - r1[2] * r2[1])^2
+    n1 = r1[1]^2 + r1[2]^2 + r1[3]^2; n2 = r2[1]^2 + r2[2]^2 + r2[3]^2
+    core == zero(T) && cr <= T(1e-24) * n1 * n2 && return zero(SVector{3,T}), zero(SMatrix{3,3,T,9})
+    # the Gaussian family divides by core^2; with no core it is the singular kernel
+    fam = core == zero(T) ? 1 : kernel.family
+    if fam == 2
+        u = _rect_bound_vortex_velocity(r1, r2, core, Val(2))
+        g = GRAD ? _rect_bound_vortex_gradient(r1, r2, core, Val(2)) : zero(SMatrix{3,3,T,9})
+    elseif fam == 3
+        u = _rect_bound_vortex_velocity(r1, r2, core, Val(3))
+        g = GRAD ? _rect_bound_vortex_gradient(r1, r2, core, Val(3)) : zero(SMatrix{3,3,T,9})
+    else
+        u = _rect_bound_vortex_velocity(r1, r2, core, Val(1))
+        g = GRAD ? _rect_bound_vortex_gradient(r1, r2, core, Val(1)) : zero(SMatrix{3,3,T,9})
+    end
+    return gamma * u, gamma * g
+end
+
+@inline function _direct_pair_ug(kernel::VortexFilamentKernel, dx, dy, dz, r2_, invr,
+        source_bodies, j)
+    u, _ = _vortex_filament_pair(kernel, dx, dy, dz, source_bodies, j, Val(false))
+    return zero(typeof(dx)), u[1], u[2], u[3]
+end
+
+@inline function _direct_pair_ugh(kernel::VortexFilamentKernel, dx, dy, dz, r2_, invr,
+        source_bodies, j)
+    u, g = _vortex_filament_pair(kernel, dx, dy, dz, source_bodies, j, Val(true))
+    T = typeof(dx)
+    # column-major J[i,j] = du_i/dx_j, as the vortex point kernels return it
+    return (zero(T), u[1], u[2], u[3],
+        g[1, 1], g[2, 1], g[3, 1], g[1, 2], g[2, 2], g[3, 2], g[1, 3], g[2, 3], g[3, 3])
+end
+
+#------- planar triangular panels -------#
+#
+# Source and dipole panels use the closed forms of direct_rectangular.jl
+# (`_rect_panel_pair` for velocity and its gradient with the self-pair limits,
+# `_rect_panel_potential` for the potential). Those follow FLOWPanel's sign
+# convention, in which a source panel's potential is −σ/(4π) ∫ dA/r; the
+# resident lifecycle's sources are +q/(4π r), so the panel results are negated
+# to be the area integrals of the point kernels.
+@inline function _panel_vertices(source_bodies, j, v1row, ::Type{T}) where T
+    @inbounds begin
+        v1 = SVector{3,T}(source_bodies[v1row, j], source_bodies[v1row + 1, j], source_bodies[v1row + 2, j])
+        v2 = SVector{3,T}(source_bodies[v1row + 3, j], source_bodies[v1row + 4, j], source_bodies[v1row + 5, j])
+        v3 = SVector{3,T}(source_bodies[v1row + 6, j], source_bodies[v1row + 7, j], source_bodies[v1row + 8, j])
+    end
+    return v1, v2, v3
+end
+
+@inline function _panel_pair(tag::Int, s1, s2, dx, dy, dz, source_bodies, j, v1row, ::Val{GRAD}) where GRAD
+    T = typeof(dx)
+    @inbounds target = SVector{3,T}(source_bodies[1, j] + dx, source_bodies[2, j] + dy, source_bodies[3, j] + dz)
+    v1, v2, v3 = _panel_vertices(source_bodies, j, v1row, T)
+    u, g = _rect_panel_pair(RectangularPanelInfluence(), target, tag, 3, v1, v2, v3, v3,
+        T(s1), T(s2), zero(T), Val(GRAD), Val(1))
+    p = _rect_panel_potential(target, tag, 3, v1, v2, v3, T(s1), T(s2))
+    return -p, -u, -g
+end
+
+for (K, tag, v1row, srow, drow) in ((:SourcePanelKernel, 1, 6, 5, 5), (:DipolePanelKernel, 2, 6, 5, 5),
+                                     (:SourceDipolePanelKernel, 5, 7, 5, 6))
+    @eval begin
+        @inline function _direct_pair_ug(::$K, dx, dy, dz, r2_, invr, source_bodies, j)
+            @inbounds s1 = source_bodies[$srow, j]; s2 = source_bodies[$drow, j]
+            p, u, _ = _panel_pair($tag, s1, s2, dx, dy, dz, source_bodies, j, $v1row, Val(false))
+            return p, u[1], u[2], u[3]
+        end
+        @inline function _direct_pair_ugh(::$K, dx, dy, dz, r2_, invr, source_bodies, j)
+            @inbounds s1 = source_bodies[$srow, j]; s2 = source_bodies[$drow, j]
+            p, u, g = _panel_pair($tag, s1, s2, dx, dy, dz, source_bodies, j, $v1row, Val(true))
+            return (p, u[1], u[2], u[3], g[1, 1], g[2, 1], g[3, 1], g[1, 2], g[2, 2], g[3, 2], g[1, 3], g[2, 3], g[3, 3])
+        end
+    end
+end
+
+# Dunavant rules on the reference triangle (barycentric points, weights summing to 1)
+@inline function _dunavant(::Val{1})
+    return ((SVector(1/3, 1/3, 1/3), 1.0),)
+end
+@inline function _dunavant(::Val{2})
+    a = 0.797426985353087; b = 0.101286507323456; c = 0.470142064105115; d = 0.059715871789770
+    wa = 0.125939180544827; wc = 0.132394152788506
+    return ((SVector(1/3, 1/3, 1/3), 0.225),
+            (SVector(a, b, b), wa), (SVector(b, a, b), wa), (SVector(b, b, a), wa),
+            (SVector(c, c, d), wc), (SVector(c, d, c), wc), (SVector(d, c, c), wc))
+end
+
+# uniform vortex sheet: Biot-Savart of γ over the triangle by quadrature
+@inline function _vortex_sheet_pair(kernel::VortexSheetPanelKernel, dx, dy, dz, source_bodies, j, ::Val{GRAD}) where GRAD
+    T = typeof(dx)
+    @inbounds begin
+        target = SVector{3,T}(source_bodies[1, j] + dx, source_bodies[2, j] + dy, source_bodies[3, j] + dz)
+        gx = source_bodies[5, j]; gy = source_bodies[6, j]; gz = source_bodies[7, j]
+    end
+    v1, v2, v3 = _panel_vertices(source_bodies, j, 8, T)
+    e1 = v2 - v1; e2 = v3 - v1
+    nx = e1[2] * e2[3] - e1[3] * e2[2]; ny = e1[3] * e2[1] - e1[1] * e2[3]; nz = e1[1] * e2[2] - e1[2] * e2[1]
+    area = T(0.5) * sqrt(nx * nx + ny * ny + nz * nz)
+    ux = zero(T); uy = zero(T); uz = zero(T)
+    j11 = zero(T); j21 = zero(T); j31 = zero(T); j12 = zero(T); j22 = zero(T); j32 = zero(T); j13 = zero(T); j23 = zero(T); j33 = zero(T)
+    rule = kernel.order >= 2 ? _dunavant(Val(2)) : _dunavant(Val(1))
+    for (lam, w) in rule
+        y = T(lam[1]) * v1 + T(lam[2]) * v2 + T(lam[3]) * v3
+        d = target - y
+        r2 = d[1] * d[1] + d[2] * d[2] + d[3] * d[3]
+        r2 == zero(T) && continue
+        invr = inv(sqrt(r2))
+        s = T(w) * area
+        if GRAD
+            v = _vortex_pair_ugh(d[1], d[2], d[3], r2, invr, gx * s, gy * s, gz * s, one(T), -T(3))
+            ux += v[2]; uy += v[3]; uz += v[4]
+            j11 += v[5]; j21 += v[6]; j31 += v[7]; j12 += v[8]; j22 += v[9]; j32 += v[10]; j13 += v[11]; j23 += v[12]; j33 += v[13]
+        else
+            v = _vortex_pair_ug(d[1], d[2], d[3], invr, gx * s, gy * s, gz * s, one(T))
+            ux += v[2]; uy += v[3]; uz += v[4]
+        end
+    end
+    return (zero(T), ux, uy, uz, j11, j21, j31, j12, j22, j32, j13, j23, j33)
+end
+
+@inline function _direct_pair_ug(kernel::VortexSheetPanelKernel, dx, dy, dz, r2_, invr, source_bodies, j)
+    v = _vortex_sheet_pair(kernel, dx, dy, dz, source_bodies, j, Val(false))
+    return v[1], v[2], v[3], v[4]
+end
+@inline _direct_pair_ugh(kernel::VortexSheetPanelKernel, dx, dy, dz, r2_, invr, source_bodies, j) =
+    _vortex_sheet_pair(kernel, dx, dy, dz, source_bodies, j, Val(true))
+
 # Shared vortex U/J assembly for a given regularization pair (g, h); g = 1,
 # h = −3 reproduces the singular Biot-Savart kernel exactly.
 @inline function _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
@@ -800,6 +1329,30 @@ end
         a * crss1 * dx, a * crss2 * dx - b * gsz, a * crss3 * dx + b * gsy,
         a * crss1 * dy + b * gsz, a * crss2 * dy, a * crss3 * dy - b * gsx,
         a * crss1 * dz - b * gsy, a * crss2 * dz + b * gsx, a * crss3 * dz)
+end
+
+# Source (row 5) plus vortex (rows 6:8) on one body: the sum of the two singular pairs.
+@inline function _direct_pair_ug(::SingularSourceVortex, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    @inbounds q = source_bodies[5, j] * inv(T(4) * T(π))
+    @inbounds gsx = source_bodies[6, j]
+    @inbounds gsy = source_bodies[7, j]
+    @inbounds gsz = source_bodies[8, j]
+    invr3 = invr * invr * invr
+    _, vx, vy, vz = _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, one(T))
+    return q * invr, vx - q * dx * invr3, vy - q * dy * invr3, vz - q * dz * invr3
+end
+
+@inline function _direct_pair_ugh(::SingularSourceVortex, dx, dy, dz, r2, invr,
+        source_bodies, j)
+    T = typeof(r2)
+    s = _direct_pair_ugh(SingularSource(), dx, dy, dz, r2, invr, source_bodies, j)
+    @inbounds gsx = source_bodies[6, j]
+    @inbounds gsy = source_bodies[7, j]
+    @inbounds gsz = source_bodies[8, j]
+    v = _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, one(T), -T(3))
+    return ntuple(i -> s[i] + v[i], Val(13))
 end
 
 @inline function _direct_pair_ug(::SingularVortex, dx, dy, dz, r2, invr,
@@ -2615,14 +3168,19 @@ _default_radix_precision(expansion_order::Int) =
 function _default_radix_m2l_strategy(::Type{TF}, expansion_order::Int, LH::Bool,
         device::Bool, nclasses::Int, ndof::Int) where TF
     dense = DenseTranslationM2L()
+    # The device lifecycle is the KernelAbstractions extension, which builds the
+    # concatenated or the dense plan and has no plan for the factored strategy
+    # (that was the native CUDA lifecycle's, removed); so wherever the host
+    # would fall back to precomputed-y, the device falls back to concat.
+    fallback = device ? ConcatenatedFixedZM2L() : PrecomputedFactoredYM2L()
     # 024 found the operator payload is dense's binding constraint; keep a margin
     # under its own gate so the auto choice never construction-errors on storage.
     dense_bytes = nclasses * ndof * ndof * sizeof(TF)
-    dense_bytes <= (dense.max_persistent_bytes * 3) ÷ 4 || return PrecomputedFactoredYM2L()
+    dense_bytes <= (dense.max_persistent_bytes * 3) ÷ 4 || return fallback
     expansion_order <= 3 && return dense                  # literature P <= 4
-    expansion_order <= 7 || return PrecomputedFactoredYM2L()  # literature P >= 12
+    expansion_order <= 7 || return fallback               # literature P >= 12
     LH || return dense                                    # P = 8, LH off
-    return device ? PrecomputedFactoredYM2L() : dense     # P = 8, LH on: platform split
+    return device ? fallback : dense                      # P = 8, LH on: platform split
 end
 
 _default_radix_options(::Type{TF}, expansion_order::Int, LH::Bool, device::Bool,

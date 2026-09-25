@@ -1,19 +1,13 @@
 # Connecting an External Code to the Resident GPU Lifecycle
 
-This page documents the device-resident FMM interface (tasks 023–032): how an
-external code that keeps its particle state on the GPU drives the recurring
-radix-grid FMM lifecycle with **zero per-step host/device body transfer** and
-**zero per-step allocation**. It restates the contracts of the signed-off
-integration API specification
-(`MATRIX_OPERATOR_REFACTOR/integration-api-spec.md`); a complete runnable
-program implementing everything described here is
+This page documents the device-resident FMM interface in full: how an external
+code that keeps its particle state on the GPU drives the recurring radix-grid
+FMM lifecycle with **zero per-step host/device body transfer** and **zero
+per-step allocation**. [Running on a GPU](gpu.md) is the short version; a
+complete runnable program implementing everything described here is
 [`examples/device_resident_system.jl`](https://github.com/byuflowlab/FastMultipole.jl/blob/main/examples/device_resident_system.jl).
-
-!!! note "Task 032 staging"
-    Most of this page describes interface surface that exists on the
-    `matrix-ops` branch today. The explicit [`recenter!`](@ref recenter-section)
-    helper is specified but lands in task 032 stage 3; it is marked as such
-    below.
+The device implementation is the KernelAbstractions extension, so "CUDA" below
+reads as "the device" and applies to Metal as well.
 
 ## Overview: the resident radix path
 

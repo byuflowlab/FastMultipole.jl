@@ -98,6 +98,7 @@ include("tree.jl")
 include("tree_batched.jl")
 include("interaction_list_batched.jl")
 include("translate_batched_resident.jl")
+include("resident_elements.jl")
 include("resident_extra_tree.jl")
 include("radix_extra_systems.jl")
 include("radix_settings.jl")
@@ -111,7 +112,9 @@ export RigidImplicitStencil, SparseOffsetIntersection, BlockedOccupancyBitsets, 
 export RadixM2LBatch, RadixInteractionList
 export Residency, HostResident, DeviceResident, residency
 export TreeRole, SourceTree, TargetTree, NearfieldExecution, HostNearfield, DeviceNearfield
-export AbstractDirectKernel, SingularSource, SingularVortex, RegularizedVortex,
+export AbstractDirectKernel, SingularSource, SingularVortex, SingularDipole, SingularSourceVortex, RegularizedVortex,
+    SourceFilamentKernel, DipoleFilamentKernel, VortexFilamentKernel, element_strength_dims,
+    SourcePanelKernel, DipolePanelKernel, SourceDipolePanelKernel, VortexSheetPanelKernel,
     PartitionedVortex, TwoPassVortex, direct_kernel
 export AbstractRectangularKernel, RectangularGaussianErfVortex,
     RectangularPanelInfluence, direct_rectangular!, rect_source_rows,

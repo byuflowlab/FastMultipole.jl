@@ -1948,10 +1948,31 @@ L2LOperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val, batch_max::Integ
 # can load without touching a device runtime. The device backend extension fills
 # them with device-array-backed buffers once it is loaded.
 
+"""
+    Residency
+
+Where a system's bodies live for the resident radix lifecycle: [`HostResident`](@ref)
+(the default) or [`DeviceResident`](@ref). Declared through the
+[`residency`](@ref) trait.
+"""
 abstract type Residency end
 
+"""
+    HostResident()
+
+The system's bodies live in host memory; the lifecycle packs them through the host
+`source_system_to_buffer!` hooks and, on a device cache, uploads the packed buffer
+each step.
+"""
 struct HostResident <: Residency end
 
+"""
+    DeviceResident()
+
+The system's bodies live on the device named by [`device_backend`](@ref); the
+lifecycle calls the system's device `source_to_buffer!` / `buffer_to_target!`
+methods and moves no per-body data between host and device.
+"""
 struct DeviceResident <: Residency end
 
 """
@@ -2044,6 +2065,13 @@ abstract type AbstractRegularizedVortex <: AbstractDirectKernel end
     return nothing
 end
 
+"""
+    RegularizedVortex(; sigma_row, rho_t=4.789)
+
+Regularized (Gaussian-erf) Biot-Savart nearfield kernel for `Point{Vortex}` sources,
+with the core size read from packed row `sigma_row` and the smoothing cutoff
+`rho_t` cores. See also `PartitionedVortex` and `TwoPassVortex`.
+"""
 struct RegularizedVortex <: AbstractRegularizedVortex
     sigma_row::Int
     rho_t::Float64
@@ -2139,13 +2167,146 @@ struct TwoPassVortex <: AbstractRegularizedVortex
     end
 end
 
+"""
+    SingularDipole()
+
+Singular point-dipole kernel (shipped default for `Point{Dipole}`): the dipole
+vector in packed rows 5:7, potential `p·(x-y) / (4π r³)` and its derivatives,
+the source-position derivative of [`SingularSource`](@ref).
+"""
+struct SingularDipole <: AbstractDirectKernel end
+
+"""
+    SingularSourceVortex()
+
+Singular kernel for `Point{SourceVortex}` bodies: the source strength in packed
+row 5 and the vortex strength in rows 6:8; the sum of [`SingularSource`](@ref)
+and [`SingularVortex`](@ref).
+"""
+struct SingularSourceVortex <: AbstractDirectKernel end
+
+"""
+    element_strength_dims(body_type)
+
+Strength components of a body type on the resident lifecycle: 1 for sources and
+dipole panels, 3 for vortices and point dipoles, 2 for `Panel{3,SourceDipole}`, 4
+for `Point{SourceVortex}`. The packed vertices of an element start at row
+`5 + element_strength_dims`.
+"""
+element_strength_dims(::Type{<:Point{Source}}) = 1
+element_strength_dims(::Type{<:Point{Dipole}}) = 3
+element_strength_dims(::Type{<:Point{Vortex}}) = 3
+element_strength_dims(::Type{<:Point{SourceVortex}}) = 4
+element_strength_dims(::Type{<:Filament{Source}}) = 1
+element_strength_dims(::Type{<:Filament{Dipole}}) = 3
+element_strength_dims(::Type{<:Filament{Vortex}}) = 3
+element_strength_dims(::Type{<:Panel{3,Source}}) = 1
+element_strength_dims(::Type{<:Panel{3,Dipole}}) = 1
+element_strength_dims(::Type{<:Panel{3,SourceDipole}}) = 2
+element_strength_dims(::Type{<:Panel{3,Vortex}}) = 3
+
+"""
+    SourceFilamentKernel()
+
+Nearfield of a straight source filament: uniform strength `q` per unit length
+(packed row 5) between the vertices in rows 6:8 and 9:11. Potential
+`q/(4π) ln((r₁+r₂+L)/(r₁+r₂−L))`, with its gradient and hessian in closed form.
+"""
+struct SourceFilamentKernel <: AbstractDirectKernel end
+
+"""
+    DipoleFilamentKernel()
+
+Nearfield of a straight dipole filament: uniform dipole density `p` (packed rows
+5:7) between the vertices in rows 8:10 and 11:13; the source-position
+derivative of [`SourceFilamentKernel`](@ref), derivatives to third order in
+closed form.
+"""
+struct DipoleFilamentKernel <: AbstractDirectKernel end
+
+"""
+    VortexFilamentKernel(; core_row=0, family=1)
+
+Nearfield of a straight vortex filament: circulation vector `Γ` (packed rows
+5:7, along the segment) between the vertices in rows 8:10 and 11:13. Singular
+Biot-Savart when `core_row == 0`; otherwise regularized with the core read from
+packed row `core_row` and the family of `direct_rectangular!` (1 Vatistas n=2,
+2 compact support, 3 Gaussian). Velocity and its gradient; no scalar potential.
+"""
+struct VortexFilamentKernel <: AbstractDirectKernel
+    core_row::Int
+    family::Int
+    VortexFilamentKernel(; core_row::Integer=0, family::Integer=1) =
+        new(Int(core_row), Int(family))
+end
+
+"""
+    SourcePanelKernel()
+
+Nearfield of a planar triangular source panel of uniform strength (packed row 5)
+with vertices in rows 6:8, 9:11, 12:14: the closed forms of `direct_rectangular!`
+(potential, velocity, velocity gradient), signed so that the panel is the area
+integral of [`SingularSource`](@ref).
+"""
+struct SourcePanelKernel <: AbstractDirectKernel end
+
+"""
+    DipolePanelKernel()
+
+Nearfield of a planar triangular dipole (doublet) panel of uniform density
+along its normal (packed row 5), vertices in rows 6:8, 9:11, 12:14: the area
+integral of [`SingularDipole`](@ref) along the normal, in closed form.
+"""
+struct DipolePanelKernel <: AbstractDirectKernel end
+
+"""
+    SourceDipolePanelKernel()
+
+Nearfield of a planar triangular panel carrying a uniform source strength (row 5)
+and a uniform dipole density along its normal (row 6), vertices in rows 7:9,
+10:12, 13:15.
+"""
+struct SourceDipolePanelKernel <: AbstractDirectKernel end
+
+"""
+    VortexSheetPanelKernel(; order=2)
+
+Nearfield of a planar triangular panel of uniform sheet vorticity (packed rows
+5:7), vertices in rows 8:10, 11:13, 14:16: Biot-Savart of the sheet integrated
+with a Dunavant quadrature of the given order over the triangle (7 points at
+order 2), which is exact to expansion accuracy away from the panel and
+approximate within about one panel size of it. No scalar potential.
+"""
+struct VortexSheetPanelKernel <: AbstractDirectKernel
+    order::Int
+    VortexSheetPanelKernel(; order::Integer=2) = new(Int(order))
+end
+
 _default_direct_kernel(::Type{<:Point{Source}}) = SingularSource()
 _default_direct_kernel(::Type{<:Point{Vortex}}) = SingularVortex()
+_default_direct_kernel(::Type{<:Point{Dipole}}) = SingularDipole()
+_default_direct_kernel(::Type{<:Point{SourceVortex}}) = SingularSourceVortex()
+_default_direct_kernel(::Type{<:Filament{Source}}) = SourceFilamentKernel()
+_default_direct_kernel(::Type{<:Filament{Dipole}}) = DipoleFilamentKernel()
+_default_direct_kernel(::Type{<:Filament{Vortex}}) = VortexFilamentKernel()
+_default_direct_kernel(::Type{<:Panel{3,Source}}) = SourcePanelKernel()
+_default_direct_kernel(::Type{<:Panel{3,Dipole}}) = DipolePanelKernel()
+_default_direct_kernel(::Type{<:Panel{3,SourceDipole}}) = SourceDipolePanelKernel()
+_default_direct_kernel(::Type{<:Panel{3,Vortex}}) = VortexSheetPanelKernel()
 _default_direct_kernel(::Type) = SingularSource()
 
 # Only kernels that produce a scalar potential write output row 1 (the vortex
 # kernels' atomics/stores skip it) — compile-time via the functor type.
 _emits_potential(::SingularSource) = true
+_emits_potential(::SingularDipole) = true
+_emits_potential(::SingularSourceVortex) = true
+_emits_potential(::SourceFilamentKernel) = true
+_emits_potential(::DipoleFilamentKernel) = true
+_emits_potential(::VortexFilamentKernel) = false
+_emits_potential(::SourcePanelKernel) = true
+_emits_potential(::DipolePanelKernel) = true
+_emits_potential(::SourceDipolePanelKernel) = true
+_emits_potential(::VortexSheetPanelKernel) = false
 _emits_potential(::SingularVortex) = false
 _emits_potential(::AbstractRegularizedVortex) = false
 
@@ -2164,6 +2325,17 @@ end
 
 CUDARadixTransferCounters() = CUDARadixTransferCounters(0, 0, 0, 0, 0, 0)
 
+"""
+    CUDARadixLifecycleOptions(; precision=Float64, operator, m2m_strategy, m2l_strategy,
+                              body_type=Point{Source}, direct_kernel)
+
+Options of a resident radix lifecycle, host or device (the name predates the
+KernelAbstractions extension). `precision` is the working float type (Float32 on
+Metal); `m2l_strategy` selects the far-field plan (`ConcatenatedFixedZM2L` or
+`DenseTranslationM2L` on a device; the host default is `SharedRotationM2L`);
+`body_type` and `direct_kernel` are resolved from the systems' traits at cache
+construction and need not be given. Passed to [`RadixFMMCache`](@ref) as `options`.
+"""
 struct CUDARadixLifecycleOptions{TF,O<:AbstractM2LOperator,
         M2M<:AbstractResidentM2MStrategy,M2L<:AbstractResidentM2LStrategy,
         BT<:AbstractElement,DK<:AbstractDirectKernel}
@@ -2265,6 +2437,14 @@ end
 # Optional host/device storage remains separately parameterized.  The concrete options
 # type deliberately participates in the state type so default lifecycle launchers can
 # infer operator and strategy dispatch without boxing the state.
+"""
+    DeviceResidentRadixState
+
+The resident radix lifecycle's state: packed bodies, cell ranges and centers, flat
+multipole and local buffers, routes, workspace, output, transfer counters and the
+options, all sized at capacity on the host or the device. Built and owned by a
+[`RadixFMMCache`](@ref) (`cache.state`); user code reads its `counters`.
+"""
 struct DeviceResidentRadixState{TF,B,LH,
         GR,IL,FM,HBV,HRV,HFM,DIV,DIM,
         FB<:FlatCoefficientBuffer{TF,<:AbstractMatrix{TF},B,LH},

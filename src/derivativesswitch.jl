@@ -155,5 +155,12 @@ Accumulates `value` into extra output row `j` for target-buffer column `i`.
     return nothing
 end
 
+"""
+    extra_output_view(buffer, switch, i)
+
+View of the extra output rows of body `i` in an output `buffer` (the rows past
+the potential, gradient and hessian that `extra_outputs=N` requested), located
+through `extra_output_range(switch)`.
+"""
 @inline extra_output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i) = view(buffer, extra_output_range(switch), i)
 @inline output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i) = view(buffer, output_range(switch), i)

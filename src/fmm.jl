@@ -1358,6 +1358,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     nearfield::Bool=true,
     tune=false, update_target_systems=true, multipole_acceptance=0.5,
     t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
+    # telemetry fields of the `optargs` a tuned call returns, accepted so that
+    # tuple can be splatted straight back into `fmm!` (they are outputs, ignored here)
+    nearfield_cache_feasible=true, nearfield_cache_build_time=0.0,
     silence_warnings=false,
     extra_farfield=false,
     direct_conditioning=(),

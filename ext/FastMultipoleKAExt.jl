@@ -3131,16 +3131,384 @@ end
     end
 end
 
+# Point{Source} body-to-multipole: the phi channel only, one workgroup per leaf
+# cell with a body-parallel tree reduction. Mirrors `_host_b2m_kernel!`
+# (src/translate_batched_resident.jl) term for term: regular harmonics of the
+# offset `x - c`, weighted by `(-1)^(n+m) q`, conjugated into the flat buffer.
+@kernel function ka_b2m_source_leaf_nodes_kernel!(phi, @Const(source_bodies),
+        @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
+        P_phi, ncell, ::Type{TF}, ::Val{WG}) where {TF,WG}
+    i_cell = @index(Group)
+    tid = @index(Local)
+    shre = @localmem TF (WG,)
+    shim = @localmem TF (WG,)
+    @inbounds begin
+        first = cell_ranges[1, i_cell]
+        count = cell_ranges[2, i_cell]
+        cx = cell_centers[1, i_cell]
+        cy = cell_centers[2, i_cell]
+        cz = cell_centers[3, i_cell]
+        node = leaf_to_node[i_cell]
+        for n in 0:P_phi
+            for m in 0:n
+                acc_re = zero(TF); acc_im = zero(TF)
+                sgn = isodd(n + m) ? -one(TF) : one(TF)
+                k = first + tid - 1
+                while k <= first + count - 1
+                    rre, rim = FastMultipole._resident_regular_harmonic_coeff(
+                        source_bodies[1, k] - cx, source_bodies[2, k] - cy,
+                        source_bodies[3, k] - cz, n, m)
+                    scale = sgn * source_bodies[5, k]
+                    acc_re += rre * scale
+                    acc_im -= rim * scale
+                    k += WG
+                end
+                shre[tid] = acc_re
+                shim[tid] = acc_im
+                @synchronize()
+                s = WG >> 1
+                while s >= 1
+                    if tid <= s
+                        shre[tid] += shre[tid + s]
+                        shim[tid] += shim[tid + s]
+                    end
+                    @synchronize()
+                    s >>= 1
+                end
+                if tid == 1
+                    row = FastMultipole.flat_basis_index(n, m, 1)
+                    phi[row, node] = shre[1]
+                    phi[row + 1, node] = shim[1]
+                end
+                @synchronize()
+            end
+        end
+    end
+end
+
+# Point{Dipole}: phi channel from `_resident_dipole_contrib` (the order n−1
+# harmonics of x − c), sign and conjugation as the scalar B2M.
+@kernel function ka_b2m_dipole_leaf_nodes_kernel!(phi, @Const(source_bodies),
+        @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
+        P_phi, ncell, ::Type{TF}, ::Val{WG}) where {TF,WG}
+    i_cell = @index(Group)
+    tid = @index(Local)
+    shre = @localmem TF (WG,)
+    shim = @localmem TF (WG,)
+    @inbounds begin
+        first = cell_ranges[1, i_cell]
+        count = cell_ranges[2, i_cell]
+        cx = cell_centers[1, i_cell]
+        cy = cell_centers[2, i_cell]
+        cz = cell_centers[3, i_cell]
+        node = leaf_to_node[i_cell]
+        for n in 0:P_phi
+            for m in 0:n
+                acc_re = zero(TF); acc_im = zero(TF)
+                sgn = isodd(n + m) ? -one(TF) : one(TF)
+                k = first + tid - 1
+                while k <= first + count - 1
+                    re_, im_ = FastMultipole._resident_dipole_contrib(
+                        source_bodies[1, k] - cx, source_bodies[2, k] - cy,
+                        source_bodies[3, k] - cz, source_bodies[5, k],
+                        source_bodies[6, k], source_bodies[7, k], n, m)
+                    acc_re += re_ * sgn
+                    acc_im -= im_ * sgn
+                    k += WG
+                end
+                shre[tid] = acc_re
+                shim[tid] = acc_im
+                @synchronize()
+                s = WG >> 1
+                while s >= 1
+                    if tid <= s
+                        shre[tid] += shre[tid + s]
+                        shim[tid] += shim[tid + s]
+                    end
+                    @synchronize()
+                    s >>= 1
+                end
+                if tid == 1
+                    row = FastMultipole.flat_basis_index(n, m, 1)
+                    phi[row, node] = shre[1]
+                    phi[row + 1, node] = shim[1]
+                end
+                @synchronize()
+            end
+        end
+    end
+end
+
+# Point{SourceVortex}: source strength in row 5 into phi (scalar B2M) plus the
+# vortex strength in rows 6:8 into phi and chi (mirrored vortex B2M).
+@kernel function ka_b2m_sourcevortex_leaf_nodes_kernel!(phi, chi, @Const(source_bodies),
+        @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
+        P_phi, P_chi, ncell, ::Type{TF}, ::Val{WG}) where {TF,WG}
+    i_cell = @index(Group)
+    tid = @index(Local)
+    shre = @localmem TF (WG,)
+    shim = @localmem TF (WG,)
+    @inbounds begin
+        first = cell_ranges[1, i_cell]
+        count = cell_ranges[2, i_cell]
+        cx = cell_centers[1, i_cell]
+        cy = cell_centers[2, i_cell]
+        cz = cell_centers[3, i_cell]
+        node = leaf_to_node[i_cell]
+        for n in 0:P_phi
+            for m in 0:n
+                acc_re = zero(TF); acc_im = zero(TF)
+                sgn = isodd(n + m) ? -one(TF) : one(TF)
+                k = first + tid - 1
+                while k <= first + count - 1
+                    dx = source_bodies[1, k] - cx
+                    dy = source_bodies[2, k] - cy
+                    dz = source_bodies[3, k] - cz
+                    rre, rim = FastMultipole._resident_regular_harmonic_coeff(dx, dy, dz, n, m)
+                    scale = sgn * source_bodies[5, k]
+                    acc_re += rre * scale
+                    acc_im -= rim * scale
+                    re_, im_ = ka_vortex_phi_contrib(-dx, -dy, -dz, source_bodies[6, k],
+                        source_bodies[7, k], source_bodies[8, k], n, m)
+                    acc_re += re_; acc_im += im_
+                    k += WG
+                end
+                shre[tid] = acc_re
+                shim[tid] = acc_im
+                @synchronize()
+                s = WG >> 1
+                while s >= 1
+                    if tid <= s
+                        shre[tid] += shre[tid + s]
+                        shim[tid] += shim[tid + s]
+                    end
+                    @synchronize()
+                    s >>= 1
+                end
+                if tid == 1
+                    row = FastMultipole.flat_basis_index(n, m, 1)
+                    phi[row, node] = shre[1]
+                    phi[row + 1, node] = shim[1]
+                end
+                @synchronize()
+            end
+        end
+        for n in 1:P_chi
+            for m in 0:n
+                acc_re = zero(TF); acc_im = zero(TF)
+                k = first + tid - 1
+                while k <= first + count - 1
+                    re_, im_ = ka_vortex_chi_contrib(
+                        cx - source_bodies[1, k], cy - source_bodies[2, k],
+                        cz - source_bodies[3, k], source_bodies[6, k],
+                        source_bodies[7, k], source_bodies[8, k], n, m)
+                    acc_re += re_; acc_im += im_
+                    k += WG
+                end
+                shre[tid] = acc_re
+                shim[tid] = acc_im
+                @synchronize()
+                s = WG >> 1
+                while s >= 1
+                    if tid <= s
+                        shre[tid] += shre[tid + s]
+                        shim[tid] += shim[tid + s]
+                    end
+                    @synchronize()
+                    s >>= 1
+                end
+                if tid == 1
+                    row = FastMultipole.flat_basis_index(n, m, 1)
+                    chi[row, node] = shre[1]
+                    chi[row + 1, node] = shim[1]
+                end
+                @synchronize()
+            end
+        end
+    end
+end
+
 """
     ka_launch_b2m!(state; workgroup=128)
 
 Body-to-multipole for the KA lifecycle: mirror of `_launch_cuda_b2m!`. Zeroes
-the multipole buffers, then runs one workgroup per leaf cell. Vortex sources
-require the Lamb-Helmholtz channel, exactly as the CUDA launcher does.
+the multipole buffers, then runs one workgroup per leaf cell. `Point{Source}`
+fills the phi channel (with or without Lamb-Helmholtz; chi stays zero);
+`Point{Vortex}` fills both and requires the Lamb-Helmholtz channel, exactly as
+the CUDA launcher did. Any other body type is rejected with the list of
+supported ones.
 """
 function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
         workgroup::Int=128) where {TF,B,LH}
     return ka_launch_b2m!(state, state.options.body_type; workgroup)
+end
+
+function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        ::Type{<:FastMultipole.Point{FastMultipole.Source}}; workgroup::Int=128) where {TF,B,LH}
+    ispow2(workgroup) || throw(ArgumentError(
+        "ka_launch_b2m! workgroup must be a power of two (halving tree reduction)"))
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    ncell = state.counts.n_cells
+    ncell == 0 && return state
+    backend = KA.get_backend(state.multipoles.phi)
+    kernel = _cached_kernel(ka_b2m_source_leaf_nodes_kernel!, backend, workgroup)
+    kernel(state.multipoles.phi, state.source_bodies, state.cell_centers,
+        state.cell_ranges, state.grid.leaf_to_node,
+        state.invariant_cache.basis_info.orders.P_phi, ncell, TF, Val(workgroup);
+        ndrange=ncell * workgroup)
+    return state
+end
+
+function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        ::Type{<:FastMultipole.Point{FastMultipole.Dipole}}; workgroup::Int=128) where {TF,B,LH}
+    ispow2(workgroup) || throw(ArgumentError(
+        "ka_launch_b2m! workgroup must be a power of two (halving tree reduction)"))
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    ncell = state.counts.n_cells
+    ncell == 0 && return state
+    backend = KA.get_backend(state.multipoles.phi)
+    kernel = _cached_kernel(ka_b2m_dipole_leaf_nodes_kernel!, backend, workgroup)
+    kernel(state.multipoles.phi, state.source_bodies, state.cell_centers,
+        state.cell_ranges, state.grid.leaf_to_node,
+        state.invariant_cache.basis_info.orders.P_phi, ncell, TF, Val(workgroup);
+        ndrange=ncell * workgroup)
+    return state
+end
+
+function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        ::Type{<:FastMultipole.Point{FastMultipole.SourceVortex}}; workgroup::Int=128) where {TF,B,LH}
+    LH || throw(ArgumentError(
+        "Point{SourceVortex} sources require the Lamb-Helmholtz channel; construct the " *
+        "cache with lamb_helmholtz=true"))
+    ispow2(workgroup) || throw(ArgumentError(
+        "ka_launch_b2m! workgroup must be a power of two (halving tree reduction)"))
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    ncell = state.counts.n_cells
+    ncell == 0 && return state
+    orders = state.invariant_cache.basis_info.orders
+    backend = KA.get_backend(state.multipoles.phi)
+    kernel = _cached_kernel(ka_b2m_sourcevortex_leaf_nodes_kernel!, backend, workgroup)
+    kernel(state.multipoles.phi, state.multipoles.chi, state.source_bodies,
+        state.cell_centers, state.cell_ranges, state.grid.leaf_to_node,
+        orders.P_phi, orders.P_active, ncell, TF, Val(workgroup);
+        ndrange=ncell * workgroup)
+    return state
+end
+
+#------- element B2M: filaments (src/resident_elements.jl on the device) -------#
+#
+# An element's expansion is a recurrence over its whole (n, m) triangle, so one
+# workgroup per leaf cell strides its threads over the cell's bodies, each
+# running the shared `_res_filament_b2m!` on that body's slice of a
+# capacity-sized scratch (harmonics and coefficients per body), and then
+# strides over the flat rows summing the cell's bodies into the leaf node.
+# The scratch is allocated once per state at the body capacity and reused
+# (grow-only, like the target-buffer cache), so the recurring step allocates
+# nothing.
+const _KA_ELEMENT_SCRATCH = IdDict{Any,Any}()
+
+function _ka_element_scratch(state, backend, ::Type{TF}, ndof::Integer, nh::Integer, cap::Integer) where TF
+    sc = get(_KA_ELEMENT_SCRATCH, state, nothing)
+    if sc === nothing || eltype(sc.coef) != TF || size(sc.coef, 3) < ndof || size(sc.harm, 3) < nh ||
+            size(sc.coef, 4) < cap
+        c = sc === nothing ? cap : max(cap, size(sc.coef, 4) + cld(size(sc.coef, 4), 4))
+        sc = (; coef = KA.allocate(backend, TF, 2, 2, ndof, c), harm = KA.allocate(backend, TF, 2, 2, nh, c))
+        _KA_ELEMENT_SCRATCH[state] = sc
+    end
+    return sc
+end
+
+@kernel function ka_b2m_filament_cells_kernel!(phi, chi, coef, harm, ::Val{BT},
+        @Const(source_bodies), @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
+        P, ndof_phi, ndof_chi, ncell, ::Type{TF}, ::Val{WG}, ::Val{SD}) where {BT,TF,WG,SD}
+    i_cell = @index(Group)
+    tid = @index(Local)
+    @inbounds begin
+        first = cell_ranges[1, i_cell]
+        count = cell_ranges[2, i_cell]
+        cx = cell_centers[1, i_cell]
+        cy = cell_centers[2, i_cell]
+        cz = cell_centers[3, i_cell]
+        node = leaf_to_node[i_cell]
+        v1 = 5 + SD
+        ndof = size(coef, 3)
+        k = first + tid - 1
+        while k <= first + count - 1
+            cv = FastMultipole.ResBodySlice(coef, k)
+            hv = FastMultipole.ResBodySlice(harm, k)
+            for i in 1:ndof
+                cv[1, 1, i] = zero(TF); cv[2, 1, i] = zero(TF)
+                cv[1, 2, i] = zero(TF); cv[2, 2, i] = zero(TF)
+            end
+            x0 = SVector{3,TF}(source_bodies[v1, k] - cx, source_bodies[v1 + 1, k] - cy, source_bodies[v1 + 2, k] - cz)
+            xu = SVector{3,TF}(source_bodies[v1 + 3, k] - source_bodies[v1, k],
+                               source_bodies[v1 + 4, k] - source_bodies[v1 + 1, k],
+                               source_bodies[v1 + 5, k] - source_bodies[v1 + 2, k])
+            strength = FastMultipole._res_packed_strength(source_bodies, k, Val(SD))
+            FastMultipole._res_filament_b2m!(BT, cv, hv, x0, xu, strength, P)
+            k += WG
+        end
+        @synchronize()
+        r = tid
+        while r <= 2 * ndof_phi
+            i = (r - 1) ÷ 2 + 1
+            reim = (r - 1) % 2 + 1
+            acc = zero(TF)
+            for kk in first:(first + count - 1)
+                acc += coef[reim, 1, i, kk]
+            end
+            phi[r, node] = acc
+            r += WG
+        end
+        r = tid
+        while r <= 2 * ndof_chi
+            i = (r - 1) ÷ 2 + 1
+            reim = (r - 1) % 2 + 1
+            acc = zero(TF)
+            for kk in first:(first + count - 1)
+                acc += coef[reim, 2, i, kk]
+            end
+            chi[r, node] = acc
+            r += WG
+        end
+    end
+end
+
+function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
+        ::Type{BT}; workgroup::Int=128) where {TF,B,LH,BT<:FastMultipole.Filament}
+    (BT <: FastMultipole.Filament{FastMultipole.Vortex} && !LH) && throw(ArgumentError(
+        "Filament{Vortex} sources require the Lamb-Helmholtz channel; construct the " *
+        "cache with lamb_helmholtz=true"))
+    ispow2(workgroup) || throw(ArgumentError(
+        "ka_launch_b2m! workgroup must be a power of two"))
+    fill!(state.multipoles.phi, zero(TF))
+    fill!(state.multipoles.chi, zero(TF))
+    ncell = state.counts.n_cells
+    ncell == 0 && return state
+    orders = state.invariant_cache.basis_info.orders
+    P_phi = orders.P_phi; P_chi = orders.P_active
+    P = max(P_phi, P_chi)
+    ndof = FastMultipole.harmonic_index(P, P)
+    ndof_phi = FastMultipole.harmonic_index(P_phi, P_phi)
+    ndof_chi = (P_chi >= 1 && size(state.multipoles.chi, 1) > 0) ? FastMultipole.harmonic_index(P_chi, P_chi) : 0
+    backend = KA.get_backend(state.multipoles.phi)
+    sc = _ka_element_scratch(state, backend, TF, ndof, FastMultipole._res_element_harmonics_rows(P),
+        size(state.source_bodies, 2))
+    kernel = _cached_kernel(ka_b2m_filament_cells_kernel!, backend, workgroup)
+    kernel(state.multipoles.phi, state.multipoles.chi, sc.coef, sc.harm, Val(BT),
+        state.source_bodies, state.cell_centers, state.cell_ranges, state.grid.leaf_to_node,
+        P, ndof_phi, ndof_chi, ncell, TF, Val(workgroup), Val(FastMultipole.element_strength_dims(BT));
+        ndrange=ncell * workgroup)
+    return state
+end
+
+function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState, ::Type{BT};
+        workgroup::Int=128) where BT
+    throw(ArgumentError("the KernelAbstractions device lifecycle implements body-to-multipole " *
+        "for Point{Source}, Point{Vortex}, Point{Dipole}, Point{SourceVortex} and the three Filament types; got body_type $BT"))
 end
 
 function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
@@ -5067,10 +5435,18 @@ end
         px = positions[1, i]
         py = positions[2, i]
         pz = positions[3, i]
-        # benign-race flag store: any lane observing an escape sets it
-        if !(x_min[1] <= px <= x_min[1] + box_extent[1] &&
-             x_min[2] <= py <= x_min[2] + box_extent[2] &&
-             x_min[3] <= pz <= x_min[3] + box_extent[3])
+        # benign-race flag store: any lane observing an escape sets it.
+        # Tolerate ulp-scale overshoot: a tight box built as center - h0 can sit
+        # a rounding error below the true data max (the clamp handles the key).
+        hx = x_min[1] + box_extent[1]
+        hy = x_min[2] + box_extent[2]
+        hz = x_min[3] + box_extent[3]
+        tx = 4 * eps(max(abs(x_min[1]), abs(hx)))
+        ty = 4 * eps(max(abs(x_min[2]), abs(hy)))
+        tz = 4 * eps(max(abs(x_min[3]), abs(hz)))
+        if !(x_min[1] - tx <= px <= hx + tx &&
+             x_min[2] - ty <= py <= hy + ty &&
+             x_min[3] - tz <= pz <= hz + tz)
             oob_flag[1] = Int32(1)
         end
         ix = clamp(floor(Int, (px - x_min[1]) / delta), 0, G - 1)
@@ -5713,17 +6089,27 @@ function ka_scatter_output_to_target_buffer!(target_buffer, output, body_perm,
 end
 
 # Per-system cached device scatter buffer, the generic form of
-# `_cuda_cached_target_buffer`: allocated undef once per (rows, n_bodies) layout
-# and reused, since the scatter zero-fills it anyway.
+# `_cuda_cached_target_buffer`: allocated undef and reused, since the scatter
+# zero-fills it anyway. Capacity contract (052 long-run leak, job 13508681): a
+# shedding run changes `nb` every step, and an exact-size cache then
+# reallocates every step -- the replaced device buffer survives a full step
+# before dying, gets promoted, and no major GC ever runs because device bytes
+# are invisible to the host GC heuristics, so ~rows*nb*8 bytes of dead pool
+# blocks accumulate per step. The cache instead holds a grow-only capacity
+# buffer (geometric headroom) and serves the live `nb` as a contiguous
+# column-prefix view.
 function _ka_cached_target_buffer(cache, backend, isys::Integer, ::Type{TF},
         rows::Integer, nb::Integer) where TF
     cache === nothing && return KA.allocate(backend, TF, rows, nb)
     buf = get(cache, isys, nothing)
-    if !(buf isa AbstractMatrix{TF}) || size(buf) != (rows, nb)
-        buf = KA.allocate(backend, TF, rows, nb)
+    if !(buf isa AbstractMatrix{TF}) || size(buf, 1) != rows || size(buf, 2) < nb
+        cap = buf isa AbstractMatrix{TF} && size(buf, 1) == rows ?
+            max(nb, size(buf, 2) + cld(size(buf, 2), 4)) : nb
+        buf = KA.allocate(backend, TF, rows, cap)
         cache[isys] = buf
     end
-    return buf
+    buf = buf::AbstractMatrix{TF}
+    return size(buf, 2) == nb ? buf : view(buf, :, 1:nb)
 end
 
 """
@@ -8525,9 +8911,10 @@ function ka_validate_radix_arguments(backend, target_systems, source_systems=tar
             "all source systems sharing a RadixFMMCache must report the same " *
             "strength_dims (the packed strength rows 5:4+strength_dims are shared)"))
     end
-    if BT <: FastMultipole.Point{FastMultipole.Vortex} && !LH
+    if (BT <: FastMultipole.Point{FastMultipole.Vortex} ||
+            BT <: FastMultipole.Point{FastMultipole.SourceVortex}) && !LH
         throw(ArgumentError(
-            "Point{Vortex} sources require the Lamb-Helmholtz channel; construct " *
+            "$BT sources require the Lamb-Helmholtz channel; construct " *
             "the cache with lamb_helmholtz=true (or leave it to be inferred from " *
             "has_vector_potential)"))
     end

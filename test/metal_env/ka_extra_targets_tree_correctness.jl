@@ -116,10 +116,17 @@ else
         cd_ = RadixFMMCache(sysd; expansion_order = P, ell = ell, window_classes = 64,
                             options = opts, hessian = true, device = true)
         FM.fmm!((sysd, probes_d), (sysd,), cd_; scalar_potential = false, gradient = true, hessian = (true, false))
-        gh = reduce(hcat, probes_h.gradient); gd = reduce(hcat, probes_d.gradient)
-        e = relerr(gd, gh)
-        tol = DTF === Float32 ? 3e-4 : 1e-10
-        check(e <= tol, @sprintf("device tree targets match host (%.2e, tol %.0e)", e, tol))
+        # `fmm!` sums extra targets all-pairs on the host, so `probes_h` is the
+        # exact sum, not the grid path; the like-for-like oracle for the
+        # device grid path is the host grid path on the host cache's own state.
+        gh_exact = reduce(hcat, probes_h.gradient); gd = reduce(hcat, probes_d.gradient)
+        gh_tree = zeros(DTF, 4, nt)
+        FM._host_extra_targets_tree!(gh_tree, ch.state, xt, Val(false))
+        e = relerr(gd, gh_tree[2:4, :])
+        tol = DTF === Float32 ? 3e-4 : 1e-8      # summation order differs between the two
+        check(e <= tol, @sprintf("device tree targets match the host grid path (%.2e, tol %.0e)", e, tol))
+        ex = relerr(gd, gh_exact)
+        check(ex <= 2e-3, @sprintf("device tree targets vs the exact sum %.2e (tol 2e-03)", ex))
 
         # 5. the all-pairs direct arm runs no lifecycle, so its probes must not
         # read local expansions or near lists (they are stale there); they are

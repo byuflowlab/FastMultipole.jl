@@ -40,6 +40,8 @@ jobs:
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
+        env:
+          FASTMULTIPOLE_GPU_TESTS: "0"   # the KA device suites need a GPU; the macOS runner is Apple but has none
   docs:
     name: Documentation
     runs-on: ubuntu-latest

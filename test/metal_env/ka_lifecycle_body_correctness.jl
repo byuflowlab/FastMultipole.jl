@@ -34,11 +34,9 @@
 # plus the sequencing between them -- which is where a silent wrong answer of
 # the kind that bit the M2L branch would show up.
 #
-# Body type: `Point{Vortex}` with Lamb-Helmholtz on. Not a preference -- it is
-# the only type with a KA B2M port (`ka_launch_b2m!` has exactly one body-type
-# method, ext:2684), and it is what FLOWVPM runs. A `Point{Source}` case throws
-# a `MethodError` at the B2M stage; that gap is deliberate and out of scope
-# here, since the migration targets FLOWVPM's vortex lifecycle.
+# Body types: `Point{Vortex}` with Lamb-Helmholtz on (what FLOWVPM runs), and
+# `Point{Source}` with and without the channel (the library default body, the
+# gravitational test system), each against the same host lifecycle.
 include("ka_backend.jl")
 using FastMultipole, Random, Test
 using FastMultipole.StaticArrays
@@ -47,6 +45,7 @@ const FM = FastMultipole
 
 # the repo's own vortex system + generator (correct traits, body_type Point{Vortex})
 include(joinpath(@__DIR__, "..", "vortex.jl"))
+include(joinpath(@__DIR__, "..", "gravitational.jl"))   # Point{Source} system
 
 if !dev_functional()
     println("$(DEV_NAME) not functional; skipping")
@@ -199,5 +198,169 @@ for (ci, (P, ell, n)) in pairs(CASES)
         "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
 end
 
-println("\nka_lifecycle_body! vs run_host_radix_lifecycle!: $(npass[])/$(length(CASES)) pass")
+println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (Point{Vortex}): $(npass[])/$(length(CASES)) pass")
+nfail[] == 0 || error("lifecycle gate failed (vortex)")
+
+# --- Point{Source}: the gravitational system, with and without Lamb-Helmholtz ---
+npass[] = 0; nfail[] = 0; ncase = 0
+for (ci, (P, ell, n)) in pairs(CASES), lh in (false, true)
+    global ncase += 1
+    t_case = time()
+    TF = Float32
+    Random.seed!(4500 + ci)
+    bodies = rand(TF, 8, n)
+    bodies[4, :] ./= TF(n^(1 / 3) * 2); bodies[4, :] .*= TF(0.1)
+    bodies[5, :] ./= TF(n)
+    system = Gravitational(bodies)
+    grid = FM.RadixGrid(system, ell)
+    list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
+        FM.ParentNeighborM2L(), grid)
+    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+        m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Source})
+    hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
+    local ds
+    try
+        ds = dev_state(hs, DEV_BACKEND)
+    catch err
+        nfail[] += 1
+        println("source case $ci LH=$lh (P=$P, ell=$ell, n=$n): device state build FAILED: $err")
+        continue
+    end
+    FM.run_host_radix_lifecycle!(hs)
+    try
+        ext.ka_lifecycle_body!(ds)
+    catch err
+        nfail[] += 1
+        println("source case $ci LH=$lh (P=$P, ell=$ell, n=$n): ka_lifecycle_body! THREW: $err")
+        continue
+    end
+    e_mul = relerr(ds.multipoles.phi, hs.multipoles.phi)
+    e_loc = relerr(ds.locals.phi, hs.locals.phi)
+    e_out = relerr(ds.output, hs.output)
+    ok = e_mul < TOL && e_loc < TOL && e_out < TOL
+    ok ? (npass[] += 1) : (nfail[] += 1)
+    println("[$(round(Int, time() - t_case))s] source case $ci LH=$lh (P=$P, ell=$ell, n=$n): ", ok ? "PASS" : "FAIL",
+        "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
+end
+println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (Point{Source}): $(npass[])/$ncase pass")
+nfail[] == 0 || error("lifecycle gate failed (source)")
+
+# --- Point{Dipole} and Point{SourceVortex}: packed-matrix systems ---
+struct PackedPoints{TF,BT}
+    data::Matrix{TF}
+end
+Base.eltype(::PackedPoints{TF}) where TF = TF
+FM.get_n_bodies(s::PackedPoints) = size(s.data, 2)
+FM.data_per_body(s::PackedPoints) = size(s.data, 1)
+FM.strength_dims(s::PackedPoints) = size(s.data, 1) - 4
+FM.get_position(s::PackedPoints{TF}, i) where TF = SVector{3,TF}(s.data[1, i], s.data[2, i], s.data[3, i])
+FM.body_type(::PackedPoints{TF,BT}) where {TF,BT} = BT
+FM.has_vector_potential(::PackedPoints{TF,BT}) where {TF,BT} = BT <: FM.Point{FM.SourceVortex}
+FM.source_system_to_buffer!(buffer, i_buffer, s::PackedPoints, i_body) =
+    (buffer[1:size(s.data, 1), i_buffer] .= view(s.data, :, i_body))
+npass[] = 0; nfail[] = 0; ncase = 0
+for (ci, (P, ell, n)) in pairs(CASES),
+        (label, BT, dpb, lh) in (("dipole", FM.Point{FM.Dipole}, 7, false),
+                                 ("dipole LH", FM.Point{FM.Dipole}, 7, true),
+                                 ("source-vortex", FM.Point{FM.SourceVortex}, 8, true))
+    global ncase += 1
+    t_case = time()
+    TF = Float32
+    Random.seed!(4600 + ci)
+    data = rand(TF, dpb, n); data[4, :] .= TF(1e-3); data[5:end, :] .= (data[5:end, :] .- TF(0.5)) ./ TF(n)
+    system = PackedPoints{TF,BT}(data)
+    grid = FM.RadixGrid(system, ell)
+    list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
+        FM.ParentNeighborM2L(), grid)
+    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+        m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=BT)
+    hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
+    local ds
+    try
+        ds = dev_state(hs, DEV_BACKEND)
+    catch err
+        nfail[] += 1
+        println("$label case $ci (P=$P, ell=$ell, n=$n): device state build FAILED: $err")
+        continue
+    end
+    FM.run_host_radix_lifecycle!(hs)
+    try
+        ext.ka_lifecycle_body!(ds)
+    catch err
+        nfail[] += 1
+        println("$label case $ci (P=$P, ell=$ell, n=$n): ka_lifecycle_body! THREW: $err")
+        continue
+    end
+    e_mul = relerr(ds.multipoles.phi, hs.multipoles.phi)
+    e_loc = relerr(ds.locals.phi, hs.locals.phi)
+    e_out = relerr(ds.output, hs.output)
+    ok = e_mul < TOL && e_loc < TOL && e_out < TOL
+    ok ? (npass[] += 1) : (nfail[] += 1)
+    println("[$(round(Int, time() - t_case))s] $label case $ci (P=$P, ell=$ell, n=$n): ", ok ? "PASS" : "FAIL",
+        "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
+end
+println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (Point{Dipole}, Point{SourceVortex}): $(npass[])/$ncase pass")
 nfail[] == 0 || error("$(nfail[]) case(s) failed")
+
+# --- straight filaments: packed systems with vertices ---
+struct PackedFilaments{TF,BT}
+    data::Matrix{TF}
+end
+Base.eltype(::PackedFilaments{TF}) where TF = TF
+FM.get_n_bodies(s::PackedFilaments) = size(s.data, 2)
+FM.data_per_body(s::PackedFilaments) = size(s.data, 1)
+FM.strength_dims(::PackedFilaments{TF,BT}) where {TF,BT} = FM.element_strength_dims(BT)
+FM.get_position(s::PackedFilaments{TF}, i) where TF = SVector{3,TF}(s.data[1, i], s.data[2, i], s.data[3, i])
+FM.body_type(::PackedFilaments{TF,BT}) where {TF,BT} = BT
+FM.has_vector_potential(::PackedFilaments{TF,BT}) where {TF,BT} = BT <: FM.Filament{FM.Vortex}
+FM.source_system_to_buffer!(buffer, i_buffer, s::PackedFilaments, i_body) =
+    (buffer[1:size(s.data, 1), i_buffer] .= view(s.data, :, i_body))
+npass[] = 0; nfail[] = 0; ncase = 0
+for (ci, (P, ell, n)) in pairs(CASES),
+        (label, BT, sd, lh) in (("source filament", FM.Filament{FM.Source}, 1, false),
+                               ("dipole filament", FM.Filament{FM.Dipole}, 3, false),
+                               ("vortex filament", FM.Filament{FM.Vortex}, 3, true))
+    global ncase += 1
+    t_case = time()
+    TF = Float32
+    Random.seed!(4700 + ci)
+    mids = rand(TF, 3, n); dirs = randn(TF, 3, n); dirs ./= sqrt.(sum(dirs .^ 2; dims = 1))
+    len = TF(0.004)
+    data = zeros(TF, 4 + sd + 6, n)
+    data[1:3, :] .= mids; data[4, :] .= len / 2
+    data[5:4+sd, :] .= (rand(TF, sd, n) .- TF(0.5)) ./ TF(n)
+    BT <: FM.Filament{FM.Vortex} && (data[5:7, :] .= dirs .* ((rand(TF, 1, n) .- TF(0.5)) ./ TF(n)))
+    data[5+sd:7+sd, :] .= mids .- dirs .* (len / 2); data[8+sd:10+sd, :] .= mids .+ dirs .* (len / 2)
+    system = PackedFilaments{TF,BT}(data)
+    grid = FM.RadixGrid(system, ell)
+    list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
+        FM.ParentNeighborM2L(), grid)
+    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+        m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=BT)
+    hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
+    local ds
+    try
+        ds = dev_state(hs, DEV_BACKEND)
+    catch err
+        nfail[] += 1
+        println("$label case $ci (P=$P, ell=$ell, n=$n): device state build FAILED: $err")
+        continue
+    end
+    FM.run_host_radix_lifecycle!(hs)
+    try
+        ext.ka_lifecycle_body!(ds)
+    catch err
+        nfail[] += 1
+        println("$label case $ci (P=$P, ell=$ell, n=$n): ka_lifecycle_body! THREW: $err")
+        continue
+    end
+    e_mul = relerr(ds.multipoles.phi, hs.multipoles.phi)
+    e_loc = relerr(ds.locals.phi, hs.locals.phi)
+    e_out = relerr(ds.output, hs.output)
+    ok = e_mul < TOL && e_loc < TOL && e_out < TOL
+    ok ? (npass[] += 1) : (nfail[] += 1)
+    println("[$(round(Int, time() - t_case))s] $label case $ci (P=$P, ell=$ell, n=$n): ", ok ? "PASS" : "FAIL",
+        "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
+end
+println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (filaments): $(npass[])/$ncase pass")
+nfail[] == 0 || error("$(nfail[]) filament case(s) failed")

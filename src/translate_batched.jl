@@ -4399,6 +4399,10 @@ function _dense_m2l_limit_error(strategy::DenseTranslationM2L, D::Int,
         "when slabs are material; chunking does not reduce operator storage."))
 end
 
+_unwrap_task_error(err::CompositeException) = isempty(err.exceptions) ? err : _unwrap_task_error(first(err.exceptions))
+_unwrap_task_error(err::TaskFailedException) = _unwrap_task_error(err.task.result)
+_unwrap_task_error(err) = err
+
 function _check_dense_m2l_operator_finite!(K::AbstractMatrix{TF},
         basis_info::OperatorBasisInfo{B,LH}, offset) where {TF,B,LH}
     all(isfinite, K) && return K
@@ -4453,16 +4457,22 @@ function ResidentM2LDensePlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     # particle count)
     nops = length(operator_offsets)
     nt = max(1, min(Threads.nthreads(), nops))
-    Threads.@threads :static for t in 1:nt
-        workspace = DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
-        @inbounds for i in t:nt:nops
-            offset = operator_offsets[i]
-            delta = TF(cell_width) * SVector{3,TF}(offset)
-            r, theta, phi = cartesian_to_spherical(delta)
-            build_dense_m2l_operator!(operators[i], r, theta, phi, invariant, workspace,
-                Val(LH))
-            _check_dense_m2l_operator_finite!(operators[i], basis_info, offset)
+    try
+        Threads.@threads :static for t in 1:nt
+            workspace = DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
+            @inbounds for i in t:nt:nops
+                offset = operator_offsets[i]
+                delta = TF(cell_width) * SVector{3,TF}(offset)
+                r, theta, phi = cartesian_to_spherical(delta)
+                build_dense_m2l_operator!(operators[i], r, theta, phi, invariant, workspace,
+                    Val(LH))
+                _check_dense_m2l_operator_finite!(operators[i], basis_info, offset)
+            end
         end
+    catch err
+        # the validation error is the caller's contract (an ArgumentError, not a
+        # task wrapper): unwrap what the threaded loop wrapped it in
+        rethrow(_unwrap_task_error(err))
     end
     class_operator = hierarchical ?
         [mod1(i, hno) for i in 1:nclasses] : collect(1:nclasses)

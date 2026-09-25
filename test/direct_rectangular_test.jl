@@ -591,8 +591,7 @@ end
     if !cuda_ok
         @info "CUDA not functional; skipping the device parity layer"
     else
-        FMR.load_cuda_radix_lifecycle!() || error(
-            "CUDA is functional but load_cuda_radix_lifecycle!() failed")
+        @eval using KernelAbstractions   # loads the device extension (FastMultipoleKAExt)
         Random.seed!(51151)
         # worst per-target relative error: a single branch-flipped target must
         # fail the gate rather than be diluted by a global norm
