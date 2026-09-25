@@ -3449,6 +3449,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     _assert_radix_targets_are_sources(targets, sources)
     # task 048: the SFS pass reads the 9-component J from the 13-row output
     # and the raw smoothing radius sigma from packed row 8
+    0 <= ell <= RADIX_GRID_MAX_ELL || throw(ArgumentError(
+        "RadixFMMCache ell=$ell must lie in 0:$(RADIX_GRID_MAX_ELL) (64-bit Morton keys)"))
     sfs && !hessian && throw(ArgumentError(
         "RadixFMMCache(sfs=true) requires hessian=true (the SFS pass reads " *
         "the velocity Jacobian from the 13-row output)"))

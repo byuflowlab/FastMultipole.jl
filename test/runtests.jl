@@ -113,7 +113,13 @@ include("fgs_coloring_test.jl")
 # FASTMULTIPOLE_GPU_TEST_PROJECT points the suites at another env (the H200
 # checkout runs them under ~/fmauto_env).
 gpu_present = Sys.isapple() || Sys.which("nvidia-smi") !== nothing
-if get(ENV, "FASTMULTIPOLE_GPU_TESTS", gpu_present ? "1" : "0") == "1"
+# test/metal_env/Project.toml declares Metal only; an NVIDIA machine must point
+# FASTMULTIPOLE_GPU_TEST_PROJECT at an environment with CUDA (see docs/src/gpu.md)
+gpu_env_ok = Sys.isapple() || haskey(ENV, "FASTMULTIPOLE_GPU_TEST_PROJECT")
+if get(ENV, "FASTMULTIPOLE_GPU_TESTS", gpu_present ? "1" : "0") == "1" && !gpu_env_ok
+    @warn "GPU detected but FASTMULTIPOLE_GPU_TEST_PROJECT is unset: the device suites need an environment with CUDA; skipping them (set FASTMULTIPOLE_GPU_TESTS=0 to silence)"
+end
+if get(ENV, "FASTMULTIPOLE_GPU_TESTS", gpu_present ? "1" : "0") == "1" && gpu_env_ok
     @testset "GPU correctness suites" begin
         @test success(`bash $(joinpath(@__DIR__, "metal_env", "run_suites.sh"))`)
     end

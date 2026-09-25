@@ -2373,6 +2373,18 @@ _emits_potential(::VortexSheetPanelKernel) = false
 _emits_potential(::SingularVortex) = false
 _emits_potential(::AbstractRegularizedVortex) = false
 
+"""
+    CUDARadixTransferCounters
+
+Host-device transfer telemetry of a device-resident [`RadixFMMCache`](@ref)
+(the name is historical; it serves the KernelAbstractions path). Counts, per
+cache lifetime: `body_uploads` (packed source buffers sent to the device),
+`influence_downloads` (output buffers read back), `expansion_host_copies`
+(multipole/local slabs mirrored to the host), `route_uploads` (M2L route tables)
+and `operator_uploads` (translation operator tables). Read from
+`cache.state.counters`; used by the device tests to assert the residency
+contract (no per-step re-upload of static data).
+"""
 mutable struct CUDARadixTransferCounters
     body_uploads::Int
     influence_downloads::Int

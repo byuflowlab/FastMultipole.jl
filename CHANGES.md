@@ -15,8 +15,11 @@
   `RegularizedVortex`, `PartitionedVortex`, `TwoPassVortex`, `RectangularGaussianErfVortex`,
   the filament nearfield kernels `SourceFilamentKernel`, `DipoleFilamentKernel`, `VortexFilamentKernel`
   and the panel nearfield kernels `SourcePanelKernel`, `DipolePanelKernel`, `SourceDipolePanelKernel`, `VortexSheetPanelKernel`.
-- `RectangularPanelInfluence` accepts Float32 (its singularity guards scale with the
-  precision); `VortexSheetPanelKernel(; order=3)` selects a 13-point degree-7 Dunavant rule.
+- `RectangularPanelInfluence` accepts Float32 (its singularity guards and the LineGauss
+  series/axis crossovers scale with the precision; LineGauss in Float32 tracks Float64 to
+  about 3e-5 in velocity and 2e-3 in gradient of the field scale near the segment axis); `VortexSheetPanelKernel(; order=3)`
+  selects a 13-point degree-7 Dunavant rule. `direct_rectangular!` runs on device arrays
+  through the KernelAbstractions extension (all-pairs, one work-item per target).
 - Minimum Julia version 1.11.
 
 ## v0.1.0 - 2024 August

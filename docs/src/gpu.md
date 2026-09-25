@@ -22,7 +22,8 @@ grid of leaf cells, and a [`RadixFMMCache`](@ref) built once at a capacity
 and reused every step, with the bodies, the expansions and the results all
 living on the device. It is the path for a time-stepping code that keeps its
 particles on the GPU (FLOWVPM is the reference consumer): after construction a
-step moves no per-body data between host and device and allocates nothing.
+step moves no per-body data between host and device and, after one warm-up call
+per output layout, allocates nothing.
 
 It is not the tree-based `fmm!(system)` of the [Quick Start](quickstart.md)
 made faster; that path stays on the host. Which bodies the device path
@@ -58,9 +59,9 @@ the output buffer back into the system's own arrays, addressing rows through
 the derivative-switch accessors rather than fixed indices:
 
 ```julia
-using GPUArraysCore: AbstractGPUMatrix      # one signature for CUDA and Metal
+using GPUArraysCore: AnyGPUMatrix      # one signature for CUDA and Metal, views included
 
-function FastMultipole.source_to_buffer!(buf::AbstractGPUMatrix, sys::MySystem, sort_index)
+function FastMultipole.source_to_buffer!(buf::AnyGPUMatrix, sys::MySystem, sort_index)
     buf[1:3, :] .= sys.positions
     buf[4, :]   .= sys.radii
     buf[5:7, :] .= sys.strengths           # rows 5:4+strength_dims
@@ -68,7 +69,7 @@ function FastMultipole.source_to_buffer!(buf::AbstractGPUMatrix, sys::MySystem, 
     return buf
 end
 
-function FastMultipole.buffer_to_target!(sys::MySystem, out::AbstractGPUMatrix, switch, sort_index)
+function FastMultipole.buffer_to_target!(sys::MySystem, out::AnyGPUMatrix, switch, sort_index)
     g = FastMultipole.gradient_range(switch)
     isempty(g) || (sys.velocity .= view(out, g, :))
     return sys

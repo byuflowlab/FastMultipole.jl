@@ -175,8 +175,10 @@ capacity-sized buffers, so:
   particles is just the consumer updating its own arrays and the value
   returned by `get_n_bodies` — any `1 ≤ n ≤ max_n_bodies` is valid at any
   step.
-- **Zero per-step allocation.** After construction, `fmm!` mutates only the
-  valid prefixes of framework-owned buffers. Consumer hooks must likewise be
+- **Zero steady-state allocation.** After construction and one warm-up call per
+  requested output layout (target, SFS and dsigma buffers are allocated lazily on
+  first use of each switch combination), `fmm!` mutates only the valid prefixes
+  of framework-owned buffers. Consumer hooks must likewise be
   steady-state allocation-free (broadcasts into existing device arrays,
   kernels, `copyto!` — no fresh `CuArray`s per step).
 - **Out-of-box bodies throw.** A body outside the cache's fixed box raises
@@ -204,8 +206,8 @@ recenter!(cache, systems; bounds=nothing, padding=0.05)
   side added on each face: $x_{\min} = \mathrm{lo} - p\,L_{\text{tight}}$ and
   $L = (1 + 2p)\,L_{\text{tight}}$. Caller-supplied `bounds` are final and not
   padded.
-- The operation performs **no allocation** after cache construction, does not
-  run B2M, and delivers no output; the following `fmm!` performs the ordinary
+- The operation allocates a replacement cache and swaps it in (transiently about
+  twice the cache memory; the old one is released), does not run B2M, and delivers no output; the following `fmm!` performs the ordinary
   pack/tree/route refresh. Invalid inputs (empty systems, non-finite bounds,
   nonpositive `L`, negative padding, changed system count, live count above
   capacity) throw `ArgumentError` without mutating the cache.

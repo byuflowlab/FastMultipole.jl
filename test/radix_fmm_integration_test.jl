@@ -418,3 +418,9 @@ end
     @test_throws ArgumentError RadixFMMCache(dev_sys;
         bounds=(origin, (1.0, -1.0, 1.0)))
 end
+
+@testset "RadixFMMCache ell validation" begin
+    sys = generate_gravitational(1, 16)
+    @test_throws ArgumentError RadixFMMCache(sys; ell = -1)
+    @test_throws ArgumentError RadixFMMCache(sys; ell = FastMultipole.RADIX_GRID_MAX_ELL + 1)
+end

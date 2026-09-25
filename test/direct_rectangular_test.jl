@@ -817,3 +817,29 @@ end
         end
     end
 end
+
+@testset "direct rectangular: LineGauss in Float32" begin
+    # the Float32 arm (typed constants, loop powers, precision-scaled crossovers)
+    # against Float64 on the same rounded inputs, scaled by the field maximum of
+    # the set: targets from 1e-6 to 0.3 of a unit box off segments of core 0.05
+    Random.seed!(41)
+    sigma = 0.05
+    eu = 0.0; eg = 0.0; umax = 0.0; gmax = 0.0
+    for i in 1:3000
+        x1 = rand(SVector{3,Float64}); x2 = x1 + 0.2 * rand(SVector{3,Float64})
+        off = (1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 0.3)[rand(1:6)]
+        t = x1 + rand() * (x2 - x1) + off * randn(SVector{3,Float64})
+        r1f = Float32.(x1 - t); r2f = Float32.(x2 - t); sf = Float32(sigma)
+        r1 = Float64.(r1f); r2 = Float64.(r2f)
+        u64 = FastMultipole._rect_bound_vortex_velocity(r1, r2, Float64(sf), Val(4))
+        g64 = FastMultipole._rect_linegauss_gradient(r1, r2, Float64(sf))
+        u32 = FastMultipole._rect_bound_vortex_velocity(r1f, r2f, sf, Val(4))
+        g32 = FastMultipole._rect_linegauss_gradient(r1f, r2f, sf)
+        @test eltype(u32) == Float32 && eltype(g32) == Float32
+        @test all(isfinite, u32) && all(isfinite, g32)
+        eu = max(eu, maximum(abs.(u32 .- u64))); eg = max(eg, maximum(abs.(g32 .- g64)))
+        umax = max(umax, maximum(abs.(u64))); gmax = max(gmax, maximum(abs.(g64)))
+    end
+    @test eu <= 1e-4 * umax
+    @test eg <= 5e-3 * gmax
+end

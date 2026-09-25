@@ -14,7 +14,7 @@
 # The functors below therefore emit U (+J when `gradient=true`) and no
 # potential.
 #
-# API (host here; CUDA methods ride the lazy load in translate_batched_cuda.jl):
+# API (host here; device-array methods live in ext/FastMultipoleKAExt.jl):
 #
 #   direct_rectangular!(out, targets, functor, sources; gradient=false)
 #
@@ -145,8 +145,8 @@ end
     reg == 4 && return Val(4)
     # unknown codes throw — falling through to Vatistas would silently
     # change the physics
-    reg >= 5 && throw(ArgumentError("filament regularization code $reg " *
-        "is not supported by the rectangular-influence kernel"))
+    (reg >= 5 || reg <= 0) && throw(ArgumentError("filament regularization code $reg " *
+        "is not supported by the rectangular-influence kernel (1 Vatistas, 2 compact, 3 Gaussian, 4 LineGauss)"))
     return Val(1)
 end
 
@@ -548,48 +548,59 @@ end
 # fallback and CUDA device agree exactly; it differs from the FLOWPanel host
 # port (SpecialFunctions.erf) by ulps only, amplified to ≤ ~5e-8 relative by
 # the q̃-cancellation conditioning on distant axial-ish configs (k03 P3).
-# All helper arguments are σ-scaled (σ ≡ core_size); guard thresholds and
-# series truncations are Float64-derived (a Float32 port needs re-derivation;
-# the RectangularPanelInfluence contract is Float64-only anyway).
+# All helper arguments are σ-scaled (σ ≡ core_size). Every constant is typed on
+# the argument type and integer powers go through _rect_ipow (a loop, not
+# pow_body), so the arm compiles for Float32 on Metal; the guard thresholds
+# are relative and keep their Float64-derived values. Float32 tracks Float64
+# to about 1e-4 relative through the series branches.
 
 const _RECT_LG_SQ2OPI = 0.7978845608028654   # sqrt(2/pi)
 const _RECT_LG_SMALL_R = 0.125
 
 # blob velocity function g(t) (odd in t), series-guarded as t → 0
-@inline function _rect_lg_gfun(t)
+# x^n for a runtime integer n as a plain loop (pow_body promotes to Float64)
+@inline function _rect_ipow(x::T, n::Integer) where T
+    r = one(T)
+    for _ in 1:n
+        r *= x
+    end
+    return r
+end
+
+@inline function _rect_lg_gfun(t::T) where T
     at = abs(t)
-    at >= 9.3 && return copysign(one(t), t)   # deviation < 2e-18
-    if at < 0.125
+    at >= T(9.3) && return copysign(one(t), t)   # deviation < 2e-18
+    if at < T(0.125)
         t2 = t * t
         term = t * t2 / 3
         s = term
         for m in 1:12
-            term *= -t2 * (2m + 1) / (2m * (2m + 3))
+            term *= -t2 * T(2m + 1) / T(2m * (2m + 3))
             s += term
         end
-        return _RECT_LG_SQ2OPI * s
+        return T(_RECT_LG_SQ2OPI) * s
     end
-    return _rect_erf(t / sqrt(2)) - _RECT_LG_SQ2OPI * t * exp(-t * t / 2)
+    return _rect_erf(t / sqrt(T(2))) - T(_RECT_LG_SQ2OPI) * t * exp(-t * t / 2)
 end
 
 # on-axis antiderivative ψ (odd, ψ(0) = 0): M_axis = ψ(ẑ1) − ψ(ẑ2)
-@inline function _rect_lg_psi(z)
+@inline function _rect_lg_psi(z::T) where T
     z == 0 && return zero(z)
-    if abs(z) < 0.125
+    if abs(z) < T(0.125)
         z2 = z * z
-        return _RECT_LG_SQ2OPI * z * (1 / 3 - z2 / 30 + z2^2 / 280 -
-                                      z2^3 / 3024 + z2^4 / 38016 - z2^5 / 549120)
+        return T(_RECT_LG_SQ2OPI) * z * (one(T) / 3 - z2 / 30 + z2^2 / 280 -
+                                         z2^3 / 3024 + z2^4 / 38016 - z2^5 / 549120)
     end
-    return _RECT_LG_SQ2OPI * (z / 2) * exp(-z * z / 2) -
+    return T(_RECT_LG_SQ2OPI) * (z / 2) * exp(-z * z / 2) -
            _rect_lg_gfun(z) / (2 * z * z) + _rect_lg_gfun(z) / 2
 end
 
 # g(R)/R³ including its finite R = 0 limit (gradient axial factor)
-@inline function _rect_lg_kfun(R)
-    if R < 0.125
+@inline function _rect_lg_kfun(R::T) where T
+    if R < T(0.125)
         r2 = R * R
-        return _RECT_LG_SQ2OPI * (1 / 3 - r2 / 10 + r2^2 / 56 -
-                                  r2^3 / 432 + r2^4 / 4224 - r2^5 / 49920)
+        return T(_RECT_LG_SQ2OPI) * (one(T) / 3 - r2 / 10 + r2^2 / 56 -
+                                     r2^3 / 432 + r2^4 / 4224 - r2^5 / 49920)
     end
     return _rect_lg_gfun(R) / R^3
 end
@@ -599,48 +610,57 @@ end
 # cancellation in N = ĥ²·M — both ≤ ~2.5e-8 at ĥ² = 1e-7. Do NOT scale by
 # min ẑ² (the pre-fix form silently dropped the O(ĥ²) correction for long
 # segments).
-@inline _rect_lg_axis_guard(ĥ2, ẑ1, ẑ2) =
-    ĥ2 < 1e-7 && ẑ1 != 0 && ẑ2 != 0
+# The crossover scales with the precision: eps/ĥ² cancellation in the closed
+# form against the O(ĥ²) axis-limit truncation meets at ĥ² ~ sqrt(eps), so
+# Float32 switches at 3e-4 (error floor ~3e-4 relative there).
+@inline _rect_lg_axis_h2(::Type{Float64}) = 1e-7
+@inline _rect_lg_nh_tol(::Type{Float64}) = 1e-10
+@inline _rect_lg_nh_tol(::Type{T}) where T = T(1e-4)
+@inline _rect_lg_axis_h2(::Type{T}) where T = T(3e-4)
+@inline _rect_lg_axis_guard(ĥ2::T, ẑ1, ẑ2) where T =
+    ĥ2 < _rect_lg_axis_h2(T) && ẑ1 != 0 && ẑ2 != 0
 
 # wholly-small configuration: term-by-term integral of the convolution;
 # returns M and the radial-gradient factor D = M + 2ĥ²·∂M/∂ĥ². binomial(m,k)
 # is built incrementally in Float64 (exact for m ≤ 12, keeps Base.binomial's
 # Int branch/throw machinery off the device).
-function _rect_lg_small_radius_MD(ẑ1, ẑ2, ĥ2)
+function _rect_lg_small_radius_MD(ẑ1::T, ẑ2::T, ĥ2::T) where T
     M = zero(ĥ2)
     dM = zero(ĥ2)
-    coeff = 1 / 3
+    coeff = one(T) / 3
     for m in 0:12
         Im = zero(ĥ2)
         dIm = zero(ĥ2)
         bc = one(ĥ2)   # C(m,0)
         for k in 0:m
             p = m - k
-            dzpow = (ẑ1^(2k + 1) - ẑ2^(2k + 1)) / (2k + 1)
-            Im += bc * ĥ2^p * dzpow
-            p > 0 && (dIm += bc * p * ĥ2^(p - 1) * dzpow)
-            bc = bc * (m - k) / (k + 1)   # C(m,k+1), exact in Float64
+            dzpow = (_rect_ipow(ẑ1, 2k + 1) - _rect_ipow(ẑ2, 2k + 1)) / (2k + 1)
+            Im += bc * _rect_ipow(ĥ2, p) * dzpow
+            p > 0 && (dIm += bc * p * _rect_ipow(ĥ2, p - 1) * dzpow)
+            bc = bc * (m - k) / (k + 1)   # C(m,k+1), exact (m <= 12) in Float32 and Float64
         end
         M += coeff * Im
         dM += coeff * dIm
-        coeff *= -(2m + 3) / (2 * (m + 1) * (2m + 5))
+        coeff *= -T(2m + 3) / T(2 * (m + 1) * (2m + 5))
     end
-    M *= _RECT_LG_SQ2OPI
-    return M, M + 2ĥ2 * _RECT_LG_SQ2OPI * dM
+    M *= T(_RECT_LG_SQ2OPI)
+    return M, M + 2ĥ2 * T(_RECT_LG_SQ2OPI) * dM
 end
 
 # one endpoint in the small-radius region: split the integral at |ẑ| = SMALL_R
-@inline _rect_lg_endpoint_split_guard(ĥ2, ẑ1, ẑ2, R̂1, R̂2) =
-    ĥ2 < 1e-8 * _RECT_LG_SMALL_R^2 && min(abs(ẑ1), abs(ẑ2)) < _RECT_LG_SMALL_R &&
+@inline _rect_lg_split_h2(::Type{Float64}) = 1e-8
+@inline _rect_lg_split_h2(::Type{T}) where T = T(3e-4)
+@inline _rect_lg_endpoint_split_guard(ĥ2::T, ẑ1, ẑ2, R̂1, R̂2) where T =
+    ĥ2 < _rect_lg_split_h2(T) * T(_RECT_LG_SMALL_R)^2 && min(abs(ẑ1), abs(ẑ2)) < _RECT_LG_SMALL_R &&
     max(R̂1, R̂2) >= _RECT_LG_SMALL_R
 
-function _rect_lg_endpoint_split_MD(ẑ1, ẑ2, ĥ2)
+function _rect_lg_endpoint_split_MD(ẑ1::T, ẑ2::T, ĥ2::T) where T
     if abs(ẑ1) < _RECT_LG_SMALL_R
-        split = -_RECT_LG_SMALL_R
+        split = -T(_RECT_LG_SMALL_R)
         Mc, Dc = _rect_lg_small_radius_MD(ẑ1, split, ĥ2)
         Mf = _rect_lg_psi(split) - _rect_lg_psi(ẑ2)
     else
-        split = _RECT_LG_SMALL_R
+        split = T(_RECT_LG_SMALL_R)
         Mc, Dc = _rect_lg_small_radius_MD(split, ẑ2, ĥ2)
         Mf = _rect_lg_psi(ẑ1) - _rect_lg_psi(split)
     end
@@ -648,7 +668,7 @@ function _rect_lg_endpoint_split_MD(ẑ1, ẑ2, ĥ2)
 end
 
 # M = N/ĥ² with u = c·M/(4π σ² L); guarded near the axis and endpoints
-function _rect_lg_M(ẑ1, ẑ2, ĥ2, R̂1, R̂2)
+function _rect_lg_M(ẑ1::T, ẑ2::T, ĥ2::T, R̂1::T, R̂2::T) where T
     if ĥ2 == 0
         return _rect_lg_psi(ẑ1) - _rect_lg_psi(ẑ2)
     elseif max(R̂1, R̂2) < _RECT_LG_SMALL_R
@@ -663,9 +683,10 @@ function _rect_lg_M(ẑ1, ẑ2, ĥ2, R̂1, R̂2)
     # cancellation-reduced closed form: the endpoint Gaussians inside the
     # four g functions cancel exactly — 4 erf + 1 exp per edge
     G = exp(-ĥ2 / 2)
-    N = ẑ1 * _rect_erf(R̂1 / sqrt(2)) / R̂1 -
-        ẑ2 * _rect_erf(R̂2 / sqrt(2)) / R̂2 -
-        G * (_rect_erf(ẑ1 / sqrt(2)) - _rect_erf(ẑ2 / sqrt(2)))
+    s2 = sqrt(T(2))
+    N = ẑ1 * _rect_erf(R̂1 / s2) / R̂1 -
+        ẑ2 * _rect_erf(R̂2 / s2) / R̂2 -
+        G * (_rect_erf(ẑ1 / s2) - _rect_erf(ẑ2 / s2))
     return N / ĥ2
 end
 
@@ -704,9 +725,11 @@ end
     ĥ = sqrt(ĥ2)
     hvec = -r1 - (σ * ẑ1) * that      # h n̂ = (x − P1) − z1 t̂
     nh = sqrt(hvec[1]*hvec[1] + hvec[2]*hvec[2] + hvec[3]*hvec[3])
-    if nh <= T(1e-10) * σ * max(R̂1, R̂2)
-        # transverse direction lost to projection roundoff (can be exactly
-        # zero → NaN): collapse to the deterministic axis-limit skew form
+    # transverse direction lost to projection roundoff (can be exactly zero →
+    # NaN): collapse to the deterministic axis-limit skew form. The direction
+    # error of n̂ is eps·R̂/nh, so the guard scales with the precision (Float32:
+    # 1e-4, direction error ≤ ~6e-4, transverse terms are O(ĥ) there anyway).
+    if nh <= _rect_lg_nh_tol(T) * σ * max(R̂1, R̂2)
         return (C * M) * _rect_lg_skewmat(that)
     end
     n̂ = hvec / nh
@@ -727,7 +750,7 @@ end
     else
         G = exp(-ĥ2 / 2)
         brk = -ẑ1 * k1 + ẑ2 * k2 +
-              G * (_rect_erf(ẑ1 / sqrt(2)) - _rect_erf(ẑ2 / sqrt(2)))
+              G * (_rect_erf(ẑ1 / sqrt(T(2))) - _rect_erf(ẑ2 / sqrt(T(2))))
         duθdh = C * (brk - M)
     end
     uθ_h = C * M

@@ -195,7 +195,7 @@ export Body, Position, Radius, ScalarPotential, Gradient, Hessian, Vertex, Norma
 export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Panel
 export PowerAbsolutePotential, PowerAbsoluteGradient, RotatedCoefficientsAbsoluteGradient
 # export PowerRelativePotential, PowerRelativeGradient, RotatedCoefficientsRelativeGradient
-export get_n_bodies, buffer_element, body_to_multipole!, direct!, direct_gpu!
+export get_n_bodies, buffer_element, body_to_multipole!, direct!
 export source_to_buffer!, source_to_buffer, buffer_to_target!
 export body_type, data_per_body, strength_dims, has_vector_potential, get_position
 export recenter!
