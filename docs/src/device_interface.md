@@ -279,12 +279,13 @@ tolerance $\varepsilon = 10^{-3}$.
 
 Consumer-supplied functors are allowed if isbits and (for `device=true`
 caches) GPU-compilable. Subtype `AbstractDirectKernel` and implement, with
-`dx, dy, dz = target - source` and `r2 = dx^2 + dy^2 + dz^2 > 0`
+`dx, dy, dz = target - source`, `r2 = dx^2 + dy^2 + dz^2 > 0`, and
+`invr = inv(sqrt(r2))`
 (self/coincident pairs are skipped by the caller):
 
-- `FastMultipole._direct_pair_ug(kernel, dx, dy, dz, r2, source_bodies, j)`
+- `FastMultipole._direct_pair_ug(kernel, dx, dy, dz, r2, invr, source_bodies, j)`
   returning `(u, gx, gy, gz)`;
-- `FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, source_bodies, j)`
+- `FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, invr, source_bodies, j)`
   returning `(u, gx, gy, gz, h1, ..., h9)` (hessian in column-major 3×3
   order);
 - `FastMultipole._emits_potential(kernel)::Bool` — whether `u` is meaningful
@@ -357,8 +358,12 @@ step. Therefore:
 
 ## Restrictions (v1)
 
-- `target_systems === source_systems` — the radix path evaluates a system's
-  influence on itself; distinct target sets throw `ArgumentError`.
+- The cache's main systems must be the first target systems, in cache order.
+  For self-induction they must also be the first source systems in the same
+  order. Additional targets receive the main systems' field; additional
+  sources act directly on the main systems. Omitting every main system from
+  the sources runs the extra-sources-only mode. Supplying only some main
+  systems as sources, or reordering them, throws `ArgumentError`.
 - Body count `≤ max_n_bodies`; positions inside the cache's fixed box (see
   the capacity contract above).
 - Hessian output requires `RadixFMMCache(...; hessian=true)`.

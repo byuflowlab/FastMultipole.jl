@@ -2,42 +2,58 @@
 
 abstract type Indexable end
 
+"Index tag for a body's position."
 struct Position <: Indexable end
 
+"Index tag for a body's finite radius."
 struct Radius <: Indexable end
 
+"Index tag for a body's scalar potential."
 struct ScalarPotential <: Indexable end
 
+"Index tag for a body's potential gradient or vector field."
 struct Gradient <: Indexable end
 
+"Index tag for a body's potential hessian or vector-field gradient."
 struct Hessian <: Indexable end
 
+"Index tag for a vertex of an extended body."
 struct Vertex <: Indexable end
 
+"Index tag for an extended body's unit normal."
 struct Normal <: Indexable end
 
+"Index tag for a body's source strength."
 struct Strength <: Indexable end
 
 #------- dispatch convenience functions for multipole creation definition -------#
 
 abstract type AbstractKernel end
 
+"Kernel tag for vortex strengths."
 abstract type Vortex <: AbstractKernel end
 
+"Kernel tag for scalar source strengths."
 abstract type Source <: AbstractKernel end
 
+"Kernel tag for combined scalar-source and vortex strengths."
 abstract type SourceVortex <: AbstractKernel end
 
+"Kernel tag for dipole strengths."
 abstract type Dipole <: AbstractKernel end
 
+"Kernel tag for combined scalar-source and dipole strengths."
 abstract type SourceDipole <: AbstractKernel end
 
 abstract type AbstractElement{TK<:AbstractKernel} end
 
+"Point-element tag parameterized by its kernel type."
 abstract type Point{TK} <: AbstractElement{TK} end
 
+"Straight-filament element tag parameterized by its kernel type."
 abstract type Filament{TK} <: AbstractElement{TK} end
 
+"Panel element tag parameterized by vertex count and kernel type."
 abstract type Panel{NS,TK} <: AbstractElement{TK} end
 
 #------- dispatch convenience functions to determine which derivatives are desired -------#
@@ -162,15 +178,18 @@ struct RotatedCoefficients{BE} <: ErrorMethod{BE} end
 # struct AbsoluteUpperBound{ε} <: AbsoluteError end
 # AbsoluteUpperBound(ε) = AbsoluteUpperBound{ε}()
 
+"Absolute scalar-potential error criterion with tolerance `ε`."
 struct PowerAbsolutePotential{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsolutePotential(ε, BE::Bool=true) = PowerAbsolutePotential{ε,BE}()
 
 struct PowerAbsolutePotentialMultipole{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsolutePotentialMultipole(ε, BE::Bool=true) = PowerAbsolutePotentialMultipole{ε,BE}()
 
+"Absolute gradient error criterion with tolerance `ε`."
 struct PowerAbsoluteGradient{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 PowerAbsoluteGradient(ε, BE::Bool=true) = PowerAbsoluteGradient{ε,BE}()
 
+"Absolute gradient criterion based on rotated expansion coefficients."
 struct RotatedCoefficientsAbsoluteGradient{ε,BE} <: AbsoluteErrorMethod{ε,BE} end
 RotatedCoefficientsAbsoluteGradient(ε, BE::Bool=true) = RotatedCoefficientsAbsoluteGradient{ε,BE}()
 
@@ -190,7 +209,9 @@ RotatedCoefficientsRelativeGradient(ε_rel, ε_abs=sqrt(eps()), BE::Bool=true) =
 
 abstract type InteractionListMethod end
 
+"Geometric interaction-list policy using the branch multipole criterion."
 struct Barba <: InteractionListMethod end
+"Cost-based interaction-list policy used by the automatic tuner."
 struct SelfTuning <: InteractionListMethod end
 struct SelfTuningTreeStop <: InteractionListMethod end
 struct SelfTuningTargetStop <: InteractionListMethod end
@@ -308,12 +329,16 @@ struct RadixGrid{TF}
     body_index::Vector{Int}
 end
 
+"Supertype for radix-grid sorting backend selections."
 abstract type RadixSortBackend end
 
+"Select host radix sorting."
 struct HostRadixSort <: RadixSortBackend end
 
+"Select device radix sorting."
 struct DeviceRadixSort <: RadixSortBackend end
 
+"Select device sorting at or above `min_device_bodies`, otherwise host sorting."
 struct AutoRadixSort <: RadixSortBackend
     min_device_bodies::Int
     function AutoRadixSort(; min_device_bodies::Integer=MIN_BODIES)
@@ -357,6 +382,15 @@ mutable struct DeviceRadixGrid{TF,VI,VK,MI,MC}
     leaf_to_node::VI
 end
 
+"""
+    ConstantPStencilConfig(P_phi, epsilon, source_strength=one(epsilon);
+        chi_strength=source_strength, lamb_helmholtz=false,
+        normalization=:analytic)
+
+Accuracy inputs for a constant-order radix stencil. Strengths and `epsilon`
+must use consistent physical units; `normalization` is `:analytic` or
+`:production`.
+"""
 struct ConstantPStencilConfig{TF,LH,N}
     P_phi::Int
     epsilon::TF
@@ -379,6 +413,7 @@ function ConstantPStencilConfig(P_phi::Integer, epsilon, source_strength=one(eps
     )
 end
 
+"Supertype for radix near/far separation policies."
 abstract type RadixSeparationPolicy end
 
 # Every integer <= 20 with a nonempty lattice shell (7 and 15 are not sums of
@@ -429,6 +464,7 @@ function _validate_rigid_level_schedule(level_radii2, near_radius2::Int)
     return qs
 end
 
+"Classic parent-neighbor M2L policy with adjacent leaf cells kept direct."
 struct ParentNeighborM2L <: RadixSeparationPolicy end
 
 """
@@ -540,6 +576,12 @@ function HierarchicalRigidStencil(P_phi::Integer, epsilon,
         window_classes, dense_occupancy_max_bytes, dense_occupancy_max_ell)
 end
 
+"""
+    classic_fmm_stencil(config; kwargs...)
+
+Construct a [`HierarchicalRigidStencil`](@ref) with the classic 27-cell near
+set (`near_radius2=3`).
+"""
 classic_fmm_stencil(config::ConstantPStencilConfig; kwargs...) =
     HierarchicalRigidStencil(config; near_radius2=3, kwargs...)
 classic_fmm_stencil(args...; kwargs...) =
@@ -601,6 +643,15 @@ Opt-in policy for the 2:1-balanced adaptive Morton octree of
 `theory/adaptive-radix-octree.md` (task 038), implemented on the host by task
 039. The uniform-depth radix grid remains the production default; nothing about
 `RadixFMMCache` behavior changes unless this policy is passed explicitly.
+
+The standalone [`AdaptiveRadixTree`](@ref) uses host arrays. The integrated
+`RadixFMMCache(...; adaptive=policy)` lifecycle runs on the host and on CUDA;
+other device backends reject it. The adaptive lifecycle accepts only
+`Point{Source}` and `Point{Vortex}`, requires a cubic Morton domain, does not
+support `TwoPassVortex` or `PartitionedVortex`, and has no extra-sources-only
+mode. On a device, `split_veto` must be `false`. Lamb--Helmholtz hessian output
+is not supported. A regularized kernel requires matching `rho_t` and
+`sigma_row` gate settings.
 
 - `K_max`: leaf split threshold — a node splits while its population exceeds
   `K_max` and its level is below `ell_max`.
@@ -966,12 +1017,16 @@ mutable struct CUDANearfieldBinContext
     gh_lut::Any
 end
 
+"Supertype for radix interaction-list traversal strategies."
 abstract type RadixTraversalStrategy end
 
+"Traverse a rigid stencil through its dense occupancy lookup."
 struct RigidImplicitStencil <: RadixTraversalStrategy end
 
+"Intersect each stencil offset with the sparse occupied-cell set."
 struct SparseOffsetIntersection <: RadixTraversalStrategy end
 
+"Traverse occupancy in power-of-two bricks represented by bit sets."
 struct BlockedOccupancyBitsets <: RadixTraversalStrategy
     brick_side::Int
     function BlockedOccupancyBitsets(brick_side::Integer=4)
@@ -984,6 +1039,7 @@ struct BlockedOccupancyBitsets <: RadixTraversalStrategy
     end
 end
 
+"Materialize batches above a route threshold and use `fallback` below it."
 struct LazyMaterializedBatches{S<:RadixTraversalStrategy} <: RadixTraversalStrategy
     materialization_threshold::Int
     fallback::S
@@ -995,6 +1051,7 @@ struct LazyMaterializedBatches{S<:RadixTraversalStrategy} <: RadixTraversalStrat
     end
 end
 
+"One radix M2L displacement class and its paired target/source cell indices."
 struct RadixM2LBatch{TI}
     level::Int
     offset::SVector{3,Int}
@@ -1008,6 +1065,7 @@ RadixM2LBatch(offset::SVector{3,Int}, targets::Vector{TI}, sources::Vector{TI}) 
 RadixM2LBatch(level::Integer, offset::SVector{3,Int}, targets::Vector{TI}, sources::Vector{TI}) where {TI} =
     RadixM2LBatch{TI}(Int(level), offset, targets, sources)
 
+"Radix M2L batches and direct leaf-cell pairs."
 struct RadixInteractionList{TI}
     m2l_batches::Vector{RadixM2LBatch{TI}}
     direct_pairs::Vector{SVector{2,TI}}
@@ -1041,6 +1099,7 @@ end
 #     direct_offsets::Vector{SVector{3,Int}}
 # end
 
+"Stored direct-list influence matrices and work vectors used by solvers."
 struct InteractionList{TF}
     influence_matrices::Vector{Matrix{TF}}
     strengths::Vector{TF}
@@ -1104,6 +1163,7 @@ struct LeafLUCache{TF,LF}
     bytes::Int
 end
 
+"Reusable fast Gauss--Seidel solver state. Construct it through `FastGaussSeidel(...)`."
 struct FastGaussSeidel{TF,Nsys,TIL,TLC} <: AbstractSolver
     self_matrices::Matrices{TF}
     leaf_lu_cache::TLC
@@ -1183,12 +1243,16 @@ end
 
 #------- operator basis and cache types -------#
 
+"Supertype for resident expansion-coefficient bases."
 abstract type AbstractOperatorBasis end
 
+"Compressed complex spherical-harmonic basis storing nonnegative orders."
 struct CompressedComplexBasis <: AbstractOperatorBasis end
 
+"Real solid-harmonic basis with cosine and sine components."
 struct RealSolidHarmonicBasis <: AbstractOperatorBasis end
 
+"Scalar, Lamb--Helmholtz, and active expansion orders for an operator basis."
 struct OperatorOrders{LH}
     P_phi::Int
     P_chi::Int
@@ -1210,6 +1274,7 @@ function OperatorOrders(P::Integer, ::Val{true})
     return OperatorOrders{true}(P_int, P_int + 1, P_int + 1)
 end
 
+"Basis, order, channel-count, and coefficient-count metadata."
 struct OperatorBasisInfo{B<:AbstractOperatorBasis,LH}
     basis::B
     orders::OperatorOrders{LH}
@@ -1285,6 +1350,7 @@ OperatorBasisInfo(P::Integer, lamb_helmholtz::Val) =
 # rejected; the accessors below remain the swap surface should that change.
 
 @inline flat_basis_index(n, m, reim) = 2 * (harmonic_index(n, m) - 1) + reim
+"Return the packed real-basis row for `(n,m)` and an optional `Val(:cos)` or `Val(:sin)`."
 @inline real_basis_index(n, m) = (m == 0) ? n * n + 1 : throw(ArgumentError("two-argument real_basis_index is only valid for m == 0"))
 @inline real_basis_index(n, m, ::Val{:cos}) = n * n + 2m
 @inline real_basis_index(n, m, ::Val{:sin}) = n * n + 2m + 1
@@ -1314,8 +1380,8 @@ Native flat coefficient storage (task 017). Holds a dense φ channel matrix
 (`basis_dof_chi x batch`); for `Val(false)` `chi` is empty (χ pruned). Parametric on
 the matrix type `A` so a device array (e.g. `CuArray`) can back it later (task 022).
 
-Operators touch the channels only through the accessors [`phi_slab`](@ref) /
-[`chi_slab`](@ref) / [`phi_physical_view`](@ref), so the physical backing
+Operators touch the channels only through the accessors `phi_slab` /
+`chi_slab` / `phi_physical_view`, so the physical backing
 (ragged, decided by task 019b; the padded single-array alternative was measured
 and rejected) is swappable.
 """
@@ -1440,6 +1506,7 @@ function to_flat_buffer!(flat::FlatCoefficientBuffer{TF,A,B,LH}, gemm::DegreeMaj
     return flat
 end
 
+"Convert a compressed-complex coefficient buffer into a matching real-basis buffer."
 function complex_to_real_basis!(out::FlatCoefficientBuffer{TF,A,RealSolidHarmonicBasis,LH},
                                 source::FlatCoefficientBuffer{TF2,A2,CompressedComplexBasis,LH}) where {TF,A,LH,TF2,A2}
     out.basis_info.orders == source.basis_info.orders ||
@@ -1451,6 +1518,7 @@ function complex_to_real_basis!(out::FlatCoefficientBuffer{TF,A,RealSolidHarmoni
     return out
 end
 
+"Convert a real-basis coefficient buffer into a matching compressed-complex buffer."
 function real_to_complex_basis!(out::FlatCoefficientBuffer{TF,A,CompressedComplexBasis,LH},
                                 source::FlatCoefficientBuffer{TF2,A2,RealSolidHarmonicBasis,LH}) where {TF,A,LH,TF2,A2}
     out.basis_info.orders == source.basis_info.orders ||
@@ -1491,6 +1559,7 @@ function _real_to_complex_channel!(out, source, P)
     return out
 end
 
+"Order-dependent normalization and rotation tables shared by batched operators."
 struct OperatorInvariantCache{TF,B<:AbstractOperatorBasis,LH}
     basis_info::OperatorBasisInfo{B,LH}
     Hs_pi2::Vector{TF}
@@ -1571,6 +1640,7 @@ end
 OperatorInvariantCache(::Type{TF}, P::Integer, lamb_helmholtz::Val) where TF =
     OperatorInvariantCache(TF, OperatorBasisInfo(P, lamb_helmholtz))
 
+"Reusable working arrays for one batched operator invocation."
 struct OperatorScratch{TF,B<:AbstractOperatorBasis,LH}
     basis_info::OperatorBasisInfo{B,LH}
     weights_tmp_1::Array{TF,3}
@@ -1605,6 +1675,7 @@ end
 OperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val) where TF =
     OperatorScratch(TF, OperatorBasisInfo(P, lamb_helmholtz))
 
+"One [`OperatorScratch`](@ref) object per Julia thread."
 struct ThreadedOperatorScratch{S}
     scratch::Vector{S}
 end
@@ -1636,8 +1707,10 @@ ThreadedOperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val) where TF =
 # These are zero-field tag types; all invariant data lives on OperatorInvariantCache
 # and all working storage on M2LOperatorScratch.
 
+"Supertype for batched multipole-to-local operator implementations."
 abstract type AbstractM2LOperator end
 
+"M2L operator using materialized y-axis rotations."
 struct MaterializedYRotationM2L <: AbstractM2LOperator end
 
 # Physical-subspace invariant (016b): the FactoredRotation* operators reproduce
@@ -1645,6 +1718,7 @@ struct MaterializedYRotationM2L <: AbstractM2LOperator end
 # real solid-harmonic expansion is physical, so this holds throughout production;
 # the MaterializedYRotation* operators stay exact for any input. See the
 # `_assert_factored_input_physical` guard in src/rotate_batched.jl.
+"M2L operator using factored y-axis rotations on physical coefficients."
 struct FactoredRotationM2L <: AbstractM2LOperator end
 
 """
@@ -1689,17 +1763,23 @@ M2LOperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val, batch_max::Integ
 
 #------- FULL M2M/L2L OPERATOR PIPELINES (Matrix Operator Refactor, task 016) -------#
 
+"Supertype for batched multipole-to-multipole operators."
 abstract type AbstractM2MOperator end
+"Supertype for batched local-to-local operators."
 abstract type AbstractL2LOperator end
 
+"M2M operator using materialized y-axis rotations."
 struct MaterializedYRotationM2M <: AbstractM2MOperator end
 # Physical-subspace invariant (016b): exact only for physical inputs (m=0 imag == 0);
 # see the FactoredRotationM2L note above and `_assert_factored_input_physical`.
+"M2M operator using factored y-axis rotations on physical coefficients."
 struct FactoredRotationM2M <: AbstractM2MOperator end
 
+"L2L operator using materialized y-axis rotations."
 struct MaterializedYRotationL2L <: AbstractL2LOperator end
 # Physical-subspace invariant (016b): exact only for physical inputs (m=0 imag == 0);
 # see the FactoredRotationM2L note above and `_assert_factored_input_physical`.
+"L2L operator using factored y-axis rotations on physical coefficients."
 struct FactoredRotationL2L <: AbstractL2LOperator end
 
 # Resident batched-M2M GEMM strategies (task 022), swappable for `024` benchmarking.
@@ -1707,10 +1787,14 @@ struct FactoredRotationL2L <: AbstractL2LOperator end
 # batches columns sharing that vector into one GEMM. `SharedRotationM2M` (the main
 # path) batches all edges together, materializing only the per-vector z-axis pieces
 # and applying the batch-shared y-rotation modes `U_n`/`V_n` by per-degree GEMM.
+"Supertype for resident batched M2M strategies."
 abstract type AbstractResidentM2MStrategy end
+"Resident M2M strategy using a dense operator for each translation class."
 struct DenseTranslationM2M <: AbstractResidentM2MStrategy end
+"Resident M2M strategy sharing factored rotation work across a batch."
 struct SharedRotationM2M <: AbstractResidentM2MStrategy end
 
+"Supertype for resident batched M2L strategies."
 abstract type AbstractResidentM2LStrategy end
 
 """
@@ -1764,6 +1848,7 @@ struct DenseTranslationM2L <: AbstractResidentM2LStrategy
             converted.build_chunk, converted.cuda_headroom_bytes)
     end
 end
+"Resident M2L strategy sharing factored rotation work across a batch."
 struct SharedRotationM2L <: AbstractResidentM2LStrategy end
 
 # Whole-pass concatenated M2L (task 022 throughput repair). Instead of looping
@@ -1772,6 +1857,7 @@ struct SharedRotationM2L <: AbstractResidentM2LStrategy end
 # z-translation separates as K_m(r)[n,np] = r^-(n+1/2) * (n+np)! * r^-(np+1/2), so a
 # per-column diagonal scaling before and after fixed factorial GEMMs replaces the
 # per-radius block matrices. Kernel-launch count scales with chunks, not groups.
+"Chunked whole-pass M2L strategy with fixed-m z-translation factors."
 struct ConcatenatedFixedZM2L <: AbstractResidentM2LStrategy
     chunk::Int
     function ConcatenatedFixedZM2L(chunk::Integer=1 << 17)
@@ -1785,9 +1871,8 @@ end
 
 Resident M2L strategy which precomputes the real factored-y block for each
 exact polar-angle class in the fixed radix stencil.  It must be paired with
-[`FactoredRotationM2L`](@ref).  Supported on the host lifecycle (task 023c)
-and the CUDA device-resident lifecycle through `RadixFMMCache(...; device=true)`
-(task 023d).
+[`FactoredRotationM2L`](@ref). It is host-only; KernelAbstractions device
+caches reject it because no device plan is installed.
 """
 struct PrecomputedFactoredYM2L <: AbstractResidentM2LStrategy end
 
@@ -2060,12 +2145,16 @@ end
 
 "Role policy for tree construction; replaces ambiguous source/target booleans."
 abstract type TreeRole end
+"Tree role for systems that form multipole expansions."
 struct SourceTree <: TreeRole end
+"Tree role for systems that receive local-expansion output."
 struct TargetTree <: TreeRole end
 
 "Execution policy for the legacy FMM nearfield path."
 abstract type NearfieldExecution end
+"Run legacy-tree nearfield interactions on the host."
 struct HostNearfield <: NearfieldExecution end
+"Dispatch legacy-tree nearfield interactions to `nearfield_device!`."
 struct DeviceNearfield <: NearfieldExecution end
 _device_nearfield(::HostNearfield) = false
 _device_nearfield(::DeviceNearfield) = true
@@ -2080,6 +2169,7 @@ _device_nearfield(::DeviceNearfield) = true
 # `_direct_pair_ug` / `_direct_pair_ugh` (translate_batched_resident.jl) and
 # `_emits_potential` for the new type.
 
+"Supertype for resident nearfield pair-kernel functors."
 abstract type AbstractDirectKernel end
 
 "Singular scalar `1/r` kernel (shipped default for `Point{Source}`)."
@@ -2593,8 +2683,10 @@ change their number (up to `max_n_bodies`), but positions must stay inside the
 fixed box; violations throw `ArgumentError` rather than silently rebuilding the
 step-invariant geometry tables.
 
-v1 scope restrictions (documented at `fmm!`): `target_systems === source_systems`;
-host- or device-resident execution and hessian output are selected at
+Construction requires the same main systems as targets and sources. At step
+time those systems remain first and in cache order; `fmm!` may append extra
+targets or extra sources, or omit all main sources for an extra-sources-only
+call. Host- or device-resident execution and hessian output are selected at
 construction (`hessian=true` allocates the 13-row output).
 """
 mutable struct RadixFMMCache{TF,LH}

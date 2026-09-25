@@ -69,17 +69,17 @@ FastMultipole.strength_dims(system::VortexFilaments) = 3
 
 FastMultipole.get_n_bodies(system::VortexFilaments) = length(system.strength)
 
-function FastMultipole.buffer_to_target_system!(target_system::VortexFilaments, i_target, ::DerivativesSwitch{PS,VS,GS}, target_buffer, i_buffer) where {PS,VS,GS}
+function FastMultipole.buffer_to_target_system!(target_system::VortexFilaments, i_target, switch::DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
 
     # extract from buffer
-    PS && (potential = FastMultipole.get_scalar_potential(target_buffer, i_buffer))
-    VS && (velocity = FastMultipole.get_gradient(target_buffer, i_buffer))
-    GS && (hessian = FastMultipole.get_hessian(target_buffer, i_buffer))
+    PS && (potential = FastMultipole.get_scalar_potential(target_buffer, switch, i_buffer))
+    GS && (velocity = FastMultipole.get_gradient(target_buffer, switch, i_buffer))
+    HS && (hessian = FastMultipole.get_hessian(target_buffer, switch, i_buffer))
 
     # load into system
     PS && (target_system.potential[i_target] += potential)
-    VS && (target_system.gradient[i_target] += velocity)
-    GS && (target_system.hessian[i_target] += hessian)
+    GS && (target_system.gradient[i_target] += velocity)
+    HS && (target_system.hessian[i_target] += hessian)
 
 end
 ```
@@ -127,7 +127,7 @@ function vortex_filament_finite_core_2(x1,x2,xt,q,core_size)
     return V
 end
 
-function FastMultipole.direct!(target_system, target_index, derivatives_switch::DerivativesSwitch{PS,VS,GS}, source_system::VortexFilaments, source_buffer, source_index) where {PS,VS,GS}
+function FastMultipole.direct!(target_buffer, target_index, switch::DerivativesSwitch{PS,GS,HS}, source_system::VortexFilaments, source_buffer, source_index) where {PS,GS,HS}
     for i_source in source_index
         x1 = FastMultipole.get_vertex(source_buffer, source_system, i_source, 1)
         x2 = FastMultipole.get_vertex(source_buffer, source_system, i_source, 2)
@@ -135,15 +135,15 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch::
         core_size = source_buffer[14, i_source]
 
         for i_target in target_index
-            xt = FastMultipole.get_position(target_system, i_target)
+            xt = FastMultipole.get_position(target_buffer, i_target)
 
-            if VS
+            if GS
                 # determine sign of q
                 q_mag = norm(q) * sign(dot(q, x2-x1))
 
                 # calculate velocity
                 v = vortex_filament_finite_core_2(x1,x2,xt,q_mag,core_size)
-                FastMultipole.set_gradient!(target_system, i_target, v)
+                FastMultipole.set_gradient!(target_buffer, switch, i_target, v)
             end
         end
     end

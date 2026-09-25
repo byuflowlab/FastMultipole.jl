@@ -1,5 +1,12 @@
 #--- create interaction lists ---#
 
+"""
+    build_interaction_lists(target_branches, source_branches, source_leaf_size,
+        multipole_acceptance, farfield, nearfield, self_induced,
+        method=SelfTuning())
+
+Build and return `(m2l_list, direct_list)` for two legacy octrees.
+"""
 function build_interaction_lists(target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method::InteractionListMethod=SelfTuning())
     # prepare containers
     m2l_list = Vector{SVector{2,Int32}}(undef,0)
@@ -707,4 +714,3 @@ function InteractionList(direct_list, target_systems, target_tree::Tree, source_
 
     return InteractionList{TF}(influence_matrices, strengths, influence, direct_list)
 end
-

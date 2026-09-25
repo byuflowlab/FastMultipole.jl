@@ -127,12 +127,12 @@ We note that the convenience functions `get_gradient` and `get_hessian` return `
 The last required interface function is [`FastMultipole.direct!`](@ref), which evaluates the potential at a target system using a source system without multipole acceleration. This is required in an FMM call for those interactions that are too close to be approximated by expansions. It is also useful for debugging and testing the accuracy of the FMM call. Overloading for `::Gravitational` systems, we have:
 
 ```@example guidedex
-function FastMultipole.direct!(target_system, target_index, switch::DerivativesSwitch{PS,VS,GS}, source_system::Gravitational, source_buffer, source_index) where {PS,VS,GS}
+function FastMultipole.direct!(target_buffer, target_index, switch::DerivativesSwitch{PS,GS,HS}, source_system::Gravitational, source_buffer, source_index) where {PS,GS,HS}
     @inbounds for i_source in source_index
         source_x, source_y, source_z = FastMultipole.get_position(source_buffer, i_source)
         source_strength = FastMultipole.get_strength(source_buffer, source_system, i_source)[1]
         @inbounds for j_target in target_index
-            target_x, target_y, target_z = FastMultipole.get_position(target_system, j_target)
+            target_x, target_y, target_z = FastMultipole.get_position(target_buffer, j_target)
             dx = target_x - source_x
             dy = target_y - source_y
             dz = target_z - source_z
@@ -141,11 +141,11 @@ function FastMultipole.direct!(target_system, target_index, switch::DerivativesS
                 r = sqrt(r2)
                 if PS
                     dϕ = source_strength / r * FastMultipole.ONE_OVER_4π
-                    FastMultipole.set_scalar_potential!(target_system, switch, j_target, dϕ)
+                    FastMultipole.set_scalar_potential!(target_buffer, switch, j_target, dϕ)
                 end
-                if VS
+                if GS
                     dF = SVector{3}(dx,dy,dz) * source_strength / (r2 * r) * FastMultipole.ONE_OVER_4π
-                    FastMultipole.set_gradient!(target_system, switch, j_target, dF)
+                    FastMultipole.set_gradient!(target_buffer, switch, j_target, dF)
                 end
             end
         end

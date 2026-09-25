@@ -14,6 +14,7 @@ function RadixGrid(systems::Tuple, ell::Integer; TF=get_type(systems),
     return _radix_grid(systems, ell, TF, h0_fallback, sort)
 end
 
+"Alias for the [`RadixGrid`](@ref) constructors."
 radix_grid(args...; kwargs...) = RadixGrid(args...; kwargs...)
 
 function _radix_grid(systems::Tuple, ell::Integer, ::Type{TF}, h0_fallback,
@@ -1032,8 +1033,10 @@ function _adaptive_sigma_sweep!(tree::AdaptiveRadixTree{TF}) where TF
     return tree
 end
 
+"Return whether `node` has no children in an [`AdaptiveRadixTree`](@ref)."
 @inline adaptive_is_leaf(tree::AdaptiveRadixTree, node::Integer) =
     tree.child_ranges[2, node] == 0
+"Return the sorted-body range belonging to an adaptive tree node."
 @inline adaptive_node_range(tree::AdaptiveRadixTree, node::Integer) =
     tree.node_lo[node]:tree.node_hi[node]
 

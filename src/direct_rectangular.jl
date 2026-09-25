@@ -37,6 +37,13 @@
 # supports Float32 end-to-end (kept behind an explicit caller choice — pass
 # Float32 matrices).
 
+"""
+    AbstractRectangularKernel
+
+Supertype for kernels accepted by [`direct_rectangular!`](@ref). A kernel
+defines its source layout with [`rect_source_rows`](@ref) and supplies host and,
+when supported, device pair evaluation methods.
+"""
 abstract type AbstractRectangularKernel end
 
 """
@@ -150,8 +157,10 @@ end
     return Val(1)
 end
 
+"Return the required number of packed source rows for a rectangular kernel."
 rect_source_rows(::RectangularGaussianErfVortex) = 7
 rect_source_rows(::RectangularPanelInfluence) = 17
+"Return the required output rows for rectangular velocity, gradient, and potential output."
 rect_output_rows(gradient::Bool, scalar_potential::Bool=false) =
     (gradient ? 12 : 3) + scalar_potential
 rect_potential_row(gradient::Bool) = gradient ? 13 : 4
@@ -1054,7 +1063,8 @@ function _rect_assert_host(out, targets, sources)
 end
 
 """
-    direct_rectangular!(out, targets, kernel, sources; gradient=false)
+    direct_rectangular!(out, targets, kernel, sources;
+        gradient=false, scalar_potential=false)
 
 Brute-force rectangular direct evaluation: every source column of `sources`
 influences every target column of `targets`, accumulating (+=) velocity into
@@ -1063,6 +1073,10 @@ influences every target column of `targets`, accumulating (+=) velocity into
 threaded over targets; GPU-array methods are installed by a device backend
 extension. See [`RectangularGaussianErfVortex`](@ref) and
 [`RectangularPanelInfluence`](@ref) for the source row layouts.
+
+`scalar_potential=true` is supported only by `RectangularPanelInfluence`. It
+adds the scalar potential in row 4 when `gradient=false` or row 13 when
+`gradient=true`; vortex-ring sources must then be triangular (`nv == 3`).
 """
 function direct_rectangular!(out::AbstractMatrix{T}, targets::AbstractMatrix{T},
         kernel::RectangularGaussianErfVortex, sources::AbstractMatrix{T};

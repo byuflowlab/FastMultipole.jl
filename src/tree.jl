@@ -1371,6 +1371,7 @@ end
 #     return tree.inverse_sort_index[i_unsorted]
 # end
 
+"Map an original body index to its sorted tree-buffer index."
 @inline function unsorted_index_2_sorted_index(i_unsorted, i_system, tree::Tree)
     return tree.inverse_sort_index_list[i_system][i_unsorted]
 end
@@ -1379,6 +1380,7 @@ end
 #     return tree.sort_index[i_sorted]
 # end
 
+"Map a sorted tree-buffer index to its original body index."
 @inline function sorted_index_2_unsorted_index(i_unsorted, i_system, tree::Tree)
     return tree.sort_index_list[i_system][i_unsorted]
 end
@@ -2139,6 +2141,7 @@ end
     branches[i_branch] = TB(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, new_center, new_radius, new_box, min_potential, min_gradient)
 end
 
+"Allocate a zeroed scalar/vector multipole or local expansion through `expansion_order`."
 function initialize_expansion(expansion_order, type=Float64)
     # incrememnt expansion order to make room for error predictions
     # expansion_order += 1
@@ -2162,6 +2165,7 @@ function initialize_gradient_n_m(expansion_order, type=Float64; third_derivative
     return zeros(type, 2, third_derivative ? 12 : 3, n_harmonics)
 end
 
+"Allocate zeroed harmonic work storage through `expansion_order + 2`."
 function initialize_harmonics(expansion_order, type=Float64)
     # incrememnt expansion order to make room for error predictions
     # expansion_order += 1

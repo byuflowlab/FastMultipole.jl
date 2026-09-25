@@ -5,6 +5,13 @@
 # source bodies, radix metadata, expansion buffers, and output stay in the state
 # across B2M, M2M, M2L, L2L, and L2B.
 
+"""
+    host_resident_radix_grid(grid::RadixGrid)
+
+Expand a host [`RadixGrid`](@ref) into host-resident level and node metadata in
+a [`DeviceRadixGrid`](@ref)-shaped container. The returned arrays are owned by
+the new container; the input grid is not modified.
+"""
 function host_resident_radix_grid(grid::RadixGrid{TF}) where TF
     level_keys = [sort(unique(key >> (3 * (grid.ell - level)) for key in grid.cell_keys))
                   for level in 0:grid.ell]
@@ -2207,6 +2214,17 @@ function _launch_host_resident_operator_pipeline!(state::DeviceResidentRadixStat
     return state
 end
 
+"""
+    host_radix_state(systems, grid, list, P, lamb_helmholtz=Val(false); options)
+
+Build the host-resident state used to mirror the radix lifecycle. `systems` may
+be a system, tuple of systems, or an already packed body matrix. The state owns
+its packed-body copy, flattened routes, expansions, scratch space, output, and
+transfer counters, and retains the supplied grid metadata. The `RadixGrid`
+overload first creates a fresh host-resident grid with
+[`host_resident_radix_grid`](@ref). This is a host-only construction even though
+its container type is shared with device backends.
+"""
 function host_radix_state(systems, grid::RadixGrid, list::RadixInteractionList,
         P::Integer, lamb_helmholtz::Val{LH}=Val(false);
         options::CUDARadixLifecycleOptions=CUDARadixLifecycleOptions()) where LH
@@ -2374,6 +2392,13 @@ function finalize_radix_output!(state::DeviceResidentRadixState{TF}, target_syst
     return target_systems
 end
 
+"""
+    run_host_radix_lifecycle!(state)
+
+Run B2M, M2M, M2L, L2L, and L2B in place for a host-resident radix `state`.
+The source bodies and routes must already be current. Returns `state`; use
+[`finalize_radix_output!`](@ref) to scatter its output to user systems.
+"""
 function run_host_radix_lifecycle!(state::DeviceResidentRadixState)
     state.counters.expansion_host_copies == 0 ||
         throw(AssertionError("resident host radix lifecycle observed expansion host copies before execution"))

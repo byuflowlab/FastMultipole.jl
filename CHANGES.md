@@ -20,10 +20,21 @@
   about 3e-5 in velocity and 2e-3 in gradient of the field scale near the segment axis); `VortexSheetPanelKernel(; order=3)`
   selects a 13-point degree-7 Dunavant rule. `direct_rectangular!` runs on device arrays
   through the KernelAbstractions extension (all-pairs, one work-item per target).
+- Added the validated radix settings API: `radix_settings`, `radix_setting`,
+  `set_radix_setting!`, and `set_radix_settings!`. Construction-locked settings
+  are snapshotted by a cache and checked at each device step; runtime settings
+  may change between steps.
+- Added the opt-in `AdaptiveTreePolicy` and adaptive radix-tree lifecycle.
+- Added `transform_tree!`, `transform_plan!`, and `transform_solver!` for rigid
+  motion of reusable trees, plans, and solvers, subject to their documented
+  cache and output restrictions.
+- Added the `source_revision(system)` compatibility trait for reusing unchanged
+  extra-tree sources; the default `nothing` disables reuse.
+- GPU tests can be selected with `FASTMULTIPOLE_GPU_TESTS`; NVIDIA runs require
+  `FASTMULTIPOLE_GPU_TEST_PROJECT` to name a CUDA-enabled Julia project.
 - Minimum Julia version 1.11.
 
 ## v0.1.0 - 2024 August
 
 Initial release.
-
 

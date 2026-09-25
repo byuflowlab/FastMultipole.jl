@@ -114,14 +114,17 @@ transfer counters checked flat across the steps.
 
 ## Testing on a device
 
-`Pkg.test()` runs the host suites everywhere and, on a machine with a GPU, the
-device correctness suites in `test/metal_env/` as well
-(`FASTMULTIPOLE_GPU_TESTS=0|1` overrides the detection; hosted CI sets `0`).
+`Pkg.test()` runs the host suites everywhere. `FASTMULTIPOLE_GPU_TESTS=0|1`
+overrides GPU detection (hosted CI sets `0`). On Apple, the bundled
+`test/metal_env` project supplies Metal. On NVIDIA, the device suites run only
+when `FASTMULTIPOLE_GPU_TEST_PROJECT` points to a CUDA-enabled Julia project;
+otherwise they are skipped even when a GPU is detected.
 The suites compare every stage of the device lifecycle, and the whole of it,
 against the host implementation of the same lifecycle, for both body types;
-`bash test/metal_env/run_suites.sh` runs them directly and prints one line per
-suite. On a cluster, build the environment on the login node first; compute
-nodes rarely have network access.
+From the repository root, run them directly with
+`FASTMULTIPOLE_GPU_TEST_PROJECT=/path/to/cuda/project bash test/metal_env/run_suites.sh`.
+The script prints one line per suite. On a cluster, build that environment on
+the login node first; compute nodes rarely have network access.
 
 ## Restrictions
 

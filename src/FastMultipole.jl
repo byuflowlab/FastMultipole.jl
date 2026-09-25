@@ -104,7 +104,7 @@ include("radix_extra_systems.jl")
 include("radix_settings.jl")
 include("direct_rectangular.jl")
 
-export Branch, SingleBranch, MultiBranch, Tree, SingleTree, MultiTree, initialize_expansion, initialize_harmonics
+export Branch, Tree, initialize_expansion, initialize_harmonics
 export RadixGrid, DeviceRadixGrid, RadixSortBackend, HostRadixSort, DeviceRadixSort, AutoRadixSort, radix_grid
 export ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L, ConstantPAnalyticStencil, HierarchicalRigidStencil, classic_fmm_stencil, rigid_stencil_epsilon, RadixTraversalStrategy
 export RigidHierarchicalTables, RadixLevelOccupancy
@@ -125,7 +125,7 @@ export AbstractResidentM2LStrategy, DenseTranslationM2L, SharedRotationM2L, Conc
 export constant_p_stencil_bound, constant_p_stencil_accepts, accepted_radix_stencil
 export foreach_radix_m2l_pair, foreach_radix_m2l_route, foreach_radix_direct_pair, build_radix_interaction_list
 export RadixRouteSelection
-export unsort!, resort!, unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
+export unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
 export transform_tree!, transform_plan!
 export AbstractOperatorBasis, CompressedComplexBasis, RealSolidHarmonicBasis
 export OperatorOrders, OperatorBasisInfo, OperatorInvariantCache, OperatorScratch, ThreadedOperatorScratch
@@ -143,6 +143,12 @@ export AdaptiveTreePolicy, AdaptiveRadixTree, AdaptiveInteractionLists,
     update_adaptive_tree!, build_adaptive_interaction_lists!,
     adaptive_is_leaf, adaptive_node_range
 
+"""
+    RadixDeviceUnavailable(reason)
+
+Exception thrown when a device-resident radix operation is requested without a
+registered device backend. `reason` is reported by `showerror`.
+"""
 struct RadixDeviceUnavailable <: Exception
     reason::String
 end
@@ -191,11 +197,11 @@ end
 
 include("compatibility.jl")
 
-export Body, Position, Radius, ScalarPotential, Gradient, Hessian, Vertex, Normal, Strength
+export Position, Radius, ScalarPotential, Gradient, Hessian, Vertex, Normal, Strength
 export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Panel
 export PowerAbsolutePotential, PowerAbsoluteGradient, RotatedCoefficientsAbsoluteGradient
 # export PowerRelativePotential, PowerRelativeGradient, RotatedCoefficientsRelativeGradient
-export get_n_bodies, buffer_element, body_to_multipole!, direct!
+export get_n_bodies, body_to_multipole!, direct!
 export source_to_buffer!, source_to_buffer, buffer_to_target!
 export body_type, data_per_body, strength_dims, has_vector_potential, get_position
 export recenter!
@@ -223,7 +229,7 @@ export get_third_derivative, set_third_derivative!, supports_third_derivative
 
 include("error.jl")
 
-export multipole_error, local_error, error
+export multipole_error, local_error
 
 include("interaction_list.jl")
 

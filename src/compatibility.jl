@@ -62,14 +62,15 @@ instantiation per functor type, no runtime branch in the pair loop).
 Custom kernels subtype `AbstractDirectKernel` and implement (with
 `kernel = direct_kernel(system)`):
 
-- `_direct_pair_ug(kernel, dx, dy, dz, r2, source_bodies, j)` returning
+- `_direct_pair_ug(kernel, dx, dy, dz, r2, invr, source_bodies, j)` returning
   `(u, gx, gy, gz)`, and
-- `_direct_pair_ugh(kernel, dx, dy, dz, r2, source_bodies, j)` returning
+- `_direct_pair_ugh(kernel, dx, dy, dz, r2, invr, source_bodies, j)` returning
   `(u, gx, gy, gz, h1, ..., h9)` (hessian in column-major 3×3 order), and
 - `_emits_potential(kernel)::Bool` — whether `u` is meaningful (row 1 written).
 
-Here `dx, dy, dz = target - source`, `r2 = dx^2+dy^2+dz^2 > 0` (self/coincident
-pairs are skipped by the caller), and `source_bodies[:, j]` is the packed source
+Here `dx, dy, dz = target - source`, `r2 = dx^2+dy^2+dz^2 > 0`, and
+`invr = inv(sqrt(r2))` (self/coincident pairs are skipped by the caller).
+`source_bodies[:, j]` is the packed source
 column (`[x, y, z, radius, strength..., extras...]`), giving the kernel access
 to per-source extra states such as a smoothing radius. This flat-argument form
 deviates from the spec §5 column-view signature so the same code compiles as a
@@ -674,6 +675,12 @@ function target_to_buffer(system, switch::DerivativesSwitch, sort_index=1:get_n_
     return buffer
 end
 
+"""
+    source_to_buffer(system, sort_index=1:get_n_bodies(system))
+
+Allocate a packed source buffer, fill it through [`source_to_buffer!`](@ref),
+and return it. A tuple of systems returns one buffer per system.
+"""
 function source_to_buffer(systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     buffers = allocate_buffers(systems, false, get_type(systems), DerivativesSwitch(false, false, false, systems))
     source_to_buffer!(buffers, systems, sort_index_list)

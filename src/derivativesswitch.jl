@@ -176,4 +176,5 @@ the potential, gradient and hessian that `extra_outputs=N` requested), located
 through `extra_output_range(switch)`.
 """
 @inline extra_output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i) = view(buffer, extra_output_range(switch), i)
+"Return a view of all accumulated output rows for target-buffer column `i`."
 @inline output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i) = view(buffer, output_range(switch), i)

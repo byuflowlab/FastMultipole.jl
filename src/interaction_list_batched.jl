@@ -5,6 +5,18 @@ const RADIX_PRODUCTION_NORMALIZATION = 1 / (4 * π)
 
 @inline _stencil_lamb_helmholtz(::ConstantPStencilConfig{<:Any,LH,<:Any}) where {LH} = LH
 
+"""
+    constant_p_stencil_bound(P, offset, source_strength, cell_half_width)
+    constant_p_stencil_bound(grid, config, offset)
+
+Return the analytic absolute-error bound for a constant-order interaction at
+the dimensionless integer cell `offset`. `cell_half_width` and
+`source_strength` use the caller's physical units; the returned bound has
+`source_strength / cell_half_width` units and must be compared with a tolerance
+in the same units. Offsets whose enclosing spheres overlap return `Inf`. The
+`grid` method also includes the configured Lamb--Helmholtz channel and
+normalization.
+"""
 function constant_p_stencil_bound(P::Integer, offset::SVector{3,<:Integer}, source_strength, cell_half_width)
     TF = promote_type(typeof(source_strength), typeof(cell_half_width), Float64)
     dnorm = norm(SVector{3,TF}(offset[1], offset[2], offset[3]))
@@ -31,10 +43,22 @@ function constant_p_stencil_bound(grid::RadixGrid, config::ConstantPStencilConfi
     end
 end
 
+"""
+    constant_p_stencil_accepts(grid, config, offset) -> Bool
+
+Return whether the constant-order bound at integer cell `offset` is no larger
+than `config.epsilon`.
+"""
 @inline constant_p_stencil_accepts(grid::RadixGrid, config::ConstantPStencilConfig,
         offset::SVector{3,<:Integer}) =
     constant_p_stencil_bound(grid, config, offset) <= config.epsilon
 
+"""
+    accepted_radix_stencil(grid, config)
+
+Return the integer cell offsets in the grid's bounded offset box whose
+constant-order error bound satisfies `config.epsilon`.
+"""
 function accepted_radix_stencil(grid::RadixGrid, config::ConstantPStencilConfig)
     G = radix_resolution(grid)
     offsets = SVector{3,Int}[]
@@ -772,6 +796,11 @@ end
     0 <= coord[1] < G && 0 <= coord[2] < G && 0 <= coord[3] < G
 end
 
+"""
+    foreach_radix_m2l_pair(f, strategy, [policy,] grid; farfield=true)
+
+Call `f(offset, target_cell, source_cell)` for each radix M2L pair.
+"""
 foreach_radix_m2l_pair(f, strategy::RadixTraversalStrategy, grid::RadixGrid;
         farfield::Bool=true) =
     foreach_radix_m2l_pair(f, strategy, ParentNeighborM2L(), grid; farfield)
@@ -794,6 +823,11 @@ function foreach_radix_m2l_pair(f, strategy::RadixTraversalStrategy,
     end
 end
 
+"""
+    foreach_radix_m2l_route(f, strategy, [policy,] grid; farfield=true)
+
+Call `f(level, offset, target_cell, source_cell)` for each radix M2L route.
+"""
 function foreach_radix_m2l_route(f, strategy::RadixTraversalStrategy,
         policy::RadixSeparationPolicy, grid::RadixGrid; farfield::Bool=true)
     farfield || return nothing
@@ -847,6 +881,12 @@ function _foreach_radix_m2l_route_implicit(f, stencil::RadixImplicitStencil,
     return nothing
 end
 
+"""
+    foreach_radix_direct_pair(f, strategy, [policy,] grid;
+        nearfield=true, self_induced=true)
+
+Call `f(offset, target_cell, source_cell)` for each selected direct pair.
+"""
 function foreach_radix_direct_pair(f, ::RadixTraversalStrategy, policy::ParentNeighborM2L,
         grid::RadixGrid; nearfield::Bool=true, self_induced::Bool=true)
     (nearfield || self_induced) || return nothing
@@ -900,6 +940,13 @@ end
 # both passes, while each accepted pair is still materialized into an offset batch — already
 # in the canonical (level, z, y, x) batch order, so no Dict and no final sort — and the
 # direct complement comes from the bounded rejected-offset set.
+"""
+    build_radix_interaction_list(strategy, [policy,] grid;
+        farfield=true, nearfield=true, self_induced=true)
+
+Materialize radix M2L batches and direct pairs for the requested traversal and
+separation policy.
+"""
 function build_radix_interaction_list(::RadixTraversalStrategy,
         policy::ConstantPAnalyticStencil, grid::RadixGrid; farfield::Bool=true,
         nearfield::Bool=true, self_induced::Bool=true)
@@ -944,25 +991,28 @@ function build_radix_interaction_list(::RadixTraversalStrategy,
 end
 
 """
-    build_radix_routes!(route_levels, route_offsets, route_targets, route_sources,
-        route_class, direct_targets, direct_sources, accepted_offsets,
-        rejected_offsets, cell_at, coords, leaf_to_node, ell, n_cells;
-        farfield=true, nearfield=true, self_induced=true) -> (n_routes, n_direct)
+    RadixRouteSelection(; farfield=true, nearfield=true, self_induced=true)
 
-In-place constant-`P` route generation (task 023): writes the flattened M2L routes
-(offset-class-major, matching `build_radix_interaction_list` +
-`_flatten_radix_routes_host` elementwise) and the direct near/self pairs
-(target-major, matching `_foreach_radix_direct_pair_implicit` order) directly into
-preallocated flat arrays, so recurring time steps materialize no batch vectors.
-Route targets/sources are node indices (via `leaf_to_node`); direct pairs are leaf
-cell indices. `route_class[i]` receives the 1-based index of route `i`'s offset in
-`accepted_offsets` (pass `nothing` to skip). `coords[1:n_cells]` are the decoded
-cell coordinates. Returns the valid prefix lengths.
+Compile-time selection of radix far-field, near-field, and self interactions.
+Pass it to route or interaction-list builders to specialize those three flags.
 """
 struct RadixRouteSelection{F,N,S} end
 RadixRouteSelection(; farfield::Bool=true, nearfield::Bool=true, self_induced::Bool=true) =
     RadixRouteSelection{farfield,nearfield,self_induced}()
 
+"""
+    build_radix_routes!(route_levels, route_offsets, route_targets, route_sources,
+        route_class, direct_targets, direct_sources, accepted_offsets,
+        rejected_offsets, cell_at, coords, leaf_to_node, ell, n_cells;
+        farfield=true, nearfield=true, self_induced=true) -> (n_routes, n_direct)
+
+In-place constant-`P` route generation: write flattened, offset-class-major M2L
+routes and target-major direct pairs into preallocated arrays. Route endpoints
+are node indices through `leaf_to_node`; direct endpoints are leaf-cell indices.
+`route_class[i]` receives the 1-based offset class, or may be `nothing`.
+`coords[1:n_cells]` are integer cell coordinates. Return the valid route and
+direct-pair prefix lengths.
+"""
 function build_radix_routes!(route_levels, route_offsets, route_targets, route_sources,
         route_class, direct_targets, direct_sources,
         accepted_offsets, rejected_offsets, cell_at::AbstractArray{Int32,3},

@@ -83,6 +83,13 @@ function visualize_bodies(name_list, systems::Tuple, tree::Tree, probe_indices_l
     end
 end
 
+"""
+    visualize(name, system, tree; probe_indices=nothing,
+        toggle_branches=true, toggle_bodies=false)
+
+Write VTK files for a tree's branches and, when enabled, its bodies or selected
+probe indices, using `name` as the output prefix.
+"""
 function visualize(name, system, tree; probe_indices=nothing, toggle_branches=true, toggle_bodies=false)
     #####
     ##### source branches
@@ -129,4 +136,3 @@ function visualize(name, system, tree; probe_indices=nothing, toggle_branches=tr
 
     return nothing
 end
-
