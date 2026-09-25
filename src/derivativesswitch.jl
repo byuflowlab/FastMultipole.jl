@@ -10,10 +10,11 @@ Constructs a tuple of [`DerivativesSwitch`](@ref) objects.
 - `hessian::Vector{Bool}`: a vector of `::Bool` indicating whether the vector gradient should be computed for each target system
 
 """
-function DerivativesSwitch(scalar_potential, gradient, hessian; extra_outputs=0, metadata=0)
+function DerivativesSwitch(scalar_potential, gradient, hessian; third_derivative=false, extra_outputs=0, metadata=0)
+    third_derivative = to_vector(third_derivative, length(scalar_potential))
     extra_outputs = to_vector(extra_outputs, length(scalar_potential))
     metadata = to_vector(metadata, length(scalar_potential))
-    return Tuple(DerivativesSwitch(ps, gs, hs; extra_outputs=no, metadata=nm) for (ps, gs, hs, no, nm) in zip(scalar_potential, gradient, hessian, extra_outputs, metadata))
+    return Tuple(DerivativesSwitch(ps, gs, hs; third_derivative=ts, extra_outputs=no, metadata=nm) for (ps, gs, hs, ts, no, nm) in zip(scalar_potential, gradient, hessian, third_derivative, extra_outputs, metadata))
 end
 
 """
@@ -28,9 +29,14 @@ Constructs a single [`DerivativesSwitch`](@ref) object.
 - `hessian::Bool`: a `::Bool` indicating whether the vector gradient should be computed for the target system
 
 """
-function DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool; extra_outputs=0, metadata=0)
-    return DerivativesSwitch{scalar_potential, gradient, hessian, Int(extra_outputs), Int(metadata)}()
+function DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool; third_derivative::Bool=false, extra_outputs=0, metadata=0)
+    return DerivativesSwitch{scalar_potential, gradient, hessian, Int(extra_outputs), Int(metadata), third_derivative}()
 end
+
+DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool,
+    third_derivative::Bool; extra_outputs=0, metadata=0) =
+    DerivativesSwitch(scalar_potential, gradient, hessian;
+        third_derivative, extra_outputs, metadata)
 
 """
     DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
@@ -44,39 +50,41 @@ Constructs a `::Tuple` of indentical [`DerivativesSwitch`](@ref) objects of the 
 - `hessian::Bool`: a `::Bool` indicating whether the vector gradient should be computed for each target system
 
 """
-function DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool, target_systems::Tuple; extra_outputs=0, metadata=nothing)
+function DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool, target_systems::Tuple; third_derivative=false, extra_outputs=0, metadata=nothing)
+    third_derivative = to_vector(third_derivative, length(target_systems))
     extra_outputs = to_vector(extra_outputs, length(target_systems))
     metadata = metadata_vector(metadata, target_systems)
-    return Tuple(DerivativesSwitch{scalar_potential, gradient, hessian, Int(extra_outputs[i]), Int(metadata[i])}() for i in eachindex(target_systems))
+    return Tuple(DerivativesSwitch{scalar_potential, gradient, hessian, Int(extra_outputs[i]), Int(metadata[i]), third_derivative[i]}() for i in eachindex(target_systems))
 end
 
-function DerivativesSwitch(scalar_potential, gradient, hessian, target_systems::Tuple; extra_outputs=0, metadata=nothing)
+function DerivativesSwitch(scalar_potential, gradient, hessian, target_systems::Tuple; third_derivative=false, extra_outputs=0, metadata=nothing)
     @assert length(scalar_potential) == length(gradient) == length(hessian) == length(target_systems) "length of inputs to DerivativesSwitch inconsistent"
     extra_outputs = to_vector(extra_outputs, length(target_systems))
     metadata = metadata_vector(metadata, target_systems)
-    return Tuple(DerivativesSwitch{scalar_potential[i], gradient[i], hessian[i], Int(extra_outputs[i]), Int(metadata[i])}() for i in eachindex(target_systems))
+    third_derivative = to_vector(third_derivative, length(target_systems))
+    return Tuple(DerivativesSwitch{scalar_potential[i], gradient[i], hessian[i], Int(extra_outputs[i]), Int(metadata[i]), third_derivative[i]}() for i in eachindex(target_systems))
 end
 
-function DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool, target_system; extra_outputs=0, metadata=nothing)
+function DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool, target_system; third_derivative::Bool=false, extra_outputs=0, metadata=nothing)
     metadata = isnothing(metadata) ? metadata_per_body(target_system) : metadata
-    return DerivativesSwitch{scalar_potential, gradient, hessian, Int(extra_outputs), Int(metadata)}()
+    return DerivativesSwitch{scalar_potential, gradient, hessian, Int(extra_outputs), Int(metadata), third_derivative}()
 end
 
-DerivativesSwitch() = DerivativesSwitch{true, true, true, 0, 0}()
+DerivativesSwitch() = DerivativesSwitch{true, true, true, 0, 0, false}()
 
 """
     scalar_potential_index(switch)
 
 Target-buffer row for scalar potential output.
 """
-@inline scalar_potential_index(::DerivativesSwitch{true,GS,HS,NO,NM}) where {GS,HS,NO,NM} = 4 + NM
-@inline scalar_potential_index(::DerivativesSwitch{false,GS,HS,NO,NM}) where {GS,HS,NO,NM} = 0
+@inline scalar_potential_index(::DerivativesSwitch{true,GS,HS,NO,NM,TS}) where {GS,HS,NO,NM,TS} = 4 + NM
+@inline scalar_potential_index(::DerivativesSwitch{false,GS,HS,NO,NM,TS}) where {GS,HS,NO,NM,TS} = 0
 
-@inline _standard_output_rows(::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM} =
-    (PS ? 1 : 0) + (GS ? 3 : 0) + (HS ? 9 : 0)
+@inline _standard_output_rows(::DerivativesSwitch{PS,GS,HS,NO,NM,TS}) where {PS,GS,HS,NO,NM,TS} =
+    (PS ? 1 : 0) + (GS ? 3 : 0) + (HS ? 9 : 0) + (TS ? 18 : 0)
 
-@inline target_buffer_rows(::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM} =
-    3 + NM + _standard_output_rows(DerivativesSwitch{PS,GS,HS,NO,NM}()) + NO
+@inline target_buffer_rows(switch::DerivativesSwitch{PS,GS,HS,NO,NM,TS}) where {PS,GS,HS,NO,NM,TS} =
+    3 + NM + _standard_output_rows(switch) + NO
 
 """
     gradient_range(switch)
@@ -96,6 +104,11 @@ Target-buffer rows for hessian output.
     4 + NM + (PS ? 1 : 0) + (GS ? 3 : 0) : 3 + NM + (PS ? 1 : 0) + (GS ? 3 : 0) + 9
 @inline hessian_range(::DerivativesSwitch{PS,GS,false,NO,NM}) where {PS,GS,NO,NM} =
     4 + NM + (PS ? 1 : 0) + (GS ? 3 : 0) : 3 + NM + (PS ? 1 : 0) + (GS ? 3 : 0)
+"""Target-buffer rows for packed third-derivative output."""
+@inline third_derivative_range(::DerivativesSwitch{PS,GS,HS,NO,NM,true}) where {PS,GS,HS,NO,NM} =
+    4 + NM + (PS ? 1 : 0) + (GS ? 3 : 0) + (HS ? 9 : 0) : 3 + NM + (PS ? 1 : 0) + (GS ? 3 : 0) + (HS ? 9 : 0) + 18
+@inline third_derivative_range(::DerivativesSwitch{PS,GS,HS,NO,NM,false}) where {PS,GS,HS,NO,NM} =
+    4 + NM + (PS ? 1 : 0) + (GS ? 3 : 0) + (HS ? 9 : 0) : 3 + NM + (PS ? 1 : 0) + (GS ? 3 : 0) + (HS ? 9 : 0)
 """
     metadata_range(switch)
 

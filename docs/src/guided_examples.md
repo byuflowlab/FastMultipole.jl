@@ -158,7 +158,7 @@ Note that the velocity gradient is not calculated in this function. If the veloc
     Use the boolean type parameters of the `::DerivativesSwitch{PS,GS,HS}` argument when overloading the `direct!` to know when to compute the scalar potential, its gradient, and its hessian, respectively. This can save cost by avoiding unnecessary calculations.
 
 !!! note
-    The hard-coded target buffer rows `4`, `5:7`, and `8:16` are valid only when `metadata=0` and only when all preceding standard outputs are enabled. New overloads should use the switch-aware getter and setter functions shown above. A `DerivativesSwitch(true, true, false)` call still works and creates `DerivativesSwitch{true,true,false,0,0}`.
+    The hard-coded target buffer rows `4`, `5:7`, `8:16`, and `17:34` are valid only when `metadata=0` and all preceding standard outputs are enabled. The last range contains packed third derivatives in component-major `(xx,xy,xz,yy,yz,zz)` order. New overloads should use the switch-aware getter and setter functions. A `DerivativesSwitch(true, true, false)` call remains valid and defaults `third_derivative=false`.
 
 ## Running the FMM
 
@@ -200,7 +200,7 @@ println("gravitational acceleration:\n", system.potential[5:7,1:10], "...")
 The `scalar_potential` and `gradient` arguments are set to `false` and `true`, respectively, to indicate that we want to compute the vector field (i.e. the gravitational field lines that translate to force and their gradient) but not the scalar potential.
 
 !!! warning
-    The user must specify which fields they want to be computed by the FMM by setting the boolean keyword arguments `scalar_potential`, `gradient`, and `hessian` when calling `fmm!` (defaults are `scalar_potential=false`, `gradient=true`, and `hessian=false`). Note also that if the source system induces a vector potential (as indicated by the interface function `has_vector_potential(system)=true`), then the `scalar_potential` keyword should be set to `false`, since the scalar potential will be non-sensical in this case.
+    The user selects fields with `scalar_potential`, `gradient`, `hessian`, and `third_derivative` when calling `fmm!`; the last defaults to `false`. Third-order output is a compressed `ThirdDerivativeTensor`, and user kernels must explicitly opt in through `supports_third_derivative`. If the source system induces a vector potential (`has_vector_potential(system)=true`), `scalar_potential` should be false because it is not meaningful for that channel.
 
 ## Preallocating the Buffers
 
@@ -222,4 +222,4 @@ Note that the second call to `fmm!` allocates less memory.
     If you plan to call `fmm!` multiple times on the same system, consider preallocating the buffers by saving the `cache` returned by the first call, and splatting it as a keyword argument for each subsequent call. This can reduce memory allocations and improve performance.
 
 !!! warning
-    Caches are tied to the requested target buffer layout. Changing `scalar_potential`, `gradient`, `hessian`, `metadata`, or `extra_outputs` requires a cache with the matching switch layout or a new cache.
+    Caches are tied to the requested target buffer layout. Changing `scalar_potential`, `gradient`, `hessian`, `third_derivative`, `metadata`, or `extra_outputs` requires a cache with the matching switch layout or a new cache.

@@ -233,14 +233,28 @@ end
         @test maximum(abs.(base.potential[5:13, :] .- J_ref)) / j_scale < htol
     end
 
-    #--- (d) near-set adequacy gate: reject, don't enlarge ---#
+    #--- (d) near-set adequacy: an inadequate geometry demotes to the
+    #    all-direct zero-M2L cache (task 052f) instead of throwing, and the
+    #    demoted cache still matches the erf-based regularized direct truth ---#
 
     base = generate_vortex(seed, 400)
     big_sigma = fill(0.2, 400)          # cutoff ρ_t·σ ≈ 0.96 ≫ any leaf gap
     bad = SmoothedVortex(base, big_sigma)
-    @test_throws ArgumentError RadixFMMCache(bad; expansion_order=4, ell=3,
+    fat_cache = @test_logs (:warn, r"near-set adequacy failed") match_mode=:any RadixFMMCache(
+        bad; expansion_order=4, ell=3, hessian=true,
         options=CUDARadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    @test fat_cache.ell == 2
+    @test isempty(fat_cache.accepted_offsets)   # zero-M2L: every pair direct
+    U_fat, J_fat = _interface_regularized_direct(SmoothedVortex(base, big_sigma))
+    fmm!(bad, fat_cache; scalar_potential=false, gradient=true, hessian=true)
+    # all pairs are direct, so parity is bounded by the erf-free gaussianerf
+    # evaluation itself (outer branch ≤ 2.1e-4 absolute against the 3.69e-4
+    # budget, see the 032 stage-2 kernel block) — not by expansion error
+    @test maximum(abs.(base.gradient_stretching[1:3, :] .- U_fat)) /
+        maximum(abs.(U_fat)) < 5e-4
+    @test maximum(abs.(base.potential[5:13, :] .- J_fat)) /
+        maximum(abs.(J_fat)) < 5e-4
 
     #--- (e) construction/validation error paths ---#
 
@@ -355,12 +369,15 @@ end
         options=CUDARadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
             direct_kernel=PartitionedVortex(; sigma_row=8)))
-    # adequacy gate applies identically to the partitioned kernel
+    # adequacy demotion applies identically to the partitioned kernel (052f)
     fat = PartitionedSmoothedVortex(SmoothedVortex(generate_vortex(seed, 400),
         fill(0.2, 400)))
-    @test_throws ArgumentError RadixFMMCache(fat; expansion_order=4, ell=3,
+    fat_pcache = @test_logs (:warn, r"near-set adequacy failed") match_mode=:any RadixFMMCache(
+        fat; expansion_order=4, ell=3,
         options=CUDARadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
+    @test fat_pcache.ell == 2
+    @test isempty(fat_pcache.accepted_offsets)
     # constructor negatives
     @test_throws ArgumentError PartitionedVortex(; sigma_row=4)
     @test_throws ArgumentError PartitionedVortex(; sigma_row=8, rho_t=0.0)
@@ -565,11 +582,14 @@ end
     # the designated pair is genuinely beyond the primary near set
     ctx = tpcache.state.interaction_list
     @test all(sum(abs2, o) <= 3 for o in ctx.tables.near_offsets)
-    # ... which is exactly why the partitioned kernel rejects this geometry
-    # while the two-pass rho_c gate admits it (gate dispatch)
+    # ... which is exactly why the partitioned kernel demotes this geometry to
+    # the all-direct zero-M2L fallback (052f) while the two-pass rho_c gate
+    # admits it as-is (gate dispatch)
     part_sys = PartitionedSmoothedVortex(SmoothedVortex(
         VortexParticles(copy(posr), copy(strr)), sigr))
-    @test_throws ArgumentError RadixFMMCache(part_sys; kwargs..., options=opts64())
+    part_cache = @test_logs (:warn, r"near-set adequacy failed") match_mode=:any RadixFMMCache(
+        part_sys; kwargs..., options=opts64())
+    @test isempty(part_cache.accepted_offsets)
     fmm!(tpsys, tpcache; scalar_potential=false, gradient=true, hessian=true)
     # singular-kernel run on identical bodies: the difference at T is exactly
     # the accumulated pass-2 deficit (T has no direct neighbors, no pair below

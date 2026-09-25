@@ -1,11 +1,21 @@
 #------- matrix storage -------#
 
+# calloc-backed zeros: pairs with assemble_influence_block!'s assignment
+# semantics — zero pages come free from the OS and are first-touched by the
+# worker that fills each block (non-bits eltypes fall back to zeros())
+function _calloc_vector(::Type{TF}, n::Integer) where TF
+    (isbitstype(TF) && n > 0) || return zeros(TF, n)
+    ptr = Ptr{TF}(Libc.calloc(n, sizeof(TF)))
+    ptr == C_NULL && throw(OutOfMemoryError())
+    return unsafe_wrap(Array, ptr, Int(n); own=true)
+end
+
 function Matrices(sizes::Vector{Tuple{Int,Int}}, TF=Float64)
-    # preallocate matrix storage
+    # preallocate matrix storage (zero-initialized; see _calloc_vector)
     n_matrix = sum(m * n for (m, n) in sizes)
     n_rhs = sum(m for (m,_) in sizes)
-    data = Vector{TF}(undef, n_matrix)
-    rhs = Vector{TF}(undef, n_rhs)
+    data = _calloc_vector(TF, n_matrix)
+    rhs = _calloc_vector(TF, n_rhs)
 
     # offsets
     matrix_offsets = Vector{Int}(undef, length(sizes))
@@ -40,6 +50,15 @@ end
     # get the range of values corresponding to the k-th rhs vector
     rhs_offset = ms.rhs_offsets[k]
     return rhs_offset:rhs_offset + m - 1
+end
+
+# internal: block k's storage as a plain Matrix (no ReshapedArray/SubArray
+# indirection — measurably faster for scalar-indexed assembly). The caller
+# must GC.@preserve `ms` (or ms.data) for the wrapper's lifetime and must not
+# let it escape.
+@inline function unsafe_get_block_matrix(ms::Matrices, k::Int)
+    m, n = ms.sizes[k]
+    return unsafe_wrap(Array, pointer(ms.data, ms.matrix_offsets[k]), (m, n))
 end
 
 function get_matrix_vector(ms::Matrices, k::Int)

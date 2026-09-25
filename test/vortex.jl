@@ -13,6 +13,7 @@ const i_STRENGTH_vortex = 4:6
 const i_POTENTIAL_SCALAR = 1:1
 const i_POTENTIAL_VECTOR = 2:4
 const i_HESSIAN_vortex = 5:13
+const i_THIRD_DERIVATIVE_vortex = 14:31
 const i_gradient_vortex = 1:3
 const i_STRETCHING_vortex = 4:6
 
@@ -80,7 +81,7 @@ fmm.body_to_multipole!(system::VortexParticles, args...) = body_to_multipole!(Po
 
 FastMultipole.body_type(::VortexParticles) = Point{Vortex}
 
-function fmm.direct!(target_system::Matrix{TF}, target_index, derivatives_switch::FastMultipole.DerivativesSwitch{S,V,VG}, source_system::VortexParticles, source_buffer, source_index) where {TF,S,V,VG}
+function fmm.direct!(target_system::Matrix{TF}, target_index, derivatives_switch::FastMultipole.DerivativesSwitch{S,V,VG,NO,NM,TS}, source_system::VortexParticles, source_buffer, source_index) where {TF,S,V,VG,NO,NM,TS}
     for j_source in source_index
         x_source = FastMultipole.get_position(source_buffer, j_source)
         Γx, Γy, Γz = FastMultipole.get_strength(source_buffer,  source_system, j_source)
@@ -122,16 +123,36 @@ function fmm.direct!(target_system::Matrix{TF}, target_index, derivatives_switch
                     FastMultipole.set_hessian!(target_system, derivatives_switch, i_target, SMatrix{3,3,TF,9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz))
                 end
 
+                if TS
+                    A = SVector(Γy * dz - Γz * dy, Γz * dx - Γx * dz,
+                        Γx * dy - Γy * dx)
+                    B = SMatrix{3,3,TF,9}(0, Γz, -Γy,
+                        -Γz, 0, Γx, Γy, -Γx, 0)
+                    x = SVector(dx, dy, dz)
+                    c7 = FastMultipole.ONE_OVER_4π / (r2 * r2 * r2 * r)
+                    packed = MVector{18,TF}(undef)
+                    slot = 0
+                    for ii in 1:3, (jj, kk) in ((1,1), (1,2), (1,3), (2,2), (2,3), (3,3))
+                        slot += 1
+                        delta = jj == kk ? one(r2) : zero(r2)
+                        packed[slot] = c7 * (15A[ii] * x[jj] * x[kk] -
+                            3r2 * (A[ii] * delta + B[ii,jj] * x[kk] + B[ii,kk] * x[jj]))
+                    end
+                    FastMultipole.set_third_derivative!(target_system, derivatives_switch,
+                        i_target, SVector(packed))
+                end
+
             end
         end
     end
 end
 
-function FastMultipole.buffer_to_target_system!(target_system::VortexParticles, i_target, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer, i_buffer) where {PS,GS,HS}
+function FastMultipole.buffer_to_target_system!(target_system::VortexParticles, i_target, derivatives_switch::FastMultipole.DerivativesSwitch{PS,GS,HS,NO,NM,TS}, target_buffer, i_buffer) where {PS,GS,HS,NO,NM,TS}
     # retrieve fields
     TF = eltype(target_system)
     gradient = GS ? FastMultipole.get_gradient(target_buffer, derivatives_switch, i_buffer) : zero(SVector{3,TF})
     hessian = HS ? FastMultipole.get_hessian(target_buffer, derivatives_switch, i_buffer) : zero(SMatrix{3,3,TF,9})
+    third_derivative = TS ? FastMultipole.get_third_derivative(target_buffer, derivatives_switch, i_buffer) : nothing
 
     # update system
     if GS
@@ -140,7 +161,10 @@ function FastMultipole.buffer_to_target_system!(target_system::VortexParticles, 
     if HS
         target_system.potential[i_HESSIAN_vortex, i_target] .= reshape(hessian, 9)
     end
+    TS && (target_system.potential[i_THIRD_DERIVATIVE_vortex, i_target] .= FastMultipole.packed_data(third_derivative))
 end
+
+FastMultipole.supports_third_derivative(target_system, source_system::VortexParticles) = true
 
 FastMultipole.metadata_per_body(system::VortexParticles) = 2
 FastMultipole.previous_potential_metadata_index(system::VortexParticles) = 1
@@ -186,7 +210,7 @@ end
 
 function VortexParticles(position, strength, radius=zeros(size(position,2));
     N = size(position)[2],
-    potential = zeros(i_HESSIAN_vortex[end],N),
+    potential = zeros(i_THIRD_DERIVATIVE_vortex[end],N),
     gradient_stretching = zeros(3+3,N),
 )
     @assert size(position)[1] == 3
@@ -197,7 +221,7 @@ end
 
 function VortexParticles(bodies;
     N = size(bodies)[2],
-    potential = zeros(i_HESSIAN_vortex[end],N),
+    potential = zeros(i_THIRD_DERIVATIVE_vortex[end],N),
     gradient_stretching = zeros(3+3,N)
 )
     bodies = [Vorton(SVector{3}(bodies[1:3,i]), SVector{3}(bodies[5:7,i]), bodies[4,i]) for i in 1:size(bodies)[2]]
