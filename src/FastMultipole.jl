@@ -21,18 +21,18 @@ const DEBUG = Array{Bool,0}(undef)
 DEBUG[] = false
 
 # multithreading parameters
-const MIN_NPT_B2M = 100
-const MIN_NPT_M2M = 100
-const MIN_NPT_M2L = 100
-const MIN_NPT_L2L = 100
-const MIN_NPT_L2B = 100
-const MIN_NPT_NF = 100
-const MIN_NPT_BRANCH = 9 # if fewer branches than this, multithread over bodies instead of branches
+const MIN_NPT_B2M = 10
+const MIN_NPT_M2M = 10
+const MIN_NPT_M2L = 10
+const MIN_NPT_L2L = 10
+const MIN_NPT_L2B = 10
+const MIN_NPT_NF = 10
+const MIN_NPT_BRANCH = 1 # if fewer branches than this, multithread over bodies instead of branches
                          # TODO: this should probably be a function of the number of threads
-const MIN_NPT_SORT = 10000
-const MIN_NPT_MUL_SORT = 100
-const MIN_NPT = 100
-const MIN_BODIES = 10000
+const MIN_NPT_SORT = 1
+const MIN_NPT_MUL_SORT = 1
+const MIN_NPT = 1
+const MIN_BODIES = 100
 
 # preallocate y-axis rotation matrices by π/2
 const Hs_π2 = Float64[1.0]
