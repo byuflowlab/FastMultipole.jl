@@ -64,10 +64,17 @@ direct!((target_one, target_two), (source_one, source_two, source_three); scalar
 println("max error in target one: ", maximum(abs.(target_one.potential[5:7,:] .- v1)))
 println("max error in target two: ", maximum(abs.(target_two.gradient_stretching[1:3,:] .- v2)))
 ```
-Note that `scalar_potential`, `gradient`, and `hessian` can be passed as a single boolean or as a tuple of booleans, one for each target system. This allows the user to specify which values are desired for each target system, and avoids unnecessary calculations for values that are not needed. In this case, we have set `scalar_potential=false` and `gradient=true` to indicate all target systems, but a tuple `hessian=(false,true)` to indicate different settings for each. It is worth remembering that these switches must be implemented by the user when overloading the `direct!` function for each system to act as a source.
+The optional `third_derivative` switch follows the same scalar-or-tuple convention. It
+returns `T[i,j,k] = ∂H[i,j]/∂x[k]` through a symmetry-compressed
+`ThirdDerivativeTensor`; use `packed_data(T)` for its canonical 18 values or `dense(T)` for
+an explicit 3×3×3 static array. User-defined direct kernels must opt in with
+`supports_third_derivative(target, source) = true` only after both direct accumulation and
+target writeback are implemented. Otherwise a third-order request fails before computation.
+
+Note that `scalar_potential`, `gradient`, `hessian`, and `third_derivative` can be passed as a single boolean or as a tuple of booleans, one for each target system. This allows the user to specify which values are desired for each target system, and avoids unnecessary calculations for values that are not needed. In this case, we have set `scalar_potential=false` and `gradient=true` to indicate all target systems, but a tuple `hessian=(false,true)` to indicate different settings for each.
 
 !!! tip
-    The `fmm!` keyword arguments `scalar_potential`, `gradient`, and `hessian` can be passed as a single boolean or as a tuple of booleans, one for each target system. This allows the user to specify which values are desired for each target system, and avoids unnecessary calculations for values that are not needed.
+    The `fmm!` keyword arguments `scalar_potential`, `gradient`, `hessian`, and `third_derivative` can be passed as a single boolean or as a tuple of booleans, one for each target system. This allows the user to specify which values are desired for each target system and avoids unnecessary calculations.
 
 ## Direct Conditioning
 
@@ -165,3 +172,42 @@ end
 
 !!! warning
     Target buffers are compact. Hard-coded target rows `4`, `5:7`, and `8:16` are valid only when `metadata=0` and only when all preceding standard outputs are enabled. Custom target code should use switch-aware getters, setters, and range helpers.
+
+## Migrating From the Fixed-Row Buffer Layout
+
+Earlier versions of FastMultipole used a fixed target-buffer layout: row `4`
+was always the scalar potential, `5:7` the gradient, and `8:16` the hessian,
+whether or not those outputs were requested. Target buffers are now
+**compact**: disabled outputs are not allocated, and each enabled output's
+rows shift accordingly (metadata rows shift them further). Consumer hooks
+written against the fixed layout — including any following the old published
+`direct!`/`buffer_to_target_system!` examples that call the switchless
+setters (e.g. `set_hessian!(buffer, i, hessian)`) or index rows directly
+under `@inbounds` — still compile and run, but when any preceding standard
+output is disabled (e.g. `scalar_potential=false`) they **silently write the
+wrong rows or past the end of the buffer**. There is no error; results are
+corrupted, and out-of-buffer writes are undefined behavior.
+
+To migrate a consumer:
+
+1. In every `direct!` overload and `buffer_to_target_system!` method, replace
+   switchless setters/getters and hard-coded rows with the switch-aware forms:
+   `set_scalar_potential!(buffer, switch, i, val)`,
+   `set_gradient!(buffer, switch, i, val)`,
+   `set_hessian!(buffer, switch, i, val)`, and the matching getters and
+   range helpers (`scalar_potential_index`, `gradient_range`,
+   `hessian_range`, `third_derivative_range`, `extra_output_range`, `metadata_index`).
+
+With metadata disabled and every preceding output enabled, third derivatives occupy rows
+`17:34`. Hessians retain their existing dense 9-row layout. The packed order is
+`(xx,xy,xz,yy,yz,zz)` for each vector component `x`, `y`, then `z`; the last two tensor
+indices are symmetric. `solve!` does not expose third-order output.
+2. Guard each output with its switch parameter (`PS`, `GS`, `HS`) rather than
+   writing unconditionally; the switch-aware setters for disabled outputs
+   throw instead of corrupting, which converts a silent bug into a loud one.
+3. If your hooks read previously accumulated influence, note that
+   `get_previous_influence` has been removed; carry prior-step values through
+   metadata rows (`metadata_per_body` / `metadata_to_buffer!`) instead.
+4. Re-run your accuracy checks with at least one output disabled
+   (e.g. `scalar_potential=false, hessian=true`) — the configuration that
+   exposes fixed-row assumptions — in addition to the all-enabled case.

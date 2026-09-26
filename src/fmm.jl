@@ -772,7 +772,8 @@ function downward_pass_multithread_2!(tree::Tree{TF,<:Any}, systems, derivatives
     #--- preallocate memory ---#
 
     harmonics = [initialize_harmonics(expansion_order, TF) for _ in 1:n_threads]
-    gradient_n_m = [initialize_gradient_n_m(expansion_order, TF) for _ in 1:n_threads]
+    needs_third = any(_requests_third_derivative, derivatives_switches)
+    gradient_n_m = [initialize_gradient_n_m(expansion_order, TF; third_derivative=needs_third) for _ in 1:n_threads]
 
     #--- compute multipole expansion coefficients ---#
 
@@ -838,11 +839,146 @@ end
     return SVector{n}(input...)
 end
 
-fmm!(system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...) = fmm!(system, Cache(to_tuple(system), to_tuple(system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(system); extra_outputs, metadata)); scalar_potential, gradient, hessian, leaf_size, extra_outputs, metadata, optargs...)
+function fmm!(system; scalar_potential=false, gradient=true, hessian=false,
+        third_derivative=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...)
+    systems = to_tuple(system)
+    switches = DerivativesSwitch(scalar_potential, gradient, hessian, systems;
+        third_derivative, extra_outputs, metadata)
+    _check_third_derivative_support(systems, systems, switches)
+    return fmm!(system, Cache(systems, systems, switches); scalar_potential, gradient,
+        hessian, third_derivative, leaf_size, extra_outputs, metadata, optargs...)
+end
 
-fmm!(target_system, source_system; scalar_potential=false, gradient=true, hessian=false, leaf_size=20, extra_outputs=0, metadata=nothing, optargs...) = fmm!(target_system, source_system, Cache(to_tuple(target_system), to_tuple(source_system), DerivativesSwitch(scalar_potential, gradient, hessian, to_tuple(target_system); extra_outputs, metadata)); scalar_potential, gradient, hessian, leaf_size_source=leaf_size, leaf_size_target=nothing, extra_outputs, metadata, optargs...)
+function fmm!(target_system, source_system; scalar_potential=false, gradient=true,
+        hessian=false, third_derivative=false, leaf_size=20, extra_outputs=0,
+        metadata=nothing, optargs...)
+    targets, sources = to_tuple(target_system), to_tuple(source_system)
+    switches = DerivativesSwitch(scalar_potential, gradient, hessian, targets;
+        third_derivative, extra_outputs, metadata)
+    _check_third_derivative_support(targets, sources, switches)
+    return fmm!(target_system, source_system, Cache(targets, sources, switches);
+        scalar_potential, gradient, hessian, third_derivative,
+        leaf_size_source=leaf_size, leaf_size_target=nothing, extra_outputs, metadata,
+        optargs...)
+end
 
 fmm!(system, cache::Cache; leaf_size=20, optargs...) = fmm!(system, system, cache; leaf_size_source=leaf_size, leaf_size_target=nothing, optargs...)
+
+"""
+    fmm!(system, cache::RadixFMMCache; kwargs...)
+    fmm!(target_systems, source_systems, cache::RadixFMMCache; kwargs...)
+
+Opt-in radix-grid / matrix-operator FMM step (task 023). Construct the cache once
+with [`RadixFMMCache`](@ref) and call this each time step: it refreshes the
+step-varying state in place (grid, routes, packed bodies — zero reallocation),
+runs the resident lifecycle, and writes results back through
+[`buffer_to_target!`](@ref). The legacy octree `fmm!` methods are untouched; this
+path is only selected by passing a `RadixFMMCache`.
+
+**Keyword arguments**
+
+- `scalar_potential::Bool=false`, `gradient::Bool=true`: which outputs to write back
+- `hessian::Bool=false`: write back the 9-component hessian; requires a cache
+  built with `RadixFMMCache(...; hessian=true)` (`ArgumentError` otherwise)
+- `sfs_dsigma::Bool=false`: with `sfs=true`, also deliver the analytic
+  derivatives of the resolved stretching and of E_str with respect to a uniform
+  core scaling through [`sfs_dsigma_to_target!`](@ref) (dynamic SFS, two-level)
+- `sfs::Bool=false`: deliver the subfilter-scale vortex-stretching term E_str
+  through [`sfs_to_target!`](@ref) (task 048); requires a cache built with
+  `RadixFMMCache(...; sfs=true, hessian=true)` (`ArgumentError` otherwise)
+- `lamb_helmholtz=nothing`: optional cross-check against the cache's `LH` parameter
+
+The cache's systems must appear in both `target_systems` and `source_systems`
+(same order). Any further target system is an extra target and any further
+source system an extra source, both evaluated by direct rectangular kernels
+(see `radix_extra_systems.jl`); `hessian` may be a per-target vector.
+Restrictions: body count `<= max_n_bodies`; positions inside the cache's fixed box.
+"""
+fmm!(system, cache::RadixFMMCache; optargs...) = fmm!(system, system, cache; optargs...)
+
+function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
+        scalar_potential::Bool=false, gradient::Bool=true, hessian=false,
+        third_derivative::Bool=false,
+        sfs::Bool=false, sfs_dsigma::Bool=false, tree_sources::Tuple=(),
+        lamb_helmholtz::Union{Nothing,Bool}=nothing) where {TF,LH}
+    targets = to_tuple(target_systems)
+    sources = to_tuple(source_systems)
+    split = _split_radix_systems(cache.n_systems, targets, sources)
+    third_derivative && throw(ArgumentError(
+        "third_derivative output is not yet supported by RadixFMMCache"))
+    hessian_v = to_vector(hessian, length(targets))
+    any(hessian_v) && !cache.hessian && throw(ArgumentError(
+        "hessian output requested but this RadixFMMCache was built with " *
+        "hessian=false (4-row output); construct RadixFMMCache(...; hessian=true)"))
+    sfs && !cache.sfs && throw(ArgumentError(
+        "sfs output requested but this RadixFMMCache was built with " *
+        "sfs=false; construct RadixFMMCache(...; sfs=true, hessian=true)"))
+    sfs && !split.self_induce && throw(ArgumentError(
+        "sfs=true requires the self-inducing call (the SFS pass consumes the " *
+        "lifecycle's direct pairs)"))
+    sfs_dsigma && !sfs && throw(ArgumentError(
+        "sfs_dsigma=true is a channel of the SFS pass; pass sfs=true as well"))
+    lamb_helmholtz === nothing || Bool(lamb_helmholtz) == LH || throw(ArgumentError(
+        "lamb_helmholtz=$(lamb_helmholtz) conflicts with the cache's lamb_helmholtz=$LH; " *
+        "the Lamb-Helmholtz channel is fixed at cache construction"))
+    !has_vector_potential(split.main) || LH || throw(ArgumentError(
+        "source systems carry a vector potential but the cache was built with " *
+        "lamb_helmholtz=false; rebuild the cache with lamb_helmholtz=true"))
+    all_switches = DerivativesSwitch(
+        to_vector(scalar_potential, length(targets)),
+        to_vector(gradient, length(targets)),
+        hessian_v, targets)
+    switches = Tuple(all_switches[i] for i in split.main_index)
+    extra_switches = Tuple(all_switches[i] for i in split.extra_target_index)
+    main = split.main
+    if cache.device
+        _radix_cache_device_step!(cache, main, switches; sfs, sfs_dsigma,
+            extra_targets=split.extra_targets, extra_target_switches=extra_switches,
+            extra_sources=split.extra_sources, extra_tree_sources=tree_sources,
+            self_induce=split.self_induce)
+    elseif cache.adaptive === nothing
+        update_radix_state!(cache, main)
+        if split.self_induce
+            # `tree_sources` join the leaf multipoles before the upward pass;
+            # a sources-only call has no tree to join, so they stay direct
+            run_host_radix_lifecycle_with_extra_tree!(cache.state, tree_sources)
+        else
+            fill!(cache.state.output, zero(TF))
+            _radix_extra_sources_into_output!(cache.state, tree_sources)
+        end
+        sfs && _run_host_radix_sfs!(cache.state; dsigma=sfs_dsigma)
+        _radix_extra_sources_into_output!(cache.state, split.extra_sources)
+        finalize_radix_output!(cache.state, main; derivatives_switches=switches,
+            target_buffers=_radix_cache_target_buffers!(cache, switches))
+        sfs && finalize_radix_sfs_output!(cache.state, main;
+            sfs_buffers=_radix_cache_sfs_buffers!(cache, main), dsigma=sfs_dsigma,
+            dsfs_buffers=sfs_dsigma ? _radix_cache_dsfs_buffers!(cache, main) : nothing)
+        split.self_induce &&
+            _radix_extra_targets_evaluate!(cache.state, split.extra_targets, extra_switches)
+    else
+        # task 040: with an AdaptiveTreePolicy armed, the host branch runs the
+        # adaptive resident lifecycle (B2M/M2M/V-M2L/S2L/L2L/direct/L2B/M2T)
+        # instead of the uniform one; the adaptive state carries the adaptive
+        # sort's permutation metadata, so the finalize path is unchanged.
+        update_radix_state!(cache, main)
+        split.self_induce || throw(ArgumentError(
+            "the adaptive radix path has no extra-sources-only mode"))
+        isempty(tree_sources) || throw(ArgumentError(
+            "the adaptive radix path does not carry tree_sources; pass them as extra_sources"))
+        run_adaptive_host_radix_lifecycle!(cache)
+        adaptive_state = (cache.adaptive_state::AdaptiveResidentLifecycle).state
+        sfs && _run_host_radix_sfs!(adaptive_state; dsigma=sfs_dsigma)
+        _radix_extra_sources_into_output!(adaptive_state, split.extra_sources)
+        finalize_radix_output!(adaptive_state, main;
+            derivatives_switches=switches,
+            target_buffers=_radix_cache_target_buffers!(cache, switches))
+        sfs && finalize_radix_sfs_output!(adaptive_state, main;
+            sfs_buffers=_radix_cache_sfs_buffers!(cache, main), dsigma=sfs_dsigma,
+            dsfs_buffers=sfs_dsigma ? _radix_cache_dsfs_buffers!(cache, main) : nothing)
+        _radix_extra_targets_evaluate!(adaptive_state, split.extra_targets, extra_switches)
+    end
+    return cache
+end
 
 function fmm!(target_systems, source_systems, cache::Cache; optargs...)
     # promote arguments to Tuples and dispatch to the main method
@@ -931,6 +1067,8 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 - `scalar_potential::Union{Bool,AbstractVector{Bool}}`: whether to compute the scalar potential; default is `false`
 - `gradient::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector field; default is `true`
 - `hessian::Union{Bool,AbstractVector{Bool}}`: whether to compute the vector gradient; default is `false`
+- `third_derivative::Union{Bool,AbstractVector{Bool}}`: whether to compute its packed
+  second spatial derivative; default is `false`
 - `extra_outputs::Union{Int,AbstractVector{Int}}`: number of extra accumulated target output rows; default is `0`
 - `metadata::Union{Nothing,Int,AbstractVector{Int}}`: number of metadata rows carried with target positions; `nothing` infers [`metadata_per_body`](@ref)
 - `extra_farfield::Bool`: whether to compute extra farfield interactions; default is `false`
@@ -938,21 +1076,23 @@ Note: a convenience function `fmm!(system)` is provided, which is equivalent to 
 
 """
 function fmm!(target_systems::Tuple, source_systems::Tuple;
-    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing, optargs...
+    scalar_potential=false, gradient=true, hessian=false, third_derivative=false, extra_outputs=0, metadata=nothing, optargs...
 )
     # allocate cache with actual derivatives switches
     scalar_potential_v = to_vector(scalar_potential, length(target_systems))
     gradient_v = to_vector(gradient, length(target_systems))
     hessian_v = to_vector(hessian, length(target_systems))
-    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; extra_outputs, metadata)
+    third_derivative_v = to_vector(third_derivative, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; third_derivative=third_derivative_v, extra_outputs, metadata)
+    _check_third_derivative_support(target_systems, source_systems, derivatives_switches)
     cache = Cache(target_systems, source_systems, derivatives_switches)
-    return fmm!(target_systems, source_systems, cache; scalar_potential, gradient, hessian, extra_outputs, metadata, optargs...)
+    return fmm!(target_systems, source_systems, cache; scalar_potential, gradient, hessian, third_derivative, extra_outputs, metadata, optargs...)
 end
 
 function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     leaf_size_target=nothing,
     leaf_size_source=default_leaf_size(source_systems),
-    scalar_potential=false, gradient=true, hessian=false, extra_outputs=0, metadata=nothing,
+    scalar_potential=false, gradient=true, hessian=false, third_derivative=false, extra_outputs=0, metadata=nothing,
     expansion_order=5,
     error_tolerance=nothing,
     shrink=true, recenter=false,
@@ -967,9 +1107,11 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     scalar_potential = to_vector(scalar_potential, length(target_systems))
     gradient = to_vector(gradient, length(target_systems))
     hessian = to_vector(hessian, length(target_systems))
+    third_derivative = to_vector(third_derivative, length(target_systems))
 
     # assemble derivatives switch
-    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems; extra_outputs, metadata)
+    derivatives_switches = DerivativesSwitch(scalar_potential, gradient, hessian, target_systems; third_derivative, extra_outputs, metadata)
+    _check_third_derivative_support(target_systems, source_systems, derivatives_switches)
 
     validate_cache_compatibility(cache, target_systems, source_systems, derivatives_switches)
 
@@ -980,8 +1122,8 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, cache::Cache;
     leaf_size_target = to_vector(isnothing(leaf_size_target) ? minimum(leaf_size_source) : leaf_size_target, length(target_systems))
 
     # create trees
-    t_target_tree = @elapsed target_tree = Tree(target_systems, true, derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
-    t_source_tree = @elapsed source_tree = Tree(source_systems, false, derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
+    t_target_tree = @elapsed target_tree = Tree(target_systems, TargetTree(), derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
+    t_source_tree = @elapsed source_tree = Tree(source_systems, SourceTree(), derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
 
     # println("Tree construction times: target = $t_target_tree, source = $t_source_tree")
     # error()
@@ -1017,24 +1159,268 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     return fmm!(target_systems, target_tree, source_systems, source_tree, leaf_size_source, m2l_list, direct_list, derivatives_switches, interaction_list_method; multipole_acceptance, t_source_tree, t_target_tree, t_lists, optargs...)
 end
 
+"""
+    FmmPlan(target_systems::Tuple, source_systems::Tuple; kwargs...)
+
+Precomputed state for repeated `fmm!` calls over FROZEN geometry: `Cache`
+buffers, both `Tree`s, sorted `m2l_list`/`direct_list`, and the derivatives
+switches, built once. `fmm!(target_systems, source_systems, plan)` then skips
+tree and interaction-list construction, refreshing only source strengths and
+target outputs per call.
+
+Validity contract: positions, radii (including any radius contributions that
+depend on system state, e.g. regularization offsets folded into the buffer
+radius), body counts, leaf sizes, expansion order, and the requested
+derivative set are all FROZEN at plan construction — only source STRENGTHS
+may change between calls. The plan performs no staleness detection beyond a
+body-count check; the caller owns invalidation (rebuild the plan whenever
+geometry or radius-affecting state changes).
+
+Accepts the union of the tree-building and list-building kwargs of the
+`fmm!(target_systems, source_systems)` entry point (`expansion_order`,
+`leaf_size_source`/`leaf_size_target`, `multipole_acceptance`,
+`scalar_potential`/`gradient`/`hessian`, `extra_outputs`, `metadata`,
+`shrink`, `recenter`, `interaction_list_method`, `farfield`, `nearfield`,
+`self_induced`).
+"""
+struct FmmPlan{TF,TTT<:Tree,TST<:Tree,TM,TD,TDS,TLS,TILM}
+    cache::Cache{TF}
+    target_tree::TTT
+    source_tree::TST
+    m2l_list::TM
+    direct_list::TD
+    derivatives_switches::TDS
+    leaf_size_source::TLS
+    multipole_acceptance::Float64
+    interaction_list_method::TILM
+    expansion_order::Int
+    n_target_bodies::Int
+    n_source_bodies::Int
+    nearfield_cache::Base.RefValue{Any}   # nothing, or a NearfieldInfluenceCache built from this plan's trees (see build_nearfield_cache!)
+end
+
+"""
+    FMMPLAN_STRUCTURAL_KWARGS
+
+Keyword names accepted by [`FmmPlan`](@ref) that shape the trees or the
+interaction lists (as opposed to a per-apply option). Used to split a caller's
+`kwargs...` between plan construction and the applies that reuse the plan;
+`FmmPlan` has no catch-all `optargs...`, so an unrecognized key is an error
+rather than a silent no-op. Keep in sync with the `FmmPlan` signature below.
+"""
+const FMMPLAN_STRUCTURAL_KWARGS = (:scalar_potential, :gradient, :hessian, :third_derivative,
+    :extra_outputs, :metadata, :leaf_size_target, :shrink, :recenter,
+    :interaction_list_method, :farfield, :nearfield, :self_induced)
+
+function FmmPlan(target_systems::Tuple, source_systems::Tuple;
+    scalar_potential=false, gradient=true, hessian=false, third_derivative=false, extra_outputs=0, metadata=nothing,
+    leaf_size_target=nothing,
+    leaf_size_source=default_leaf_size(source_systems),
+    expansion_order=5,
+    shrink=true, recenter=false,
+    interaction_list_method::InteractionListMethod=SelfTuningTargetStop(),
+    multipole_acceptance=0.4,
+    farfield=true, nearfield=true, self_induced=true,
+)
+    # mirror of fmm!(targets, sources) construction (see the methods above),
+    # stopping short of the passes
+    TF = get_type(target_systems, source_systems)
+    scalar_potential_v = to_vector(scalar_potential, length(target_systems))
+    gradient_v = to_vector(gradient, length(target_systems))
+    hessian_v = to_vector(hessian, length(target_systems))
+    third_derivative_v = to_vector(third_derivative, length(target_systems))
+    derivatives_switches = DerivativesSwitch(scalar_potential_v, gradient_v, hessian_v, target_systems; third_derivative=third_derivative_v, extra_outputs, metadata)
+    _check_third_derivative_support(target_systems, source_systems, derivatives_switches)
+    cache = Cache(target_systems, source_systems, derivatives_switches)
+
+    leaf_size_source = to_vector(leaf_size_source, length(source_systems))
+    leaf_size_target = to_vector(isnothing(leaf_size_target) ? minimum(leaf_size_source) : leaf_size_target, length(target_systems))
+
+    target_tree = Tree(target_systems, TargetTree(), derivatives_switches, TF; buffers=cache.target_buffers, small_buffers=cache.target_small_buffers, expansion_order, leaf_size=leaf_size_target, shrink, recenter, interaction_list_method)
+    source_tree = Tree(source_systems, SourceTree(), derivatives_switches, TF; buffers=cache.source_buffers, small_buffers=cache.source_small_buffers, expansion_order, leaf_size=leaf_size_source, shrink, recenter, interaction_list_method)
+
+    m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size_source, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
+    m2l_list = sort_by_target(m2l_list, target_tree.branches)
+    direct_list = sort_by_target(direct_list, target_tree.branches)
+
+    return FmmPlan(cache, target_tree, source_tree, m2l_list, direct_list,
+        derivatives_switches, leaf_size_source, Float64(multipole_acceptance),
+        interaction_list_method, Int(expansion_order),
+        get_n_bodies(target_systems), get_n_bodies(source_systems),
+        Ref{Any}(nothing))
+end
+
+"""
+    build_nearfield_cache!(plan::FmmPlan, target_systems, source_systems; max_bytes)
+
+Build a [`NearfieldInfluenceCache`](@ref) from the plan's trees and sorted
+direct list and store it in the plan; subsequent `fmm!(targets, sources,
+plan)` calls evaluate the near field as cached BLAS matvecs. The cache
+inherits the plan's validity contract (frozen geometry, only strengths
+change) and dies with the plan's trees. Returns the cache.
+"""
+function build_nearfield_cache!(plan::FmmPlan, target_systems::Tuple, source_systems::Tuple;
+        max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
+        max_build_time::Real=Inf,
+        n_threads::Integer=Threads.nthreads(),
+        use_block_assembly::Bool=true)
+    cache = NearfieldInfluenceCache(target_systems, plan.target_tree,
+        source_systems, plan.source_tree, plan.direct_list,
+        plan.derivatives_switches; max_bytes, max_build_time, n_threads,
+        use_block_assembly)
+    plan.nearfield_cache[] = cache
+    return cache
+end
+
+# cached near-field evaluation inside fmm!; returns the timing vector the
+# kernel paths return. Without tune, the total cached time lands in slot 1
+# (cheap); with tune, the total is attributed per source system in proportion
+# to its share of block interaction counts, so the tune path's division by
+# n_interactions yields the cached per-interaction cost.
+function nearfield_cached!(target_tree, source_tree, cache, direct_conditioning, source_systems, n_threads, tune)
+    _refuse_conditioning(direct_conditioning, "fmm! evaluation")
+    check_cache_trees(cache, target_tree, source_tree)
+    t_nf = @MVector zeros(length(source_systems))
+    t = @elapsed nearfield_matvec!(target_tree.buffers, cache, source_tree.buffers; n_threads)
+    if tune
+        counts = zeros(length(source_systems))
+        for k in eachindex(cache.entries)
+            i_ss = cache.entries[k][4]
+            counts[i_ss] += length(cache.target_ranges[k]) * length(cache.source_ranges[k])
+        end
+        total = sum(counts)
+        if total > 0
+            for i in eachindex(t_nf)
+                t_nf[i] = t * counts[i] / total
+            end
+        end
+    else
+        t_nf[1] = t
+    end
+    return t_nf
+end
+
+# a switch whose requested outputs are direction-carrying: cached near-field
+# blocks for these rows would need a per-block rotation after rigid motion.
+# extra outputs are treated as sensitive (their semantics are user-defined).
+@inline _rotation_sensitive_outputs(::DerivativesSwitch{PS,GS,HS,NO,NM,TS}) where {PS,GS,HS,NO,NM,TS} =
+    GS || HS || TS || NO > 0
+
+"""
+    transform_plan!(plan::FmmPlan, target_systems::Tuple, R, t)
+
+Update `plan` for a RIGID motion `x -> R*x + t` of the (co-moving) target and
+source systems, so the plan can be reused across timesteps of a rigidly
+moving body instead of being rebuilt: both trees are transformed with
+[`transform_tree!`](@ref) (interaction lists are exactly invariant), and the
+target buffer positions/metadata — frozen at plan build; planned `fmm!` calls
+only zero their output rows — are refreshed from the moved `target_systems`.
+Source buffers need no attention here (planned `fmm!` refills them from the
+systems on every call).
+
+Call AFTER the systems have moved (the refreshed target positions are read
+from them). This amends the `FmmPlan` validity contract: geometry may change
+between calls exactly when each rigid step is mirrored by a `transform_plan!`
+call; relative geometry must still be frozen.
+
+A stored [`NearfieldInfluenceCache`](@ref) remains EXACTLY valid for
+scalar-potential outputs (the cached blocks map strengths to outputs through
+the scalar kernel of relative distances, which rigid motion preserves).
+Gradient/hessian/extra-output rows are direction-carrying and would need a
+per-block `G -> R*G` rotation, which is not implemented: transforming a plan
+whose cache serves such outputs throws rather than silently returning
+stale-frame vectors. Drop or rebuild the cache (or the plan) in that case.
+"""
+function transform_plan!(plan::FmmPlan, target_systems::Tuple, R, t)
+    get_n_bodies(target_systems) == plan.n_target_bodies ||
+        throw(ArgumentError("transform_plan!: target body count " *
+            "$(get_n_bodies(target_systems)) does not match the plan's " *
+            "$(plan.n_target_bodies) — rigid motion cannot change body counts"))
+    if plan.nearfield_cache[] !== nothing &&
+            any(_rotation_sensitive_outputs, plan.derivatives_switches)
+        throw(ArgumentError("transform_plan! v1 supports a stored nearfield " *
+            "cache only for scalar-potential-only outputs: cached gradient/" *
+            "hessian/extra-output rows would need a per-block rotation after " *
+            "rigid motion. Drop the cache (plan.nearfield_cache[] = nothing) " *
+            "and rebuild it after the motion, or rebuild the plan."))
+    end
+    transform_tree!(plan.target_tree, R, t)
+    plan.source_tree === plan.target_tree || transform_tree!(plan.source_tree, R, t)
+    target_to_buffer!(plan.target_tree.buffers, target_systems,
+        plan.target_tree.sort_index_list, plan.derivatives_switches)
+    return plan
+end
+
+"""
+    fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
+         refresh_strengths=true, reset_targets=true, optargs...)
+
+Run the FMM using the precomputed `plan` (see [`FmmPlan`](@ref)): refresh
+source strengths into the plan's sorted source buffers, zero the target
+output rows, and dispatch straight to the prebuilt-tree/prebuilt-list `fmm!`
+method. Returns the same tuple as the allocating `fmm!` entry point.
+"""
+function fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
+    refresh_strengths::Bool=true, reset_targets::Bool=true, optargs...
+)
+    get_n_bodies(target_systems) == plan.n_target_bodies &&
+        get_n_bodies(source_systems) == plan.n_source_bodies ||
+        throw(ArgumentError("FmmPlan body counts ($(plan.n_target_bodies) targets, " *
+            "$(plan.n_source_bodies) sources) do not match the provided systems — " *
+            "rebuild the plan after any geometry change"))
+
+    # only strengths may change between calls (see the FmmPlan contract);
+    # buffers are refilled in the trees' sorted order, exactly as at build
+    refresh_strengths && system_to_buffer!(plan.source_tree.buffers,
+        source_systems, plan.source_tree.sort_index_list)
+    reset_targets && reset!(plan.target_tree.buffers)
+
+    return fmm!(target_systems, plan.target_tree, source_systems,
+        plan.source_tree, plan.leaf_size_source, plan.m2l_list,
+        plan.direct_list, plan.derivatives_switches,
+        plan.interaction_list_method;
+        expansion_order=plan.expansion_order,
+        multipole_acceptance=plan.multipole_acceptance,
+        nearfield_cache=plan.nearfield_cache[], optargs...)
+end
+
 function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, source_tree::Tree, leaf_size_source, m2l_list, direct_list, derivatives_switches::Tuple, interaction_list_method::InteractionListMethod;
     expansion_order=5, error_tolerance=nothing,
     upward_pass::Bool=true, horizontal_pass::Bool=true, downward_pass::Bool=true,
     horizontal_pass_verbose::Bool=false,
     reset_target_tree::Bool=true, reset_source_tree::Bool=true,
-    nearfield_device::Bool=false,
+    nearfield_execution::NearfieldExecution=HostNearfield(),
+    nearfield_device::Union{Nothing,Bool}=nothing,
     nearfield::Bool=true,
     tune=false, update_target_systems=true, multipole_acceptance=0.5,
     t_source_tree=0.0, t_target_tree=0.0, t_lists=0.0,
+    # telemetry fields of the `optargs` a tuned call returns, accepted so that
+    # tuple can be splatted straight back into `fmm!` (they are outputs, ignored here)
+    nearfield_cache_feasible=true, nearfield_cache_build_time=0.0,
     silence_warnings=false,
     extra_farfield=false,
     direct_conditioning=(),
+    nearfield_cache=nothing,
+    tune_nearfield_cache::Bool=false,
+    nearfield_cache_max_bytes::Integer=NEARFIELD_CACHE_DEFAULT_MAX_BYTES,
+    nearfield_cache_max_build_time::Real=Inf,
 )
 
     #--- check if lamb-helmholtz decomposition is required ---#
 
     lamb_helmholtz = has_vector_potential(source_systems)
     direct_conditioning = normalize_direct_conditioning(direct_conditioning)
+
+    #--- near-field cache bookkeeping (see NearfieldInfluenceCache) ---#
+
+    # with a PROVIDED cache, tune=true still suggests a new leaf_size_source
+    # (computed from the cached per-interaction timing); acting on it means
+    # new trees, so the USER decides whether to rebuild the cache at the
+    # suggested leaf. tune_nearfield_cache instead builds a throwaway cache
+    # per call (the tune_fmm route).
+    nearfield_cache_provided = !isnothing(nearfield_cache)
+    nearfield_cache_feasible = true
+    nearfield_cache_build_time = 0.0
 
     #--- check for datarace condition ---#
 
@@ -1080,6 +1466,11 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
     if n_target_bodies > 0 && n_source_bodies > 0
 
+        # `nearfield_device` is a compatibility keyword. New code selects a
+        # concrete execution policy and the branch below dispatches through it.
+        nf_execution = nearfield_device === nothing ? nearfield_execution :
+            (nearfield_device ? DeviceNearfield() : HostNearfield())
+
         # check that lamb_helmholtz and ScalarPotential are not both true
         warn_scalar_potential_with_lh(derivatives_switches, lamb_helmholtz)
 
@@ -1118,9 +1509,12 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
         error_success = true
 
         # begin FMM
-        if nearfield_device # use GPU
+        if _device_nearfield(nf_execution)
             if has_direct_conditioning(direct_conditioning)
-                throw(ArgumentError("direct_conditioning is only supported for CPU nearfield; use nearfield_device=false"))
+                throw(ArgumentError("direct_conditioning is only supported with HostNearfield()"))
+            end
+            if nearfield_cache_provided || tune_nearfield_cache
+                throw(ArgumentError("nearfield_cache/tune_nearfield_cache are only supported with HostNearfield()"))
             end
 
             # allow nearfield_device! to be called concurrently with upward and horizontal passes
@@ -1140,11 +1534,39 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
         else # use CPU
 
+            # tune_nearfield_cache: build a THROWAWAY cache for this call's
+            # trees/lists so the tune leaf-size model reflects cached
+            # economics (build cost stays out of t_direct by construction);
+            # over-cap trials are NOT built — the kernel path runs instead and
+            # optargs.nearfield_cache_feasible=false tells the tuner to stop
+            # leaf growth at the last feasible trial
+            if tune && tune_nearfield_cache && !nearfield_cache_provided
+                _refuse_conditioning(direct_conditioning, "tune_nearfield_cache")
+                est = estimate_nearfield_cache(target_tree, source_tree,
+                    direct_list, derivatives_switches, source_systems;
+                    sample=isfinite(nearfield_cache_max_build_time), n_threads)
+                if est.bytes <= nearfield_cache_max_bytes &&
+                        !(isfinite(nearfield_cache_max_build_time) &&
+                          est.est_build_time > nearfield_cache_max_build_time)
+                    nearfield_cache = NearfieldInfluenceCache(target_systems,
+                        target_tree, source_systems, source_tree, direct_list,
+                        derivatives_switches;
+                        max_bytes=nearfield_cache_max_bytes, n_threads)
+                    nearfield_cache_build_time = nearfield_cache.build_time
+                else
+                    nearfield_cache_feasible = false
+                end
+            end
+
             # single threaded
             if n_threads == 1
 
                 # perform nearfield calculations
-                t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, direct_conditioning)
+                if isnothing(nearfield_cache)
+                    t_direct = nearfield_singlethread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, direct_conditioning)
+                else
+                    t_direct = nearfield_cached!(target_tree, source_tree, nearfield_cache, direct_conditioning, source_systems, 1, tune)
+                end
                 # println("Direct interaction time: ", t_direct[1])
 
                 # check number of interactions
@@ -1181,7 +1603,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                 t_dp = 0.0
                 if downward_pass
                     t_dp = @elapsed downward_pass_singlethread_1!(target_tree, expansion_order, lamb_helmholtz)
-                    t_dp += @elapsed gradient_n_m = initialize_gradient_n_m(expansion_order, eltype(target_tree.branches[1]))
+                    needs_third = any(_requests_third_derivative, derivatives_switches)
+                    t_dp += @elapsed gradient_n_m = initialize_gradient_n_m(expansion_order, eltype(target_tree.branches[1]); third_derivative=needs_third)
                     t_dp += @elapsed downward_pass_singlethread_2!(target_tree, target_tree.buffers, expansion_order, lamb_helmholtz, derivatives_switches, gradient_n_m)
                     # println("Downward pass time: ", t_dp)
                 end
@@ -1215,7 +1638,11 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
             else
 
                 # perform nearfield calculations
-                t_direct = nearfield_multithread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, n_threads, direct_conditioning)
+                if isnothing(nearfield_cache)
+                    t_direct = nearfield_multithread!(target_tree.buffers, target_tree.branches, source_systems, source_tree.buffers, source_tree.branches, derivatives_switches, direct_list, interaction_list_method, n_threads, direct_conditioning)
+                else
+                    t_direct = nearfield_cached!(target_tree, source_tree, nearfield_cache, direct_conditioning, source_systems, n_threads, tune)
+                end
                 # println("Direct interaction time: ", t_direct[1])
                 # check number of interactions
                 if tune
@@ -1225,7 +1652,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
                         n_points = length(direct_list)
                         n_per_thread, rem = divrem(n_points,n_threads)
-                        n = n_per_thread + (rem > 0)
+                        # max(...,1): an empty direct_list would give a zero-step range
+                        n = max(n_per_thread + (rem > 0), 1)
                         assignments = 1:n:n_points
 
                         Threads.@threads :static for i_assignment in eachindex(assignments)
@@ -1307,6 +1735,12 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                        leaf_size_source = leaf_size_source,
                        expansion_order = max(expansion_order, 1),
                        multipole_acceptance = multipole_acceptance,
+                       # cached-near-field tuning telemetry (see tune_nearfield_cache):
+                       # feasible=false means this call's cache exceeded a cap and
+                       # the kernel path ran; build_time lets tuners subtract the
+                       # throwaway build from wall-clock comparisons
+                       nearfield_cache_feasible = nearfield_cache_feasible,
+                       nearfield_cache_build_time = nearfield_cache_build_time,
                       )
 
     cache = Cache(;

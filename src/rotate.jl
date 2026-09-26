@@ -2,11 +2,20 @@
 
 #--- spherical coordinates ---#
 
-@inline function cartesian_to_spherical(x; EPSILON=1e-10)
+# The epsilon and the pi below must carry the INPUT's float type. Defaulting
+# them to Float64 literals promotes an otherwise-Float32 computation to
+# Float64, which CUDA silently tolerates but Apple GPUs reject outright
+# ("unsupported use of double value") -- the adaptive S2L/M2T kernels call this
+# from device code. For Float64 inputs these are bit-identical to the previous
+# `1e-10` / `π` literals, so the host path is unchanged.
+@inline _c2s_epsilon(x::AbstractFloat) = oftype(x, 1e-10)
+@inline _c2s_epsilon(x) = 1e-10
+
+@inline function cartesian_to_spherical(x; EPSILON=_c2s_epsilon(x[1]))
     return cartesian_to_spherical(x[1], x[2], x[3]; EPSILON)
 end
 
-@inline function cartesian_to_spherical(x, y, z; EPSILON=1e-10)
+@inline function cartesian_to_spherical(x, y, z; EPSILON=_c2s_epsilon(x))
     x2y2 = x*x + y*y
     r2 = x2y2 + z*z
     epsilon_squared = EPSILON*EPSILON
@@ -17,7 +26,7 @@ end
             z_r = clamp(z/r, -one(r), one(r))
             theta = acos(z_r)
         else
-            theta = π * (z < 0)
+            theta = oftype(r, π) * (z < 0)
         end
     else
         theta = zero(r)
@@ -647,17 +656,20 @@ function update_ζs_mag!(ζs_mag, expansion_order)
     end # otherwise, we already have enough, so do nothing
 end
 
+# the zero must have the magnitude's type: a `0.0` literal made the return type
+# depend on the branch, and in Float32 every call in the rotation loops boxed
+# (7.8 GB of temporaries per operator-table build, 1.6 s instead of 0.09 s)
 @inline function ζ_sign(magnitude, mp, m)
     mod = (abs(mp) - abs(m)) % 4
     mod < 0 && (mod += 4)
     if mod == 0
-        return magnitude, 0.0
+        return magnitude, zero(magnitude)
     elseif mod == 1
-        return 0.0, magnitude
+        return zero(magnitude), magnitude
     elseif mod == 2
-        return -magnitude, 0.0
+        return -magnitude, zero(magnitude)
     elseif mod == 3
-        return 0.0, -magnitude
+        return zero(magnitude), -magnitude
     end
 end
 
@@ -966,13 +978,13 @@ end
     mod = (abs(m) - abs(mp)) % 4
     mod < 0 && (mod += 4)
     if mod == 0
-        return magnitude, 0.0
+        return magnitude, zero(magnitude)
     elseif mod == 1
-        return 0.0, magnitude
+        return zero(magnitude), magnitude
     elseif mod == 2
-        return -magnitude, 0.0
+        return -magnitude, zero(magnitude)
     elseif mod == 3
-        return 0.0, -magnitude
+        return zero(magnitude), -magnitude
     end
 end
 

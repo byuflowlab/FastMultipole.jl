@@ -90,21 +90,121 @@ include("complex.jl")
 include("derivatives.jl")
 include("harmonics.jl")
 include("rotate.jl")
+include("rotate_batched.jl")
 include("translate.jl")
+include("translate_batched.jl")
 include("evaluate_expansions.jl")
 include("tree.jl")
+include("tree_batched.jl")
+include("interaction_list_batched.jl")
+include("translate_batched_resident.jl")
+include("resident_elements.jl")
+include("resident_extra_tree.jl")
+include("radix_extra_systems.jl")
+include("radix_settings.jl")
+include("direct_rectangular.jl")
 
-export Branch, SingleBranch, MultiBranch, Tree, SingleTree, MultiTree, initialize_expansion, initialize_harmonics
-export unsort!, resort!, unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
+export Branch, Tree, initialize_expansion, initialize_harmonics
+export RadixGrid, DeviceRadixGrid, RadixSortBackend, HostRadixSort, DeviceRadixSort, AutoRadixSort, radix_grid
+export ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L, ConstantPAnalyticStencil, HierarchicalRigidStencil, classic_fmm_stencil, rigid_stencil_epsilon, RadixTraversalStrategy
+export RigidHierarchicalTables, RadixLevelOccupancy
+export RigidImplicitStencil, SparseOffsetIntersection, BlockedOccupancyBitsets, LazyMaterializedBatches
+export RadixM2LBatch, RadixInteractionList
+export Residency, HostResident, DeviceResident, residency
+export TreeRole, SourceTree, TargetTree, NearfieldExecution, HostNearfield, DeviceNearfield
+export AbstractDirectKernel, SingularSource, SingularVortex, SingularDipole, SingularSourceVortex, RegularizedVortex,
+    SourceFilamentKernel, DipoleFilamentKernel, VortexFilamentKernel, element_strength_dims,
+    SourcePanelKernel, DipolePanelKernel, SourceDipolePanelKernel, VortexSheetPanelKernel,
+    PartitionedVortex, TwoPassVortex, direct_kernel
+export AbstractRectangularKernel, RectangularGaussianErfVortex,
+    RectangularPanelInfluence, direct_rectangular!, rect_source_rows,
+    rect_output_rows
+export CUDARadixTransferCounters, CUDARadixLifecycleOptions, DeviceResidentRadixState
+export AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M
+export AbstractResidentM2LStrategy, DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L, PrecomputedFactoredYM2L
+export constant_p_stencil_bound, constant_p_stencil_accepts, accepted_radix_stencil
+export foreach_radix_m2l_pair, foreach_radix_m2l_route, foreach_radix_direct_pair, build_radix_interaction_list
+export RadixRouteSelection
+export unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
+export transform_tree!, transform_plan!
+export AbstractOperatorBasis, CompressedComplexBasis, RealSolidHarmonicBasis
+export OperatorOrders, OperatorBasisInfo, OperatorInvariantCache, OperatorScratch, ThreadedOperatorScratch
+export FlatCoefficientBuffer, real_basis_index, complex_to_real_basis!, real_to_complex_basis!
+export AbstractM2LOperator, MaterializedYRotationM2L, FactoredRotationM2L, M2LOperatorScratch
+export AbstractM2MOperator, MaterializedYRotationM2M, FactoredRotationM2M, M2MOperatorScratch
+export AbstractL2LOperator, MaterializedYRotationL2L, FactoredRotationL2L, L2LOperatorScratch
+export RadixDeviceUnavailable
+export host_radix_state, run_host_radix_lifecycle!, host_resident_radix_grid
+export finalize_radix_output!
+export RadixFMMCache, update_radix_state!
+export radix_settings, radix_setting, set_radix_setting!, set_radix_settings!, radix_setting_lock,
+    snapshot_locked_radix_settings, verify_locked_radix_settings
+export AdaptiveTreePolicy, AdaptiveRadixTree, AdaptiveInteractionLists,
+    update_adaptive_tree!, build_adaptive_interaction_lists!,
+    adaptive_is_leaf, adaptive_node_range
+
+"""
+    RadixDeviceUnavailable(reason)
+
+Exception thrown when a device-resident radix operation is requested without a
+registered device backend. `reason` is reported by `showerror`.
+"""
+struct RadixDeviceUnavailable <: Exception
+    reason::String
+end
+
+Base.showerror(io::IO, err::RadixDeviceUnavailable) = print(io, err.reason)
+
+#------- device-backend registry -------#
+#
+# The device-resident radix lifecycle is provided by a package extension
+# (ext/FastMultipoleKAExt.jl for KernelAbstractions backends: CUDA, Metal, ...).
+# The extension REGISTERS its entry points here from its `__init__`, and the
+# stubs in translate_batched_resident.jl consult the registry before throwing.
+# The former hand-written CUDA lifecycle (runtime-`include`d into this module)
+# was removed after the KA port reached parity with it (2026-09-02).
+const _RADIX_DEVICE_BACKEND_NAME = Ref{Any}(nothing)
+const _RADIX_DEVICE_BUILD_HOOK = Ref{Any}(nothing)
+const _RADIX_DEVICE_STEP_HOOK = Ref{Any}(nothing)
+
+"""
+    register_radix_device_backend!(name, build, step!)
+
+Register a non-CUDA device-resident radix lifecycle. `build` is called with the
+argument list of `_radix_cache_device_build` and must return a built
+`RadixFMMCache`; `step!` is called as `step!(cache, targets, switches; sfs)`.
+Called from a package extension's `__init__`.
+"""
+function register_radix_device_backend!(name, build, step!)
+    _RADIX_DEVICE_BACKEND_NAME[] = name
+    _RADIX_DEVICE_BUILD_HOOK[] = build
+    _RADIX_DEVICE_STEP_HOOK[] = step!
+    return nothing
+end
+
+"A non-CUDA device-resident radix lifecycle is registered."
+radix_device_backend_available() = _RADIX_DEVICE_STEP_HOOK[] !== nothing
+
+"Name of the registered non-CUDA radix backend, or `nothing`."
+radix_device_backend_name() = _RADIX_DEVICE_BACKEND_NAME[]
+
+function radix_device_status()
+    name = _RADIX_DEVICE_BACKEND_NAME[]
+    name === nothing && return "no device radix backend registered; load a backend " *
+        "extension (e.g. `using KernelAbstractions` together with CUDA or Metal)"
+    return "device radix lifecycle provided by $(name)"
+end
 
 include("compatibility.jl")
 
-export Body, Position, Radius, ScalarPotential, Gradient, Hessian, Vertex, Normal, Strength
+export Position, Radius, ScalarPotential, Gradient, Hessian, Vertex, Normal, Strength
 export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Panel
 export PowerAbsolutePotential, PowerAbsoluteGradient, RotatedCoefficientsAbsoluteGradient
 # export PowerRelativePotential, PowerRelativeGradient, RotatedCoefficientsRelativeGradient
-export get_n_bodies, buffer_element, body_to_multipole!, direct!, direct_gpu!
-export source_to_buffer!, source_to_buffer
+export get_n_bodies, body_to_multipole!, direct!
+export source_to_buffer!, source_to_buffer, buffer_to_target!
+export body_type, data_per_body, strength_dims, has_vector_potential, get_position
+export recenter!
 
 include("direct_conditioning.jl")
 
@@ -120,14 +220,16 @@ export direct!
 
 include("derivativesswitch.jl")
 
-export DerivativesSwitch, metadata_range, metadata_index, tree_carried_range
-export scalar_potential_index, gradient_range, hessian_range
+export DerivativesSwitch, ThirdDerivativeTensor, packed_data, dense
+export metadata_range, metadata_index, tree_carried_range
+export scalar_potential_index, gradient_range, hessian_range, third_derivative_range
 export standard_output_range, extra_output_range, output_range
 export get_extra_output, set_extra_output!, extra_output_view, output_view
+export get_third_derivative, set_third_derivative!, supports_third_derivative
 
 include("error.jl")
 
-export multipole_error, local_error, error
+export multipole_error, local_error
 
 include("interaction_list.jl")
 
@@ -149,9 +251,44 @@ include("probes.jl")
 
 include("solve.jl")
 
+include("nearfield_cache.jl")
+
+export NearfieldInfluenceCache, nearfield_matvec!, build_nearfield_cache!, estimate_nearfield_cache
+export NearfieldCacheDonor, retarget_nearfield_cache
+export assemble_influence_block!, overrides_block_assembly
+
 include("extra_farfield.jl")
 
-export FastGaussSeidel, JacobiPreconditioner
+export FastGaussSeidel, JacobiPreconditioner, transform_solver!
+
+#------- KERNELABSTRACTIONS GPU SUPPORT -------#
+
+"""
+    ka_m2m_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
+
+KernelAbstractions-compatible M2M kernel. Loaded via FastMultipoleKAExt extension when KernelAbstractions is available.
+"""
+function ka_m2m_operator_batch! end
+
+export ka_m2m_operator_batch!
+
+"""
+    ka_m2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
+
+KernelAbstractions-compatible M2L kernel. Loaded via FastMultipoleKAExt extension when KernelAbstractions is available.
+"""
+function ka_m2l_operator_batch! end
+
+export ka_m2l_operator_batch!
+
+"""
+    ka_l2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
+
+KernelAbstractions-compatible L2L kernel. Loaded via FastMultipoleKAExt extension when KernelAbstractions is available.
+"""
+function ka_l2l_operator_batch! end
+
+export ka_l2l_operator_batch!
 
 #------- PRECALCULATIONS -------#
 

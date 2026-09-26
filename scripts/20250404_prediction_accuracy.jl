@@ -447,7 +447,7 @@ println("Random seed: $seed")
 source = generate_gravitational(seed, n_bodies; strength_scale=1.0/3798.955768976926)
 vortex = generate_vortex(seed, n_bodies; strength_scale=1.0/10566.33461495282)
 
-fmm!(source; expansion_order=4, multipole_acceptance=0.5)
+fmm!(vortex; expansion_order=4, multipole_acceptance=0.5)
 
 # #--- rotated coefficients ---#
 
@@ -467,13 +467,13 @@ fmm!(source; expansion_order=4, multipole_acceptance=0.5)
 
 #--- multipole power method ---#
 
-expansion_orders = 1:20
+expansion_orders = 1:2
 multipole_acceptance = 0.5
 shrink, recenter = false, false
 leaf_size = SVector{1}(50)
 
-# error_method = FastMultipole.PowerAbsoluteGradient{1.0,false}()
-error_method = FastMultipole.DehnenAbsoluteGradient()
+error_method = FastMultipole.PowerAbsoluteGradient{1.0,true}()
+# error_method = FastMultipole.DehnenAbsoluteGradient()
 
 error_method_potential = FastMultipole.PringleAbsolutePotential()
 error_method_potential2 = FastMultipole.HeuristicAbsolutePotential()
@@ -485,8 +485,9 @@ force_smaller_target = false
 # interaction_list_method = FastMultipole.SelfTuningTargetStop()
 interaction_list_method = FastMultipole.SelfTuning()
 # interaction_list_method = FastMultipole.Barba()
-max_errs_list, max_errs_potential_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list, ε_pot_hat_list, ε_pot_hat_list2, ε_pot_hat_list3, ε_pot_hat_list4 = test_accuracy((source,), (source,), expansion_orders, multipole_acceptance, shrink, recenter, leaf_size, error_method, error_method_potential, error_method_potential2, error_method_potential3, error_method_potential4; n_m2l, interaction_list_method, force_smaller_target)
-filename_base = "dehnen"
+# max_errs_list, max_errs_potential_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list, ε_pot_hat_list, ε_pot_hat_list2, ε_pot_hat_list3, ε_pot_hat_list4 = test_accuracy((source,), (source,), expansion_orders, multipole_acceptance, shrink, recenter, leaf_size, error_method, error_method_potential, error_method_potential2, error_method_potential3, error_method_potential4; n_m2l, interaction_list_method, force_smaller_target)
+max_errs_list, max_errs_potential_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list, ε_pot_hat_list, ε_pot_hat_list2, ε_pot_hat_list3, ε_pot_hat_list4 = test_accuracy((vortex,), (vortex,), expansion_orders, multipole_acceptance, shrink, recenter, leaf_size, error_method, error_method_potential, error_method_potential2, error_method_potential3, error_method_potential4; n_m2l, interaction_list_method, force_smaller_target)
+filename_base = "power_gradient_vortex"
 save_csv(filename_base, max_errs_list, max_errs_potential_list, max_mp_errs_list, ε_mp_hat_list, ε_l_hat_list, ε_hat_list, ε_pot_hat_list, ε_pot_hat_list2, ε_pot_hat_list3, ε_pot_hat_list4, expansion_orders, multipole_acceptance, leaf_size[1])
 plot_error_data(filename_base, multipole_acceptance, leaf_size[1])
 

@@ -15,6 +15,8 @@ makedocs(;
         canonical="https://flow.byu.edu/FastMultipole.jl",
         edit_link="main",
         assets=String[],
+        # reference.md documents the whole radix API on one page
+        size_threshold=1_000_000, size_threshold_warn=600_000,
     ),
     pages=[
 		"Introduction" => "index.md",
@@ -24,10 +26,12 @@ makedocs(;
         "Tuning Parameters" => "tuning.md",
         "Multiple Systems" => "advanced_usage.md",
         "Automated Tuning" => "advanced_usage_2.md",
+        "Running on a GPU" => "gpu.md",
+        "Device Interface" => "device_interface.md",
         "Reference" => "reference.md",
         # "Theory" => "theory.md"
     ],
-    checkdocs=:none
+    checkdocs=:exports
 )
 
 deploydocs(;

@@ -1,11 +1,21 @@
 #------- matrix storage -------#
 
+# calloc-backed zeros: pairs with assemble_influence_block!'s assignment
+# semantics — zero pages come free from the OS and are first-touched by the
+# worker that fills each block (non-bits eltypes fall back to zeros())
+function _calloc_vector(::Type{TF}, n::Integer) where TF
+    (isbitstype(TF) && n > 0) || return zeros(TF, n)
+    ptr = Ptr{TF}(Libc.calloc(n, sizeof(TF)))
+    ptr == C_NULL && throw(OutOfMemoryError())
+    return unsafe_wrap(Array, ptr, Int(n); own=true)
+end
+
 function Matrices(sizes::Vector{Tuple{Int,Int}}, TF=Float64)
-    # preallocate matrix storage
+    # preallocate matrix storage (zero-initialized; see _calloc_vector)
     n_matrix = sum(m * n for (m, n) in sizes)
     n_rhs = sum(m for (m,_) in sizes)
-    data = Vector{TF}(undef, n_matrix)
-    rhs = Vector{TF}(undef, n_rhs)
+    data = _calloc_vector(TF, n_matrix)
+    rhs = _calloc_vector(TF, n_rhs)
 
     # offsets
     matrix_offsets = Vector{Int}(undef, length(sizes))
@@ -42,12 +52,51 @@ end
     return rhs_offset:rhs_offset + m - 1
 end
 
+# internal: block k's storage as a plain Matrix (no ReshapedArray/SubArray
+# indirection — measurably faster for scalar-indexed assembly). The caller
+# must GC.@preserve `ms` (or ms.data) for the wrapper's lifetime and must not
+# let it escape.
+@inline function unsafe_get_block_matrix(ms::Matrices, k::Int)
+    m, n = ms.sizes[k]
+    return unsafe_wrap(Array, pointer(ms.data, ms.matrix_offsets[k]), (m, n))
+end
+
 function get_matrix_vector(ms::Matrices, k::Int)
     m, n = ms.sizes[k]
     vrange = get_rhs_range(ms, k, m)
     mrange = get_matrix_range(ms, k, m, n)
     mat = @view ms.data[mrange]
     return reshape(mat, m, n), view(ms.rhs, vrange)
+end
+
+function build_leaf_lu_cache(self_matrices::Matrices{TF}) where TF
+    start_time = time_ns()
+    data = copy(self_matrices.data)
+    factors = map(eachindex(self_matrices.sizes)) do k
+        m, n = self_matrices.sizes[k]
+        m == n || throw(DimensionMismatch(
+            "FastGaussSeidel self-influence block $k must be square, got $(m)×$(n)"))
+        matrix_range = get_matrix_range(self_matrices, k, m, n)
+        factor_matrix = reshape(view(data, matrix_range), m, n)
+        lu!(factor_matrix; check=true)
+    end
+    build_time = (time_ns() - start_time) * 1e-9
+    bytes = sizeof(data) + sum(sizeof(F.ipiv) for F in factors)
+    return LeafLUCache{TF,eltype(factors)}(data, factors, build_time, bytes)
+end
+
+@inline function solve_leaf!(leaf_strengths, self_matrices::Matrices,
+                             ::Nothing, i_leaf::Int)
+    mat, rhs = get_matrix_vector(self_matrices, i_leaf)
+    leaf_strengths .= mat \ rhs
+    return leaf_strengths
+end
+
+@inline function solve_leaf!(leaf_strengths, self_matrices::Matrices,
+                             cache::LeafLUCache, i_leaf::Int)
+    _, rhs = get_matrix_vector(self_matrices, i_leaf)
+    ldiv!(leaf_strengths, cache.factorizations[i_leaf], rhs)
+    return leaf_strengths
 end
 
 function set_unit_strength!(source_buffers::AbstractVector{<:Matrix}, source_systems::Tuple)
@@ -531,6 +580,28 @@ function add_self_interactions(direct_list::Vector{SVector{2,Int32}}, source_tre
     return full_direct_list
 end
 
+"""
+    assert_shared_topology(target_tree, source_tree)
+
+Errors if the two trees do not share identical octree topology (branch count and
+per-branch `bodies_index`/`branch_index`). `FastGaussSeidel` requires this invariant
+because its interaction lists and influence matrices use source- and target-tree branch
+indices interchangeably; a silent divergence would mis-associate blocks rather than crash.
+"""
+function assert_shared_topology(target_tree::Tree, source_tree::Tree)
+    length(target_tree.branches) == length(source_tree.branches) || error(
+        "FastGaussSeidel requires structurally identical source/target trees, but got " *
+        "$(length(target_tree.branches)) target vs $(length(source_tree.branches)) source branches; " *
+        "the target tree should replay the source tree's topology — please file an issue.")
+    for (i_branch, (tb, sb)) in enumerate(zip(target_tree.branches, source_tree.branches))
+        (tb.bodies_index == sb.bodies_index && tb.branch_index == sb.branch_index) || error(
+            "FastGaussSeidel requires structurally identical source/target trees, but branch " *
+            "$i_branch differs: target (bodies_index=$(tb.bodies_index), branch_index=$(tb.branch_index)) " *
+            "vs source (bodies_index=$(sb.bodies_index), branch_index=$(sb.branch_index)); " *
+            "the target tree should replay the source tree's topology — please file an issue.")
+    end
+end
+
 FastGaussSeidel(system; optargs...) = FastGaussSeidel((system,); optargs...)
 
 FastGaussSeidel(systems::Tuple; optargs...) = FastGaussSeidel(systems, systems; optargs...)
@@ -541,8 +612,11 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     expansion_order=4, multipole_acceptance=0.5, leaf_size=30,
     interaction_list_method=Barba(), shrink=true, recenter=false,
     derivatives_switches=DerivativesSwitch(true, true, false, target_systems),
-    extra_farfield=false
+    extra_farfield=false, cache_leaf_lu::Bool=true,
+    sweep_order::Symbol=:lexicographic
 )
+    sweep_order in (:lexicographic, :colored) || throw(ArgumentError(
+        "sweep_order must be :lexicographic or :colored (got $(repr(sweep_order)))"))
 
     #--- identical source and target trees ---#
 
@@ -554,12 +628,16 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     # promote leaf_size to vector
     leaf_size = to_vector(leaf_size, length(source_systems))
 
-    # create trees
+    # create trees; the target tree REPLAYS the source tree's topology (identical branch
+    # structure and body order) with a target-role shrink pass, since the block
+    # bookkeeping below indexes both trees interchangeably and independently built trees
+    # can diverge (source subdivision stops early at large body radii)
     TF = promote_type(numtype.(target_systems)...)
-    switches = DerivativesSwitch(true, true, true, target_systems)
-    target_tree = Tree(target_systems, true, switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
     switches = DerivativesSwitch(true, true, true, source_systems)
-    source_tree = Tree(source_systems, false, switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
+    source_tree = Tree(source_systems, SourceTree(), switches; expansion_order, leaf_size, shrink, recenter, interaction_list_method)
+    switches = DerivativesSwitch(true, true, true, target_systems)
+    target_tree = Tree(source_tree, target_systems, switches; shrink, recenter)
+    assert_shared_topology(target_tree, source_tree)
 
     #--- ensure no leaves have fewer than 2 bodies ---#
 
@@ -574,6 +652,19 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
 
     farfield, nearfield, self_induced = true, true, false # self-induced interactions accounted for in self-influence matrices
     m2l_list, direct_list = build_interaction_lists(target_tree.branches, source_tree.branches, leaf_size, multipole_acceptance, farfield, nearfield, self_induced, interaction_list_method)
+
+    # Canonical owner-major order is required before any threaded M2L
+    # assignments or matrix/index maps are constructed.  `assign_m2l!`
+    # partitions only at contiguous target boundaries; the parallel list
+    # builder's assignment-order concatenation does not guarantee that all
+    # interactions for one target are contiguous, which otherwise permits
+    # concurrent `+=` into the same target expansion.
+    # The counting sorts are stable and O(list + branches): source first,
+    # then target, yields lexicographic (target, source) order.
+    m2l_list = sort_by_target(sort_by_source(m2l_list, source_tree.branches),
+                              target_tree.branches)
+    direct_list = sort_by_target(sort_by_source(direct_list, source_tree.branches),
+                                 target_tree.branches)
 
     #--- build non-self influence matrices ---#
 
@@ -591,6 +682,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     #--- build self-influence matrices ---#
 
     self_matrices = self_influence_matrices(target_tree.buffers, source_tree.buffers, source_systems, target_tree, source_tree, derivatives_switches)
+    leaf_lu_cache = cache_leaf_lu ? build_leaf_lu_cache(self_matrices) : nothing
 
     #--- source strength vector ---#
 
@@ -628,8 +720,20 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
     # construct residual vector
     residual_vector = Vector{TF}(undef, n_max)
 
-    return FastGaussSeidel{TF,length(source_systems),typeof(interaction_list_method)}(
+    #--- colored-sweep structures (opt-in; empty when lexicographic) ---#
+
+    if sweep_order === :colored
+        leaf_colors, leaves_by_color = color_leaves(source_tree, sorted_list,
+                                                   index_map, targets_by_branch)
+    else
+        leaf_colors = Int[]
+        leaves_by_color = Vector{Int}[]
+    end
+
+    return FastGaussSeidel{TF,length(source_systems),typeof(interaction_list_method),typeof(leaf_lu_cache)}(
         self_matrices,
+        leaf_lu_cache,
+        cache_leaf_lu,
         nonself_matrices,
         index_map,
         m2l_list,
@@ -647,7 +751,53 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
         influences_per_system,
         residual_vector,
         extra_farfield,
+        sweep_order,
+        leaf_colors,
+        leaves_by_color,
+        Ref(false),
     )
+end
+
+"""
+    transform_solver!(solver::FastGaussSeidel, target_systems::Tuple, R, t)
+
+Update a `FastGaussSeidel` solver for a RIGID motion `x -> R*x + t` of its
+(co-moving) systems, so the solver can be reused across timesteps instead of
+being rebuilt: both trees are transformed with [`transform_tree!`](@ref)
+(interaction lists are exactly invariant) and the target buffer
+positions/metadata — written only at construction; `solve!` refreshes source
+buffers and target INFLUENCE rows per call, never target positions — are
+refreshed from the moved `target_systems`. Call AFTER the systems have moved.
+
+Without this, `solve!` on a moved system silently forms far-field expansions
+about construction-time branch centers: bodies leave their branches as
+rotation accumulates and the multipole acceptance criterion that justified
+the interaction lists no longer holds — error grows with rotation angle.
+
+The dense self/nonself influence matrices stay untouched: their
+scalar-potential rows depend only on relative geometry, which rigid motion
+preserves exactly. Their GRADIENT rows are direction-carrying and do NOT
+rotate with the body, so once a solver has been transformed, `solve!` with
+`gradient=true` refuses loudly (scalar-potential solves remain exact).
+
+Reusable dense blocks also require every kernel-consumed auxiliary geometry,
+active kernel offset, and source-buffer radius to remain invariant under the
+same rigid motion. Rebuild the solver after any non-rigid change to those
+quantities.
+"""
+function transform_solver!(solver::FastGaussSeidel, target_systems::Tuple, R, t)
+    get_n_bodies(target_systems) == length(solver.strengths) ||
+        throw(ArgumentError("transform_solver!: target body count " *
+            "$(get_n_bodies(target_systems)) does not match the solver's " *
+            "$(length(solver.strengths)) — rigid motion cannot change body counts"))
+    transform_tree!(solver.source_tree, R, t)
+    solver.target_tree === solver.source_tree ||
+        transform_tree!(solver.target_tree, R, t)
+    switches = DerivativesSwitch(true, true, true, target_systems)
+    target_to_buffer!(solver.target_tree.buffers, target_systems,
+        solver.target_tree.sort_index_list, switches)
+    solver.transformed[] = true
+    return solver
 end
 
 function reset!(v::Vector{TF}) where TF<:Number
@@ -744,6 +894,15 @@ function update_nonself_influence!(right_hand_side, strengths::Vector, nonself_m
 end
 
 function update_nonself_influence!(right_hand_side, strengths::Vector, nonself_matrices::Matrices, old_influence_storage, i_leaf::Int, source_tree::Tree, target_tree::Tree, strengths_by_leaf::Vector{UnitRange{Int}}, index_map::Vector{UnitRange{Int}}, direct_list::Vector{SVector{2,Int32}}, targets_by_branch::Vector{UnitRange{Int}})
+    compute_nonself_products!(strengths, nonself_matrices, old_influence_storage, i_leaf, strengths_by_leaf)
+    scatter_nonself_influence!(right_hand_side, nonself_matrices, old_influence_storage, i_leaf, target_tree, index_map, direct_list, targets_by_branch)
+    return nothing
+end
+
+# Thread-safe half of update_nonself_influence!: every write lands in leaf
+# `i_leaf`'s own disjoint blocks of `nonself_matrices.rhs` and
+# `old_influence_storage`, so distinct leaves may run concurrently.
+function compute_nonself_products!(strengths::Vector, nonself_matrices::Matrices, old_influence_storage, i_leaf::Int, strengths_by_leaf::Vector{UnitRange{Int}})
 
     # unpack influence matrix and right-hand side
     mat, target_influence = get_matrix_vector(nonself_matrices, i_leaf)
@@ -753,8 +912,6 @@ function update_nonself_influence!(right_hand_side, strengths::Vector, nonself_m
 
     if length(target_influence) > 0
 
-        #--- compute the updated influence ---#
-
         # unpack strengths
         leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
 
@@ -763,8 +920,21 @@ function update_nonself_influence!(right_hand_side, strengths::Vector, nonself_m
 
         # compute the influence
         mul!(target_influence, mat, leaf_strengths)
+    end
+    return nothing
+end
 
-        #--- move to right-hand side ---#
+# Serial half of update_nonself_influence!: applies leaf `i_leaf`'s
+# already-computed old/new products to the shared `right_hand_side` — target
+# rows overlap between leaves, so calls must not run concurrently.
+function scatter_nonself_influence!(right_hand_side, nonself_matrices::Matrices, old_influence_storage, i_leaf::Int, target_tree::Tree, index_map::Vector{UnitRange{Int}}, direct_list::Vector{SVector{2,Int32}}, targets_by_branch::Vector{UnitRange{Int}})
+
+    _, target_influence = get_matrix_vector(nonself_matrices, i_leaf)
+    m = length(target_influence)
+    rhs_offset = nonself_matrices.rhs_offsets[i_leaf]
+    old_influence = view(old_influence_storage, rhs_offset:rhs_offset + m - 1)
+
+    if length(target_influence) > 0
 
         # determine which target branches this leaf influences
         direct_list_indices = index_map[i_leaf]
@@ -792,6 +962,145 @@ function update_nonself_influence!(right_hand_side, strengths::Vector, nonself_m
             this_rhs .-= this_influence
         end
     end
+    return nothing
+end
+
+"""
+    color_leaves(source_tree, sorted_list, index_map, targets_by_branch)
+
+Greedy graph coloring of the source leaves by direct-interaction conflict, for
+`sweep_order=:colored` (deterministic: pure function of the sorted lists,
+independent of thread count). Two leaves conflict when one's nonself update
+WRITES right-hand-side rows that overlap the other's OWN rows (its leaf-solve
+READ set) — including overlap through non-leaf target branches, whose row
+ranges span several leaves' rows. Within one color no leaf reads rows another
+writes, so deferring all of a color's scatters to the color boundary
+reproduces sequential Gauss-Seidel in color-major leaf order EXACTLY (the
+serial ascending-leaf scatter preserves the sequential floating-point
+accumulation order on shared target rows).
+
+Returns `(leaf_colors, leaves_by_color)`, colors 1-based, leaves ascending
+within each color.
+"""
+function color_leaves(source_tree::Tree, sorted_list::Vector{SVector{2,Int32}},
+                      index_map::Vector{UnitRange{Int}},
+                      targets_by_branch::Vector{UnitRange{Int}})
+
+    n_leaves = length(source_tree.leaf_index)
+
+    # each leaf's own rhs rows (ascending, disjoint: leaves partition bodies
+    # in tree order)
+    leaf_ranges = [targets_by_branch[i_branch] for i_branch in source_tree.leaf_index]
+    leaf_starts = [first(r) for r in leaf_ranges]
+
+    # leaves whose own rows overlap a target-branch row range. Leaf ranges
+    # TILE the target rows contiguously in ascending order (each body lives in
+    # exactly one leaf), so two binary searches bracket the overlap exactly.
+    function overlapping_leaves(rows::UnitRange{Int})
+        isempty(rows) && return 1:0
+        lo = max(searchsortedlast(leaf_starts, first(rows)), 1)
+        hi = max(searchsortedlast(leaf_starts, last(rows)), 1)
+        return lo:hi
+    end
+
+    # adjacency: L writes targets_by_branch[i_target] for each of its direct
+    # entries -> conflict with every leaf overlapping those rows (symmetrized)
+    adjacency = [Set{Int}() for _ in 1:n_leaves]
+    for i_leaf in 1:n_leaves
+        for index in index_map[i_leaf]
+            i_target, _ = sorted_list[index]
+            for k_leaf in overlapping_leaves(targets_by_branch[i_target])
+                k_leaf == i_leaf && continue
+                push!(adjacency[i_leaf], k_leaf)
+                push!(adjacency[k_leaf], i_leaf)
+            end
+        end
+    end
+
+    # greedy coloring, ascending leaf order, smallest admissible color
+    leaf_colors = zeros(Int, n_leaves)
+    used = Int[]
+    for i_leaf in 1:n_leaves
+        empty!(used)
+        for k in adjacency[i_leaf]
+            leaf_colors[k] > 0 && push!(used, leaf_colors[k])
+        end
+        c = 1
+        while c in used
+            c += 1
+        end
+        leaf_colors[i_leaf] = c
+    end
+
+    n_colors = n_leaves == 0 ? 0 : maximum(leaf_colors)
+    leaves_by_color = [Int[] for _ in 1:n_colors]
+    for i_leaf in 1:n_leaves   # ascending within color by construction
+        push!(leaves_by_color[leaf_colors[i_leaf]], i_leaf)
+    end
+
+    return leaf_colors, leaves_by_color
+end
+
+"""
+One Gauss-Seidel sweep over all source leaves.
+
+- `sweep_order == :lexicographic` (default): the historical serial loop —
+  solve leaf, immediately scatter its nonself update — bit-identical to the
+  pre-refactor code. NOTE the historical `reverse_pass` quirk is preserved:
+  the legacy loop iterated `enumerate(reverse(leaf_index))` but used only the
+  enumeration counter `i_leaf`, so the "reverse" sweep visited leaves in
+  FORWARD order; both sweep orders keep that behavior (flagged for review —
+  changing it would alter the reverse_pass iteration).
+- `sweep_order == :colored`: within each color, leaf solves and nonself
+  PRODUCTS run in parallel (all writes per leaf are disjoint); the RHS
+  scatter then runs serially in ascending leaf order at the color boundary.
+  Coloring guarantees no same-color leaf reads rows another writes, so this
+  reproduces sequential GS in color-major leaf order exactly (see
+  `color_leaves`), deterministically at any thread count.
+"""
+function gs_sweep!(strengths, self_matrices, leaf_lu_cache, right_hand_side,
+                   nonself_matrices, old_influence_storage, source_tree,
+                   target_tree, strengths_by_leaf, index_map, direct_list,
+                   targets_by_branch, solver, reverse_sweep::Bool)
+
+    if solver.sweep_order === :colored
+
+        for leaves in solver.leaves_by_color
+            # parallel: per-leaf-disjoint writes only (strengths block +
+            # nonself product/old-influence blocks)
+            Threads.@threads for i_leaf in leaves
+                leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
+                solve_leaf!(leaf_strengths, self_matrices, leaf_lu_cache, i_leaf)
+                length(direct_list) > 0 && compute_nonself_products!(strengths,
+                    nonself_matrices, old_influence_storage, i_leaf,
+                    strengths_by_leaf)
+            end
+            # serial scatter, fixed ascending order: preserves the sequential
+            # accumulation order on shared target rows (determinism + the
+            # color-major-GS equivalence)
+            if length(direct_list) > 0
+                for i_leaf in leaves
+                    scatter_nonself_influence!(right_hand_side,
+                        nonself_matrices, old_influence_storage, i_leaf,
+                        target_tree, index_map, direct_list, targets_by_branch)
+                end
+            end
+        end
+
+    else # :lexicographic — the historical serial loop, bit-identical
+
+        for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
+            leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
+            solve_leaf!(leaf_strengths, self_matrices, leaf_lu_cache, i_leaf)
+            length(direct_list) > 0 && update_nonself_influence!(
+                right_hand_side, strengths, nonself_matrices,
+                old_influence_storage, i_leaf, source_tree, target_tree,
+                strengths_by_leaf, index_map, direct_list, targets_by_branch)
+        end
+
+    end
+
+    return nothing
 end
 
 solve!(system, solver::FastGaussSeidel; optargs...) = solve!((system,), solver; optargs...)
@@ -803,8 +1112,22 @@ solve!(target_systems, source_systems, solver::FastGaussSeidel; optargs...) = so
 function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussSeidel{TF,N};
     scalar_potential=false, gradient=true, hessian=false,
     max_iterations=10, inner_iterations=1, tolerance=1e-3,
-    rlx=1.0, reverse_pass=false, verbose=true, final_update=true
+    rlx=1.0, reverse_pass=false, verbose=true, final_update=true,
+    callback=nothing
 ) where {TF,N}
+
+    #--- refuse direction-carrying outputs on a transformed solver ---#
+
+    # the dense influence matrices embed build-time gradient rows, which do
+    # not rotate with the body (see transform_solver!)
+    if solver.transformed[] &&
+            (any(to_vector(gradient, N)) || any(to_vector(hessian, N)))
+        throw(ArgumentError("this FastGaussSeidel solver has been rigidly " *
+            "transformed (transform_solver!): its dense influence matrices " *
+            "embed build-time gradient/hessian rows, which do not rotate " *
+            "with the body — only scalar_potential solves are valid. " *
+            "Rebuild the solver for gradient solves under rigid motion."))
+    end
 
     #--- derivatives switches ---#
 
@@ -817,6 +1140,7 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
     source_buffers = source_tree.buffers
     target_buffers = target_tree.buffers
     self_matrices = solver.self_matrices
+    leaf_lu_cache = solver.leaf_lu_cache
     nonself_matrices = solver.nonself_matrices
     index_map = solver.index_map
     m2l_list = solver.m2l_list
@@ -901,6 +1225,11 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
         # note that `right_hand_side` now contains external, nonself, and farfield influence
         mse = residual!(residual_vector, self_matrices, strengths, strengths_by_leaf)
 
+        # convergence-history hook: called once per outer iteration with the
+        # exact residual the loop's tolerance check uses (max-abs, despite the
+        # MSE label); default nothing → zero behavior change
+        callback === nothing || callback(iteration, mse)
+
         verbose && println("Iteration $(iteration):\tMSE = $(mse),\tdelta = $(Δ)")
 
         # if mse > mse_best * 10 # stop if mse begins increasing
@@ -922,39 +1251,17 @@ function solve!(target_systems::Tuple, source_systems::Tuple, solver::FastGaussS
 
         for i_inner in 1:inner_iterations
 
-            for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
-
-                # unpack influence matrix and right-hand side
-                mat, rhs = get_matrix_vector(self_matrices, i_leaf)
-
-                # unpack strengths
-                leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
-
-                # solve for strengths
-                leaf_strengths .= mat \ rhs
-
-                # update non-self influence
-                length(direct_list) > 0 && update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, i_leaf, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
-
-            end
+            gs_sweep!(strengths, self_matrices, leaf_lu_cache, right_hand_side,
+                nonself_matrices, old_influence_storage, source_tree,
+                target_tree, strengths_by_leaf, index_map, direct_list,
+                targets_by_branch, solver, false)
 
             if reverse_pass
                 #--- reverse pass ---#
-
-                for (i_leaf, i_branch) in enumerate(reverse(source_tree.leaf_index))
-
-                    # unpack influence matrix and right-hand side
-                    mat, rhs = get_matrix_vector(self_matrices, i_leaf)
-
-                    # unpack strengths
-                    leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
-
-                    # solve for strengths
-                    leaf_strengths .= mat \ rhs
-
-                    # update non-self influence
-                    length(direct_list) > 0 && update_nonself_influence!(right_hand_side, strengths, nonself_matrices, old_influence_storage, i_leaf, source_tree, target_tree, strengths_by_leaf, index_map, direct_list, targets_by_branch)
-                end
+                gs_sweep!(strengths, self_matrices, leaf_lu_cache,
+                    right_hand_side, nonself_matrices, old_influence_storage,
+                    source_tree, target_tree, strengths_by_leaf, index_map,
+                    direct_list, targets_by_branch, solver, true)
             end
 
         end

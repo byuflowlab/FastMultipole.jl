@@ -1,5 +1,83 @@
 #------- functions that should be overloaded for each user-defined system for use in the FMM -------#
 
+"""
+    residency(system)
+
+Return whether a system's canonical FastMultipole buffers live on the host or on
+the active device. Systems are host-resident by default. Device-backed systems
+may opt into CUDA device-native materialization by overloading this method to
+return [`DeviceResident()`](@ref).
+"""
+residency(system) = HostResident()
+
+"""
+    supports_third_derivative(target_system, source_system) -> Bool
+
+Opt-in trait for a target/source pair whose direct interaction and target writeback
+implement packed third-derivative output. It defaults to `false` so legacy kernels cannot
+silently return incomplete near-field results.
+"""
+supports_third_derivative(target_system, source_system) = false
+
+@inline _requests_third_derivative(::DerivativesSwitch{PS,GS,HS,NO,NM,TS}) where {PS,GS,HS,NO,NM,TS} = TS
+
+function _check_third_derivative_support(target_systems, source_systems, switches)
+    for (target, switch) in zip(target_systems, switches)
+        _requests_third_derivative(switch) || continue
+        for source in source_systems
+            supports_third_derivative(target, source) || throw(ArgumentError(
+                "third_derivative=true requires supports_third_derivative(target, source) == true; " *
+                "unsupported pair: $(typeof(target)) <- $(typeof(source))"))
+        end
+    end
+    return nothing
+end
+
+"""
+    body_type(system)
+
+Return the element type used to form multipole expansions from `system` on the
+radix/resident path (task 032), e.g. `Point{Source}` (default) or
+`Point{Vortex}`. The returned value is the element *type* itself, matching the
+`body_to_multipole!(Point{Vortex}, system, args...)` convention of the legacy
+path. All source systems sharing one `RadixFMMCache` must return the same body
+type; `Point{Vortex}` requires `has_vector_potential(system) == true` (the
+Lamb-Helmholtz χ channel), which is checked at cache construction.
+"""
+body_type(system) = Point{Source}
+
+"""
+    direct_kernel(system)
+
+Return the nearfield direct-interaction kernel functor used for `system` on the
+radix/resident path (task 032 stage 2). Defaults follow [`body_type`](@ref):
+`SingularSource()` for `Point{Source}` and `SingularVortex()` for
+`Point{Vortex}`. Overload to select [`RegularizedVortex`](@ref) (regularized
+Biot-Savart, `gaussianerf`) or a custom kernel. All source systems sharing one
+`RadixFMMCache` must return equal kernels; the functor must be `isbits` and, for
+`device=true` caches, GPU-compilable. It is stamped into the cache options at
+construction, so the pair kernels specialize on it at compile time (one kernel
+instantiation per functor type, no runtime branch in the pair loop).
+
+Custom kernels subtype `AbstractDirectKernel` and implement (with
+`kernel = direct_kernel(system)`):
+
+- `_direct_pair_ug(kernel, dx, dy, dz, r2, invr, source_bodies, j)` returning
+  `(u, gx, gy, gz)`, and
+- `_direct_pair_ugh(kernel, dx, dy, dz, r2, invr, source_bodies, j)` returning
+  `(u, gx, gy, gz, h1, ..., h9)` (hessian in column-major 3×3 order), and
+- `_emits_potential(kernel)::Bool` — whether `u` is meaningful (row 1 written).
+
+Here `dx, dy, dz = target - source`, `r2 = dx^2+dy^2+dz^2 > 0`, and
+`invr = inv(sqrt(r2))` (self/coincident pairs are skipped by the caller).
+`source_bodies[:, j]` is the packed source
+column (`[x, y, z, radius, strength..., extras...]`), giving the kernel access
+to per-source extra states such as a smoothing radius. This flat-argument form
+deviates from the spec §5 column-view signature so the same code compiles as a
+CUDA device function without constructing a view per pair.
+"""
+direct_kernel(system) = _default_direct_kernel(body_type(system))
+
 #--- buffer functions ---#
 
 """
@@ -31,6 +109,17 @@ Returns the number of values used to represent a single body in a source system.
 function data_per_body(system)
     throw("data_per_body not overloaded for type $(typeof(system))")
 end
+
+"""
+    source_revision(system::{UserDefinedSystem})
+
+A value that changes whenever the system's bodies change, or `nothing` (the
+default). A device radix cache reuses the binned bodies and multipole columns
+of an extra tree source across calls while its revision and the resident grid's
+occupancy epoch are both unchanged -- the RK3 stages of a solver whose bodies
+are frozen over the step. `nothing` disables the reuse for that system.
+"""
+source_revision(system) = nothing
 
 #--- getters ---#
 
@@ -328,6 +417,27 @@ function buffer_to_target!(target_systems::Tuple, target_tree::Tree, derivatives
     buffer_to_target!(target_systems, target_tree.buffers, derivatives_switches, target_tree.sort_index_list)
 end
 
+"""
+    buffer_to_target!(target_system, target_buffer, derivatives_switch, sort_index, ...)
+
+Deliver an evaluation's results from the **framework-owned** output buffer to
+the consumer's own state. Called by the framework at the end of every
+evaluation; rows are switch-relative (`scalar_potential_index`,
+`gradient_range`, `hessian_range` of the `DerivativesSwitch`), and the call
+must be steady-state allocation-free.
+
+**Delivery semantics**: the buffer always holds the **total influence of this
+evaluation** — the framework zeroes its accumulators each step. Whether the
+consumer overwrites its state or accumulates into it (`.=` vs `.+=`) inside
+this call is the consumer's choice; both are correct (a time stepper typically
+overwrites, FLOWVPM-style resets accumulate).
+
+Host systems get this behavior for free by overloading
+[`buffer_to_target_system!`](@ref); `DeviceResident` systems overload
+`buffer_to_target!(system, device_output_buffer, derivatives_switch,
+sort_index)` for their device buffer type and consume it with device-to-device
+operations.
+"""
 function buffer_to_target!(target_systems::Tuple, target_buffers, derivatives_switches, sort_index_list=Tuple(1:get_n_bodies(system) for system in target_systems), buffer_index_list=Tuple(1:get_n_bodies(system) for system in target_systems))
     for (target_system, target_buffer, derivatives_switch, sort_index, buffer_index) in zip(target_systems, target_buffers, derivatives_switches, sort_index_list, buffer_index_list)
         buffer_to_target!(target_system, target_buffer, derivatives_switch, sort_index, buffer_index)
@@ -344,6 +454,57 @@ function buffer_to_target!(target_system, target_buffer, derivatives_switch, sor
             buffer_to_target_system!(target_system, sort_index[i_body], derivatives_switch, target_buffer, i_body)
         end
     end
+end
+
+"""
+    sfs_to_target!(target_system, sfs_buffer, sort_index=1:get_n_bodies(target_system))
+
+Deliver the SFS (subfilter-scale vortex-stretching) result of an evaluation to
+the consumer: `sfs_buffer` is a **framework-owned** `3 x n_bodies` matrix in
+**global (unsorted) body order** holding `E_str` for every body of
+`target_system` (device caches pass a device matrix to `DeviceResident`
+systems, a host matrix otherwise). Same delivery semantics as
+[`buffer_to_target!`](@ref): the buffer holds the total influence of this
+evaluation; overwrite vs accumulate is the consumer's choice, and the call
+must be steady-state allocation-free. Only consumers evaluated with
+`fmm!(...; sfs=true)` on an `sfs=true` [`RadixFMMCache`](@ref) need this
+overload (task 048).
+"""
+function sfs_to_target!(target_system, sfs_buffer,
+        sort_index=1:get_n_bodies(target_system))
+    throw(ArgumentError(
+        "target systems evaluated with sfs=true must overload " *
+        "FastMultipole.sfs_to_target!(target_system, sfs_buffer, sort_index) " *
+        "for $(typeof(target_system))"))
+end
+
+"""
+    zeta_to_target!(target_system, zeta_buffer, sort_index=1:get_n_bodies(target_system))
+
+Deliver the regularized-vorticity reconstruction ζ (3 x n_bodies, global body
+order) computed by [`radix_zeta!`](@ref) to the target system. Overload for
+device-resident systems that use core-spreading viscosity; the buffer is
+assigned, not accumulated.
+"""
+function zeta_to_target!(target_system, zeta_buffer,
+        sort_index=1:get_n_bodies(target_system))
+    throw(ArgumentError(
+        "FastMultipole.zeta_to_target!(target_system, zeta_buffer, sort_index) " *
+        "is not implemented for $(typeof(target_system))"))
+end
+
+"""
+    radix_zeta!(cache::RadixFMMCache, systems::Tuple, om, out)
+
+Nearfield-only pair sum ζ_i = Σ_j Γ_j ζ(|x_i - x_j|/σ_j)/σ_j³ over the radix
+direct list (self pair included, no cutoff), the device counterpart of the
+host `zeta_fmm` used by core spreading. `om` is a 3 x (source capacity) sorted-
+order accumulator, `out` a 3 x n_bodies global-order buffer; both are owned by
+the caller. Delivered through [`zeta_to_target!`](@ref). Requires the
+KernelAbstractions extension and a device-resident cache.
+"""
+function radix_zeta!(cache, systems::Tuple, om, out; workgroup::Int=64)
+    throw(ArgumentError("radix_zeta! requires the KernelAbstractions extension and a device-resident RadixFMMCache (got $(typeof(cache)))"))
 end
 
 """
@@ -466,6 +627,20 @@ function target_to_buffer_multithread!(buffer::Matrix, system, sort_index=1:get_
     end
 end
 
+"""
+    source_to_buffer!(buffer, system, sort_index=1:get_n_bodies(system))
+
+Pack `system`'s live bodies into the **framework-owned** packed source buffer:
+column `i` holds body `sort_index[i]` as `[x, y, z, radius,
+strength (rows 5:4+strength_dims), extras...]`. Called by the framework every
+evaluation (and by [`recenter!`](@ref) when deriving bounds); the consumer
+never allocates or retains the buffer, and the call must be steady-state
+allocation-free. Host systems get this behavior for free by overloading
+[`source_system_to_buffer!`](@ref); `DeviceResident` systems overload this
+method for their device buffer type (the framework passes a view of the valid
+column prefix of a persistent device buffer, with the identity `sort_index`)
+and fill it with device-to-device operations.
+"""
 function source_to_buffer!(buffers, systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     for (buffer, system, sort_index) in zip(buffers, systems, sort_index_list)
         source_to_buffer!(buffer, system, sort_index)
@@ -500,6 +675,12 @@ function target_to_buffer(system, switch::DerivativesSwitch, sort_index=1:get_n_
     return buffer
 end
 
+"""
+    source_to_buffer(system, sort_index=1:get_n_bodies(system))
+
+Allocate a packed source buffer, fill it through [`source_to_buffer!`](@ref),
+and return it. A tuple of systems returns one buffer per system.
+"""
 function source_to_buffer(systems::Tuple, sort_index_list=SVector{length(systems)}([1:get_n_bodies(system) for system in systems]))
     buffers = allocate_buffers(systems, false, get_type(systems), DerivativesSwitch(false, false, false, systems))
     source_to_buffer!(buffers, systems, sort_index_list)
@@ -624,6 +805,26 @@ end
 get_hessian(system::AbstractMatrix, ::DerivativesSwitch{<:Any,<:Any,false}, i) =
     throw(ArgumentError("hessian output is disabled for this target buffer"))
 
+"""
+    get_third_derivative(target_buffer, i_body)
+    get_third_derivative(target_buffer, derivatives_switch, i_body)
+
+Returns the third derivative `T[i,j,k] = ∂H[i,j]/∂x[k]` induced at the `i_body`th body of
+`target_buffer` as a [`ThirdDerivativeTensor`](@ref). The two-argument form assumes the
+default layout (rows 17:34, no metadata or extra outputs); the switch-aware form reads the
+rows given by [`third_derivative_range`](@ref) and throws an `ArgumentError` if the switch
+did not request third derivatives.
+"""
+function get_third_derivative(system::AbstractMatrix{TF}, i) where TF
+    return ThirdDerivativeTensor(SVector{18,TF}(ntuple(n -> @inbounds(system[16 + n, i]), Val(18))))
+end
+function get_third_derivative(system::AbstractMatrix{TF}, switch::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,true}, i) where TF
+    first_row = first(third_derivative_range(switch))
+    return ThirdDerivativeTensor(SVector{18,TF}(ntuple(n -> @inbounds(system[first_row + n - 1, i]), Val(18))))
+end
+get_third_derivative(system::AbstractMatrix, ::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,false}, i) =
+    throw(ArgumentError("third-derivative output is disabled for this target buffer"))
+
 get_n_bodies(sys::AbstractMatrix) = size(sys, 2)
 
 #--- setters ---#
@@ -694,6 +895,35 @@ function set_hessian!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,true
 end
 set_hessian!(system::Matrix, ::DerivativesSwitch{<:Any,<:Any,false}, i, hessian) =
     throw(ArgumentError("hessian output is disabled for this target buffer"))
+
+@inline function _set_third_derivative_packed!(system::Matrix, first_row, i, data::SVector{18})
+    @inbounds for n in 1:18
+        system[first_row + n - 1, i] += data[n]
+    end
+    return nothing
+end
+
+"""
+    set_third_derivative!(target_buffer, i_body, value)
+    set_third_derivative!(target_buffer, derivatives_switch, i_body, value)
+
+Accumulates the packed third derivative `value` — a [`ThirdDerivativeTensor`](@ref) or an
+`SVector{18}` in the packed `(xx,xy,xz,yy,yz,zz)`-per-component order — into the 18
+third-derivative rows for the `i_body`th body of `target_buffer`. The three-argument form
+assumes the default layout (rows 17:34); the switch-aware form uses
+[`third_derivative_range`](@ref) and throws an `ArgumentError` if the switch did not
+request third derivatives.
+"""
+set_third_derivative!(system::Matrix, i, tensor::ThirdDerivativeTensor) =
+    _set_third_derivative_packed!(system, 17, i, packed_data(tensor))
+set_third_derivative!(system::Matrix, i, data::SVector{18}) =
+    _set_third_derivative_packed!(system, 17, i, data)
+set_third_derivative!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,true}, i, tensor::ThirdDerivativeTensor) =
+    _set_third_derivative_packed!(system, first(third_derivative_range(switch)), i, packed_data(tensor))
+set_third_derivative!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,true}, i, data::SVector{18}) =
+    _set_third_derivative_packed!(system, first(third_derivative_range(switch)), i, data)
+set_third_derivative!(system::Matrix, ::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,false}, i, value) =
+    throw(ArgumentError("third-derivative output is disabled for this target buffer"))
 
 #--- auxilliary functions ---#
 

@@ -407,3 +407,154 @@ for i in 1:FastMultipole.get_n_bodies(system)
 end
 
 end
+
+@testset "Fast Gauss Seidel: shared source/target tree topology" begin
+
+#--- system whose body radii split independently built source/target trees ---#
+
+n_bodies = 300
+seed = 42
+leaf_size = 10
+expansion_order = 4
+
+# large body radii make the source tree stop subdividing early (child radius < max body
+# radius) while a target tree keeps splitting to leaf_size
+system = generate_gravitational(seed, n_bodies; radius_factor=4.0)
+
+# premise guard: independent builds MUST diverge, else this test is vacuous
+switches = FastMultipole.DerivativesSwitch(true, true, true, (system,))
+independent_target_tree = FastMultipole.Tree((system,), true, switches; expansion_order, leaf_size=SVector{1}(leaf_size), shrink=true, recenter=false, interaction_list_method=FastMultipole.Barba())
+independent_source_tree = FastMultipole.Tree((system,), false, switches; expansion_order, leaf_size=SVector{1}(leaf_size), shrink=true, recenter=false, interaction_list_method=FastMultipole.Barba())
+@test length(independent_target_tree.branches) != length(independent_source_tree.branches)
+
+#--- FGS constructor must produce structurally identical trees ---#
+
+fgs = FastMultipole.FastGaussSeidel((system,), (system,); expansion_order, multipole_acceptance=0.5, leaf_size)
+
+@test length(fgs.target_tree.branches) == length(fgs.source_tree.branches)
+@test all(t.bodies_index == s.bodies_index && t.branch_index == s.branch_index for (t, s) in zip(fgs.target_tree.branches, fgs.source_tree.branches))
+FastMultipole.assert_shared_topology(fgs.target_tree, fgs.source_tree) # must not throw
+
+# target-role shrink keeps target leaf radii tight (source radii include body radii)
+@test all(fgs.target_tree.branches[i].radius <= fgs.source_tree.branches[i].radius + 1e-12 for i in fgs.source_tree.leaf_index)
+
+#--- one solve must run without BoundsError ---#
+
+direct!(system; scalar_potential=true, gradient=false)
+system.potential[1, :] .*= -1.0 # invert external potential so FGS solves for strengths
+FastMultipole.solve!(system, fgs; scalar_potential=true, gradient=false, max_iterations=20, tolerance=1e-3)
+@test all(isfinite(b.strength) for b in system.bodies)
+
+end
+
+@testset "Fast Gauss Seidel: threaded M2L repeatability" begin
+
+# Multiple leaves and a nonempty M2L list are premise guards: without both,
+# the owner-partitioning race fixed by canonical target/source ordering is not
+# exercised.  Keep the solve cold and fixed-iteration so threshold behavior
+# cannot hide an early bit difference.
+system = generate_gravitational(20260815, 800)
+direct!(system; scalar_potential=true, gradient=false)
+system.potential[1, :] .*= -1.0
+
+fgs = FastMultipole.FastGaussSeidel((system,), (system,);
+    expansion_order=4, multipole_acceptance=0.5, leaf_size=40,
+    shrink=true, recenter=false)
+@test length(fgs.source_tree.leaf_index) > 1
+@test !isempty(fgs.m2l_list)
+@test issorted(fgs.m2l_list; by=ij -> (ij[1], ij[2]))
+
+function cold_fixed_solve!()
+    for i in eachindex(system.bodies)
+        body = system.bodies[i]
+        system.bodies[i] = typeof(body)(body.position, body.radius, 0.0)
+    end
+    residuals = Float64[]
+    FastMultipole.solve!(system, fgs; scalar_potential=true, gradient=false,
+        max_iterations=6, inner_iterations=2, tolerance=-1.0,
+        reverse_pass=false, final_update=false, verbose=false,
+        callback=(_, residual) -> push!(residuals, residual))
+    strengths = [body.strength for body in system.bodies]
+    return collect(reinterpret(UInt64, residuals)),
+           collect(reinterpret(UInt64, strengths))
+end
+
+reference_residuals, reference_strengths = cold_fixed_solve!()
+for _ in 1:3
+    residuals, strengths = cold_fixed_solve!()
+    @test residuals == reference_residuals
+    @test strengths == reference_strengths
+end
+
+end
+
+@testset "Fast Gauss Seidel: cached leaf LU factorizations" begin
+    # This deterministic tree has multiple leaves and no one-body gravitational
+    # leaf (whose deliberately zero self term would make that block singular).
+    system = generate_gravitational(20260815, 800)
+    direct!(system; scalar_potential=true, gradient=false)
+    system.potential[1, :] .*= -1.0
+
+    original_strengths = [body.strength for body in system.bodies]
+    cached = FastMultipole.FastGaussSeidel((system,), (system,);
+        expansion_order=4, multipole_acceptance=0.5, leaf_size=40,
+        shrink=true, recenter=false)
+    self_data = copy(cached.self_matrices.data)
+    cache = cached.leaf_lu_cache
+
+    @test cached.cache_leaf_lu
+    @test cache !== nothing
+    @test length(cache.factorizations) == length(cached.self_matrices.sizes) > 1
+    @test cache.data !== cached.self_matrices.data
+    @test cache.data != cached.self_matrices.data
+    @test cached.self_matrices.data == self_data
+    @test cache.build_time >= 0.0
+    @test cache.bytes == sizeof(cache.data) + sum(sizeof(F.ipiv) for F in cache.factorizations)
+    @test all(parent(parent(F.factors)) === cache.data for F in cache.factorizations)
+
+    uncached = FastMultipole.FastGaussSeidel((system,), (system,);
+        expansion_order=4, multipole_acceptance=0.5, leaf_size=40,
+        shrink=true, recenter=false, cache_leaf_lu=false)
+    @test !uncached.cache_leaf_lu
+    @test uncached.leaf_lu_cache === nothing
+    @test uncached.self_matrices.data == cached.self_matrices.data
+
+    for i_leaf in eachindex(cached.self_matrices.sizes)
+        _, rhs = FastMultipole.get_matrix_vector(cached.self_matrices, i_leaf)
+        rhs .= sin.(eachindex(rhs))
+        x_cached = similar(rhs)
+        x_uncached = similar(rhs)
+        FastMultipole.solve_leaf!(x_cached, cached.self_matrices, cache, i_leaf)
+        FastMultipole.solve_leaf!(x_uncached, cached.self_matrices, nothing, i_leaf)
+        @test x_cached ≈ x_uncached rtol=1e-12 atol=1e-12
+        @test cached.self_matrices.data == self_data
+    end
+
+    function cached_path_cold_solve!(system, solver, original_strengths;
+                                     reverse_pass)
+        for (i, body) in enumerate(system.bodies)
+            system.bodies[i] = typeof(body)(body.position, body.radius,
+                                             original_strengths[i])
+        end
+        residuals = Float64[]
+        FastMultipole.solve!(system, solver; scalar_potential=true, gradient=false,
+            max_iterations=5, inner_iterations=2, tolerance=-1.0,
+            reverse_pass, final_update=false, verbose=false,
+            callback=(_, residual) -> push!(residuals, residual))
+        return residuals, [body.strength for body in system.bodies]
+    end
+
+    for reverse_pass in (false, true), repetition in 1:2
+        residuals_cached, strengths_cached = cached_path_cold_solve!(
+            system, cached, original_strengths; reverse_pass)
+        residuals_uncached, strengths_uncached = cached_path_cold_solve!(
+            system, uncached, original_strengths; reverse_pass)
+        @test residuals_cached ≈ residuals_uncached rtol=1e-11 atol=1e-12
+        @test strengths_cached ≈ strengths_uncached rtol=1e-11 atol=1e-12
+        @test cached.self_matrices.data == self_data
+    end
+
+    singular = FastMultipole.Matrices([(2, 2)])
+    singular.data .= [1.0, 2.0, 2.0, 4.0]
+    @test_throws LinearAlgebra.SingularException FastMultipole.build_leaf_lu_cache(singular)
+end

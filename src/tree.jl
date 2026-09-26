@@ -2,6 +2,15 @@ const DEBUG_COUNTER = [0]
 
 #------- tree constructor -------#
 
+# Role-dispatched public boundary. The Bool methods below remain as compatibility
+# shims for downstream callers while production construction uses these tags.
+Tree(systems::Tuple, ::TargetTree, switches, TF=get_type(systems); kwargs...) =
+    Tree(systems, true, switches, TF; kwargs...)
+Tree(systems::Tuple, ::SourceTree, switches, TF=get_type(systems); kwargs...) =
+    Tree(systems, false, switches, TF; kwargs...)
+Tree(system, role::TreeRole, switches, TF=numtype(system); optargs...) =
+    Tree((system,), role, switches isa Tuple ? switches : (switches,), TF; optargs...)
+
 function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buffers=allocate_buffers(systems, target, TF, switches), small_buffers = allocate_small_buffers(systems, TF, switches; target), expansion_order=7, leaf_size=default_leaf_size(systems), n_divisions=20, shrink=false, recenter=false, allocation_safety_factor=1.0, estimate_cost=false, read_cost_file=false, write_cost_file=false, interaction_list_method=SelfTuning())
 
     # ensure `systems` isn't empty; otherwise return an empty tree
@@ -27,7 +36,7 @@ function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buff
 
         # initial octree generation uses cubic cells
         bmax = max(max(bx,by),bz)
-        radius = sqrt(bmax*bmax*3.0)
+        radius = sqrt(3 * bmax * bmax)
         box = SVector{3}(bmax, bmax, bmax)
 
         # prepare to divide
@@ -173,6 +182,59 @@ function Tree(system, target::Bool, TF=numtype(system); optargs...)
 end
 
 """
+    Tree(source_tree::Tree, target_systems::Tuple, switches; shrink=true, recenter=false)
+
+Constructs a TARGET tree sharing `source_tree`'s octree topology — root box, subdivision
+decisions, `bodies_index` partitions, branch/level/leaf structure, and body sort order —
+instead of re-deriving splits from body positions. Branch geometry is then replaced by the
+role-appropriate target shrink pass, so target centers/radii/boxes stay tight for the
+error machinery.
+
+Required by `FastGaussSeidel`, whose influence-matrix and interaction-list bookkeeping
+uses source- and target-tree branch indices interchangeably: independently built trees can
+diverge because source subdivision stops once the child radius falls below the largest
+body radius (see `branch!`) while target subdivision keeps going — bodies with inflated
+radii (e.g. panels carrying regularization reach) make the source tree strictly shallower.
+
+`target_systems` must contain the same bodies (count and positions) as the systems used to
+build `source_tree`.
+"""
+function Tree(source_tree::Tree{TF,N}, target_systems::Tuple, switches;
+    shrink=true, recenter=false) where {TF,N}
+
+    @assert length(target_systems) == N "target_systems has $(length(target_systems)) systems but source_tree represents $N"
+    for (i_system, system) in enumerate(target_systems)
+        @assert get_n_bodies(system) == length(source_tree.sort_index_list[i_system]) "target system $i_system has $(get_n_bodies(system)) bodies but source_tree sorted $(length(source_tree.sort_index_list[i_system]))"
+    end
+
+    # empty source tree -> empty target tree
+    length(source_tree.branches) == 0 && (return EmptyTree(target_systems))
+
+    # replay topology: branch structure is role-independent; geometry is replaced below
+    branches = copy(source_tree.branches)
+    levels_index = copy(source_tree.levels_index)
+    leaf_index = copy(source_tree.leaf_index)
+    sort_index = map(copy, source_tree.sort_index_list)
+    inverse_sort_index = map(copy, source_tree.inverse_sort_index_list)
+
+    # fill target buffers directly in the source tree's sorted order
+    buffers = allocate_buffers(target_systems, true, TF, switches)
+    small_buffers = allocate_small_buffers(target_systems, TF, switches; target=true)
+    target_to_buffer!(buffers, target_systems, sort_index, switches)
+
+    # role-appropriate updates, in the same order as the standard constructor
+    update_min_influence!(branches, levels_index, buffers, target_systems, switches)
+    if shrink
+        shrink_recenter_target!(branches, levels_index, buffers, recenter)
+    end
+
+    expansions = initialize_expansions(source_tree.expansion_order, length(branches), TF)
+
+    return Tree(branches, expansions, levels_index, leaf_index, sort_index, inverse_sort_index,
+        buffers, small_buffers, source_tree.expansion_order, source_tree.leaf_size)
+end
+
+"""
     EmptyTree(system)
 
 Returns an empty tree. Used if `system` is empty.
@@ -241,7 +303,7 @@ function TreeByLevel(systems::Tuple, target::Bool, TF=get_type(systems), switche
 
         # initial octree generation uses cubic cells
         bmax = max(max(bx,by),bz)
-        radius = sqrt(bmax*bmax*3.0)
+        radius = sqrt(3 * bmax * bmax)
         box = SVector{3}(bmax, bmax, bmax)
 
         # prepare to divide
@@ -328,8 +390,7 @@ end
 
 #--- buffers ---#
 
-function allocate_target_buffer(TF, system, ::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM}
-    switch = DerivativesSwitch{PS,GS,HS,NO,NM}()
+function allocate_target_buffer(TF, system, switch::DerivativesSwitch)
     buffer = zeros(TF, target_buffer_rows(switch), get_n_bodies(system))
     return buffer
 end
@@ -448,8 +509,8 @@ function child_branches!(branches, buffers, sort_index, small_buffers, sort_inde
         parent_branch = branches[i_parent]
         if parent_branch.n_branches > 0
             # radius of the child branches
-            child_radius = parent_branch.radius * 0.5
-            child_box = parent_branch.box * 0.5
+            child_radius = parent_branch.radius / 2
+            child_box = parent_branch.box / 2
 
             # count bodies per octant
             max_body_radius = census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
@@ -518,8 +579,8 @@ function child_branches_multithread_parents!(branches, buffers, sort_index, smal
             parent_branch = branches[i_parent]
             if parent_branch.n_branches > 0
                 # radius of the child branches
-                child_radius = parent_branch.radius * 0.5
-                child_box = parent_branch.box * 0.5
+                child_radius = parent_branch.radius / 2
+                child_box = parent_branch.box / 2
                 
                 # count bodies per octant
                 # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
@@ -614,8 +675,8 @@ function child_branches_multithread_bodies!(branches, buffers, sort_index, small
         parent_branch = branches[i_parent]
         if parent_branch.n_branches > 0
             # radius of the child branches
-            child_radius = parent_branch.radius * 0.5
-            child_box = parent_branch.box * 0.5
+            child_radius = parent_branch.radius / 2
+            child_box = parent_branch.box / 2
 
             # count bodies per octant
             max_body_radius = census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
@@ -647,8 +708,8 @@ function child_branches_level!(branches, buffers, sort_index, small_buffers, sor
         parent_branch = branches[i_parent]
         if parent_branch.n_branches > 0
             # radius of the child branches
-            child_radius = parent_branch.radius * 0.5
-            child_box = parent_branch.box * 0.5
+            child_radius = parent_branch.radius / 2
+            child_box = parent_branch.box / 2
 
             # count bodies per octant
             max_body_radius = census!(cumulative_octant_census, buffers, parent_branch.bodies_index, parent_branch.center) # doesn't need to sort them here; just count them; the alternative is to save census data for EVERY CHILD BRANCH EACH GENERATION; then I save myself some effort at the expense of more memory allocation, as the octant_census would already be available; then again, the allocation might cost more than I save (which is what my intuition suggests)
@@ -1310,6 +1371,7 @@ end
 #     return tree.inverse_sort_index[i_unsorted]
 # end
 
+"Map an original body index to its sorted tree-buffer index."
 @inline function unsorted_index_2_sorted_index(i_unsorted, i_system, tree::Tree)
     return tree.inverse_sort_index_list[i_system][i_unsorted]
 end
@@ -1318,6 +1380,7 @@ end
 #     return tree.sort_index[i_sorted]
 # end
 
+"Map a sorted tree-buffer index to its original body index."
 @inline function sorted_index_2_unsorted_index(i_unsorted, i_system, tree::Tree)
     return tree.sort_index_list[i_system][i_unsorted]
 end
@@ -1367,7 +1430,7 @@ end
 end
 
 @inline function get_center_box(x_min, x_max, y_min, y_max, z_min, z_max)
-    center = SVector{3}((x_max+x_min)*0.5, (y_max+y_min)*0.5, (z_max+z_min)*0.5)
+    center = SVector{3}((x_max+x_min)/2, (y_max+y_min)/2, (z_max+z_min)/2)
     bounding_box = SVector{3}(x_max-center[1], y_max-center[2], z_max-center[3])
     dx, dy, dz = bounding_box
     return center, bounding_box
@@ -1408,7 +1471,7 @@ end
     x_min, x_max, y_min, y_max, z_min, z_max = max_xyz(x_min, x_max, y_min, y_max, z_min, z_max, branches, child_index)
 
     # find center
-    center = SVector{3}((x_min+x_max)*0.5, (y_min+y_max)*0.5, (z_min+z_max)*0.5)
+    center = SVector{3}((x_min+x_max)/2, (y_min+y_max)/2, (z_min+z_max)/2)
     bounding_box = SVector{3}(x_max - center[1], y_max - center[2], z_max - center[3])
 
     return center, bounding_box
@@ -2078,6 +2141,7 @@ end
     branches[i_branch] = TB(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, new_center, new_radius, new_box, min_potential, min_gradient)
 end
 
+"Allocate a zeroed scalar/vector multipole or local expansion through `expansion_order`."
 function initialize_expansion(expansion_order, type=Float64)
     # incrememnt expansion order to make room for error predictions
     # expansion_order += 1
@@ -2092,15 +2156,16 @@ end
     return zeros(type, 2, 2, ((expansion_order+1) * (expansion_order+2)) >> 1, n_branches)
 end
 
-function initialize_gradient_n_m(expansion_order, type=Float64)
+function initialize_gradient_n_m(expansion_order, type=Float64; third_derivative=false)
     # incrememnt expansion order to make room for error predictions
     # expansion_order += 1
 
     p = expansion_order
     n_harmonics = harmonic_index(p,p)
-    return zeros(type, 2, 3, n_harmonics)
+    return zeros(type, 2, third_derivative ? 12 : 3, n_harmonics)
 end
 
+"Allocate zeroed harmonic work storage through `expansion_order + 2`."
 function initialize_harmonics(expansion_order, type=Float64)
     # incrememnt expansion order to make room for error predictions
     # expansion_order += 1
@@ -2138,4 +2203,59 @@ function get_interaction_list(tree, m2l_list, i_target)
 	end
 
 	return interaction_list
+end
+
+#--- rigid-motion transform (BRAINSTORM 021 rigid_motion_tree_reuse item) ---#
+
+"""
+    transform_tree!(tree::Tree, R, t)
+
+Apply the rigid transform `x -> R*x + t` (rotation `R`, translation `t`) to a
+tree built for a rigidly moving system, so the tree can be reused instead of
+rebuilt after the motion.
+
+Everything the tree encodes about *relative* geometry is invariant under rigid
+motion: leaf/body assignments and `bodies_index` are unchanged, branch radii
+are rotation-invariant, and interaction lists built from center distances,
+radii, and the multipole acceptance criterion remain exactly valid. Only the
+branch centers must move with the bodies (`center -> R*center + t`); the
+stored axis-aligned box half-widths are replaced by `abs.(R) * box`, the tight
+axis-aligned bounding box of the rotated box, so the enclosure property
+consumed by the error-bound paths (`minimum_distance`) is preserved (bounds
+can only become more conservative). Expansions are recomputed from the
+buffers on every `fmm!`/`solve!` call, so no expansion data needs updating.
+
+The caller owns buffer freshness: source buffers are refilled from the
+systems on each planned `fmm!` call, but target buffer POSITIONS are not —
+use [`transform_plan!`](@ref) (or the `FastGaussSeidel` `transform!`) which
+refreshes them, rather than calling this on a plan's trees directly.
+
+`R` must be a proper rotation (`R'R = I`, `det(R) = +1`); anything else
+(scaling, reflection) breaks radius/box invariance and throws.
+"""
+function transform_tree!(tree::Tree{TF,<:Any}, R, t) where TF
+    R_s = SMatrix{3,3,TF,9}(R)
+    t_s = SVector{3,TF}(t)
+    _assert_rigid_rotation(R_s)
+    absR = abs.(R_s)
+    branches = tree.branches
+    for i in eachindex(branches)
+        b = branches[i]
+        branches[i] = Branch(b.n_bodies, b.bodies_index, b.n_branches,
+            b.branch_index, b.i_parent, b.i_leaf, R_s * b.center + t_s,
+            b.radius, absR * b.box, b.min_potential, b.min_gradient)
+    end
+    return tree
+end
+
+function _assert_rigid_rotation(R::SMatrix{3,3,TF,9}; atol=1e-10) where TF
+    err = maximum(abs.(R' * R - SMatrix{3,3,TF,9}(I)))
+    err <= atol || throw(ArgumentError(
+        "transform_tree! requires a proper rotation: R'R deviates from I by " *
+        "$err (> $atol) — scaling or shear breaks radius/box invariance"))
+    d = det(R)
+    abs(d - 1) <= atol || throw(ArgumentError(
+        "transform_tree! requires a proper rotation: det(R) = $d != +1 — " *
+        "reflections break the transform's validity"))
+    return nothing
 end

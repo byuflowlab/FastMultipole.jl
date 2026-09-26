@@ -4,20 +4,30 @@ version = "2.3.0"
 authors = ["Ryan Anderson <rymanderson@gmail.com> and contributors"]
 
 [deps]
+GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
 WriteVTK = "64499a7a-5c06-52f2-abe2-ccb03c286192"
 
+[weakdeps]
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
+
+[extensions]
+FastMultipoleKAExt = "KernelAbstractions"
+
 [compat]
 ForwardDiff = "1.0.1"
+GPUArraysCore = "0.1, 0.2"
+KernelAbstractions = "0.9"
 LegendrePolynomials = "0.4"
 SpecialFunctions = "2.5.1"
 StaticArrays = "1"
 WriteVTK = "1"
-julia = "1.6"
+julia = "1.11"
 
 [extras]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 LegendrePolynomials = "3db4a2ba-fc88-11e8-3e01-49c72059a882"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
@@ -26,4 +36,4 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["ForwardDiff", "Test", "LegendrePolynomials", "Random", "SpecialFunctions", "Statistics"]
+test = ["ForwardDiff", "KernelAbstractions", "Test", "LegendrePolynomials", "Random", "SpecialFunctions", "Statistics"]

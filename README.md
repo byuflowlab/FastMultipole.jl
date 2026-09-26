@@ -15,7 +15,7 @@
 * provides velocity and velocity gradient (or their equivalent for non-fluids problems) obtained using analytic expressions (no finite difference or AD)
 * uses $\mathcal{O}(p^3)$ multipole-to-local translation operator (where $p$ is the expansion order)
 * automated CPU-parallelization of expansions and direct interactions
-* supports GPU-parallelization of direct interactions using [CUDA](https://github.com/JuliaGPU/CUDA.jl)
+* runs the resident FMM lifecycle on a GPU through [KernelAbstractions](https://github.com/JuliaGPU/KernelAbstractions.jl) (CUDA and Metal)
 * [ForwardDiff](https://github.com/JuliaDiff/ForwardDiff.jl) and [ReverseDiff](https://github.com/JuliaDiff/ReverseDiff.jl) compatible
 
 **Documentation**
