@@ -8168,13 +8168,14 @@ function _ka_extra_tree_prepared!(cache::FastMultipole.RadixFMMCache, sys)
     ctx = cache.device_ctx
     key = objectid(sys)
     hit = get(ctx.extra_tree_cache, key, nothing)
-    if hit !== nothing && hit.revision == rev && hit.epoch == ctx.epoch_id[]
+    kernel = FastMultipole.direct_kernel(sys)     # the prepared form carries the kernel: a changed kernel is a miss
+    if hit !== nothing && hit.revision == rev && hit.epoch == ctx.epoch_id[] && hit.kernel == kernel
         ctx.extra_tree_hits[] += 1
         return hit.prepared
     end
     ctx.extra_tree_misses[] += 1
     prepared = ka_extra_tree_prepare(cache.state, sys)
-    ctx.extra_tree_cache[key] = (; revision = rev, epoch = ctx.epoch_id[], prepared)
+    ctx.extra_tree_cache[key] = (; revision = rev, epoch = ctx.epoch_id[], kernel, prepared)
     return prepared
 end
 
