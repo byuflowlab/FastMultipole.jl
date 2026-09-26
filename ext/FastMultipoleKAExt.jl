@@ -8145,7 +8145,7 @@ function ka_extra_tree_near!(state::FastMultipole.DeviceResidentRadixState{TF},
     kern = _cached_kernel(ka_extra_tree_near_kernel!, backend, wg)
     kern(dkernel, state.output, state.source_bodies, state.cell_ranges,
          prepared.buffer, prepared.cell_ranges, state.direct_targets, state.direct_sources,
-         n_direct, TF, Val(hs && FastMultipole._extra_pair_has_hessian(prepared.kernel)), Val(wg),
+         n_direct, TF, Val(hs && FastMultipole._extra_pair_has_hessian(dkernel)), Val(wg),
          Val(FastMultipole._emits_potential(prepared.kernel)); ndrange=n_direct * wg)
     return state
 end
@@ -8208,7 +8208,12 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         fill!(state.output, zero(eltype(state.output)))
         ka_extra_sources_into_output!(state, extra_tree_sources; workgroup)
     elseif direct_arm
+        # the all-pairs arm writes rows 2:4 (and 5:13) but only writes row 1 for
+        # a potential-emitting kernel, so it starts from zero like the host; tree
+        # sources have no leaves to join here and are applied all-pairs
+        fill!(state.output, zero(eltype(state.output)))
         ka_direct_body!(state; workgroup)
+        ka_extra_sources_into_output!(state, extra_tree_sources; workgroup)
     else
         prepared = isempty(extra_tree_sources) ? () :
             Tuple(_ka_extra_tree_prepared!(cache, sys) for sys in extra_tree_sources)
@@ -8219,8 +8224,6 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         end
         isempty(prepared) || _utick!(:extra_finish, KA.get_backend(state.output))
     end
-    ka_extra_sources_into_output!(state, extra_sources; workgroup)
-    isempty(extra_sources) || _utick!(:extra_sources, KA.get_backend(state.output))
     # SFS is a per-evaluation option, not merely a cache capability: an
     # sfs-armed cache runs no TG/zeta kernels on the (default) sfs=false path.
     # Placed after the lifecycle body and before the U/J finalize, which is
@@ -8240,6 +8243,10 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         ka_launch_sfs!(state; dsigma=sfs_dsigma)
         _utick!(:sfs, KA.get_backend(state.output))
     end
+    # after the SFS pass, as on the host (src/fmm.jl): the SFS estimator reads
+    # the velocity gradient of the resident bodies and the tree sources only
+    ka_extra_sources_into_output!(state, extra_sources; workgroup)
+    isempty(extra_sources) || _utick!(:extra_sources, KA.get_backend(state.output))
     ka_finalize_radix_output!(state, targets; derivatives_switches=switches,
         host_output_staging=cache.device_ctx.host_output,
         target_buffers=FastMultipole._radix_cache_target_buffers!(cache, switches),
@@ -8435,7 +8442,7 @@ function ka_extra_tree_finish!(state::FastMultipole.DeviceResidentRadixState{TF}
         backend = KA.get_backend(state.output)
         wg = resolve_workgroup(backend, workgroup)
         _ka_launch_extra_buffer!(backend, wg, state.output, state.source_bodies, n,
-            prepared.loose, prepared.kernel, TF, size(state.output, 1) >= 13)
+            prepared.loose, _ka_device_direct_kernel(prepared.kernel, TF, 0), TF, size(state.output, 1) >= 13)
     end
     return state
 end

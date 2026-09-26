@@ -164,6 +164,17 @@ else
         # and it must be the extra field alone, not the self-induction again
         check(maximum(abs.(so_ref[V, :] .- ref[V, :])) / maximum(abs, ref[V, :]) <= tol,
               "sources-only carries the extra field alone")
+
+        # 5. the all-pairs direct arm must carry tree sources too: it dropped
+        # them silently before 2026-09-26
+        FM.set_radix_settings!((; RADIX_DIRECT_ARM = true))
+        try
+            da_base = run((;)); da_tree = run((; extra_tree_sources = (ex,))) .- da_base
+            e3 = maximum(abs.(da_tree[V, :] .- ref[V, :])) / maximum(abs, ref[V, :])
+            check(e3 <= tol, @sprintf("direct arm carries tree sources (%.2e, tol %.0e)", e3, tol))
+        finally
+            FM.set_radix_settings!((; RADIX_DIRECT_ARM = false))
+        end
     end
 end
 

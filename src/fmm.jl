@@ -963,6 +963,8 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         update_radix_state!(cache, main)
         split.self_induce || throw(ArgumentError(
             "the adaptive radix path has no extra-sources-only mode"))
+        isempty(tree_sources) || throw(ArgumentError(
+            "the adaptive radix path does not carry tree_sources; pass them as extra_sources"))
         run_adaptive_host_radix_lifecycle!(cache)
         adaptive_state = (cache.adaptive_state::AdaptiveResidentLifecycle).state
         sfs && _run_host_radix_sfs!(adaptive_state; dsigma=sfs_dsigma)
