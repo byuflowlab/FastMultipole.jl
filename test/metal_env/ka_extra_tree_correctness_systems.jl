@@ -42,6 +42,22 @@ FM._emits_potential(::SegKernel) = false
     k = g * (one(T)/(T(4)*T(pi))) * f2 / den
     return (zero(T), k*nx, k*ny, k*nz)
 end
+# The gradient by central differences of the velocity, columns d/dx, d/dy, d/dz
+# (FastMultipole's rows 5:13): a test kernel, so that the device near pass is
+# checked for carrying whatever gradient an extra source's functor returns.
+FM._extra_pair_has_hessian(::SegKernel) = true
+@inline function FM._extra_pair_ugh(k::SegKernel, tx, ty, tz, buf, j)
+    T = typeof(tx)
+    h = cbrt(eps(T)) * max(one(T), abs(tx), abs(ty), abs(tz)); i2h = one(T) / (2h)
+    _, ux, uy, uz = FM._extra_pair_ug(k, tx, ty, tz, buf, j)
+    _, p1, p2, p3 = FM._extra_pair_ug(k, tx + h, ty, tz, buf, j); _, m1, m2, m3 = FM._extra_pair_ug(k, tx - h, ty, tz, buf, j)
+    _, q1, q2, q3 = FM._extra_pair_ug(k, tx, ty + h, tz, buf, j); _, n1, n2, n3 = FM._extra_pair_ug(k, tx, ty - h, tz, buf, j)
+    _, s1, s2, s3 = FM._extra_pair_ug(k, tx, ty, tz + h, buf, j); _, t1, t2, t3 = FM._extra_pair_ug(k, tx, ty, tz - h, buf, j)
+    return (zero(T), ux, uy, uz,
+            (p1 - m1) * i2h, (p2 - m2) * i2h, (p3 - m3) * i2h,
+            (q1 - n1) * i2h, (q2 - n2) * i2h, (q3 - n3) * i2h,
+            (s1 - t1) * i2h, (s2 - t2) * i2h, (s3 - t3) * i2h)
+end
 
 #--- a point system, to check the slab layout against the trusted kernel ---#
 struct PV{TF}

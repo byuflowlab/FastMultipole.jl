@@ -8087,9 +8087,21 @@ end
             while i <= tfirst + tcount - 1
                 xi = bodies[1, i]; yi = bodies[2, i]; zi = bodies[3, i]
                 u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
+                h1 = zero(T); h2 = zero(T); h3 = zero(T)
+                h4 = zero(T); h5 = zero(T); h6 = zero(T)
+                h7 = zero(T); h8 = zero(T); h9 = zero(T)
                 for j in sfirst:(sfirst + scount - 1)
-                    du, dgx, dgy, dgz = FastMultipole._extra_pair_ug(kernel, xi, yi, zi, ex_buffer, j)
-                    u += du; gx += dgx; gy += dgy; gz += dgz
+                    if HS
+                        du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                            FastMultipole._extra_pair_ugh(kernel, xi, yi, zi, ex_buffer, j)
+                        u += du; gx += dgx; gy += dgy; gz += dgz
+                        h1 += dh1; h2 += dh2; h3 += dh3
+                        h4 += dh4; h5 += dh5; h6 += dh6
+                        h7 += dh7; h8 += dh8; h9 += dh9
+                    else
+                        du, dgx, dgy, dgz = FastMultipole._extra_pair_ug(kernel, xi, yi, zi, ex_buffer, j)
+                        u += du; gx += dgx; gy += dgy; gz += dgz
+                    end
                 end
                 if ep
                     KA.@atomic output[1, i] += u
@@ -8097,6 +8109,19 @@ end
                 KA.@atomic output[2, i] += gx
                 KA.@atomic output[3, i] += gy
                 KA.@atomic output[4, i] += gz
+                if HS
+                    # the velocity gradient of the near pairs: without it only the
+                    # far field carried the extra source's gradient (2026-09-26)
+                    KA.@atomic output[5, i] += h1
+                    KA.@atomic output[6, i] += h2
+                    KA.@atomic output[7, i] += h3
+                    KA.@atomic output[8, i] += h4
+                    KA.@atomic output[9, i] += h5
+                    KA.@atomic output[10, i] += h6
+                    KA.@atomic output[11, i] += h7
+                    KA.@atomic output[12, i] += h8
+                    KA.@atomic output[13, i] += h9
+                end
                 i += WG
             end
         end
@@ -8120,7 +8145,7 @@ function ka_extra_tree_near!(state::FastMultipole.DeviceResidentRadixState{TF},
     kern = _cached_kernel(ka_extra_tree_near_kernel!, backend, wg)
     kern(dkernel, state.output, state.source_bodies, state.cell_ranges,
          prepared.buffer, prepared.cell_ranges, state.direct_targets, state.direct_sources,
-         n_direct, TF, Val(hs), Val(wg),
+         n_direct, TF, Val(hs && FastMultipole._extra_pair_has_hessian(prepared.kernel)), Val(wg),
          Val(FastMultipole._emits_potential(prepared.kernel)); ndrange=n_direct * wg)
     return state
 end

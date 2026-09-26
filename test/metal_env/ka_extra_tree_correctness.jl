@@ -132,19 +132,24 @@ else
             nb = Int(st.counts.n_bodies)
             out = Array(st.output)
             idx = Array(st.host_body_indices)
-            res = zeros(DTF, 3, n)
+            res = zeros(DTF, 12, n)                  # velocity, then the nine gradient rows
             inv = Array(cd_.state.grid.invperm)
             for i in 1:nb
-                res[:, i] .= out[2:4, inv[i]]
+                res[:, i] .= out[2:13, inv[i]]
             end
             return res
         end
         base = run((;))
         ref = run((; extra_sources = (ex,))) .- base        # all-direct extra
         new = run((; extra_tree_sources = (ex,))) .- base   # carried by the tree
-        e = maximum(abs.(new .- ref)) / maximum(abs, ref)
+        V = 1:3; G = 4:12
+        e = maximum(abs.(new[V, :] .- ref[V, :])) / maximum(abs, ref[V, :])
         tol = DTF === Float32 ? 5e-3 : 1e-3
         check(e <= tol, @sprintf("device tree matches device all-direct (%.2e, tol %.0e)", e, tol))
+        # the velocity gradient too: the near pass once dropped it (2026-09-26),
+        # which the velocity-only check above could not see
+        eg = maximum(abs.(new[G, :] .- ref[G, :])) / maximum(abs, ref[G, :])
+        check(eg <= tol, @sprintf("device tree gradient matches device all-direct (%.2e, tol %.0e)", eg, tol))
 
         # 4. sources-only: the particles contribute nothing as sources, so the
         # whole result is the extra system's field. This is the "body on wake"
@@ -153,11 +158,11 @@ else
         # the device branch zeroed the output and applied only `extra_sources`.
         so_ref = run((; extra_sources = (ex,), self_induce = false))
         so_new = run((; extra_tree_sources = (ex,), self_induce = false))
-        e2 = maximum(abs.(so_new .- so_ref)) / maximum(abs, so_ref)
+        e2 = maximum(abs.(so_new[V, :] .- so_ref[V, :])) / maximum(abs, so_ref[V, :])
         check(e2 <= tol,
               @sprintf("sources-only carries tree sources (%.2e, tol %.0e)", e2, tol))
         # and it must be the extra field alone, not the self-induction again
-        check(maximum(abs.(so_ref .- ref)) / maximum(abs, ref) <= tol,
+        check(maximum(abs.(so_ref[V, :] .- ref[V, :])) / maximum(abs, ref[V, :]) <= tol,
               "sources-only carries the extra field alone")
     end
 end
