@@ -7781,7 +7781,12 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         "got $(typeof(stencil_policy))"))
     hierarchical_tables isa FastMultipole.RigidHierarchicalTables || throw(ArgumentError(
         "the hierarchical policy requires the rigid hierarchical tables"))
-    options.m2l_strategy isa FastMultipole.PrecomputedFactoredYM2L && throw(ArgumentError(
+    # the KA lifecycle has no pass-2 deficit sweep: a TwoPassVortex cache would
+    # run pass 1 only and report rows 2:13 without the rho_c..rho_t deficit
+    options.direct_kernel isa FastMultipole.TwoPassVortex && throw(ArgumentError(
+        "TwoPassVortex is not available on a KernelAbstractions device cache (no pass-2 deficit sweep); " *
+        "use RegularizedVortex or PartitionedVortex, or build the cache with device=false"))
+        options.m2l_strategy isa FastMultipole.PrecomputedFactoredYM2L && throw(ArgumentError(
         "the KA device cache builds the concatenated or dense hierarchical plan; " *
         "m2l_strategy=$(typeof(options.m2l_strategy)) has no KA plan"))
     dense_strategy = options.m2l_strategy isa FastMultipole.DenseTranslationM2L ?
