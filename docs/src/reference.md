@@ -66,4 +66,5 @@ FastMultipole.extra_output_range
 FastMultipole.output_range
 FastMultipole.get_extra_output
 FastMultipole.set_extra_output!
+FastMultipole.extra_output_view
 ```

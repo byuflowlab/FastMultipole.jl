@@ -135,6 +135,38 @@ end
     @test_throws ArgumentError FastMultipole.fmm!(system, cache; scalar_potential=false, gradient=true, hessian=true)
 end
 
+@testset "tune_fmm cache honors derivative switches" begin
+    system = generate_gravitational(123, 32)
+    error_tolerance = FastMultipole.PowerAbsolutePotential(1e-3)
+
+    opt_params, cache = FastMultipole.tune_fmm(
+        system;
+        scalar_potential=true,
+        gradient=false,
+        hessian=false,
+        error_tolerance,
+        multipole_acceptances=0.5:0.1:0.5,
+        expansion_order=4,
+        max_expansion_order=8,
+        verbose=false,
+    )
+
+    @test begin
+        FastMultipole.fmm!(
+            system,
+            cache;
+            scalar_potential=true,
+            gradient=false,
+            hessian=false,
+            error_tolerance,
+            opt_params...,
+            update_target_systems=false,
+            silence_warnings=true,
+        )
+        true
+    end
+end
+
 @testset "threaded fmm extra_farfield" begin
     if Threads.nthreads() == 1
         @test_skip "requires multiple Julia threads"

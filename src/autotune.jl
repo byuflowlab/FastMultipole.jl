@@ -72,7 +72,14 @@ function tune_fmm(target_systems::Tuple, source_systems::Tuple;
 
     #--- preallocate cache ---#
 
+    scalar_potential = get(kwargs, :scalar_potential, false)
+    gradient = get(kwargs, :gradient, true)
+    hessian = get(kwargs, :hessian, false)
+    extra_outputs = get(kwargs, :extra_outputs, 0)
+    metadata = get(kwargs, :metadata, nothing)
+
     t_fmm = @elapsed _, cache, _ = fmm!(target_systems, source_systems;
+                       scalar_potential, gradient, hessian, extra_outputs, metadata,
                        expansion_order=1, leaf_size_source,
                        nearfield=false, farfield=false, self_induced=false,
                        tune=true, update_target_systems=false
@@ -230,4 +237,3 @@ function tune_fmm(target_systems::Tuple, source_systems::Tuple;
 
     return tuned_params, cache
 end
-
