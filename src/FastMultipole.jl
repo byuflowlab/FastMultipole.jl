@@ -86,6 +86,27 @@ WARNING_FLAG_MAX_INFLUENCE[] = true
 #------- HEADERS AND EXPORTS -------#
 
 include("containers.jl")
+export Branch, Tree, RadixGrid, DeviceRadixGrid, RadixSortBackend, HostRadixSort, DeviceRadixSort,
+    AutoRadixSort, ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L,
+    ConstantPAnalyticStencil, HierarchicalRigidStencil, classic_fmm_stencil, RadixTraversalStrategy,
+    RigidHierarchicalTables, RadixLevelOccupancy, RigidImplicitStencil, SparseOffsetIntersection,
+    BlockedOccupancyBitsets, LazyMaterializedBatches, RadixM2LBatch, RadixInteractionList, Residency,
+    HostResident, DeviceResident, TreeRole, SourceTree, TargetTree, NearfieldExecution, HostNearfield,
+    DeviceNearfield, AbstractDirectKernel, SingularSource, SingularVortex, SingularDipole,
+    SingularSourceVortex, RegularizedVortex, SourceFilamentKernel, DipoleFilamentKernel,
+    VortexFilamentKernel, element_strength_dims, SourcePanelKernel, DipolePanelKernel,
+    SourceDipolePanelKernel, VortexSheetPanelKernel, PartitionedVortex, TwoPassVortex,
+    CUDARadixTransferCounters, CUDARadixLifecycleOptions, DeviceResidentRadixState,
+    AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M, AbstractResidentM2LStrategy,
+    DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L, PrecomputedFactoredYM2L,
+    AbstractOperatorBasis, CompressedComplexBasis, RealSolidHarmonicBasis, OperatorOrders, OperatorBasisInfo,
+    OperatorInvariantCache, OperatorScratch, ThreadedOperatorScratch, FlatCoefficientBuffer,
+    AbstractM2LOperator, MaterializedYRotationM2L, FactoredRotationM2L, M2LOperatorScratch,
+    AbstractM2MOperator, MaterializedYRotationM2M, FactoredRotationM2M, M2MOperatorScratch,
+    AbstractL2LOperator, MaterializedYRotationL2L, FactoredRotationL2L, L2LOperatorScratch, RadixFMMCache,
+    AdaptiveTreePolicy, AdaptiveRadixTree, AdaptiveInteractionLists
+export real_basis_index, complex_to_real_basis!, real_to_complex_basis!
+
 include("complex.jl")
 include("derivatives.jl")
 include("harmonics.jl")
@@ -95,53 +116,35 @@ include("translate.jl")
 include("translate_batched.jl")
 include("evaluate_expansions.jl")
 include("tree.jl")
+export initialize_expansion, initialize_harmonics, unsorted_index_2_sorted_index,
+    sorted_index_2_unsorted_index
+
 include("tree_batched.jl")
+export radix_grid, update_adaptive_tree!
+export adaptive_is_leaf, adaptive_node_range
+
 include("interaction_list_batched.jl")
+export rigid_stencil_epsilon, constant_p_stencil_bound, accepted_radix_stencil, foreach_radix_m2l_pair,
+    foreach_radix_m2l_route, foreach_radix_direct_pair, build_radix_interaction_list, RadixRouteSelection
+export constant_p_stencil_accepts, build_adaptive_interaction_lists!
+
 include("translate_batched_resident.jl")
+export host_radix_state, host_resident_radix_grid, update_radix_state!
+export run_host_radix_lifecycle!, finalize_radix_output!
+
 include("resident_elements.jl")
 include("resident_extra_tree.jl")
 include("radix_extra_systems.jl")
 include("radix_settings.jl")
-include("direct_rectangular.jl")
+export radix_settings, radix_setting, radix_setting_lock, snapshot_locked_radix_settings,
+    verify_locked_radix_settings
+export set_radix_setting!, set_radix_settings!
 
-export Branch, Tree, initialize_expansion, initialize_harmonics
-export RadixGrid, DeviceRadixGrid, RadixSortBackend, HostRadixSort, DeviceRadixSort, AutoRadixSort, radix_grid
-export ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L, ConstantPAnalyticStencil, HierarchicalRigidStencil, classic_fmm_stencil, rigid_stencil_epsilon, RadixTraversalStrategy
-export RigidHierarchicalTables, RadixLevelOccupancy
-export RigidImplicitStencil, SparseOffsetIntersection, BlockedOccupancyBitsets, LazyMaterializedBatches
-export RadixM2LBatch, RadixInteractionList
-export Residency, HostResident, DeviceResident, residency
-export TreeRole, SourceTree, TargetTree, NearfieldExecution, HostNearfield, DeviceNearfield
-export AbstractDirectKernel, SingularSource, SingularVortex, SingularDipole, SingularSourceVortex, RegularizedVortex,
-    SourceFilamentKernel, DipoleFilamentKernel, VortexFilamentKernel, element_strength_dims,
-    SourcePanelKernel, DipolePanelKernel, SourceDipolePanelKernel, VortexSheetPanelKernel,
-    PartitionedVortex, TwoPassVortex, direct_kernel
-export AbstractRectangularKernel, RectangularGaussianErfVortex,
-    RectangularPanelInfluence, direct_rectangular!, rect_source_rows,
+include("direct_rectangular.jl")
+export AbstractRectangularKernel, RectangularGaussianErfVortex, RectangularPanelInfluence, rect_source_rows,
     rect_output_rows
-export CUDARadixTransferCounters, CUDARadixLifecycleOptions, DeviceResidentRadixState
-export AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M
-export AbstractResidentM2LStrategy, DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L, PrecomputedFactoredYM2L
-export constant_p_stencil_bound, constant_p_stencil_accepts, accepted_radix_stencil
-export foreach_radix_m2l_pair, foreach_radix_m2l_route, foreach_radix_direct_pair, build_radix_interaction_list
-export RadixRouteSelection
-export unsorted_index_2_sorted_index, sorted_index_2_unsorted_index
-export transform_tree!, transform_plan!
-export AbstractOperatorBasis, CompressedComplexBasis, RealSolidHarmonicBasis
-export OperatorOrders, OperatorBasisInfo, OperatorInvariantCache, OperatorScratch, ThreadedOperatorScratch
-export FlatCoefficientBuffer, real_basis_index, complex_to_real_basis!, real_to_complex_basis!
-export AbstractM2LOperator, MaterializedYRotationM2L, FactoredRotationM2L, M2LOperatorScratch
-export AbstractM2MOperator, MaterializedYRotationM2M, FactoredRotationM2M, M2MOperatorScratch
-export AbstractL2LOperator, MaterializedYRotationL2L, FactoredRotationL2L, L2LOperatorScratch
-export RadixDeviceUnavailable
-export host_radix_state, run_host_radix_lifecycle!, host_resident_radix_grid
-export finalize_radix_output!
-export RadixFMMCache, update_radix_state!
-export radix_settings, radix_setting, set_radix_setting!, set_radix_settings!, radix_setting_lock,
-    snapshot_locked_radix_settings, verify_locked_radix_settings
-export AdaptiveTreePolicy, AdaptiveRadixTree, AdaptiveInteractionLists,
-    update_adaptive_tree!, build_adaptive_interaction_lists!,
-    adaptive_is_leaf, adaptive_node_range
+export direct_rectangular!
+
 
 """
     RadixDeviceUnavailable(reason)
@@ -152,6 +155,7 @@ registered device backend. `reason` is reported by `showerror`.
 struct RadixDeviceUnavailable <: Exception
     reason::String
 end
+export RadixDeviceUnavailable
 
 Base.showerror(io::IO, err::RadixDeviceUnavailable) = print(io, err.reason)
 
@@ -196,6 +200,7 @@ function radix_device_status()
 end
 
 include("compatibility.jl")
+export residency, direct_kernel
 
 export Position, Radius, ScalarPotential, Gradient, Hessian, Vertex, Normal, Strength
 export Vortex, Source, Dipole, SourceDipole, SourceVortex, Point, Filament, Panel
@@ -236,6 +241,7 @@ include("interaction_list.jl")
 export build_interaction_lists
 
 include("fmm.jl")
+export transform_tree!, transform_plan!
 
 export InteractionList, fmm!, SelfTuning, Barba
 

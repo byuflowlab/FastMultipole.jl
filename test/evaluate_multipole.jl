@@ -13,9 +13,9 @@ function evaluate_multipole!(system, bodies_index, harmonics, multipole_expansio
     for i_body in bodies_index
         scalar_potential, gradient, gradient = evaluate_multipole(FastMultipole.get_position(system, i_body) - expansion_center, harmonics, multipole_expansion, expansion_order, lamb_helmholtz, derivatives_switch)
         
-        PS && FastMultipole.set_scalar_potential!(system, i_body, scalar_potential)
-        GS && FastMultipole.set_gradient!(system, i_body, gradient)
-        HS && FastMultipole.set_hessian!(system, i_body, gradient)
+        PS && FastMultipole.set_scalar_potential!(system, derivatives_switch, i_body, scalar_potential)
+        GS && FastMultipole.set_gradient!(system, derivatives_switch, i_body, gradient)
+        HS && FastMultipole.set_hessian!(system, derivatives_switch, i_body, gradient)
     end
 end
 

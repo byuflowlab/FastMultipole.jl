@@ -115,6 +115,67 @@ leaves to the first far-field cell, or the near field would be truncated.
 system on Metal or CUDA, three steps of convection on the device, and the
 transfer counters checked flat across the steps.
 
+## End-to-end example
+
+The complete program (`examples/device_resident_system.jl` is the same with
+comments and the transfer-counter assertions): a regularized vortex-particle
+system that lives on the device, convected by its own induced velocity.
+
+```julia
+using FastMultipole, KernelAbstractions, StaticArrays
+using CUDA                                  # or: using Metal
+using GPUArraysCore: AbstractGPUMatrix, AbstractGPUVector
+const TF = Float32
+
+struct VortexBlobs{TF,PM<:AbstractGPUMatrix{TF},VV<:AbstractGPUVector{TF}}
+    host_positions::Matrix{TF}               # for the construction bounds only
+    positions::PM; strengths::PM             # 3 x n each, on the device
+    sigma::VV                                # n cores
+    velocity::PM                             # 3 x n output
+end
+
+# traits
+FastMultipole.get_n_bodies(s::VortexBlobs) = size(s.positions, 2)
+FastMultipole.data_per_body(::VortexBlobs) = 8        # x y z radius Gx Gy Gz sigma
+FastMultipole.strength_dims(::VortexBlobs) = 3
+FastMultipole.get_position(s::VortexBlobs{TF}, i) where TF = SVector{3,TF}(view(s.host_positions, :, i))
+FastMultipole.residency(::VortexBlobs) = FastMultipole.DeviceResident()
+FastMultipole.device_backend(::VortexBlobs) = CUDABackend()   # or Metal.MetalBackend()
+FastMultipole.has_vector_potential(::VortexBlobs) = true
+FastMultipole.body_type(::VortexBlobs) = FastMultipole.Point{FastMultipole.Vortex}
+FastMultipole.direct_kernel(::VortexBlobs) = FastMultipole.RegularizedVortex(; sigma_row = 8)
+
+# per-step hooks, on device arrays
+function FastMultipole.source_to_buffer!(buf::AbstractGPUMatrix, s::VortexBlobs, sort_index)
+    buf[1:3, :] .= s.positions
+    buf[4, :]   .= 4 .* s.sigma              # multipole-acceptance radius
+    buf[5:7, :] .= s.strengths
+    buf[8, :]   .= s.sigma
+    return buf
+end
+function FastMultipole.buffer_to_target!(s::VortexBlobs, out::AbstractGPUMatrix, switch, sort_index)
+    g = FastMultipole.gradient_range(switch)             # the induced velocity
+    isempty(g) || (s.velocity .= view(out, g, :))
+    return s
+end
+
+# the system, the cache, the loop
+n = 20_000
+x = rand(TF, 3, n); G = TF(1e-3) .* randn(TF, 3, n); sig = fill(TF(0.02), n)
+sys = VortexBlobs(x, CuArray(x), CuArray(G), CuArray(sig), CUDA.zeros(TF, 3, n))
+cache = RadixFMMCache(sys; expansion_order = 4, ell = 3, max_n_bodies = n,
+                      bounds = (SVector{3,TF}(-1, -1, -1), TF(3)), device = true,
+                      options = CUDARadixLifecycleOptions(; precision = TF, m2l_strategy = ConcatenatedFixedZM2L()))
+dt = TF(1e-2)
+for step in 1:100
+    fmm!(sys, cache; scalar_potential = false, gradient = true)
+    sys.positions .= clamp.(sys.positions .+ dt .* sys.velocity, TF(-1), TF(2))   # stay inside the box
+end
+```
+
+Nothing per body crosses the host/device boundary after construction; after
+the first step no allocation remains.
+
 ## Testing on a device
 
 `Pkg.test()` runs the host suites everywhere. `FASTMULTIPOLE_GPU_TESTS=0|1`

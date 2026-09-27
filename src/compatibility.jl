@@ -782,12 +782,19 @@ function get_position(system::AbstractMatrix{TF}, i) where TF
     return val
 end
 
-get_scalar_potential(system::AbstractMatrix, i) = @inbounds system[4, i]
+# The switchless accessors assumed the fixed pre-2.3 row layout; with a
+# preceding output disabled they read or wrote the wrong rows silently. They
+# now refuse, naming the switch-aware form (reviewer request, 2026-09-27).
+_switchless(name) = throw(ArgumentError(
+    "$name(buffer, i, ...) assumes the fixed row layout of FastMultipole < 2.3 and " *
+    "reads or writes the wrong rows when any output is disabled; use " *
+    "$name(buffer, derivatives_switch, i, ...) (see docs: Advanced usage, output layout)"))
+get_scalar_potential(system::AbstractMatrix, i) = _switchless("get_scalar_potential")
 get_scalar_potential(system::AbstractMatrix, switch::DerivativesSwitch{true,<:Any,<:Any}, i) = @inbounds system[scalar_potential_index(switch), i]
 get_scalar_potential(system::AbstractMatrix, ::DerivativesSwitch{false,<:Any,<:Any}, i) =
     throw(ArgumentError("scalar potential output is disabled for this target buffer"))
 
-get_gradient(system::AbstractMatrix{TF}, i) where TF = @inbounds SVector{3,TF}(system[5,i], system[6,i], system[7,i])
+get_gradient(system::AbstractMatrix, i) = _switchless("get_gradient")
 get_gradient(system::AbstractMatrix{TF}, switch::DerivativesSwitch{<:Any,true,<:Any}, i) where TF = @inbounds SVector{3,TF}(system[gradient_range(switch)[1],i], system[gradient_range(switch)[2],i], system[gradient_range(switch)[3],i])
 get_gradient(system::AbstractMatrix, ::DerivativesSwitch{<:Any,false,<:Any}, i) =
     throw(ArgumentError("gradient output is disabled for this target buffer"))
@@ -835,9 +842,7 @@ get_n_bodies(sys::AbstractMatrix) = size(sys, 2)
 Accumulates `scalar_potential` to `target_buffer`.
 
 """
-function set_scalar_potential!(system::Matrix, i, scalar_potential)
-    @inbounds system[4, i] += scalar_potential
-end
+set_scalar_potential!(system::Matrix, i, scalar_potential) = _switchless("set_scalar_potential!")
 function set_scalar_potential!(system::Matrix, switch::DerivativesSwitch{true,<:Any,<:Any}, i, scalar_potential)
     @inbounds system[scalar_potential_index(switch), i] += scalar_potential
 end
@@ -850,11 +855,7 @@ set_scalar_potential!(system::Matrix, ::DerivativesSwitch{false,<:Any,<:Any}, i,
 Accumulates `gradient` to `target_buffer`.
 
 """
-function set_gradient!(system::Matrix, i, gradient)
-    @inbounds system[5,i] += gradient[1]
-    @inbounds system[6,i] += gradient[2]
-    @inbounds system[7,i] += gradient[3]
-end
+set_gradient!(system::Matrix, i, gradient) = _switchless("set_gradient!")
 function set_gradient!(system::Matrix, switch::DerivativesSwitch{<:Any,true,<:Any}, i, gradient)
     r = gradient_range(switch)
     @inbounds system[r[1],i] += gradient[1]
@@ -870,17 +871,7 @@ set_gradient!(system::Matrix, ::DerivativesSwitch{<:Any,false,<:Any}, i, gradien
 Accumulates `hessian` to `target_buffer`.
 
 """
-function set_hessian!(system::Matrix, i, hessian)
-    @inbounds system[8, i] += hessian[1]
-    @inbounds system[9, i] += hessian[2]
-    @inbounds system[10, i] += hessian[3]
-    @inbounds system[11, i] += hessian[4]
-    @inbounds system[12, i] += hessian[5]
-    @inbounds system[13, i] += hessian[6]
-    @inbounds system[14, i] += hessian[7]
-    @inbounds system[15, i] += hessian[8]
-    @inbounds system[16, i] += hessian[9]
-end
+set_hessian!(system::Matrix, i, hessian) = _switchless("set_hessian!")
 function set_hessian!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,true}, i, hessian)
     r = hessian_range(switch)
     @inbounds system[r[1], i] += hessian[1]

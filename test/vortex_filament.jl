@@ -434,7 +434,7 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch::
                 # v = vortex_filament(x1,x2,xt,q_mag)
                 v = vortex_filament_finite_core_2(x1,x2,xt,q_mag,core_size)
                 # v = vortex_filament_gauss_compressed(x1,x2,xt,q_mag,core_size)
-                FastMultipole.set_gradient!(target_system, i_target, v)
+                FastMultipole.set_gradient!(target_system, derivatives_switch, i_target, v)
             end
         end
     end
@@ -445,7 +445,7 @@ FastMultipole.body_to_multipole!(system::VortexFilaments, args...) = FastMultipo
 function FastMultipole.buffer_to_target_system!(target_system::VortexFilaments, i_target, derivatives_switch, target_buffer, i_buffer)
 
     # extract from buffer
-    gradient = FastMultipole.get_gradient(target_buffer, i_buffer)
+    gradient = FastMultipole.get_gradient(target_buffer, derivatives_switch, i_buffer)
 
     # load into system
     target_system.gradient[i_target] += gradient

@@ -172,12 +172,12 @@ function FastMultipole.reset!(system::TransformPanels{TF}) where TF
 end
 
 function FastMultipole.buffer_to_target_system!(target_system::TransformPanels,
-        i_target, ::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer,
+        i_target, switch::FastMultipole.DerivativesSwitch{PS,GS,HS}, target_buffer,
         i_buffer) where {PS,GS,HS}
     PS && (target_system.potential[i_target] +=
-        FastMultipole.get_scalar_potential(target_buffer, i_buffer))
+        FastMultipole.get_scalar_potential(target_buffer, switch, i_buffer))
     GS && (target_system.gradient[i_target] +=
-        FastMultipole.get_gradient(target_buffer, i_buffer))
+        FastMultipole.get_gradient(target_buffer, switch, i_buffer))
 end
 
 function FastMultipole.direct!(target_system, target_index,

@@ -128,7 +128,7 @@ currently used with custom device nearfield overloads (`nearfield_device=true`).
 
 Target buffers have two distinct extension areas. Metadata rows are copied from
 the target system and sorted with positions, so they are available during
-nearfield interactions. Extra output rows are additional fields induced by neighboring bodies besides the scalar potential, gradient, and hessian. Note that extra outputs are not included in far-field interactions; as such, they are typically kernels with compact or near-compact support, meaning their far-field influence vanishes. An example of an appropriate extra output would be the vorticity induced by a gaussian vortex blob. Its velocity is approximated by multipole expansions, but the vorticity drops off exponentially.
+nearfield interactions. Extra output rows are additional fields induced by neighboring bodies besides the scalar potential, gradient, hessian, and third derivatives. Note that extra outputs are not included in far-field interactions; as such, they are typically kernels with compact or near-compact support, meaning their far-field influence vanishes. An example of an appropriate extra output would be the vorticity induced by a gaussian vortex blob. Its velocity is approximated by multipole expansions, but the vorticity drops off exponentially.
 
 Request extra accumulated rows with `extra_outputs`:
 
@@ -151,6 +151,14 @@ function FastMultipole.direct!(target_buffer, target_index, switch::DerivativesS
 end
 ```
 
+## Metadata rows
+
+Metadata rows are per-body values the consumer wants carried through the sort
+alongside the outputs: previous-step estimates for relative-error methods, flags,
+or any per-body scalar a `direct!` overload or `buffer_to_target_system!` needs
+while the bodies are in sorted order. They live after the outputs in the target
+buffer (`metadata_range(switch)`, `metadata_index(switch, k)`), are written on
+the way in by `metadata_to_buffer!` and are never touched by the FMM itself.
 Target systems declare sorted metadata with:
 
 ```julia
@@ -183,10 +191,12 @@ rows shift accordingly (metadata rows shift them further). Consumer hooks
 written against the fixed layout — including any following the old published
 `direct!`/`buffer_to_target_system!` examples that call the switchless
 setters (e.g. `set_hessian!(buffer, i, hessian)`) or index rows directly
-under `@inbounds` — still compile and run, but when any preceding standard
-output is disabled (e.g. `scalar_potential=false`) they **silently write the
-wrong rows or past the end of the buffer**. There is no error; results are
-corrupted, and out-of-buffer writes are undefined behavior.
+under `@inbounds` — no longer run: the switchless setters and getters
+(`set_hessian!(buffer, i, hessian)`, `get_gradient(buffer, i)`, ...) throw an
+`ArgumentError` naming the switch-aware form, because with any preceding output
+disabled (e.g. `scalar_potential=false`) they wrote or read the wrong rows
+silently. Code that indexes rows directly under `@inbounds` cannot be caught
+this way and must be migrated by hand.
 
 To migrate a consumer:
 
@@ -207,7 +217,8 @@ indices are symmetric. `solve!` does not expose third-order output.
    throw instead of corrupting, which converts a silent bug into a loud one.
 3. If your hooks read previously accumulated influence, note that
    `get_previous_influence` has been removed; carry prior-step values through
-   metadata rows (`metadata_per_body` / `metadata_to_buffer!`) instead.
+   metadata rows (`metadata_per_body` / `metadata_to_buffer!`, see
+   [Metadata rows](@ref)) instead.
 4. Re-run your accuracy checks with at least one output disabled
    (e.g. `scalar_potential=false, hessian=true`) — the configuration that
    exposes fixed-row assumptions — in addition to the all-enabled case.
