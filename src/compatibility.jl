@@ -37,7 +37,7 @@ end
     body_type(system)
 
 Return the element type used to form multipole expansions from `system` on the
-radix/resident path (task 032), e.g. `Point{Source}` (default) or
+radix/resident path, e.g. `Point{Source}` (default) or
 `Point{Vortex}`. The returned value is the element *type* itself, matching the
 `body_to_multipole!(Point{Vortex}, system, args...)` convention of the legacy
 path. All source systems sharing one `RadixFMMCache` must return the same body
@@ -50,7 +50,7 @@ body_type(system) = Point{Source}
     direct_kernel(system)
 
 Return the nearfield direct-interaction kernel functor used for `system` on the
-radix/resident path (task 032 stage 2). Defaults follow [`body_type`](@ref):
+radix/resident path (). Defaults follow [`body_type`](@ref):
 `SingularSource()` for `Point{Source}` and `SingularVortex()` for
 `Point{Vortex}`. Overload to select [`RegularizedVortex`](@ref) (regularized
 Biot-Savart, `gaussianerf`) or a custom kernel. All source systems sharing one
@@ -734,7 +734,7 @@ end
 
 # The switchless accessors assumed the fixed pre-2.3 row layout; with a
 # preceding output disabled they read or wrote the wrong rows silently. They
-# now refuse, naming the switch-aware form (reviewer request, 2026-09-27).
+# now refuse, naming the switch-aware form (reviewer request).
 _switchless(name) = throw(ArgumentError(
     "$name(buffer, i, ...) assumes the fixed row layout of FastMultipole < 2.3 and " *
     "reads or writes the wrong rows when any output is disabled; use " *

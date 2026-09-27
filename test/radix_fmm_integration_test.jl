@@ -77,7 +77,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     # constructor rejections
     @test_throws ArgumentError RadixFMMCache(err_sys; max_n_bodies=10)
     @test_throws ArgumentError RadixFMMCache(err_sys;
-        options=CUDARadixLifecycleOptions(; m2l_strategy=FastMultipole.SharedRotationM2L()))
+        options=RadixLifecycleOptions(; m2l_strategy=FastMultipole.SharedRotationM2L()))
     @test_throws Exception RadixFMMCache(err_sys; device=true)   # no CUDA on test host
 
     #--- (e) Float32 and Lamb-Helmholtz variants ---#
@@ -86,7 +86,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     sys32 = generate_gravitational(seed, n32)
     ref32 = _radix_direct_reference(seed, n32)
     cache32 = RadixFMMCache(sys32; expansion_order=6, ell=3,
-        options=CUDARadixLifecycleOptions(; precision=Float32,
+        options=RadixLifecycleOptions(; precision=Float32,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     fmm!(sys32, cache32; scalar_potential=true, gradient=true)
     @test _radix_potential_error(sys32, ref32) < 1f-3
@@ -106,7 +106,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
         sys_f = generate_gravitational(seed, 500)
         ref_f = _radix_direct_reference(seed, 500)
         cache_f = RadixFMMCache(sys_f; expansion_order=8, ell=3,
-            options=CUDARadixLifecycleOptions(; operator=FactoredRotationM2L(),
+            options=RadixLifecycleOptions(; operator=FactoredRotationM2L(),
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         fmm!(sys_f, cache_f; scalar_potential=true, gradient=true)
         @test _radix_potential_error(sys_f, ref_f) < 1e-6
@@ -128,12 +128,12 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
         # to the flat classifier so this block keeps comparing factored vs concat.
         factored_cache = RadixFMMCache(factored; expansion_order=P, ell=3,
             lamb_helmholtz=LH, stencil_epsilon=1e-4,
-            options=CUDARadixLifecycleOptions(; precision=TF,
+            options=RadixLifecycleOptions(; precision=TF,
                 operator=FactoredRotationM2L(),
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         concat_cache = RadixFMMCache(concat; expansion_order=P, ell=3,
             lamb_helmholtz=LH, stencil_epsilon=1e-4,
-            options=CUDARadixLifecycleOptions(; precision=TF,
+            options=RadixLifecycleOptions(; precision=TF,
                 operator=MaterializedYRotationM2L(),
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         @test factored_cache.state.scratch.m2l_concat isa FastMultipole.ResidentM2LFactoredPlan
@@ -163,7 +163,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
             gemm_direct = _radix_direct_reference(seed + 9, nf)
             mk_cache(sys) = RadixFMMCache(sys; expansion_order=P, ell=3,
                 lamb_helmholtz=LH,
-                options=CUDARadixLifecycleOptions(; operator=FactoredRotationM2L(),
+                options=RadixLifecycleOptions(; operator=FactoredRotationM2L(),
                     m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
             # scalar branch forced everywhere
             FastMultipole.FACTORED_Y_GEMM_MIN_COLS[] = typemax(Int)
@@ -252,7 +252,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     # Explicit options bypass the rules entirely.
     exp_sys = generate_gravitational(seed + 4, 400)
     exp_cache = RadixFMMCache(exp_sys; expansion_order=3, ell=4,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=ConcatenatedFixedZM2L()))
     @test exp_cache.state.options.precision === Float64
     @test exp_cache.state.options.m2l_strategy isa ConcatenatedFixedZM2L
@@ -264,7 +264,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     ref32 = _radix_direct_reference(seed + 5, 1500)
     c32 = RadixFMMCache(f32; expansion_order=3, ell=4)
     c64 = RadixFMMCache(f64; expansion_order=3, ell=4,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=DenseTranslationM2L()))
     fmm!(f32, c32; scalar_potential=true, gradient=true)
     fmm!(f64, c64; scalar_potential=true, gradient=true)

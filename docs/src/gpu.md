@@ -24,7 +24,7 @@ The device path is the *resident radix lifecycle*: a fixed domain box, a radix
 grid of leaf cells, and a [`RadixFMMCache`](@ref) built once at a capacity
 and reused every step, with the bodies, the expansions and the results all
 living on the device. It is the path for a time-stepping code that keeps its
-particles on the GPU (FLOWVPM is the reference consumer): after construction a
+particles on the GPU (a vortex particle method is the reference consumer): after construction a
 step moves no per-body data between host and device and, after one warm-up call
 per output layout, allocates nothing.
 
@@ -48,7 +48,7 @@ Every source system sharing one cache must report the same body type.
 ## Declaring a device-resident system
 
 A system opts in with two traits beyond the usual ones
-([Compatibility Functions](reference.md)):
+([Compatibility Functions](reference_api.md)):
 
 ```julia
 FastMultipole.residency(::MySystem) = FastMultipole.DeviceResident()   # default: HostResident()
@@ -85,7 +85,7 @@ whether the consumer overwrites or accumulates is its own choice.
 ## Building the cache and stepping
 
 ```julia
-options = CUDARadixLifecycleOptions(; precision = Float32,
+options = RadixLifecycleOptions(; precision = Float32,
                                       m2l_strategy = ConcatenatedFixedZM2L())
 cache = RadixFMMCache(sys; expansion_order = 4, ell = 3, max_n_bodies = n,
                       bounds = (x_min, box_size), device = true, options)
@@ -102,10 +102,10 @@ lifetime; a body that leaves it makes the next step throw, by contract, and
 
 * `precision`: the default is Float64 from expansion order 4 up; Metal has no
   Float64, and Float32 is the usual choice on an H200 too.
-* `m2l_strategy`: the extension builds the `ConcatenatedFixedZM2L` and
-  `DenseTranslationM2L` plans; the options constructor's host default is
-  neither. (Leaving `options` out entirely lets the cache pick a device-capable
-  default for both.)
+* `m2l_strategy`: the extension builds the `ConcatenatedFixedZM2L` plan
+  (`DenseTranslationM2L` and the factored strategies are host-only); the
+  options constructor's host default is not it. (Leaving `options` out entirely
+  lets the cache pick a device-capable default for both.)
 
 A regularized vortex kernel also sets the core-size rule the cache enforces at
 construction: `rho_t * sigma_max` must fit inside the gap the direct stencil
@@ -165,7 +165,7 @@ x = rand(TF, 3, n); G = TF(1e-3) .* randn(TF, 3, n); sig = fill(TF(0.02), n)
 sys = VortexBlobs(x, CuArray(x), CuArray(G), CuArray(sig), CUDA.zeros(TF, 3, n))
 cache = RadixFMMCache(sys; expansion_order = 4, ell = 3, max_n_bodies = n,
                       bounds = (SVector{3,TF}(-1, -1, -1), TF(3)), device = true,
-                      options = CUDARadixLifecycleOptions(; precision = TF, m2l_strategy = ConcatenatedFixedZM2L()))
+                      options = RadixLifecycleOptions(; precision = TF, m2l_strategy = ConcatenatedFixedZM2L()))
 dt = TF(1e-2)
 for step in 1:100
     fmm!(sys, cache; scalar_potential = false, gradient = true)

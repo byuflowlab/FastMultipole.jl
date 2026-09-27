@@ -144,7 +144,7 @@ for (ci, (P, ell, n, wc, nprobe, nseg)) in pairs(CASES)
     sys_h = make_system(6100 + ci, n, TF)
     sys_d = make_system(6100 + ci, n, TF)
     segs = make_segments(6200 + ci, nseg, TF)
-    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+    opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Vortex})
     local hcache, dcache
     try

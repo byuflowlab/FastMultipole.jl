@@ -1,4 +1,4 @@
-#------- EXPLICIT Z-ROTATION OPERATORS (Matrix Operator Refactor, task 010) -------#
+#------- EXPLICIT Z-ROTATION OPERATORS (Matrix Operator Refactor) -------#
 #
 # The z-rotation is block-diagonal in the azimuthal order m: each stored
 # coefficient (n, m) is multiplied by the complex phase e^{imϕ}, i.e. the real
@@ -109,7 +109,7 @@ function apply_z_rotation!(out, in, C, S, P, lamb_helmholtz::Val{LH}, ::Val{:acc
     return out
 end
 
-#------- INVARIANT AXIS-SWAP OPERATORS (Matrix Operator Refactor, task 013) -------#
+#------- INVARIANT AXIS-SWAP OPERATORS (Matrix Operator Refactor) -------#
 #
 # The non-z part of the y-alignment used by the rotation-trick M2M/M2L/L2L is, for
 # every degree n, generated entirely from the fixed π/2 Wigner blocks H(π/2). The
@@ -425,7 +425,7 @@ back_rotate_local_y_op!(target, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P
         Vector{eltype(Ts)}(undef, 2 * max(P, 1)),
     )
 
-#------- FIXED Y-SWAP PRIMITIVES (Matrix Operator Refactor, task 013b) -------#
+#------- FIXED Y-SWAP PRIMITIVES (Matrix Operator Refactor) -------#
 #
 # These are the primitive fixed ±π/2 y stages for the explicit factored rotation
 # path. They intentionally do not assemble the full Z_phi -> S -> Z_theta -> S_inv
@@ -488,7 +488,7 @@ function local_y_swap_neg90!(out, source, T_y_neg90, Hs_π2, ηs_mag, P, lamb_he
     return out
 end
 
-#------- GLOBALLY BATCHED FACTORED ROTATION ALIGNMENT (Matrix Operator Refactor, task 013c) -------#
+#------- GLOBALLY BATCHED FACTORED ROTATION ALIGNMENT (Matrix Operator Refactor) -------#
 #
 # Genuinely factored y-rotation. For every degree n the production y-operator factors
 # as  Y_n(θ) = U_n · diag(e^{iνθ}) · V_n  (ν = -n..n), with U_n / V_n FIXED (angle- and
@@ -829,7 +829,7 @@ end
     return nothing
 end
 
-#------- NATIVE FLAT FACTORED ROTATION (Matrix Operator Refactor, task 017) -------#
+#------- NATIVE FLAT FACTORED ROTATION (Matrix Operator Refactor) -------#
 #
 # Flat ragged-buffer counterparts of the factored y-rotation stages. They consume
 # FlatCoefficientBuffer storage directly: the φ channel is rotated through P_phi and

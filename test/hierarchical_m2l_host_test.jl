@@ -272,7 +272,7 @@ _hier_step_allocated(sys, cache) =
     wlo, whi = HIER_FM._radix_bounds((wide_sys,), Float64)
     wh0 = maximum((whi - wlo) * 0.5) * 1.05
     wide_cache = RadixFMMCache(wide_sys; expansion_order=4, ell=4,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=ConcatenatedFixedZM2L()),
         policy=HierarchicalRigidStencil(4,
             _hier_epsilon(4, 12, wh0, 4); near_radius2=12, window_classes=64))
@@ -292,7 +292,7 @@ _hier_step_allocated(sys, cache) =
         _hier_epsilon(4, 12, dh0, ell); near_radius2=12, window_classes=8)
     dense_cache = RadixFMMCache(dense_sys; expansion_order=4, ell,
         policy=dense_policy,
-        options=CUDARadixLifecycleOptions(;
+        options=RadixLifecycleOptions(;
             m2l_strategy=DenseTranslationM2L(apply_chunk=8, build_chunk=8)))
     dense_plan = dense_cache.state.scratch.m2l_concat
     @test length(dense_plan.operators) ==
@@ -304,12 +304,12 @@ _hier_step_allocated(sys, cache) =
     # All four resident strategy selections execute the same hierarchical
     # route partition and agree at matched geometry.
     strategy_specs = (
-        CUDARadixLifecycleOptions(; m2l_strategy=ConcatenatedFixedZM2L()),
-        CUDARadixLifecycleOptions(; operator=FactoredRotationM2L(),
+        RadixLifecycleOptions(; m2l_strategy=ConcatenatedFixedZM2L()),
+        RadixLifecycleOptions(; operator=FactoredRotationM2L(),
             m2l_strategy=ConcatenatedFixedZM2L()),
-        CUDARadixLifecycleOptions(; operator=FactoredRotationM2L(),
+        RadixLifecycleOptions(; operator=FactoredRotationM2L(),
             m2l_strategy=PrecomputedFactoredYM2L()),
-        CUDARadixLifecycleOptions(; m2l_strategy=DenseTranslationM2L(
+        RadixLifecycleOptions(; m2l_strategy=DenseTranslationM2L(
             apply_chunk=8, build_chunk=8)),
     )
     strategy_outputs = Matrix{Float64}[]
@@ -381,7 +381,7 @@ _hier_step_allocated(sys, cache) =
         pv = _hier_policy(4, 12, vh0, ell, TF, LH)
         cv = RadixFMMCache(sysv; expansion_order=4, ell,
             lamb_helmholtz=LH, policy=pv,
-            options=CUDARadixLifecycleOptions(; precision=TF,
+            options=RadixLifecycleOptions(; precision=TF,
                 m2l_strategy=ConcatenatedFixedZM2L()))
         fmm!(sysv, cv; scalar_potential=!LH, gradient=true)
         direct!(refv; scalar_potential=!LH, gradient=true)
@@ -530,7 +530,7 @@ _hier_step_allocated(sys, cache) =
         pprobe = ConstantPStencilConfig(P, one(TF); lamb_helmholtz=LH)
         peps = (constant_p_stencil_bound(TF(ph0), pell, pprobe, SVector(2, 2, 2)) +
             constant_p_stencil_bound(TF(ph0), pell, pprobe, SVector(3, 2, 0))) / 2
-        popts = CUDARadixLifecycleOptions(; precision=TF,
+        popts = RadixLifecycleOptions(; precision=TF,
             m2l_strategy=ConcatenatedFixedZM2L())
         ph = RadixFMMCache(pa; expansion_order=P, ell=pell, lamb_helmholtz=LH,
             policy=HierarchicalRigidStencil(ConstantPStencilConfig(P, peps;
@@ -556,12 +556,12 @@ _hier_step_allocated(sys, cache) =
     # Float32 hierarchical coverage for the specialized strategies (dense and
     # precomputed-y were Float64-only on this path before this block).
     f32_specs = (
-        CUDARadixLifecycleOptions(; precision=Float32,
+        RadixLifecycleOptions(; precision=Float32,
             m2l_strategy=ConcatenatedFixedZM2L()),
-        CUDARadixLifecycleOptions(; precision=Float32,
+        RadixLifecycleOptions(; precision=Float32,
             operator=FactoredRotationM2L(),
             m2l_strategy=PrecomputedFactoredYM2L()),
-        CUDARadixLifecycleOptions(; precision=Float32,
+        RadixLifecycleOptions(; precision=Float32,
             m2l_strategy=DenseTranslationM2L(apply_chunk=8, build_chunk=8)),
     )
     f32_outputs = Matrix{Float64}[]

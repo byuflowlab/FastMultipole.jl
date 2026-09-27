@@ -33,7 +33,7 @@ let n = 3000, nt = 200, P = 5, ell = 3
     Random.seed!(1)
     sys = VortexParticles(TF.(rand(3, n)), TF.(randn(3, n) ./ n), fill(TF(0.01), n);
         potential = zeros(TF, 13, n), gradient_stretching = zeros(TF, 6, n))
-    opts = FM.CUDARadixLifecycleOptions(; precision = TF,
+    opts = FM.RadixLifecycleOptions(; precision = TF,
         m2l_strategy = FM.ConcatenatedFixedZM2L(), body_type = FM.Point{FM.Vortex})
     cache = RadixFMMCache(sys; expansion_order = P, ell = ell, window_classes = 64,
                           options = opts, hessian = true)
@@ -66,7 +66,7 @@ let n = 256, ell = 3, nt = 16
         Random.seed!(6101)
         sys = VortexParticles(TF.(rand(3, n)), TF.(randn(3, n) ./ n), fill(TF(0.01), n);
             potential = zeros(TF, 13, n), gradient_stretching = zeros(TF, 6, n))
-        opts = FM.CUDARadixLifecycleOptions(; precision = TF,
+        opts = FM.RadixLifecycleOptions(; precision = TF,
             m2l_strategy = FM.ConcatenatedFixedZM2L(), body_type = FM.Point{FM.Vortex})
         cache = RadixFMMCache(sys; expansion_order = P, ell = ell, window_classes = 64, options = opts)
         FM.update_radix_state!(cache, (sys,)); st = cache.state
@@ -100,7 +100,7 @@ else
         pos = DTF.(rand(3, n)); str = DTF.(randn(3, n) ./ n)
         mk() = VortexParticles(copy(pos), copy(str), fill(DTF(0.01), n);
             potential = zeros(DTF, 13, n), gradient_stretching = zeros(DTF, 6, n))
-        opts = FM.CUDARadixLifecycleOptions(; precision = DTF,
+        opts = FM.RadixLifecycleOptions(; precision = DTF,
             m2l_strategy = FM.ConcatenatedFixedZM2L(), body_type = FM.Point{FM.Vortex})
         FM.device_backend(::VortexParticles) = DEV_BACKEND
         extmod = Base.get_extension(FastMultipole, :FastMultipoleKAExt)

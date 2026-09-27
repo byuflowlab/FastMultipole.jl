@@ -16,7 +16,6 @@ makedocs(;
         edit_link="main",
         assets=String[],
         # reference.md documents the whole radix API on one page
-        size_threshold=1_000_000, size_threshold_warn=600_000,
     ),
     pages=[
 		"Introduction" => "index.md",
@@ -28,7 +27,9 @@ makedocs(;
         "Automated Tuning" => "advanced_usage_2.md",
         "Running on a GPU" => "gpu.md",
         "Device Interface" => "device_interface.md",
-        "Reference" => "reference.md",
+        "Reference" => ["Core API" => "reference_api.md", "Radix and device path" => "reference_radix.md",
+                        "Kernels, operators and transforms" => "reference_kernels.md",
+                        "Solvers, visualization and telemetry" => "reference_solvers.md"],
         # "Theory" => "theory.md"
     ],
     checkdocs=:exports

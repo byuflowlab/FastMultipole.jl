@@ -113,7 +113,7 @@ _alt_rel_rms(a, b) = sqrt(mean(abs2, a .- b)) / sqrt(mean(abs2, b))
         for P in (4, 8), TF in (Float64, Float32)
             sys = Gravitational(copy(b))
             pol = AdaptiveTreePolicy(K_max=16, ell_max=6, near_radius2=5)
-            opts = ALT_FM.CUDARadixLifecycleOptions(precision=TF,
+            opts = ALT_FM.RadixLifecycleOptions(precision=TF,
                 m2l_strategy=ALT_FM.ConcatenatedFixedZM2L())
             cache = ALT_FM.RadixFMMCache(sys; expansion_order=P, ell=3,
                 adaptive=pol, options=opts)
@@ -145,7 +145,7 @@ end
         for P in (4, 8), TF in (Float64, Float32)
             sys = VortexParticles(copy(pos), copy(str))
             pol = AdaptiveTreePolicy(K_max=16, ell_max=6, near_radius2=5)
-            opts = ALT_FM.CUDARadixLifecycleOptions(precision=TF,
+            opts = ALT_FM.RadixLifecycleOptions(precision=TF,
                 m2l_strategy=ALT_FM.ConcatenatedFixedZM2L(),
                 body_type=ALT_FM.Point{ALT_FM.Vortex})
             cache = ALT_FM.RadixFMMCache(sys; expansion_order=P, ell=3,
@@ -463,7 +463,7 @@ end
         SmoothedVortex(base, sigma); expansion_order=4, ell=3,
         adaptive=pol_gate, hessian=true)
     # TwoPassVortex + adaptive: refused (uniform-lattice deficit sweep)
-    opts_tp = ALT_FM.CUDARadixLifecycleOptions(precision=Float64,
+    opts_tp = ALT_FM.RadixLifecycleOptions(precision=Float64,
         m2l_strategy=ALT_FM.ConcatenatedFixedZM2L(),
         body_type=ALT_FM.Point{ALT_FM.Vortex},
         direct_kernel=ALT_FM.TwoPassVortex(; sigma_row=8))

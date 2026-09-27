@@ -31,7 +31,7 @@ end
     sys8 = generate_gravitational(seed, n)
     u_ref, g_ref, H_ref = _interface_scalar_direct(sys8)
     cache8 = RadixFMMCache(sys8; expansion_order=8, ell=3, hessian=true,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     @test cache8.hessian
     fmm!(sys8, cache8; scalar_potential=true, gradient=true, hessian=true)
@@ -42,7 +42,7 @@ end
     # P = 4 (standing rule): same-P parity below plus a loose accuracy check
     sys4 = generate_gravitational(seed, n)
     cache4 = RadixFMMCache(sys4; expansion_order=4, ell=3, hessian=true,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     fmm!(sys4, cache4; scalar_potential=true, gradient=true, hessian=true)
     @test maximum(abs.(sys4.potential[5:7, :] .- g_ref)) < 5e-2
@@ -53,7 +53,7 @@ end
     for P in (4, 8)
         plain = generate_gravitational(seed, n)
         pcache = RadixFMMCache(plain; expansion_order=P, ell=3,
-            options=CUDARadixLifecycleOptions(; precision=Float64,
+            options=RadixLifecycleOptions(; precision=Float64,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         fmm!(plain, pcache; scalar_potential=true, gradient=true)
         hsys = P == 8 ? sys8 : sys4
@@ -73,7 +73,7 @@ end
     for (P, gtol, htol) in ((8, 1e-4, 1e-2), (4, 2e-3, 0.2))
         vsys = generate_vortex(seed, nv)
         vcache = RadixFMMCache(vsys; expansion_order=P, ell=3, hessian=true,
-            options=CUDARadixLifecycleOptions(; precision=Float64,
+            options=RadixLifecycleOptions(; precision=Float64,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         @test vcache isa RadixFMMCache{Float64,true}
         @test vcache.state.options.body_type === Point{Vortex}
@@ -90,7 +90,7 @@ end
     # P-independent), so gate loosely relative to the field scale
     v32 = generate_vortex(seed, nv)
     c32 = RadixFMMCache(v32; expansion_order=4, ell=3, hessian=true,
-        options=CUDARadixLifecycleOptions(; precision=Float32,
+        options=RadixLifecycleOptions(; precision=Float32,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     fmm!(v32, c32; scalar_potential=false, gradient=true, hessian=true)
     @test maximum(abs.(v32.gradient_stretching[1:3, :] .-
@@ -103,7 +103,7 @@ end
     eref = generate_vortex(seed, 300; radius_factor=0.1)
     FastMultipole.direct!(eref; gradient=true, hessian=true)
     ecache = RadixFMMCache(ext; expansion_order=8, ell=3, hessian=true,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     fmm!(ext, ecache; scalar_potential=false, gradient=true, hessian=true)
     @test maximum(abs.(ext.inner.gradient_stretching[1:3, :] .-
@@ -179,7 +179,7 @@ end
     n = 400
     sys = generate_gravitational(seed, n)
     cache = RadixFMMCache(sys; expansion_order=4, ell=3, hessian=true,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     @test cache.state.options.direct_kernel === SingularSource()
     fmm!(sys, cache; gradient=true, hessian=true)   # populates packed state
@@ -200,7 +200,7 @@ end
 
     vsys = generate_vortex(seed, n)
     vcache = RadixFMMCache(vsys; expansion_order=4, ell=3, hessian=true,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     @test vcache.state.options.direct_kernel === SingularVortex()
     fmm!(vsys, vcache; gradient=true, hessian=true)
@@ -224,7 +224,7 @@ end
         ssys = SmoothedVortex(base, sigma)
         U_ref, J_ref = _interface_regularized_direct(SmoothedVortex(base, sigma))
         scache = RadixFMMCache(ssys; expansion_order=8, ell=2, hessian=true,
-            options=CUDARadixLifecycleOptions(; precision=TF,
+            options=RadixLifecycleOptions(; precision=TF,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         @test scache.state.options.direct_kernel == RegularizedVortex(; sigma_row=8)
         fmm!(ssys, scache; scalar_potential=false, gradient=true, hessian=true)
@@ -242,7 +242,7 @@ end
     bad = SmoothedVortex(base, big_sigma)
     fat_cache = @test_logs (:warn, r"near-set adequacy failed") match_mode=:any RadixFMMCache(
         bad; expansion_order=4, ell=3, hessian=true,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     @test fat_cache.ell == 2
     @test isempty(fat_cache.accepted_offsets)   # zero-M2L: every pair direct
@@ -261,14 +261,14 @@ end
     # RegularizedVortex on a scalar body type
     plain = generate_gravitational(seed, 100)
     @test_throws ArgumentError RadixFMMCache(plain; expansion_order=4, ell=2,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
             direct_kernel=RegularizedVortex(; sigma_row=8)))
     # sigma_row beyond the packed width
     base = generate_vortex(seed, 100)
     thin = SmoothedVortex(base, fill(0.01, 100))
     @test_throws ArgumentError RadixFMMCache(thin; expansion_order=4, ell=2,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
             direct_kernel=RegularizedVortex(; sigma_row=9)))
     # invalid functor construction
@@ -332,7 +332,7 @@ end
         sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
         rsys = SmoothedVortex(base_r, sigma)
         psys = PartitionedSmoothedVortex(SmoothedVortex(base_p, sigma))
-        opts() = CUDARadixLifecycleOptions(; precision=TF,
+        opts() = RadixLifecycleOptions(; precision=TF,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
         rcache = RadixFMMCache(rsys; expansion_order=P, ell=2, hessian=true,
             options=opts())
@@ -360,13 +360,13 @@ end
     base = generate_vortex(seed, 100)
     thin = SmoothedVortex(base, fill(0.01, 100))
     @test_throws ArgumentError RadixFMMCache(thin; expansion_order=4, ell=2,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
             direct_kernel=PartitionedVortex(; sigma_row=8)))
     # scalar body type rejected
     plain = generate_gravitational(seed, 100)
     @test_throws ArgumentError RadixFMMCache(plain; expansion_order=4, ell=2,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
             direct_kernel=PartitionedVortex(; sigma_row=8)))
     # adequacy demotion applies identically to the partitioned kernel (052f)
@@ -374,7 +374,7 @@ end
         fill(0.2, 400)))
     fat_pcache = @test_logs (:warn, r"near-set adequacy failed") match_mode=:any RadixFMMCache(
         fat; expansion_order=4, ell=3,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     @test fat_pcache.ell == 2
     @test isempty(fat_pcache.accepted_offsets)
@@ -468,7 +468,7 @@ end
         sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
         rsys = SmoothedVortex(base_r, sigma)
         tsys = TwoPassSmoothedVortex(SmoothedVortex(base_t, sigma))
-        opts() = CUDARadixLifecycleOptions(; precision=TF,
+        opts() = RadixLifecycleOptions(; precision=TF,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
         rcache = RadixFMMCache(rsys; expansion_order=P, ell=2, hessian=true,
             options=opts())
@@ -544,7 +544,7 @@ end
     csys = TwoPassSmoothedVortex(SmoothedVortex(base_c, sigma_c))
     ccache = RadixFMMCache(csys; expansion_order=8, ell=2, hessian=true,
         bounds=(SVector(0.0, 0.0, 0.0), 1.0),
-        options=CUDARadixLifecycleOptions(; precision=Float32,
+        options=RadixLifecycleOptions(; precision=Float32,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     fmm!(csys, ccache; scalar_potential=false, gradient=true, hessian=true)
     U_cref, J_cref = _interface_regularized_direct(SmoothedVortex(
@@ -574,7 +574,7 @@ end
     sigr = fill(0.05, n_bg + 2)
     kwargs = (expansion_order=8, ell=3, hessian=true,
         bounds=(SVector(0.0, 0.0, 0.0), 1.0), near_radius2=3)
-    opts64 = () -> CUDARadixLifecycleOptions(; precision=Float64,
+    opts64 = () -> RadixLifecycleOptions(; precision=Float64,
         m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
     base_tp = VortexParticles(copy(posr), copy(strr))
     tpsys = TwoPassSmoothedVortex(SmoothedVortex(base_tp, sigr))
@@ -612,13 +612,13 @@ end
     # trait conflicts with an explicit different kernel
     thin = SmoothedVortex(generate_vortex(seed, 100), fill(0.01, 100))
     @test_throws ArgumentError RadixFMMCache(thin; expansion_order=4, ell=2,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
             direct_kernel=TwoPassVortex(; sigma_row=8)))
     # scalar body type rejected
     plain = generate_gravitational(seed, 100)
     @test_throws ArgumentError RadixFMMCache(plain; expansion_order=4, ell=2,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
             direct_kernel=TwoPassVortex(; sigma_row=8)))
     # pass-1 adequacy gate binds at rho_c: sigma large enough that even the
@@ -626,14 +626,14 @@ end
     fat = TwoPassSmoothedVortex(SmoothedVortex(generate_vortex(seed, 400),
         fill(0.2, 400)))
     @test_throws ArgumentError RadixFMMCache(fat; expansion_order=4, ell=3,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     # host-only until stage C: the device path must refuse the kernel rather
     # than silently skip pass 2
     dev = TwoPassSmoothedVortex(SmoothedVortex(generate_vortex(seed, 100),
         fill(0.01, 100)))
     @test_throws ArgumentError RadixFMMCache(dev; expansion_order=4, ell=2,
-        device=true, options=CUDARadixLifecycleOptions(; precision=Float64,
+        device=true, options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     # constructor negatives
     @test_throws ArgumentError TwoPassVortex(; sigma_row=4)
@@ -646,7 +646,7 @@ end
 @testset "stage 3 (task 032): recenter!, deprecated hooks" begin
 
     seed = 20260805
-    opts64 = CUDARadixLifecycleOptions(; precision=Float64,
+    opts64 = RadixLifecycleOptions(; precision=Float64,
         m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
 
     #--- (a) deprecated device-buffer hooks are gone ---#
@@ -769,7 +769,7 @@ end
         sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
         psys = PartitionedSmoothedVortex(SmoothedVortex(base, sigma))
         cache = RadixFMMCache(psys; expansion_order=P, ell=2, hessian=true,
-            options=CUDARadixLifecycleOptions(; precision=TF,
+            options=RadixLifecycleOptions(; precision=TF,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         fmm!(psys, cache; scalar_potential=false, gradient=true, hessian=true)
         st = cache.state
@@ -859,7 +859,7 @@ end
     sigma = fill(0.03, 300)
     tsys = TwoPassSmoothedVortex(SmoothedVortex(base, sigma))
     tcache = RadixFMMCache(tsys; expansion_order=4, ell=2, hessian=true,
-        options=CUDARadixLifecycleOptions(; precision=Float64,
+        options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
     fmm!(tsys, tcache; scalar_potential=false, gradient=true, hessian=true)
     g_min = FastMultipole._leaf_stencil_min_gap(tcache)
@@ -895,7 +895,7 @@ end
     # a device construction attempt still fails on this CUDA-less host, before
     # reaching the policy check
     @test_throws ArgumentError RadixFMMCache(tsys; expansion_order=4, ell=2,
-        device=true, options=CUDARadixLifecycleOptions(; precision=Float64,
+        device=true, options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
 
     #--- (f) sub-Morton key semantics (mechanism a, host mirror of the device
@@ -1104,7 +1104,7 @@ end
         sys = PartitionedSmoothedVortex(SmoothedVortex(generate_vortex(seed, nv),
             copy(sigma)))
         cache = RadixFMMCache(sys; expansion_order=4, ell=2, hessian=true,
-            options=CUDARadixLifecycleOptions(; precision=Float64,
+            options=RadixLifecycleOptions(; precision=Float64,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         old = FastMultipole.CUDA_NEARFIELD_GH_MODE[]
         FastMultipole.CUDA_NEARFIELD_GH_MODE[] = mode
@@ -1143,7 +1143,7 @@ end
         base = generate_vortex(20260807, 200)
         psys = PartitionedSmoothedVortex(SmoothedVortex(base, fill(0.02, 200)))
         cache = RadixFMMCache(psys; expansion_order=P, ell=2, hessian=true,
-            options=CUDARadixLifecycleOptions(; precision=Float64,
+            options=RadixLifecycleOptions(; precision=Float64,
                 m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
         dk = cache.state.options.direct_kernel
         @test dk isa PartitionedVortex && dk.rho_t == 4.252

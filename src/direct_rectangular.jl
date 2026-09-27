@@ -1,9 +1,9 @@
-#------- RECTANGULAR (SOURCE-SET -> DISTINCT TARGET-SET) DIRECT EVALUATION (task 051 stage 1) -------#
+#------- RECTANGULAR (SOURCE-SET -> DISTINCT TARGET-SET) DIRECT EVALUATION () -------#
 #
 # Standalone brute-force cross-pass evaluation OUTSIDE the radix FMM framework:
 # a distinct source set induces velocity (+ optional velocity gradient) at a
 # distinct target set. Motivated by the FLOWPanel 018 rotor step's two cross
-# passes (BRAINSTORM 023 profiling):
+# passes:
 #   pass 1: gaussianerf-regularized vortex particles -> arbitrary target points
 #   pass 2: FLOWPanel panel elements -> arbitrary target points
 #
@@ -79,7 +79,7 @@ struct RectangularGaussianErfVortex <: AbstractRectangularKernel end
 
 Rectangular pair kernel for FLOWPanel panel elements (the 018 rotor element
 set), transcribed from FLOWPanel.jl `src/FLOWPanel_elements_fmm.jl` at commit
-75b45c7, plus the working-tree (branch fastmultipole, 2026-08-20) selectable
+75b45c7, plus the working-tree (branch fastmultipole) selectable
 filament-regularization families for the vortex-ring branch. `filament_reg`
 selects the bound-vortex filament family (FLOWPanel's
 `FilamentRegularization` enum, working-tree elements_fmm.jl:910-915):
@@ -345,7 +345,7 @@ end
 # The on-plane clause fires on tRz == 0 alone: tRz is snapped to an exact zero
 # by _rect_tri_source_doublet whenever it is at roundoff scale, so all edges of
 # a panel take the same branch and the PV cannot flip with the sign of FMA
-# junk (device defect, job 13309929 stage 0c, 2026-08-22: den < 0 on 2 of 3
+# junk (a device defect seen in production: den < 0 on 2 of 3
 # edges at a centroid makes atan(num, den) jump by ±π with the sign of num).
 # relative tolerance of the singularity guards (extension line, on-plane snap,
 # self pair): 1e-12 in Float64, 1e-5 in Float32 (roundoff there is ~1e-7)
@@ -614,7 +614,7 @@ end
     return _rect_lg_gfun(R) / R^3
 end
 
-# FIXED threshold at the error crossover (2026-08-28 session-3 bug fix): the
+# FIXED threshold at the error crossover (bug fix): the
 # axis limit truncates O(ĥ²) terms while the general branch loses ~eps/ĥ² to
 # cancellation in N = ĥ²·M — both ≤ ~2.5e-8 at ĥ² = 1e-7. Do NOT scale by
 # min ẑ² (the pre-fix form silently dropped the O(ĥ²) correction for long
@@ -768,10 +768,8 @@ end
 end
 
 # Bound-vortex filament velocity, per-family regularization. Vatistas (REG=1)
-# is the HEAD kernel (elements_fmm.jl:867-898 @ 75b45c7); compact (REG=2) and
-# Gaussian (REG=3) are the working-tree families (branch fastmultipole,
-# 2026-08-20): _bound_vortex_velocity ::Val{F} at working-tree
-# elements_fmm.jl:945-987, finite_core=true path (elements_fmm.jl:966-985).
+# is FLOWPanel's kernel; compact (REG=2) and Gaussian (REG=3) are the
+# finite-core families of its `_bound_vortex_velocity ::Val{F}`.
 @inline function _rect_bound_vortex_velocity(r1::SVector{3,T}, r2::SVector{3,T},
         core_size::T, ::Val{REG}) where {T,REG}
     nr1 = sqrt(r1[1]*r1[1] + r1[2]*r1[2] + r1[3]*r1[3])

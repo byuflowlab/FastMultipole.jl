@@ -44,7 +44,7 @@ Each `fmm!(system, cache)` call performs, in order (device-resident case):
    `buffer_to_target!(system, device_output, switch, sort_index)` — *you*
    consume the results.
 
-The counter contract from task 023 makes "resident" checkable: after the first
+The counter contract makes "resident" checkable: after the first
 call, `cache.state.counters.body_uploads`, `influence_downloads`,
 `route_uploads`, and `operator_uploads` stay flat across steps, and
 `expansion_host_copies == 0` always.
@@ -98,7 +98,7 @@ the consumer's choice:
 - a time stepper that consumes velocity directly typically **overwrites**
   (the worked example below does);
 - a code that zeroes its own accumulators at the top of each evaluation and
-  sums several contributions **accumulates** (`.+=`) — FLOWVPM does this.
+  sums several contributions **accumulates** (`.+=`), as a vortex particle method does.
 
 Both are correct; the framework side is identical either way.
 
@@ -187,8 +187,6 @@ capacity-sized buffers, so:
 
 ### [`recenter!` — moving the domain box](@id recenter-section)
 
-*The following is the specified contract; the helper lands in task 032
-stage 3.*
 
 ```julia
 recenter!(cache, systems; bounds=nothing, padding=0.05)
@@ -310,7 +308,7 @@ For a vortex consumer the output channels read as:
 - **hessian slot = the 9-component velocity gradient** $J = \nabla u$ (needed
   in full, e.g. for vortex stretching — see the hessian discussion above).
 
-As a concrete mapping, FLOWVPM (one dense 46×N state matrix, column per
+As a concrete mapping, a particle code with one dense state matrix (a column per
 particle) connects as:
 
 | FLOWVPM rows | quantity | interface side |
@@ -334,7 +332,7 @@ and performs one H2D upload of the packed prefix plus one D2H download of the
 results per step — the consumer implements only the host hooks it already has
 for the legacy path. `DeviceResident()` eliminates those transfers entirely.
 
-Measured evidence (task 028, H200, $n = 10^6$, literature $P = 4$):
+Measured evidence (H200, $n = 10^6$, literature $P = 4$):
 
 - Fully host-resident lifecycle: **159.4 ms** vs **91.4 ms** device-resident
   at Phase A — a factor of ≈ **1.7×**, entirely per-step body H2D/D2H plus
@@ -392,6 +390,4 @@ tree-carried sources, before extra sources are added and before delivery.
 sorted outputs, the cell ranges, the direct pair list and the permutation (host
 arrays on a host cache, device arrays on a device cache); the pass owns its
 scratch, its host loops or KernelAbstractions kernels, and the delivery into its
-own storage. FastMultipole keeps no consumer physics: the subfilter-scale pass
-FLOWVPM used to run through `fmm!(...; sfs=true)` is FLOWVPM's own code on this
-hook.
+own storage. FastMultipole keeps no consumer physics on this hook.

@@ -35,7 +35,7 @@ const RTOL = 1f-6
 function run_case(seed, n_bodies, ell, P)
     sys = generate_gravitational(seed, n_bodies)
     cache = RadixFMMCache(sys; expansion_order=P, ell=ell,
-        options=CUDARadixLifecycleOptions(; precision=TF,
+        options=RadixLifecycleOptions(; precision=TF,
             m2l_strategy=ConcatenatedFixedZM2L()))
     state = cache.state
     grid = state.grid

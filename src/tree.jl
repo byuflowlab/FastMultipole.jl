@@ -418,8 +418,8 @@ numtype(system) = eltype(system)
 """
     allocate_buffers(systems::Tuple, target::Bool)
 
-Allocates buffers for the given systems. 
-    
+Allocates buffers for the given systems.
+
 **Arguments**
 
 * `systems::Tuple`: tuple of systems for which to allocate buffers
@@ -2205,7 +2205,7 @@ function get_interaction_list(tree, m2l_list, i_target)
 	return interaction_list
 end
 
-#--- rigid-motion transform (BRAINSTORM 021 rigid_motion_tree_reuse item) ---#
+#--- rigid-motion transform ---#
 
 """
     transform_tree!(tree::Tree, R, t)

@@ -1,4 +1,4 @@
-#------- EXPLICIT M2M/L2L Z-TRANSLATION BLOCKS (Matrix Operator Refactor, task 016) -------#
+#------- EXPLICIT M2M/L2L Z-TRANSLATION BLOCKS (Matrix Operator Refactor) -------#
 
 @inline _triangular_z_block_length(P) = ((P + 1) * (P + 2) * (P + 3)) ÷ 6
 
@@ -135,7 +135,7 @@ function apply_l2l_z!(out, in, blocks, P, lamb_helmholtz::Val{LH}, ::Val{:overwr
     return out
 end
 
-#------- EXPLICIT M2L Z-TRANSLATION BLOCKS (Matrix Operator Refactor, task 011) -------#
+#------- EXPLICIT M2L Z-TRANSLATION BLOCKS (Matrix Operator Refactor) -------#
 #
 # The z-aligned multipole-to-local translation is block-diagonal in the azimuthal
 # order m: for a fixed m, each output local coefficient (n, m) is a dense linear
@@ -147,14 +147,14 @@ end
 # both the real and imaginary lanes, and (for Val(true)) both the φ and χ
 # component channels. There is no conjugation or extra sign in the z-aligned
 # block; azimuthal phase signs are owned by the approved z-rotation operators
-# (task 010). See the approved theory artifact
+#. See the approved theory artifact
 # MATRIX_OPERATOR_REFACTOR/theory/m2l-z-translation-scaling.md.
 #
 # This stage materializes the fixed-m blocks explicitly (rather than fusing the
 # recurrence into a single per-call kernel) so the blocks can be built once and
 # applied to many source/target pairs that share the same integer z-offset, which
 # is exactly the reuse the later radix/offset-class batching (tasks 020/021) and
-# the GPU path (task 022) exploit. The distance scaling is evaluated by the same
+# the GPU path exploit. The distance scaling is evaluated by the same
 # stable recurrence used by translate_multipole_to_local_z! in src/translate.jl,
 # in the same multiply order, so a materialize-then-apply is bit-for-bit identical
 # to production.
@@ -360,7 +360,7 @@ function apply_m2l_z!(out, in, blocks, basis_info::OperatorBasisInfo{<:Compresse
     return out
 end
 
-#------- EXPLICIT LAMB-HELMHOLTZ OPERATORS (Matrix Operator Refactor, task 012) -------#
+#------- EXPLICIT LAMB-HELMHOLTZ OPERATORS (Matrix Operator Refactor) -------#
 #
 # The Lamb-Helmholtz transforms couple the φ (component 1) and χ (component 2)
 # channels after a z-aligned translation. They are sparse by construction (see the
@@ -385,7 +385,7 @@ end
 # Like the M2L z blocks above, the factors are materialized once (they depend only
 # on r and the degrees) so they can be reused across many source/target pairs that
 # share the same integer z-offset class (radix/offset-class batching, tasks
-# 020/021; GPU path, task 022). The factor formulas and multiply order match
+# 020/021; GPU path). The factor formulas and multiply order match
 # transform_lamb_helmholtz_multipole! / transform_lamb_helmholtz_local! in
 # src/translate.jl, so the materialize-then-apply path is bit-for-bit identical to
 # production. The apply uses separate in/out buffers with overwrite semantics
@@ -635,7 +635,7 @@ function apply_lamb_helmholtz_local!(out, in, A, B, basis_info::OperatorBasisInf
     return out
 end
 
-#------- NATIVE FLAT KERNELS (Matrix Operator Refactor, task 017) -------#
+#------- NATIVE FLAT KERNELS (Matrix Operator Refactor) -------#
 #
 # Flat ragged-buffer counterparts of the per-column z-translation and
 # Lamb-Helmholtz kernels above. They consume FlatCoefficientBuffer storage through
@@ -909,7 +909,7 @@ function _unpack_flat_column_accumulate!(buf::FlatCoefficientBuffer, legacy, j, 
     return buf
 end
 
-#------- FULL M2L OPERATOR PIPELINE (Matrix Operator Refactor, task 014) -------#
+#------- FULL M2L OPERATOR PIPELINE (Matrix Operator Refactor) -------#
 #
 # Compose the complete multipole-to-local translation from the explicit operator
 # stages built in tasks 010-013c, validated side-by-side against the production
@@ -927,9 +927,9 @@ end
 #
 # The two swappable variants differ only in stages 2/5 (the arbitrary-angle
 # y-alignment): MaterializedYRotationM2L reconstructs Ts(θ) per column from the
-# cached S_pos/S_neg blocks (task 013); FactoredRotationM2L applies the genuinely
+# cached S_pos/S_neg blocks; FactoredRotationM2L applies the genuinely
 # factored Z_phi -> Y(θ) -> ... -> inverse Z_phi using the fixed per-degree mode
-# matrices U_n/V_n (task 013c, Plain-H modes `y_*_U`/`y_*_V`, never the 013b
+# matrices U_n/V_n (Plain-H modes `y_*_U`/`y_*_V`, never the 013b
 # T_y_*90 primitives). Both reuse the shared task-011 z-translation blocks and
 # task-012 Lamb-Helmholtz coupling.
 #
@@ -942,7 +942,7 @@ end
 """
     m2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
 
-Apply the full batched M2L operator pipeline (task 014). `op` is the operator tag
+Apply the full batched M2L operator pipeline. `op` is the operator tag
 ([`MaterializedYRotationM2L`](@ref) or [`FactoredRotationM2L`](@ref)). `sources`
 and `targets` are native [`FlatCoefficientBuffer`](@ref) batches; `phis`, `thetas`,
 `rs` are length-`B` vectors of the per-pair rotation angles and z-separation.
@@ -1031,7 +1031,7 @@ function _m2l_return_alignment!(::FactoredRotationM2L, targets, B, A, phis, thet
     return targets
 end
 
-#------- FULL M2M/L2L OPERATOR PIPELINES (Matrix Operator Refactor, task 016) -------#
+#------- FULL M2M/L2L OPERATOR PIPELINES (Matrix Operator Refactor) -------#
 
 function m2m_operator_batch!(op::AbstractM2MOperator, targets::FlatCoefficientBuffer, sources::FlatCoefficientBuffer, phis, thetas, rs, invariant_cache, scratch::M2MOperatorScratch, lamb_helmholtz::Val{LH}) where LH
     _require_compressed_complex_operator_buffers(targets, sources, invariant_cache, scratch)
@@ -1174,7 +1174,7 @@ function _l2l_return_alignment!(::FactoredRotationL2L, targets, mid, tmp, phis, 
     return _l2l_return_alignment!(MaterializedYRotationL2L(), targets, mid, tmp, phis, thetas, cache, scratch, lamb_helmholtz, nbatch)
 end
 
-#------- RESIDENT BATCHED-M2M GEMM STRATEGIES (Matrix Operator Refactor, task 022) -------#
+#------- RESIDENT BATCHED-M2M GEMM STRATEGIES (Matrix Operator Refactor) -------#
 #
 # These operate on the GEMM-native `DegreeMajorRealBuffer` layout so per-degree blocks
 # are ready `mul!` operands with no repack. A node's coefficients are the stacked real
@@ -2051,7 +2051,7 @@ end
 """
     resident_m2l_batch!(strategy, targets, sources, phis, thetas, rs, cache, Val(LH))
 
-Degree-major resident M2L. The resident path ignores `CUDARadixLifecycleOptions.operator`;
+Degree-major resident M2L. The resident path ignores `RadixLifecycleOptions.operator`;
 the free-function strategy selects either the batch-shared factored-mode form or,
 for `DenseTranslationM2L`, complete matrices constructed from the materialized-y
 oracle. Production lifecycle constructors validate the corresponding operator
@@ -2241,7 +2241,7 @@ struct ResidentOperatorGroup{I,A,R,OB,DM,LHR}
     chi_dense::DM
     lh_phi_rows::LHR
     lh_chi_rows::LHR
-    # Valid-prefix length of source_idx/target_idx/phis/thetas (task 023): recurring
+    # Valid-prefix length of source_idx/target_idx/phis/thetas: recurring
     # steps refresh those arrays in place at capacity and update this count instead
     # of reallocating the group.
     count::Base.RefValue{Int}
@@ -2486,7 +2486,7 @@ end
 # rotation acts on the contiguous [re; im] halves of the stacked scratch, so it is
 # allocation-free strided broadcasting on both Array and CuArray.
 # C = A * B for the resident operator chain. The generic method is plain
-# `mul!`; the CUDA extension overrides it (task 029 cycle 1) to call
+# `mul!`; the CUDA extension overrides it () to call
 # `CUBLAS.gemm!` with construction-staged device alpha/beta scalars, because in
 # CUBLAS_POINTER_MODE_DEVICE a scalar-alpha/beta `mul!` stages a fresh `CuRef`
 # per call — one device allocation plus one pageable H2D memcpy, which is both
@@ -2599,7 +2599,7 @@ function _matrix_col_view(mat, nbatch::Integer)
     return @view mat[:, 1:nbatch]
 end
 
-# Valid-prefix view of a capacity-sized vector (task 023); returns the vector
+# Valid-prefix view of a capacity-sized vector; returns the vector
 # itself when the prefix spans it, keeping the one-shot path allocation-identical.
 _vector_prefix_view(v, n::Integer) = length(v) == n ? v : @view v[1:n]
 
@@ -2685,7 +2685,7 @@ end
 function _zero_resident_nonleaf_multipoles!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
     # DeviceRadixGrid nodes are level-major with leaves last, so the nonleaf set is
     # exactly the first (n_nodes - n_cells) columns; the prefix fill works for both
-    # host and CUDA arrays and stays correct under per-step counts (task 023).
+    # host and CUDA arrays and stays correct under per-step counts.
     if state.grid isa DeviceRadixGrid && state.counts.n_nodes > 0
         n_nonleaf = state.counts.n_nodes - state.counts.n_cells
         n_nonleaf <= 0 && return state
@@ -3363,9 +3363,8 @@ function _launch_resident_m2l_dense!(state::DeviceResidentRadixState{TF,B,LH}) w
         "DenseTranslationM2L requires operator=MaterializedYRotationM2L()"))
     ws = state.scratch::ResidentOperatorWorkspace{TF,B,LH}
     plan = ws.m2l_concat
-    plan isa Union{ResidentM2LDensePlan{TF},ResidentM2LDenseCUDAPlan} || throw(ArgumentError(
-        "DenseTranslationM2L requires a ResidentM2LDensePlan (host) or " *
-        "ResidentM2LDenseCUDAPlan (device) workspace"))
+    plan isa ResidentM2LDensePlan{TF} || throw(ArgumentError(
+        "DenseTranslationM2L requires a ResidentM2LDensePlan workspace (host only)"))
     return _launch_resident_m2l_dense_plan!(state, ws, plan)
 end
 
@@ -3463,7 +3462,7 @@ function _dense_m2l_scatter_add!(
     return target
 end
 
-# Measured on an AMD EPYC 7763 with one- and 64-thread OpenBLAS (task 023c):
+# Measured on an AMD EPYC 7763 with one- and 64-thread OpenBLAS:
 # narrow classes favor the direct dense scalar loop and wider classes favor one
 # BLAS mul! per real degree block.  A 16-column global crossover stayed within 5%
 # of the best focused candidate in every measured P/N/LH/thread regime, so no
@@ -3923,7 +3922,7 @@ function _launch_resident_m2l_concat!(state::DeviceResidentRadixState{TF,B,LH};
     return state
 end
 
-#------- fixed-box cache operator workspace (Matrix Operator Refactor, task 023) -------#
+#------- fixed-box cache operator workspace (Matrix Operator Refactor) -------#
 #
 # The RadixFMMCache path builds the resident workspace once at construction from the
 # fixed Morton domain (x_min, h0, ell) instead of from a concrete grid/list:
@@ -3950,7 +3949,7 @@ end
 
 # Nodes at level L are bounded by both the grid width at that level and the
 # occupied leaf count (each occupied leaf contributes at most one ancestor per
-# level). On a rectangular grid (task 037) an axis stops halving once it
+# level). On a rectangular grid an axis stops halving once it
 # saturates, so the per-axis cell count at level L is 2^max(ell_a - ell + L, 0).
 function _radix_level_node_capacity(level::Integer, ell_axes::SVector{3,Int},
         ell::Integer, max_cells::Integer)
@@ -3966,7 +3965,7 @@ _radix_level_node_capacity(level::Integer, max_cells::Integer) =
     _radix_level_node_capacity(level, SVector(Int(level), Int(level), Int(level)),
         Int(level), max_cells)
 
-# Capacity ResidentM2LConcatPlan from the fixed accepted-offset classes (task 023).
+# Capacity ResidentM2LConcatPlan from the fixed accepted-offset classes.
 function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, exemplar,
         strategy::ConcatenatedFixedZM2L, invariant::OperatorInvariantCache,
         accepted_offsets::AbstractVector{SVector{3,Int}}, cell_width::Real,
@@ -4049,7 +4048,7 @@ function ResidentM2LFactoredPlan(::Type{TF}, basis_info::OperatorBasisInfo,
         m2l_z_blocks!(view(z_flat_host, :, k), TF(r), P_active)
     end
     # Flat Plain-H mode blocks and per-class z tables for the fused device kernels
-    # (task 023b); host paths carry them too (construction-time only, small).
+    #; host paths carry them too (construction-time only, small).
     ym_flat = (
         mult_U_re = _array_like_vector(exemplar, TF, TF.(real.(invariant.y_mult_U))),
         mult_U_im = _array_like_vector(exemplar, TF, TF.(imag.(invariant.y_mult_U))),
@@ -4156,7 +4155,7 @@ function ResidentM2LPrecomputedYPlan(::Type{TF}, basis_info::OperatorBasisInfo{B
     Vl = _ymode_real_blocks(Vector{Complex{TF}}(invariant.y_loc_V), P_active, TF)
 
     if compact_device
-        # Compact device plan (task 023d): flat operator tables replace the nested
+        # Compact device plan: flat operator tables replace the nested
         # host storage, the packed route arrays stay empty (device routes remain in
         # emission order), and route_class lives on the device where route
         # generation writes it directly.
@@ -4545,7 +4544,7 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     nonleaf_idx = collect(1:max_nodes)      # capacity; resize!d by the step refresh
 
     child_radius(Lc) = sqrt(TF(3)) * h0 / (1 << Lc)
-    # active-level trimming (task 037 stage 3): stage groups exist only for the
+    # active-level trimming (): stage groups exist only for the
     # retained levels first_level:ell — M2M parent levels (ell-1):-1:first_level,
     # L2L child levels (first_level+1):ell. Untrimmed callers pass 0 (legacy).
     m2m_groups = [
@@ -4564,13 +4563,9 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
 
     cell_width = (2 * h0) / (1 << ell)
     m2l_concat = m2l_strategy isa DenseTranslationM2L ?
-        (compact_cuda_factored ?
-            _build_cuda_dense_m2l_plan(TF, basis_info, accepted_offsets, cell_width,
-                route_capacity, max_cells, 1 << ell, m2l_strategy, invariant,
-                dense_cuda_estimated_peak_bytes) :
-            ResidentM2LDensePlan(TF, basis_info, accepted_offsets, cell_width,
-                route_capacity, max_cells, 1 << ell, m2l_strategy, invariant;
-                hierarchical_noffsets)) :
+        ResidentM2LDensePlan(TF, basis_info, accepted_offsets, cell_width,
+            route_capacity, max_cells, 1 << ell, m2l_strategy, invariant;
+            hierarchical_noffsets) :
         m2l_strategy isa PrecomputedFactoredYM2L ?
         ResidentM2LPrecomputedYPlan(TF, basis_info, exemplar.phi, accepted_offsets,
             cell_width, route_capacity, max_cells, 1 << ell, invariant;
@@ -4611,7 +4606,7 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     )
 end
 
-#------- adaptive octree host lifecycle: M2T/S2L operators + stage launchers (task 040) -------#
+#------- adaptive octree host lifecycle: M2T/S2L operators + stage launchers -------#
 #
 # The host resident lifecycle over the task-039 adaptive octree
 # (theory/adaptive-radix-octree.md §2.6). V-list M2L, M2M/L2L, B2M/L2B, and the

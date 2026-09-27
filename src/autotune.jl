@@ -42,12 +42,14 @@ Tune the Fast Multipole Method (FMM) parameters for optimal performance on the g
 **Returns**
 
 - `tuned_params::NamedTuple`: a named tuple containing the best parameters found during tuning, which can be used in subsequent `fmm!` calls by splatting it as a keyword argument:`:
-  
+
     - `leaf_size_source::Int`: the optimal leaf size for the source systems
     - `expansion_order::Int`: the optimal expansion order for the FMM
     - `multipole_acceptance::Float64`: the optimal multipole acceptance criterion
 
 - `cache::Tuple`: a tuple containing the cache used during tuning, which can be reused for subsequent `fmm!` calls by splatting it as a keyword argument
+
+- `tune_info::NamedTuple`: diagnostics of the search (`cache_capped` says whether the leaf growth was clamped by the nearfield-cache budget); the two-value destructuring `tuned, cache = tune_fmm(...)` still works
 
 """
 function tune_fmm(target_systems::Tuple, source_systems::Tuple;
@@ -86,7 +88,7 @@ function tune_fmm(target_systems::Tuple, source_systems::Tuple;
 
     #--- cached-near-field tuning state (see tune_nearfield_cache) ---#
 
-    # "stop growth at the cap" (Ryan 2026-08-19): when a trial's throwaway
+    # "stop growth at the cap": when a trial's throwaway
     # cache exceeds nearfield_cache_max_bytes or _max_build_time, clamp
     # leaf_size_source to the last cache-feasible trial and keep tuning there.
     last_feasible_leaf = nothing
@@ -315,8 +317,7 @@ starting from already-tuned parameters (e.g. the first return value of
 `leaf_size_source` and `expansion_order` per multipole acceptance; this
 routine instead *measures* each neighbor of the current point and moves while
 a neighbor beats the incumbent by more than `improve_tol` (relative), so a
-model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
-023, Ryan 2026-08-20).
+model-vs-reality gap at production scale is closed by experiment.
 
 **Keyword Arguments**
 
@@ -340,7 +341,7 @@ model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
       and one tree is reused indefinitely — the panels-on-panels operator in a
       panel solve is built once a priori and reused across every iteration AND
       every timestep, so its build is a one-off that should not influence the
-      choice of knobs at all (Ryan, BRAINSTORM 021, 2026-08-24).
+      choice of knobs at all.
     - finite `n > 1`: in between — a build reused over exactly `n` applies.
       Set it to the expected iteration count.
 
@@ -350,7 +351,7 @@ model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
   This matters because tree and interaction-list construction get MORE
   expensive as `leaf_size_source` shrinks, so charging a full build to every
   apply adds a leaf-dependent penalty that biases the descent toward large
-  leaves. Measured (BRAINSTORM 021, 2026-08-24) at R1, 8016 panels: the descent
+  leaves. Measured at R1, 8016 panels: the descent
   stalled at leaf 45 because leaf 30 timed 1.4% WORSE under the `n=1`
   objective, while a Krylov solve — which reuses one build across every
   iteration — is ~15-20% FASTER at leaf 30.
@@ -383,7 +384,7 @@ model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
   ignored. Everything else - min-of-`reps`, `abandon_factor`, `max_seconds`,
   memoization, the descent itself - is unchanged.
 
-  Motivation (BRAINSTORM 021, Ryan 2026-08-24): this routine minimizes ONE
+  Motivation: this routine minimizes ONE
   `fmm!` apply, but a panel campaign publishes SOLVE wall clock, and below
   leaf ~40 the two were measured to disagree - at R1/p17/MAC0.5 the real solve
   falls monotonically to leaf 9 (15.5 s) while the apply proxy read flat
@@ -394,7 +395,7 @@ model-vs-reality gap at production scale is closed by experiment (BRAINSTORM
   it is how cached-near-field economics get tuned - the closure simply asks for
   `cache_nearfield=true`, builds the cache in an untimed warm-up, and times the
   warm solve, so the build is excluded from the objective by construction
-  (Ryan's Phase 2 caching ruling) without any cache plumbing in here.
+ without any cache plumbing in here.
 
   A candidate the closure declares infeasible (e.g. its near-field cache would
   exceed a memory budget) returns `success=false` and is rejected untimed.
@@ -439,7 +440,7 @@ function tune_fmm_perturb(target_systems, source_systems;
     reps=2, tree_amortization::Real=1, max_seconds=Inf, abandon_factor=1.3,
     improve_tol=0.02, max_iters=20, cost=nothing,
     memo=nothing, on_measure=nothing,
-    verbose=true, kwargs...)
+    verbose=false, kwargs...)
 
     tree_amortization >= 1 || throw(ArgumentError(
         "tree_amortization must be >= 1 (got $tree_amortization)"))
@@ -449,7 +450,7 @@ function tune_fmm_perturb(target_systems, source_systems;
     # solve) is run, what is built, and what is charged. Every knob that would
     # otherwise shape the internal trial is therefore meaningless here, and
     # silently ignoring one is exactly the class of bug this routine exists to
-    # fix (BRAINSTORM 021), so refuse loudly instead.
+    # fix, so refuse loudly instead.
     if cost !== nothing
         tree_amortization == 1 || throw(ArgumentError(
             "cost and tree_amortization are mutually exclusive: the cost " *
@@ -502,7 +503,7 @@ function tune_fmm_perturb(target_systems, source_systems;
     # candidate otherwise, which is most of them once the descent gets going.
     t_best_ok = Ref(Inf)
 
-    # A caller may supply a persisted memo (BRAINSTORM 021): seeding it makes a
+    # A caller may supply a persisted memo: seeding it makes a
     # resumed descent replay the identical path at near-zero cost and then
     # continue from where an interrupted run stopped. `nothing` keeps today's
     # fresh-dict behaviour exactly.

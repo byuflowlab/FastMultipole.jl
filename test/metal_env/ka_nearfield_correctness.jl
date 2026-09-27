@@ -83,7 +83,7 @@ for (ci,(n,K_max,ell_max,P,q,rows)) in pairs(CASES)
         leaf_capacity=leaf_capacity, maxn=n)
     lists=ext.ka_refresh_adaptive_lists!(lctx,actx,build;
         near_radius2=q, ell_max=ell_max, rho_t=0.0f0, sigma_armed=false)
-    opts=FM.CUDARadixLifecycleOptions(;precision=TF, body_type=FM.Point{FM.Vortex})
+    opts=FM.RadixLifecycleOptions(;precision=TF, body_type=FM.Point{FM.Vortex})
     state=ext.ka_radix_state(actx,build,devb,P,Val(true); options=opts, lists=lists, output_rows=rows)
 
     try
@@ -140,7 +140,7 @@ for (ci,(n,K_max,ell_max,P,q,rows)) in pairs(CASES[[1, 4]]),
         noffsets=noff, first_m2l_level=0, ell_max=ell_max, leaf_capacity=leaf_capacity, maxn=n)
     lists=ext.ka_refresh_adaptive_lists!(lctx,actx,build;
         near_radius2=q, ell_max=ell_max, rho_t=0.0f0, sigma_armed=false)
-    opts=FM.CUDARadixLifecycleOptions(;precision=TF, body_type=BT)
+    opts=FM.RadixLifecycleOptions(;precision=TF, body_type=BT)
     state=ext.ka_radix_state(actx,build,devb,P,Val(lh); options=opts, lists=lists, output_rows=rows)
     try
         ext.ka_launch_nearfield!(state); KernelAbstractions.synchronize(DEV_BACKEND)

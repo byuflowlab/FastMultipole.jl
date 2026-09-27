@@ -284,7 +284,7 @@ end
 @inline radix_displacement(grid::RadixGrid, target_cell::Integer, source_cell::Integer) =
     radix_displacement(grid, radix_offset(grid, target_cell, source_cell))
 
-#------- in-place radix grid refresh (Matrix Operator Refactor, task 023) -------#
+#------- in-place radix grid refresh (Matrix Operator Refactor) -------#
 #
 # Recurring time steps rebuild the entire grid — body keys, sort permutation, cell
 # compression, and level-major node metadata — inside a capacity-sized host
@@ -375,7 +375,7 @@ function _refresh_radix_nodes!(grid::DeviceRadixGrid{TF}, level_offsets::Vector{
         throw(ArgumentError("level_offsets must have length ell + 2"))
     0 <= first_level <= ell ||
         throw(ArgumentError("node-build first_level must lie in 0:ell"))
-    # active-level trimming (task 037 stage 3): levels below first_level are
+    # active-level trimming (): levels below first_level are
     # never built — their level_offsets prefix stays 0 and nodes at first_level
     # are roots (parent_index 0)
     first_lvl = Int(first_level)
@@ -459,7 +459,7 @@ end
         sort_offsets, level_offsets)
 
 Rebuild a capacity-sized host `DeviceRadixGrid` in place from the systems' current
-positions using the grid's **fixed** `x_min`/`h0`/`ell` (task 023). Every array
+positions using the grid's **fixed** `x_min`/`h0`/`ell`. Every array
 field keeps its identity; `n_bodies`/`n_cells` are refreshed. Returns the grid.
 """
 function update_radix_grid!(grid::DeviceRadixGrid{TF}, systems::Tuple,
@@ -570,7 +570,7 @@ function refresh_radix_level_occupancy!(occupancy::RadixLevelOccupancy,
     return occupancy
 end
 
-#------- adaptive radix octree construction (Matrix Operator Refactor, task 039) -------#
+#------- adaptive radix octree construction (Matrix Operator Refactor) -------#
 #
 # Host reference implementation of theory/adaptive-radix-octree.md §1 (tree
 # construction as sort/scan/compact), §1.4 (Sundar-style 2:1 balance sweep), and
@@ -578,7 +578,7 @@ end
 # (per-node subtree sigma_max, population-split veto). The dual-tree U/V/W/X
 # list generation itself lives in interaction_list_batched.jl.
 #
-# Contract (task 023 invariant style): the root cube, depth cap, and every
+# Contract (the port invariant style): the root cube, depth cap, and every
 # capacity are fixed at construction; update_adaptive_tree! rebuilds the whole
 # tree in place — keys, sort, top-down split, balance, level-major finalize,
 # sigma sweep — with zero allocation, and any capacity violation is a loud
@@ -643,7 +643,7 @@ end
     AdaptiveRadixTree(systems; policy=AdaptiveTreePolicy(), max_n_bodies=nothing,
         root=nothing, bounds_margin=0.05, TF=Float64, sigma=nothing)
 
-Standalone host constructor for the task-038 adaptive octree (task 039).
+Standalone host constructor for the task-038 adaptive octree.
 `systems` is a user system or tuple of systems implementing the standard
 `get_position`/`get_n_bodies` interface. `root=(x_min, h0)` fixes the root cube
 explicitly (lower corner + half-width); otherwise a cube is derived from the
@@ -1060,7 +1060,7 @@ function _refresh_adaptive_radix!(cache, systems::Tuple)
     tree = cache.adaptive_tree::AdaptiveRadixTree
     lists = cache.adaptive_lists::AdaptiveInteractionLists
     _refresh_adaptive_radix_typed!(tree, lists, cache.source_buffers, systems)
-    # task 040: refresh the resident-lifecycle mirrors (leaf-as-cell arrays,
+    # refresh the resident-lifecycle mirrors (leaf-as-cell arrays,
     # Int node mirrors, packed adaptive-order bodies, U leaf slots, M2M/L2L
     # group columns) from the rebuilt tree + lists
     al = cache.adaptive_state

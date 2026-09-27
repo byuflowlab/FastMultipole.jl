@@ -696,7 +696,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     # multipole power
     i = (n*(n+1)) >> 1 + 1
     for m in 0:n
-        # get Ñ 
+        # get Ñ
         Ñ = sqrt(4*pi*Float64(factorial(big(n+abs(m)))) * Float64(factorial(big(n-abs(m)))) / (2*n+1) )
 
         # conservative multipole power
@@ -736,7 +736,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     # multipole power
     i = (n*(n+1)) >> 1 + 1
     for m in 0:n
-        # get Ñ 
+        # get Ñ
         L̃ = sqrt(4*pi / (Float64(factorial(big(n-abs(m)))) * Float64(factorial(big(n+abs(m)))) * (2*n+1)) )
 
         # conservative multipole power
@@ -774,7 +774,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     # multipole power
     i = (n*(n+1)) >> 1 + 1 # index of degree n=p, order m=0
     for m in 0:n
-        # get Ñ 
+        # get Ñ
         Ñ = sqrt(4*pi*Float64(factorial(big(n+abs(m)))) * Float64(factorial(big(n-abs(m)))) / (2*n+1) )
 
         # conservative multipole power
@@ -816,7 +816,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     # multipole power
     i = (n*(n+1)) >> 1 + 1
     for m in 0:n
-        # get Ñ 
+        # get Ñ
         Ñ = sqrt(4*pi*Float64(factorial(big(n+abs(m)))) * Float64(factorial(big(n-abs(m)))) / (2*n+1) )
 
         # conservative multipole power
@@ -856,7 +856,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     # multipole power
     i = (n*(n+1)) >> 1 + 1
     for m in 0:n
-        # get Ñ 
+        # get Ñ
         L̃ = sqrt(4*pi / (Float64(factorial(big(n-abs(m)))) * Float64(factorial(big(n+abs(m)))) * (2*n+1)) )
 
         # conservative multipole power
@@ -894,7 +894,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     # multipole power
     i = (n*(n+1)) >> 1 + 1 # index of ϕn0
     for m in 0:n
-        # get Ñ 
+        # get Ñ
         Ñ = sqrt(4*pi*Float64(factorial(big(n+abs(m)))) * Float64(factorial(big(n-abs(m)))) / (2*n+1) )
 
         # conservative multipole power
@@ -919,7 +919,7 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
         i = ((n+1)*(n+2)) >> 1 + 1
         mp_power = 0.0
         for m in 0:n
-            # get Ñ 
+            # get Ñ
             Ñ = sqrt(4*pi*Float64(factorial(big(n+abs(m)))) * Float64(factorial(big(n-abs(m)))) / (2*n+1) )
     
             # conservative multipole power

@@ -99,7 +99,7 @@ inside a device kernel is a compile error, not a runtime one.)
 _extra_pair_has_hessian(kernel) = false
 
 # Regularized vortex particles as an all-pairs extra source (FLOWVPM's oversize
-# particles, 2026-09-21): the buffer is the particle source layout -- rows 1:3
+# particles): the buffer is the particle source layout -- rows 1:3
 # position, 5:7 strength, `sigma_row` the core -- so the resident near-field pair
 # math applies verbatim. A coincident pair (r = 0: the source is also a target)
 # contributes nothing, as in the near-field kernels.
@@ -129,7 +129,7 @@ _extra_pair_has_hessian(::Union{PartitionedVortex,RegularizedVortex}) = true
 # Straight vortex filaments (Filament{Vortex} systems, VortexFilamentKernel) as
 # an extra source: the packed column carries the midpoint in rows 1:3, the
 # strength in 5:7 and the endpoints in 8:13 (core_row if regularized), the
-# layout `_vortex_filament_pair` reads. Added 2026-09-26: without these the
+# layout `_vortex_filament_pair` reads. Without these the
 # near pairs of a filament extra source threw the default above.
 @inline function _extra_pair_ug(kernel::VortexFilamentKernel, tx, ty, tz, source_buffer, j)
     @inbounds dx = tx - source_buffer[1, j]

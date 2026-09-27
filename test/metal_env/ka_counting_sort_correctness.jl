@@ -67,7 +67,7 @@ function check_case(n, ell, TF; clustered=false)
     @printf("case n=%d ell=%d %s\n", n, ell, clustered ? "clustered" : "uniform")
     sys_h = make_field(77, n, TF; clustered)
     sys_d = make_field(77, n, TF; clustered)
-    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+    opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Vortex})
     # this gate compares the sort and the grid it produces: the window-class
     # count and a full evaluation cost operator tables and a whole FMM pass

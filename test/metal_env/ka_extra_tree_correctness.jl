@@ -68,7 +68,7 @@ let n = 800, ns = 120
     r1 = [SVector{3,TF}(rand(3)) for _ in 1:ns]
     ex = Segs(r1, [r1[i] + SVector{3,TF}(0.01 .* randn(3)) for i in 1:ns],
               TF.(randn(ns) ./ ns), fill(TF(0.005), ns))
-    opts = FM.CUDARadixLifecycleOptions(; precision = TF,
+    opts = FM.RadixLifecycleOptions(; precision = TF,
         m2l_strategy = FM.ConcatenatedFixedZM2L(), body_type = FM.Point{FM.Vortex})
     # `near` is the tree path with the multipoles left out: the far field is
     # then missing entirely, which is what the third check must reject
@@ -116,7 +116,7 @@ else
         r1 = [SVector{3,DTF}(rand(3)) for _ in 1:ns]
         ex = Segs(r1, [r1[i] + SVector{3,DTF}(0.01 .* randn(3)) for i in 1:ns],
                   DTF.(randn(ns) ./ ns), fill(DTF(0.005), ns))
-        opts = FM.CUDARadixLifecycleOptions(; precision = DTF,
+        opts = FM.RadixLifecycleOptions(; precision = DTF,
             m2l_strategy = FM.ConcatenatedFixedZM2L(), body_type = FM.Point{FM.Vortex})
         FM.device_backend(::VortexParticles) = DEV_BACKEND
         extmod = Base.get_extension(FastMultipole, :FastMultipoleKAExt)

@@ -77,7 +77,7 @@ for (case_i, (n, K_max, ell_max, P, balance)) in pairs(CASES)
         leaf_capacity=10*nl+256, frontier_capacity=16*(10*nl+256), node_capacity=100*nl+256)
     build = ext.ka_build_adaptive_tree!(actx, devarray(positions), ell_max, K_max,
         balance, (TF(0), TF(0), TF(0)), TF(1))
-    options = FM.CUDARadixLifecycleOptions(; precision=TF, body_type=FM.Point{FM.Vortex})
+    options = FM.RadixLifecycleOptions(; precision=TF, body_type=FM.Point{FM.Vortex})
     state = ext.ka_radix_state(actx, build, devarray(source_buffer), P, Val(true); options)
 
     try
@@ -147,7 +147,7 @@ for (case_i, (n, K_max, ell_max, P, balance)) in pairs(CASES), lh in (false, tru
         leaf_capacity=10*nl+256, frontier_capacity=16*(10*nl+256), node_capacity=100*nl+256)
     build = ext.ka_build_adaptive_tree!(actx, devarray(positions), ell_max, K_max,
         balance, (TF(0), TF(0), TF(0)), TF(1))
-    options = FM.CUDARadixLifecycleOptions(; precision=TF, body_type=FM.Point{FM.Source})
+    options = FM.RadixLifecycleOptions(; precision=TF, body_type=FM.Point{FM.Source})
     state = ext.ka_radix_state(actx, build, devarray(source_buffer), P, Val(lh); options)
     try
         ext.ka_launch_b2m!(state)
@@ -203,7 +203,7 @@ for (case_i, (n, K_max, ell_max, P, balance)) in pairs(CASES),
         leaf_capacity=10*nl+256, frontier_capacity=16*(10*nl+256), node_capacity=100*nl+256)
     build = ext.ka_build_adaptive_tree!(actx, devarray(positions), ell_max, K_max,
         balance, (TF(0), TF(0), TF(0)), TF(1))
-    options = FM.CUDARadixLifecycleOptions(; precision=TF, body_type=BT)
+    options = FM.RadixLifecycleOptions(; precision=TF, body_type=BT)
     state = ext.ka_radix_state(actx, build, devarray(source_buffer), P, Val(lh); options)
     try
         ext.ka_launch_b2m!(state)
@@ -262,7 +262,7 @@ for (case_i, (n, K_max, ell_max, P, balance)) in pairs(CASES),
         leaf_capacity=10*nl+256, frontier_capacity=16*(10*nl+256), node_capacity=100*nl+256)
     build = ext.ka_build_adaptive_tree!(actx, devarray(positions), ell_max, K_max,
         balance, (TF(0), TF(0), TF(0)), TF(1))
-    options = FM.CUDARadixLifecycleOptions(; precision=TF, body_type=BT)
+    options = FM.RadixLifecycleOptions(; precision=TF, body_type=BT)
     state = ext.ka_radix_state(actx, build, devarray(source_buffer), P, Val(lh); options)
     try
         ext.ka_launch_b2m!(state)

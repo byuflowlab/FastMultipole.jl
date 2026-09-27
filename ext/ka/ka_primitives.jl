@@ -1,0 +1,1056 @@
+#------- fixed-geometry row extrema (src: _device_row_extrema) -------#
+#
+# One kernel of ROW_EXTREMA_LANES workitems, each striding the row; the lane
+# partials (2 x lanes scalars) cross to the host and finish there. The kernel's
+# specialization does not involve `n`, so it compiles once per (backend, eltype)
+# rather than once per distinct length.
+
+const ROW_EXTREMA_LANES = 1024
+const _ROW_EXTREMA_SCRATCH = Dict{Any,Any}()
+
+@kernel function ka_row_extrema_kernel!(lo, hi, @Const(A), row, n, lanes)
+    i = @index(Global)
+    T = eltype(A)
+    mn = typemax(T); mx = typemin(T)
+    j = i
+    @inbounds while j <= n
+        v = A[row, j]
+        mn = min(mn, v); mx = max(mx, v)
+        j += lanes
+    end
+    @inbounds if i <= lanes
+        lo[i] = mn; hi[i] = mx
+    end
+end
+
+function FastMultipole._device_row_extrema(A::AnyGPUMatrix, row::Integer, n::Integer)
+    n > 0 || throw(ArgumentError("reducing over an empty row prefix"))
+    T = eltype(A)
+    backend = KA.get_backend(A)
+    lo, hi, hlo, hhi = get!(_ROW_EXTREMA_SCRATCH, (typeof(backend), T)) do
+        (KA.allocate(backend, T, ROW_EXTREMA_LANES), KA.allocate(backend, T, ROW_EXTREMA_LANES),
+         Vector{T}(undef, ROW_EXTREMA_LANES), Vector{T}(undef, ROW_EXTREMA_LANES))
+    end
+    wg = resolve_workgroup(backend, KA_AUTO_WORKGROUP)
+    kern = _cached_kernel(ka_row_extrema_kernel!, backend, wg)
+    kern(lo, hi, A, Int(row), Int(n), ROW_EXTREMA_LANES; ndrange=ROW_EXTREMA_LANES)
+    KA.synchronize(backend)
+    copyto!(hlo, lo); copyto!(hhi, hi)
+    return minimum(hlo), maximum(hhi)
+end
+
+#------- backend workgroup policy -------#
+#
+# `workgroup=64` was the unexamined default at most launch sites here. 64 suits
+# Metal (SIMD width 32, small threadgroups keep occupancy up on a 16-32 core
+# GPU) but wastes scheduler slots on an A100, where 256 is the usual figure for
+# the memory-bound elementwise kernels that dominate this file. Tunable sites
+# now pass `KA_AUTO_WORKGROUP` and the size is resolved per backend, so one
+# source tunes for both the local and the HPC target.
+#
+# NOT every site is tunable. `ka_launch_b2m!`, `ka_launch_l2b!`,
+# `ka_launch_nearfield!`, `ka_launch_adaptive_m2t!` and `ka_launch_adaptive_s2l!`
+# thread `workgroup` into `Val(workgroup)` and into `ndrange = n * workgroup`:
+# there it is the per-cell/per-pair *team size* that the kernel's `@localmem`
+# extents are declared against, not an occupancy knob. Those keep their explicit
+# sizes and are a separate tuning axis; changing one there changes the parallel
+# decomposition, not just the launch geometry.
+
+"""
+    KA_AUTO_WORKGROUP
+
+Sentinel workgroup size meaning "let the backend decide"; see
+[`resolve_workgroup`](@ref).
+"""
+const KA_AUTO_WORKGROUP = 0
+
+_backend_default_workgroup(::KA.CPU) = 64
+function _backend_default_workgroup(backend)
+    # The accelerator backend types live in packages this extension must not
+    # depend on, so select on the type's name rather than on the type.
+    name = string(nameof(typeof(backend)))
+    (name == "CUDABackend" || name == "ROCBackend" || name == "oneAPIBackend") && return 256
+    name == "MetalBackend" && return 64
+    return 64  # conservative for an unrecognised accelerator
+end
+
+const _WORKGROUP_CACHE = Dict{DataType,Int}()
+
+"""
+    resolve_workgroup(backend, workgroup) -> Int
+
+Return `workgroup` unchanged unless it is [`KA_AUTO_WORKGROUP`](@ref), in which
+case return the `:KA_WORKGROUP` radix setting if set, else the default for
+`backend` (256 on CUDA/ROCm/oneAPI, 64 on Metal and CPU).
+"""
+function resolve_workgroup(backend, workgroup::Int)
+    workgroup == KA_AUTO_WORKGROUP || return workgroup
+    override = FastMultipole.KA_WORKGROUP[]
+    override == KA_AUTO_WORKGROUP || return override
+    return get!(() -> _backend_default_workgroup(backend), _WORKGROUP_CACHE, typeof(backend))
+end
+
+# Backend-agnostic M2M building blocks (GPU-native, no host round-trip),
+# mirroring FastMultipole's CUDA-only production kernels in
+# src/translate_batched_cuda.jl (`_cuda_gather_rotate_z_kernel!`,
+# `_cuda_rotate_z_scatter_accumulate_kernel!`, `_resident_mul!`) so they run
+# on any KernelAbstractions backend (CUDA, Metal, ...).
+#
+# Verified against a from-scratch CPU reference derived directly from the
+# CUDA source (not yet wired into FastMultipole's actual
+# ResidentOperatorGroup/ResidentOperatorWorkspace structs -- see the plan
+# file / session notes for what remains):
+#   - ka_gather_rotate_z!           : max abs err 5.96e-8 vs CPU (n=8x6)
+#   - ka_rotate_z_scatter_accumulate!: max abs err 1.19e-7 vs CPU (w/ KA.@atomic)
+#   - full non-LH M2M group chain    : max abs err 2.14e-6 (relerr 4.2e-7),
+#     gather_rotate_z -> stacked_y_dense -> rotate_z_scatter_accumulate
+# All Float32, on Metal (MetalBackend, M1 Pro).
+
+@kernel function ka_gather_rotate_z_kernel!(dst, @Const(src), @Const(flat_idx), @Const(cols),
+                                             @Const(row_m), @Const(row_ssign), @Const(row_pair),
+                                             @Const(phis), sgn)
+    i = @index(Global)
+    nrow = size(dst, 1)
+    @inbounds begin
+        # Int32 decode: a 64-bit divide per element is emulated on Metal
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
+        s, c = sincos(row_m[row] * phis[col])
+        a = src[flat_idx[row], cols[col]]
+        b = src[flat_idx[row_pair[row]], cols[col]]
+        dst[row, col] = c * a + sgn * row_ssign[row] * s * b
+    end
+end
+
+"""
+    ka_gather_rotate_z!(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; workgroup=64)
+
+Backend-agnostic port of `_cuda_gather_rotate_z_kernel!`
+(src/translate_batched_cuda.jl): fused flat-column gather + z-axis rotation
+stage of the M2M/M2L source alignment. `sgn = inverse ? -1 : 1`, matching the
+CUDA `_gather_rotate_z!` convention.
+"""
+function ka_gather_rotate_z!(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; workgroup=KA_AUTO_WORKGROUP)
+    length(dst) == 0 && return dst
+    backend = KA.get_backend(dst)
+    kernel = _cached_kernel(ka_gather_rotate_z_kernel!, backend, workgroup)
+    kernel(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; ndrange=length(dst))
+    return dst
+end
+
+@kernel function ka_rotate_z_scatter_accumulate_kernel!(dest, @Const(slab), @Const(flat_idx),
+                                                         @Const(col_targets), @Const(row_m),
+                                                         @Const(row_ssign), @Const(row_pair), @Const(phis))
+    i = @index(Global)
+    nrow = size(slab, 1)
+    @inbounds begin
+        # Int32 decode: a 64-bit divide per element is emulated on Metal
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
+        s, c = sincos(row_m[row] * phis[col])
+        v = c * slab[row, col] - row_ssign[row] * s * slab[row_pair[row], col]
+        KA.@atomic dest[flat_idx[row], col_targets[col]] += v
+    end
+end
+
+"""
+    ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=64)
+
+Backend-agnostic port of `_cuda_rotate_z_scatter_accumulate_kernel!`
+(src/translate_batched_cuda.jl): inverse z-rotation fused with an
+atomic-accumulating scatter back into the flat coefficient buffer (the
+M2M/M2L "return alignment" stage). Uses `KernelAbstractions.@atomic`,
+confirmed working on Metal.
+"""
+function ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=KA_AUTO_WORKGROUP)
+    length(slab) == 0 && return dest
+    backend = KA.get_backend(dest)
+    kernel = _cached_kernel(ka_rotate_z_scatter_accumulate_kernel!, backend, workgroup)
+    kernel(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; ndrange=length(slab))
+    return dest
+end
+
+"""
+    ka_stacked_y_dense!(out_slab, in_slab, Ur, Vs, C, S, G, G2, ndof)
+
+Backend-agnostic port of `_stacked_y_dense!` (src/translate_batched.jl):
+the dense y-rotation application used by the M2M `SharedRotationM2M`
+strategy. On CUDA this is `_resident_mul!` (== `CUBLAS.gemm!`) around an
+elementwise C/S combine; here it is `LinearAlgebra.mul!` (which dispatches
+to each backend's own GPU matmul -- Metal's MPS-backed `mul!` for
+`MtlArray`, CUBLAS for `CuArray`) plus the same elementwise combine via
+ordinary broadcasting. No custom `@kernel` is needed for this stage --
+`mul!`/broadcast are already backend-generic.
+"""
+# Slab pointwise kernels. Base broadcasts over ndof-row views ran 3-5x below
+# bandwidth on Metal (49-row slabs, strided views, Int64 index math); these
+# decode (row, col) in Int32 from a flat index instead.
+@kernel function ka_stacked_combine_kernel!(G2, @Const(G), @Const(C), @Const(S), nd::Int32)
+    i = @index(Global)
+    @inbounds if i <= length(G2)
+        i32 = Int32(i) - Int32(1); nr = nd + nd
+        row = i32 % nr + Int32(1)
+        col = i32 ÷ nr + Int32(1)
+        if row <= nd
+            G2[row, col] = C[row, col] * G[row, col] - S[row, col] * G[row + nd, col]
+        else
+            r = row - nd
+            G2[row, col] = S[r, col] * G[r, col] + C[r, col] * G[row, col]
+        end
+    end
+end
+
+@kernel function ka_scale_inplace_kernel!(Y, @Const(Sc))
+    i = @index(Global)
+    @inbounds if i <= length(Y)
+        i32 = Int32(i) - Int32(1); nr = Int32(size(Y, 1))
+        row = i32 % nr + Int32(1)
+        col = i32 ÷ nr + Int32(1)
+        Y[row, col] *= Sc[row, col]
+    end
+end
+
+@kernel function ka_trig_fill_kernel!(C, S, @Const(nu), @Const(theta))
+    i = @index(Global)
+    @inbounds if i <= length(C)
+        i32 = Int32(i) - Int32(1); nr = Int32(size(C, 1))
+        row = i32 % nr + Int32(1)
+        col = i32 ÷ nr + Int32(1)
+        th = nu[row] * theta[col]
+        C[row, col] = cos(th)
+        S[row, col] = sin(th)
+    end
+end
+
+function ka_scale_inplace!(Y, Sc)
+    kernel = _cached_kernel(ka_scale_inplace_kernel!, KA.get_backend(Y), 256)
+    kernel(Y, Sc; ndrange=length(Y))
+    return Y
+end
+
+# C, S = cos/sin(nu * theta') as slabs (ndof x n); `theta` is the plain vector.
+function ka_trig_fill!(C, S, nu, theta)
+    kernel = _cached_kernel(ka_trig_fill_kernel!, KA.get_backend(C), 256)
+    kernel(C, S, nu, theta; ndrange=length(C))
+    return C
+end
+
+function ka_stacked_y_dense!(out_slab, in_slab, Ur, Vs, C, S, G, G2, ndof::Integer)
+    mul!(G, Vs, in_slab)
+    kernel = _cached_kernel(ka_stacked_combine_kernel!, KA.get_backend(G2), 256)
+    kernel(G2, G, C, S, Int32(ndof); ndrange=length(G2))
+    mul!(out_slab, Ur, G2)
+    return out_slab
+end
+
+@kernel function ka_gather_rows_kernel!(dst, @Const(src), @Const(rows))
+    i = @index(Global)
+    nrow = size(dst, 1)
+    @inbounds begin
+        # Int32 decode: a 64-bit divide per element is emulated on Metal
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
+        dst[row, col] = src[rows[row], col]
+    end
+end
+
+@kernel function ka_gather_values_kernel!(dst, @Const(src), @Const(ids))
+    i = @index(Global)
+    @inbounds dst[i] = src[ids[i]]
+end
+
+"""
+    ka_gather_values!(dst, src, ids; workgroup=64)
+
+Backend-agnostic port of `_gather_values!` (src/translate_batched.jl): allocation-free
+value gather `dst[i] = src[ids[i]]`, used by the M2L concat plan's per-chunk column
+parameter gather (phi/theta/r/invr) from the per-class geometry tables.
+"""
+function ka_gather_values!(dst, src, ids; workgroup=KA_AUTO_WORKGROUP)
+    length(dst) == 0 && return dst
+    backend = KA.get_backend(dst)
+    kernel = _cached_kernel(ka_gather_values_kernel!, backend, workgroup)
+    kernel(dst, src, ids; ndrange=length(dst))
+    return dst
+end
+
+"""
+    ka_gather_rows!(dst, src, rows; workgroup=64)
+
+Backend-agnostic port of `_gather_rows!` (src/translate_batched.jl): allocation-free
+row gather `dst[i, :] = src[rows[i], :]`, used by the Lamb-Helmholtz row-mix stage of
+`_resident_stage_group_apply!`.
+"""
+function ka_gather_rows!(dst, src, rows; workgroup=KA_AUTO_WORKGROUP)
+    length(dst) == 0 && return dst
+    backend = KA.get_backend(dst)
+    kernel = _cached_kernel(ka_gather_rows_kernel!, backend, workgroup)
+    kernel(dst, src, rows; ndrange=length(dst))
+    return dst
+end
+
+#------- FUSED POINTWISE M2L PRIMITIVES -------#
+#
+# Ports of the host launcher's already-fused helpers `_prefix_trig_scale!` and
+# `_prefix_lh_mix!` (src/translate_batched.jl), plus a three-way column gather.
+# The KA concat driver used to spell these out as separate broadcasts and
+# `ka_gather_rows!` calls -- 14 launches per chunk for work that is pure
+# elementwise reindexing. Profiled on the real wake at np=8192 (11650 routes):
+# the apply is neither bandwidth- nor FLOP-bound at that size (6-30 GB/s of
+# ~100; stacked_y at ~0.22 of ~3.6 TFLOP/s), and 1.69 ms of its 8.36 ms is
+# fixed per-launch cost across 22 launches. So pass COUNT is the lever here,
+# not traffic per pass.
+
+@kernel function ka_gather_values3_kernel!(d1, d2, d3, @Const(s1), @Const(s2),
+        @Const(s3), @Const(ids))
+    j = @index(Global)
+    @inbounds begin
+        id = ids[j]
+        d1[j] = s1[id]
+        d2[j] = s2[id]
+        d3[j] = s3[id]
+    end
+end
+
+"""
+    ka_gather_values3!(d1, d2, d3, s1, s2, s3, ids; workgroup=64)
+
+Three `ka_gather_values!` calls sharing one index vector, done in one launch and
+one `ids` read per column. Used for the concat plan's (phi, theta, invr) column
+parameter gather; the Lamb-Helmholtz `r` gather stays a separate call because
+`col_r` is absent on a non-LH plan.
+"""
+function ka_gather_values3!(d1, d2, d3, s1, s2, s3, ids; workgroup=KA_AUTO_WORKGROUP)
+    n = length(d1)
+    n == 0 && return d1
+    backend = KA.get_backend(d1)
+    kernel = _cached_kernel(ka_gather_values3_kernel!, backend, workgroup)
+    kernel(d1, d2, d3, s1, s2, s3, ids; ndrange=n)
+    return d1
+end
+
+@kernel function ka_prefix_trig_scale_kernel!(C, S, scale, @Const(nu),
+        @Const(theta), @Const(invr), @Const(rexp), nrow::Int)
+    i = @index(Global)
+    @inbounds begin
+        # Int32 decode: a 64-bit divide per element is emulated on Metal
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
+        th = nu[row] * theta[col]
+        C[row, col] = cos(th)
+        S[row, col] = sin(th)
+        scale[row, col] = invr[col]^rexp[row]
+    end
+end
+
+"""
+    ka_prefix_trig_scale!(C, S, scale, nu, theta, invr, rexp; workgroup=64)
+
+Backend-agnostic port of `_prefix_trig_scale!` (src/translate_batched.jl): the
+per-column rotation table `C = cos(nu*theta)`, `S = sin(nu*theta)` and the
+radial scaling `scale[i, j] = invr[j]^rexp[i]`, in one pass over the slab
+instead of three broadcasts. `C`, `S` and `scale` must be `length(nu)`-row views
+of the same column range as `theta` and `invr`.
+"""
+function ka_prefix_trig_scale!(C, S, scale, nu, theta, invr, rexp;
+        workgroup=KA_AUTO_WORKGROUP)
+    nrow = length(nu)
+    ncols = length(theta)
+    (nrow == 0 || ncols == 0) && return scale
+    backend = KA.get_backend(scale)
+    kernel = _cached_kernel(ka_prefix_trig_scale_kernel!, backend, workgroup)
+    kernel(C, S, scale, nu, theta, invr, rexp, nrow; ndrange=nrow * ncols)
+    return scale
+end
+
+@kernel function ka_prefix_lh_mix_kernel!(cphi, cchi, @Const(zphi), @Const(zchi),
+        @Const(arow), @Const(brow), @Const(rs), @Const(phi_pair), @Const(chi_up),
+        ndphi::Int, ndchi::Int)
+    i = @index(Global)
+    @inbounds begin
+        nd = ndphi + ndchi
+        i32 = Int32(i) - Int32(1); nd32 = Int32(nd)
+        row = i32 % nd32 + Int32(1)
+        col = i32 ÷ nd32 + Int32(1)
+        r = rs[col]
+        if row <= ndphi
+            cphi[row, col] = zphi[row, col] + arow[row] * r * zchi[phi_pair[row], col]
+        else
+            k = row - ndphi
+            cchi[k, col] = zchi[k, col] + brow[k] * r * zchi[chi_up[k], col]
+        end
+    end
+end
+
+"""
+    ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, arow, brow, rs, phi_pair, chi_up; workgroup=64)
+
+Backend-agnostic port of `_prefix_lh_mix!` (src/translate_batched.jl): the
+Lamb-Helmholtz row mix
+
+    cphi[i, j] = zphi[i, j] + arow[i] * rs[j] * zchi[phi_pair[i], j]
+    cchi[i, j] = zchi[i, j] + brow[i] * rs[j] * zchi[chi_up[i],   j]
+
+in one launch. The row gather is folded into the read, so the two staging slabs
+(`lhgp`, `lhgu`) and the two `ka_gather_rows!` passes that filled them are not
+needed. Both outputs are written by one ndrange, split at row `ndphi`.
+"""
+function ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, arow, brow, rs, phi_pair,
+        chi_up; workgroup=KA_AUTO_WORKGROUP)
+    ndphi = size(cphi, 1)
+    ndchi = size(cchi, 1)
+    ncols = length(rs)
+    (ncols == 0 || ndphi + ndchi == 0) && return cchi
+    backend = KA.get_backend(cchi)
+    kernel = _cached_kernel(ka_prefix_lh_mix_kernel!, backend, workgroup)
+    kernel(cphi, cchi, zphi, zchi, arow, brow, rs, phi_pair, chi_up, ndphi,
+        ndchi; ndrange=(ndphi + ndchi) * ncols)
+    return cchi
+end
+
+#------- PRODUCTION PRIMITIVE DISPATCH -------#
+#
+# The resident stage drivers in src/translate_batched.jl
+# (`_resident_stage_group_apply!`, `_launch_resident_m2l_concat!`) are already
+# backend-agnostic: apart from views, broadcast, `mul!` and `fill!`, the only
+# device work they do goes through the four primitives below. CUDA's "port" of
+# the far field is exactly the same trick -- `_launch_cuda_resident_m2m!` and
+# `_launch_cuda_resident_l2l!` are one-line passthroughs to those same generic
+# drivers, and `src/translate_batched_cuda.jl` specializes only these
+# primitives on `CUDA.AnyCuArray`.
+#
+# So overloading them on GPU arrays puts the KA kernels into the *production*
+# call graph rather than alongside it, which is why the standalone
+# `ka_resident_stage_group_apply!` / `ka_resident_m2l_concat_apply!` drivers
+# (which re-implemented the generic drivers) are no longer needed.
+#
+# Dispatch handle is `GPUArraysCore.AnyGPU{Matrix,Vector}` -- the wrapper-aware
+# analogue of `CUDA.AnyCuArray`. This matters: the drivers hand these
+# primitives *views* (`_matrix_col_view`, `@view`), and a `SubArray` of an
+# `MtlArray` is not itself an `AbstractGPUArray`. Verified: `MtlMatrix` and
+# views of it are `AnyGPUMatrix`, host `Array` is not, and CUDA's
+# `AnyCuArray` methods remain strictly more specific for every `CuArray`
+# shape including views -- so the CUDA path is unchanged and unambiguous.
+
+function FastMultipole._gather_rotate_z!(dst::AnyGPUMatrix, src::AnyGPUMatrix, flat_idx,
+        cols, row_m, row_ssign, row_pair, phis, inverse::Bool)
+    # `sgn` must be a float, never the raw `Bool`: `Bool * Number` would
+    # silently zero the sin cross-term rather than negate it.
+    TF = eltype(dst)
+    sgn = inverse ? -one(TF) : one(TF)
+    return ka_gather_rotate_z!(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn)
+end
+
+function FastMultipole._rotate_z_scatter_accumulate!(dest::AnyGPUMatrix, slab, flat_idx,
+        col_targets, row_m, row_ssign, row_pair, phis)
+    return ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets,
+                                           row_m, row_ssign, row_pair, phis)
+end
+
+function FastMultipole._gather_rows!(dst::AnyGPUMatrix, src::AnyGPUMatrix, rows)
+    return ka_gather_rows!(dst, src, rows)
+end
+
+function FastMultipole._gather_values!(dst::AnyGPUVector, src::AnyGPUVector, ids)
+    return ka_gather_values!(dst, src, ids)
+end
+
+@kernel function ka_fill_invperm_kernel!(invperm, @Const(perm), n)
+    sorted_i = @index(Global)
+    @inbounds if sorted_i <= n
+        invperm[perm[sorted_i]] = sorted_i
+    end
+end
+
+"""
+    ka_fill_invperm!(invperm, perm; workgroup=64)
+
+Backend-agnostic port of `_cuda_fill_invperm_kernel!` (src/translate_batched_cuda.jl):
+scatter the inverse of the body sort permutation, `invperm[perm[i]] = i`, so a global
+body ordinal maps back to its sorted slot. `invperm` is written over `1:length(perm)`
+and must be at least that long; `perm` must be a genuine permutation of `1:n` (each
+slot is written exactly once, so a non-permutation silently leaves stale entries --
+the same contract CUDA carries).
+"""
+function ka_fill_invperm!(invperm, perm; workgroup::Int=KA_AUTO_WORKGROUP)
+    n = length(perm)
+    n == 0 && return invperm
+    length(invperm) >= n || throw(ArgumentError(
+        "invperm (length $(length(invperm))) is shorter than perm (length $n)"))
+    backend = KA.get_backend(invperm)
+    kernel = _cached_kernel(ka_fill_invperm_kernel!, backend, workgroup)
+    kernel(invperm, perm, n; ndrange=n)
+    return invperm
+end
+
+@kernel function ka_fill_single_system_attribution_kernel!(body_system, body_index, n)
+    i = @index(Global)
+    @inbounds if i <= n
+        body_system[i] = 1
+        body_index[i] = i
+    end
+end
+
+"""
+    ka_fill_single_system_attribution!(body_system, body_index, n; workgroup=64)
+
+Fill the `DeviceRadixGrid` body-attribution arrays for a single source system:
+`body_system[i] = 1`, `body_index[i] = i` over `1:n`. Both are indexed by *global*
+(unsorted) body ordinal, so a sorted slot is resolved as `body_system[perm[slot]]`.
+
+This is the attribution half of `_cuda_extract_matrix_positions_kernel!`
+(src/translate_batched_cuda.jl), which CUDA fuses into position extraction. The KA
+build takes an already-extracted `3 x n` position matrix, so there is nothing to
+fuse with and the fill stands alone.
+
+Multi-system attribution (`_cuda_extract_source_positions_kernel!`: one launch per
+system, each writing `isys` and its local index into an offset slice) is not ported;
+it belongs to the repack path rather than the octree build.
+"""
+function ka_fill_single_system_attribution!(body_system, body_index, n::Int; workgroup::Int=KA_AUTO_WORKGROUP)
+    n == 0 && return body_system, body_index
+    (length(body_system) >= n && length(body_index) >= n) || throw(ArgumentError(
+        "body attribution arrays (lengths $(length(body_system)), $(length(body_index))) " *
+        "are shorter than n=$n"))
+    backend = KA.get_backend(body_system)
+    kernel = _cached_kernel(ka_fill_single_system_attribution_kernel!, backend, workgroup)
+    kernel(body_system, body_index, n; ndrange=n)
+    return body_system, body_index
+end
+
+@kernel function ka_tree_routes_kernel!(m2m_parent, m2m_child, l2l_parent, l2l_child,
+        @Const(parent_index), n_root_nodes, n_nodes)
+    edge = @index(Global)
+    node = edge + n_root_nodes
+    @inbounds if node <= n_nodes
+        parent = parent_index[node]
+        m2m_parent[edge] = parent
+        m2m_child[edge] = node
+        l2l_parent[edge] = parent
+        l2l_child[edge] = node
+    end
+end
+
+"""
+    ka_tree_routes!(m2m_parent, m2m_child, l2l_parent, l2l_child, parent_index, n_nodes;
+                    n_root_nodes=1, workgroup=64)
+
+Backend-agnostic port of `_cuda_tree_routes_kernel!`/`_cuda_radix_tree_routes`
+(src/translate_batched_cuda.jl): materialize the parent-child edge list the resident
+M2M and L2L passes walk. One edge per non-root node, in node order, so edge `e`
+carries child `e + n_root_nodes` and its parent. M2M and L2L get identical arrays
+(the passes differ in direction, not in topology) -- CUDA writes both rather than
+aliasing, and this does the same so the two can diverge later without a data race.
+
+`n_nodes` is the *logical* node count: `parent_index` is capacity-sized in the KA
+context, so its `length` is not the extent. The four outputs are written over
+`1:(n_nodes - n_root_nodes)` and must be at least that long. `n_root_nodes` is the
+number of leading nodes that are roots (`parent_index == 0`) and therefore contribute
+no edge; 1 for the adaptive tree, matching CUDA's call site.
+"""
+function ka_tree_routes!(m2m_parent, m2m_child, l2l_parent, l2l_child, parent_index,
+        n_nodes::Int; n_root_nodes::Int=1, workgroup::Int=KA_AUTO_WORKGROUP)
+    n_edges = max(n_nodes - n_root_nodes, 0)
+    n_edges == 0 && return m2m_parent, m2m_child, l2l_parent, l2l_child
+    n_nodes <= length(parent_index) || throw(ArgumentError(
+        "n_nodes=$n_nodes exceeds parent_index (length $(length(parent_index)))"))
+    for (name, arr) in (("m2m_parent", m2m_parent), ("m2m_child", m2m_child),
+            ("l2l_parent", l2l_parent), ("l2l_child", l2l_child))
+        length(arr) >= n_edges || throw(ArgumentError(
+            "$name (length $(length(arr))) is shorter than the edge count $n_edges"))
+    end
+    backend = KA.get_backend(m2m_parent)
+    kernel = _cached_kernel(ka_tree_routes_kernel!, backend, workgroup)
+    kernel(m2m_parent, m2m_child, l2l_parent, l2l_child, parent_index, n_root_nodes,
+        n_nodes; ndrange=n_edges)
+    return m2m_parent, m2m_child, l2l_parent, l2l_child
+end
+
+@kernel function ka_pack_body_matrix_kernel!(body, @Const(source_buffer), @Const(perm),
+        @Const(body_system), @Const(body_index), isys, n, nrows, nsys,
+        sigma_row, inv_sigma_row)
+    sorted_i = @index(Global)
+    @inbounds if sorted_i <= n
+        global_i = perm[sorted_i]
+        if body_system[global_i] == isys
+            ibody = body_index[global_i]
+            for row in 1:nsys
+                body[row, sorted_i] = source_buffer[row, ibody]
+            end
+            for row in (nsys + 1):nrows
+                body[row, sorted_i] = zero(eltype(body))
+            end
+            # Reciprocal-sigma row: one divide per body here replaces one divide
+            # per target-source INTERACTION in the nearfield kernel (measured 15.6%
+            # of the nearfield at np=248714). Stored as 0 for a non-positive sigma
+            # so the nearfield's `sigma > 0` regularization guard becomes an
+            # exactly equivalent `inv_sigma > 0` test on the row it already loads.
+            if inv_sigma_row > 0
+                sig = body[sigma_row, sorted_i]
+                body[inv_sigma_row, sorted_i] =
+                    sig > zero(sig) ? inv(sig) : zero(sig)
+            end
+        end
+    end
+end
+
+"""
+    ka_pack_body_matrix!(body, source_buffer, perm, body_system, body_index, n;
+                         isys=1, workgroup=64)
+
+Backend-agnostic port of `_cuda_pack_radix_body_kernel!`/`_pack_radix_body_matrix!`
+(src/translate_batched_cuda.jl): gather one source system's bodies out of its
+global-ordinal `source_buffer` into `body`, the sorted-order `dpb x n` matrix the
+resident lifecycle reads. Column `sorted_i` of `body` takes buffer column
+`body_index[perm[sorted_i]]`, and only for slots this system owns
+(`body_system[perm[sorted_i]] == isys`).
+
+Canonical all-rows packed layout: every source-buffer row is carried,
+including radius row 4, and a system narrower than `body` is zero-padded. Call once
+per system, as CUDA does -- with the single-system attribution of
+[`ka_fill_single_system_attribution!`](@ref) one `isys=1` call fills every column.
+
+`n` is the *logical* body count: `perm` is capacity-sized in the KA context, so its
+`length` is not the extent. Columns beyond `n`, and columns this system does not own,
+are left untouched.
+"""
+function ka_pack_body_matrix!(body, source_buffer, perm, body_system, body_index,
+        n::Int; isys::Integer=1, sigma_row::Integer=0, inv_sigma_row::Integer=0,
+        workgroup::Int=KA_AUTO_WORKGROUP)
+    n == 0 && return body
+    size(body, 2) >= n || throw(ArgumentError(
+        "body has $(size(body, 2)) columns, fewer than n=$n"))
+    n <= length(perm) || throw(ArgumentError(
+        "n=$n exceeds perm (length $(length(perm)))"))
+    nrows = size(body, 1)
+    nsys = min(size(source_buffer, 1), nrows)
+    inv_sigma_row == 0 || (0 < sigma_row <= nsys && inv_sigma_row <= nrows) ||
+        throw(ArgumentError(
+            "inv_sigma_row=$inv_sigma_row needs 0 < sigma_row=$sigma_row <= $nsys " *
+            "and inv_sigma_row <= nrows=$nrows"))
+    backend = KA.get_backend(body)
+    kernel = _cached_kernel(ka_pack_body_matrix_kernel!, backend, workgroup)
+    kernel(body, source_buffer, perm, body_system, body_index, Int(isys), n, nrows, nsys,
+        Int(sigma_row), Int(inv_sigma_row); ndrange=n)
+    return body
+end
+
+# --- Integration with FastMultipole's real M2M call path ---
+#
+# `ka_resident_stage_group_apply!` mirrors `_resident_stage_group_apply!`
+# (src/translate_batched.jl:2962) -- the real production M2M/L2L group-apply
+# reached via `_launch_resident_m2m!` -- substituting the four KA building blocks
+# above for its CPU/CUDA-specific primitives. It operates on the same
+# `FlatCoefficientBuffer`/`ResidentOperatorGroup`/`ResidentOperatorWorkspace` types,
+# so it can be dropped in wherever the CPU function is called, backed by any
+# KernelAbstractions array (Metal, CUDA, or plain CPU Array).
+#
+# This DOES use the `count[]`-prefix views (`_vector_prefix_view`/`_matrix_col_view`),
+# exactly as the CPU function does. An earlier version did not, on the reasoning that
+# those helpers are FastMultipole-internal and that callers would size `group`/`ws` to
+# exactly `group.count[]` columns -- true for the isolated per-group suite this backs
+# (test/metal_env/ka_m2m_correctness.jl), and false everywhere else. In the production
+# lifecycle `ka_lifecycle_body!` loops over `ws.m2m_groups`/`ws.l2l_groups` from a real
+# workspace whose scratch is sized to `max_batch`, the max over levels, so most groups
+# are SHORTER than the scratch. Without the views that is a `DimensionMismatch` where
+# the shapes disagree and, worse, stale trailing columns scattered into `dest` where
+# they happen to broadcast. Both helpers return the array unchanged when the size
+# already matches, so the isolated suites are unaffected.
+function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
+    n = group.count[]
+    n == 0 && return dest
+    mult = kind === :m2m
+    ystk = ws.ystk_phi
+    Ur = mult ? ystk.mult_Ur : ystk.loc_Ur
+    Vs = mult ? ystk.mult_Vs : ystk.loc_Vs
+    ndof_phi = size(ws.aphi, 1)
+    source_idx = FastMultipole._vector_prefix_view(group.source_idx, n)
+    target_idx = FastMultipole._vector_prefix_view(group.target_idx, n)
+    group_phis = FastMultipole._vector_prefix_view(group.phis, n)
+    group_thetas = FastMultipole._vector_prefix_view(group.thetas, n)
+    aphi = FastMultipole._matrix_col_view(ws.aphi, n)
+    yphi = FastMultipole._matrix_col_view(ws.yphi, n)
+    zphi = FastMultipole._matrix_col_view(ws.zphi, n)
+    rphi = FastMultipole._matrix_col_view(ws.rphi, n)
+    cphi = FastMultipole._matrix_col_view(ws.cphi, n)
+    C = FastMultipole._matrix_col_view(ystk.Cy, n)
+    S = FastMultipole._matrix_col_view(ystk.Sy, n)
+    G = FastMultipole._matrix_col_view(ystk.G, n)
+    G2 = FastMultipole._matrix_col_view(ystk.G2, n)
+    ka_trig_fill!(C, S, ystk.nu, group_thetas)
+    ka_gather_rotate_z!(aphi, src.phi, ws.phi_flat_idx, source_idx,
+        ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, group_phis, one(eltype(aphi)))
+    ka_stacked_y_dense!(yphi, aphi, Ur, Vs, C, S, G, G2, ndof_phi)
+    mul!(zphi, group.phi_dense, yphi)
+    ret_phi = zphi
+
+    has_lh = size(dest.chi, 1) > 0
+    if has_lh
+        ystk_c = ws.ystk_chi
+        Urc = mult ? ystk_c.mult_Ur : ystk_c.loc_Ur
+        Vsc = mult ? ystk_c.mult_Vs : ystk_c.loc_Vs
+        ndof_chi = size(ws.achi, 1)
+        achi = FastMultipole._matrix_col_view(ws.achi, n)
+        ychi = FastMultipole._matrix_col_view(ws.ychi, n)
+        zchi = FastMultipole._matrix_col_view(ws.zchi, n)
+        rchi = FastMultipole._matrix_col_view(ws.rchi, n)
+        cchi = FastMultipole._matrix_col_view(ws.cchi, n)
+        Cc = FastMultipole._matrix_col_view(ystk_c.Cy, n)
+        Sc = FastMultipole._matrix_col_view(ystk_c.Sy, n)
+        Gc = FastMultipole._matrix_col_view(ystk_c.G, n)
+        G2c = FastMultipole._matrix_col_view(ystk_c.G2, n)
+        ka_trig_fill!(Cc, Sc, ystk_c.nu, group_thetas)
+        ka_gather_rotate_z!(achi, src.chi, ws.chi_flat_idx, source_idx,
+            ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, group_phis, one(eltype(achi)))
+        ka_stacked_y_dense!(ychi, achi, Urc, Vsc, Cc, Sc, Gc, G2c, ndof_chi)
+        mul!(zchi, group.chi_dense, ychi)
+        chi_rows = mult ? ws.maps_chi.row_down : ws.maps_chi.row_up
+        ka_gather_rows!(yphi, zchi, ws.maps_phi.row_pair)
+        ka_gather_rows!(ychi, zchi, chi_rows)
+        cphi .= zphi .+ group.lh_phi_rows .* yphi
+        cchi .= zchi .+ group.lh_chi_rows .* ychi
+        ka_stacked_y_dense!(rchi, cchi, Urc, Vsc, Cc, Sc, Gc, G2c, ndof_chi)
+        ka_rotate_z_scatter_accumulate!(dest.chi, rchi, ws.chi_flat_idx, target_idx,
+            ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, group_phis)
+        ret_phi = cphi
+    end
+
+    ka_stacked_y_dense!(rphi, ret_phi, Ur, Vs, C, S, G, G2, ndof_phi)
+    ka_rotate_z_scatter_accumulate!(dest.phi, rphi, ws.phi_flat_idx, target_idx,
+        ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, group_phis)
+    # No sync here: every kernel above is queue-ordered against the caller's
+    # next launch on this same backend, and this driver is called once per
+    # M2M/L2L group and per M2L route set -- a barrier here is the per-stage
+    # sync `ka_lifecycle_body!` exists to avoid (measured 1.37-2.7x on this
+    # code). The single end-of-lifecycle sync there covers the host readback.
+    return dest
+end
+
+# Build a single-group ResidentOperatorGroup + the (M2M-only) slice of a
+# ResidentOperatorWorkspace on `exemplar`'s backend, sized to `nbatch` columns, with
+# `source_idx = target_idx = 1:nbatch` (an isolated per-node correctness check has no
+# tree, so there is no real parent/child relationship to reuse). M2L-only workspace
+# fields (`m2l_sources`, `m2l_targets`, `m2l_groups`, `m2l_concat`, the whole-pass
+# `y_mult_*`/`y_loc_*`, `nonleaf_idx`) are untouched by `_resident_stage_group_apply!`
+# and left as `nothing`.
+function _build_m2m_group_and_workspace(exemplar, ::Type{TF}, invariant_cache,
+        phis_host::Vector{TF}, thetas_host::Vector{TF}, rs_host::Vector{TF}, ::Val{LH}) where {TF,LH}
+    basis_info = invariant_cache.basis_info
+    B = typeof(basis_info.basis)
+    nbatch = length(phis_host)
+    P_phi = basis_info.orders.P_phi
+    P_active = basis_info.orders.P_active
+
+    group = FastMultipole._resident_group(exemplar, TF, basis_info, :m2m, 0,
+        collect(1:nbatch), collect(1:nbatch), phis_host, thetas_host, rs_host)
+
+    phi_flat_idx = FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_phi))
+    chi_flat_idx = LH ?
+        FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_active)) :
+        FastMultipole._array_like_vector(exemplar, Int, Int[])
+    maps_phi = FastMultipole.DegreeMajorMaps(TF, P_phi, exemplar)
+    maps_chi = LH ? FastMultipole.DegreeMajorMaps(TF, P_active, exemplar) : maps_phi
+
+    ndof_phi = FastMultipole.degree_major_dof(P_phi)
+    ndof_chi = LH ? FastMultipole.degree_major_dof(P_active) : 0
+    mkphi() = similar(exemplar, TF, ndof_phi, nbatch)
+    mkchi() = similar(exemplar, TF, ndof_chi, LH ? nbatch : 0)
+    aphi = mkphi(); yphi = mkphi(); zphi = mkphi(); rphi = mkphi(); cphi = mkphi()
+    achi = mkchi(); ychi = mkchi(); zchi = mkchi(); rchi = mkchi(); cchi = mkchi()
+
+    ystk_phi = FastMultipole.StackedYChannel(exemplar, TF, invariant_cache, P_phi, nbatch)
+    ystk_chi = LH ? FastMultipole.StackedYChannel(exemplar, TF, invariant_cache, P_active, nbatch) : nothing
+
+    ws = FastMultipole.ResidentOperatorWorkspace{TF,B,LH}(
+        basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
+        nothing, nothing, nothing, nothing, nothing, nbatch,
+        nothing, nothing,
+        aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi, cphi, cchi,
+        nothing, nothing, nothing, nothing, FastMultipole.ResidentOperatorGroup[], nothing, nothing,
+        ystk_phi, ystk_chi,
+    )
+    return group, ws
+end
+
+"""
+    FastMultipole.ka_m2m_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
+
+KernelAbstractions-backed M2M batch operator (stub declared in `src/FastMultipole.jl`).
+On a CPU backend this just delegates to the existing `m2m_operator_batch!` (identical
+math, no device dispatch needed). On a GPU backend it builds a single-group resident
+operator workspace (`_build_m2m_group_and_workspace`) and runs `ka_resident_stage_group_apply!`
+-- the KA-ported form of the real production resident M2M path (`_resident_stage_group_apply!`,
+reached in production via `_launch_resident_m2m!`) -- against it. Numerically this should
+agree with the (CPU, non-resident) `op`/`scratch`-based path up to floating point error:
+both compute the same M2M translation, just through different (materialized-rotation vs.
+factored-y dense-GEMM) factorizations of the same math.
+"""
+function FastMultipole.ka_m2m_operator_batch!(op, targets, sources, phis, thetas, rs,
+        invariant_cache, scratch, lamb_helmholtz::Val{LH}) where LH
+    backend = KA.get_backend(targets.phi)
+    if backend isa KA.CPU
+        return FastMultipole.m2m_operator_batch!(op, targets, sources, phis, thetas, rs,
+            invariant_cache, scratch, lamb_helmholtz)
+    end
+    TF = eltype(targets.phi)
+    group, ws = _build_m2m_group_and_workspace(targets.phi, TF, invariant_cache,
+        TF.(collect(phis)), TF.(collect(thetas)), TF.(collect(rs)), lamb_helmholtz)
+    return ka_resident_stage_group_apply!(targets, sources, group, ws, :m2m)
+end
+
+# --- M2L (horizontal pass) ---
+#
+# The real production GPU M2L path is `ConcatenatedFixedZM2L`/`_launch_resident_m2l_concat!`
+# (src/translate_batched.jl:3828, `ResidentM2LConcatPlan`/`ConcatChannelOps`) -- confirmed
+# by checking `RadixFMMCache`'s default/allowed M2L strategies (src/translate_batched_resident.jl),
+# not the `FactoredRotationM2L`/`_resident_factored_m2l_group_apply!` path, whose per-degree
+# y-rotation blocks are type-asserted as plain CPU `Matrix{TF}` (translate_batched.jl:3077-3080)
+# and never dispatch to CUBLAS/Metal GPU matmul -- that path is CPU-only.
+#
+# `_launch_resident_m2l_concat!`'s primitives are, beyond the M2M-shared ones above:
+#   - `_gather_values!` (1D per-chunk column-parameter gather) -- ported here as `ka_gather_values!`
+#   - `_stacked_y_dense!` -- already backend-generic (`mul!` + broadcast); reused directly
+#     from `ka_stacked_y_dense!` above (same math, real/imag stacked-block form)
+#   - `_resident_mul!` (== `mul!`) for the fixed z-translation GEMM -- already backend-generic,
+#     called directly
+# No new `@kernel` beyond `ka_gather_values!` is needed; `ka_gather_rotate_z!`,
+# `ka_gather_rows!`, and `ka_rotate_z_scatter_accumulate!` are reused unchanged from M2M.
+
+# Build a `ResidentM2LConcatPlan` + the (M2L-only) slice of a `ResidentOperatorWorkspace`
+# on `exemplar`'s backend for an isolated per-route correctness check: `nbatch` independent
+# (source, target) = (i, i) pairs, one geometry class per route (arbitrary per-route
+# (r, θ, φ), not the uniform-grid-stencil classes production groups routes into) so any
+# random test geometry can be exercised without a tree. `accepted_offsets` here only sizes
+# `nclasses` to `nbatch`; the real per-class (r, θ, φ) tables are overwritten right after
+# construction with the caller's actual test angles.
+function _build_m2l_concat_plan_and_workspace(exemplar, ::Type{TF}, invariant_cache,
+        phis_host::Vector{TF}, thetas_host::Vector{TF}, rs_host::Vector{TF}, ::Val{LH}) where {TF,LH}
+    basis_info = invariant_cache.basis_info
+    B = typeof(basis_info.basis)
+    nbatch = length(phis_host)
+    P_phi = basis_info.orders.P_phi
+    P_active = basis_info.orders.P_active
+
+    offsets = [SVector{3,Int}(i, 0, 0) for i in 1:nbatch]
+    plan = FastMultipole.ResidentM2LConcatPlan(TF, basis_info, exemplar,
+        FastMultipole.ConcatenatedFixedZM2L(nbatch), invariant_cache, offsets, one(TF), nbatch)
+    copyto!(plan.phis, phis_host)
+    copyto!(plan.thetas, thetas_host)
+    copyto!(plan.rs, rs_host)
+    copyto!(plan.invrs, inv.(rs_host))
+    copyto!(plan.route_class, Int32.(1:nbatch))
+
+    phi_flat_idx = FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_phi))
+    chi_flat_idx = LH ?
+        FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_active)) :
+        FastMultipole._array_like_vector(exemplar, Int, Int[])
+    maps_phi = FastMultipole.DegreeMajorMaps(TF, P_phi, exemplar)
+    maps_chi = LH ? FastMultipole.DegreeMajorMaps(TF, P_active, exemplar) : maps_phi
+
+    empty_sm() = similar(exemplar, TF, 0, 0)
+    ws = FastMultipole.ResidentOperatorWorkspace{TF,B,LH}(
+        basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
+        nothing, nothing, nothing, nothing, nothing, nbatch,
+        nothing, nothing,
+        empty_sm(), empty_sm(), empty_sm(), empty_sm(),
+        empty_sm(), empty_sm(), empty_sm(), empty_sm(),
+        empty_sm(), empty_sm(),
+        nothing, nothing, nothing, nothing, FastMultipole.ResidentOperatorGroup[], nothing, plan,
+        nothing, nothing,
+    )
+    return plan, ws
+end
+
+"""
+    ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets, nroutes)
+
+Backend-agnostic port of `_launch_resident_m2l_concat!` (src/translate_batched.jl:3828),
+the real production `ConcatenatedFixedZM2L` resident M2L apply. Operates on `ws.m2l_concat`
+(a `ResidentM2LConcatPlan`) plus `route_sources`/`route_targets` (GPU index vectors) directly,
+rather than a full `DeviceResidentRadixState`, so it can be dropped into an isolated
+per-route correctness check the same way `ka_resident_stage_group_apply!` was for M2M.
+"""
+function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets,
+        nroutes::Int; route_class=nothing)
+    nroutes == 0 && return dest
+    plan = ws.m2l_concat
+    # `route_class` defaults to the plan's own window-scoped buffer, which the
+    # generate-and-apply-per-window path refills before every call. The cached
+    # path passes a view into the epoch-cached class stream instead.
+    classes = route_class === nothing ? plan.route_class : route_class
+    LH = size(dest.chi, 1) > 0
+    TF = eltype(dest.phi)
+    for c0 in 1:plan.chunk:nroutes
+        cols = c0:min(c0 + plan.chunk - 1, nroutes)
+        n = length(cols)
+        cls = @view classes[cols]
+        phis = @view plan.col_phi[1:n]
+        thetas = @view plan.col_theta[1:n]
+        invr_col = @view plan.col_invr[1:n]
+        ka_gather_values3!(phis, thetas, invr_col, plan.phis, plan.thetas,
+            plan.invrs, cls)
+        if LH
+            rs_col = @view plan.col_r[1:n]
+            ka_gather_values!(rs_col, plan.rs, cls)
+        end
+        src_cols = @view route_sources[cols]
+        tgt_cols = @view route_targets[cols]
+        aphi = @view plan.aphi[:, 1:n]; yphi = @view plan.yphi[:, 1:n]
+        zphi = @view plan.zphi[:, 1:n]; rphi = @view plan.rphi[:, 1:n]
+        ops_phi = plan.ops_phi
+        ndof_phi = size(plan.aphi, 1)
+        Gphi = @view ops_phi.G[:, 1:n]; G2phi = @view ops_phi.G2[:, 1:n]
+        Cphi = @view ops_phi.Cy[:, 1:n]; Sphi = @view ops_phi.Sy[:, 1:n]
+        sphi = @view ops_phi.scale[:, 1:n]
+        ka_prefix_trig_scale!(Cphi, Sphi, sphi, ops_phi.nu, thetas, invr_col,
+            plan.rexp_phi)
+        ka_gather_rotate_z!(aphi, src.phi, ws.phi_flat_idx, src_cols,
+            ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis, one(TF))
+        ka_stacked_y_dense!(yphi, aphi, ops_phi.yU_mult, ops_phi.yV_mult,
+            Cphi, Sphi, Gphi, G2phi, ndof_phi)
+        ka_scale_inplace!(yphi, sphi)
+        mul!(zphi, ops_phi.zD, yphi)
+        ka_scale_inplace!(zphi, sphi)
+        ret_phi = zphi
+
+        if LH
+            ops_chi = plan.ops_chi
+            ndof_chi = size(plan.achi, 1)
+            Gchi = @view ops_chi.G[:, 1:n]; G2chi = @view ops_chi.G2[:, 1:n]
+            Cchi = @view ops_chi.Cy[:, 1:n]; Schi = @view ops_chi.Sy[:, 1:n]
+            schi = @view ops_chi.scale[:, 1:n]
+            achi = @view plan.achi[:, 1:n]; ychi = @view plan.ychi[:, 1:n]
+            zchi = @view plan.zchi[:, 1:n]; rchi = @view plan.rchi[:, 1:n]
+            cphi = @view plan.cphi[:, 1:n]; cchi = @view plan.cchi[:, 1:n]
+            ka_prefix_trig_scale!(Cchi, Schi, schi, ops_chi.nu, thetas, invr_col,
+                plan.rexp_chi)
+            ka_gather_rotate_z!(achi, src.chi, ws.chi_flat_idx, src_cols,
+                ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis, one(TF))
+            ka_stacked_y_dense!(ychi, achi, ops_chi.yU_mult, ops_chi.yV_mult,
+                Cchi, Schi, Gchi, G2chi, ndof_chi)
+            ka_scale_inplace!(ychi, schi)
+            mul!(zchi, ops_chi.zD, ychi)
+            ka_scale_inplace!(zchi, schi)
+            ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, plan.lh_arow_unit,
+                plan.lh_brow_unit, rs_col, ws.maps_phi.row_pair,
+                ws.maps_chi.row_up)
+            ka_stacked_y_dense!(rchi, cchi, ops_chi.yU_loc, ops_chi.yV_loc,
+                Cchi, Schi, Gchi, G2chi, ndof_chi)
+            ka_rotate_z_scatter_accumulate!(dest.chi, rchi, ws.chi_flat_idx, tgt_cols,
+                ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis)
+            ret_phi = cphi
+        end
+
+        ka_stacked_y_dense!(rphi, ret_phi, ops_phi.yU_loc, ops_phi.yV_loc,
+            Cphi, Sphi, Gphi, G2phi, ndof_phi)
+        ka_rotate_z_scatter_accumulate!(dest.phi, rphi, ws.phi_flat_idx, tgt_cols,
+            ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis)
+    end
+    # No sync here: every kernel above is queue-ordered against the caller's
+    # next launch on this same backend, and this driver is called once per
+    # M2M/L2L group and per M2L route set -- a barrier here is the per-stage
+    # sync `ka_lifecycle_body!` exists to avoid (measured 1.37-2.7x on this
+    # code). The single end-of-lifecycle sync there covers the host readback.
+    return dest
+end
+
+"""
+    FastMultipole.ka_m2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
+
+KernelAbstractions-backed M2L batch operator (stub declared in `src/FastMultipole.jl`).
+On a CPU backend this delegates to the existing `m2l_operator_batch!` (identical math, no
+device dispatch needed). On a GPU backend it builds a single-chunk resident concat plan
+(`_build_m2l_concat_plan_and_workspace`) treating each (phis[i], thetas[i], rs[i]) as an
+independent (source i -> target i) M2L pair, and runs `ka_resident_m2l_concat_apply!` --
+the KA-ported form of the real production `ConcatenatedFixedZM2L` resident M2L path
+(`_launch_resident_m2l_concat!`) -- against it.
+"""
+function FastMultipole.ka_m2l_operator_batch!(op, targets, sources, phis, thetas, rs,
+        invariant_cache, scratch, lamb_helmholtz::Val{LH}) where LH
+    backend = KA.get_backend(targets.phi)
+    if backend isa KA.CPU
+        return FastMultipole.m2l_operator_batch!(op, targets, sources, phis, thetas, rs,
+            invariant_cache, scratch, lamb_helmholtz)
+    end
+    TF = eltype(targets.phi)
+    plan, ws = _build_m2l_concat_plan_and_workspace(targets.phi, TF, invariant_cache,
+        TF.(collect(phis)), TF.(collect(thetas)), TF.(collect(rs)), lamb_helmholtz)
+    nbatch = length(phis)
+    idx = FastMultipole._array_like_vector(targets.phi, Int, collect(1:nbatch))
+    return ka_resident_m2l_concat_apply!(targets, sources, ws, idx, idx, nbatch)
+end
+
+# --- L2L (downward pass) ---
+#
+# The real production GPU L2L path (`_launch_resident_l2l!`, src/translate_batched.jl:3702)
+# reaches the exact same `_resident_stage_group_apply!` group-apply function that M2M does,
+# just with `kind=:l2l` (the function's `mult = kind === :m2m` branch alone selects the
+# multipole vs. local y-rotation tables and LH row direction). `ka_resident_stage_group_apply!`
+# above already threads `kind` through unchanged, so no new KA kernel or group-apply port is
+# needed for L2L -- only a `:l2l` group/workspace builder and dispatch stub, mirroring M2M's.
+function _build_l2l_group_and_workspace(exemplar, ::Type{TF}, invariant_cache,
+        phis_host::Vector{TF}, thetas_host::Vector{TF}, rs_host::Vector{TF}, ::Val{LH}) where {TF,LH}
+    basis_info = invariant_cache.basis_info
+    B = typeof(basis_info.basis)
+    nbatch = length(phis_host)
+    P_phi = basis_info.orders.P_phi
+    P_active = basis_info.orders.P_active
+
+    group = FastMultipole._resident_group(exemplar, TF, basis_info, :l2l, 0,
+        collect(1:nbatch), collect(1:nbatch), phis_host, thetas_host, rs_host)
+
+    phi_flat_idx = FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_phi))
+    chi_flat_idx = LH ?
+        FastMultipole._array_like_vector(exemplar, Int, FastMultipole._degree_major_to_flat_indices(P_active)) :
+        FastMultipole._array_like_vector(exemplar, Int, Int[])
+    maps_phi = FastMultipole.DegreeMajorMaps(TF, P_phi, exemplar)
+    maps_chi = LH ? FastMultipole.DegreeMajorMaps(TF, P_active, exemplar) : maps_phi
+
+    ndof_phi = FastMultipole.degree_major_dof(P_phi)
+    ndof_chi = LH ? FastMultipole.degree_major_dof(P_active) : 0
+    mkphi() = similar(exemplar, TF, ndof_phi, nbatch)
+    mkchi() = similar(exemplar, TF, ndof_chi, LH ? nbatch : 0)
+    aphi = mkphi(); yphi = mkphi(); zphi = mkphi(); rphi = mkphi(); cphi = mkphi()
+    achi = mkchi(); ychi = mkchi(); zchi = mkchi(); rchi = mkchi(); cchi = mkchi()
+
+    ystk_phi = FastMultipole.StackedYChannel(exemplar, TF, invariant_cache, P_phi, nbatch)
+    ystk_chi = LH ? FastMultipole.StackedYChannel(exemplar, TF, invariant_cache, P_active, nbatch) : nothing
+
+    ws = FastMultipole.ResidentOperatorWorkspace{TF,B,LH}(
+        basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
+        nothing, nothing, nothing, nothing, nothing, nbatch,
+        nothing, nothing,
+        aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi, cphi, cchi,
+        nothing, nothing, nothing, nothing, FastMultipole.ResidentOperatorGroup[], nothing, nothing,
+        ystk_phi, ystk_chi,
+    )
+    return group, ws
+end
+
+"""
+    FastMultipole.ka_l2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
+
+KernelAbstractions-backed L2L batch operator (stub declared in `src/FastMultipole.jl`).
+On a CPU backend this just delegates to the existing `l2l_operator_batch!` (identical
+math, no device dispatch needed). On a GPU backend it builds a single-group resident
+operator workspace (`_build_l2l_group_and_workspace`) and runs `ka_resident_stage_group_apply!`
+with `kind=:l2l` -- the same KA-ported group-apply M2M already uses, reached in production
+via `_launch_resident_l2l!`.
+"""
+function FastMultipole.ka_l2l_operator_batch!(op, targets, sources, phis, thetas, rs,
+        invariant_cache, scratch, lamb_helmholtz::Val{LH}) where LH
+    backend = KA.get_backend(targets.phi)
+    if backend isa KA.CPU
+        return FastMultipole.l2l_operator_batch!(op, targets, sources, phis, thetas, rs,
+            invariant_cache, scratch, lamb_helmholtz)
+    end
+    TF = eltype(targets.phi)
+    group, ws = _build_l2l_group_and_workspace(targets.phi, TF, invariant_cache,
+        TF.(collect(phis)), TF.(collect(thetas)), TF.(collect(rs)), lamb_helmholtz)
+    return ka_resident_stage_group_apply!(targets, sources, group, ws, :l2l)
+end
+

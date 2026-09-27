@@ -42,7 +42,7 @@ end
     @test_throws ArgumentError DenseTranslationM2L(apply_chunk=-1)
     @test_throws ArgumentError DenseTranslationM2L(build_chunk=-1)
     @test_throws ArgumentError DenseTranslationM2L(apply_chunk=1.5)
-    @test_throws ArgumentError CUDARadixLifecycleOptions(
+    @test_throws ArgumentError RadixLifecycleOptions(
         operator=FactoredRotationM2L(), m2l_strategy=DenseTranslationM2L())
 
     # CUDA-headroom keyword (task 023f): defaults, nonnegativity, Int-representability;
@@ -145,7 +145,7 @@ end
     one_list = build_radix_interaction_list(
         LazyMaterializedBatches(1), ParentNeighborM2L(), one_grid)
     one = host_radix_state(one_sys, one_grid, one_list, 4;
-        options=CUDARadixLifecycleOptions(m2l_strategy=
+        options=RadixLifecycleOptions(m2l_strategy=
             DenseTranslationM2L(apply_chunk=8, build_chunk=8)))
     @test one.scratch.m2l_concat isa DENSE_FM.ResidentM2LDensePlan
     @test run_host_radix_lifecycle!(one) === one
@@ -156,10 +156,10 @@ end
         a = generate_gravitational(20260721, 120)
         b = generate_gravitational(20260721, 120)
         dense = RadixFMMCache(a; stencil_epsilon=1e-4, expansion_order=4, ell=3, lamb_helmholtz=LH,
-            options=CUDARadixLifecycleOptions(; precision=TF,
+            options=RadixLifecycleOptions(; precision=TF,
                 m2l_strategy=DenseTranslationM2L(apply_chunk=8, build_chunk=8)))
         concat = RadixFMMCache(b; stencil_epsilon=1e-4, expansion_order=4, ell=3, lamb_helmholtz=LH,
-            options=CUDARadixLifecycleOptions(; precision=TF,
+            options=RadixLifecycleOptions(; precision=TF,
                 m2l_strategy=ConcatenatedFixedZM2L()))
         plan = dense.state.scratch.m2l_concat
         @test sum(plan.class_counts) == dense.state.counts.n_routes
@@ -185,7 +185,7 @@ end
     # An isolated repeated target must receive the explicit sum of both products.
     rep_sys = generate_gravitational(20260722, 120)
     rep = RadixFMMCache(rep_sys; stencil_epsilon=1e-4, expansion_order=4, ell=3,
-        options=CUDARadixLifecycleOptions(m2l_strategy=
+        options=RadixLifecycleOptions(m2l_strategy=
             DenseTranslationM2L(apply_chunk=1, build_chunk=4)))
     rplan = rep.state.scratch.m2l_concat
     cls = findfirst(>=(2), rplan.class_capacities)
@@ -214,7 +214,7 @@ end
     empty_sys = generate_gravitational(20260723, 1)
     empty_cache = RadixFMMCache(empty_sys; stencil_epsilon=1e-4, expansion_order=4, ell=2,
         bounds=(SVector(-0.1, -0.1, -0.1), 1.2),
-        options=CUDARadixLifecycleOptions(m2l_strategy=DenseTranslationM2L()))
+        options=RadixLifecycleOptions(m2l_strategy=DenseTranslationM2L()))
     @test empty_cache.state.counts.n_routes == 0
     DENSE_FM._launch_resident_m2l!(empty_cache.state)
     @test all(iszero, empty_cache.state.locals.phi)
@@ -224,7 +224,7 @@ end
     full = generate_gravitational(20260724, 160)
     moving = RadixFMMCache(full; stencil_epsilon=1e-4, expansion_order=4, ell=3, max_n_bodies=160,
         bounds=(SVector(-0.1, -0.1, -0.1), 1.2),
-        options=CUDARadixLifecycleOptions(m2l_strategy=
+        options=RadixLifecycleOptions(m2l_strategy=
             DenseTranslationM2L(apply_chunk=8, build_chunk=8)))
     moving_plan = moving.state.scratch.m2l_concat
     moving_ids = (objectid(moving_plan.route_class), objectid(moving_plan.packed_sources),
@@ -247,10 +247,10 @@ end
     direct_sys = generate_gravitational(seed, 180)
     direct!(direct_sys; scalar_potential=true, gradient=true)
     dense_cache = RadixFMMCache(dense_sys; stencil_epsilon=1e-4, expansion_order=8, ell=3,
-        options=CUDARadixLifecycleOptions(m2l_strategy=
+        options=RadixLifecycleOptions(m2l_strategy=
             DenseTranslationM2L(apply_chunk=16, build_chunk=16)))
     concat_cache = RadixFMMCache(concat_sys; stencil_epsilon=1e-4, expansion_order=8, ell=3,
-        options=CUDARadixLifecycleOptions(m2l_strategy=ConcatenatedFixedZM2L()))
+        options=RadixLifecycleOptions(m2l_strategy=ConcatenatedFixedZM2L()))
     fmm!(dense_sys, dense_cache; scalar_potential=true, gradient=true)
     fmm!(concat_sys, concat_cache; scalar_potential=true, gradient=true)
     DENSE_FM._launch_resident_m2l!(dense_cache.state)

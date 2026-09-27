@@ -186,7 +186,7 @@ for (case_i, (n, K_max, ell_max, q, P, lh, dpb, balance, gate, rho_t)) in pairs(
     lists = ext.ka_refresh_adaptive_lists!(lctx, actx, build;
         near_radius2=q, ell_max=ell_max, rho_t=rho_t, sigma_armed=gate)
 
-    options = FM.CUDARadixLifecycleOptions(; precision=Float32)
+    options = FM.RadixLifecycleOptions(; precision=Float32)
     state = ext.ka_radix_state(actx, build, dev_bodies, P, Val(lh);
         options=options, lists=lists)
 

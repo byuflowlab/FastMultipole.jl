@@ -98,7 +98,7 @@ function device_build_args(hcache)
 end
 
 function build_pair(sys_h, sys_d, P, ell, TF)
-    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+    opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Vortex})
     hcache = RadixFMMCache(sys_h; expansion_order=P, ell=ell,
         window_classes=256, options=opts)

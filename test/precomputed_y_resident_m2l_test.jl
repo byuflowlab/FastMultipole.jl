@@ -17,7 +17,7 @@ using LinearAlgebra
     @test starts == [1, 3, 4, 5, 6]
     @test packed == [1, 3, 2, 4, 5]
 
-    @test_throws ArgumentError CUDARadixLifecycleOptions(
+    @test_throws ArgumentError RadixLifecycleOptions(
         m2l_strategy=PrecomputedFactoredYM2L())
 
     one_shot_sys = generate_gravitational(20260718, 80)
@@ -25,7 +25,7 @@ using LinearAlgebra
     one_shot_list = build_radix_interaction_list(
         LazyMaterializedBatches(1), ParentNeighborM2L(), one_shot_grid)
     one_shot = host_radix_state(one_shot_sys, one_shot_grid, one_shot_list, 4;
-        options=CUDARadixLifecycleOptions(; operator=FactoredRotationM2L(),
+        options=RadixLifecycleOptions(; operator=FactoredRotationM2L(),
             m2l_strategy=PrecomputedFactoredYM2L()))
     @test one_shot.scratch.m2l_concat isa FastMultipole.ResidentM2LPrecomputedYPlan
     @test run_host_radix_lifecycle!(one_shot) === one_shot
@@ -42,11 +42,11 @@ using LinearAlgebra
         b = generate_gravitational(seed, 120)
         pre = RadixFMMCache(a; expansion_order=4, ell=3, lamb_helmholtz=LH,
             stencil_epsilon=1e-4,
-            options=CUDARadixLifecycleOptions(; precision=TF,
+            options=RadixLifecycleOptions(; precision=TF,
                 operator=FactoredRotationM2L(), m2l_strategy=PrecomputedFactoredYM2L()))
         ref = RadixFMMCache(b; expansion_order=4, ell=3, lamb_helmholtz=LH,
             stencil_epsilon=1e-4,
-            options=CUDARadixLifecycleOptions(; precision=TF,
+            options=RadixLifecycleOptions(; precision=TF,
                 operator=FactoredRotationM2L(), m2l_strategy=ConcatenatedFixedZM2L()))
         plan = pre.state.scratch.m2l_concat
         @test plan isa FastMultipole.ResidentM2LPrecomputedYPlan
@@ -83,7 +83,7 @@ using LinearAlgebra
     sys = generate_gravitational(seed + 1, 80)
     cache = RadixFMMCache(sys; expansion_order=4, ell=3,
         stencil_epsilon=1e-4,
-        options=CUDARadixLifecycleOptions(; operator=FactoredRotationM2L(),
+        options=RadixLifecycleOptions(; operator=FactoredRotationM2L(),
             m2l_strategy=PrecomputedFactoredYM2L()))
     ws = cache.state.scratch
     plan = ws.m2l_concat
@@ -108,11 +108,11 @@ using LinearAlgebra
     direct!(direct_sys; scalar_potential=true, gradient=true)
     pre_cache = RadixFMMCache(pre_sys; expansion_order=8, ell=3,
         stencil_epsilon=1e-4,
-        options=CUDARadixLifecycleOptions(; operator=FactoredRotationM2L(),
+        options=RadixLifecycleOptions(; operator=FactoredRotationM2L(),
             m2l_strategy=PrecomputedFactoredYM2L()))
     concat_cache = RadixFMMCache(concat_sys; expansion_order=8, ell=3,
         stencil_epsilon=1e-4,
-        options=CUDARadixLifecycleOptions(; operator=MaterializedYRotationM2L(),
+        options=RadixLifecycleOptions(; operator=MaterializedYRotationM2L(),
             m2l_strategy=ConcatenatedFixedZM2L()))
     fmm!(pre_sys, pre_cache; scalar_potential=true, gradient=true)
     fmm!(concat_sys, concat_cache; scalar_potential=true, gradient=true)
@@ -125,7 +125,7 @@ using LinearAlgebra
     moving_cache = RadixFMMCache(full; expansion_order=4, ell=3, max_n_bodies=160,
         stencil_epsilon=1e-4,
         bounds=(SVector(-0.1, -0.1, -0.1), 1.2),
-        options=CUDARadixLifecycleOptions(; operator=FactoredRotationM2L(),
+        options=RadixLifecycleOptions(; operator=FactoredRotationM2L(),
             m2l_strategy=PrecomputedFactoredYM2L()))
     moving_plan = moving_cache.state.scratch.m2l_concat
     fixed_ids = (objectid(moving_plan.route_class), objectid(moving_plan.packed_sources),

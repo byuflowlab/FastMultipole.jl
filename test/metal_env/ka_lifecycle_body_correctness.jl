@@ -123,7 +123,7 @@ function dev_state(hs::FM.DeviceResidentRadixState{TF,B,LH}, backend) where {TF,
         to_dev(hs.route_levels), to_dev(hs.route_offsets),
         to_dev(hs.route_targets), to_dev(hs.route_sources),
         to_dev(hs.direct_targets), to_dev(hs.direct_sources), to_dev(hs.output),
-        hs.invariant_cache, ws, FM.CUDARadixTransferCounters(), hs.options, hs.counts,
+        hs.invariant_cache, ws, FM.RadixTransferCounters(), hs.options, hs.counts,
     )
 end
 
@@ -166,7 +166,7 @@ for (ci, (P, ell, n)) in pairs(CASES)
     grid = FM.RadixGrid(system, ell)
     list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
         FM.ParentNeighborM2L(), grid)
-    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+    opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Vortex})
 
     hs = FM.host_radix_state(system, grid, list, P, Val(true); options=opts)
@@ -215,7 +215,7 @@ for (ci, (P, ell, n)) in pairs(CASES), lh in (false, true)
     grid = FM.RadixGrid(system, ell)
     list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
         FM.ParentNeighborM2L(), grid)
-    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+    opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Source})
     hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
     local ds
@@ -272,7 +272,7 @@ for (ci, (P, ell, n)) in pairs(CASES),
     grid = FM.RadixGrid(system, ell)
     list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
         FM.ParentNeighborM2L(), grid)
-    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+    opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=BT)
     hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
     local ds
@@ -345,7 +345,7 @@ for (ci, (P, ell, n)) in pairs(CASES),
     grid = FM.RadixGrid(system, ell)
     list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
         FM.ParentNeighborM2L(), grid)
-    opts = FM.CUDARadixLifecycleOptions(; precision=TF,
+    opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=BT)
     hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
     local ds

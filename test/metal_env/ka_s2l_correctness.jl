@@ -47,7 +47,7 @@ for (ci,(n,K_max,ell_max,P,q)) in pairs(CASES)
     if lists.n_x == 0
         nskip[]+=1; println("  SKIP case $ci: no X pairs"); continue
     end
-    opts=FM.CUDARadixLifecycleOptions(;precision=TF, body_type=FM.Point{FM.Vortex})
+    opts=FM.RadixLifecycleOptions(;precision=TF, body_type=FM.Point{FM.Vortex})
     state=ext.ka_radix_state(actx,build,devb,P,Val(true); options=opts, lists=lists, output_rows=13)
     o=state.invariant_cache.basis_info.orders
     fill!(state.locals.phi, zero(TF)); fill!(state.locals.chi, zero(TF))

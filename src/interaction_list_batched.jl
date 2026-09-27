@@ -176,7 +176,7 @@ end
 """
     RigidHierarchicalTables(near_radius2)
 
-Enumerate the level-invariant source-major V-list from task 025.  This is
+Enumerate the level-invariant source-major V-list earlier.  This is
 construction-time work and contains no occupancy-dependent state.
 """
 function RigidHierarchicalTables(near_radius2::Integer)
@@ -277,7 +277,7 @@ function _rigid_transition_tables(q_parent::Integer, q_child::Integer)
 end
 
 # Per-axis cell counts of the root grid at `level` on the virtual-cube embedding
-# (task 037): an axis stops halving once it saturates, so the count is
+#: an axis stops halving once it saturates, so the count is
 # 2^max(ell_a - ell + level, 0). Cubic axes give the usual 2^level per axis.
 @inline _radix_root_counts(ell_axes::SVector{3,Int}, ell::Int, level::Int) =
     SVector{3,Int}(
@@ -299,14 +299,14 @@ function _radix_flat_top_count(ell_axes::SVector{3,Int}, ell::Int, level::Int,
     return count
 end
 
-# Flat-top class-count cap (task 037 stage 3): matches the device window default,
+# Flat-top class-count cap (): matches the device window default,
 # so a single flat-top level is never wider than one device route window.
 const RADIX_FLAT_TOP_CLASS_CAP = 4096
 
 """
     _radix_root_level(ell_axes, ell, q) -> (R, L_allnear)
 
-Construction-time active-level trimming (task 037 stage 3): `R` is the flat-top
+Construction-time active-level trimming (): `R` is the flat-top
 root level of the hierarchy — node build and stage groups retain levels `R:ell`
 only. `L_allnear` is the largest level at which every root-grid offset lies in
 the rigid near ball `{o : |o|^2 <= q}`; passing the *leaf* near radius (the
@@ -334,7 +334,7 @@ function _radix_root_level(ell_axes::SVector{3,Int}, ell::Int, q::Integer)
     return R, L_allnear
 end
 
-# Flat-top table at the root level (task 037 stage 3): the degenerate transition
+# Flat-top table at the root level (): the degenerate transition
 # table with `q_parent = Inf` bounded by the root grid box — every offset between
 # root-grid cells outside the near ball is emitted, all 8 phases admitted. Shaped
 # like `_rigid_transition_tables` output so the scheduled-tables union and the
@@ -380,7 +380,7 @@ complete rigid (and therefore complete cubic-symmetry-orbit) table. Uniform
 policies take this same path, which keeps scheduled and production geometry
 directly comparable.
 
-Task 037 stage 3: the active M2L levels are `first_m2l_level:ell`, where
+the active M2L levels are `first_m2l_level:ell`, where
 `first_m2l_level = R` when the flat-top table at the root level `R` is nonempty
 and `R + 1` otherwise (`R == L_allnear`, every root offset near). Cubic grids
 give `R = 1` with an empty flat-top, i.e. bitwise the legacy `2:ell` schedule.
@@ -392,7 +392,7 @@ Returns `(tables, level_class_of, qs, root_level, first_m2l_level)`.
 
 Degenerate zero-M2L grids (every leaf offset inside the near ball, i.e.
 `first_m2l_level == ell + 1`) return an empty push union and an empty
-schedule — the cache then evaluates pure direct (task 052c). An explicit
+schedule — the cache then evaluates pure direct. An explicit
 `level_radii2` on such a grid is an `ArgumentError`.
 """
 _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::Int) =
@@ -405,7 +405,7 @@ function _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::I
     R, L_allnear = _radix_root_level(ell_axes, ell, policy.near_radius2)
     first_m2l = R == L_allnear ? R + 1 : R
     if first_m2l > ell
-        # Degenerate zero-M2L geometry (task 052c): every leaf offset on this
+        # Degenerate zero-M2L geometry: every leaf offset on this
         # grid lies inside the near ball, so no far pair exists at any level.
         # Legitimate for fields small (or overlap-dense) enough that pure
         # direct evaluation is the efficient answer: return an empty schedule
@@ -496,7 +496,7 @@ function _verify_hierarchical_classifier!(h0, ell::Int,
         level_radii2::AbstractVector{<:Integer})
     ell >= 2 || throw(ArgumentError(
         "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
-    # Task 037 stage 3: root-level accuracy gate. Every flat-top offset `o`
+    # root-level accuracy gate. Every flat-top offset `o`
     # runs M2L at the root level `R`, whose cells are the leaf cells of the
     # same box at depth `R` — so the exact level-true task-025 bound is the
     # analytic classifier evaluated at `(h0, R)` (this is the `2^(ell-L)`
@@ -542,7 +542,7 @@ function _verify_hierarchical_classifier!(h0, ell::Int,
         "(missing=$missing, extra=$extra). If you constructed this policy with " *
         "an explicit tolerance, choose one compatible with " *
         "rigid_stencil_epsilon(P, h0, ell, near_radius2) (it must scale with " *
-        "2^ell as derived in task 025). If the tolerance was machine-derived, " *
+        "2^ell as derived for the level-invariant stencil). If the tolerance was machine-derived, " *
         "the analytic bound at this (P, ell, box) cannot realize this rigid " *
         "near set; try the other near_radius2 or pass " *
         "policy=ConstantPAnalyticStencil(...) for the flat path."))
@@ -665,7 +665,7 @@ function build_hierarchical_direct_pairs!(direct_targets, direct_sources,
     return n_direct
 end
 
-# Grid-free constant-P bound from the fixed Morton domain (task 023): identical
+# Grid-free constant-P bound from the fixed Morton domain: identical
 # arithmetic to the RadixGrid method, with cell_half_width = h0 / G and
 # displacement = offset * (2 h0 / G).
 function constant_p_stencil_bound(h0::Real, ell::Integer, config::ConstantPStencilConfig,
@@ -693,7 +693,7 @@ end
 
 Refill the dense coord -> occupied-cell map in place: zero it, then scatter the
 first `n_cells` Morton keys. Factored out of [`radix_implicit_stencil`](@ref) so
-the recurring update path (task 023) can refresh occupancy without reallocating.
+the recurring update path can refresh occupancy without reallocating.
 """
 function refresh_cell_at!(cell_at::AbstractArray{Int32,3}, cell_keys, n_cells::Integer,
         ell::Integer)
@@ -958,7 +958,7 @@ function build_radix_interaction_list(::RadixTraversalStrategy,
         sizehint!(batches, length(stencil.accepted_offsets))
         for offset in stencil.accepted_offsets
             # count first so each batch retains exactly its member count (the former
-            # ncells sizehint over-retained ~2 GB at n=1e5/ell=4; task 023)
+            # ncells sizehint over-retained ~2 GB at n=1e5/ell=4; the port)
             npairs = 0
             @inbounds for target_cell in 1:ncells
                 _radix_cell_at(stencil, coords[target_cell] - offset) == 0 || (npairs += 1)
@@ -1090,7 +1090,7 @@ function build_radix_interaction_list(strategy::RadixTraversalStrategy,
     return RadixInteractionList{Int}(batches, direct_pairs)
 end
 
-#------- adaptive octree U/V/W/X interaction lists (task 039) -------#
+#------- adaptive octree U/V/W/X interaction lists -------#
 #
 # Dual-tree recursion of theory/adaptive-radix-octree.md §2.2-§2.4 over an
 # AdaptiveRadixTree, with the §5.2 STICKY per-cell sigma demotion gate. V lists
@@ -1166,7 +1166,7 @@ end
 """
     AdaptiveInteractionLists(tree::AdaptiveRadixTree)
 
-Capacity-sized U/V/W/X list container for `tree` (task 039). Geometry tables
+Capacity-sized U/V/W/X list container for `tree`. Geometry tables
 are the task-025 `RigidHierarchicalTables` at the tree's constant near radius,
 with the production class metadata (`_hierarchical_class_metadata`) over levels
 `2:ell_max` — no new operator tables (theory §2.4). Capacities follow theory

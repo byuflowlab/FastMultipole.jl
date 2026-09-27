@@ -49,7 +49,7 @@ end
 @testset "factored resident M2L lifecycle (task 023a)" begin
     seed = 2301
     full = generate_gravitational(seed, 400)
-    opts = CUDARadixLifecycleOptions(; operator=FactoredRotationM2L(),
+    opts = RadixLifecycleOptions(; operator=FactoredRotationM2L(),
         m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
     # The grouped-factored resident plan and its `.groups` are FLAT-path structures:
     # under the task-027 hierarchical default the factored selection routes through

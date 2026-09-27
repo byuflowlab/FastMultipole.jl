@@ -40,7 +40,7 @@ Random.seed!(2)
 r1 = [SVector{3,TF}(rand(3)) for _ in 1:ns]
 r2 = [r1[i] + SVector{3,TF}(0.02 .* randn(3)) for i in 1:ns]
 gam = TF.(randn(ns) ./ ns)
-opts = FM.CUDARadixLifecycleOptions(; precision = TF, m2l_strategy = FM.ConcatenatedFixedZM2L(), body_type = FM.Point{FM.Vortex})
+opts = FM.RadixLifecycleOptions(; precision = TF, m2l_strategy = FM.ConcatenatedFixedZM2L(), body_type = FM.Point{FM.Vortex})
 
 function extra_field(ex; ell = 1, tree = false)
     Random.seed!(1); sys = sys0()

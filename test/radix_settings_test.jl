@@ -49,11 +49,9 @@ end
         finally
             set_radix_setting!(:CUDA_NEARFIELD_GH_MODE, old)
         end
-        if !isdefined(FastMultipole, :CUDA_NEARFIELD_BINNING)
-            # device-only settings are named but unreachable before a backend loads
-            @test_throws ArgumentError radix_setting(:CUDA_NEARFIELD_BINNING)
-            @test_throws ArgumentError set_radix_setting!(:CUDA_NEARFIELD_BINNING, :unbinned)
-        end
+        # a name the registry does not know
+        @test_throws ArgumentError radix_setting(:NOT_A_SETTING)
+        @test_throws ArgumentError set_radix_setting!(:NOT_A_SETTING, true)
     end
 
     @testset "atomic batch + CUDA thread validation" begin
@@ -65,20 +63,6 @@ end
         ))
         @test radix_setting(:CUDA_NEARFIELD_GH_MODE) === old_gh
         @test radix_setting(:FACTORED_Y_GEMM_MIN_COLS) == old_cols
-        thread_validator = RADIX_SETTING_SPECS[:DENSE_CUDA_TILED_THREADS].validate
-        @test thread_validator(128) === nothing
-        @test_throws ArgumentError thread_validator(true)
-        @test_throws ArgumentError thread_validator(Int32(64))
-        @test_throws ArgumentError thread_validator(33)
-        @test_throws ArgumentError thread_validator(2048)
-        if isdefined(FastMultipole, :DENSE_CUDA_TILED_THREADS)
-            old_threads = radix_setting(:DENSE_CUDA_TILED_THREADS)
-            try
-                @test set_radix_setting!(:DENSE_CUDA_TILED_THREADS, 128) == 128
-            finally
-                set_radix_setting!(:DENSE_CUDA_TILED_THREADS, old_threads)
-            end
-        end
     end
 
     @testset "construction-lock snapshot + drift detection" begin

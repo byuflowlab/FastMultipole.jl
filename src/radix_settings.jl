@@ -1,5 +1,5 @@
 #=##############################################################################
-Task 047: consolidated settings surface for the GPU/radix production path.
+Consolidated settings surface for the GPU/radix production path.
 
 Every mechanism tunable of the radix lifecycle is a process-global `Ref`
 (most defined in the lazily-include'd translate_batched_cuda.jl). This file
@@ -43,16 +43,8 @@ _rs_enum(vals) = v -> v in vals ? nothing : throw(ArgumentError("expected one of
 _rs_ka_workgroup(v) = (v isa Int && (v == 0 || (32 <= v <= 1024 && v % 32 == 0))) ? nothing :
     throw(ArgumentError("expected 0 (auto) or an Int warp multiple in 32:1024, got $(repr(v))"))
 
-# KA arm of the uniform lifecycle. Unlike every other tunable here this one has
-# no CUDA-side Ref to reference, so it lives in always-loaded src: the whole
-# point is to select a NON-CUDA implementation of the per-step body, and the
-# selection has to be readable whether or not translate_batched_cuda.jl was
-# ever included.
-const RADIX_KA_LIFECYCLE = Ref(false)
 
-# Workgroup size for the auto-tuned KA launches, for the same reason as
-# RADIX_KA_LIFECYCLE above: a KA tunable has to be settable on a build where
-# translate_batched_cuda.jl never loads. `0` means "let the backend decide" --
+# Workgroup size for the auto-tuned KA launches. `0` means "let the backend decide" --
 # FastMultipoleKAExt.resolve_workgroup then picks per backend (256 on
 # CUDA/ROCm/oneAPI, 64 on Metal and CPU), which is the point: 64 suits Metal's
 # small threadgroups but wastes scheduler slots on an A100. Does not affect the
@@ -60,29 +52,12 @@ const RADIX_KA_LIFECYCLE = Ref(false)
 # declared against (b2m, l2b, nearfield, adaptive m2t/s2l).
 const KA_WORKGROUP = Ref(0)
 
-# All-pairs direct arm (task 053). Swaps `ka_lifecycle_body!` for a single
+# All-pairs direct arm. Swaps `ka_lifecycle_body!` for a single
 # O(np^2) kernel and skips the grid/route refresh entirely. Off by default and
 # selected only by an explicit write here: below some np the arm is faster
 # (np ~ 6e4 on Metal for one wake), but that crossover has not been measured
-# on CUDA and no automatic dispatch rule is built on it. Lives here for the
-# same reason as
-# RADIX_KA_LIFECYCLE: it selects a non-CUDA implementation and must be
-# readable on a build where translate_batched_cuda.jl never loads.
+# on CUDA and no automatic dispatch rule is built on it.
 const RADIX_DIRECT_ARM = Ref(false)
-
-"""
-    ka_radix_lifecycle!(state)
-
-Run the uniform per-step lifecycle over `state` with KernelAbstractions
-kernels. Overloaded by `FastMultipoleKAExt`; this stub is what a caller hits
-when `:RADIX_KA_LIFECYCLE` was set without `KernelAbstractions` loaded.
-"""
-function ka_radix_lifecycle!(state)
-    throw(ArgumentError(
-        "radix setting :RADIX_KA_LIFECYCLE is on but the KernelAbstractions " *
-        "extension is not loaded; `using KernelAbstractions` (plus the backend " *
-        "package) before the first device step, or set it back to false"))
-end
 
 const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
     # ---- tree/refresh --------------------------------------------------------
@@ -94,71 +69,16 @@ const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
     :CUDA_NEARFIELD_GH_MODE => RadixSettingSpec(:construction,
         _rs_enum((:shipped, :reduced, :fp32, :reduced_fp32, :lut)),
         "g/h evaluation mode for the regularized nearfield (037f; :fp32 default; :lut needs the construction-built table)."),
-    :CUDA_NEARFIELD_BINNING => RadixSettingSpec(:construction,
-        _rs_enum((:unbinned, :classsplit, :ballot, :classsplit_ballot)),
-        "Pair-class binning of the split vortex nearfield kernels (baked into the captured graph)."),
-    :CUDA_NEARFIELD_SHAPE => RadixSettingSpec(:construction,
-        _rs_enum((:pairs, :fused_cta, :fused_srclanes, :fused_packed)),
-        "Nearfield kernel shape (041e target-owned CSR shapes need construction-time arming: U-CSR buffers are sized 0 under :pairs)."),
-    :CUDA_NEARFIELD_FUSED_MIN_BODIES => RadixSettingSpec(:construction, _rs_nonnegint,
-        "Body-count threshold above which the fused nearfield shapes engage."),
     :CUDA_NEARFIELD_SUBSORT => RadixSettingSpec(:runtime, _rs_bool,
         "Sub-Morton ordering inside cells during the (uncaptured) host refresh; flippable per step."),
-    :CUDA_TWOPASS_PASS2_QUEUED => RadixSettingSpec(:construction, _rs_bool,
-        "TwoPassVortex pass-2 ballot queue (captured)."),
-    :CUDA_TWOPASS_TARGET_AABB_PRUNE => RadixSettingSpec(:construction, _rs_bool,
-        "TwoPassVortex target-AABB pruning (captured)."),
-    :CUDA_NEARFIELD_PAIR_AABB => RadixSettingSpec(:construction, _rs_bool,
-        "Per-pair AABB gap predicate in the split nearfield (captured)."),
-    :CUDA_SYMMETRIC_NEARFIELD => RadixSettingSpec(:construction, _rs_bool,
-        "Symmetric nearfield pair walk (buffers sized at construction; throws at launch if armed late)."),
     :SYMMETRIC_CUDA_MAX_CELL_BODIES => RadixSettingSpec(:runtime, _rs_posint,
         "Cell-size cap for symmetric-pair eligibility (host refresh; flippable per step)."),
-    :DIRECT_CUDA_MAX_BLOCKS => RadixSettingSpec(:construction, _rs_posint,
-        "Grid cap for the direct nearfield kernels (captured)."),
     # ---- M2L strategies ------------------------------------------------------
-    :FACTORED_CUDA_WHOLE_PASS => RadixSettingSpec(:runtime, _rs_bool,
-        "Whole-pass chunked launch for the factored M2L (never graph-captured; flippable)."),
-    :FACTORED_CUDA_CHUNK => RadixSettingSpec(:construction, _rs_posint,
-        "Route chunk of the factored whole-pass scratch (sized at construction)."),
-    :PRECOMPUTED_CUDA_WHOLE_PASS => RadixSettingSpec(:runtime, _rs_bool,
-        "Whole-pass chunked launch for the precomputed-y M2L (never graph-captured; flippable)."),
-    :PRECOMPUTED_CUDA_CHUNK => RadixSettingSpec(:construction, _rs_posint,
-        "Route chunk of the precomputed-y whole-pass scratch (sized at construction)."),
-    :DENSE_CUDA_WHOLE_PASS => RadixSettingSpec(:construction, _rs_bool,
-        "Whole-pass launch for the dense M2L (captured)."),
-    :DENSE_CUDA_CHUNK => RadixSettingSpec(:construction, _rs_posint,
-        "Dense M2L slab capacity (allocated at construction)."),
-    :DENSE_CUDA_FUSED => RadixSettingSpec(:runtime, _rs_bool,
-        "Fused per-route dense M2L kernel. Runtime-flippable, but it also gates graph eligibility: flipping it OFF disables capture; window-cache validity follows it."),
-    :DENSE_CUDA_FUSED_MAX_BLOCKS => RadixSettingSpec(:construction, _rs_posint,
-        "Grid cap of the fused dense kernel (captured)."),
-    :DENSE_CUDA_TILED => RadixSettingSpec(:construction, _rs_bool,
-        "Tiled variant of the fused dense kernel (captured)."),
-    :DENSE_CUDA_TILED_MIN_ROUTES => RadixSettingSpec(:construction, _rs_nonnegint,
-        "Route-count threshold for the tiled dense kernel (captured)."),
-    :DENSE_CUDA_TILED_THREADS => RadixSettingSpec(:construction, _rs_cuda_threads,
-        "Block size of the tiled dense kernel (captured)."),
-    :DENSE_CUDA_TILED_MAX_BLOCKS => RadixSettingSpec(:construction, _rs_posint,
-        "Grid cap of the tiled dense kernel (captured)."),
-    :DENSE_CUDA_TENSOR_FORMAT => RadixSettingSpec(:construction,
-        _rs_enum((:off, :fp16, :bf16)),
-        "Tensor-core operator format for the dense M2L (low-precision operator copies allocated at construction)."),
     # ---- lifecycle/orchestration --------------------------------------------
     :CUDA_CACHED_WINDOWS => RadixSettingSpec(:runtime, _rs_bool,
         "Occupancy-epoch window caching (checked per step; also gates graph eligibility)."),
     :KA_EXTRA_TARGETS_GRID => RadixSettingSpec(:runtime, _rs_bool,
-        "Evaluate extra targets through the resident grid instead of all-pairs (opt-in: open per-call race, 2026-09-19)."),
-    :KA_EXTRA_TARGETS_SYNC => RadixSettingSpec(:runtime, _rs_bool,
-        "Synchronize after every upload and launch in the grid extra-target path (race bisection)."),
-    :KA_EXTRA_TARGETS_CHECK => RadixSettingSpec(:runtime, _rs_bool,
-        "Re-evaluate the grid extra-target path on the host from the device inputs and report disagreements (race bisection)."),
-    :CUDA_GRAPH_LIFECYCLE => RadixSettingSpec(:runtime, _rs_bool,
-        "CUDA-graph capture/replay of the lifecycle (checked per step at entry)."),
-    :CUDA_OVERLAP_NEARFIELD => RadixSettingSpec(:construction, _rs_bool,
-        "Nearfield side-stream overlap (first statement of the captured body)."),
-    :RADIX_KA_LIFECYCLE => RadixSettingSpec(:runtime, _rs_bool,
-        "Run the uniform per-step lifecycle with KernelAbstractions kernels instead of the native CUDA ones (checked per step at entry; requires the KA extension loaded)."),
+        "Evaluate extra targets through the resident grid instead of all-pairs (opt-in: an open per-call race)."),
     :RADIX_DIRECT_ARM => RadixSettingSpec(:runtime, _rs_bool,
         "Evaluate the step as a single all-pairs O(np^2) direct kernel instead of the FMM lifecycle, skipping the grid and route refresh (KA device path only; checked per step at entry). Opt-in: nothing selects it automatically."),
     :KA_WORKGROUP => RadixSettingSpec(:runtime, _rs_ka_workgroup,

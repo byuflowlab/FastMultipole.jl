@@ -232,7 +232,7 @@ end
     return nothing
 end
 
-#------- generic influence-block assembly hook (BRAINSTORM 030) -------#
+#------- generic influence-block assembly hook -------#
 
 """
     assemble_influence_block!(block, target_buffer, target_range, switch,

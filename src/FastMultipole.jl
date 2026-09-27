@@ -15,7 +15,7 @@ const π_over_2 = π/2
 const π2 = 2*π
 const SQRT3 = sqrt(3.0)
 const LOCAL_ERROR_SAFETY = 2.0 # guess how many cells will contribute to the local error
-                               # NOTE: this doesn't apply to multipole error as that error is 
+                               # NOTE: this doesn't apply to multipole error as that error is
                                # highly localized and doesn't accumulate
 const DEBUG = Array{Bool,0}(undef)
 DEBUG[] = false
@@ -86,26 +86,14 @@ WARNING_FLAG_MAX_INFLUENCE[] = true
 #------- HEADERS AND EXPORTS -------#
 
 include("containers.jl")
-export Branch, Tree, RadixGrid, DeviceRadixGrid, RadixSortBackend, HostRadixSort, DeviceRadixSort,
-    AutoRadixSort, ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L,
-    ConstantPAnalyticStencil, HierarchicalRigidStencil, classic_fmm_stencil, RadixTraversalStrategy,
-    RigidHierarchicalTables, RadixLevelOccupancy, RigidImplicitStencil, SparseOffsetIntersection,
-    BlockedOccupancyBitsets, LazyMaterializedBatches, RadixM2LBatch, RadixInteractionList, Residency,
-    HostResident, DeviceResident, TreeRole, SourceTree, TargetTree, NearfieldExecution, HostNearfield,
-    DeviceNearfield, AbstractDirectKernel, SingularSource, SingularVortex, SingularDipole,
+export Branch, Tree, ConstantPAnalyticStencil, HierarchicalRigidStencil, classic_fmm_stencil, Residency,
+    HostResident, DeviceResident, AbstractDirectKernel, SingularSource, SingularVortex, SingularDipole,
     SingularSourceVortex, RegularizedVortex, SourceFilamentKernel, DipoleFilamentKernel,
-    VortexFilamentKernel, element_strength_dims, SourcePanelKernel, DipolePanelKernel,
-    SourceDipolePanelKernel, VortexSheetPanelKernel, PartitionedVortex, TwoPassVortex,
-    CUDARadixTransferCounters, CUDARadixLifecycleOptions, DeviceResidentRadixState,
-    AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M, AbstractResidentM2LStrategy,
-    DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L, PrecomputedFactoredYM2L,
-    AbstractOperatorBasis, CompressedComplexBasis, RealSolidHarmonicBasis, OperatorOrders, OperatorBasisInfo,
-    OperatorInvariantCache, OperatorScratch, ThreadedOperatorScratch, FlatCoefficientBuffer,
-    AbstractM2LOperator, MaterializedYRotationM2L, FactoredRotationM2L, M2LOperatorScratch,
-    AbstractM2MOperator, MaterializedYRotationM2M, FactoredRotationM2M, M2MOperatorScratch,
-    AbstractL2LOperator, MaterializedYRotationL2L, FactoredRotationL2L, L2LOperatorScratch, RadixFMMCache,
-    AdaptiveTreePolicy, AdaptiveRadixTree, AdaptiveInteractionLists
-export real_basis_index, complex_to_real_basis!, real_to_complex_basis!
+    VortexFilamentKernel, SourcePanelKernel, DipolePanelKernel, SourceDipolePanelKernel,
+    VortexSheetPanelKernel, PartitionedVortex, TwoPassVortex, RadixTransferCounters,
+    RadixLifecycleOptions, AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M,
+    AbstractResidentM2LStrategy, DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L,
+    PrecomputedFactoredYM2L, RadixFMMCache, AdaptiveTreePolicy
 
 include("complex.jl")
 include("derivatives.jl")
@@ -120,17 +108,17 @@ export initialize_expansion, initialize_harmonics, unsorted_index_2_sorted_index
     sorted_index_2_unsorted_index
 
 include("tree_batched.jl")
-export radix_grid, update_adaptive_tree!
-export adaptive_is_leaf, adaptive_node_range
 
 include("interaction_list_batched.jl")
-export rigid_stencil_epsilon, constant_p_stencil_bound, accepted_radix_stencil, foreach_radix_m2l_pair,
-    foreach_radix_m2l_route, foreach_radix_direct_pair, build_radix_interaction_list, RadixRouteSelection
-export constant_p_stencil_accepts, build_adaptive_interaction_lists!
 
-include("translate_batched_resident.jl")
-export host_radix_state, host_resident_radix_grid, update_radix_state!
-export run_host_radix_lifecycle!, finalize_radix_output!
+include("resident/resident_grid_state.jl")
+include("resident/resident_b2m.jl")
+include("resident/resident_pair_kernels.jl")
+include("resident/resident_finalize.jl")
+include("resident/radix_cache.jl")
+include("resident/resident_device_plumbing.jl")
+include("resident/adaptive_lifecycle.jl")
+export update_radix_state!
 
 include("resident_elements.jl")
 include("resident_extra_tree.jl")
@@ -138,13 +126,11 @@ include("radix_extra_systems.jl")
 include("radix_nearfield.jl")
 export radix_nearfield
 include("radix_settings.jl")
-export radix_settings, radix_setting, radix_setting_lock, snapshot_locked_radix_settings,
-    verify_locked_radix_settings
+export radix_settings, radix_setting
 export set_radix_setting!, set_radix_settings!
 
 include("direct_rectangular.jl")
-export AbstractRectangularKernel, RectangularGaussianErfVortex, RectangularPanelInfluence, rect_source_rows,
-    rect_output_rows
+export AbstractRectangularKernel, RectangularGaussianErfVortex, RectangularPanelInfluence
 export direct_rectangular!
 
 
@@ -168,7 +154,7 @@ Base.showerror(io::IO, err::RadixDeviceUnavailable) = print(io, err.reason)
 # The extension REGISTERS its entry points here from its `__init__`, and the
 # stubs in translate_batched_resident.jl consult the registry before throwing.
 # The former hand-written CUDA lifecycle (runtime-`include`d into this module)
-# was removed after the KA port reached parity with it (2026-09-02).
+# was removed after the KA port reached parity with it.
 const _RADIX_DEVICE_BACKEND_NAME = Ref{Any}(nothing)
 const _RADIX_DEVICE_BUILD_HOOK = Ref{Any}(nothing)
 const _RADIX_DEVICE_STEP_HOOK = Ref{Any}(nothing)
@@ -281,7 +267,6 @@ KernelAbstractions-compatible M2M kernel. Loaded via FastMultipoleKAExt extensio
 """
 function ka_m2m_operator_batch! end
 
-export ka_m2m_operator_batch!
 
 """
     ka_m2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
@@ -290,7 +275,6 @@ KernelAbstractions-compatible M2L kernel. Loaded via FastMultipoleKAExt extensio
 """
 function ka_m2l_operator_batch! end
 
-export ka_m2l_operator_batch!
 
 """
     ka_l2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
@@ -299,7 +283,6 @@ KernelAbstractions-compatible L2L kernel. Loaded via FastMultipoleKAExt extensio
 """
 function ka_l2l_operator_batch! end
 
-export ka_l2l_operator_batch!
 
 #------- PRECALCULATIONS -------#
 

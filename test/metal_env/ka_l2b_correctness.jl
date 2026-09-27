@@ -33,7 +33,7 @@ for (ci,(n,K_max,ell_max,P,lh,rows)) in pairs(CASES)
     actx=ext.ka_allocate_adaptive_context(DEV_BACKEND,TF,n;
         leaf_capacity=10*nl+256, frontier_capacity=16*(10*nl+256), node_capacity=100*nl+256)
     build=ext.ka_build_adaptive_tree!(actx,devarray(positions),ell_max,K_max,true,(TF(0),TF(0),TF(0)),TF(1))
-    opts=FM.CUDARadixLifecycleOptions(;precision=TF, body_type=FM.Point{FM.Vortex})
+    opts=FM.RadixLifecycleOptions(;precision=TF, body_type=FM.Point{FM.Vortex})
     state=ext.ka_radix_state(actx,build,devarray(sb),P,Val(lh); options=opts, output_rows=rows)
 
     # populate locals with a well-scaled pseudo-expansion (the evaluation, not

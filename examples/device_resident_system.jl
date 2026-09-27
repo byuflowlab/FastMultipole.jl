@@ -199,7 +199,7 @@ function run_example(; n = 2000, ell = 3, expansion_order = 4, TF = DEV_TF, dt =
     # (the default is Float64 from expansion order 4 up, which Metal cannot
     # run) and an M2L strategy the extension builds a device plan for
     # (concatenated here; dense is the other; the host default is neither).
-    options = FastMultipole.CUDARadixLifecycleOptions(; precision = TF,
+    options = FastMultipole.RadixLifecycleOptions(; precision = TF,
         m2l_strategy = FastMultipole.ConcatenatedFixedZM2L())
     cache = RadixFMMCache(sys; expansion_order, ell, max_n_bodies = n,
         bounds = (box_min, box_size), device = true, options)

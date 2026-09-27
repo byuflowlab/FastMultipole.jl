@@ -29,4 +29,4 @@ pkg> add https://github.com/byuflowlab/FastMultipole.git
 * learn about the [Tuning Parameters](tuning.md)
 * run FMM simultaneously on multiple systems in [Multiple Systems](advanced_usage.md) section
 * fine-tune performance in the [Automated Tuning](advanced_usage_2.md)
-* see the full [API](reference.md)
+* see the full [API](reference_api.md)

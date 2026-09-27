@@ -570,7 +570,7 @@ end
 #         P, this_error_success = multipole_to_local!(target_expansion, target_branch, source_expansion, source_branch, weights_tmp_1, weights_tmp_2, weights_tmp_3, Ts, eimϕs, ζs_mag, ηs_mag, Hs_π2, M̃, L̃, expansion_order, lamb_helmholtz, error_tolerance)
 #         Pmax = max(P, Pmax)
 #         error_success = error_success && this_error_success
-#     end    
+#     end
 
 #     return Pmax, error_success
 # end
@@ -601,7 +601,7 @@ function horizontal_pass_multithread!(target_tree::Tree{TF1,<:Any}, source_tree:
     rem > 0 && (n_per_thread += 1)
     assignments = fill(1:0, n_threads)
 
-    # make assignments 
+    # make assignments
     assign_m2l!(assignments, m2l_list, n_threads, n_per_thread, interaction_list_method)
 
     # preallocate containers
@@ -868,7 +868,7 @@ fmm!(system, cache::Cache; leaf_size=20, optargs...) = fmm!(system, system, cach
     fmm!(system, cache::RadixFMMCache; kwargs...)
     fmm!(target_systems, source_systems, cache::RadixFMMCache; kwargs...)
 
-Opt-in radix-grid / matrix-operator FMM step (task 023). Construct the cache once
+Opt-in radix-grid / matrix-operator FMM step. Construct the cache once
 with [`RadixFMMCache`](@ref) and call this each time step: it refreshes the
 step-varying state in place (grid, routes, packed bodies — zero reallocation),
 runs the resident lifecycle, and writes results back through
@@ -946,7 +946,7 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         split.self_induce &&
             _radix_extra_targets_evaluate!(cache.state, split.extra_targets, extra_switches)
     else
-        # task 040: with an AdaptiveTreePolicy armed, the host branch runs the
+        # with an AdaptiveTreePolicy armed, the host branch runs the
         # adaptive resident lifecycle (B2M/M2M/V-M2L/S2L/L2L/direct/L2B/M2T)
         # instead of the uniform one; the adaptive state carries the adaptive
         # sort's permutation metadata, so the finalize path is unchanged.
@@ -1759,7 +1759,7 @@ end
 
 #     #--- low-order estimate for relative error tolerance ---#
 
-#     _, _, estimate_tree, _ = fmm!(target_systems, source_systems; 
+#     _, _, estimate_tree, _ = fmm!(target_systems, source_systems;
 #         scalar_potential = true, gradient = true, hessian = false,
 #         leaf_size_source = to_vector(5, length(source_systems)),
 #         expansion_order = 3, multipole_acceptance = 0.6,
@@ -1788,7 +1788,7 @@ end
 #             set_scalar_potential!(buffer, j_buffer, get_scalar_potential(estimate, j_estimate))
 #             set_gradient!(buffer, j_buffer, get_gradient(estimate, j_estimate))
 
-#         end        
+#         end
 #     end
 
 #     #--- update target branches ---#
@@ -1814,14 +1814,14 @@ end
 #             target_box = branch.target_box
 #             max_influence = branch.max_influence
 
-#             # loop over bodies 
+#             # loop over bodies
 #             for j in branch.bodies_index[i_system]
 #                 influence = get_influence(system, j, error_tolerance)
 #                 max_influence = max(max_influence, influence)
 #             end
 
 #             # replace branch
-#             target_tree.branches[i] = typeof(branch)(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf, 
+#             target_tree.branches[i] = typeof(branch)(n_bodies, bodies_index, n_branches, branch_index, i_parent, i_leaf,
 #                 source_center, target_center, source_radius, target_radius, source_box, target_box, max_influence)
 #         end
 #     end

@@ -199,7 +199,7 @@ end
             operator = strategy isa FastMultipole.PrecomputedFactoredYM2L ?
                 FastMultipole.FactoredRotationM2L() :
                 FastMultipole.MaterializedYRotationM2L()
-            opts = CUDARadixLifecycleOptions(; precision=Float64,
+            opts = RadixLifecycleOptions(; precision=Float64,
                 m2l_strategy=strategy, operator)
             s = _trim_system(coords)
             c = RadixFMMCache(s; expansion_order=3, ell,

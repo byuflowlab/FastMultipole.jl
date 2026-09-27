@@ -33,7 +33,7 @@
   extra-tree sources; the default `nothing` disables reuse.
 - GPU tests can be selected with `FASTMULTIPOLE_GPU_TESTS`; NVIDIA runs require
   `FASTMULTIPOLE_GPU_TEST_PROJECT` to name a CUDA-enabled Julia project.
-- Minimum Julia version 1.11.
+- Minimum Julia version 1.10 (the LTS; package extensions with weak dependencies).
 
 ### Breaking changes and migration
 

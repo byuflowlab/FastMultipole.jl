@@ -41,7 +41,7 @@ function run_case(seed, n_bodies, ell, P; window_classes=8)
     # plan, and the route-class ids compared below are the concat convention
     # (level-true), the same pin cuda_radix_hierarchical_test.jl makes.
     cache = RadixFMMCache(sys; expansion_order=P, ell=ell,
-        options=CUDARadixLifecycleOptions(; m2l_strategy=ConcatenatedFixedZM2L()))
+        options=RadixLifecycleOptions(; m2l_strategy=ConcatenatedFixedZM2L()))
     state = cache.state
     ctx = state.interaction_list
     ctx isa FM.HostHierarchicalM2LContext ||

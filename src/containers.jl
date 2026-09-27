@@ -356,7 +356,7 @@ opt-in CUDA implementation and are not named here, keeping the CPU load path fre
 of CUDA symbols. Nodes are stored level-major and Morton-key-major within each
 level. `child_ranges[:, i]` is a first/count range over this node ordering.
 
-Mutable (task 023) so the recurring update path can refresh `n_bodies`/`n_cells`
+Mutable so the recurring update path can refresh `n_bodies`/`n_cells`
 in place while every array field keeps its identity across time steps; kernels
 and loops receive the arrays (never the struct), so mutability costs nothing.
 """
@@ -421,12 +421,12 @@ abstract type RadixSeparationPolicy end
 # `rigid_stencil_epsilon`, `_verify_hierarchical_classifier!`) is fully generic
 # in the radius and self-verifies classifier exactness at construction; the
 # guard exists to reject radii with no lattice shell and typos. Radii above 12
-# were added by task 032: a regularized nearfield at overlap beta = 2 needs
+# were added earlier: a regularized nearfield at overlap beta = 2 needs
 # g_min*h_leaf > rho_t*sigma_max, which forces a large leaf near set, while the
 # fixed 1e-3 velocity gate needs more accuracy than q = 12 delivers at P = 4
 # (measured 1.088e-3, job 13058532) — q = 16 raises g_min from sqrt(5) to
 # sqrt(6), q = 20 to 3. Radii 21-27 (23 has no lattice shell) were added by
-# task 052f for the all-direct adequacy fallback: q = 27 covers every offset
+# the port for the all-direct adequacy fallback: q = 27 covers every offset
 # of the 4^3 leaf grid at ell = 2, producing the zero-M2L degenerate cache
 # (052c) in which every pair is evaluated by the regularized direct kernel.
 const _SUPPORTED_RIGID_NEAR_RADII2 =
@@ -434,7 +434,7 @@ const _SUPPORTED_RIGID_NEAR_RADII2 =
 const _SUPPORTED_RIGID_NEAR_RADII2_TEXT =
     "3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27"
 
-# Shipped rigid-stencil operating point, selected by measurement in task 028
+# Shipped rigid-stencil operating point, selected by measurement earlier
 # Stage 7: `q = 5` at every M2L level except the coarsest, which uses `q = 6`.
 # At n = 1e6 / P = 4 / ell = 5 this measured 12.51 ms per resident step at
 # 1.05e-3 gradient relative RMS, against 15.45 ms at 5.75e-4 for uniform q = 6
@@ -449,7 +449,7 @@ const RADIX_DEFAULT_COARSE_NEAR_RADIUS2 = 6
 end
 
 # A level schedule lists one near radius per M2L level (levels 2:ell, coarse to
-# fine). Task 025's exact-once proof extends to a level-dependent radius only
+# fine). the earlier stage's exact-once proof extends to a level-dependent radius only
 # while the radius is non-increasing with depth, and the leaf entry is what
 # defines the direct list, so it must agree with `near_radius2`.
 function _validate_rigid_level_schedule(level_radii2, near_radius2::Int)
@@ -473,7 +473,7 @@ struct ParentNeighborM2L <: RadixSeparationPolicy end
 Flat, leaf-only constant-`P` M2L policy: one analytic acceptance test over the
 bounded offset box, applied at the leaf level only.
 
-!!! warning "Deprecated as the production default (task 027)"
+!!! warning "Deprecated as the production default"
     [`HierarchicalRigidStencil`](@ref) replaced this as the default policy. The
     flat classifier accepts *more* offsets as `ell` grows (cell width shrinks at
     fixed `epsilon`), so its route count scales as `offsets(ell) x cells`: on an
@@ -500,7 +500,7 @@ ConstantPAnalyticStencil(args...; kwargs...) =
 Host-resident, genuinely hierarchical rigid M2L policy.  The analytic
 `config` is retained as an accuracy contract: cache construction verifies that
 its rejected integer offsets are exactly the requested spherical near set.
-Since task 027 this is the default `RadixFMMCache` policy; the flat
+this is the default `RadixFMMCache` policy; the flat
 [`ConstantPAnalyticStencil`](@ref) remains selectable as the correctness oracle.
 
 `near_radius2` is the squared lattice near radius `q` at the leaf level: cell
@@ -511,8 +511,8 @@ far field; `q = 3` is the classic `|o|_inf <= 1` FMM stencil and `q = 12` the
 `theta = 0.5` stencil.
 
 `level_radii2` optionally schedules one radius per M2L level, coarse to fine,
-for levels `2:ell` — task 028 Stage 7. It must be non-increasing with depth
-(the condition under which task 025's exact-once coverage proof still holds)
+for levels `2:ell` — . It must be non-increasing with depth
+(the condition under which the earlier stage's exact-once coverage proof still holds)
 and its last entry must equal `near_radius2`. An empty tuple means the uniform
 policy. The default `RadixFMMCache` policy is `near_radius2 = 5` with the
 schedule `(6, 5, 5, ..., 5)`, the fastest configuration that stayed inside task
@@ -619,7 +619,7 @@ mutable struct HostHierarchicalM2LContext{O<:RadixLevelOccupancy,A}
     effective_offsets::Vector{SVector{3,Int}}
     apply_plan::A
     window_classes::Int
-    # coarsest active M2L level (task 037 stage 3): construction-fixed; levels
+    # coarsest active M2L level (): construction-fixed; levels
     # first_m2l_level:ell carry classes, class numbering is
     # (L - first_m2l_level) * noffsets + k. Cubic caches: 2 (legacy).
     first_m2l_level::Int
@@ -640,7 +640,7 @@ end
         node_capacity=0, u_capacity=0, v_capacity=0, wx_capacity=0)
 
 Opt-in policy for the 2:1-balanced adaptive Morton octree of
-`theory/adaptive-radix-octree.md` (task 038), implemented on the host by task
+`theory/adaptive-radix-octree.md`, implemented on the host by task
 039. The uniform-depth radix grid remains the production default; nothing about
 `RadixFMMCache` behavior changes unless this policy is passed explicitly.
 
@@ -727,7 +727,7 @@ struct AdaptiveTreePolicy
 end
 
 """
-Capacity-sized host adaptive Morton octree (task 039, theory §1). Leaves appear
+Capacity-sized host adaptive Morton octree (theory §1). Leaves appear
 at multiple levels: a node splits while its population exceeds `policy.K_max`
 below the depth cap, followed by the optional §1.4 2:1 balance sweep. The final
 node table is **level-major and Morton-key-sorted within each level** — the
@@ -737,7 +737,7 @@ per-level machinery (M2M/L2L stage grouping, node lookup) carries over.
 
 The root cube (`x_min`, `h0`), depth cap, and all capacities are fixed for the
 tree lifetime; [`update_adaptive_tree!`](@ref) rebuilds everything else in
-place with zero allocation (the task 023 invariant contract).
+place with zero allocation (the the port invariant contract).
 
 Internal-node body ranges are subtree ranges (`node_lo:node_hi` into `perm`);
 `child_ranges[:, i] == (first_child, n_children)` with children contiguous in
@@ -809,7 +809,7 @@ end
 
 """
 Capacity-sized U/V/W/X interaction lists over an [`AdaptiveRadixTree`](@ref)
-(task 039, theory §2). V lists are emitted in the existing hierarchical
+(theory §2). V lists are emitted in the existing hierarchical
 `(level, offset)` class format — the same five parallel arrays
 (`route_levels`, `route_offsets`, `route_targets`, `route_sources`,
 `route_class`) with the production class numbering
@@ -819,7 +819,7 @@ class-partitioned by the CSR `class_starts` (routes of class `c` occupy
 `class_starts[c]:class_starts[c + 1] - 1`), the layout the windowed resident
 M2L strategies consume. U/W/X endpoints are **flat adaptive node indices**
 (leaves live at multiple levels, so the uniform path's leaf-cell-index direct
-convention does not apply; row 040 consumes node body ranges directly).
+convention does not apply; a later stage consumes node body ranges directly).
 
 Emission follows the theory §2.2 dual-tree recursion with the §5 sticky
 per-cell σ demotion gate; every emitted V pair is checked against the 025
@@ -876,7 +876,7 @@ mutable struct AdaptiveInteractionLists
 end
 
 """
-Device mirror of [`HostHierarchicalM2LContext`](@ref) (task 027).  It owns the
+Device mirror of [`HostHierarchicalM2LContext`](@ref).  It owns the
 step-invariant task-025 stencil tables uploaded once at construction, the
 persistent per-level occupancy lookup, the single-window flag/scan/compact
 buffers, and the dense strategy's per-level `Lambda` scaling columns.  Only the
@@ -899,7 +899,7 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV,SM}
     apply_plan::PL
     window_classes::Int
     ell::Int
-    # coarsest active M2L level (task 037 stage 3): construction-fixed — the
+    # coarsest active M2L level (): construction-fixed — the
     # 029 window cache and CUDA-graph capture rely on the level structure never
     # changing across steps. Cubic caches: 2 (legacy).
     first_m2l_level::Int
@@ -932,7 +932,7 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV,SM}
     profile_stages::Bool
     update_stage_ns::Vector{UInt64}
     m2l_level_ns::Vector{UInt64}
-    # Task 029 cycle 1: occupancy-epoch route-window cache + captured far-field
+    # occupancy-epoch route-window cache + captured far-field
     # graph. `epoch_id` increments whenever the occupied-cell set changes; the
     # route windows, direct pairs, node metadata, and stage-group edges are all
     # pure functions of that set given the cache's fixed Morton box, so they are
@@ -955,7 +955,7 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV,SM}
     graph_exec::Any
     graph_epoch::Int
     graph_warm_epoch::Int
-    # Task 032a Stage C: distance-binned nearfield pair-stream scratch
+    # distance-binned nearfield pair-stream scratch
     # (`CUDANearfieldBinContext`) for the split vortex kernels, or `nothing`
     # when the cache's direct kernel is not a split kernel.
     nearfield::Any
@@ -969,7 +969,7 @@ Device scratch for the task-032a Stage C distance-binned nearfield pair stream
 hierarchical device context and built at cache construction only when the
 cache's direct kernel is a split kernel (`PartitionedVortex`/`TwoPassVortex`).
 
-All arrays are construction-sized (capacity contract, task 023): the three-way
+All arrays are construction-sized (capacity contract): the three-way
 bucket compaction reuses the direct-pair capacity per bucket, the per-cell σ
 extrema are `max_cells`-sized, and the pass-2 offset ball is enumerated once at
 construction to the gate-derived reach capacity
@@ -1011,7 +1011,7 @@ mutable struct CUDANearfieldBinContext
     subsort_keys::Any
     # homogeneity diagnostics (device UInt64 counters; diagnostic launches only)
     diag::Any
-    # task 037f :lut g/h mode: device Float32 (2, _NF_GH_LUT_N) table of the
+    # the port :lut g/h mode: device Float32 (2, _NF_GH_LUT_N) table of the
     # normalized G = g/rho^3, H = h/rho^5 over x = rho^2 in [0, rho_t^2],
     # built and uploaded once at construction (counted as an operator upload)
     gh_lut::Any
@@ -1327,7 +1327,7 @@ OperatorBasisInfo(basis::RealSolidHarmonicBasis, P::Integer, lamb_helmholtz::Val
 OperatorBasisInfo(P::Integer, lamb_helmholtz::Val) =
     OperatorBasisInfo(CompressedComplexBasis(), P, lamb_helmholtz)
 
-#------- native flat coefficient buffers (Matrix Operator Refactor, task 017) -------#
+#------- native flat coefficient buffers (Matrix Operator Refactor) -------#
 #
 # The native coefficient storage for the batched operators. re/im are interleaved
 # into the leading basis dimension and each channel is a dense `basis_dof x batch`
@@ -1335,7 +1335,7 @@ OperatorBasisInfo(P::Integer, lamb_helmholtz::Val) =
 #
 #     flat_basis_index(n, m, reim) = 2 * (harmonic_index(n, m) - 1) + reim,  reim in 1:2
 #
-# Default backing is RAGGED (user-directed 2026-06-25): a separate dense φ matrix
+# Default backing is RAGGED: a separate dense φ matrix
 # sized to `basis_dof_phi` (order `P_phi`) and a separate dense χ matrix sized to
 # `basis_dof_chi` (order `P_active = P_chi`). φ therefore carries no padding rows,
 # so the task-014/016 `_zero_phi_padding!` machinery is unnecessary here; the
@@ -1343,7 +1343,7 @@ OperatorBasisInfo(P::Integer, lamb_helmholtz::Val) =
 # kernels (`P_phi` for φ, `P_active` for χ). `Val(false)` allocates φ only (the dead
 # χ channel is pruned). `harmonic_index(n,m)` is P-independent, so the same
 # `flat_basis_index` addresses both matrices (φ valid for n <= P_phi, χ for n <=
-# P_active). RAGGED is the DECIDED layout (task 019b, user decision 2026-07-14):
+# P_active). RAGGED is the DECIDED layout:
 # the padded single-array alternative measured +10-28% chain time on CPU with no
 # channel-merged-GEMM win (the GPU M2L is no longer launch-bound after 019's
 # fusion) and +17-39% storage at the small P the GPU path runs, so it was
@@ -1363,7 +1363,7 @@ OperatorBasisInfo(P::Integer, lamb_helmholtz::Val) =
 """
     AbstractCoefficientBuffer{TF,LH}
 
-Supertype for resident expansion-coefficient buffer layouts (task 022). Concrete
+Supertype for resident expansion-coefficient buffer layouts. Concrete
 layouts are the legacy [`FlatCoefficientBuffer`](@ref) (compressed `m>=0`, interleaved
 re/im, used by the per-column operators) and the GEMM-native
 [`DegreeMajorRealBuffer`](@ref) (real, degree-major, y-mode-ordered) that the batched
@@ -1375,14 +1375,14 @@ abstract type AbstractCoefficientBuffer{TF,LH} end
 """
     FlatCoefficientBuffer{TF,A,B,LH}
 
-Native flat coefficient storage (task 017). Holds a dense φ channel matrix
+Native flat coefficient storage. Holds a dense φ channel matrix
 (`basis_dof_phi x batch`) and, for `Val(true)`, a dense χ channel matrix
 (`basis_dof_chi x batch`); for `Val(false)` `chi` is empty (χ pruned). Parametric on
-the matrix type `A` so a device array (e.g. `CuArray`) can back it later (task 022).
+the matrix type `A` so a device array (e.g. `CuArray`) can back it later.
 
 Operators touch the channels only through the accessors `phi_slab` /
 `chi_slab` / `phi_physical_view`, so the physical backing
-(ragged, decided by task 019b; the padded single-array alternative was measured
+(ragged, decided earlier; the padded single-array alternative was measured
 and rejected) is swappable.
 """
 struct FlatCoefficientBuffer{TF,A<:AbstractMatrix{TF},B<:AbstractOperatorBasis,LH} <: AbstractCoefficientBuffer{TF,LH}
@@ -1409,7 +1409,7 @@ FlatCoefficientBuffer(::Type{TF}, P::Integer, lamb_helmholtz::Val, batch::Intege
     @view buf.phi[1:buf.basis_info.basis_dof_phi, :]
 @inline flat_nbatch(buf::FlatCoefficientBuffer) = size(buf.phi, 2)
 
-#------- GEMM-native degree-major coefficient buffer (Matrix Operator Refactor, task 022) -------#
+#------- GEMM-native degree-major coefficient buffer (Matrix Operator Refactor) -------#
 #
 # The batched `mul!` M2M/M2L/L2L operator strategies work over the genuinely factored
 # y-rotation `Y_n(θ) = U_n diag(e^{iνθ}) V_n`, whose fixed modes `U_n`/`V_n` act on the
@@ -1425,7 +1425,7 @@ FlatCoefficientBuffer(::Type{TF}, P::Integer, lamb_helmholtz::Val, batch::Intege
 """
     DegreeMajorRealBuffer{TF,A,B,LH}
 
-GEMM-native coefficient storage (task 022): a real, degree-major, y-mode-ordered φ
+GEMM-native coefficient storage: a real, degree-major, y-mode-ordered φ
 matrix (`(P_phi+1)^2 x batch`) and, for `Val(true)`, a χ matrix
 (`(P_active+1)^2 x batch`); `chi` is empty for `Val(false)`. Parametric on the matrix
 type `A` so a device array (`CuArray`) can back it. Read the per-degree GEMM operands
@@ -1567,15 +1567,15 @@ struct OperatorInvariantCache{TF,B<:AbstractOperatorBasis,LH}
     eta_mag::Vector{TF}
     M_tilde::Vector{TF}
     L_tilde::Vector{TF}
-    # angle-independent axis-swap blocks (Matrix Operator Refactor, task 013):
+    # angle-independent axis-swap blocks (Matrix Operator Refactor):
     # precomputed from Hs_pi2 so the per-call Wigner Ts is a cheap phase contraction
     # via build_Ts_from_S! instead of the per-call update_Ts! rebuild.
     S_pos::Vector{TF}
     S_neg::Vector{TF}
-    # fixed y-swap matrices for the explicit factored rotation path (task 013b).
+    # fixed y-swap matrices for the explicit factored rotation path.
     T_y_pos90::Vector{TF}
     T_y_neg90::Vector{TF}
-    # fixed per-degree mode matrices for the genuinely factored y-rotation (task 013c):
+    # fixed per-degree mode matrices for the genuinely factored y-rotation:
     # Y_n(θ) = U_n diag(e^{iνθ}) V_n, with U/V angle-independent and batch-shared. The
     # multipole (ζ) and local (η) paths carry their own modes (dressing baked in).
     y_mult_U::Vector{Complex{TF}}
@@ -1609,7 +1609,7 @@ function OperatorInvariantCache(::Type{TF}, basis_info::OperatorBasisInfo{B,LH})
     build_Ts_from_S!(T_y_pos90, S_pos, S_neg, TF(pi / 2), P_active, y_trig)
     build_Ts_from_S!(T_y_neg90, S_pos, S_neg, TF(-pi / 2), P_active, y_trig)
 
-    # fixed per-degree factored y-rotation modes (task 013c), one set per path
+    # fixed per-degree factored y-rotation modes, one set per path
     nmodes = length_ymodes(P_active)
     y_mult_U = Vector{Complex{TF}}(undef, nmodes)
     y_mult_V = Vector{Complex{TF}}(undef, nmodes)
@@ -1651,7 +1651,7 @@ struct OperatorScratch{TF,B<:AbstractOperatorBasis,LH}
     z_cos::Vector{TF}
     z_sin::Vector{TF}
     eimphis::Matrix{TF}
-    # ν-space scratch for the factored y stage (task 013c); length >= 2*P_active+1
+    # ν-space scratch for the factored y stage; length >= 2*P_active+1
     y_mode_buf::Vector{Complex{TF}}
 end
 
@@ -1688,19 +1688,19 @@ end
 ThreadedOperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val) where TF =
     ThreadedOperatorScratch(TF, OperatorBasisInfo(P, lamb_helmholtz))
 
-#------- FULL M2L OPERATOR PIPELINE (Matrix Operator Refactor, task 014) -------#
+#------- FULL M2L OPERATOR PIPELINE (Matrix Operator Refactor) -------#
 #
 # Whole-M2L operator tags selecting the y-rotation strategy. Both compose the same
-# shared stages (task 010 z-rotation, task 011 fixed-m z-translation blocks, task
+# shared stages (the port z-rotation, the port fixed-m z-translation blocks, task
 # 012 Lamb-Helmholtz coupling); they differ only in how the arbitrary-angle
 # y-alignment is realized:
 #
 #   MaterializedYRotationM2L : reconstruct Ts(θ) per column from the cached S_pos /
-#                              S_neg axis-swap blocks (task 013) and apply the
+#                              S_neg axis-swap blocks and apply the
 #                              production-parity y kernels.
 #   FactoredRotationM2L      : apply the genuinely factored Z_phi -> Y(θ) -> ... ->
 #                              inverse Z_phi using the fixed per-degree mode
-#                              matrices U_n / V_n (task 013c). Plain-H: the modes
+#                              matrices U_n / V_n. Plain-H: the modes
 #                              are y_mult_U/V and y_loc_U/V, NOT the 013b T_y_*90
 #                              primitives.
 #
@@ -1724,7 +1724,7 @@ struct FactoredRotationM2L <: AbstractM2LOperator end
 """
     M2LOperatorScratch{TF,B,LH}
 
-Working storage for the batched full-M2L operator pipeline (task 014), sized for a
+Working storage for the batched full-M2L operator pipeline, sized for a
 maximum batch width `B_max` and the active order `P_active`.
 
 Minimal footprint: exactly two native flat working buffers (`work_a`, `work_b`,
@@ -1734,7 +1734,7 @@ across the three pipeline stages, plus an embedded [`OperatorScratch`](@ref) tha
 already provides every 1D per-column buffer (`Ts`, `y_trig`, `z_cos`, `z_sin`, and
 the factored ν-space `y_mode_buf`) and the `weights_tmp_*` `[2,2,nh]` scratch used
 by the materialized-y per-column repack, so nothing is duplicated. The
-distance-dependent `blocks` (task 011) and `lh_A`/`lh_B` (task 012) coefficient
+distance-dependent `blocks` and `lh_A`/`lh_B` coefficient
 buffers are rebuilt per source/target distance; `lh_A`/`lh_B` are empty when `!LH`.
 """
 struct M2LOperatorScratch{TF,B<:AbstractOperatorBasis,LH}
@@ -1761,7 +1761,7 @@ end
 M2LOperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val, batch_max::Integer) where TF =
     M2LOperatorScratch(TF, OperatorBasisInfo(P, lamb_helmholtz), batch_max)
 
-#------- FULL M2M/L2L OPERATOR PIPELINES (Matrix Operator Refactor, task 016) -------#
+#------- FULL M2M/L2L OPERATOR PIPELINES (Matrix Operator Refactor) -------#
 
 "Supertype for batched multipole-to-multipole operators."
 abstract type AbstractM2MOperator end
@@ -1782,7 +1782,7 @@ struct MaterializedYRotationL2L <: AbstractL2LOperator end
 "L2L operator using factored y-axis rotations on physical coefficients."
 struct FactoredRotationL2L <: AbstractL2LOperator end
 
-# Resident batched-M2M GEMM strategies (task 022), swappable for `024` benchmarking.
+# Resident batched-M2M GEMM strategies, swappable for `024` benchmarking.
 # `DenseTranslationM2M` materializes the complete per-translation-vector operator and
 # batches columns sharing that vector into one GEMM. `SharedRotationM2M` (the main
 # path) batches all edges together, materializing only the per-vector z-axis pieces
@@ -1808,8 +1808,8 @@ columns passed through the materialized-y construction oracle; zero selects the
 largest useful width. `max_persistent_bytes` limits operator, application-slab, and
 route-metadata payload storage.
 
-Supported on the host lifecycle (task 023e) and, through
-`RadixFMMCache(...; device=true, options=CUDARadixLifecycleOptions(
+Supported on the host lifecycle and, through
+`RadixFMMCache(...; device=true, options=RadixLifecycleOptions(
 m2l_strategy=DenseTranslationM2L()))`, on the CUDA device-resident lifecycle (task
 023f). `cuda_headroom_bytes` reserves free device memory the estimated dense
 lifecycle footprint must not consume: the CUDA construction gate requires the
@@ -1851,7 +1851,7 @@ end
 "Resident M2L strategy sharing factored rotation work across a batch."
 struct SharedRotationM2L <: AbstractResidentM2LStrategy end
 
-# Whole-pass concatenated M2L (task 022 throughput repair). Instead of looping
+# Whole-pass concatenated M2L (the port throughput repair). Instead of looping
 # per-(r,theta,phi) groups, all routes are processed in fixed-width column chunks:
 # the z-rotation and factored-y stages are already per-column parameterized, and the
 # z-translation separates as K_m(r)[n,np] = r^-(n+1/2) * (n+np)! * r^-(np+1/2), so a
@@ -1876,8 +1876,8 @@ caches reject it because no device plan is installed.
 """
 struct PrecomputedFactoredYM2L <: AbstractResidentM2LStrategy end
 
-# Capacity-sized grouped host plan selected by FactoredRotationM2L (task 023a).
-# CUDA plans deliberately leave `groups` empty (task 023b compact-storage
+# Capacity-sized grouped host plan selected by FactoredRotationM2L.
+# CUDA plans deliberately leave `groups` empty (the port compact-storage
 # amendment): their per-class reference and whole-pass implementations use only
 # the trailing route histogram/prefix metadata, class geometry, flat Plain-H
 # y-mode vectors, and per-class fixed-m z tables. The 2-arg constructor (one-shot
@@ -1902,7 +1902,7 @@ ResidentM2LFactoredPlan(route_class, groups) = ResidentM2LFactoredPlan(
     route_class, groups, nothing, nothing, Int[], nothing, nothing, nothing, nothing,
     nothing, Ref{Any}(nothing))
 
-# Fixed-box precomputed-y plan (task 023c host, 023d CUDA).  `route_class` is
+# Fixed-box precomputed-y plan (the port host, 023d CUDA).  `route_class` is
 # filled by build_radix_routes! with the accepted-offset id (a device Int32 array
 # on the CUDA lifecycle, where route emission writes it directly).  The host
 # refresh stably packs the route indices into angle-major / offset-minor ranges;
@@ -1910,7 +1910,7 @@ ResidentM2LFactoredPlan(route_class, groups) = ResidentM2LFactoredPlan(
 # rebuilds the offset histogram/prefix.  All arrays are allocated once at cache
 # construction; counts and prefixes are the only mutable contents.
 #
-# Compact CUDA plans (task 023d) leave the nested host operator storage
+# Compact CUDA plans leave the nested host operator storage
 # (`y_mult`/`y_loc`/`z_phi`/`z_chi`/LH rows) and the packed route arrays empty and
 # carry instead the trailing flat device fields: per-angle flat `M_n(theta)`
 # block tables in `ymode_offset` layout (`y_flat_*`, one column per angle class),
@@ -1940,7 +1940,7 @@ struct ResidentM2LPrecomputedYPlan{TF,S,R}
     lh_phi_rows::Vector{Vector{TF}}
     lh_chi_rows::Vector{Vector{TF}}
     scratch::S
-    # --- device extension (task 023d); nothing/empty on host plans ---
+    # --- device extension; nothing/empty on host plans ---
     class_counts::Any        # per-offset route histogram (device Int32 on CUDA)
     host_class_counts::Any   # host Int32 mirror of class_counts (pinned on CUDA)
     y_flat_mult::Any         # flat multipole M_n(theta) blocks, one column per angle
@@ -1964,7 +1964,7 @@ ResidentM2LPrecomputedYPlan(route_class, offset_to_angle, angle_keys, angle_thet
         lh_phi_rows, lh_chi_rows, scratch, nothing, nothing, nothing, nothing,
         nothing, nothing, Ref{Any}(nothing))
 
-# Complete host coefficient-space M2L plan (task 023e). Every array is allocated
+# Complete host coefficient-space M2L plan. Every array is allocated
 # at construction capacity and refreshed in place; the byte fields count array
 # payloads only (not Julia object/container headers).
 struct ResidentM2LDensePlan{TF}
@@ -1987,44 +1987,6 @@ struct ResidentM2LDensePlan{TF}
     route_metadata_bytes::Int
     persistent_bytes::Int
     construction_peak_bytes::Int
-end
-
-# Device-resident coefficient-space M2L plan (task 023f). Distinct from the host
-# `ResidentM2LDensePlan` so the host fields stay concretely typed; this plan holds
-# only preallocated device execution state plus host-side per-step count staging.
-#
-# `operators` is the packed device operator array, one contiguous column-major
-# `ndof x ndof` slice per accepted displacement class (`operators[:, :, k]`).
-# `route_class` is the device Int32 offset-class id filled by route emission;
-# device routes are offset-class-major and contiguous, so no source/target repack
-# exists here (`class_starts` addresses contiguous views of the state route arrays).
-# `class_counts` is the device Int32 per-class histogram, `host_class_counts` its
-# pinned host mirror, and `class_starts` the 1-based host prefix (+1 sentinel) the
-# per-step refresh rebuilds in place. `src_slab`/`dst_slab` are the chunk-width
-# device gather/GEMM/scatter slabs. `whole_pass` carries the chunk-width execution
-# bundle filled by the CUDA cache build; the byte fields count array payloads only.
-struct ResidentM2LDenseCUDAPlan{TF,O,OH,OB,OS,R,C,S}
-    route_class::R
-    operators::O
-    tensor_fp16_operators::OH
-    tensor_bf16_operators::OB
-    tensor_input_scale::OS
-    class_counts::C
-    host_class_counts::Vector{Int32}
-    class_starts::Vector{Int}
-    class_capacities::Vector{Int}
-    src_slab::S
-    dst_slab::S
-    nclasses::Int
-    ndof::Int
-    ndof_phi::Int
-    width::Int
-    operator_bytes::Int
-    scratch_bytes::Int
-    route_metadata_bytes::Int
-    persistent_bytes::Int
-    estimated_peak_bytes::Int
-    whole_pass::Base.RefValue{Any}
 end
 
 """
@@ -2090,7 +2052,7 @@ end
 L2LOperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val, batch_max::Integer) where TF =
     L2LOperatorScratch(TF, OperatorBasisInfo(P, lamb_helmholtz), batch_max)
 
-#------- CUDA device-resident radix lifecycle metadata (task 022) -------#
+#------- CUDA device-resident radix lifecycle metadata -------#
 #
 # These containers intentionally avoid CUDA-specific types so the CPU package path
 # can load without touching a device runtime. The device backend extension fills
@@ -2159,10 +2121,10 @@ struct DeviceNearfield <: NearfieldExecution end
 _device_nearfield(::HostNearfield) = false
 _device_nearfield(::DeviceNearfield) = true
 
-#------- nearfield direct-kernel functors (task 032 stage 2) -------#
+#------- nearfield direct-kernel functors () -------#
 #
 # The resident nearfield pair kernels are generic over an isbits functor selected
-# by the `direct_kernel(system)` trait and stamped into `CUDARadixLifecycleOptions`
+# by the `direct_kernel(system)` trait and stamped into `RadixLifecycleOptions`
 # at cache construction, so each distinct kernel is one compile-time kernel
 # instantiation, never a runtime branch in the pair loop. Consumer-supplied
 # functors are allowed if isbits and GPU-compilable: implement
@@ -2200,14 +2162,14 @@ The `g(ρ)`/`h(ρ) = ρg'−3g` evaluation is erf-free: the theory-§3 Horner se
 below `ρ = 2` and the `031a` §6.2 one-`exp` form above (constants measured by
 `MATRIX_OPERATOR_REFACTOR/scripts/fit_032_nearfield_g.jl`).
 
-Since the 032a Stage D measurement (Checkpoint D approval, 2026-08-07) this
+Since the 032a Stage D measurement this
 kernel is the **divergence-proof fallback**: [`PartitionedVortex`](@ref) is
 the recommended default for σ-carrying vortex systems (1.16-1.77x faster
 step-level at identical gate accuracy on both Integration Phase test cases).
 """
 # Regularized vortex nearfields share the sigma_row/rho_t contract and the
 # near-set adequacy gate; they differ only in how pairs beyond the smoothing
-# cutoff are evaluated (task 032a).
+# cutoff are evaluated.
 abstract type AbstractRegularizedVortex <: AbstractDirectKernel end
 
 @inline function _validate_regularized_vortex_args(name, sigma_row, rho_t)
@@ -2238,8 +2200,8 @@ end
     PartitionedVortex(; sigma_row, rho_t=4.252)
 
 Partitioned-replacement Biot-Savart nearfield for `Point{Vortex}` sources
-(task 032a, candidate 2 of `031a` §6), and **the recommended default for
-σ-carrying vortex systems** (Checkpoint D user approval, 2026-08-07): pairs
+(candidate 2 of `031a` §6), and **the recommended default for
+σ-carrying vortex systems**: pairs
 inside the smoothing cutoff `r/σ_src ≤ rho_t` are evaluated with the
 cancellation-safe regularized U/J formulas (the same erf-free `g`/`h`
 evaluation as [`RegularizedVortex`](@ref)); the remaining direct pairs use
@@ -2275,7 +2237,7 @@ end
     TwoPassVortex(; sigma_row, rho_t=4.252, rho_c=2.0)
 
 Two-pass additive-correction Biot-Savart nearfield for `Point{Vortex}` sources
-(task 032a, candidate 3 of `031a` §6.1), in the `rho_c` hybrid form. The FMM
+(candidate 3 of `031a` §6.1), in the `rho_c` hybrid form. The FMM
 routing is left entirely unmodified:
 
 - **Pass 1** is the ordinary direct evaluation with the stable regularized U/J
@@ -2464,7 +2426,7 @@ _emits_potential(::SingularVortex) = false
 _emits_potential(::AbstractRegularizedVortex) = false
 
 """
-    CUDARadixTransferCounters
+    RadixTransferCounters
 
 Host-device transfer telemetry of a device-resident [`RadixFMMCache`](@ref)
 (the name is historical; it serves the KernelAbstractions path). Counts, per
@@ -2475,7 +2437,7 @@ and `operator_uploads` (translation operator tables). Read from
 `cache.state.counters`; used by the device tests to assert the residency
 contract (no per-step re-upload of static data).
 """
-mutable struct CUDARadixTransferCounters
+mutable struct RadixTransferCounters
     body_uploads::Int
     influence_downloads::Int
     expansion_host_copies::Int
@@ -2488,10 +2450,10 @@ mutable struct CUDARadixTransferCounters
     metadata_downloads::Int
 end
 
-CUDARadixTransferCounters() = CUDARadixTransferCounters(0, 0, 0, 0, 0, 0)
+RadixTransferCounters() = RadixTransferCounters(0, 0, 0, 0, 0, 0)
 
 """
-    CUDARadixLifecycleOptions(; precision=Float64, operator, m2m_strategy, m2l_strategy,
+    RadixLifecycleOptions(; precision=Float64, operator, m2m_strategy, m2l_strategy,
                               body_type=Point{Source}, direct_kernel)
 
 Options of a resident radix lifecycle, host or device (the name predates the
@@ -2501,43 +2463,43 @@ Metal); `m2l_strategy` selects the far-field plan (`ConcatenatedFixedZM2L` or
 `body_type` and `direct_kernel` are resolved from the systems' traits at cache
 construction and need not be given. Passed to [`RadixFMMCache`](@ref) as `options`.
 """
-struct CUDARadixLifecycleOptions{TF,O<:AbstractM2LOperator,
+struct RadixLifecycleOptions{TF,O<:AbstractM2LOperator,
         M2M<:AbstractResidentM2MStrategy,M2L<:AbstractResidentM2LStrategy,
         BT<:AbstractElement,DK<:AbstractDirectKernel}
     precision::Type{TF}
     operator::O
     m2m_strategy::M2M
     m2l_strategy::M2L
-    # B2M element selection (task 032): the element type shared by every source
+    # B2M element selection: the element type shared by every source
     # system on this cache, resolved from the `body_type` trait at cache
     # construction. Part of the concrete options type so B2M launchers dispatch
     # at compile time.
     body_type::Type{BT}
-    # Nearfield direct-kernel functor (task 032 stage 2): resolved from the
+    # Nearfield direct-kernel functor (): resolved from the
     # `direct_kernel` trait (defaulting per body type) at cache construction;
     # part of the concrete options type so the pair kernels specialize on it.
     direct_kernel::DK
 end
 
-# Preserve the historical partial form `CUDARadixLifecycleOptions{TF}(...)` while
+# Preserve the historical partial form `RadixLifecycleOptions{TF}(...)` while
 # making all dispatch choices part of the concrete options type.
-CUDARadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy,
+RadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy,
         body_type::Type=Point{Source},
         direct_kernel::AbstractDirectKernel=_default_direct_kernel(body_type)) where TF =
-    CUDARadixLifecycleOptions{TF,typeof(operator),typeof(m2m_strategy),
+    RadixLifecycleOptions{TF,typeof(operator),typeof(m2m_strategy),
         typeof(m2l_strategy),body_type,typeof(direct_kernel)}(precision, operator,
         m2m_strategy, m2l_strategy, body_type, direct_kernel)
 
-CUDARadixLifecycleOptions{TF}(;
+RadixLifecycleOptions{TF}(;
         operator=MaterializedYRotationM2L(),
         m2m_strategy=SharedRotationM2M(),
         m2l_strategy=SharedRotationM2L(),
         body_type=Point{Source},
         direct_kernel=_default_direct_kernel(body_type)) where TF =
-    CUDARadixLifecycleOptions(; precision=TF, operator, m2m_strategy, m2l_strategy,
+    RadixLifecycleOptions(; precision=TF, operator, m2m_strategy, m2l_strategy,
         body_type, direct_kernel)
 
-function CUDARadixLifecycleOptions(;
+function RadixLifecycleOptions(;
         precision::Type{TF}=Float64,
         operator=MaterializedYRotationM2L(),
         m2m_strategy=SharedRotationM2M(),
@@ -2561,7 +2523,7 @@ function CUDARadixLifecycleOptions(;
     if m2l_strategy isa DenseTranslationM2L && !(operator isa MaterializedYRotationM2L)
         throw(ArgumentError("DenseTranslationM2L requires operator=MaterializedYRotationM2L()"))
     end
-    return CUDARadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy,
+    return RadixLifecycleOptions{TF}(precision, operator, m2m_strategy, m2l_strategy,
         body_type, direct_kernel)
 end
 
@@ -2569,19 +2531,19 @@ end
 # which resolves the shared `body_type` trait of the actual source systems). A
 # direct kernel that was defaulted follows the body type; an explicit non-default
 # choice is preserved.
-function _options_with_body_type(options::CUDARadixLifecycleOptions{TF},
+function _options_with_body_type(options::RadixLifecycleOptions{TF},
         ::Type{BT}) where {TF,BT}
     dk = options.direct_kernel == _default_direct_kernel(options.body_type) ?
         _default_direct_kernel(BT) : options.direct_kernel
-    return CUDARadixLifecycleOptions{TF}(options.precision, options.operator,
+    return RadixLifecycleOptions{TF}(options.precision, options.operator,
         options.m2m_strategy, options.m2l_strategy, BT, dk)
 end
 
 # Rebuild options with an explicit direct kernel (RadixFMMCache construction,
 # resolving the `direct_kernel` trait of the actual source systems).
-_options_with_direct_kernel(options::CUDARadixLifecycleOptions{TF},
+_options_with_direct_kernel(options::RadixLifecycleOptions{TF},
         dk::AbstractDirectKernel) where TF =
-    CUDARadixLifecycleOptions{TF}(options.precision, options.operator,
+    RadixLifecycleOptions{TF}(options.precision, options.operator,
         options.m2m_strategy, options.m2l_strategy, options.body_type, dk)
 
 # Step-varying prefix lengths for a capacity-sized DeviceResidentRadixState (task
@@ -2613,7 +2575,7 @@ options, all sized at capacity on the host or the device. Built and owned by a
 struct DeviceResidentRadixState{TF,B,LH,
         GR,IL,FM,HBV,HRV,HFM,DIV,DIM,
         FB<:FlatCoefficientBuffer{TF,<:AbstractMatrix{TF},B,LH},
-        IC,SC,OPT<:CUDARadixLifecycleOptions{TF}}
+        IC,SC,OPT<:RadixLifecycleOptions{TF}}
     grid::GR
     interaction_list::IL
     source_bodies::FM
@@ -2650,7 +2612,7 @@ struct DeviceResidentRadixState{TF,B,LH,
     output::FM
     invariant_cache::IC
     scratch::SC
-    counters::CUDARadixTransferCounters
+    counters::RadixTransferCounters
     options::OPT
     counts::RadixStepCounts
 end
@@ -2660,7 +2622,7 @@ end
 """
     RadixFMMCache{TF,LH}
 
-Opt-in production cache for the radix-grid / matrix-operator FMM path (task 023).
+Opt-in production cache for the radix-grid / matrix-operator FMM path.
 Construct once with [`RadixFMMCache`](@ref)`(target_systems, source_systems; ...)`
 and pass to `fmm!(system, cache)` each time step; construction eagerly builds the
 capacity-sized [`DeviceResidentRadixState`](@ref) plus all step-invariant operator
@@ -2668,7 +2630,7 @@ data, so every `fmm!` call is the fast path and no persistent host or device arr
 is reallocated across steps. Bounded Morton depths use persistent counting-sort
 scratch; larger depths retain CUDA's pool-served device sort scratch.
 
-The invariant contract: the domain box (`x_min`, `h0`, and — task 037 — the
+The invariant contract: the domain box (`x_min`, `h0`, and — the port — the
 readable rectangular extents `ell_axes`/`box_extent`), depth `ell`, expansion
 order, and `max_n_bodies` are fixed at construction. Each step may move bodies and
 change their number (up to `max_n_bodies`), but positions must stay inside the
@@ -2687,13 +2649,13 @@ mutable struct RadixFMMCache{TF,LH}
     ell::Int
     x_min::SVector{3,TF}
     h0::TF
-    # rectangular geometry contract (task 037): per-axis leaf depths with
+    # rectangular geometry contract: per-axis leaf depths with
     # `ell = maximum(ell_axes)` the virtual-cube depth, and the physical box
     # extents `Δ .* 2 .^ ell_axes` where `Δ = 2h0 / 2^ell` is the shared cubic
     # cell width. Cubic caches carry `(ell, ell, ell)` and `(2h0, 2h0, 2h0)`.
     ell_axes::SVector{3,Int}
     box_extent::SVector{3,TF}
-    # active-level trimming (task 037 stage 3): hierarchical caches build node
+    # active-level trimming (): hierarchical caches build node
     # metadata and stage groups for levels root_level:ell only
     # (level_offsets[1:root_level+1] stay 0; nodes at root_level have parent 0).
     # Cubic hierarchical caches carry 1 (level 0 trimmed — its multipole/local
@@ -2702,10 +2664,10 @@ mutable struct RadixFMMCache{TF,LH}
     max_n_bodies::Int
     device::Bool
     # 13-row (potential + gradient + 9-component hessian) vs 4-row output,
-    # chosen at construction (task 032): the scalar 4-row path stays
+    # chosen at construction: the scalar 4-row path stays
     # bandwidth-identical when hessian output is off.
     hessian::Bool
-    options::CUDARadixLifecycleOptions{TF}
+    options::RadixLifecycleOptions{TF}
     policy::Any                     # ConstantPAnalyticStencil
     # step-invariant stencil classification and capacity bounds
     accepted_offsets::Vector{SVector{3,Int}}
@@ -2725,26 +2687,26 @@ mutable struct RadixFMMCache{TF,LH}
     sort_offsets::Vector{Int}
     source_buffers::Any             # NTuple{N,Matrix{TF}} capacity-width repack buffers
     target_buffers::Any             # per-switch-layout scatter buffers (lazy)
-    device_ctx::Any                 # CUDA-side update context (task 023 step 7)
+    device_ctx::Any                 # CUDA-side update context (the port step 7)
     n_systems::Int
     built::Bool
     step::Int
-    # opt-in adaptive octree (task 039): `nothing` unless an AdaptiveTreePolicy
-    # was passed at construction. Host-only until row 041. Task 040 wires
+    # opt-in adaptive octree: `nothing` unless an AdaptiveTreePolicy
+    # was passed at construction. Host-only until a later stage. the port wires
     # consumption: with the policy armed, the host `fmm!` branch runs the
     # adaptive resident lifecycle (`adaptive_state`) instead of the uniform one.
     adaptive::Any                   # AdaptiveTreePolicy or nothing
     adaptive_tree::Any              # AdaptiveRadixTree{TF} or nothing
     adaptive_lists::Any             # AdaptiveInteractionLists or nothing
-    adaptive_state::Any             # AdaptiveResidentLifecycle or nothing (task 040)
-    # task 047: construction snapshot of the construction-locked radix
+    adaptive_state::Any             # AdaptiveResidentLifecycle or nothing
+    # construction snapshot of the construction-locked radix
     # settings (Vector{Pair{Symbol,Any}}); verified at device-step entry so a
     # post-construction flip errors loudly instead of being silently ignored.
     locked_settings::Any
 end
 
 """
-Host resident-lifecycle container for the adaptive octree (task 040). Wraps a
+Host resident-lifecycle container for the adaptive octree. Wraps a
 capacity-sized [`DeviceResidentRadixState`](@ref) whose `grid` is a genuine
 `DeviceRadixGrid` **mirror** of the [`AdaptiveRadixTree`](@ref) node table
 (the 039 level-major layout matches the uniform convention): `node_centers`,
@@ -2759,10 +2721,10 @@ to leaf-cell slots via `leaf_slot_of`; W/X pairs feed the task-040 M2T/S2L
 kernels using the `harmonics` scratch (legacy `irregular_harmonics!` layout,
 order `P_phi + 2`).
 
-All capacities are fixed at construction (task 023 contract): per-step refresh
+All capacities are fixed at construction (the port contract): per-step refresh
 and the full lifecycle are allocation-free after warm-up, and capacity
 violations throw. Host-only, single-threaded (the `harmonics` scratch is
-shared across pairs); the CUDA mirror is row 041.
+shared across pairs); the CUDA mirror is a later stage.
 """
 mutable struct AdaptiveResidentLifecycle
     state::Any                # DeviceResidentRadixState (host arrays)
@@ -2774,7 +2736,7 @@ mutable struct AdaptiveResidentLifecycle
 end
 
 """
-Device-resident adaptive octree context (task 041) — the CUDA mirror of the
+Device-resident adaptive octree context — the CUDA mirror of the
 039/040 host adaptive machinery. Owns the device adaptive node table (a
 `DeviceRadixGrid` whose node block is the level-major adaptive tree, with
 leaves presented as cells), the construction/balance/DTR scratch, the
@@ -2902,7 +2864,7 @@ mutable struct DeviceAdaptiveCUDAContext
     profile_stages::Bool
     stage_ns::Vector{UInt64}    # refresh sub-stages (sort/build/balance/finalize/dtr/csr/groups)
     step::Int
-    # task 041e: target-owned U CSR for the fused nearfield shapes.
+    # target-owned U CSR for the fused nearfield shapes.
     # Allocated (u_capacity-sized) only when CUDA_NEARFIELD_SHAPE is not :pairs.
     # at construction (zero-length otherwise, so the default path pays no
     # memory); rebuilt on occupancy epochs from the slot-mapped U list by a
@@ -2975,3 +2937,7 @@ function DeviceResidentRadixState{TF,B,LH}(grid, interaction_list, source_bodies
         RadixStepCounts(source_bodies, nothing, multipoles, route_targets, nothing),
     )
 end
+
+# the names of the native-CUDA era, kept as aliases for one release
+const CUDARadixLifecycleOptions = RadixLifecycleOptions
+const CUDARadixTransferCounters = RadixTransferCounters

@@ -73,7 +73,7 @@ for (case_i, (n, K_max, ell_max, P, lh, dpb, balance)) in pairs(CASES)
     build = ext.ka_build_adaptive_tree!(actx, devarray(positions), ell_max, K_max,
         balance, x_min, h0)
 
-    options = FM.CUDARadixLifecycleOptions(; precision=Float32)
+    options = FM.RadixLifecycleOptions(; precision=Float32)
     state = ext.ka_radix_state(actx, build, devarray(source_buffer), P, Val(lh);
         options=options)
 
