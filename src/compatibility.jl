@@ -817,14 +817,11 @@ get_hessian(system::AbstractMatrix, ::DerivativesSwitch{<:Any,<:Any,false}, i) =
     get_third_derivative(target_buffer, derivatives_switch, i_body)
 
 Returns the third derivative `T[i,j,k] = ∂H[i,j]/∂x[k]` induced at the `i_body`th body of
-`target_buffer` as a [`ThirdDerivativeTensor`](@ref). The two-argument form assumes the
-default layout (rows 17:34, no metadata or extra outputs); the switch-aware form reads the
-rows given by [`third_derivative_range`](@ref) and throws an `ArgumentError` if the switch
+`target_buffer` as a [`ThirdDerivativeTensor`](@ref). The two-argument form refuses (it
+assumed the fixed layout); the switch-aware form reads the rows given by [`third_derivative_range`](@ref) and throws an `ArgumentError` if the switch
 did not request third derivatives.
 """
-function get_third_derivative(system::AbstractMatrix{TF}, i) where TF
-    return ThirdDerivativeTensor(SVector{18,TF}(ntuple(n -> @inbounds(system[16 + n, i]), Val(18))))
-end
+get_third_derivative(system::AbstractMatrix, i) = _switchless("get_third_derivative")
 function get_third_derivative(system::AbstractMatrix{TF}, switch::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,true}, i) where TF
     first_row = first(third_derivative_range(switch))
     return ThirdDerivativeTensor(SVector{18,TF}(ntuple(n -> @inbounds(system[first_row + n - 1, i]), Val(18))))
@@ -905,10 +902,7 @@ assumes the default layout (rows 17:34); the switch-aware form uses
 [`third_derivative_range`](@ref) and throws an `ArgumentError` if the switch did not
 request third derivatives.
 """
-set_third_derivative!(system::Matrix, i, tensor::ThirdDerivativeTensor) =
-    _set_third_derivative_packed!(system, 17, i, packed_data(tensor))
-set_third_derivative!(system::Matrix, i, data::SVector{18}) =
-    _set_third_derivative_packed!(system, 17, i, data)
+set_third_derivative!(system::Matrix, i, value) = _switchless("set_third_derivative!")
 set_third_derivative!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,true}, i, tensor::ThirdDerivativeTensor) =
     _set_third_derivative_packed!(system, first(third_derivative_range(switch)), i, packed_data(tensor))
 set_third_derivative!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,<:Any,<:Any,<:Any,true}, i, data::SVector{18}) =

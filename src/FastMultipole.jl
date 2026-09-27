@@ -135,6 +135,8 @@ export run_host_radix_lifecycle!, finalize_radix_output!
 include("resident_elements.jl")
 include("resident_extra_tree.jl")
 include("radix_extra_systems.jl")
+include("radix_nearfield.jl")
+export radix_nearfield
 include("radix_settings.jl")
 export radix_settings, radix_setting, radix_setting_lock, snapshot_locked_radix_settings,
     verify_locked_radix_settings

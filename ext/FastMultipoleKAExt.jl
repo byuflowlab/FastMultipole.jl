@@ -8181,6 +8181,7 @@ end
 
 function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         targets::Tuple, switches::Tuple; sfs::Bool=false, sfs_dsigma::Bool=false,
+        nearfield_pass=nothing,
         workgroup=KA_AUTO_WORKGROUP, extra_targets::Tuple=(),
         extra_target_switches::Tuple=(), extra_sources::Tuple=(),
         extra_tree_sources::Tuple=(), self_induce::Bool=true)
@@ -8248,6 +8249,15 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
             "sfs=true evaluation requires a RadixFMMCache built with sfs=true"))
         ka_launch_sfs!(state; dsigma=sfs_dsigma)
         _utick!(:sfs, KA.get_backend(state.output))
+    end
+    if nearfield_pass !== nothing
+        # the consumer's own pass over the U-list direct pairs (radix_nearfield):
+        # same point as the SFS pass above, and the direct arm builds no pairs
+        direct_arm && throw(ArgumentError(
+            "nearfield_pass is not supported on the all-pairs direct arm " *
+            "(radix setting :RADIX_DIRECT_ARM): it runs over the U-list direct pairs, which this arm does not build"))
+        nearfield_pass(cache)
+        _utick!(:nearfield_pass, KA.get_backend(state.output))
     end
     # after the SFS pass, as on the host (src/fmm.jl): the SFS estimator reads
     # the velocity gradient of the resident bodies and the tree sources only

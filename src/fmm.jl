@@ -886,6 +886,10 @@ path is only selected by passing a `RadixFMMCache`.
 - `sfs::Bool=false`: deliver the subfilter-scale vortex-stretching term E_str
   through [`sfs_to_target!`](@ref) (task 048); requires a cache built with
   `RadixFMMCache(...; sfs=true, hessian=true)` (`ArgumentError` otherwise)
+- `nearfield_pass=nothing`: a function `f(cache)` run once the lifecycle has the
+  standard outputs of the resident bodies and the tree sources, before extra
+  sources are added and before delivery: a consumer's own pairwise pass over
+  the near field (see [`radix_nearfield`](@ref)); requires the self-inducing call
 - `lamb_helmholtz=nothing`: optional cross-check against the cache's `LH` parameter
 
 The cache's systems must appear in both `target_systems` and `source_systems`
@@ -900,6 +904,7 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         scalar_potential::Bool=false, gradient::Bool=true, hessian=false,
         third_derivative::Bool=false,
         sfs::Bool=false, sfs_dsigma::Bool=false, tree_sources::Tuple=(),
+        nearfield_pass=nothing,
         lamb_helmholtz::Union{Nothing,Bool}=nothing) where {TF,LH}
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
@@ -918,6 +923,8 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         "lifecycle's direct pairs)"))
     sfs_dsigma && !sfs && throw(ArgumentError(
         "sfs_dsigma=true is a channel of the SFS pass; pass sfs=true as well"))
+    nearfield_pass === nothing || split.self_induce || throw(ArgumentError(
+        "nearfield_pass runs over the lifecycle's direct pairs, which only the self-inducing call builds"))
     lamb_helmholtz === nothing || Bool(lamb_helmholtz) == LH || throw(ArgumentError(
         "lamb_helmholtz=$(lamb_helmholtz) conflicts with the cache's lamb_helmholtz=$LH; " *
         "the Lamb-Helmholtz channel is fixed at cache construction"))
@@ -932,7 +939,7 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
     extra_switches = Tuple(all_switches[i] for i in split.extra_target_index)
     main = split.main
     if cache.device
-        _radix_cache_device_step!(cache, main, switches; sfs, sfs_dsigma,
+        _radix_cache_device_step!(cache, main, switches; sfs, sfs_dsigma, nearfield_pass,
             extra_targets=split.extra_targets, extra_target_switches=extra_switches,
             extra_sources=split.extra_sources, extra_tree_sources=tree_sources,
             self_induce=split.self_induce)
@@ -947,6 +954,7 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
             _radix_extra_sources_into_output!(cache.state, tree_sources)
         end
         sfs && _run_host_radix_sfs!(cache.state; dsigma=sfs_dsigma)
+        nearfield_pass === nothing || nearfield_pass(cache)
         _radix_extra_sources_into_output!(cache.state, split.extra_sources)
         finalize_radix_output!(cache.state, main; derivatives_switches=switches,
             target_buffers=_radix_cache_target_buffers!(cache, switches))
@@ -968,6 +976,7 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         run_adaptive_host_radix_lifecycle!(cache)
         adaptive_state = (cache.adaptive_state::AdaptiveResidentLifecycle).state
         sfs && _run_host_radix_sfs!(adaptive_state; dsigma=sfs_dsigma)
+        nearfield_pass === nothing || nearfield_pass(cache)
         _radix_extra_sources_into_output!(adaptive_state, split.extra_sources)
         finalize_radix_output!(adaptive_state, main;
             derivatives_switches=switches,

@@ -4476,12 +4476,12 @@ function _build_cuda_dense_m2l_plan(args...)
 end
 
 function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switches::Tuple;
-        sfs::Bool=false, sfs_dsigma::Bool=false, extra_targets::Tuple=(),
+        sfs::Bool=false, sfs_dsigma::Bool=false, nearfield_pass=nothing, extra_targets::Tuple=(),
         extra_target_switches::Tuple=(), extra_sources::Tuple=(),
         extra_tree_sources::Tuple=(), self_induce::Bool=true)
     hook = _RADIX_DEVICE_STEP_HOOK[]
     hook === nothing && throw(RadixDeviceUnavailable(radix_device_status()))
-    return hook(cache, targets, switches; sfs, sfs_dsigma, extra_targets,
+    return hook(cache, targets, switches; sfs, sfs_dsigma, nearfield_pass, extra_targets,
         extra_target_switches, extra_sources, extra_tree_sources, self_induce)
 end
 

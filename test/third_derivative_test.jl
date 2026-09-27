@@ -33,7 +33,7 @@ _alloc_third_set_packed!(buffer, switch, data) = @allocated set_third_derivative
     buffer = zeros(34, 1)
     set_third_derivative!(buffer, switch, 1, tensor)
     @test packed_data(get_third_derivative(buffer, switch, 1)) == data
-    @test get_third_derivative(buffer, 1) == tensor
+    @test_throws ArgumentError get_third_derivative(buffer, 1)   # the switchless form refuses
 
     _alloc_third_construct(data); _alloc_third_get(buffer, switch); _alloc_third_index(tensor)
     _alloc_third_packed(tensor); _alloc_third_set_tensor!(buffer, switch, tensor)
