@@ -172,13 +172,16 @@ Base.showerror(io::IO, err::RadixDeviceUnavailable) = print(io, err.reason)
 const _RADIX_DEVICE_BACKEND_NAME = Ref{Any}(nothing)
 const _RADIX_DEVICE_BUILD_HOOK = Ref{Any}(nothing)
 const _RADIX_DEVICE_STEP_HOOK = Ref{Any}(nothing)
+# a device cache repacks its bodies and refreshes its lists through the extension
+# (`update_radix_state!` on a device cache)
+const _RADIX_DEVICE_UPDATE_HOOK = Ref{Any}(nothing)
 
 """
     register_radix_device_backend!(name, build, step!)
 
 Register a non-CUDA device-resident radix lifecycle. `build` is called with the
 argument list of `_radix_cache_device_build` and must return a built
-`RadixFMMCache`; `step!` is called as `step!(cache, targets, switches; sfs)`.
+`RadixFMMCache`; `step!` is called as `step!(cache, targets, switches; nearfield_pass, ...)`.
 Called from a package extension's `__init__`.
 """
 function register_radix_device_backend!(name, build, step!)

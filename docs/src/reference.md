@@ -197,6 +197,7 @@ host_radix_state
 run_host_radix_lifecycle!
 finalize_radix_output!
 update_radix_state!
+radix_nearfield
 ```
 
 ## Radix Settings

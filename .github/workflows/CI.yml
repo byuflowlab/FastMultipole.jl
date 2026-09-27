@@ -23,7 +23,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.11'
+          - 'lts'
           - '1'
         os:
           - ubuntu-latest
@@ -41,7 +41,12 @@ jobs:
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         env:
-          FASTMULTIPOLE_GPU_TESTS: "0"   # the KA device suites need a GPU; the macOS runner is Apple but has none
+          # No hosted GitHub runner has a GPU (the macOS runner is Apple silicon without
+          # a usable Metal device), so the KernelAbstractions device suites cannot run
+          # here and are switched off on every runner. They are run by hand before a
+          # release: `bash test/metal_env/run_suites.sh` on a Metal machine, or with
+          # FASTMULTIPOLE_GPU_TEST_PROJECT pointing at a CUDA project (see docs/src/gpu.md).
+          FASTMULTIPOLE_GPU_TESTS: "0"
   docs:
     name: Documentation
     runs-on: ubuntu-latest

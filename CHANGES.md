@@ -7,7 +7,7 @@
   the four point body types (`Point{Source}`, `Point{Dipole}`, `Point{Vortex}`,
   `Point{SourceVortex}`), the three straight filament types and the four planar triangular panel
   types (`Panel{3,Source}`, `Panel{3,Dipole}`, `Panel{3,SourceDipole}`, `Panel{3,Vortex}`), with the singular and regularized vortex nearfield kernels
-  and the subfilter-scale pass. The native CUDA lifecycle is removed.
+  and a consumer near-field pass hook (`fmm!(...; nearfield_pass)`, `radix_nearfield`). The native CUDA lifecycle is removed.
 - Radix-grid FMM path on the host: `RadixFMMCache`, hierarchical stencils, dense
   and concatenated M2L operators, `FmmPlan` for repeated calls on frozen geometry,
   nearfield influence cache, extra sources and targets.
@@ -34,6 +34,32 @@
 - GPU tests can be selected with `FASTMULTIPOLE_GPU_TESTS`; NVIDIA runs require
   `FASTMULTIPOLE_GPU_TEST_PROJECT` to name a CUDA-enabled Julia project.
 - Minimum Julia version 1.11.
+
+### Breaking changes and migration
+
+- Target buffer layout: the output rows follow the `DerivativesSwitch`
+  (`scalar_potential_index`, `gradient_range`, `hessian_range`,
+  `third_derivative_range`, `extra_output_range`, `metadata_index`). The
+  switchless accessors (`get_gradient(buffer, i)`, `set_hessian!(buffer, i, h)`,
+  and the scalar-potential and third-derivative forms) now throw an
+  `ArgumentError` naming the switch-aware form; code that indexed rows directly
+  (`buffer[5:7, i]`) must migrate by hand. `get_previous_influence` is removed;
+  carry prior-step values in metadata rows (`metadata_per_body`,
+  `metadata_to_buffer!`).
+- Third derivatives: `third_derivative=true` on the host path, packed
+  `(xx,xy,xz,yy,yz,zz)` per component in `third_derivative_range`
+  (`ThirdDerivativeTensor`, `packed_data`, `dense`); not on the device path.
+- New consumer traits: `residency`, `device_backend`, `body_type`,
+  `direct_kernel`, `supports_third_derivative`, `source_revision`.
+- Removed exports: `SingleBranch`, `MultiBranch`, `SingleTree`, `MultiTree`,
+  `Body`, `buffer_element`, `direct_gpu!`, `unsort!`, `resort!`, `error`.
+- Consumer physics left FastMultipole: the subfilter-scale pass, its
+  core-scaling derivatives, the ζ reconstruction and the SFS repass
+  (`fmm!(...; sfs, sfs_dsigma)`, `RadixFMMCache(...; sfs, sfs_transposed,
+  sfs_active_row)`, `sfs_to_target!`, `sfs_dsigma_to_target!`,
+  `zeta_to_target!`, `output_from_target!`, `radix_zeta!`, `radix_sfs_repass!`)
+  are gone; a consumer runs its own pass through `nearfield_pass` and reads
+  `radix_nearfield(cache)` (FLOWVPM does).
 
 ## v0.1.0 - 2024 August
 

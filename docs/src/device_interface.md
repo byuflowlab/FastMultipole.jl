@@ -176,8 +176,8 @@ capacity-sized buffers, so:
   returned by `get_n_bodies` — any `1 ≤ n ≤ max_n_bodies` is valid at any
   step.
 - **Zero steady-state allocation.** After construction and one warm-up call per
-  requested output layout (target, SFS and dsigma buffers are allocated lazily on
-  first use of each switch combination), `fmm!` mutates only the valid prefixes
+  requested output layout (target buffers are allocated lazily on first use of
+  each switch combination), `fmm!` mutates only the valid prefixes
   of framework-owned buffers. Consumer hooks must likewise be
   steady-state allocation-free (broadcasts into existing device arrays,
   kernels, `copyto!` — no fresh `CuArray`s per step).
@@ -380,3 +380,18 @@ for a complete device-resident scalar system: all trait overloads, the device
 `source_to_buffer!`/`buffer_to_target!` methods, capacity-sized cache
 construction, and a three-step convection loop that asserts the zero-transfer
 counter contract.
+
+## A consumer pass over the near field
+
+A consumer with pairwise physics of its own over the near field (a vortex
+method's subfilter-scale estimator, a vorticity reconstruction) runs it inside
+the step with `fmm!(...; nearfield_pass = f)`: `f(cache)` is called once the
+lifecycle has completed the resident bodies' standard outputs and the
+tree-carried sources, before extra sources are added and before delivery.
+[`radix_nearfield`](@ref)`(cache)` hands the pass the sorted packed bodies, the
+sorted outputs, the cell ranges, the direct pair list and the permutation (host
+arrays on a host cache, device arrays on a device cache); the pass owns its
+scratch, its host loops or KernelAbstractions kernels, and the delivery into its
+own storage. FastMultipole keeps no consumer physics: the subfilter-scale pass
+FLOWVPM used to run through `fmm!(...; sfs=true)` is FLOWVPM's own code on this
+hook.

@@ -456,56 +456,6 @@ function buffer_to_target!(target_system, target_buffer, derivatives_switch, sor
     end
 end
 
-"""
-    sfs_to_target!(target_system, sfs_buffer, sort_index=1:get_n_bodies(target_system))
-
-Deliver the SFS (subfilter-scale vortex-stretching) result of an evaluation to
-the consumer: `sfs_buffer` is a **framework-owned** `3 x n_bodies` matrix in
-**global (unsorted) body order** holding `E_str` for every body of
-`target_system` (device caches pass a device matrix to `DeviceResident`
-systems, a host matrix otherwise). Same delivery semantics as
-[`buffer_to_target!`](@ref): the buffer holds the total influence of this
-evaluation; overwrite vs accumulate is the consumer's choice, and the call
-must be steady-state allocation-free. Only consumers evaluated with
-`fmm!(...; sfs=true)` on an `sfs=true` [`RadixFMMCache`](@ref) need this
-overload (task 048).
-"""
-function sfs_to_target!(target_system, sfs_buffer,
-        sort_index=1:get_n_bodies(target_system))
-    throw(ArgumentError(
-        "target systems evaluated with sfs=true must overload " *
-        "FastMultipole.sfs_to_target!(target_system, sfs_buffer, sort_index) " *
-        "for $(typeof(target_system))"))
-end
-
-"""
-    zeta_to_target!(target_system, zeta_buffer, sort_index=1:get_n_bodies(target_system))
-
-Deliver the regularized-vorticity reconstruction ζ (3 x n_bodies, global body
-order) computed by [`radix_zeta!`](@ref) to the target system. Overload for
-device-resident systems that use core-spreading viscosity; the buffer is
-assigned, not accumulated.
-"""
-function zeta_to_target!(target_system, zeta_buffer,
-        sort_index=1:get_n_bodies(target_system))
-    throw(ArgumentError(
-        "FastMultipole.zeta_to_target!(target_system, zeta_buffer, sort_index) " *
-        "is not implemented for $(typeof(target_system))"))
-end
-
-"""
-    radix_zeta!(cache::RadixFMMCache, systems::Tuple, om, out)
-
-Nearfield-only pair sum ζ_i = Σ_j Γ_j ζ(|x_i - x_j|/σ_j)/σ_j³ over the radix
-direct list (self pair included, no cutoff), the device counterpart of the
-host `zeta_fmm` used by core spreading. `om` is a 3 x (source capacity) sorted-
-order accumulator, `out` a 3 x n_bodies global-order buffer; both are owned by
-the caller. Delivered through [`zeta_to_target!`](@ref). Requires the
-KernelAbstractions extension and a device-resident cache.
-"""
-function radix_zeta!(cache, systems::Tuple, om, out; workgroup::Int=64)
-    throw(ArgumentError("radix_zeta! requires the KernelAbstractions extension and a device-resident RadixFMMCache (got $(typeof(cache)))"))
-end
 
 """
     extra_target_data_to_buffer!(buffer, i_body, system, i_sorted)
