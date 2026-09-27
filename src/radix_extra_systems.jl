@@ -126,6 +126,27 @@ end
 end
 _extra_pair_has_hessian(::Union{PartitionedVortex,RegularizedVortex}) = true
 
+# Straight vortex filaments (Filament{Vortex} systems, VortexFilamentKernel) as
+# an extra source: the packed column carries the midpoint in rows 1:3, the
+# strength in 5:7 and the endpoints in 8:13 (core_row if regularized), the
+# layout `_vortex_filament_pair` reads. Added 2026-09-26: without these the
+# near pairs of a filament extra source threw the default above.
+@inline function _extra_pair_ug(kernel::VortexFilamentKernel, tx, ty, tz, source_buffer, j)
+    @inbounds dx = tx - source_buffer[1, j]
+    @inbounds dy = ty - source_buffer[2, j]
+    @inbounds dz = tz - source_buffer[3, j]
+    r2 = dx * dx + dy * dy + dz * dz
+    return _direct_pair_ug(kernel, dx, dy, dz, r2, r2 > zero(r2) ? inv(sqrt(r2)) : zero(r2), source_buffer, j)
+end
+@inline function _extra_pair_ugh(kernel::VortexFilamentKernel, tx, ty, tz, source_buffer, j)
+    @inbounds dx = tx - source_buffer[1, j]
+    @inbounds dy = ty - source_buffer[2, j]
+    @inbounds dz = tz - source_buffer[3, j]
+    r2 = dx * dx + dy * dy + dz * dz
+    return _direct_pair_ugh(kernel, dx, dy, dz, r2, r2 > zero(r2) ? inv(sqrt(r2)) : zero(r2), source_buffer, j)
+end
+_extra_pair_has_hessian(::VortexFilamentKernel) = true
+
 #------- host packing -------#
 
 function _radix_extra_target_positions(::Type{TF}, system) where TF
