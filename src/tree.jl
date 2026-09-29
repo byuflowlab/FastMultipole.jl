@@ -2225,7 +2225,7 @@ buffers on every `fmm!`/`solve!` call, so no expansion data needs updating.
 
 The caller owns buffer freshness: source buffers are refilled from the
 systems on each planned `fmm!` call, but target buffer POSITIONS are not —
-use [`transform_plan!`](@ref) (or the `FastGaussSeidel` `transform!`) which
+use [`transform_plan!`](@ref) (or `transform_solver!` for a `FastGaussSeidel`), which
 refreshes them, rather than calling this on a plan's trees directly.
 
 `R` must be a proper rotation (`R'R = I`, `det(R) = +1`); anything else

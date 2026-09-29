@@ -1041,21 +1041,19 @@ end
 """
 One Gauss-Seidel sweep over all source leaves.
 
-- `sweep_order == :lexicographic` (default): the historical serial loop —
-  solve leaf, immediately scatter its nonself update — bit-identical to the
-  pre-refactor code. NOTE the historical `reverse_pass` quirk is preserved:
-  the legacy loop iterated `enumerate(reverse(leaf_index))` but used only the
-  enumeration counter `i_leaf`, so the "reverse" sweep visited leaves in
-  FORWARD order; both sweep orders keep that behavior (flagged for review —
-  changing it would alter the reverse_pass iteration). Consequently the
-  `reverse_sweep` argument is currently IGNORED: `reverse_pass=true` runs a
-  second forward sweep identical to the first.
+- `sweep_order == :lexicographic` (default): the serial loop — solve a leaf,
+  then immediately scatter its nonself update.
+
 - `sweep_order == :colored`: within each color, leaf solves and nonself
   PRODUCTS run in parallel (all writes per leaf are disjoint); the RHS
   scatter then runs serially in ascending leaf order at the color boundary.
   Coloring guarantees no same-color leaf reads rows another writes, so this
   reproduces sequential GS in color-major leaf order exactly (see
   `color_leaves`), deterministically at any thread count.
+
+The `reverse_sweep` argument is ignored by both sweep orders: leaves are
+always visited in forward order, so `reverse_pass=true` runs a second forward
+sweep identical to the first.
 """
 function gs_sweep!(strengths, self_matrices, leaf_lu_cache, right_hand_side,
                    nonself_matrices, old_influence_storage, source_tree,
@@ -1086,7 +1084,7 @@ function gs_sweep!(strengths, self_matrices, leaf_lu_cache, right_hand_side,
             end
         end
 
-    else # :lexicographic — the historical serial loop, bit-identical
+    else # :lexicographic — serial loop
 
         for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
             leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])

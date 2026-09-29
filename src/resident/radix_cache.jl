@@ -90,7 +90,7 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
     # direct list covers every pair at every offset, so no pair can fall to
     # the singular far field — the adequacy gate is vacuous.
     isempty(cache.accepted_offsets) && return nothing
-    # works for Matrix and CuMatrix alike (device reduction + scalar download)
+    # works for host and device matrices alike (device reduction + scalar download)
     sigma_max = Float64(_device_row_max(source_bodies, kernel.sigma_row, n))
     sigma_max > 0 || return nothing
     g_min = _leaf_stencil_min_gap(cache)
@@ -109,9 +109,9 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
         "(ratio $(round(g_min * h_leaf / cutoff, sigdigits=4)), g_min = " *
         "$(round(g_min, sigdigits=4)), sigma_max = $(round(sigma_max, sigdigits=4)), " *
         "ell = $(cache.ell)); $depth_msg. Pairs inside the cutoff would be handled " *
-        "by the singular far field and silently lose the regularization (row 032a)."
-    # a hierarchical cache no longer
-    # throws here. sigma can outgrow every admissible stencil geometry mid-run
+        "by the singular far field and silently lose the regularization."
+    # a hierarchical cache does not
+    # throw here. sigma can outgrow every admissible stencil geometry mid-run
     # (core spreading + merging fatten sigma_max monotonically), so the caller
     # demotes the cache to the all-direct zero-M2L geometry instead:
     # every pair is evaluated by the regularized direct kernel on the same
@@ -191,7 +191,7 @@ function _assert_radix_positions_in_box(systems::Tuple, x_min::SVector{3,TF},
 end
 
 # Resolve the rectangular geometry contract from the bounds box size.
-# Scalar sizes reproduce the legacy cubic contract bit-for-bit. Vector sizes
+# A scalar size gives a cube of that side. Vector sizes
 # embed the box in a virtual cube of half-width h0 = maximum(box_size)/2 whose
 # leaf width Δ = 2h0/2^ell tiles every axis: axis a spans 2^ell_axes[a] leaf
 # cells with its extent snapped up to Δ * 2^ell_axes[a] (never below the
@@ -222,41 +222,42 @@ function _resolve_radix_ell_axes(box_size, ell::Int, ::Type{TF}) where TF
     return ell_axes, h0, box_extent
 end
 
-# Measured window widths. The host default of 4 comes from the 026 host
-# campaign; on the GPU the per-window flag/scan/compact carries a fixed ~50 us
+# Measured window widths. The host default of 4 is the fastest measured host
+# width. On the GPU the per-window flag/scan/compact carries a fixed ~50 us
 # device-to-host round trip, so route generation scales as
 # `(ell - 1) * ceil(noffsets / K)` and K = 4 spends 72-164 ms per step on latency
 # alone. On an H200, route generation fell 109-193x from K = 4 to
 # a whole-level window.
 #
-# then measured the residual at n = 1e6: K = 256 still spent
-# 24.19 ms per step in route generation against 2.13 ms for a whole-level window,
-# so the device default is now larger than any supported shell's offset count and
-# every level is generated in one window. The cost is route-buffer memory, which
+# At n = 1e6, K = 256 still spent 24.19 ms per step in route generation against
+# 2.13 ms for a whole-level window, so the device default is larger than any
+# supported shell's offset count and every level is generated in one window. The cost is route-buffer memory, which
 # grows as `min(K, noffsets) * max_level_nodes` (2.0 GB persistent at n = 1e6,
 # ell = 5 on the default policy); pass a smaller `window_classes` on
 # memory-constrained devices.
 const RADIX_HOST_WINDOW_CLASSES = 4
 const RADIX_DEVICE_WINDOW_CLASSES = 4096
 
-# Measured defaults for `RadixFMMCache(...; options=nothing)` (tasks 024 and 028).
+# Measured defaults for `RadixFMMCache(...; options=nothing)`.
 # Both choices are made from the expansion order, the Lamb-Helmholtz channel, the
-# platform, and the dense operator footprint — the selectors 024 found sufficient —
-# and both are overridden by passing an explicit `options`.
+# platform, and the dense operator footprint — measured to be sufficient
+# selectors — and both are overridden by passing an explicit `options`.
 #
-# Precision. the port measured Float32 max gradient error at 5.33e-4 (CPU) / 5.34e-4
-# (H200) essentially independently of `P`, against 5.25e-6 for Float64: Float32 has an
-# accuracy floor, not an accuracy cost proportional to the order. At literature P = 4
-# that floor sits under the stencil's own truncation error (the port measured 3.186e-4
-# Float32 vs 3.185e-4 Float64 at n = 1e6, +0.03%), so Float32 is free accuracy-wise and
-# worth 1.14x; above P = 4 the user is paying for accuracy Float32 would discard.
+# Precision. Float32 is the chosen default only for literature P <= 4
+# (expansion_order <= 3). There the stencil's own truncation error dominates:
+# at n = 1e6 the max gradient error was 3.186e-4 in Float32 vs 3.185e-4 in
+# Float64 (+0.03%), and Float32 was 1.14x faster. Above P = 4 the default is
+# Float64. This is a chosen default, not a Float32 accuracy floor: measured
+# against a Float64 all-pairs reference, the Float32 FMM error keeps falling with
+# P (to ~6e-7 on a wake case at P ≈ 8-10), so a Float32 cache at higher order is
+# a legitimate explicit choice.
 _default_radix_precision(expansion_order::Int) =
     expansion_order <= 3 ? Float32 : Float64
 
 # Host strategy, from the measured recurring-step rules: dense wins every measured
 # P = 4 and P = 8 case; precomputed-y wins P = 12, where dense is either unsupported
-# (Float32) or over its memory gate. The port confirmed dense over precomputed-y on
-# the hierarchical path at n = 1e6 (106.3 vs 172.3 ms). A device cache always takes
+# (Float32) or over its memory gate. Dense also beat precomputed-y on the
+# hierarchical path at n = 1e6 (106.3 vs 172.3 ms). A device cache always takes
 # `ConcatenatedFixedZM2L`: it is the only plan the KernelAbstractions build has.
 #
 # Dense trades construction for steady state (~20 s build and ~300-370 break-even
@@ -269,7 +270,7 @@ function _default_radix_m2l_strategy(::Type{TF}, expansion_order::Int, LH::Bool,
     device && return ConcatenatedFixedZM2L()
     dense = DenseTranslationM2L()
     fallback = PrecomputedFactoredYM2L()
-    # 024 found the operator payload is dense's binding constraint; keep a margin
+    # the operator payload is dense's binding constraint; keep a margin
     # under its own gate so the auto choice never construction-errors on storage.
     dense_bytes = nclasses * ndof * ndof * sizeof(TF)
     dense_bytes <= (dense.max_persistent_bytes * 3) ÷ 4 || return fallback
@@ -364,7 +365,7 @@ is reallocated over the cache's lifetime.
 - `max_n_bodies::Int=n`: capacity bound; steps may use any `1 <= n <= max_n_bodies`
 - `bounds=nothing`: `(x_min::SVector{3}, box_size)` fixed domain box; default derives
   a cube from the current positions inflated by `bounds_margin`. `box_size` may be a
-  scalar (cubic, legacy) or a 3-vector/`NTuple{3}` of per-axis extents:
+  scalar (cubic) or a 3-vector/`NTuple{3}` of per-axis extents:
   the rectangular box is embedded in a virtual cube of half-width
   `h0 = maximum(box_size)/2`, per-axis extents snap up to whole leaf cells
   (readable as `cache.ell_axes` / `cache.box_extent`), and the per-axis in-box
@@ -377,18 +378,17 @@ is reallocated over the cache's lifetime.
 - `device::Bool=false`: run the lifecycle device-resident (requires a registered
   device backend, i.e. the KernelAbstractions extension)
 - `options::RadixLifecycleOptions`: operator strategies/precision. Omitted, both
-  are selected from the measured 024/028 rules (see below); passed explicitly, it is
+  are selected from measured rules (see below); passed explicitly, it is
   used verbatim. The resolved choice is readable as `cache.state.options`.
 - `near_radius2`: rigid leaf near set `{o : |o|^2 <= near_radius2}` of the default
   hierarchical policy (default `$(RADIX_DEFAULT_NEAR_RADIUS2)`; `12` is the
   `theta=0.5` stencil and `3` the classic FMM one). Passing it explicitly also
   selects the *uniform* geometry, i.e. it drops the default level schedule below.
 - `level_radii2`: per-M2L-level near radii, coarse to fine; must be
-  non-increasing and end at `near_radius2` (). Anchored to
-  levels `2:ell` (legacy length `ell - 1`) or — the port, rectangular caches
-  with trimmed coarse levels — to the active M2L levels
-  `first_m2l_level:ell`; the legacy anchoring is sliced to the active range,
-  which is the identity on cubic caches
+  non-increasing and end at `near_radius2`. Anchored either to levels `2:ell`
+  (length `ell - 1`) or, for rectangular caches with trimmed coarse levels, to
+  the active M2L levels `first_m2l_level:ell`; a `2:ell` schedule is sliced to
+  the active range, which is the identity on cubic caches
 - `window_classes`: route-window width of the hierarchical policy; defaults to the
   measured `$(RADIX_DEVICE_WINDOW_CLASSES)` on device and `$(RADIX_HOST_WINDOW_CLASSES)`
   on host. The flat policy (`stencil_epsilon`, or `ell < 2`) has no route windows
@@ -401,17 +401,16 @@ is reallocated over the cache's lifetime.
   `level_radii2`, or `window_classes` throws; likewise `stencil_epsilon` (flat)
   and `ell < 2` (flat) reject `near_radius2` and `level_radii2`.
 
-the default policy is [`HierarchicalRigidStencil`](@ref); its default geometry is `near_radius2=$(RADIX_DEFAULT_NEAR_RADIUS2)` with
+The default policy is [`HierarchicalRigidStencil`](@ref); its default geometry is `near_radius2=$(RADIX_DEFAULT_NEAR_RADIUS2)` with
 the level schedule `($(RADIX_DEFAULT_COARSE_NEAR_RADIUS2), $(RADIX_DEFAULT_NEAR_RADIUS2), ...)`,
 the fastest measured configuration inside the `P = 4` accuracy tolerance. Its tolerance is
 derived by [`rigid_stencil_epsilon`](@ref) so the analytic accuracy gate is satisfied
-by construction; pass `near_radius2=12` for the previous, more accurate and slower
-default. The flat
+by construction; pass `near_radius2=12` for a more accurate, slower
+geometry. The flat
 [`ConstantPAnalyticStencil`](@ref) is deprecated as a default but fully supported;
 it is still used automatically when `ell < 2`, where there is no hierarchy to walk.
 
-When no `options` are passed, precision and M2L strategy follow the measured rules
-of tasks 024 and 028:
+When no `options` are passed, precision and M2L strategy follow measured rules:
 
 | selector | precision | M2L strategy |
 |---|---|---|
@@ -421,10 +420,11 @@ of tasks 024 and 028:
 | `expansion_order >= 8` (literature `P >= 12`) | `Float64` | precomputed-y |
 | dense operator payload over its gate | unchanged | precomputed-y |
 
-`Float32` is selected only where the port measured its accuracy floor (~5.3e-4 max
-gradient error, essentially independent of `P`) to sit below the stencil's own
-truncation error; above `P = 4` it would discard accuracy the higher order was paid
-for. Dense trades a large construction cost for the best steady state (~300-370
+`Float32` is the default only at literature `P <= 4`, where the stencil's own
+truncation error dominates and Float32 matched Float64 accuracy (+0.03%) while
+running 1.14x faster; above that the default is `Float64`. Pass explicit `options`
+to run Float32 at a higher order. Dense trades a large construction cost for the
+best steady state (~300-370
 break-even steps in the benchmarked configuration), which suits this repeated-step cache; pass
 `options=RadixLifecycleOptions(; m2l_strategy=PrecomputedFactoredYM2L(),
 operator=FactoredRotationM2L())` for one-shot evaluation, or any explicit `options`
@@ -472,7 +472,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             "the cache with lamb_helmholtz=true (or leave it to be inferred from " *
             "has_vector_potential)"))
     end
-    # Nearfield kernel resolution (): one shared functor per
+    # Nearfield kernel resolution: one shared functor per
     # cache, resolved from the trait like body_type above; validated after the
     # options carry the final choice (below).
     dk_trait = direct_kernel(first(sources))
@@ -481,7 +481,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             "all source systems sharing a RadixFMMCache must report the same " *
             "direct_kernel; got $(direct_kernel(system)) and $dk_trait"))
     end
-    # Measured defaults (024/028). Precision depends only on the expansion order and
+    # Measured defaults. Precision depends only on the expansion order and
     # is needed for the bounds and stencil tolerance below; the strategy also depends
     # on the class count, so it is resolved once the policy is built.
     auto_options = options === nothing
@@ -529,11 +529,11 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     stencil_policy = _default_radix_policy(policy, P, TF, LH, h0, Int(ell), device,
         stencil_epsilon, near_radius2, window_classes, level_radii2)
     hierarchical = stencil_policy isa HierarchicalRigidStencil
-    # Active-level trimming (): hierarchical caches retain node
+    # Active-level trimming: hierarchical caches retain node
     # levels root_level:ell and run M2L on levels first_m2l_level:ell (the
-    # flat-top root level plus the transition levels). Cubic caches
+    # flat-top root level plus the transition levels). Cubic caches normally
     # degenerate to root_level = 1 with an empty flat-top (first_m2l_level = 2,
-    # the legacy schedule); flat-policy caches stay untrimmed (root_level = 0).
+    # the untrimmed schedule); flat-policy caches stay untrimmed (root_level = 0).
     if hierarchical
         hierarchical_tables, hierarchical_level_class_of, hierarchical_level_radii2,
             root_level, first_m2l_level =
@@ -560,7 +560,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     max_nodes = sum(_radix_level_node_capacity(L, ell_axes, Int(ell), max_cells)
         for L in root_level:Int(ell))
     # init=0 covers the zero-M2L degenerate hierarchy (first_m2l_level == ell+1,
-    # empty range — the port): no M2L level, so no per-level node bound needed.
+    # empty range): no M2L level, so no per-level node bound needed.
     max_level_nodes = Int(ell) >= 2 ? maximum(
         (_radix_level_node_capacity(L, ell_axes, Int(ell), max_cells)
          for L in (hierarchical ? first_m2l_level : 2):Int(ell)); init=0) : 0
@@ -710,8 +710,8 @@ end
 function _refresh_resident_stage_groups!(ws::ResidentOperatorWorkspace{TF},
         grid::DeviceRadixGrid, level_offsets::Vector{Int}) where TF
     ell = grid.ell
-    # the workspace group count encodes the trimmed level range (the port
-    # stage 3): groups cover levels first_level:ell only
+    # the workspace group count encodes the trimmed level range: groups cover
+    # levels first_level:ell only
     first_level = ell - length(ws.m2m_groups)
     0 <= first_level <= ell && length(ws.l2l_groups) == length(ws.m2m_groups) ||
         throw(ArgumentError("resident cache workspace does not match grid depth ell=$ell"))
@@ -782,7 +782,7 @@ end
 function _refresh_radix_tree_routes!(m2m_parent::Vector{Int}, m2m_child::Vector{Int},
         l2l_parent::Vector{Int}, l2l_child::Vector{Int}, parent_index, n_edges::Int,
         n_root_nodes::Int=1)
-    # edges are the children of the retained levels (): the
+    # edges are the children of the retained levels: the
     # first n_root_nodes nodes are roots with parent_index 0 and carry no edge
     @inbounds for edge in 1:n_edges
         node = edge + n_root_nodes
@@ -866,9 +866,11 @@ the next `fmm!`.
   box remains centered on the tight cloud; rectangularity (and, for a
   similar-shaped cloud, the resolved `ell_axes`) is preserved.
 
-Validation errors (`ArgumentError`) — an empty system, non-finite or
-nonpositive bounds, negative padding, a changed system count, or a live count
-above `max_n_bodies` — leave the cache unmodified and usable.
+Validation errors (`ArgumentError`) — an empty system when the bounds are
+derived (with explicit `bounds`, only a system set with no live bodies at all),
+non-finite or nonpositive bounds, negative padding, a changed system count, a
+live count above `max_n_bodies`, or a body outside explicit bounds — leave the
+cache unmodified and usable.
 
 Implementation (geometry-rebuild fallback): the
 geometry-dependent state — stencil classification, operator tables, grid
@@ -889,7 +891,7 @@ holds a second set of buffers (device caches: transiently ~2x device memory),
 and restarts the transfer counters (a construction-equivalent event — route and
 operator uploads recur here, never in ordinary steps). The zero-cost
 alternative — normalized unit-cube internal coordinates making the operator
-tables box-size-invariant — is recorded as a the port lever.
+tables box-size-invariant — is not implemented.
 """
 function recenter!(cache::RadixFMMCache{TF,LH}, systems;
         bounds=nothing, padding::Real=0.05) where {TF,LH}
@@ -1107,9 +1109,9 @@ function _update_host_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) 
         state.route_sources::Vector{Int}, state.route_targets::Vector{Int}, n_routes)
 
     t_stage = profiling ? time_ns() : UInt64(0)
-    # multi-root tree edges (): every node at root_level is a
-    # root, so the edge count is n_nodes - n_root_nodes (legacy: one level-0
-    # root, n_nodes - 1)
+    # multi-root tree edges: every node at root_level is a
+    # root, so the edge count is n_nodes - n_root_nodes (an untrimmed tree has
+    # one level-0 root, n_nodes - 1)
     n_root_nodes = cache.level_offsets[cache.root_level + 2]
     n_edges = max(n_nodes - n_root_nodes, 0)
     resize!(state.m2m_parent_routes, n_edges)

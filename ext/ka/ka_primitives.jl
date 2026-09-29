@@ -41,19 +41,20 @@ end
 
 #------- backend workgroup policy -------#
 #
-# `workgroup=64` was the unexamined default at most launch sites here. 64 suits
-# Metal (SIMD width 32, small threadgroups keep occupancy up on a 16-32 core
-# GPU) but wastes scheduler slots on an A100, where 256 is the usual figure for
-# the memory-bound elementwise kernels that dominate this file. Tunable sites
-# now pass `KA_AUTO_WORKGROUP` and the size is resolved per backend, so one
-# source tunes for both the local and the HPC target.
+# A workgroup of 64 suits Metal (SIMD width 32, small threadgroups keep
+# occupancy up on a 16-32 core GPU) but wastes scheduler slots on an A100, where
+# 256 is the usual figure for the memory-bound elementwise kernels that
+# dominate this file. Tunable sites pass `KA_AUTO_WORKGROUP` and the size is
+# resolved per backend, so one source tunes for both the local and the HPC
+# target.
 #
-# NOT every site is tunable. `ka_launch_b2m!`, `ka_launch_l2b!` and
-# `ka_launch_nearfield!` thread `workgroup` into `Val(workgroup)` and into `ndrange = n * workgroup`:
-# there it is the per-cell/per-pair *team size* that the kernel's `@localmem`
-# extents are declared against, not an occupancy knob. Those keep their explicit
-# sizes and are a separate tuning axis; changing one there changes the parallel
-# decomposition, not just the launch geometry.
+# NOT every site is tunable. `ka_launch_b2m!` and `ka_launch_l2b!` thread
+# `workgroup` into `Val(workgroup)` and launch `ndrange = ncell * workgroup`
+# (one group per cell), and `ka_launch_nearfield!` takes its team shape from
+# `_nf_config`: there the workgroup is the per-cell/per-pair *team size* (for
+# B2M, also what the `@localmem` reduction extents are declared against), not
+# an occupancy knob. Those keep their explicit sizes; changing one there
+# changes the parallel decomposition, not just the launch geometry.
 
 """
     KA_AUTO_WORKGROUP
@@ -117,7 +118,7 @@ end
 end
 
 """
-    ka_gather_rotate_z!(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; workgroup=64)
+    ka_gather_rotate_z!(dst, src, flat_idx, cols, row_m, row_ssign, row_pair, phis, sgn; workgroup=KA_AUTO_WORKGROUP)
 
 Device form of `_gather_rotate_z!` (src/translate_batched.jl): fused
 flat-column gather + z-axis rotation stage of the M2M/M2L source alignment.
@@ -148,7 +149,7 @@ end
 end
 
 """
-    ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=64)
+    ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=KA_AUTO_WORKGROUP)
 
 Device form of `_rotate_z_scatter_accumulate!` (src/translate_batched.jl):
 inverse z-rotation fused with an
@@ -220,10 +221,12 @@ end
 """
     ka_stacked_y_dense!(out_slab, in_slab, Ur, Vs, C, S, G, G2, ndof)
 
-Backend-agnostic port of `_stacked_y_dense!` (src/translate_batched.jl):
-the dense y-rotation application used by the resident M2M/L2L stage groups.
+Device form of `_stacked_y_dense!` (src/translate_batched.jl):
+the dense y-rotation application used by the resident M2M/L2L stage groups
+and the concat M2L.
 `LinearAlgebra.mul!` dispatches to each backend's own GPU matmul (Metal's
-MPS-backed `mul!` for `MtlArray`, CUBLAS for `CuArray`); the elementwise C/S combine runs through the slab pointwise kernels above.
+MPS-backed `mul!` for `MtlArray`, CUBLAS for `CuArray`); the elementwise C/S
+combine runs in `ka_stacked_combine_kernel!`.
 """
 function ka_stacked_y_dense!(out_slab, in_slab, Ur, Vs, C, S, G, G2, ndof::Integer)
     mul!(G, Vs, in_slab)
@@ -251,9 +254,9 @@ end
 end
 
 """
-    ka_gather_values!(dst, src, ids; workgroup=64)
+    ka_gather_values!(dst, src, ids; workgroup=KA_AUTO_WORKGROUP)
 
-Backend-agnostic port of `_gather_values!` (src/translate_batched.jl): allocation-free
+Device form of `_gather_values!` (src/translate_batched.jl): allocation-free
 value gather `dst[i] = src[ids[i]]`, used by the M2L concat plan's per-chunk column
 parameter gather (phi/theta/r/invr) from the per-class geometry tables.
 """
@@ -266,9 +269,9 @@ function ka_gather_values!(dst, src, ids; workgroup=KA_AUTO_WORKGROUP)
 end
 
 """
-    ka_gather_rows!(dst, src, rows; workgroup=64)
+    ka_gather_rows!(dst, src, rows; workgroup=KA_AUTO_WORKGROUP)
 
-Backend-agnostic port of `_gather_rows!` (src/translate_batched.jl): allocation-free
+Device form of `_gather_rows!` (src/translate_batched.jl): allocation-free
 row gather `dst[i, :] = src[rows[i], :]`, used by the Lamb-Helmholtz row-mix stage of
 `_resident_stage_group_apply!`.
 """
@@ -282,11 +285,11 @@ end
 
 #------- FUSED POINTWISE M2L PRIMITIVES -------#
 #
-# Ports of the host launcher's already-fused helpers `_prefix_trig_scale!` and
+# Device forms of the host launcher's fused helpers `_prefix_trig_scale!` and
 # `_prefix_lh_mix!` (src/translate_batched.jl), plus a three-way column gather.
-# The KA concat driver used to spell these out as separate broadcasts and
-# `ka_gather_rows!` calls -- 14 launches per chunk for work that is pure
-# elementwise reindexing. Profiled on the real wake at np=8192 (11650 routes):
+# Spelled out as separate broadcasts and `ka_gather_rows!` calls, this work --
+# pure elementwise reindexing -- took 14 launches per chunk. Profiled on a VPM
+# wake at np=8192 (11650 routes):
 # the apply is neither bandwidth- nor FLOP-bound at that size (6-30 GB/s of
 # ~100; stacked_y at ~0.22 of ~3.6 TFLOP/s), and 1.69 ms of its 8.36 ms is
 # fixed per-launch cost across 22 launches. So pass COUNT is the lever here,
@@ -304,7 +307,7 @@ end
 end
 
 """
-    ka_gather_values3!(d1, d2, d3, s1, s2, s3, ids; workgroup=64)
+    ka_gather_values3!(d1, d2, d3, s1, s2, s3, ids; workgroup=KA_AUTO_WORKGROUP)
 
 Three `ka_gather_values!` calls sharing one index vector, done in one launch and
 one `ids` read per column. Used for the concat plan's (phi, theta, invr) column
@@ -336,9 +339,9 @@ end
 end
 
 """
-    ka_prefix_trig_scale!(C, S, scale, nu, theta, invr, rexp; workgroup=64)
+    ka_prefix_trig_scale!(C, S, scale, nu, theta, invr, rexp; workgroup=KA_AUTO_WORKGROUP)
 
-Backend-agnostic port of `_prefix_trig_scale!` (src/translate_batched.jl): the
+Device form of `_prefix_trig_scale!` (src/translate_batched.jl): the
 per-column rotation table `C = cos(nu*theta)`, `S = sin(nu*theta)` and the
 radial scaling `scale[i, j] = invr[j]^rexp[i]`, in one pass over the slab
 instead of three broadcasts. `C`, `S` and `scale` must be `length(nu)`-row views
@@ -375,9 +378,9 @@ end
 end
 
 """
-    ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, arow, brow, rs, phi_pair, chi_up; workgroup=64)
+    ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, arow, brow, rs, phi_pair, chi_up; workgroup=KA_AUTO_WORKGROUP)
 
-Backend-agnostic port of `_prefix_lh_mix!` (src/translate_batched.jl): the
+Device form of `_prefix_lh_mix!` (src/translate_batched.jl): the
 Lamb-Helmholtz row mix
 
     cphi[i, j] = zphi[i, j] + arow[i] * rs[j] * zchi[phi_pair[i], j]
@@ -408,13 +411,12 @@ end
 end
 
 """
-    ka_fill_invperm!(invperm, perm; workgroup=64)
+    ka_fill_invperm!(invperm, perm; workgroup=KA_AUTO_WORKGROUP)
 
 Scatter the inverse of the body sort permutation, `invperm[perm[i]] = i`, so a global
 body ordinal maps back to its sorted slot. `invperm` is written over `1:length(perm)`
 and must be at least that long; `perm` must be a genuine permutation of `1:n` (each
-slot is written exactly once, so a non-permutation silently leaves stale entries --
-the same contract CUDA carries).
+slot is written exactly once, so a non-permutation silently leaves stale entries).
 """
 function ka_fill_invperm!(invperm, perm; workgroup::Int=KA_AUTO_WORKGROUP)
     n = length(perm)
@@ -457,7 +459,8 @@ end
 
 """
     ka_pack_body_matrix!(body, source_buffer, perm, body_system, body_index, n;
-                         isys=1, workgroup=64)
+                         isys=1, sigma_row=0, inv_sigma_row=0,
+                         workgroup=KA_AUTO_WORKGROUP)
 
 Gather one source system's bodies out of its
 global-ordinal `source_buffer` into `body`, the sorted-order `dpb x n` matrix the
@@ -472,6 +475,11 @@ per system.
 `n` is the *logical* body count: `perm` is capacity-sized in the KA context, so its
 `length` is not the extent. Columns beyond `n`, and columns this system does not own,
 are left untouched.
+
+With `inv_sigma_row > 0`, row `inv_sigma_row` of each packed column receives
+`1/body[sigma_row, :]` (0 where sigma <= 0), the reciprocal-sigma row the
+regularized nearfield multiplies by. It requires `0 < sigma_row <=
+size(source_buffer, 1)` and `inv_sigma_row <= size(body, 1)`.
 """
 function ka_pack_body_matrix!(body, source_buffer, perm, body_system, body_index,
         n::Int; isys::Integer=1, sigma_row::Integer=0, inv_sigma_row::Integer=0,
@@ -499,7 +507,7 @@ end
 # `ka_resident_stage_group_apply!` mirrors `_resident_stage_group_apply!`
 # (src/translate_batched.jl) -- the real production M2M/L2L group-apply
 # reached via `_launch_resident_m2m!` -- substituting the four KA building blocks
-# above for its CPU/CUDA-specific primitives. It operates on the same
+# above for its host primitives. It operates on the same
 # `FlatCoefficientBuffer`/`ResidentOperatorGroup`/`ResidentOperatorWorkspace` types,
 # so it can be dropped in wherever the CPU function is called, backed by any
 # KernelAbstractions array (Metal, CUDA, or plain CPU Array).
@@ -583,27 +591,29 @@ end
 
 # --- M2L (horizontal pass) ---
 #
-# The real production GPU M2L path is `ConcatenatedFixedZM2L`/`_launch_resident_m2l_concat!`
-# (src/translate_batched.jl, `ResidentM2LConcatPlan`/`ConcatChannelOps`) -- confirmed
-# by checking `RadixFMMCache`'s default/allowed M2L strategies (src/resident/radix_cache.jl),
-# not the `FactoredRotationM2L`/`_resident_factored_m2l_group_apply!` path, whose per-degree
-# y-rotation blocks are type-asserted as plain CPU `Matrix{TF}`
-# and never dispatch to CUBLAS/Metal GPU matmul -- that path is CPU-only.
+# The device M2L path is `ConcatenatedFixedZM2L`, the `_launch_resident_m2l_concat!`
+# apply (src/translate_batched.jl, `ResidentM2LConcatPlan`/`ConcatChannelOps`),
+# which is what `RadixFMMCache` builds on device (src/resident/radix_cache.jl).
+# The `FactoredRotationM2L`/`_resident_factored_m2l_group_apply!` path keeps
+# its per-degree y-rotation blocks as plain CPU `Matrix{TF}`, so it is CPU-only.
 #
-# `_launch_resident_m2l_concat!`'s primitives are, beyond the M2M-shared ones above:
-#   - `_gather_values!` (1D per-chunk column-parameter gather) -- ported here as `ka_gather_values!`
-#   - `_stacked_y_dense!` -- already backend-generic (`mul!` + broadcast); reused directly
-#     from `ka_stacked_y_dense!` above (same math, real/imag stacked-block form)
-#   - `_resident_mul!` (== `mul!`) for the fixed z-translation GEMM -- already backend-generic,
-#     called directly
-# No new `@kernel` beyond `ka_gather_values!` is needed; `ka_gather_rotate_z!`,
-# `ka_gather_rows!`, and `ka_rotate_z_scatter_accumulate!` are reused unchanged from M2M.
+# Per route chunk, `ka_resident_m2l_concat_apply!` runs:
+#   - `ka_gather_values3!` (and `ka_gather_values!` for the LH `r`): the
+#     per-column (phi, theta, invr) parameters, gathered by offset class;
+#   - `ka_prefix_trig_scale!`: the cos/sin rotation table and radial scaling;
+#   - `ka_gather_rotate_z!` -> `ka_stacked_y_dense!` (`mul!` around
+#     `ka_stacked_combine_kernel!`) -> `ka_scale_inplace!` -> `mul!` with the
+#     fixed z-translation `zD` -> `ka_scale_inplace!`;
+#   - with Lamb-Helmholtz, `ka_prefix_lh_mix!` for the phi/chi row mix;
+#   - `ka_stacked_y_dense!` back out and `ka_rotate_z_scatter_accumulate!`
+#     into `dest`.
+# `mul!` dispatches to each backend's own GPU matmul.
 
 """
     ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets, nroutes)
 
-Backend-agnostic port of `_launch_resident_m2l_concat!` (src/translate_batched.jl),
-the real production `ConcatenatedFixedZM2L` resident M2L apply. Operates on `ws.m2l_concat`
+Device form of `_launch_resident_m2l_concat!` (src/translate_batched.jl), the
+`ConcatenatedFixedZM2L` resident M2L apply. Operates on `ws.m2l_concat`
 (a `ResidentM2LConcatPlan`) plus `route_sources`/`route_targets` (GPU index vectors) directly,
 rather than a full `DeviceResidentRadixState`, so the isolated per-route gate
 (test/metal_env/ka_m2l_correctness.jl) can drive it without a tree.

@@ -9,19 +9,15 @@
 # not a silent fallback):
 #   * hierarchical stencil policy only -- `ka_update_radix_state!` refuses a flat
 #     cache, and FLOWVPM's `window_classes` cache is hierarchical anyway
-#     (see the block comment above `ka_update_radix_state!`).
+#     (see the header of ka_device_step.jl).
 #   * concatenated M2L only -- `ka_radix_cache_workspace` pins
-#     `ConcatenatedFixedZM2L`/`MaterializedYRotationM2L`, the same pair the CUDA
-#     builder selects for a non-specialized hierarchical cache. A dense or
+#     `ConcatenatedFixedZM2L`/`MaterializedYRotationM2L`. A dense or
 #     precomputed-y strategy would silently get a different plan, so it throws.
-#   * no SFS pass.
+#   * no built-in SFS pass; a consumer supplies one through `nearfield_pass`.
 #
-# Two allocation differences from the CUDA original, both inert on this path:
-# the pinned host mirrors become plain `Array`s (pinning is a CUDA transfer
-# optimization); `CUDA.enable_synchronization!` has no KA analogue and no
-# side-stream exists here to need it. `ka_launch_nearfield!` runs the unbinned
-# functor kernel, so a `PartitionedVortex` cache needs no distance-binned scratch
-# (binning is locality only).
+# The host mirrors are plain `Array`s (no pinned memory). `ka_launch_nearfield!`
+# runs the unbinned functor kernel, so a `PartitionedVortex` cache needs no
+# distance-binned scratch (binning is locality only).
 function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         x_min::SVector{3,TF}, h0::TF, maxn::Int,
         options::FastMultipole.RadixLifecycleOptions,
@@ -49,7 +45,7 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
     options.direct_kernel isa FastMultipole.TwoPassVortex && throw(ArgumentError(
         "TwoPassVortex is not available on a KernelAbstractions device cache (no pass-2 deficit sweep); " *
         "use RegularizedVortex or PartitionedVortex, or build the cache with device=false"))
-        options.m2l_strategy isa FastMultipole.ConcatenatedFixedZM2L || throw(ArgumentError(
+    options.m2l_strategy isa FastMultipole.ConcatenatedFixedZM2L || throw(ArgumentError(
         "the KA device cache builds the concatenated hierarchical plan; " *
         "m2l_strategy=$(typeof(options.m2l_strategy)) has no KA plan (DenseTranslationM2L is host-only)"))
 
@@ -132,10 +128,9 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         positions=_z(TF, 3, maxn),
         keys=_z(UInt64, maxn),
         sorted_keys=_z(UInt64, maxn),
-        # bounded counting-sort domain buffers, sized by the same rule as the
-        # host builder: the full 2^(3ell) key
-        # domain when the fast path is enabled for this `ell`, else length 1,
-        # which is itself the signal `ka_counting_sort_ready` falls back on
+        # bounded counting-sort domain buffers: the full 2^(3ell) key domain
+        # when the fast path is enabled for this `ell`, else length 1, which is
+        # itself the signal `ka_counting_sort_ready` falls back on
         counting_histogram=_z(Int32, ka_counting_sort_enabled(ell) ? 1 << (3 * ell) : 1),
         counting_prefix=_z(Int32, ka_counting_sort_enabled(ell) ? 1 << (3 * ell) : 1),
         counting_cursor=_z(Int32, ka_counting_sort_enabled(ell) ? 1 << (3 * ell) : 1),

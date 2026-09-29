@@ -1,16 +1,16 @@
 #------- vortex B2M -------#
 #
-# Verbatim port of the legacy `mirrored_source_to_vortex!` (bodytomultipole.jl)
+# Transcription of the octree path's `mirrored_source_to_vortex!` (bodytomultipole.jl)
 # to the resident flat-buffer layout: regular harmonics of the *mirrored*
 # offset `-Δx` evaluated on the fly (matching the scalar resident B2M's
-# per-(n,m) recurrence style), with the legacy `get_n`/`get_nm1` negative-m
+# per-(n,m) recurrence style), with the octree path's `get_n`/`get_nm1` negative-m
 # conjugate-symmetry rules folded into `_resident_vortex_q`. No sign changes:
-# the legacy chain `evaluate_local ∘ multipole_to_local! ∘ vortex B2M` was
+# the octree chain `evaluate_local ∘ multipole_to_local! ∘ vortex B2M` was
 # verified machine-exact against the analytic Biot-Savart field for an
 # off-center vorton, and the resident M2L and L2B were verified numerically
-# identical to those legacy stages — so the legacy vortex coefficients are the
-# physical convention here. (The legacy *Point{Source}* B2M's strength negation
-# is a legacy-pipeline quirk the resident scalar B2M deliberately omits; it has
+# identical to those octree stages — so the octree vortex coefficients are the
+# physical convention here. (The octree *Point{Source}* B2M's strength negation
+# is an octree-pipeline quirk the resident scalar B2M deliberately omits; it has
 # no analogue for the vortex.)
 
 @inline _resident_vortex_q(mdx, mdy, mdz, n, m) =
@@ -19,7 +19,7 @@
 @inline function _resident_vortex_q(setup::NTuple{5,<:Any}, n, m)
     TF = typeof(setup[1])
     if m < 0
-        # conjugate symmetry per legacy get_n/get_nm1: Q_{n,-1} = -conj(Q_{n,1})
+        # conjugate symmetry per the octree get_n/get_nm1: Q_{n,-1} = -conj(Q_{n,1})
         (m == -1 && n >= 1) || return zero(TF), zero(TF)
         qre, qim = _resident_regular_harmonic_coeff(setup, n, 1)
         return -qre, qim
@@ -47,11 +47,11 @@ end
     return re, im
 end
 
-# Point dipole phi contribution: the legacy `source_to_dipole!` recurrence
+# Point dipole phi contribution: the octree path's `source_to_dipole!` recurrence
 # (bodytomultipole.jl) on the resident regular harmonics of the offset x − c
 # (the SOURCE convention, no mirroring): order-n coefficient from the order
 # n−1 harmonics at m−1, m, m+1, with `_resident_vortex_q`'s bound and
-# conjugate-symmetry rules standing in for legacy `get_nm1`. Returns the term
+# conjugate-symmetry rules standing in for the octree `get_nm1`. Returns the term
 # BEFORE the scalar B2M's (−1)^(n+m) sign and conjugation, which the caller
 # applies exactly as for a source. No strength negation, matching the resident
 # scalar B2M. n = 0 contributes nothing.
@@ -73,7 +73,7 @@ end
     qmm1_re, qmm1_im = _resident_vortex_q(setup, n - 1, m - 1)
     qm_re, qm_im = _resident_vortex_q(setup, n - 1, m)
     qmp1_re, qmp1_im = _resident_vortex_q(setup, n - 1, m + 1)
-    # legacy get_nm1 zeroes (n-1, m) for m == n and (n-1, m+1) for m+1 >= n;
+    # the octree get_nm1 zeroes (n-1, m) for m == n and (n-1, m+1) for m+1 >= n;
     # _resident_vortex_q's m > n-1 bound check reproduces both
     _1_over_n = inv(TF(n))
     _1_m = isodd(m) ? -one(TF) : one(TF)
@@ -148,10 +148,11 @@ end
 
 # Iterate the flat pair arrays (bounded by counts) rather than the one-shot
 # interaction list so the recurring update path never rebuilds the list object;
-# function barrier as in _launch_host_b2m!. Since stage 2 the pair math comes
-# from the `direct_kernel` functor stamped into the options at construction
-# (compile-time specialization; the hard-coded `_host_direct_pairs_*_kernel!`
-# in resident_pair_kernels.jl remain as the functor-abstraction test reference).
+# function barrier as in _launch_host_b2m!. The pair math comes from the
+# `direct_kernel` functor stamped into the options at construction (compile-time
+# specialization). The hard-coded `_host_direct_pairs_*_kernel!` functions in
+# resident_pair_kernels.jl are not called here; the tests use them as the
+# reference the functor path is checked against.
 function _add_host_direct_pairs!(state::DeviceResidentRadixState)
     hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
     # cheapened g/h mode (see _validated_host_gh_mode); Val() barrier
@@ -234,11 +235,12 @@ end
 # occupied cell by binary search on the sorted leaf Morton keys. Because R is
 # recomputed from the live σ_max every evaluation, pass-2 reach covers
 # rho_t·σ_max by construction — offsets just beyond R have gap ≥ R·h_leaf >
-# rho_t·σ_max — so the reach requirement the Stage-A gate enforces for the
+# rho_t·σ_max — so the reach requirement the geometry gate enforces for the
 # single-pass kernels holds here without a gate, and the primary near set only
-# needs the rho_c adequacy (_direct_kernel_geometry_gate! dispatch below).
-# Zero per-step allocation: loop bounds and binary searches only. The stage-C
-# CUDA mirror can materialize the same pruned ball as a compacted class list.
+# needs the rho_c adequacy (the _direct_kernel_geometry_gate! dispatch in
+# radix_cache.jl).
+# Zero per-step allocation: loop bounds and binary searches only. The KA device
+# backend has no pass-2 sweep and refuses TwoPassVortex at cache build.
 _add_host_twopass_deficit!(state::DeviceResidentRadixState) =
     _host_twopass_deficit_dispatch!(state, state.options.direct_kernel)
 

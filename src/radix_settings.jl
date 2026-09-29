@@ -11,14 +11,16 @@ access surface plus the construction-lock contract:
                                    bad type, or out-of-domain value)
 
 Each spec carries a lock class, `:construction` or `:runtime`.
-Lock contract: `:construction` settings are read at cache/device-context
-construction (they size buffers or select the mechanism the cache is built
-around), so flipping them after a `RadixFMMCache` is built used to silently
-keep the old mechanism — the documented hazard. Both cache constructors now snapshot the
+Lock contract: a `:construction` setting would be read at cache/device-context
+construction (it sizes buffers or selects the mechanism the cache is built
+around), so flipping it after a `RadixFMMCache` is built would silently keep
+the old mechanism. Both cache constructors therefore snapshot the
 construction-locked settings (`snapshot_locked_radix_settings`), and the
 device step entry verifies the snapshot (`verify_locked_radix_settings`),
-throwing a loud, actionable error on drift. `:runtime` settings are read
-per-step outside capture and may be flipped freely.
+throwing an actionable error on drift. `:runtime` settings are read per step
+and may be flipped freely. Every setting registered below is currently
+`:runtime`, so the snapshot is empty; the mechanism is kept for settings
+that need it.
 =###############################################################################
 
 struct RadixSettingSpec
@@ -183,10 +185,10 @@ end
 """
     verify_locked_radix_settings(snapshot::Vector{Pair{Symbol,Any}})
 
-Throw a loud error if any construction-locked setting drifted from the value
-it had when the cache was built. Called at device-step entry (047 contract):
-previously a late flip silently kept the old mechanism (the value is baked
-into constructed buffers).
+Throw an error if any construction-locked setting drifted from the value it
+had when the cache was built. Called at device-step entry, because such a
+value is baked into constructed buffers and a late flip would otherwise be
+silently ignored.
 """
 function verify_locked_radix_settings(snapshot::Vector{Pair{Symbol,Any}})
     for (name, locked) in snapshot
@@ -199,7 +201,7 @@ function verify_locked_radix_settings(snapshot::Vector{Pair{Symbol,Any}})
                 "(built with $(repr(locked)), now $(repr(current))). The value is baked into construction-sized " *
                 "buffers, so the flip would be silently ignored. Either restore " *
                 "FastMultipole.set_radix_setting!($(repr(name)), $(repr(locked))) or rebuild the cache " *
-                "(construct a new RadixFMMCache; from FLOWVPM use radix_fmm_settings!/clear_radix_fmm_cache!).")
+                "(construct a new RadixFMMCache, or have the package that owns it rebuild it).")
         end
     end
     return nothing

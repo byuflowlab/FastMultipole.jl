@@ -104,7 +104,8 @@ end
 """
     RigidHierarchicalTables(near_radius2)
 
-Enumerate the level-invariant source-major V-list earlier.  This is
+Enumerate the level-invariant source-major V-list (M2L offset classes by child
+phase) for the rigid near ball `|o|^2 <= near_radius2`. This is
 construction-time work and contains no occupancy-dependent state.
 """
 function RigidHierarchicalTables(near_radius2::Integer)
@@ -204,8 +205,8 @@ function _rigid_transition_tables(q_parent::Integer, q_child::Integer)
         Tuple(starts), phase_index, class_of)
 end
 
-# Per-axis cell counts of the root grid at `level` on the virtual-cube embedding
-#: an axis stops halving once it saturates, so the count is
+# Per-axis cell counts of the root grid at `level` on the virtual-cube embedding:
+# an axis stops halving once it saturates, so the count is
 # 2^max(ell_a - ell + level, 0). Cubic axes give the usual 2^level per axis.
 @inline _radix_root_counts(ell_axes::SVector{3,Int}, ell::Int, level::Int) =
     SVector{3,Int}(
@@ -227,14 +228,14 @@ function _radix_flat_top_count(ell_axes::SVector{3,Int}, ell::Int, level::Int,
     return count
 end
 
-# Flat-top class-count cap (): matches the device window default,
+# Flat-top class-count cap: matches the device window default,
 # so a single flat-top level is never wider than one device route window.
 const RADIX_FLAT_TOP_CLASS_CAP = 4096
 
 """
     _radix_root_level(ell_axes, ell, q) -> (R, L_allnear)
 
-Construction-time active-level trimming (): `R` is the flat-top
+Construction-time active-level trimming: `R` is the flat-top
 root level of the hierarchy — node build and stage groups retain levels `R:ell`
 only. `L_allnear` is the largest level at which every root-grid offset lies in
 the rigid near ball `{o : |o|^2 <= q}`; passing the *leaf* near radius (the
@@ -242,7 +243,7 @@ schedule minimum) keeps the trim conservative and schedule-independent, so the
 exact-once base case holds for any non-increasing level schedule.
 `R = max(ell - minimum(ell_axes), L_allnear)`, lowered while the flat-top class
 count at `R` exceeds `RADIX_FLAT_TOP_CLASS_CAP`; at `R == L_allnear` the
-flat-top table is empty and the hierarchy degenerates to the legacy schedule
+flat-top table is empty and the hierarchy degenerates to the untrimmed schedule
 over levels `R+1:ell` (cubic grids: `R = L_allnear = 1`, i.e. exactly the
 production `2:ell` hierarchy).
 """
@@ -262,7 +263,7 @@ function _radix_root_level(ell_axes::SVector{3,Int}, ell::Int, q::Integer)
     return R, L_allnear
 end
 
-# Flat-top table at the root level (): the degenerate transition
+# Flat-top table at the root level: the degenerate transition
 # table with `q_parent = Inf` bounded by the root grid box — every offset between
 # root-grid cells outside the near ball is emitted, all 8 phases admitted. Shaped
 # like `_rigid_transition_tables` output so the scheduled-tables union and the
@@ -308,11 +309,11 @@ complete rigid (and therefore complete cubic-symmetry-orbit) table. Uniform
 policies take this same path, which keeps scheduled and production geometry
 directly comparable.
 
-the active M2L levels are `first_m2l_level:ell`, where
+The active M2L levels are `first_m2l_level:ell`, where
 `first_m2l_level = R` when the flat-top table at the root level `R` is nonempty
 and `R + 1` otherwise (`R == L_allnear`, every root offset near). Cubic grids
-give `R = 1` with an empty flat-top, i.e. bitwise the legacy `2:ell` schedule.
-`policy.level_radii2` is accepted at either anchoring: the legacy length
+give `R = 1` with an empty flat-top, i.e. bitwise the untrimmed `2:ell` schedule.
+`policy.level_radii2` is accepted at either anchoring: the untrimmed length
 `ell - 1` (levels `2:ell`; entries above the active range are sliced off, which
 is the identity when `first_m2l_level == 2`) or the active length
 `ell - first_m2l_level + 1` (levels `first_m2l_level:ell`, coarse to fine).
@@ -356,14 +357,14 @@ function _hierarchical_scheduled_tables(policy::HierarchicalRigidStencil, ell::I
     elseif length(raw) == nlevels
         collect(raw)
     elseif length(raw) == ell - 1
-        # legacy 2:ell anchoring: keep each level's own entry, slice the trimmed
+        # untrimmed 2:ell anchoring: keep each level's own entry, slice the trimmed
         # coarse head (identity when first_m2l == 2)
         collect(raw)[(first_m2l - 1):(ell - 1)]
     else
         throw(ArgumentError(
             "hierarchical level schedule has $(length(raw)) entries, but ell=$ell " *
             "with active M2L levels $first_m2l:$ell requires $nlevels entries " *
-            "(or the legacy $(ell - 1) entries anchored to levels 2:$ell)"))
+            "(or the untrimmed $(ell - 1) entries anchored to levels 2:$ell)"))
     end
     all(qs[i + 1] <= qs[i] for i in 1:length(qs)-1) || throw(ArgumentError(
         "hierarchical level schedule must be non-increasing with depth; got $(Tuple(qs))"))
@@ -416,7 +417,7 @@ function _verify_hierarchical_classifier!(h0, ell::Int,
         level_radii2::AbstractVector{<:Integer})
     ell >= 2 || throw(ArgumentError(
         "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
-    # root-level accuracy gate. Every flat-top offset `o`
+    # Root-level accuracy gate: every flat-top offset `o`
     # runs M2L at the root level `R`, whose cells are the leaf cells of the
     # same box at depth `R` — so the exact level-true bound is the
     # analytic classifier evaluated at `(h0, R)` (this is the `2^(ell-L)`
@@ -628,12 +629,13 @@ end
     return Int(@inbounds cell_at[coord[1] + 1, coord[2] + 1, coord[3] + 1])
 end
 
-#------- ParentNeighborM2L interaction list (host oracle harness) -------#
+#------- ParentNeighborM2L interaction list (test reference) -------#
 #
 # The classic multi-level parent-neighbor list over a standalone `RadixGrid`. It
-# is not a production path: `host_radix_state` builds its reference state from it,
-# which gates the KA lifecycle body stage by stage (M2M/L2L groups included, which
-# a leaf-only constant-P list would leave idle).
+# is a test reference, not a production path: `host_radix_state` builds its
+# reference state from it, and the tests compare the KA lifecycle against that
+# state operator by operator (M2M/L2L groups included, which a leaf-only
+# constant-P list would leave idle).
 
 @inline _chebyshev_norm(d::SVector{3,<:Integer}) =
     max(abs(Int(d[1])), abs(Int(d[2])), abs(Int(d[3])))
@@ -751,7 +753,8 @@ end
 
 Materialize the multi-level parent-neighbor M2L batches and direct leaf pairs of a
 standalone [`RadixGrid`](@ref), for [`host_radix_state`](@ref). Batches are sorted
-by `(level, z, y, x)` offset.
+by `(level, z, y, x)` offset. A test reference; production caches build their
+routes in place with `build_radix_routes!`.
 """
 function build_radix_interaction_list(policy::ParentNeighborM2L, grid::RadixGrid)
     batches_by_route = Dict{Tuple{Int,SVector{3,Int}},RadixM2LBatch{Int}}()

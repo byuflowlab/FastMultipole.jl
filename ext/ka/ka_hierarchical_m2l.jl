@@ -5,15 +5,12 @@
 # `hctx.win_targets`/`win_sources`/`win_class` for every (level, offset-class)
 # window.
 #
-# `DeviceHierarchicalM2LContext` is already array-type generic
-# (IV32/IM32/IA32/IV/SM type parameters), so nothing here
-# needs a CUDA-specific context mirror -- unlike the lifecycle, which needed
-# `host_radix_state`. The scan is `accumulate!`, which is backend-generic via
-# GPUArrays.
+# `DeviceHierarchicalM2LContext` is array-type generic (IV32/IM32/IA32/IV/SM
+# type parameters), so it lives on any KA backend as is. The scan is
+# `accumulate!`, which is backend-generic via GPUArrays.
 #
-# Both kernels are elementwise index math with no shared memory and no
-# CUDA intrinsics, so they are direct translations and carry no `@localmem`
-# team-size coupling: both take `KA_AUTO_WORKGROUP`.
+# Both kernels are elementwise index math with no shared memory, so they carry
+# no `@localmem` team-size coupling: both take `KA_AUTO_WORKGROUP`.
 
 @kernel function ka_hier_route_flags_kernel!(flags, @Const(node_at),
         @Const(node_coords), @Const(push_offsets), @Const(class_of),
@@ -83,9 +80,8 @@ end
 # refills `ws.nonleaf_idx`: that is host-path-only storage and untouched on device.
 #
 # `TF` is threaded in as a type argument rather than taken from `eltype(phis)`
-# inside the kernel -- see [[reference-ka-localmem-eltype-metal]]; the group
-# fields are `Any`-typed, so an in-kernel `eltype` is exactly the pattern that
-# fails to resolve on Metal.
+# inside the kernel: the group fields are `Any`-typed, and an in-kernel
+# `eltype` of such a field fails to resolve on Metal.
 @kernel function ka_refresh_group_edges_kernel!(source_idx, target_idx, phis,
         thetas, @Const(parent_index), @Const(node_centers), first_child, n_edges,
         child_to_parent, ::Type{TF}) where {TF}
@@ -159,8 +155,6 @@ end
 
 #------- device source-position extraction (KA) -------#
 #
-# Device form of the host `_radix_cache_collect_positions!`.
-#
 # Elementwise gather of the xyz rows plus the (system, index) attribution of each
 # body into the concatenated global order: no shared memory, `KA_AUTO_WORKGROUP`.
 @kernel function ka_extract_source_positions_kernel!(positions, body_system,
@@ -177,7 +171,7 @@ end
 end
 
 # `source_buffers` are the per-system views `_radix_cache_refresh_source_buffers!`
-# returns; the return value is the total body count, as on the CUDA side.
+# returns; the return value is the total body count.
 function ka_collect_positions!(positions, body_system, body_index,
         source_buffers::Tuple; workgroup=KA_AUTO_WORKGROUP)
     offset = 0
@@ -265,13 +259,12 @@ end
 """
     ka_hierarchical_m2l!(state, hctx, ws)
 
-KA arm of `_launch_cuda_hierarchical_m2l!`. The occupancy-epoch window cache
+Hierarchical M2L on the device state. The occupancy-epoch window cache
 (`ka_hier_cache_windows!`, run by `ka_update_radix_state!` on every occupancy
 change) holds the whole route stream, so there is nothing to generate here and
 the `(level, offset-class window)` loop collapses into a single concat apply
-(the level rides in the class, not in an argument). CUDA's cached path is
-dense-fused because its dense GEMM driver needs per-window class starts; the
-concat apply needs only (class, source, target) and a count.
+(the level rides in the class, not in an argument): the concat apply needs only
+(class, source, target) and a count.
 
 Concat plans only: the dense and factored strategies are host-only.
 """

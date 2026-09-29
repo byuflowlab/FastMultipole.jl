@@ -9,6 +9,12 @@ Constructs a tuple of [`DerivativesSwitch`](@ref) objects.
 - `gradient::Vector{Bool}`: a vector of `::Bool` indicating whether the vector field should be computed for each target system
 - `hessian::Vector{Bool}`: a vector of `::Bool` indicating whether the vector gradient should be computed for each target system
 
+# Keyword Arguments
+
+- `third_derivative=false`: a `::Bool` or per-system vector requesting the packed third-derivative rows
+- `extra_outputs=0`: a count or per-system vector of extra accumulated output rows
+- `metadata=0`: a count or per-system vector of metadata rows carried with positions
+
 """
 function DerivativesSwitch(scalar_potential, gradient, hessian; third_derivative=false, extra_outputs=0, metadata=0)
     third_derivative = to_vector(third_derivative, length(scalar_potential))
@@ -27,6 +33,12 @@ Constructs a single [`DerivativesSwitch`](@ref) object.
 - `scalar_potential::Bool`: a `::Bool` indicating whether the scalar potential should be computed for the target system
 - `gradient::Bool`: a `::Bool` indicating whether the vector field should be computed for the target system
 - `hessian::Bool`: a `::Bool` indicating whether the vector gradient should be computed for the target system
+
+# Keyword Arguments
+
+- `third_derivative::Bool=false`: request the packed third-derivative rows
+- `extra_outputs=0`: number of extra accumulated output rows
+- `metadata=0`: number of metadata rows carried with positions
 
 """
 function DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool; third_derivative::Bool=false, extra_outputs=0, metadata=0)
@@ -126,7 +138,8 @@ but excludes accumulated output rows.
 """
     standard_output_range(switch)
 
-Rows used for scalar potential, gradient, and hessian outputs.
+Rows used for the standard outputs: scalar potential, gradient, hessian and
+third derivative, each present only when the switch requests it.
 """
 @inline standard_output_range(switch::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM} =
     4 + NM : 3 + NM + _standard_output_rows(switch)
@@ -167,7 +180,8 @@ end
     extra_output_view(buffer, switch, i)
 
 View of the extra output rows of body `i` in an output `buffer` (the rows past
-the potential, gradient and hessian that `extra_outputs=N` requested), located
+the standard potential, gradient, hessian and third-derivative rows that
+`extra_outputs=N` requested), located
 through `extra_output_range(switch)`.
 """
 @inline extra_output_view(buffer::AbstractMatrix, switch::DerivativesSwitch, i) = view(buffer, extra_output_range(switch), i)

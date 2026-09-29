@@ -1,4 +1,4 @@
-#------- KA LIFECYCLE DRIVER (step 7a) -------#
+#------- KA LIFECYCLE DRIVER -------#
 #
 # The UNIFORM radix lifecycle body -- the one FLOWVPM actually runs: it builds
 # its `RadixFMMCache` with `ell`/`near_radius2`/`window_classes`.
@@ -28,7 +28,7 @@ function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
         "ka_lifecycle_body! requires a ResidentOperatorWorkspace in state.scratch"))
 
     backend = KA.get_backend(state.output)
-    # 1. nearfield (clears state.output, as CUDA's fill+nearfield does)
+    # 1. nearfield (clears state.output first)
     ka_launch_nearfield!(state; clear=true)   # shape/workgroup from _nf_config
     _utick!(:lc_near, backend)
 

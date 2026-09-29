@@ -1,4 +1,4 @@
-#------- RESIDENT OPERATOR WORKSPACE (step vi-b) -------#
+#------- RESIDENT OPERATOR WORKSPACE -------#
 
 """
     ka_radix_cache_workspace(backend, TF, basis_info, ell, h0, max_cells, max_nodes,
@@ -10,8 +10,7 @@ Build a device-resident [`ResidentOperatorWorkspace`](@ref) on any KA backend.
 This is a thin forward to `FastMultipole._radix_cache_workspace`, which is already
 backend-generic: every allocation in it goes through `similar(exemplar.phi, ...)`,
 `_array_like_vector(exemplar.phi, ...)` or `DegreeMajorMaps(TF, P, exemplar.phi)`,
-so handing it a KA-array exemplar returns a KA-resident workspace. There is
-nothing to port.
+so handing it a KA-array exemplar returns a KA-resident workspace.
 
 The KA path builds the `ConcatenatedFixedZM2L` plan with
 `MaterializedYRotationM2L`, the strategy gated bit-exact against the host; the

@@ -1,4 +1,4 @@
-#------- EXPLICIT M2M/L2L Z-TRANSLATION BLOCKS (Matrix Operator Refactor) -------#
+#------- EXPLICIT M2M/L2L Z-TRANSLATION BLOCKS -------#
 
 @inline _triangular_z_block_length(P) = ((P + 1) * (P + 2) * (P + 3)) ÷ 6
 
@@ -67,7 +67,7 @@ function l2l_z_blocks!(blocks, t, P)
     return blocks
 end
 
-#------- EXPLICIT M2L Z-TRANSLATION BLOCKS (Matrix Operator Refactor) -------#
+#------- EXPLICIT M2L Z-TRANSLATION BLOCKS -------#
 #
 # The z-aligned multipole-to-local translation is block-diagonal in the azimuthal
 # order m: for a fixed m, each output local coefficient (n, m) is a dense linear
@@ -80,18 +80,17 @@ end
 # component channels. There is no conjugation or extra sign in the z-aligned
 # block; azimuthal phase signs are owned by the z-rotation operators.
 #
-# This stage materializes the fixed-m blocks explicitly (rather than fusing the
+# The fixed-m blocks are materialized explicitly (rather than fusing the
 # recurrence into a single per-call kernel) so the blocks can be built once and
 # applied to many source/target pairs that share the same integer z-offset, which
-# is exactly the reuse the later radix/offset-class batching (tasks 020/021) and
-# the GPU path exploit. The distance scaling is evaluated by the same
-# stable recurrence used by translate_multipole_to_local_z! in src/translate.jl,
-# in the same multiply order, so a materialize-then-apply is bit-for-bit identical
-# to production.
+# is exactly the reuse the radix offset-class batching and the device path
+# exploit. The distance scaling is evaluated by the same stable recurrence used
+# by translate_multipole_to_local_z! in src/translate.jl, in the same multiply
+# order, so a materialize-then-apply is bit-for-bit identical to the octree path.
 #
-# These operate on the existing production coefficient layout
-# weights[real_or_imag, component, harmonic_index]; the FlatCoefficientBuffer
-# forms are further below. The functions are intentionally internal/non-exported.
+# The builders fill flat coefficient arrays; the apply kernels that consume them
+# take FlatCoefficientBuffer storage and are further below. The functions are
+# intentionally internal/non-exported.
 
 """
     m2l_z_block_length(P)
@@ -133,7 +132,7 @@ t^(n + np + 1)` for all `0 <= m <= n, np <= P` into the flat buffer `blocks`
 (length at least `m2l_z_block_length(P)`), stored column-major per `m`-block (see
 [`m2l_z_block_offset`](@ref)).
 
-The entries are filled by the approved stable recurrence with `rho = inv(t)`
+The entries are filled by a stable recurrence with `rho = inv(t)`
 (no separately formed factorial or power):
 
 - first entry of each output row: `K_m[n, m] = (n + m)! * rho^(n + m + 1)`,
@@ -177,7 +176,7 @@ function m2l_z_blocks!(blocks, t, P)
 end
 
 
-#------- EXPLICIT LAMB-HELMHOLTZ OPERATORS (Matrix Operator Refactor) -------#
+#------- EXPLICIT LAMB-HELMHOLTZ OPERATORS -------#
 #
 # The Lamb-Helmholtz transforms couple the φ (component 1) and χ (component 2)
 # channels after a z-aligned translation. They are sparse by construction:
@@ -200,17 +199,16 @@ end
 #
 # Like the M2L z blocks above, the factors are materialized once (they depend only
 # on r and the degrees) so they can be reused across many source/target pairs that
-# share the same integer z-offset class (radix/offset-class batching, tasks
-# 020/021; GPU path). The factor formulas and multiply order match
+# share the same integer z-offset class (radix offset-class batching; device
+# path). The factor formulas and multiply order match
 # transform_lamb_helmholtz_multipole! / transform_lamb_helmholtz_local! in
 # src/translate.jl, so the materialize-then-apply path is bit-for-bit identical to
-# production. The apply uses separate in/out buffers with overwrite semantics
+# the octree path. The apply uses separate in/out buffers with overwrite semantics
 # (accumulation into the target is left to the inverse z-rotation in the full
-# pipeline). Because the in-place production loops are ordered to always read the
+# pipeline). Because the in-place octree loops are ordered to always read the
 # original (pre-transform) χ values, reading every term from `in` reproduces them
-# exactly. These operate on the production layout
-# weights[real_or_imag, component, harmonic_index]; native flat buffers are task
-# 017, and the functions are intentionally internal/non-exported.
+# exactly. The apply kernels (FlatCoefficientBuffer storage) are further below;
+# the functions are intentionally internal/non-exported.
 
 """
     lamb_helmholtz_multipole_coeffs!(A, B, r, P)
@@ -255,21 +253,20 @@ function lamb_helmholtz_local_coeffs!(A, B, r, P)
 end
 
 
-#------- NATIVE FLAT KERNELS (Matrix Operator Refactor) -------#
+#------- NATIVE FLAT KERNELS -------#
 #
-# Flat ragged-buffer counterparts of the per-column z-translation and
-# Lamb-Helmholtz kernels above. They consume FlatCoefficientBuffer storage through
-# its channel matrices: the φ channel is processed through P_phi and the χ channel
-# through P_active = P_phi + 1 (Val(true)), so the φ matrix carries no padding rows
-# and the `_zero_phi_padding!` step is unnecessary. Arithmetic and
-# multiply order are identical to the legacy [2,2,nh] kernels above (kept as the
-# parity reference); only the indexing moves to
+# Per-column z-translation and Lamb-Helmholtz apply kernels for the coefficient
+# arrays built above. They consume FlatCoefficientBuffer storage through its
+# channel matrices: the φ channel is processed through P_phi and the χ channel
+# through P_active = P_phi + 1 (Val(true)), so the φ matrix carries no padding
+# rows and needs no zeroing. Arithmetic and multiply order follow the octree
+# kernels of src/translate.jl; the indexing is
 # `flat_basis_index(n,m,reim) = 2*(harmonic_index(n,m)-1)+reim` over a column `j`.
 # The distance `blocks`/`A`/`B` coefficient buffers are sized for `P_active`, so all
-# block indexing passes `P_active`; the φ loops simply stop at `P_phi`, which
-# reproduces the zeroed-φ-padding result of the legacy path (rotations and the
-# fixed-`m` z-translation never feed a φ row above `P_phi` back into a physical
-# φ_n, n <= P_phi).
+# block indexing passes `P_active`; the φ loops simply stop at `P_phi`, which gives
+# the same result as zeroing φ rows above `P_phi` (rotations and the fixed-`m`
+# z-translation never feed a φ row above `P_phi` back into a physical φ_n,
+# n <= P_phi).
 
 function apply_m2l_z_flat!(out::FlatCoefficientBuffer{TF,A,B,LH}, in::FlatCoefficientBuffer, j, blocks, ::Val{:overwrite}) where {TF,A,B,LH}
     P_active = out.basis_info.orders.P_active
@@ -353,10 +350,10 @@ function apply_lamb_helmholtz_local_flat!(out::FlatCoefficientBuffer, in::FlatCo
     return out
 end
 
-# Per-column repack between a ragged FlatCoefficientBuffer column and a legacy
-# [2,2,nh(P_active)] frame, used only by the materialized-y stage so it can reuse
-# the production-parity y/z rotation kernels (src/rotate.jl) unchanged. The legacy
-# frame is zeroed first; φ above P_phi stays zero (no padding leak), χ fills through
+# Per-column repack between a ragged FlatCoefficientBuffer column and an
+# octree-layout [2,2,nh(P_active)] frame, used only by the materialized-y stage so
+# it can reuse the y/z rotation kernels of src/rotate.jl unchanged. The frame is
+# zeroed first; φ above P_phi stays zero (no padding leak), χ fills through
 # P_active. Cost is O(basis_dof) per column — negligible vs the y-rotation's O(P^3).
 function _pack_flat_column!(legacy, buf::FlatCoefficientBuffer, j, P_phi, P_active, ::Val{LH}) where LH
     legacy .= zero(eltype(legacy))
@@ -419,12 +416,12 @@ function _unpack_flat_column_accumulate!(buf::FlatCoefficientBuffer, legacy, j, 
     return buf
 end
 
-#------- FULL M2L OPERATOR PIPELINE (Matrix Operator Refactor) -------#
+#------- FULL M2L OPERATOR PIPELINE -------#
 #
 # Compose the complete multipole-to-local translation from the explicit operator
-# stages, validated against the legacy `multipole_to_local!` /
+# stages, validated against the octree path's `multipole_to_local!` /
 # `multipole_to_local_II!`. Its production use is building the complete per-class
-# matrices of `DenseTranslationM2L` (`build_dense_m2l_operator!`). The legacy
+# matrices of `DenseTranslationM2L` (`build_dense_m2l_operator!`). The octree
 # pipeline is, per source/target offset
 # `r, θ, ϕ = cartesian_to_spherical(target.center - source.center)`:
 #
@@ -441,9 +438,10 @@ end
 #
 # The whole pipeline runs at a single uniform order `P = basis_info.orders.P_active`.
 # For `Val(true)`, φ is physical only through `P_phi` while χ is carried at
-# `P_active = P_phi + 1` (χ is carried one order above φ); the φ padding
-# rows are zeroed before z-translation and again before return alignment so the
-# nonphysical top φ row cannot leak into the output.
+# `P_active = P_phi + 1` (χ is carried one order above φ). The flat buffers
+# carry no φ rows above `P_phi`, the flat kernels stop at `P_phi`, and the
+# octree-layout repack leaves φ above `P_phi` zero, so no nonphysical φ row can
+# leak into the output.
 
 """
     m2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
@@ -487,9 +485,9 @@ function m2l_operator_batch!(op::MaterializedYRotationM2L, targets::FlatCoeffici
 end
 
 #--- source alignment (stages 1-2: Z_phi then Y(θ)) ---#
-# Materialized path repacks each column to a legacy [2,2,nh] frame so it can reuse
-# the production-parity z/y rotation kernels unchanged (the φ padding stays zero, so
-# physical φ_n, n <= P_phi, is unaffected); the factored path is fully flat-native.
+# The materialized path repacks each column to an octree-layout [2,2,nh] frame so
+# it can reuse the z/y rotation kernels of src/rotate.jl unchanged (the φ padding
+# stays zero, so physical φ_n, n <= P_phi, is unaffected).
 
 function _m2l_source_alignment!(::MaterializedYRotationM2L, A, sources, B, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
     base = scratch.base
@@ -524,7 +522,7 @@ function _m2l_return_alignment!(::MaterializedYRotationM2L, targets, B, A, phis,
     return targets
 end
 
-#------- STACKED DEGREE-MAJOR LAYOUT + DENSE M2L OPERATORS (Matrix Operator Refactor) -------#
+#------- STACKED DEGREE-MAJOR LAYOUT + DENSE M2L OPERATORS -------#
 #
 # These operate on the GEMM-native `DegreeMajorRealBuffer` layout so per-degree blocks
 # are ready `mul!` operands with no repack. A node's coefficients are the stacked real
@@ -1285,15 +1283,15 @@ function StackedYChannel(exemplar, ::Type{TF}, invariant::OperatorInvariantCache
     )
 end
 
+# C = A * B for the resident operator chain; a single seam so a backend extension
+# can substitute its own GEMM (none currently does).
+_resident_mul!(C, A, B) = mul!(C, A, B)
+
 # Whole-slab factored y application: out = Ur * (e^{iνθ} ∘ (Vs * in)), the dense
 # stacked form of the per-degree U/V mode application (`_factored_y_degree_major_auto!`).
 # `C`/`S` are the precomputed per-chunk cos/sin(νθ) tables (ndof×n); the paired
 # rotation acts on the contiguous [re; im] halves of the stacked scratch, so it is
 # allocation-free strided broadcasting on any array type.
-# C = A * B for the resident operator chain; a single seam so a backend extension
-# can substitute its own GEMM (none currently does).
-_resident_mul!(C, A, B) = mul!(C, A, B)
-
 function _stacked_y_dense!(out_slab, in_slab, Ur, Vs, C, S, G, G2, ndof::Integer)
     _resident_mul!(G, Vs, in_slab)
     Gt = @view G[1:ndof, :]
@@ -1582,9 +1580,10 @@ function ResidentOperatorWorkspace(::Type{TF}, basis_info::OperatorBasisInfo{B,L
         host_node_levels, host_node_centers, host_route_targets, host_route_sources;
         m2l_strategy::AbstractResidentM2LStrategy=ConcatenatedFixedZM2L(),
         operator::AbstractM2LOperator=MaterializedYRotationM2L()) where {TF,B,LH}
-    # List-based construction serves `host_radix_state`, the host oracle of the KA
-    # lifecycle gate, which runs the concatenated materialized-y plan. Production
-    # caches build their workspace through `_radix_cache_workspace`.
+    # List-based construction serves `host_radix_state`, the host reference the
+    # tests compare the KA lifecycle against; it runs the concatenated
+    # materialized-y plan. Production caches build their workspace through
+    # `_radix_cache_workspace`.
     (m2l_strategy isa ConcatenatedFixedZM2L && operator isa MaterializedYRotationM2L) ||
         throw(ArgumentError("list-based ResidentOperatorWorkspace supports only " *
             "ConcatenatedFixedZM2L with MaterializedYRotationM2L; got " *
@@ -1709,8 +1708,10 @@ function _resident_stage_group_apply!(dest::FlatCoefficientBuffer, src::FlatCoef
     return dest
 end
 
-# supplies one shared (phi, theta, r), so the Plain-H U/V applications below are
-# per-degree GEMMs over all routes in the class. No Ts(theta) is materialized.
+# Factored M2L for one group of a ResidentM2LFactoredPlan: the group's routes
+# share one set of z-translation blocks, and the per-route (phi, theta) enter
+# through the z-rotation gather/scatter and the Plain-H U/V y-alignment, applied as
+# per-degree GEMMs over all routes in the group. No Ts(theta) is materialized.
 function _resident_factored_m2l_group_apply!(state::DeviceResidentRadixState{TF,B,LH},
         group::ResidentOperatorGroup, ws::ResidentOperatorWorkspace{TF,B,LH}) where {TF,B,LH}
     n = group.count[]
@@ -1935,7 +1936,7 @@ end
         plan::ResidentM2LConcatPlan, n::Int) where {TF,B,LH}
     n == 0 && return state
     # Specialize this host-only window on ordinary Array storage.  The enclosing
-    # containers are concrete and shared with CUDA, while these assertions also
+    # containers are shared with the device backend, while these assertions also
     # guard against accidentally routing a device plan through the host launcher.
     route_class = plan.route_class::Vector{Int32}
     route_sources = state.route_sources::Vector{Int}
@@ -2311,8 +2312,8 @@ end
 
 Resident top-down L2L. Translation vectors are `child - parent`, opposite the M2M
 upward `parent - child` vector.
-The resident path ignores `options.operator`; that option belongs to the retained
-flat/oracle launchers.
+The resident L2L ignores `options.operator`, which selects the M2L rotation
+operator only.
 """
 function _launch_resident_l2l!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
     state.grid isa DeviceRadixGrid ||
@@ -2525,7 +2526,7 @@ function _launch_resident_m2l_concat!(state::DeviceResidentRadixState{TF,B,LH};
     return state
 end
 
-#------- fixed-box cache operator workspace (Matrix Operator Refactor) -------#
+#------- fixed-box cache operator workspace -------#
 #
 # The RadixFMMCache path builds the resident workspace once at construction from the
 # fixed Morton domain (x_min, h0, ell) instead of from a concrete grid/list:
@@ -2706,8 +2707,9 @@ function ResidentM2LPrecomputedYPlan(::Type{TF}, basis_info::OperatorBasisInfo{B
         offset_rs[i] = r
         offset_phis[i] = phi
     end
-    # Correct the deliberately simple first-member fill above without floating
-    # comparisons (and without depending on Dict iteration order).
+    # Each angle's theta comes from its first member offset: the grouping is by
+    # exact integer key, so no floating comparisons and no dependence on Dict
+    # iteration order.
     @inbounds for angle in 1:nangles
         first_offset = angle_offsets[angle_offset_starts[angle]]
         d = SVector{3,TF}(accepted_offsets[first_offset]) * TF(cell_width)
@@ -3006,7 +3008,7 @@ function ResidentM2LDensePlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         nlevels = nclasses ÷ hno
         Dphi = degree_major_dof(basis_info.orders.P_phi)
         @inbounds for li in 1:nlevels
-            # Classes are level-ascending (L=2 first), while the final block is
+            # Classes are level-ascending (coarsest active M2L level first), while the final block is
             # the leaf reference.  Thus s = 2^(nlevels-li).
             s = TF(1 << (nlevels - li))
             for k in 1:hno
@@ -3063,9 +3065,9 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     nonleaf_idx = collect(1:max_nodes)      # capacity; resize!d by the step refresh
 
     child_radius(Lc) = sqrt(TF(3)) * h0 / (1 << Lc)
-    # active-level trimming (): stage groups exist only for the
+    # active-level trimming: stage groups exist only for the
     # retained levels first_level:ell — M2M parent levels (ell-1):-1:first_level,
-    # L2L child levels (first_level+1):ell. Untrimmed callers pass 0 (legacy).
+    # L2L child levels (first_level+1):ell. Untrimmed callers pass 0.
     m2m_groups = [
         _resident_capacity_group(exemplar.phi, TF, basis_info, :m2m, level,
             child_radius(level + 1),

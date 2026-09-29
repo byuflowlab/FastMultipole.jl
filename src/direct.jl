@@ -1,5 +1,6 @@
 """
-    direct!(systems; derivatives_switches)
+    direct!(systems; kwargs...)
+    direct!(target_systems, source_systems; kwargs...)
 
 Applies all interactions of `systems` acting on itself without multipole acceleration.
 
@@ -22,6 +23,7 @@ Applies all interactions of `systems` acting on itself without multipole acceler
 - `metadata::Union{Nothing,Int}`: number of target metadata rows carried with positions; `nothing` infers [`metadata_per_body`](@ref)
 - `n_threads::Int`: the number of threads to use for parallelization; defaults to `Threads.nthreads()`
 - `direct_conditioning`: a `DirectConditioningRule` or tuple of rules used to temporarily condition source buffers for selected source-target system pairs
+- `nearfield_cache`: `nothing` (default), or a [`NearfieldInfluenceCache`](@ref) built with the no-tree constructor for these systems; the interactions are then evaluated as cached matrix-vector products instead of kernel calls. Only the body counts are checked, so the caller must rebuild the cache whenever positions change. Cannot be combined with `direct_conditioning`
 
 """
 function direct!(systems::Tuple; args...)

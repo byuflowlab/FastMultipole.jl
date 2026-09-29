@@ -1,4 +1,4 @@
-#------- EXPLICIT Z-ROTATION OPERATORS (Matrix Operator Refactor) -------#
+#------- EXPLICIT Z-ROTATION OPERATORS -------#
 #
 # The z-rotation is block-diagonal in the azimuthal order m: each stored
 # coefficient (n, m) is multiplied by the complex phase e^{imϕ}, i.e. the real
@@ -10,11 +10,9 @@
 # e^{imϕ}; inverse/back rotation accumulates into the destination with the
 # conjugate phase e^{-imϕ}. The m = 0 block is the identity (C = 1, S = 0).
 #
-# These operate on the existing production coefficient layout
+# These operate on the octree path's coefficient layout
 # weights[real_or_imag, component, harmonic_index] so that behavior is
-# bit-for-bit identical to rotate_z! / back_rotate_z! in src/rotate.jl. The
-# native flat (basis_dof x batch x channel) buffers are introduced later (task
-# 017); this stage is intentionally layout-compatible with current production.
+# bit-for-bit identical to rotate_z! / back_rotate_z! in src/rotate.jl.
 
 """
     z_rotation_diagonals!(C, S, ϕ, P)
@@ -108,7 +106,7 @@ function apply_z_rotation!(out, in, C, S, P, lamb_helmholtz::Val{LH}, ::Val{:acc
     return out
 end
 
-#------- INVARIANT AXIS-SWAP OPERATORS (Matrix Operator Refactor) -------#
+#------- INVARIANT AXIS-SWAP OPERATORS -------#
 #
 # The non-z part of the y-alignment used by the rotation-trick M2M/M2L/L2L is, for
 # every degree n, generated entirely from the fixed π/2 Wigner blocks H(π/2). The
@@ -133,7 +131,7 @@ end
 # build_Ts_from_S! then reconstructs Ts identical (to ~1e-12) to update_Ts! using
 # only the cheap cos/sin(ν θ) recurrence. The result is shared between the
 # multipole and local paths; those differ only in the sign table (ζ vs η) passed
-# to the existing production apply kernels, which this stage reuses unchanged.
+# to the existing apply kernels of src/rotate.jl, reused unchanged.
 # These operate on the production layout weights[real_or_imag, component,
 # harmonic_index]; the FlatCoefficientBuffer forms are further below. The functions are
 # intentionally internal/non-exported.
@@ -238,7 +236,7 @@ function update_S_blocks!(S_pos, S_neg, Hs_π2, P)
 end
 
 """
-    build_Ts_from_S!(Ts, S_pos, S_neg, β, P, trig=…)
+    build_Ts_from_S!(Ts, S_pos, S_neg, β, P, trig)
 
 Reconstruct the arbitrary-angle y-rotation matrix `Ts` for angle `β` from the
 precomputed axis-swap blocks `S_pos`/`S_neg` (see [`update_S_blocks!`](@ref)),
@@ -261,9 +259,8 @@ which dominates the rebuild cost. Here the `cos(ν β)` / `sin(ν β)` values fo
 scratch, `cos` in `trig[1:P]` and `sin` in `trig[P+1:2P]`) and reused across all
 triples; the `m+mp` parity branch is hoisted out of the innermost `ν` loop. This is
 bit-for-bit identical to the per-triple recurrence (same deterministic two-term
-sequence and same accumulation order) while cutting the inner-loop work ~2-3×. Pass a
-caller-owned `trig` (length `>= 2P`) to stay allocation-free on hot paths; the
-convenience method allocates one.
+sequence and same accumulation order) while cutting the inner-loop work ~2-3×. The
+caller owns `trig` (length `>= 2P`), so the call is allocation-free.
 """
 function build_Ts_from_S!(Ts, S_pos, S_neg, β, P, trig)
     length(Ts) >= length_Ts(P) || throw(ArgumentError("Ts length must be at least length_Ts(P)"))
@@ -349,7 +346,7 @@ function back_rotate_local_y_op!(target, source, Ts, Hs_π2, S_pos, S_neg, ηs_m
     return target
 end
 
-#------- GLOBALLY BATCHED FACTORED ROTATION ALIGNMENT (Matrix Operator Refactor) -------#
+#------- GLOBALLY BATCHED FACTORED ROTATION ALIGNMENT -------#
 #
 # Genuinely factored y-rotation. For every degree n the production y-operator factors
 # as  Y_n(θ) = U_n · diag(e^{iνθ}) · V_n  (ν = -n..n), with U_n / V_n FIXED (angle- and
@@ -462,8 +459,8 @@ function update_factored_y_modes!(U, V, Hs_pi2, sign_mag, P, lamb_helmholtz::Val
 end
 
 # Flat physical-subspace check / guard, FlatCoefficientBuffer
-# form: scans the m=0 imaginary rows of φ (0:P_phi) and χ (0:P_active). Wired in at
-# the 023 integration boundary; OFF by default in production.
+# form: scans the m=0 imaginary rows of φ (0:P_phi) and χ (0:P_active). Called on
+# the upward-pass output of the resident lifecycle; active only when DEBUG[] is set.
 function _factored_input_is_physical(source::FlatCoefficientBuffer{TF,A,B,LH}; atol=nothing) where {TF,A,B,LH}
     rt = real(TF)
     tol = atol === nothing ? sqrt(eps(rt)) : atol

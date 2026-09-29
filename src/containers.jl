@@ -397,29 +397,31 @@ end
 "Supertype for radix near/far separation policies."
 abstract type RadixSeparationPolicy end
 
-# Every integer <= 20 with a nonempty lattice shell (7 and 15 are not sums of
-# three squares). The construction (`RigidHierarchicalTables`,
-# `rigid_stencil_epsilon`, `_verify_hierarchical_classifier!`) is fully generic
-# in the radius and self-verifies classifier exactness at construction; the
-# guard exists to reject radii with no lattice shell and typos. Radii above 12
-# were added earlier: a regularized nearfield at overlap beta = 2 needs
-# g_min*h_leaf > rho_t*sigma_max, which forces a large leaf near set, while the
-# fixed 1e-3 velocity gate needs more accuracy than q = 12 delivers at P = 4
+# Supported squared near radii: every integer 3..27 except 7, 15 and 23, which
+# are not sums of three squares (no lattice shell). Radii below 3 are excluded:
+# q = 3 is the smallest radius that keeps every touching neighbor cell direct.
+# The construction (`RigidHierarchicalTables`, `rigid_stencil_epsilon`,
+# `_verify_hierarchical_classifier!`) is fully generic in the radius and
+# self-verifies classifier exactness at construction; the guard exists to
+# reject radii with no lattice shell and typos. Radii above 12 serve the
+# regularized nearfield: at overlap beta = 2 it needs
+# g_min*h_leaf > rho_t*sigma_max, which forces a large leaf near set, while a
+# 1e-3 velocity target needs more accuracy than q = 12 delivers at P = 4
 # (measured 1.088e-3) — q = 16 raises g_min from sqrt(5) to
-# sqrt(6), q = 20 to 3. Radii 21-27 (23 has no lattice shell) were added by
-# the port for the all-direct adequacy fallback: q = 27 covers every offset
-# of the 4^3 leaf grid at ell = 2, producing the zero-M2L degenerate cache
-# in which every pair is evaluated by the regularized direct kernel.
+# sqrt(6), q = 20 to 3. Radii 21-27 serve the all-direct adequacy fallback:
+# q = 27 covers every offset of the 4^3 leaf grid at ell = 2, producing the
+# zero-M2L degenerate cache in which every pair is evaluated by the regularized
+# direct kernel.
 const _SUPPORTED_RIGID_NEAR_RADII2 =
     (3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27)
 const _SUPPORTED_RIGID_NEAR_RADII2_TEXT =
     "3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27"
 
-# Shipped rigid-stencil operating point, selected by measurement earlier
-# Stage 7: `q = 5` at every M2L level except the coarsest, which uses `q = 6`.
+# Default rigid-stencil operating point, selected by measurement: `q = 5` at
+# every M2L level except the coarsest, which uses `q = 6`.
 # At n = 1e6 / P = 4 / ell = 5 this measured 12.51 ms per resident step at
 # 1.05e-3 gradient relative RMS, against 15.45 ms at 5.75e-4 for uniform q = 6
-# and ~30 ms at 3.19e-4 for the previous uniform q = 12 default.
+# and ~30 ms at 3.19e-4 for uniform q = 12.
 const RADIX_DEFAULT_NEAR_RADIUS2 = 5
 const RADIX_DEFAULT_COARSE_NEAR_RADIUS2 = 6
 
@@ -429,10 +431,11 @@ const RADIX_DEFAULT_COARSE_NEAR_RADIUS2 = 6
         "supported values are ($_SUPPORTED_RIGID_NEAR_RADII2_TEXT)"))
 end
 
-# A level schedule lists one near radius per M2L level (levels 2:ell, coarse to
-# fine). the earlier stage's exact-once proof extends to a level-dependent radius only
-# while the radius is non-increasing with depth, and the leaf entry is what
-# defines the direct list, so it must agree with `near_radius2`.
+# A level schedule lists one near radius per M2L level (coarse to fine). The
+# hierarchical stencil's exact-once coverage argument extends to a
+# level-dependent radius only while the radius is non-increasing with depth, and
+# the leaf entry is what defines the direct list, so it must agree with
+# `near_radius2`.
 function _validate_rigid_level_schedule(level_radii2, near_radius2::Int)
     qs = Tuple(Int(q) for q in level_radii2)
     isempty(qs) && return ()
@@ -481,30 +484,32 @@ ConstantPAnalyticStencil(args...; kwargs...) =
 Host-resident, genuinely hierarchical rigid M2L policy.  The analytic
 `config` is retained as an accuracy contract: cache construction verifies that
 its rejected integer offsets are exactly the requested spherical near set.
-this is the default `RadixFMMCache` policy; the flat
+This is the default `RadixFMMCache` policy; the flat
 [`ConstantPAnalyticStencil`](@ref) remains selectable as the correctness oracle.
 
 `near_radius2` is the squared lattice near radius `q` at the leaf level: cell
 offsets with `|o|^2 <= q` are evaluated directly and everything beyond is M2L.
-Supported values are $(_SUPPORTED_RIGID_NEAR_RADII2_TEXT) (the omitted 7 has no
-integer lattice shell). Larger `q` means more direct work and a more accurate
+Supported values are $(_SUPPORTED_RIGID_NEAR_RADII2_TEXT) (7, 15 and 23 have no
+integer lattice shell; radii below 3 would send touching cells to M2L). Larger
+`q` means more direct work and a more accurate
 far field; `q = 3` is the classic `|o|_inf <= 1` FMM stencil and `q = 12` the
 `theta = 0.5` stencil.
 
 `level_radii2` optionally schedules one radius per M2L level, coarse to fine,
-for levels `2:ell` — . It must be non-increasing with depth
-(the condition under which the earlier stage's exact-once coverage proof still holds)
-and its last entry must equal `near_radius2`. An empty tuple means the uniform
-policy. The default `RadixFMMCache` policy is `near_radius2 = 5` with the
-schedule `(6, 5, 5, ..., 5)`, the fastest configuration that stayed inside task
-028's accuracy gate at `P = 4` (1.05e-3 gradient relative RMS at `n = 1e6`, vs
-3.19e-4 for the previous uniform `q = 12` default). Pass `near_radius2 = 12`
-for the older, more accurate and slower operating point.
+for levels `2:ell` (see [`RadixFMMCache`](@ref) for rectangular caches with
+trimmed coarse levels). It must be non-increasing with depth (the condition
+under which the exact-once coverage argument still holds) and its last entry
+must equal `near_radius2`. An empty tuple means the uniform policy. The default
+`RadixFMMCache` policy is `near_radius2 = 5` with the schedule
+`(6, 5, 5, ..., 5)`, the fastest measured configuration that met the `P = 4`
+accuracy target (1.05e-3 gradient relative RMS at `n = 1e6`, vs 3.19e-4 for
+uniform `q = 12`). Pass `near_radius2 = 12` for a more accurate, slower
+operating point.
 """
 struct HierarchicalRigidStencil{C<:ConstantPStencilConfig} <: RadixSeparationPolicy
     config::C
     near_radius2::Int
-    # One near radius per M2L level (levels 2:ell, coarse to fine); empty means
+    # One near radius per M2L level (coarse to fine); empty means
     # the uniform policy. Validated by `_validate_rigid_level_schedule`.
     level_radii2::Tuple{Vararg{Int}}
     window_classes::Int
@@ -600,9 +605,9 @@ mutable struct HostHierarchicalM2LContext{O<:RadixLevelOccupancy,A}
     effective_offsets::Vector{SVector{3,Int}}
     apply_plan::A
     window_classes::Int
-    # coarsest active M2L level (): construction-fixed; levels
+    # coarsest active M2L level: construction-fixed; levels
     # first_m2l_level:ell carry classes, class numbering is
-    # (L - first_m2l_level) * noffsets + k. Cubic caches: 2 (legacy).
+    # (L - first_m2l_level) * noffsets + k. Cubic caches: normally 2.
     first_m2l_level::Int
     level_offsets::Vector{Int}
     total_routes::Int
@@ -626,9 +631,9 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV}
     apply_plan::PL
     window_classes::Int
     ell::Int
-    # coarsest active M2L level (): construction-fixed — the
-    # 029 window cache relies on the level structure never
-    # changing across steps. Cubic caches: 2 (legacy).
+    # coarsest active M2L level: construction-fixed — the
+    # occupancy-epoch window cache relies on the level structure never
+    # changing across steps. Cubic caches: normally 2.
     first_m2l_level::Int
     noffsets::Int
     # host geometry mirrors (small, step-varying prefixes)
@@ -647,7 +652,7 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV}
     # pure functions of that set given the cache's fixed Morton box, so they are
     # regenerated only on epoch change. `win_class`/`win_sources`/`win_targets`
     # (device vectors, lazily sized, `Any`-typed to keep this container free of
-    # CUDA types) hold the complete per-level route concatenation of the current
+    # device array types) hold the complete per-level route concatenation of the current
     # epoch in exact generation order.
     epoch_id::Int
     epoch_n_direct::Int
@@ -881,27 +886,27 @@ OperatorBasisInfo(basis::CompressedComplexBasis, P::Integer, lamb_helmholtz::Val
 OperatorBasisInfo(P::Integer, lamb_helmholtz::Val) =
     OperatorBasisInfo(CompressedComplexBasis(), P, lamb_helmholtz)
 
-#------- native flat coefficient buffers (Matrix Operator Refactor) -------#
+#------- native flat coefficient buffers -------#
 #
 # The native coefficient storage for the batched operators. re/im are interleaved
 # into the leading basis dimension and each channel is a dense `basis_dof x batch`
-# matrix (the BLAS/cuBLAS GEMM slab).
+# matrix (the BLAS / device GEMM slab).
 #
 #     flat_basis_index(n, m, reim) = 2 * (harmonic_index(n, m) - 1) + reim,  reim in 1:2
 #
 # Default backing is RAGGED: a separate dense φ matrix
 # sized to `basis_dof_phi` (order `P_phi`) and a separate dense χ matrix sized to
-# `basis_dof_chi` (order `P_active = P_chi`). φ therefore carries no padding rows,
-# so the `_zero_phi_padding!` machinery is unnecessary here; the
+# `basis_dof_chi` (order `P_active = P_chi`). φ therefore carries no padding rows
+# and needs no zeroing; the
 # physical φ/χ bounds are instead enforced structurally by the order-aware operator
 # kernels (`P_phi` for φ, `P_active` for χ). `Val(false)` allocates φ only (the dead
 # χ channel is pruned). `harmonic_index(n,m)` is P-independent, so the same
 # `flat_basis_index` addresses both matrices (φ valid for n <= P_phi, χ for n <=
-# P_active). RAGGED is the DECIDED layout:
+# P_active). RAGGED was chosen by measurement:
 # the padded single-array alternative measured +10-28% chain time on CPU with no
-# channel-merged-GEMM win (the GPU M2L is no longer launch-bound after 019's
-# fusion) and +17-39% storage at the small P the GPU path runs, so it was
-# rejected; the accessors below remain the swap surface should that change.
+# channel-merged-GEMM win (the fused GPU M2L is not launch-bound) and +17-39%
+# storage at the small P the GPU path runs; the accessors below remain the swap
+# surface should that change.
 
 @inline flat_basis_index(n, m, reim) = 2 * (harmonic_index(n, m) - 1) + reim
 
@@ -911,7 +916,7 @@ OperatorBasisInfo(P::Integer, lamb_helmholtz::Val) =
     AbstractCoefficientBuffer{TF,LH}
 
 Supertype for resident expansion-coefficient buffer layouts. Concrete
-layouts are the legacy [`FlatCoefficientBuffer`](@ref) (compressed `m>=0`, interleaved
+layouts are the [`FlatCoefficientBuffer`](@ref) (compressed `m>=0`, interleaved
 re/im, used by the per-column operators) and the GEMM-native
 [`DegreeMajorRealBuffer`](@ref) (real, degree-major, y-mode-ordered) that the batched
 `mul!` operator strategies read with no per-GEMM reformatting. The buffer layout is a
@@ -925,12 +930,11 @@ abstract type AbstractCoefficientBuffer{TF,LH} end
 Native flat coefficient storage. Holds a dense φ channel matrix
 (`basis_dof_phi x batch`) and, for `Val(true)`, a dense χ channel matrix
 (`basis_dof_chi x batch`); for `Val(false)` `chi` is empty (χ pruned). Parametric on
-the matrix type `A` so a device array (e.g. `CuArray`) can back it later.
+the matrix type `A` so a device array can back it.
 
 Operators touch the channels only through the accessors `phi_slab` /
-`chi_slab`, so the physical backing
-(ragged, decided earlier; the padded single-array alternative was measured
-and rejected) is swappable.
+`chi_slab`, so the physical backing (ragged; a padded single-array alternative
+measured slower) is swappable.
 """
 struct FlatCoefficientBuffer{TF,A<:AbstractMatrix{TF},B<:AbstractOperatorBasis,LH} <: AbstractCoefficientBuffer{TF,LH}
     phi::A
@@ -952,7 +956,7 @@ FlatCoefficientBuffer(::Type{TF}, P::Integer, lamb_helmholtz::Val, batch::Intege
 @inline chi_slab(buf::FlatCoefficientBuffer) = buf.chi
 @inline flat_nbatch(buf::FlatCoefficientBuffer) = size(buf.phi, 2)
 
-#------- GEMM-native degree-major coefficient buffer (Matrix Operator Refactor) -------#
+#------- GEMM-native degree-major coefficient buffer -------#
 #
 # The batched `mul!` M2M/M2L/L2L operator strategies work over the genuinely factored
 # y-rotation `Y_n(θ) = U_n diag(e^{iνθ}) V_n`, whose fixed modes `U_n`/`V_n` act on the
@@ -971,7 +975,7 @@ FlatCoefficientBuffer(::Type{TF}, P::Integer, lamb_helmholtz::Val, batch::Intege
 GEMM-native coefficient storage: a real, degree-major, y-mode-ordered φ
 matrix (`(P_phi+1)^2 x batch`) and, for `Val(true)`, a χ matrix
 (`(P_active+1)^2 x batch`); `chi` is empty for `Val(false)`. Parametric on the matrix
-type `A` so a device array (`CuArray`) can back it. Read the per-degree GEMM operands
+type `A` so a device array can back it. Read the per-degree GEMM operands
 through `degree_row_range(n)`; use [`to_gemm_buffer!`](@ref) / [`to_flat_buffer!`](@ref)
 only at pass boundaries / tests, never in the hot path.
 """
@@ -1024,7 +1028,7 @@ end
 """
     to_gemm_buffer!(gemm::DegreeMajorRealBuffer, flat::FlatCoefficientBuffer)
 
-Copy a legacy compressed flat buffer into the degree-major GEMM layout. `im(m0)` is
+Copy a compressed flat buffer into the degree-major GEMM layout. `im(m0)` is
 dropped (structurally 0). Boundary/test use only.
 """
 function to_gemm_buffer!(gemm::DegreeMajorRealBuffer{TF,A,B,LH}, flat::FlatCoefficientBuffer) where {TF,A,B,LH}
@@ -1038,7 +1042,7 @@ end
 """
     to_flat_buffer!(flat::FlatCoefficientBuffer, gemm::DegreeMajorRealBuffer)
 
-Copy the degree-major GEMM layout back into a legacy compressed flat buffer, setting
+Copy the degree-major GEMM layout back into a compressed flat buffer, setting
 `im(m0)` to 0. Boundary/test use only.
 """
 function to_flat_buffer!(flat::FlatCoefficientBuffer{TF,A,B,LH}, gemm::DegreeMajorRealBuffer) where {TF,A,B,LH}
@@ -1057,7 +1061,7 @@ struct OperatorInvariantCache{TF,B<:AbstractOperatorBasis,LH}
     eta_mag::Vector{TF}
     M_tilde::Vector{TF}
     L_tilde::Vector{TF}
-    # angle-independent axis-swap blocks (Matrix Operator Refactor):
+    # angle-independent axis-swap blocks:
     # precomputed from Hs_pi2 so the per-call Wigner Ts is a cheap phase contraction
     # via build_Ts_from_S! instead of the per-call update_Ts! rebuild.
     S_pos::Vector{TF}
@@ -1152,14 +1156,14 @@ end
 OperatorScratch(::Type{TF}, P::Integer, lamb_helmholtz::Val) where TF =
     OperatorScratch(TF, OperatorBasisInfo(P, lamb_helmholtz))
 
-#------- FULL M2L OPERATOR PIPELINE (Matrix Operator Refactor) -------#
+#------- FULL M2L OPERATOR PIPELINE -------#
 #
 # Whole-M2L operator tags selecting the y-rotation strategy of the resident plans;
 # they differ only in how the arbitrary-angle y-alignment is realized:
 #
 #   MaterializedYRotationM2L : reconstruct Ts(θ) per column from the cached S_pos /
 #                              S_neg axis-swap blocks and apply the
-#                              production-parity y kernels. Also the per-column
+#                              y kernels of src/rotate.jl. Also the per-column
 #                              `m2l_operator_batch!` pipeline that builds the
 #                              `DenseTranslationM2L` class matrices.
 #   FactoredRotationM2L      : apply the genuinely factored Z_phi -> Y(θ) -> ... ->
@@ -1175,7 +1179,7 @@ abstract type AbstractM2LOperator end
 struct MaterializedYRotationM2L <: AbstractM2LOperator end
 
 # Physical-subspace invariant: the FactoredRotation* operators reproduce
-# production exactly only for *physical* inputs (m=0 imaginary part == 0). Every
+# the materialized rotation exactly only for *physical* inputs (m=0 imaginary part == 0). Every
 # real solid-harmonic expansion is physical, so this holds throughout production;
 # the MaterializedYRotation* operators stay exact for any input. See the
 # `_assert_factored_input_physical` guard in src/rotate_batched.jl.
@@ -1235,10 +1239,9 @@ columns passed through the materialized-y construction oracle; zero selects the
 largest useful width. `max_persistent_bytes` limits operator, application-slab, and
 route-metadata payload storage.
 
-Supported on the host lifecycle and, through
-`RadixFMMCache(...; device=true, options=RadixLifecycleOptions(
-m2l_strategy=DenseTranslationM2L()))`, on the device-resident lifecycle, where the
-same `max_persistent_bytes` payload gate applies.
+Host-only: a KernelAbstractions device cache (`RadixFMMCache(...; device=true)`)
+rejects it at construction, since the KA backend builds only the
+[`ConcatenatedFixedZM2L`](@ref) plan.
 """
 struct DenseTranslationM2L <: AbstractResidentM2LStrategy
     max_persistent_bytes::Int
@@ -1268,7 +1271,7 @@ struct DenseTranslationM2L <: AbstractResidentM2LStrategy
             converted.build_chunk)
     end
 end
-# Whole-pass concatenated M2L (the port throughput repair). Instead of looping
+# Whole-pass concatenated M2L. Instead of looping
 # per-(r,theta,phi) groups, all routes are processed in fixed-width column chunks:
 # the z-rotation and factored-y stages are already per-column parameterized, and the
 # z-translation separates as K_m(r)[n,np] = r^-(n+1/2) * (n+np)! * r^-(np+1/2), so a
@@ -1355,9 +1358,9 @@ struct ResidentM2LDensePlan{TF}
     construction_peak_bytes::Int
 end
 
-#------- CUDA device-resident radix lifecycle metadata -------#
+#------- device-resident radix lifecycle metadata -------#
 #
-# These containers intentionally avoid CUDA-specific types so the CPU package path
+# These containers intentionally avoid device-specific array types so the CPU package path
 # can load without touching a device runtime. The device backend extension fills
 # them with device-array-backed buffers once it is loaded.
 
@@ -1392,10 +1395,9 @@ struct DeviceResident <: Residency end
     device_backend(system) -> backend or nothing
 
 KernelAbstractions backend a `DeviceResident` system's storage lives on, or
-`nothing` (the default) for a system that names no backend. CUDA never consults
-this -- it reaches its device through `CUDA.jl` directly -- so it exists for the
-registry in `register_radix_device_backend!`, which must know which device to
-allocate the cache on BEFORE it may touch a source system's buffers.
+`nothing` (the default) for a system that names no backend. The KA extension's
+cache build (registered through `register_radix_device_backend!`) uses it to choose
+which device to allocate the cache on BEFORE it may touch a source system's buffers.
 """
 device_backend(system) = nothing
 
@@ -1416,15 +1418,15 @@ struct SourceTree <: TreeRole end
 struct TargetTree <: TreeRole end
 
 
-#------- nearfield direct-kernel functors () -------#
+#------- nearfield direct-kernel functors -------#
 #
 # The resident nearfield pair kernels are generic over an isbits functor selected
 # by the `direct_kernel(system)` trait and stamped into `RadixLifecycleOptions`
 # at cache construction, so each distinct kernel is one compile-time kernel
 # instantiation, never a runtime branch in the pair loop. Consumer-supplied
 # functors are allowed if isbits and GPU-compilable: implement
-# `_direct_pair_ug` / `_direct_pair_ugh` (radix_extra_systems.jl) and
-# `_emits_potential` for the new type.
+# `_direct_pair_ug` / `_direct_pair_ugh` and `_emits_potential` for the new type
+# (contract in compatibility.jl; built-in methods in resident/resident_pair_kernels.jl).
 
 "Supertype for resident nearfield pair-kernel functors."
 abstract type AbstractDirectKernel end
@@ -1434,6 +1436,23 @@ struct SingularSource <: AbstractDirectKernel end
 
 "Singular Biot-Savart kernel (shipped default for `Point{Vortex}`)."
 struct SingularVortex <: AbstractDirectKernel end
+
+"""
+Supertype of the regularized vortex nearfields ([`RegularizedVortex`](@ref),
+[`PartitionedVortex`](@ref), [`TwoPassVortex`](@ref)): they share the
+`sigma_row`/`rho_t` contract and the near-set adequacy gate, and differ only in
+how pairs beyond the smoothing cutoff are evaluated.
+"""
+abstract type AbstractRegularizedVortex <: AbstractDirectKernel end
+
+@inline function _validate_regularized_vortex_args(name, sigma_row, rho_t)
+    sigma_row >= 5 || throw(ArgumentError(
+        "$name sigma_row must point at a packed extra-state row " *
+        "(rows 1:4 are position and the MAC radius, followed by the element " *
+        "strength rows); got $sigma_row"))
+    rho_t > 0 || throw(ArgumentError("$name rho_t must be positive"))
+    return nothing
+end
 
 """
     RegularizedVortex(; sigma_row, rho_t=4.789)
@@ -1455,36 +1474,17 @@ zero-padded columns of narrower systems) fall back to the singular kernel.
 kernels agree to the expansion tolerance (4.789 for a relative difference of
 1e-3). The FMM far field is singular, so the direct near set must cover every
 source's smoothing neighborhood: each evaluation checks
-`g_min·h_leaf > rho_t·σ_max` from the live geometry and **throws**, naming the
-measured ratio and the admissible depth, when the near set is too small.
+`g_min·h_leaf > rho_t·σ_max` from the live geometry. When the near set is too
+small, a cache on the default hierarchical policy warns and demotes itself to
+the all-direct (zero-M2L) geometry; any other cache **throws**, naming the
+measured ratio and the admissible depth.
 
 `g` and `h` are evaluated without `erf`: a cancellation-safe alternating series
 below `ρ = 2` and a one-`exp` fitted form above.
 
 [`PartitionedVortex`](@ref) is the recommended default for σ-carrying vortex
 systems; it is faster at the same accuracy. This kernel is the fallback that
-evaluates every near pair regularized.
-"""
-# Regularized vortex nearfields share the sigma_row/rho_t contract and the
-# near-set adequacy gate; they differ only in how pairs beyond the smoothing
-# cutoff are evaluated.
-abstract type AbstractRegularizedVortex <: AbstractDirectKernel end
-
-@inline function _validate_regularized_vortex_args(name, sigma_row, rho_t)
-    sigma_row >= 5 || throw(ArgumentError(
-        "$name sigma_row must point at a packed extra-state row " *
-        "(rows 1:4 are position and the MAC radius, followed by the element " *
-        "strength rows); got $sigma_row"))
-    rho_t > 0 || throw(ArgumentError("$name rho_t must be positive"))
-    return nothing
-end
-
-"""
-    RegularizedVortex(; sigma_row, rho_t=4.789)
-
-Regularized (Gaussian-erf) Biot-Savart nearfield kernel for `Point{Vortex}` sources,
-with the core size read from packed row `sigma_row` and the smoothing cutoff
-`rho_t` cores. See also `PartitionedVortex` and `TwoPassVortex`.
+evaluates every near pair regularized. See also [`TwoPassVortex`](@ref).
 """
 struct RegularizedVortex <: AbstractRegularizedVortex
     sigma_row::Int
@@ -1507,7 +1507,7 @@ evaluation as [`RegularizedVortex`](@ref)); the remaining direct pairs use
 the exact singular kernel (`g → 1`, `h → −3`), skipping the regularization
 transcendentals entirely. The FMM far field is singular under every nearfield
 strategy, so the near-set adequacy gate applies identically
-(`g_min·h_leaf > rho_t·σ_max`, asserted per evaluation): the geometry that
+(`g_min·h_leaf > rho_t·σ_max`, checked per evaluation): the geometry that
 makes this kernel exact-once is the same geometry `RegularizedVortex` already
 requires, and the `rho_t` branch never changes which pairs are direct — only
 how they are evaluated.
@@ -1574,7 +1574,7 @@ struct TwoPassVortex <: AbstractRegularizedVortex
         rho_c >= 1.5 || throw(ArgumentError(
             "TwoPassVortex rho_c must be at least 1.5: the singular-plus-deficit " *
             "cancellation amplifies rounding like ~1/ρ³ and the transverse J " *
-            "reference ρg'-2g changes sign at ρ=1.3688 (031a §6.1); the measured " *
+            "reference ρg'-2g changes sign at ρ=1.3688; the measured " *
             "hybrid switch is rho_c=2"))
         return new(Int(sigma_row), Float64(rho_t), Float64(rho_c))
     end
@@ -1741,7 +1741,7 @@ mutable struct RadixTransferCounters
     expansion_host_copies::Int
     # host mirrors of step-varying sort metadata (perm/system/index), needed only
     # to finalize into host-resident targets; kept separate from
-    # influence_downloads so the 022 "download only per-body influence" contract
+    # influence_downloads so the "download only per-body influence" contract
     # stays auditable
     metadata_downloads::Int
 end
@@ -1752,8 +1752,8 @@ RadixTransferCounters() = RadixTransferCounters(0, 0, 0, 0)
     RadixLifecycleOptions(; precision=Float64, operator, m2l_strategy,
                               body_type=Point{Source}, direct_kernel)
 
-Options of a resident radix lifecycle, host or device (the name predates the
-KernelAbstractions extension). `precision` is the working float type (Float32 on
+Options of a resident radix lifecycle, host or device. `precision` is the
+working float type (Float32 on
 Metal); `m2l_strategy` selects the far-field plan (`ConcatenatedFixedZM2L`, the
 default and the only device plan, `DenseTranslationM2L`, or
 `PrecomputedFactoredYM2L` with `operator=FactoredRotationM2L()`);
@@ -1771,7 +1771,7 @@ struct RadixLifecycleOptions{TF,O<:AbstractM2LOperator,
     # construction. Part of the concrete options type so B2M launchers dispatch
     # at compile time.
     body_type::Type{BT}
-    # Nearfield direct-kernel functor (): resolved from the
+    # Nearfield direct-kernel functor: resolved from the
     # `direct_kernel` trait (defaulting per body type) at cache construction;
     # part of the concrete options type so the pair kernels specialize on it.
     direct_kernel::DK
@@ -1780,7 +1780,7 @@ struct RadixLifecycleOptions{TF,O<:AbstractM2LOperator,
     direct_kernel_explicit::Bool
 end
 
-# Preserve the historical partial form `RadixLifecycleOptions{TF}(...)` while
+# Support the partial form `RadixLifecycleOptions{TF}(...)` while
 # making all dispatch choices part of the concrete options type. An omitted
 # (`nothing`) direct kernel is the body type's default.
 RadixLifecycleOptions{TF}(precision, operator, m2l_strategy,
@@ -1811,7 +1811,7 @@ function RadixLifecycleOptions(;
         direct_kernel::Union{Nothing,AbstractDirectKernel}=nothing,
     ) where TF
     TF <: Union{Float32,Float64} ||
-        throw(ArgumentError("CUDA radix lifecycle precision must be Float32 or Float64"))
+        throw(ArgumentError("radix lifecycle precision must be Float32 or Float64"))
     operator isa AbstractM2LOperator ||
         throw(ArgumentError("operator must be an AbstractM2LOperator"))
     m2l_strategy isa AbstractResidentM2LStrategy ||
@@ -1847,8 +1847,8 @@ _options_with_direct_kernel(options::RadixLifecycleOptions{TF},
     RadixLifecycleOptions{TF}(options.precision, options.operator,
         options.m2l_strategy, options.body_type, dk, options.direct_kernel_explicit)
 
-# Step-varying prefix lengths for a capacity-sized DeviceResidentRadixState (task
-# 023): arrays stay allocated at construction capacity and each count bounds the
+# Step-varying prefix lengths for a capacity-sized DeviceResidentRadixState:
+# arrays stay allocated at construction capacity and each count bounds the
 # valid prefix, so recurring time steps never reallocate. One-shot construction
 # initializes every count to the corresponding full array length.
 mutable struct RadixStepCounts
@@ -1922,8 +1922,8 @@ data, so every `fmm!` call is the fast path and no persistent host or device arr
 is reallocated across steps. Bounded Morton depths use persistent counting-sort
 scratch; larger depths use the backend's device sort scratch.
 
-The invariant contract: the domain box (`x_min`, `h0`, and — the port — the
-readable rectangular extents `ell_axes`/`box_extent`), depth `ell`, expansion
+The invariant contract: the domain box (`x_min`, `h0`, and the readable
+rectangular extents `ell_axes`/`box_extent`), depth `ell`, expansion
 order, and `max_n_bodies` are fixed at construction. Each step may move bodies and
 change their number (up to `max_n_bodies`), but positions must stay inside the
 fixed box; violations throw `ArgumentError` rather than silently rebuilding the
@@ -1947,7 +1947,7 @@ mutable struct RadixFMMCache{TF,LH}
     # cell width. Cubic caches carry `(ell, ell, ell)` and `(2h0, 2h0, 2h0)`.
     ell_axes::SVector{3,Int}
     box_extent::SVector{3,TF}
-    # active-level trimming (): hierarchical caches build node
+    # active-level trimming: hierarchical caches build node
     # metadata and stage groups for levels root_level:ell only
     # (level_offsets[1:root_level+1] stay 0; nodes at root_level have parent 0).
     # Cubic hierarchical caches carry 1 (level 0 trimmed — its multipole/local
@@ -1960,7 +1960,7 @@ mutable struct RadixFMMCache{TF,LH}
     # bandwidth-identical when hessian output is off.
     hessian::Bool
     options::RadixLifecycleOptions{TF}
-    policy::Any                     # ConstantPAnalyticStencil
+    policy::Any                     # HierarchicalRigidStencil (default) or ConstantPAnalyticStencil
     # step-invariant stencil classification and capacity bounds
     accepted_offsets::Vector{SVector{3,Int}}
     rejected_offsets::Vector{SVector{3,Int}}
@@ -2027,5 +2027,5 @@ function DeviceResidentRadixState{TF,B,LH}(grid, interaction_list, source_bodies
     )
 end
 
-# the names of the native-CUDA era, kept as aliases for one release
+# Alias kept for existing callers (FLOWVPM uses this name).
 const CUDARadixLifecycleOptions = RadixLifecycleOptions

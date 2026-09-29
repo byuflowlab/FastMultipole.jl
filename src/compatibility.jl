@@ -14,7 +14,7 @@ residency(system) = HostResident()
     supports_third_derivative(target_system, source_system) -> Bool
 
 Opt-in trait for a target/source pair whose direct interaction and target writeback
-implement packed third-derivative output. It defaults to `false` so legacy kernels cannot
+implement packed third-derivative output. It defaults to `false` so kernels without that support cannot
 silently return incomplete near-field results.
 """
 supports_third_derivative(target_system, source_system) = false
@@ -39,7 +39,7 @@ end
 Return the element type used to form multipole expansions from `system` on the
 radix/resident path, e.g. `Point{Source}` (default) or
 `Point{Vortex}`. The returned value is the element *type* itself, matching the
-`body_to_multipole!(Point{Vortex}, system, args...)` convention of the legacy
+`body_to_multipole!(Point{Vortex}, system, args...)` convention of the octree
 path. All source systems sharing one `RadixFMMCache` must return the same body
 type; `Point{Vortex}` requires `has_vector_potential(system) == true` (the
 Lamb-Helmholtz χ channel), which is checked at cache construction.
@@ -50,7 +50,7 @@ body_type(system) = Point{Source}
     direct_kernel(system)
 
 Return the nearfield direct-interaction kernel functor used for `system` on the
-radix/resident path (). Defaults follow [`body_type`](@ref):
+radix/resident path. Defaults follow [`body_type`](@ref):
 `SingularSource()` for `Point{Source}` and `SingularVortex()` for
 `Point{Vortex}`. Overload to select [`RegularizedVortex`](@ref) (regularized
 Biot-Savart, `gaussianerf`) or a custom kernel. All source systems sharing one
@@ -74,7 +74,7 @@ Here `dx, dy, dz = target - source`, `r2 = dx^2+dy^2+dz^2 > 0`, and
 column (`[x, y, z, radius, strength..., extras...]`), giving the kernel access
 to per-source extra states such as a smoothing radius. This flat-argument form
 avoids a column-view signature so the same code compiles as a
-CUDA device function without constructing a view per pair.
+GPU device function without constructing a view per pair.
 """
 direct_kernel(system) = _default_direct_kernel(body_type(system))
 
@@ -430,7 +430,7 @@ must be steady-state allocation-free.
 evaluation** — the framework zeroes its accumulators each step. Whether the
 consumer overwrites its state or accumulates into it (`.=` vs `.+=`) inside
 this call is the consumer's choice; both are correct (a time stepper typically
-overwrites, FLOWVPM-style resets accumulate).
+overwrites; a consumer that resets its state beforehand accumulates).
 
 Host systems get this behavior for free by overloading
 [`buffer_to_target_system!`](@ref); `DeviceResident` systems overload
@@ -732,11 +732,11 @@ function get_position(system::AbstractMatrix{TF}, i) where TF
     return val
 end
 
-# The switchless accessors assumed the legacy fixed row layout (rows 4, 5:7, 8:16); with a
-# preceding output disabled they read or wrote the wrong rows silently. They
-# now refuse, naming the switch-aware form (reviewer request).
+# The switchless accessors assume a fixed row layout (rows 4, 5:7, 8:16); with a
+# preceding output disabled they would read or write the wrong rows silently,
+# so they refuse and name the switch-aware form.
 _switchless(name) = throw(ArgumentError(
-    "$name(buffer, i, ...) assumes the legacy fixed row layout (rows 4, 5:7, 8:16) and " *
+    "$name(buffer, i, ...) assumes a fixed row layout (rows 4, 5:7, 8:16) and " *
     "reads or writes the wrong rows when any output is disabled; use " *
     "$name(buffer, derivatives_switch, i, ...) (see docs: Advanced usage, output layout)"))
 get_scalar_potential(system::AbstractMatrix, i) = _switchless("get_scalar_potential")

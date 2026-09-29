@@ -1,8 +1,9 @@
 #------- host output finalization -------#
 #
-# The lifecycle output is a 4×n slab (scalar potential + gradient, sorted body
-# order). These scatter it back to user target buffers/systems; hoisted from the
-# CUDA-only file so the pure-host path can finalize without loading CUDA.
+# The lifecycle output is a 4×n slab (scalar potential + gradient; 13×n with the
+# hessian) in sorted body order. These scatter it back to user target
+# buffers/systems; they are generic host code, so the pure-host path can finalize
+# without loading a device backend.
 
 function _copy_radix_output_to_host_target_buffer!(target_buffer, output, body_perm,
         body_system_ids, body_indices, isys::Integer, derivatives_switch,
@@ -38,7 +39,7 @@ Scatter a host-resident radix lifecycle output back into the user target systems
 de-permute `state.output` (sorted body order: scalar potential + gradient, plus
 the 9-component hessian when the cache was built with `hessian=true`) into
 per-system target buffers (whose metadata rows are filled from
-`target_systems` with [`metadata_to_buffer!`](@ref), as on the legacy path) and call [`buffer_to_target!`](@ref). A derivatives
+`target_systems` with [`metadata_to_buffer!`](@ref), as on the octree path) and call [`buffer_to_target!`](@ref). A derivatives
 switch requesting hessian rows from a 4-row output throws.
 Pass preallocated `target_buffers` (one per system) to keep recurring steps
 allocation-free; otherwise buffers are allocated per call.
@@ -57,7 +58,7 @@ function finalize_radix_output!(state::DeviceResidentRadixState{TF}, target_syst
             throw(ArgumentError("finalize_radix_output! supports host-resident target systems only"))
         target_buffer = target_buffers === nothing ?
             allocate_target_buffer(TF, target_system, switch) : target_buffers[isys]
-        # metadata rows, filled as the legacy path's target_to_buffer! fills them
+        # metadata rows, filled as the octree path's target_to_buffer! fills them
         if !isempty(metadata_range(switch))
             for i_body in 1:get_n_bodies(target_system)
                 metadata_to_buffer!(target_buffer, switch, i_body, target_system, i_body)

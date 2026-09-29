@@ -2,20 +2,20 @@
 Element body-to-multipole for the resident radix lifecycle, shared by the host
 and the KernelAbstractions device path.
 
-The legacy `bodytomultipole.jl` routines (`calculate_q!`, `calculate_pj!`,
+The octree path's `bodytomultipole.jl` routines (`calculate_q!`, `calculate_pj!`,
 `source_to_dipole!`, `mirrored_source_to_vortex!`) run recurrences over the whole
 (n, m) triangle of a body's harmonics, which a device kernel cannot do
-per-coefficient the way the point kernels do. They are ported here verbatim in
-a form a kernel can run per body: no allocation, no asserts, every literal in
+per-coefficient the way the point kernels do. They are reproduced here, with the same arithmetic,
+in a form a kernel can run per body: no allocation, no asserts, every literal in
 the working precision, and the harmonics/coefficient scratch handed in as any
 3-D indexable array `[reim, slot, i]` (a host `Array` or a per-body `view` of a
 device scratch). The coefficient ordering is the resident flat ordering
 (`flat_basis_index(n, m, reim) = 2 (harmonic_index(n, m) − 1) + reim`), so the
 result adds straight into the phi/chi slabs.
 
-Sign convention: the resident scalar B2M omits the legacy strength negation
+Sign convention: the resident scalar B2M omits the octree B2M's strength negation
 (see the note above `_resident_vortex_q`), so the source and dipole filament
-routines here take the strength as is; the vortex routine is the legacy one.
+routines here take the strength as is; the vortex routine matches the octree one.
 =#
 
 @inline function _res_get_n(h, index, n, m, i, _1_m)
@@ -219,7 +219,7 @@ end
     return _res_mirrored_source_to_vortex!(coef, h, T(strength[1]), T(strength[2]), T(strength[3]), 2, L, P)
 end
 
-# rows of harmonics scratch a body of order P needs (the legacy allocates P+2)
+# rows of harmonics scratch a body of order P needs (the octree path allocates P+2)
 @inline _res_element_harmonics_rows(P) = harmonic_index(P + 2, P + 2)
 
 # A body's slice of a 4-D per-body scratch `[reim, slot, i, body]`, indexed like
@@ -263,7 +263,7 @@ end
 end
 
 # q at x0+xu (slot 1), j at x0+xv (slot 2), then i at x0 (slot 1): the
-# triangle's area harmonics, as the legacy panel routines compute them
+# triangle's area harmonics, as the octree-path panel routines compute them
 @inline function _res_panel_harmonics!(h, x0, xu, xv, P, sign)
     ξ0r, ξ0i, η0r, η0i, z0 = _res_xyz_to_ξηz(sign * x0[1], sign * x0[2], sign * x0[3])
     ξur, ξui, ηur, ηui, zu = _res_xyz_to_ξηz(sign * xu[1], sign * xu[2], sign * xu[3])

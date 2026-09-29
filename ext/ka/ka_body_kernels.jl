@@ -1,18 +1,18 @@
-#------- B2M (body -> multipole), step 3 -------#
+#------- B2M (body -> multipole) -------#
 #
 # One workgroup per leaf cell, body-parallel accumulation, tree-reduced across
 # the group.
 #
-# The per-body math is NOT reimplemented -- `_resident_vortex_phi_contrib` and
-# `_resident_vortex_chi_contrib` live in src/resident/resident_b2m.jl and
-# are backend-agnostic `@inline` Julia shared with the CPU path. Only the
-# reduction shape is ported.
+# The per-body math is shared, not reimplemented -- `_resident_vortex_phi_contrib`
+# and `_resident_vortex_chi_contrib` live in src/resident/resident_b2m.jl and
+# are backend-agnostic `@inline` Julia shared with the CPU path; only the
+# reduction shape is device-specific (the vortex kernel's harmonic walk is the
+# exception, see below).
 #
-# Workgroup size is 128 to match `CUDA_B2M_BLOCK`, not the 64 used by the tree
-# kernels: the reduction is a halving tree, so its summation ORDER depends on
-# the group size, and matching CUDA's block exactly is what makes this
-# bit-exact against the CUDA reference rather than merely close. WG must be a
-# power of two.
+# Workgroup size is a fixed 128, not the backend's auto size used by the
+# elementwise kernels: the reduction is a halving tree, so its summation ORDER
+# depends on the group size, and pinning it keeps results identical across
+# backends rather than merely close. WG must be a power of two.
 #
 # Metal portability trap: the `@localmem` element type must be a compile-time
 # constant reaching the `Val`-wrapped `SharedMemory` call, and computing it
@@ -22,23 +22,22 @@
 # `::Type{TF}` kernel argument instead. `Val{WG}` dims are fine either way.
 #
 # Float32 discipline: every literal stays in TF. Apple GPUs reject Float64
-# outright, and `_cuda_b2m_*` carries no Float64 of its own, so there is
-# nothing to widen here -- but a stray `0.5` would silently promote and break
-# Metal, so the accumulators are seeded with `zero(TF)`.
+# outright, and a stray `0.5` would silently promote and break Metal, so the
+# accumulators are seeded with `zero(TF)`.
 
 # The halving tree reduction is written out lexically in both places rather
 # than factored into a helper: `@synchronize` must appear directly in the
 # kernel body and in uniform control flow, so it can neither live inside a
 # called function nor sit under a per-group `if`. (`ndrange = ncell * WG` gives
 # exactly `ncell` groups, so no group guard is needed either.)
-# B2M's three-in-one harmonic walk, KA-only (session 41).
+
+# B2M's three-in-one harmonic walk, KA-only.
 #
 # `_resident_vortex_phi_contrib` asks `_resident_vortex_q` for THREE adjacent-m
 # coefficients at one n, and each of those restarts the full O(P^2) recurrence
 # in `_resident_regular_harmonic_coeff`. Same for the chi contribution. With the
 # (n,m) loop outside the body loop, a body pays 189 restarts per B2M call, and
-# the ablation in `test/metal_env/_probe_b2m_ablate.jl` put that recurrence at
-# 88.5% of the stage.
+# an ablation on Metal put that recurrence at 88.5% of the stage.
 #
 # One walk reaches all three columns: they differ only in m, and the recurrence
 # is m-outer/n-inner, so it passes through m-1, m and m+1 on its way. That makes
@@ -46,11 +45,11 @@
 # reaching each captured value is op-for-op the shared function's, so the
 # coefficients are BIT-IDENTICAL, not merely close. The reduction and the order
 # bodies accumulate in are untouched too, so this kernel should stay bit-exact
-# against both the CPU oracle and the CUDA reference.
+# against the CPU path.
 #
 # KA-ONLY BY CONSTRUCTION: `_resident_vortex_*_contrib` and
 # `_resident_regular_harmonic_coeff` in src/ are left alone, so the CPU host
-# kernel and CUDA keep their arithmetic. The duplicated math below must stay in
+# kernel keeps its arithmetic. The duplicated math below must stay in
 # lockstep with src/resident/resident_b2m.jl.
 
 # R_{nt,mt-1}, R_{nt,mt}, R_{nt,mt+1} from a single recurrence walk, with the
@@ -653,32 +652,28 @@ function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
     return state
 end
 
-#------- L2B (local -> body output), step 4 -------#
+#------- L2B (local -> body output) -------#
 #
-# The per-body evaluation is NOT
-# reimplemented: `_resident_local_eval_flat` and
-# `_resident_local_eval_flat_hessian` (src/resident/resident_pair_kernels.jl) are
-# backend-agnostic `@inline` Julia shared with the CPU path.
-#
-# Shape differs deliberately from CUDA's. CUDA runs a warp per cell (4 warps
-# per 128-thread block) and strides bodies by 32; KA has no portable warp
-# concept, so this runs one WORKGROUP per cell and strides by the workgroup
-# size. That costs nothing and is safe: every body belongs to exactly one cell
-# (`cell_ranges` partitions the sorted bodies) and each body writes only its
-# own output column, so there is no reduction, no shared memory, no
-# `@synchronize` and no atomic here. The value written for a given body is
-# computed independently of the thread mapping, so this stays bit-exact
-# against the CUDA kernel rather than merely close.
+# Shape: KA has no portable warp concept, so this runs one WORKGROUP per cell
+# and strides bodies by the workgroup size. That is safe: every body belongs to
+# exactly one cell (`cell_ranges` partitions the sorted bodies) and each body
+# writes only its own output column, so there is no reduction, no shared
+# memory, no `@synchronize` and no atomic here. The value written for a given
+# body is computed independently of the thread mapping.
 
-# The regular-harmonic sweep, KA-only (session 41).
+# The regular-harmonic sweep, KA-only.
+#
+# The per-body evaluation mirrors `_resident_local_eval_flat` and
+# `_resident_local_eval_flat_hessian` (src/resident/resident_pair_kernels.jl),
+# with one change to how the harmonics are produced.
 #
 # `_resident_regular_harmonic_coeff` (src/resident/resident_grid_state.jl) restarts
 # a full O(P^2) associated-Legendre recurrence for EVERY (n,m) it is asked for.
 # L2B's hessian branch asks 4 times per pair, so a body pays ~72 restarts where
-# ONE m-outer/n-inner sweep produces every coefficient it needs. Measured at
-# 72.6% of the L2B stage (`test/metal_env/_probe_l2b_ablate.jl`).
+# ONE m-outer/n-inner sweep produces every coefficient it needs. An ablation on
+# Metal measured those restarts at 72.6% of the L2B stage.
 #
-# `ka_regular_harmonic_sweep` below walks that same recurrence once and emits
+# `ka_local_eval_flat` below walks that same recurrence once and emits
 # R_{n,m} as it goes. The arithmetic is op-for-op what the shared function does
 # for each target -- the outer state (`rhom`, `pn`, `fact`, `ieim`) is untouched
 # by the inner n loop, so extending that loop to P_active instead of stopping at
@@ -688,7 +683,7 @@ end
 #
 # KA-ONLY BY CONSTRUCTION: this lives in the extension and the shared
 # `_resident_local_eval_flat*` are left exactly as they are, so the CPU host
-# kernels and the CUDA path keep their current arithmetic and stay the oracle.
+# kernels keep their current arithmetic and stay the oracle.
 # The cost of that choice is a second copy of the evaluation math here, which
 # must stay in lockstep with `src/resident/resident_pair_kernels.jl`.
 
@@ -884,10 +879,8 @@ end
 """
     ka_launch_l2b!(state; workgroup=64)
 
-Local-to-body evaluation for the KA lifecycle: mirror of
-`_launch_cuda_resident_l2b_only!`, minus the stream-event overlap (the KA
-driver runs its stages in order). Selects the 13-row hessian variant on
-`size(state.output, 1) >= 13`, the same gate the CUDA launcher uses; FLOWVPM
+Local-to-body evaluation for the KA lifecycle, one workgroup per leaf cell.
+Selects the 13-row hessian variant on `size(state.output, 1) >= 13`; FLOWVPM
 runs with `hessian=true` and therefore takes that branch.
 """
 function ka_launch_l2b!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
@@ -910,7 +903,7 @@ function ka_launch_l2b!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
     return state
 end
 
-#------- NEARFIELD (U-list direct pairs), step 5 -------#
+#------- NEARFIELD (U-list direct pairs) -------#
 #
 # The per-pair math is NOT reimplemented:
 # `_direct_pair_ug` / `_direct_pair_ugh` (src/resident/resident_pair_kernels.jl)
@@ -918,24 +911,17 @@ end
 # (PartitionedVortex, RegularizedVortex, SingularSource, ...) comes along for
 # free.
 #
-# Deliberately ports ONLY the `:pairs` shape. The fused target-owned CSR
-# shapes, the symmetric Newton-pair path, the binned split-vortex path and the
-# g/h lookup table are all skipped (`ghv = Val(:shipped)`, `shlut = nothing`) --
-# they are performance variants of the same physics. That leaves the KA U-CSR
-# built in tree Phase G unused for now; it is correct and gated, and a fused
-# shape can consume it later as a perf step.
+# Only the cell-pair shape exists here, always with the `ghv = Val(:shipped)`
+# g/h series and no lookup table; fused target-owned or symmetric Newton-pair
+# shapes would be performance variants of the same physics.
 #
-# `_cuda_fast_rsqrt` is replaced by a plain `inv(sqrt(r2))`. That makes the KA
-# kernel the MORE accurate side, so this stage is gated against the CPU
-# reference, never against the CUDA kernel.
-#
-# Workgroup per pair, workitems striding the target bodies (CUDA uses a warp
-# per pair striding by 32). Targets of different pairs overlap, so the output
-# accumulation must stay atomic.
+# A team of lanes per pair, lanes striding the pair's target bodies. Targets of
+# different pairs overlap, so the output accumulation must stay atomic. The
+# stage is gated against the CPU reference.
 
-# 1/sqrt(r2). Float32: the native path. Float64: a Float32 seed refined by two
-# Newton steps (24 -> 48 -> 53 bits), the same trick as _cuda_fast_rsqrt; a
-# full FP64 sqrt+divide was 1.7x of the Float32 nearfield on an H200.
+# 1/sqrt(r2). Float32: `inv(sqrt(r2))`. Float64: a Float32 seed refined by two
+# Newton steps (24 -> 48 -> 53 bits); a full FP64 sqrt+divide was 1.7x of the
+# Float32 nearfield on an H200.
 @inline _ka_invsqrt(r2::Float32) = inv(sqrt(r2))
 # the Float32 seed is only meaningful for r2 in Float32's normal range; outside
 # it (seed Inf or 0) take the full-precision path
@@ -950,21 +936,22 @@ end
 end
 @inline _ka_invsqrt(r2) = inv(sqrt(r2))
 
-#------- warp-per-pair nearfield -------#
+#------- lanes-per-pair nearfield -------#
 #
 # The only nearfield kernel the lifecycle launches (the all-pairs kernel below
-# serves the direct arm). Launch geometry:
-#   * LANES threads per pair (a warp, 32, on CUDA), WG/LANES pairs per block,
-#     so 128-thread blocks carry four pairs -- twice the resident warps per SM
-#     and a quarter of the blocks of one block per pair;
-#   * `rsqrt.approx` through the NVVM intrinsic instead of IEEE sqrt+divide in
-#     the innermost line on CUDA; Float64 seeds two Newton steps from it;
-#   * the g/h mode as a parameter (identical to `:shipped` for Float32 fields).
-# Launch geometry comes from `_nf_config` (lanes follow the cell population).
+# serves the direct arm). Launch geometry, from `_nf_config`:
+#   * LANES threads per pair, WG/LANES pairs per group. On CUDA, LANES follows
+#     the cell population in [64, 256] (Float64: [64, 128]) and WG = max(128,
+#     LANES), so a group carries two pairs at 64 lanes and one otherwise; on
+#     every other backend WG = LANES = 64, one pair per group;
+#   * `FR` (fast rsqrt): on CUDA, libdevice's approximate `rsqrtf` instead of
+#     IEEE sqrt+divide in the innermost line; Float64 seeds two Newton steps
+#     from it. Other backends use `_ka_invsqrt(r2)` above;
+#   * `GH`, the g/h series mode, always `:shipped` at the launch.
 
-# libdevice's rsqrtf (what CUDA.rsqrt calls);
-# resolved by the CUDA compiler's libdevice link, so only reachable when
-# `_nf_config` enables it on a CUDABackend.
+# libdevice's rsqrtf (what CUDA.rsqrt calls); resolved by the CUDA compiler's
+# libdevice link, so only reachable when `_nf_config` enables it on a
+# CUDABackend.
 @inline _ka_rsqrt_approx(r2::Float32) =
     ccall("extern __nv_rsqrtf", llvmcall, Cfloat, (Cfloat,), r2)
 @inline _ka_invsqrt(r2::Float32, ::Val{true}) = _ka_rsqrt_approx(r2)
@@ -1049,13 +1036,13 @@ end
 
 
 # (A register-tiled variant -- two targets per thread through one source pass
-# -- was tried and REMOVED: 10% slower at 115k and 249k on the H200 and 4%
-# slower in Float64. The loop is not load-bound.)
+# -- was tried and removed: 10% slower at 115k and 249k bodies on an H200 and
+# 4% slower in Float64. The loop is not load-bound.)
 
 # CONVENTION: for a regularized kernel (sigma_row > 0) both allocators size
 # `source_bodies` one row past the packed body rows and the packers fill that
 # LAST row with 1/sigma, so the nearfield can multiply instead of divide per
-# interaction (13% at 64 lanes, ~0 at 128+ on the H200). Always on.
+# interaction (13% at 64 lanes, ~0 at 128+ on an H200). Always on.
 function _ka_nf_inv_sigma_row(state)
     _ka_kernel_sigma_row(state.options.direct_kernel) > 0 || return 0
     return size(state.source_bodies, 1)
@@ -1064,12 +1051,14 @@ end
 # Per-backend nearfield launch configuration (see the block above). Only the
 # backend TYPE NAME is consulted, so this extension stays free of CUDA.
 #
-# Defaults measured on an H200, NREL wake np=248714 (20 calls, median): one block per pair with ALL its lanes on that pair, and
-# the lane count is what matters -- 64 lanes 0.099 s, 128 0.072, 256 0.069,
-# 512 0.074 in Float32 (native CUDA lifecycle: 0.067-0.074); Float64 128 lanes
-# 0.130, 256 0.135 (native 0.18-0.19). The native warp-per-pair geometry
-# (128x32) was SLOWER here, 0.130. The reciprocal-sigma row bought 13% at 64
-# lanes and nothing at 128+, where the divide latency is already hidden.
+# Defaults measured on an H200, a rotor-wake particle field at np=248714 (20
+# calls, median): one block per pair with ALL its lanes on that pair, and the
+# lane count is what matters -- 64 lanes 0.099 s, 128 0.072, 256 0.069, 512
+# 0.074 in Float32 (a hand-written CUDA.jl kernel: 0.067-0.074); Float64 128
+# lanes 0.130, 256 0.135 (hand-written: 0.18-0.19). Warp-sized teams (32 lanes,
+# four pairs per 128-thread block) were SLOWER, 0.130. The reciprocal-sigma row
+# bought 13% at 64 lanes and nothing at 128+, where the divide latency is
+# already hidden.
 function _nf_config(backend, ::Type{TF}; bodies_per_cell::Real=0) where TF
     cuda = nameof(typeof(backend)) === :CUDABackend
     # Lanes per pair follow the cell population (the lanes stride a pair's
@@ -1090,10 +1079,10 @@ end
 """
     ka_launch_nearfield!(state; workgroup=nothing, clear=true)
 
-U-list direct nearfield for the KA lifecycle: mirror of
-`_launch_cuda_nearfield_kernel!` restricted to the `:pairs` shape. Zeroes
-`state.output` (this is the first stage of the lifecycle, as on CUDA) unless
-`clear=false`.
+U-list direct nearfield for the KA lifecycle, one lane team per direct cell
+pair. Zeroes `state.output` first (this is the first stage of the lifecycle)
+unless `clear=false`. `workgroup=nothing` takes the launch shape from
+`_nf_config`; an explicit workgroup must be a multiple of the lanes per pair.
 """
 function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
         workgroup::Union{Nothing,Int}=nothing, clear::Bool=true) where {TF,B,LH}
@@ -1129,7 +1118,7 @@ end
 # setting `:RADIX_DIRECT_ARM`; nothing selects it automatically.
 #
 # There IS a crossover below which this beats the lifecycle -- measured at
-# np ~ 6e4 on Metal for the for_ryan wake, with the arm 2-4x ahead below
+# np ~ 6e4 on Metal for one VPM wake, with the arm 2-4x ahead below
 # np = 8192. That number is one backend, one wake, one sweep, and the
 # lifecycle's cost balance is not the same on CUDA, so it is recorded here as
 # an observation and deliberately NOT turned into a dispatch rule. Anything
@@ -1142,9 +1131,9 @@ end
 # which also makes the result deterministic, unlike the pair shape.
 #
 # The physics is the same `_direct_pair_ug` / `_direct_pair_ugh` shared with
-# the CPU path, with the same `ghv = Val(:shipped)` series and the same plain
-# `inv(sqrt(r2))`, so this arm is gated against the CPU reference exactly as
-# the pair shape is.
+# the CPU path, with the same `ghv = Val(:shipped)` series and a plain
+# `inv(sqrt(r2))` at every precision, so this arm is gated against the CPU
+# reference exactly as the pair shape is.
 
 @kernel function ka_direct_all_pairs_kernel!(kernel, output, @Const(source_bodies),
         nbodies, ::Type{T}, ::Val{HS}) where {T,HS}
@@ -1205,10 +1194,11 @@ end
     ka_direct_body!(state; workgroup=KA_AUTO_WORKGROUP)
 
 All-pairs replacement for [`ka_lifecycle_body!`](@ref): every target body
-against every source body in one kernel. `state.output` is written, not
-accumulated (the kernel owns one column per workitem), so no clear is needed;
-the columns past `counts.n_bodies` are left as they were, and
-`ka_finalize_radix_output!` reads only the valid prefix.
+against every source body in one kernel. Rows 2:4 (and 5:13 with a hessian)
+are written, not accumulated (the kernel owns one column per workitem), but
+row 1 is written only for a potential-emitting kernel, so the caller must
+clear `state.output` first. The columns past `counts.n_bodies` are left as
+they were, and `ka_finalize_radix_output!` reads only the valid prefix.
 """
 function ka_direct_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
         workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
@@ -1220,7 +1210,7 @@ function ka_direct_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
     kern = _cached_kernel(ka_direct_all_pairs_kernel!, backend, wg)
     # same TF re-parameterization as ka_launch_nearfield!: the stock
     # regularized functors carry hardcoded Float64 cutoffs
-    # inv_sigma_row=0: rho is computed as |r|/sigma, the divide CUDA does
+    # inv_sigma_row=0: rho is computed as |r|/sigma, one divide per interaction
     dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF, 0)
     kern(dkernel, state.output, state.source_bodies, n, TF, Val(hs);
          ndrange=cld(n, wg) * wg)

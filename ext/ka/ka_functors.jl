@@ -28,10 +28,9 @@
 # still runs in Float64 -- this is not a downcast, it is the removal of a
 # HARDCODED Float64 from a type that should always have been parameterized.
 #
-# NOTHING IN src/ IS TOUCHED. `src/containers.jl` and
-# `src/resident/resident_pair_kernels.jl` are unmodified; the host path keeps
-# building and consuming the stock `PartitionedVortex`. Conversion happens once on the host,
-# in `_ka_device_direct_kernel`, at cache build.
+# The host types in `src/containers.jl` stay as they are; the host path keeps
+# building and consuming the stock `PartitionedVortex`. Conversion happens on
+# the host, in `_ka_device_direct_kernel`, right before each device launch.
 #
 # The duplicated code is the ~10-line functor WRAPPER only. All real math --
 # `_gaussianerf_g_h`, `_vortex_pair_ug`, `_vortex_pair_ugh` -- is called
@@ -39,10 +38,12 @@
 # oracle: same functions, same order, only the cutoff's storage type differs.
 
 """
-    KAPartitionedVortex{TF}(sigma_row, rho_t)
+    KAPartitionedVortex{TF}(sigma_row, rho_t, inv_sigma_row)
 
 Device mirror of `PartitionedVortex` with the cutoff stored as `TF` instead of
-a hardcoded `Float64`. See the block comment above.
+a hardcoded `Float64`. `inv_sigma_row > 0` is the source-body row holding
+1/sigma (0: divide by the `sigma_row` value instead). See the block comment
+above.
 """
 struct KAPartitionedVortex{TF} <: FastMultipole.AbstractDirectKernel
     sigma_row::Int
@@ -51,9 +52,9 @@ struct KAPartitionedVortex{TF} <: FastMultipole.AbstractDirectKernel
 end
 
 """
-    KARegularizedVortex{TF}(sigma_row, rho_t)
+    KARegularizedVortex{TF}(sigma_row, rho_t, inv_sigma_row)
 
-Device mirror of `RegularizedVortex`.
+Device mirror of `RegularizedVortex`; fields as for [`KAPartitionedVortex`](@ref).
 """
 struct KARegularizedVortex{TF} <: FastMultipole.AbstractDirectKernel
     sigma_row::Int
@@ -74,11 +75,11 @@ FastMultipole._emits_potential(::KARegularizedFunctor) = false
 @inline _ka_pass1_cutoff(k::KARegularizedVortex{TF}) where TF = typemax(TF)
 
 """
-    _ka_device_direct_kernel(kernel, ::Type{TF}) -> device functor
+    _ka_device_direct_kernel(kernel, ::Type{TF}, inv_sigma_row=0) -> device functor
 
-Host-side conversion, called once at cache build. Singular kernels carry no
-float fields and are returned unchanged; the regularized family is rebuilt with
-`TF` cutoffs.
+Host-side conversion, called before each device launch. Singular kernels carry
+no float fields and are returned unchanged; the regularized family is rebuilt
+with `TF` cutoffs and the reciprocal-sigma row `inv_sigma_row` (0: none).
 """
 _ka_device_direct_kernel(k::FastMultipole.AbstractDirectKernel, ::Type{TF},
     inv_sigma_row::Integer=0) where TF = k
@@ -101,7 +102,7 @@ _ka_kernel_sigma_row(k::FastMultipole.RegularizedVortex) = k.sigma_row
 
 # rho = |r|/sigma for the regularized family, plus the guard value the caller
 # tests for `> 0`. With the reciprocal-sigma row wired (`inv_sigma_row > 0`) this
-# is one load and one MULTIPLY; without it, the original load-and-divide. The
+# is one load and one MULTIPLY; without it, a load and a divide. The
 # branch is on a struct field, so it is uniform across every thread in the launch
 # and there is exactly one compiled variant per functor type either way.
 #
@@ -119,10 +120,9 @@ _ka_kernel_sigma_row(k::FastMultipole.RegularizedVortex) = k.sigma_row
     end
 end
 
-# Port of the host `_direct_pair_ug(::PartitionedVortex, ...)`
-# (src/resident/resident_pair_kernels.jl). Statement for statement identical;
-# the only difference is that the cutoff needs no `T(...)` because it is already
-# `TF`. `_gaussianerf_g_h` and `_vortex_pair_ug` are FastMultipole's own.
+# Mirror of the host `_direct_pair_ug(::PartitionedVortex, ...)`
+# (src/resident/resident_pair_kernels.jl): the same statements, except that the
+# cutoff is already `TF` and rho may come from the reciprocal-sigma row. `_gaussianerf_g_h` and `_vortex_pair_ug` are FastMultipole's own.
 @inline function FastMultipole._direct_pair_ug(kernel::KARegularizedFunctor,
         dx, dy, dz, r2, invr, source_bodies, j)
     T = typeof(r2)

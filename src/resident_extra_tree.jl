@@ -145,7 +145,7 @@ function _check_extra_tree_lamb_helmholtz(system, ::Val{LH}) where LH
     return nothing
 end
 
-# The legacy B2M negates scalar (source and dipole) strengths so that v = grad(phi);
+# The octree-path B2M negates scalar (source and dipole) strengths so that v = grad(phi);
 # the resident slabs hold them unnegated (see resident/resident_b2m.jl), so the
 # strengths are pre-negated here. Vortex strengths are not negated by either.
 _resident_extra_strength_scale(::Type{<:AbstractElement}) = 1

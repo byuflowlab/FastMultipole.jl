@@ -151,25 +151,26 @@ Base.showerror(io::IO, err::RadixDeviceUnavailable) = print(io, err.reason)
 #
 # The device-resident radix lifecycle is provided by a package extension
 # (ext/FastMultipoleKAExt.jl for KernelAbstractions backends: CUDA, Metal, ...).
-# The extension REGISTERS its entry points here from its `__init__`, and the
+# The extension registers its entry points here from its `__init__`, and the
 # host entry points (`RadixFMMCache(...; device=true)`, `fmm!`,
 # `update_radix_state!`) consult the registry before throwing.
-# The former hand-written CUDA lifecycle (runtime-`include`d into this module)
-# was removed after the KA port reached parity with it.
 const _RADIX_DEVICE_BACKEND_NAME = Ref{Any}(nothing)
 const _RADIX_DEVICE_BUILD_HOOK = Ref{Any}(nothing)
 const _RADIX_DEVICE_STEP_HOOK = Ref{Any}(nothing)
-# a device cache repacks its bodies and refreshes its lists through the extension
-# (`update_radix_state!` on a device cache)
+# `update_radix_state!` on a device cache calls `hook(cache, systems::Tuple)`.
+# Not set by `register_radix_device_backend!`; the extension's `__init__`
+# assigns it directly.
 const _RADIX_DEVICE_UPDATE_HOOK = Ref{Any}(nothing)
 
 """
     register_radix_device_backend!(name, build, step!)
 
-Register a non-CUDA device-resident radix lifecycle. `build` is called with the
-argument list of `_radix_cache_device_build` and must return a built
+Register the device-resident radix lifecycle (build and step). `build` is called
+with the argument list of `_radix_cache_device_build` and must return a built
 `RadixFMMCache`; `step!` is called as `step!(cache, targets, switches; nearfield_pass, ...)`.
-Called from a package extension's `__init__`.
+Called from a package extension's `__init__`. The state-update hook used by
+`update_radix_state!` on a device cache is registered separately, by assigning
+`_RADIX_DEVICE_UPDATE_HOOK[]`.
 """
 function register_radix_device_backend!(name, build, step!)
     _RADIX_DEVICE_BACKEND_NAME[] = name
@@ -178,7 +179,7 @@ function register_radix_device_backend!(name, build, step!)
     return nothing
 end
 
-"A non-CUDA device-resident radix lifecycle is registered."
+"A device-resident radix lifecycle (build and step hooks) is registered."
 radix_device_backend_available() = _RADIX_DEVICE_STEP_HOOK[] !== nothing
 
 function radix_device_status()

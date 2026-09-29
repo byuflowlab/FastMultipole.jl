@@ -1,9 +1,10 @@
-#------- HOST-MIRRORED RESIDENT RADIX LIFECYCLE (Matrix Operator Refactor) -------#
+#------- HOST RESIDENT RADIX LIFECYCLE -------#
 #
-# CPU-only validation path for the device-resident CUDA lifecycle. This path uses
-# ordinary Array storage but keeps the same resident state shape as the CUDA path:
-# source bodies, radix metadata, expansion buffers, and output stay in the state
-# across B2M, M2M, M2L, L2L, and L2B.
+# The host radix lifecycle: `fmm!(..., ::RadixFMMCache)` on a host cache runs
+# through here (`run_host_radix_lifecycle!`). It uses ordinary Array storage but
+# keeps the same resident state shape as the KA device backend: source bodies,
+# radix metadata, expansion buffers, and output stay in the state across B2M,
+# M2M, M2L, L2L, and L2B.
 
 """
     host_resident_radix_grid(grid::RadixGrid)
@@ -120,7 +121,7 @@ end
 
 function _host_radix_body_matrix(grid::DeviceRadixGrid{TF}, bodies::AbstractMatrix) where TF
     size(bodies, 1) >= 5 ||
-        throw(ArgumentError("resident radix bodies must have at least 5 rows: x/y/z/output-placeholder/strength"))
+        throw(ArgumentError("resident radix bodies must have at least 5 rows: x/y/z/radius/strength"))
     size(bodies, 2) == grid.n_bodies ||
         throw(ArgumentError("resident radix bodies must have one column per grid body"))
     return Matrix{TF}(bodies[:, grid.perm])
@@ -132,10 +133,11 @@ end
 
 # Transcendental prologue of `_resident_regular_harmonic_coeff`, split out so a
 # caller that needs MANY coefficients at the SAME offset pays the sqrt/acos/
-# atan/2x-sincos once instead of once per (n,m). That was the dominant cost of
-# the resident B2M and L2B kernels: both evaluate one coefficient per (n,m) pair
-# and so re-derived (rho, theta, phi) for every one of them -- 63 times per body
-# in L2B, and three times per (n,m) in the vortex B2M contributions.
+# atan/2x-sincos once instead of once per (n,m). The resident L2B evaluates every
+# coefficient at one offset per body and takes the setup once per body; each
+# vortex or dipole B2M contribution takes it once per (n,m) instead of three
+# times. The scalar B2M (including the scalar part of the source-plus-vortex B2M)
+# still calls the per-(n,m) form, re-deriving (rho, theta, phi) per coefficient.
 #
 # Bit-exactness is preserved by construction. These are the identical
 # expressions the monolithic function computed, in the same order, and the

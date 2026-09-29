@@ -190,13 +190,15 @@ end
 
 """
     estimate_nearfield_cache(target_tree, source_tree, direct_list,
-        derivatives_switches, source_systems; sample=true)
+        derivatives_switches, source_systems; sample=true, n_threads=1)
 
 Estimate a [`NearfieldInfluenceCache`](@ref)'s cost WITHOUT building it:
 returns `(; bytes, est_build_time, n_blocks, total_probe_pairs)`. `bytes`
 uses the exact size-pass arithmetic the builder uses; `est_build_time` times
-one warmed-up single-source kernel evaluation and scales it by the number of
-probe pairs (`sample=false` skips the timing and reports `NaN`). The sample
+one warmed-up single-source kernel evaluation, scales it by the number of
+probe pairs and divides by `n_threads` (ideal scaling of the parallel build);
+`sample=false` skips the timing and reports `NaN` (`0.0` when there are no
+blocks). The sample
 runs on the first block's target buffer and restores its output rows, so the
 trees are left as they were. The builder's `max_build_time` guard uses the
 same timing sample; this function is for callers that want the estimate

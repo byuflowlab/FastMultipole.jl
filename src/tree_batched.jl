@@ -1,5 +1,10 @@
 const RADIX_GRID_MAX_ELL = 21
 
+# The standalone, allocating `RadixGrid` constructors below build a fresh grid
+# from the systems' bounding box. They serve the reference host lists and the
+# tests; a `RadixFMMCache` instead refreshes a capacity-sized `DeviceRadixGrid`
+# in place (below). The sort, cell-compression and Morton helpers in between
+# are shared by both.
 function RadixGrid(system, ell::Integer; TF=numtype(system), h0_fallback=one(TF))
     TF = promote_type(TF, numtype(system))
     return _radix_grid((system,), ell, TF, h0_fallback)
@@ -226,7 +231,7 @@ end
 @inline radix_cell_index(grid::RadixGrid, coord::SVector{3,<:Integer}) =
     _radix_coord_inbounds(coord, grid.ell) ? radix_cell_index(grid, morton_key(coord, grid.ell)) : 0
 
-#------- in-place radix grid refresh (Matrix Operator Refactor) -------#
+#------- in-place radix grid refresh -------#
 #
 # Recurring time steps rebuild the entire grid — body keys, sort permutation, cell
 # compression, and level-major node metadata — inside a capacity-sized host
@@ -317,7 +322,7 @@ function _refresh_radix_nodes!(grid::DeviceRadixGrid{TF}, level_offsets::Vector{
         throw(ArgumentError("level_offsets must have length ell + 2"))
     0 <= first_level <= ell ||
         throw(ArgumentError("node-build first_level must lie in 0:ell"))
-    # active-level trimming (): levels below first_level are
+    # active-level trimming: levels below first_level are
     # never built — their level_offsets prefix stays 0 and nodes at first_level
     # are roots (parent_index 0)
     first_lvl = Int(first_level)

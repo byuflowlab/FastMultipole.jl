@@ -1,10 +1,8 @@
-#------- STAGE 0: real `fmm!` dispatch, through the src/ backend registry -------#
+#------- `fmm!` dispatch through the src/ backend registry -------#
 #
-# `fmm!(targets, sources, cache)` reaches
-# `FastMultipole._radix_cache_device_step!`, whose stub now consults the
-# registry in `register_radix_device_backend!` instead of throwing. CUDA is
-# unaffected -- its runtime `include` replaces the consulting stub outright, so
-# a CUDA build never reaches the registry.
+# `fmm!(targets, sources, cache)` on a device cache reaches
+# `FastMultipole._radix_cache_device_step!`, which calls the build/step hooks
+# registered below with `register_radix_device_backend!`.
 
 
 

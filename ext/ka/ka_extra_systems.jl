@@ -194,10 +194,14 @@ function _ka_extra_tree_prepared!(cache::FastMultipole.RadixFMMCache, sys)
 end
 
 """
-    ka_radix_cache_device_step!(cache, targets, switches; workgroup=KA_AUTO_WORKGROUP)
+    ka_radix_cache_device_step!(cache, targets, switches; nearfield_pass=nothing,
+        workgroup=KA_AUTO_WORKGROUP, extra_targets=(), extra_target_switches=(),
+        extra_sources=(), extra_tree_sources=(), self_induce=true)
 
-Backend-agnostic device step: refresh the device state, run the
-uniform lifecycle body, and scatter the output back into the target systems.
+Backend-agnostic device step: refresh the device state, run the uniform
+lifecycle body (or the all-pairs direct arm when `:RADIX_DIRECT_ARM` is set),
+apply the extra systems and any `nearfield_pass`, and scatter the output back
+into the target systems. The keywords mirror the host `fmm!` radix path.
 """
 function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         targets::Tuple, switches::Tuple; nearfield_pass=nothing,
@@ -207,15 +211,16 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     # construction-locked settings must not have drifted: a late flip is
     # baked-in-silently otherwise (buffers sized at construction)
     FastMultipole.verify_locked_radix_settings(cache.locked_settings)
-    # Below the FMM/direct crossover the whole lifecycle is replaced by one
-    # all-pairs kernel, and the grid/route refresh is skipped with it (task
-    # 053). Same finalize, same SFS hook: only the U/J evaluation differs.
+    # With the direct arm armed, the whole lifecycle is replaced by one
+    # all-pairs kernel, and the grid/route refresh is skipped with it. Same
+    # finalize: only the U/J evaluation differs (a `nearfield_pass` is refused,
+    # since the arm builds no direct pairs).
     direct_arm = FastMultipole.radix_setting(:RADIX_DIRECT_ARM)
     # The extra-sources-only call needs no routes, but it DOES need the bodies
     # repacked and the permutation refreshed: `finalize` de-permutes through
     # the state's body metadata, and the body count changes between calls in a
-    # shedding solver. `direct_only=true` here left a stale permutation and
-    # scattered the result onto the wrong particles.
+    # shedding solver; skipping the refresh would leave a stale permutation and
+    # scatter the result onto the wrong particles.
     # per-stage timers (see _KA_UPDATE_TIMERS): `outside` is the host time
     # since the previous device call ended, i.e. everything the caller did
     _utick!(:outside, KA.get_backend(cache.state.output))
@@ -251,16 +256,18 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         isempty(prepared) || _utick!(:extra_finish, KA.get_backend(state.output))
     end
     if nearfield_pass !== nothing
-        # the consumer's own pass over the U-list direct pairs (radix_nearfield):
-        # same point as the SFS pass above, and the direct arm builds no pairs
+        # the consumer's own pass over the U-list direct pairs (e.g. an SFS
+        # estimator through `radix_nearfield`), at the same point as on the
+        # host (src/fmm.jl); the direct arm builds no pairs
         direct_arm && throw(ArgumentError(
             "nearfield_pass is not supported on the all-pairs direct arm " *
             "(radix setting :RADIX_DIRECT_ARM): it runs over the U-list direct pairs, which this arm does not build"))
         nearfield_pass(cache)
         _utick!(:nearfield_pass, KA.get_backend(state.output))
     end
-    # after the SFS pass, as on the host (src/fmm.jl): the SFS estimator reads
-    # the velocity gradient of the resident bodies and the tree sources only
+    # after the nearfield pass, as on the host (src/fmm.jl): an SFS estimator
+    # there reads the velocity gradient of the resident bodies and the tree
+    # sources only
     ka_extra_sources_into_output!(state, extra_sources; workgroup)
     isempty(extra_sources) || _utick!(:extra_sources, KA.get_backend(state.output))
     ka_finalize_radix_output!(state, targets; derivatives_switches=switches,
@@ -397,7 +404,7 @@ end
 Velocity of an extra source system at arbitrary points `xt` (3 x n, host),
 summed all-pairs on the device with the system's own direct kernel; returns
 a host `(4 or 13) x n` matrix in the radix output layout (row 1 potential,
-rows 2:4 velocity). Independent of any resident cache: a device port of a
+rows 2:4 velocity). Independent of any resident cache: a device form of a
 host all-pairs loop, for callers whose source count times point count has
 outgrown the host (the wake ring rows onto every body's control points are
 O(bodies^2) and were 17% of a step at sixty-four rotors).
@@ -500,12 +507,10 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
         chunk = cld(n, nchunk)
         # The kernel writes part[:, i, c] only for chunks that hold a
         # body. With nchunk chosen first and chunk rounded up, the last
-        # chunk can be EMPTY ((nchunk-1)*chunk >= n), and its slab of
-        # the uninitialized buffer was summed in: garbage from the pool,
-        # different on every call, only for target counts whose chunk
-        # arithmetic leaves that gap (53-69 probes at 326k particles
-        # did; 180 did not). That was the "race".
-        # Size the chunk count from the chunk, and zero.
+        # chunk can be EMPTY ((nchunk-1)*chunk >= n), and its slab of an
+        # uninitialized buffer would be summed in: pool garbage that differs
+        # every call and looks like a race. So size the chunk count from the
+        # chunk, and zero the buffer.
         nchunk = cld(n, chunk)
         part = KA.allocate(backend, TF, rows, nt, nchunk)
         fill!(part, zero(TF))

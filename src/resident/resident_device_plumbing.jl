@@ -1,12 +1,9 @@
 #------- backend-agnostic device source-buffer plumbing -------#
 #
-# These four lived in the former native CUDA lifecycle file, which was loaded
-# only when CUDA was available, but none of them contains a CUDA type or launch:
-# they are `source_to_buffer!` dispatch, a `copyto!`, and a residency query, all
-# generic over the array type. Their placement made them CUDA-only at run time,
-# and `_recenter_union_bounds` (above) already calls `_fill_device_source_buffer!`
-# from generic code. Moved here so a KA `_radix_cache_device_step!` can reach
-# them; behavior is unchanged and the CUDA path resolves the same methods.
+# `source_to_buffer!` dispatch, a `copyto!`, and a residency query, all generic
+# over the array type, so they live in the base package: the KA extension's
+# `_radix_cache_device_step!` and the generic `_recenter_union_bounds`
+# (radix_cache.jl) both call them.
 
 function _has_device_source_to_buffer_method(device_buffer, system, sort_index)
     sig = Tuple{typeof(device_buffer),typeof(system),typeof(sort_index)}
@@ -33,7 +30,7 @@ _radix_any_host_resident(systems::Tuple) =
 # repack into their pinned staging and upload the valid column prefix (one upload
 # per system per step); device-resident systems fill the valid prefix of their
 # persistent buffer in place through their source_to_buffer! overload (no
-# transfer, no allocation — the port gap-5 fix).
+# transfer, no allocation).
 function _radix_cache_refresh_source_buffers!(ctx, systems::Tuple, ::Type{TF}) where TF
     return ntuple(length(systems)) do isys
         system = systems[isys]

@@ -805,14 +805,20 @@ Opt-in radix-grid / matrix-operator FMM step. Construct the cache once
 with [`RadixFMMCache`](@ref) and call this each time step: it refreshes the
 step-varying state in place (grid, routes, packed bodies — zero reallocation),
 runs the resident lifecycle, and writes results back through
-[`buffer_to_target!`](@ref). The legacy octree `fmm!` methods are untouched; this
+[`buffer_to_target!`](@ref). The octree `fmm!` methods are separate; this
 path is only selected by passing a `RadixFMMCache`.
 
 **Keyword arguments**
 
 - `scalar_potential::Bool=false`, `gradient::Bool=true`: which outputs to write back
-- `hessian::Bool=false`: write back the 9-component hessian; requires a cache
-  built with `RadixFMMCache(...; hessian=true)` (`ArgumentError` otherwise)
+- `hessian=false`: write back the 9-component hessian (a `Bool` or a per-target
+  vector); requires a cache built with `RadixFMMCache(...; hessian=true)`
+  (`ArgumentError` otherwise)
+- `third_derivative::Bool=false`: not supported on this path; `true` throws an
+  `ArgumentError`
+- `tree_sources::Tuple=()`: further source systems whose bodies join the leaf
+  multipoles of the cache's tree before the upward pass (self-inducing call);
+  in a sources-only call there is no tree to join, so they are summed directly
 - `nearfield_pass=nothing`: a function `f(cache)` run once the lifecycle has the
   standard outputs of the resident bodies and the tree sources, before extra
   sources are added and before delivery: a consumer's own pairwise pass over
@@ -822,9 +828,13 @@ path is only selected by passing a `RadixFMMCache`.
 The cache's systems must lead `target_systems` (same order). When they also
 lead `source_systems` the call is self-inducing; when none of them is a source
 the call is sources-only (the cache's targets receive only `tree_sources` and
-the extra sources). Any further target system is an extra target and any further
-source system an extra source, both evaluated by direct rectangular kernels
-(see `radix_extra_systems.jl`); `hessian` may be a per-target vector.
+the extra sources).
+
+Any further source system is an extra source: it is summed all-pairs onto the
+cache's own (resident) targets only. Any further target system is an extra
+target: it is summed all-pairs from the resident bodies only, so it sees
+neither the extra sources nor `tree_sources`. Extra targets are evaluated only
+in the self-inducing call; a sources-only call leaves them untouched.
 Restrictions: body count `<= max_n_bodies`; positions inside the cache's fixed box.
 """
 fmm!(system, cache::RadixFMMCache; optargs...) = fmm!(system, system, cache; optargs...)
@@ -1064,7 +1074,7 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 end
 
 """
-    FmmPlan(target_systems::Tuple, source_systems::Tuple; kwargs...)
+    FastMultipole.FmmPlan(target_systems::Tuple, source_systems::Tuple; kwargs...)
 
 Precomputed state for repeated `fmm!` calls over FROZEN geometry: `Cache`
 buffers, both `Tree`s, sorted `m2l_list`/`direct_list`, and the derivatives
@@ -1084,7 +1094,7 @@ geometry or radius-affecting state changes).
 Accepts the union of the tree-building and list-building kwargs of the
 `fmm!(target_systems, source_systems)` entry point (`expansion_order`,
 `leaf_size_source`/`leaf_size_target`, `multipole_acceptance`,
-`scalar_potential`/`gradient`/`hessian`, `extra_outputs`, `metadata`,
+`scalar_potential`/`gradient`/`hessian`/`third_derivative`, `extra_outputs`, `metadata`,
 `shrink`, `recenter`, `interaction_list_method`, `farfield`, `nearfield`,
 `self_induced`).
 """
@@ -1143,7 +1153,7 @@ function FmmPlan(target_systems::Tuple, source_systems::Tuple;
 end
 
 """
-    build_nearfield_cache!(plan::FmmPlan, target_systems, source_systems; max_bytes)
+    build_nearfield_cache!(plan::FastMultipole.FmmPlan, target_systems, source_systems; max_bytes)
 
 Build a [`NearfieldInfluenceCache`](@ref) from the plan's trees and sorted
 direct list and store it in the plan; subsequent `fmm!(targets, sources,
@@ -1199,7 +1209,7 @@ end
     GS || HS || TS || NO > 0
 
 """
-    transform_plan!(plan::FmmPlan, target_systems::Tuple, R, t)
+    transform_plan!(plan::FastMultipole.FmmPlan, target_systems::Tuple, R, t)
 
 Update `plan` for a RIGID motion `x -> R*x + t` of the (co-moving) target and
 source systems, so the plan can be reused across timesteps of a rigidly
@@ -1212,7 +1222,7 @@ Source buffers need no attention here (planned `fmm!` refills them from the
 systems on every call).
 
 Call AFTER the systems have moved (the refreshed target positions are read
-from them). This amends the `FmmPlan` validity contract: geometry may change
+from them). This amends the [`FastMultipole.FmmPlan`](@ref) validity contract: geometry may change
 between calls exactly when each rigid step is mirrored by a `transform_plan!`
 call; relative geometry must still be frozen.
 
@@ -1231,7 +1241,7 @@ function transform_plan!(plan::FmmPlan, target_systems::Tuple, R, t)
             "$(plan.n_target_bodies) — rigid motion cannot change body counts"))
     if plan.nearfield_cache[] !== nothing &&
             any(_rotation_sensitive_outputs, plan.derivatives_switches)
-        throw(ArgumentError("transform_plan! v1 supports a stored nearfield " *
+        throw(ArgumentError("transform_plan! supports a stored nearfield " *
             "cache only for scalar-potential-only outputs: cached gradient/" *
             "hessian/extra-output rows would need a per-block rotation after " *
             "rigid motion. Drop the cache (plan.nearfield_cache[] = nothing) " *
@@ -1245,10 +1255,10 @@ function transform_plan!(plan::FmmPlan, target_systems::Tuple, R, t)
 end
 
 """
-    fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
+    fmm!(target_systems::Tuple, source_systems::Tuple, plan::FastMultipole.FmmPlan;
          refresh_strengths=true, reset_targets=true, optargs...)
 
-Run the FMM using the precomputed `plan` (see [`FmmPlan`](@ref)): refresh
+Run the FMM using the precomputed `plan` (see [`FastMultipole.FmmPlan`](@ref)): refresh
 source strengths into the plan's sorted source buffers, zero the target
 output rows and refill the target metadata rows from `target_systems`
 (`reset_targets=true`; target positions stay as frozen at plan build or
@@ -1404,8 +1414,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
         # begin FMM
         if nearfield_device
-            # device execution is the RadixFMMCache lifecycle, not the legacy tree
-            throw(ArgumentError("nearfield_device=true is not supported on the legacy octree path; " *
+            # device execution is the RadixFMMCache lifecycle, not the octree
+            throw(ArgumentError("nearfield_device=true is not supported on the octree path; " *
                 "use nearfield_device=false here or a device RadixFMMCache"))
         else # use CPU
 

@@ -19,7 +19,7 @@ end
 
 
 # The extension is one module split by responsibility; the files are included in
-# the original order (definitions depend on earlier ones).
+# dependency order (definitions depend on earlier ones).
 include("ka/ka_primitives.jl")
 include("ka/ka_body_kernels.jl")
 include("ka/ka_lifecycle.jl")

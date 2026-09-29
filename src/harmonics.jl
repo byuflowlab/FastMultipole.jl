@@ -13,8 +13,7 @@ Gumerov's normalization:
 # NOTE: every literal below must carry TF. Float64 literals here silently
 # promote an otherwise-Float32 evaluation to Float64, which CUDA tolerates but
 # Apple GPUs reject outright ("unsupported use of double value") in device
-# code. For TF=Float64 the typed forms
-# are bit-identical to the previous literals, so the host path is unchanged.
+# code. For TF=Float64 the typed forms equal the plain literals bit for bit.
 function regular_harmonics!(harmonics, ρ::TF, θ::TF, ϕ::TF, expansion_order) where TF
     y, x = sincos(θ)
     fact = one(TF)

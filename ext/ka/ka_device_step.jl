@@ -15,16 +15,6 @@
 #   * a consumer near-field pass (`nearfield_pass`) runs between the lifecycle
 #     body and the U/J finalize.
 
-"""
-    ka_update_radix_state!(cache, systems; workgroup=KA_AUTO_WORKGROUP)
-
-Backend-agnostic `update_cuda_radix_state!` for a uniform, hierarchical
-`RadixFMMCache(device=true)`: refresh the per-system source buffers, rebuild the
-grid in place inside the cache's fixed Morton box, refresh the hierarchical
-occupancy / direct pairs / cached M2L windows on occupancy change, and refresh
-the per-level operator-group edges. Returns the cache with `cache.state` built
-(first step) or refreshed in place.
-"""
 @kernel function ka_iota_kernel!(perm, invperm, n)
     i = @index(Global)
     @inbounds if i <= n
@@ -42,8 +32,8 @@ function _ka_identity_perm!(perm, invperm, n::Int; workgroup=KA_AUTO_WORKGROUP)
     return perm
 end
 
-# Optional per-stage timers for ka_update_radix_state!, used by the attribution
-# probe: set `_KA_UPDATE_TIMERS[] = Dict{Symbol,Vector{Float64}}()` and every
+# Optional per-stage timers for ka_update_radix_state!, for cost attribution:
+# set `_KA_UPDATE_TIMERS[] = Dict{Symbol,Vector{Float64}}()` and every
 # `_utick!` syncs the backend and records the time since the previous tick.
 # `nothing` (the default) makes each tick a no-op.
 const _KA_UPDATE_TIMERS = Ref{Any}(nothing)
@@ -58,6 +48,17 @@ const _KA_UPDATE_T0 = Ref{Float64}(0.0)
 end
 
 
+"""
+    ka_update_radix_state!(cache, systems; workgroup=KA_AUTO_WORKGROUP, direct_only=false)
+
+Device state refresh for a uniform, hierarchical `RadixFMMCache(device=true)` on
+any KA backend: refresh the per-system source buffers, rebuild the grid in place
+inside the cache's fixed Morton box, refresh the hierarchical occupancy / direct
+pairs / cached M2L windows on occupancy change, and refresh the per-level
+operator-group edges. `direct_only=true` skips the grid, tree and routes and
+packs bodies in identity order for the all-pairs arm. Returns the cache with
+`cache.state` built (first step) or refreshed in place.
+"""
 function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, systems::Tuple;
         workgroup=KA_AUTO_WORKGROUP, direct_only::Bool=false) where {TF,LH}
     ctx = cache.device_ctx
@@ -104,8 +105,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
             ctx.positions, cache.x_min, cache.box_extent, cache.h0, ell; workgroup)
         kv = view(ctx.keys, 1:n)
         sk = view(ctx.sorted_keys, 1:n)
-        # branch exactly where `_cuda_update_radix_grid_in_place!` branches: the
-        # bounded counting sort when the cache was built with a domain-sized
+        # the bounded counting sort when the cache was built with a domain-sized
         # histogram (ell <= KA_COUNTING_SORT_MAX_ELL), else the stable sortperm
     _utick!(:keys, backend)
         ka_radix_sort_bodies!(view(grid.perm, 1:n), sk, grid.invperm, kv; workgroup,
@@ -162,15 +162,10 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     # composed into the perm before packing (the sorted cell keys, cell ranges
     # and node metadata are unaffected).
     _utick!(:grid_rebuild, backend)
-    # (hung above 8192 cells through the grid-stride loop in
-    # `ka_subsort_cell_sort_kernel!`'s launch; fixed there, one group per cell.
-    # FM_SUBSORT_DUMP=path writes the kernel's inputs before the launch for a
-    # standalone reproduction.)
     if !direct_only && cache.options.direct_kernel isa FastMultipole.PartitionedVortex
         # NOT the refresh's `workgroup`: the local-memory sort's group size is
         # baked into the kernel (Val(WG) against a fixed capacity), so it is the
-        # kernel's own constant, not a tuning surface
-        # ([[reference-ka-workgroup-is-sometimes-team-size]]).
+        # kernel's own constant, not a tuning surface.
         ka_nearfield_subsort!(ctx, cache, n, n_cells)
     end
     pack_sigma_row = _ka_kernel_sigma_row(cache.options.direct_kernel)

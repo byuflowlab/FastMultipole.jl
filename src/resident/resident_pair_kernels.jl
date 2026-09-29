@@ -21,7 +21,7 @@ const _GAUSSERF_H_COEFFS = Tuple(Float64((iseven(k) ? -1 : 1) //
     ((2k + 5) * BigInt(2)^k * factorial(BigInt(k)))) for k in 0:18)
 const _GAUSSERF_G_COEFFS32 = Tuple(Float32(c) for c in _GAUSSERF_G_COEFFS[1:13])
 const _GAUSSERF_H_COEFFS32 = Tuple(Float32(c) for c in _GAUSSERF_H_COEFFS[1:13])
-# degree-3 fit of s(u) on [ρ_c = 2, ρ_t = 4.789] (fit_032_nearfield_g.jl)
+# degree-3 least-squares fit of s(u), u = 1/ρ², on ρ ∈ [ρ_c = 2, ρ_t = 4.789]
 const _GAUSSERF_S_COEFFS = (0.082593826443677007, 2.0801015208954681,
     -6.8585923004500211, 10.482822830062796)
 
@@ -60,9 +60,9 @@ end
 end
 
 # Per-pair math behind the `direct_kernel` functor trait. Shared verbatim by the
-# host loops and the CUDA pair kernels (arithmetic + exp only); the caller
+# host loops and the KA device pair kernels (arithmetic + exp only); the caller
 # computes `invr` with its preferred reciprocal sqrt and skips r2 == 0 pairs.
-# Conventions (as the legacy direct!): dx,dy,dz = target − source;
+# Conventions (as the octree path's direct!): dx,dy,dz = target − source;
 # crss_i = −(Δx×Γ)_i/(4πr³); U = g·crss; J[i,j] = ∂u_i/∂x_j column-major with
 # a = h/r², b = −g/(4πr³).
 
@@ -563,7 +563,7 @@ end
 # selects HOW a direct pair is evaluated, never WHICH pairs are direct (the
 # adequacy gate guarantees every cutoff pair is in the direct set).
 #
-# The two-pass hybrid's pass 1 (, candidate 3) is the same
+# The two-pass hybrid's pass 1 is the same
 # math with the branch at rho_c instead of rho_t: stable regularized U/J for
 # ρ ≤ rho_c, exact singular beyond, with the pass-2 deficit sweep
 # (_add_host_twopass_deficit!) supplying the correction on (rho_c, rho_t].
@@ -611,8 +611,8 @@ end
 # evaluate the gaussianerf (g, h); each mode was sized so its pointwise error,
 # mapped to the delivered U/J error, stays inside the accuracy budget:
 #
-#   :shipped       the unmodified evaluation above (default; every other call
-#                  path is bitwise-identical to it);
+#   :shipped       the unmodified evaluation above (the control/opt-out; every
+#                  other call path is bitwise-identical to it);
 #   :reduced       12-term series in both precisions (from 19/13), outer
 #                  branch unchanged (deg-2 s(u) fails the mapped budget);
 #   :fp32          Float64 configurations only: the shipped Float32 math
@@ -622,6 +622,8 @@ end
 #   :reduced_fp32  :fp32 with the 12-term reduced series.
 #
 # Construction-locked (radix_settings.jl): flip it BEFORE cache construction.
+# Despite the name, only the host pair loops read this setting; the KA device
+# kernels do not consult it.
 #
 # DEFAULT = :fp32: on Float64
 # configurations the g/h transcendental (and functor-path assembly) runs in
@@ -634,7 +636,7 @@ end
 const NEARFIELD_GH_MODES = (:shipped, :reduced, :fp32, :reduced_fp32)
 const CUDA_NEARFIELD_GH_MODE = Ref{Symbol}(:fp32)
 
-# 12-term truncations of the exact series (the port sizing: delta vs shipped
+# 12-term truncations of the exact series (measured delta vs shipped
 # <= 4.9e-6 relative on the series branch, >= 7x under the coherent-tier
 # delivered budget B = 2.66e-4)
 const _GAUSSERF_G_COEFFS_R = _GAUSSERF_G_COEFFS[1:12]
@@ -775,10 +777,10 @@ function _validated_host_gh_mode()
 end
 
 # Singular Biot-Savart direct kernel for Point{Vortex} sources:
-# U = -Δx×Γ/(4πr³), J as above with g→1 (transcribed from the legacy
-# test-reference vortex direct!). No scalar potential is produced. Retained
-# verbatim (with the scalar kernels below) as the hard-coded reference for the
-# stage-2 functor-abstraction benchmark; production dispatch now routes through
+# U = -Δx×Γ/(4πr³), J as above with g→1 (transcribed from the vortex direct!
+# the tests use as a reference). No scalar potential is produced. This and the
+# scalar kernels below are test references only: the tests check the functor
+# path against them, and production dispatch goes through
 # `_host_direct_pairs_functor_kernel!`.
 function _host_direct_pairs_vortex_kernel!(output::AbstractMatrix{TF}, source_bodies,
         cell_ranges, direct_targets, direct_sources, n_direct::Int,
@@ -999,7 +1001,7 @@ end
 end
 
 # Per-(n, m) local-expansion gradient coefficient: the values the
-# legacy `evaluate_local` stores in its `gradient_n_m` scratch, recomputed on
+# octree path's `evaluate_local!` stores in its `gradient_n_m` scratch, recomputed on
 # the fly from the flat zero-padded accessors so the hessian pass needs no
 # per-thread coefficient array. Must stay in lockstep with the coefficient
 # blocks inside `_resident_local_eval_flat` above.
@@ -1057,7 +1059,7 @@ end
 # porting the `evaluate_expansions.jl` hessian recurrences — each velocity
 # component's coefficient field is differentiated with the same operator pattern
 # as the first pass. Returns
-# `(u, vx, vy, vz, hxx, hxy, hxz, hyx, hyy, hyz, hzx, hzy, hzz)` in the legacy
+# `(u, vx, vy, vz, hxx, hxy, hxz, hyx, hyy, hyz, hzx, hzy, hzz)` in
 # `SMatrix{3,3}` column-major linear order (`set_hessian!` order).
 @inline function _resident_local_eval_flat_hessian(ph, ch, node, dx, dy, dz,
         P_phi, P_active, lhv::Val{LH}) where LH
@@ -1244,8 +1246,9 @@ overload first creates a fresh host-resident grid with
 [`host_resident_radix_grid`](@ref). This is a host-only construction even though
 its container type is shared with device backends. `list` comes from
 [`build_radix_interaction_list`](@ref); `options` must select the
-`ConcatenatedFixedZM2L` materialized-y plan (the default). It is the reference
-state of the KA lifecycle gate, not a production path.
+`ConcatenatedFixedZM2L` materialized-y plan (the default). The tests use it as
+the host reference for the KA lifecycle; a production host cache builds its
+state inside [`RadixFMMCache`](@ref).
 """
 function host_radix_state(systems, grid::RadixGrid, list::RadixInteractionList,
         P::Integer, lamb_helmholtz::Val{LH}=Val(false);

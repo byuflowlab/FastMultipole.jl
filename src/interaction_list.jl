@@ -5,7 +5,7 @@
         multipole_acceptance, farfield, nearfield, self_induced,
         method=SelfTuning())
 
-Build and return `(m2l_list, direct_list)` for two legacy octrees.
+Build and return `(m2l_list, direct_list)` for two octrees.
 """
 function build_interaction_lists(target_branches, source_branches, source_leaf_size, multipole_acceptance, farfield, nearfield, self_induced, method::InteractionListMethod=SelfTuning())
     # prepare containers

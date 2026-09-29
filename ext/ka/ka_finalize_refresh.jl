@@ -5,12 +5,11 @@
 # `buffer_to_target!`.
 #
 # Only one of the two branches contains anything device-specific. The
-# host-resident branch is already generic -- a prefix `copyto!` into the pinned
-# staging, then `_copy_radix_output_to_host_target_buffer!`, both of which live
-# in src/resident/resident_finalize.jl and never mention CUDA -- so it is reproduced
-# verbatim, including the download-once-per-call sharing of `host_output` across
-# systems and the `influence_downloads` counter bump. The device-resident branch
-# needs the scatter kernel, which is what this ports.
+# host-resident branch is generic -- a prefix `copyto!` into the host staging,
+# then `_copy_radix_output_to_host_target_buffer!` (src/resident/resident_finalize.jl)
+# -- and downloads `host_output` once per call, shared across systems, bumping
+# the `influence_downloads` counter. The device-resident branch runs the
+# scatter kernel below.
 #
 # Row layout is the switch's, not the output's: `scalar_potential_index`,
 # `gradient_range` and `hessian_range` decide where each of the output's 1 / 2:4
@@ -47,8 +46,7 @@ end
         body_system_ids, body_indices, isys, derivatives_switch, n_bodies;
         workgroup=KA_AUTO_WORKGROUP)
 
-Port of `_copy_radix_output_to_device_target_buffer!`: zero `target_buffer` and
-scatter the sorted-order `output` columns belonging to system `isys` into it at
+Zero `target_buffer` and scatter the sorted-order `output` columns belonging to system `isys` into it at
 the rows the derivatives switch selects.
 """
 function ka_scatter_output_to_target_buffer!(target_buffer, output, body_perm,
@@ -72,9 +70,8 @@ function ka_scatter_output_to_target_buffer!(target_buffer, output, body_perm,
     return target_buffer
 end
 
-# Per-system cached device scatter buffer, the generic form of
-# `_cuda_cached_target_buffer`: allocated undef and reused, since the scatter
-# zero-fills it anyway. Capacity contract (found as a long-run leak): a
+# Per-system cached device scatter buffer: allocated undef and reused, since
+# the scatter zero-fills it anyway. Capacity contract (found as a long-run leak): a
 # shedding run changes `nb` every step, and an exact-size cache then
 # reallocates every step -- the replaced device buffer survives a full step
 # before dying, gets promoted, and no major GC ever runs because device bytes
@@ -100,7 +97,7 @@ end
     ka_finalize_radix_output!(state, target_systems; derivatives_switches,
         host_output_staging, target_buffers, device_target_buffers)
 
-Backend-agnostic `finalize_cuda_radix_output!`. Scatters `state.output` back
+Backend-agnostic output finalize. Scatters `state.output` back
 into the target systems, downloading it once per call into
 `host_output_staging` (the valid column prefix only) when any target is host
 resident, and going through `ka_scatter_output_to_target_buffer!` for
@@ -135,7 +132,7 @@ function ka_finalize_radix_output!(state, target_systems;
                     host_output = Array(state.output)
                 else
                     # recurring path: download only the valid column prefix into
-                    # the preallocated (pinned) staging
+                    # the preallocated staging
                     nb = state.counts.n_bodies
                     KA.synchronize(backend)
                     copyto!(host_output_staging, 1, state.output, 1,
@@ -159,26 +156,23 @@ function ka_finalize_radix_output!(state, target_systems;
     return target_systems
 end
 
-#------- stage 19: within-cell sub-Morton nearfield subsort -------#
+#------- within-cell sub-Morton nearfield subsort -------#
 #
-# Within-cell sub-Morton nearfield subsort:
-# compose a within-cell
-# sub-Morton ordering into `grid.perm` after the sort and before body packing,
-# so consecutive sorted bodies -- adjacent lanes in the nearfield kernel -- span
-# a compact spatial sub-block of their cell.
+# Compose a within-cell sub-Morton ordering into `grid.perm` after the sort and
+# before body packing, so consecutive sorted bodies -- adjacent lanes in the
+# nearfield kernel -- span a compact spatial sub-block of their cell.
 #
 # It is locality only: no cell key, cell range or node changes, and cells larger
 # than the shared-memory sort capacity keep their unspecified order. But it does
 # change the ORDER same-cell contributions are summed in, so it is the one
-# post-tree stage whose absence moves results. That is why it is ported rather
-# than left as a perf variant: with it, the KA and CUDA arms sum in the same
-# order for every cell the mechanism covers.
+# post-tree stage whose absence moves results at roundoff level.
 #
-# DEVIATION (launch shape). CUDA runs one block per cell with a grid-stride
-# outer loop bounded at 8192 blocks; KA runs the same loop with `@index(Group)`
-# and an explicit group count, since KA has no `gridDim()`. The sort itself --
-# odd-even transposition in workgroup-local memory, capacity 1024 -- is
-# statement for statement.
+# Launch shape: one workgroup per cell, launched with exactly `n_cells` groups.
+# The kernel keeps a grid-stride outer loop (`cell += n_groups`), but with
+# `n_groups == n_cells` every group runs it once. A capped group count would
+# make groups loop over a second cell with `@synchronize` inside that loop, and
+# that deadlocks on the KA GPU backends. The sort itself is odd-even
+# transposition in workgroup-local memory, capacity 1024.
 
 const KA_SUBSORT_CAPACITY = 1024
 
@@ -263,9 +257,9 @@ end
 """
     ka_nearfield_subsort!(ctx, cache, n, n_cells; workgroup=256)
 
-Port of `_cuda_nearfield_subsort!`: compose a within-cell sub-Morton ordering
-into `ctx.grid.perm` and refresh `invperm`. A no-op when the grid is already at
-the Morton depth cap (`sub == 0`) or the grid is empty.
+Compose a within-cell sub-Morton ordering into `ctx.grid.perm` and refresh
+`invperm`. A no-op when the grid is already at the Morton depth cap
+(`sub == 0`), when the grid is empty, or on the KA `CPU` backend.
 """
 function ka_nearfield_subsort!(ctx, cache::FastMultipole.RadixFMMCache, n::Int,
         n_cells::Int; workgroup::Int=256)
@@ -282,13 +276,11 @@ function ka_nearfield_subsort!(ctx, cache::FastMultipole.RadixFMMCache, n::Int,
     kk(ctx.subsort_keys, ctx.positions, grid.perm, cache.x_min, cache.h0,
        cache.ell, sub, n; ndrange=n)
     _utick!(:subsort_keys, backend)
-    # ONE GROUP PER CELL, no grid-stride. The CUDA port's 8192-block
-    # cap made groups loop over a second cell, and `@synchronize` inside that
-    # loop deadlocks on the KA backends: the HVAB hover at 8349 cells hung at
-    # step 1561 on the H200, the dumped inputs hang standalone on Metal (watchdog
-    # kill) and run clean with n_groups = n_cells (each half of the cell list
-    # alone -- under the cap -- always ran). KA has no grid-dimension limit that
-    # needs the cap.
+    # ONE GROUP PER CELL, no grid-stride. A capped group count (e.g. 8192)
+    # makes groups loop over a second cell, and `@synchronize` inside that loop
+    # deadlocks on the KA GPU backends once n_cells exceeds the cap (seen on
+    # both CUDA and Metal); n_groups = n_cells runs clean. KA has no
+    # grid-dimension limit that needs the cap.
     n_groups = n_cells
     sk = _cached_kernel(ka_subsort_cell_sort_kernel!, backend, workgroup)
     sk(grid.perm, ctx.subsort_keys, grid.cell_ranges, n_cells, n_groups,
@@ -364,7 +356,7 @@ end
     ka_hier_generate_direct_pairs!(ctx, hctx, grid, n_cells, leaf_base, ell;
                                    workgroup=KA_AUTO_WORKGROUP)
 
-Port of `_cuda_hier_generate_direct_pairs!`: flag/scan/compact the near-offset
+Flag/scan/compact the near-offset
 neighbours of every occupied leaf cell into `ctx.direct_targets` /
 `ctx.direct_sources`, chunked so the flag buffer bounds the working set.
 Returns the pair count.
