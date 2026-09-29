@@ -2,6 +2,7 @@
 
 import FastMultipole as fmm
 import FastMultipole.WriteVTK
+using FastMultipole.LinearAlgebra: norm
 using FastMultipole
 
 #------- classic vortex particle method -------#

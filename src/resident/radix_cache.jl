@@ -150,7 +150,7 @@ function _alldirect_geometry_fallback!(cache::RadixFMMCache{TF,LH},
     cfg = policy.config
     eps_new = rigid_stencil_epsilon(cfg.P_phi, maximum(cache.box_extent) / 2, 2, 27;
         lamb_helmholtz=LH, TF)
-    newconfig = ConstantPStencilConfig(cfg.P_phi, eps_new, cfg.source_strength;
+    newconfig = ConstantPStencilConfig(cfg.P_phi, TF(eps_new), cfg.source_strength;
         chi_strength=cfg.chi_strength, lamb_helmholtz=LH,
         normalization=_config_normalization(cfg))
     newpolicy = HierarchicalRigidStencil(newconfig;
@@ -324,6 +324,10 @@ function _default_radix_policy(policy, P::Int, ::Type{TF}, LH::Bool, h0, ell::In
     q = near_radius2 === nothing ? RADIX_DEFAULT_NEAR_RADIUS2 : Int(near_radius2)
     if ell < 2
         # the first M2L level is 2; there is no hierarchy to walk below that
+        (near_radius2 === nothing && level_radii2 === nothing) ||
+            throw(ArgumentError("ell=$ell < 2 selects the flat " *
+                "ConstantPAnalyticStencil, which has no `near_radius2` or " *
+                "`level_radii2`; use ell >= 2 for the hierarchical policy"))
         return ConstantPAnalyticStencil(
             ConstantPStencilConfig(P, TF(1e-4); lamb_helmholtz=LH))
     end
@@ -385,15 +389,17 @@ is reallocated over the cache's lifetime.
   with trimmed coarse levels — to the active M2L levels
   `first_m2l_level:ell`; the legacy anchoring is sliced to the active range,
   which is the identity on cubic caches
-- `window_classes`: route-window width; defaults to the measured
-  `$(RADIX_DEVICE_WINDOW_CLASSES)` on device and `$(RADIX_HOST_WINDOW_CLASSES)` on host
+- `window_classes`: route-window width of the hierarchical policy; defaults to the
+  measured `$(RADIX_DEVICE_WINDOW_CLASSES)` on device and `$(RADIX_HOST_WINDOW_CLASSES)`
+  on host. The flat policy (`stencil_epsilon`, or `ell < 2`) has no route windows
+  and ignores it
 - `stencil_epsilon::Real`: **selects the deprecated flat `ConstantPAnalyticStencil`**
   at this tolerance; omit it to get the hierarchical default
 - `policy`: explicit `ConstantPAnalyticStencil` or `HierarchicalRigidStencil`
   (both run host- or device-resident). A policy carries its own stencil
   parameters, so combining it with `stencil_epsilon`, `near_radius2`,
   `level_radii2`, or `window_classes` throws; likewise `stencil_epsilon` (flat)
-  rejects `near_radius2`.
+  and `ell < 2` (flat) reject `near_radius2` and `level_radii2`.
 
 the default policy is [`HierarchicalRigidStencil`](@ref); its default geometry is `near_radius2=$(RADIX_DEFAULT_NEAR_RADIUS2)` with
 the level schedule `($(RADIX_DEFAULT_COARSE_NEAR_RADIUS2), $(RADIX_DEFAULT_NEAR_RADIUS2), ...)`,
@@ -588,6 +594,11 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         kname = nameof(typeof(dk))
         BT <: Point{Vortex} || throw(ArgumentError(
             "$kname requires body_type Point{Vortex}; got $BT"))
+        first_extra_row = 5 + element_strength_dims(BT)
+        dk.sigma_row >= first_extra_row || throw(ArgumentError(
+            "$kname sigma_row=$(dk.sigma_row) points inside the packed $BT " *
+            "strength rows 5:$(first_extra_row - 1); the smoothing radius σ " *
+            "must sit in an extra-state row >= $first_extra_row"))
         for system in sources
             dk.sigma_row <= data_per_body(system) || throw(ArgumentError(
                 "$kname sigma_row=$(dk.sigma_row) exceeds " *
@@ -962,7 +973,7 @@ function _recentered_policy(policy::HierarchicalRigidStencil, P, h0_new, ell,
     cfg = policy.config
     eps_new = rigid_stencil_epsilon(cfg.P_phi, h0_new, ell, policy.near_radius2;
         lamb_helmholtz=LH, TF)
-    config = ConstantPStencilConfig(cfg.P_phi, eps_new, cfg.source_strength;
+    config = ConstantPStencilConfig(cfg.P_phi, TF(eps_new), cfg.source_strength;
         chi_strength=cfg.chi_strength, lamb_helmholtz=LH,
         normalization=_config_normalization(cfg))
     return HierarchicalRigidStencil(config;
@@ -1051,12 +1062,11 @@ function _update_host_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) 
     _pack_radix_source_bodies!(state.source_bodies, grid.perm, grid.body_system,
         grid.body_index, cache.source_buffers, n)
     # an inadequate hierarchical geometry demotes to the all-direct
-    # zero-M2L cache and re-runs the refresh; the rebuilt cache's gate is
-    # vacuous, so the recursion terminates after one demotion.
+    # zero-M2L cache; its constructor already ran the full refresh from these
+    # systems, so nothing is left to do for this step.
     if _direct_kernel_geometry_gate!(cache,
             state.options.direct_kernel, state.source_bodies, n) === :alldirect
-        _alldirect_geometry_fallback!(cache, systems)
-        return _update_host_radix_state!(cache, systems)
+        return _alldirect_geometry_fallback!(cache, systems)
     end
 
     resize!(cache.coords, n_cells)

@@ -17,7 +17,10 @@ the tree and summed against every resident body ("loose") when
   * it lies outside the grid box, or its cell holds no resident body, so there
     is no node to carry a multipole,
   * or its own extent is not small against a cell, since a multipole about the
-    cell center is only valid outside the source's extent.
+    cell center is only valid outside the source's extent,
+  * or its direct kernel is regularized with a reach (`rho_t * sigma`) of a
+    cell width or more: the far field is singular, and the near set is only
+    guaranteed to hold every pair within one cell width of the body.
 =#
 
 """
@@ -40,8 +43,9 @@ end
 
 Pack `system` and sort it onto `grid`'s cells, returning a
 [`ResidentExtraSource`](@ref). A body goes to the loose set when it lies
-outside the grid box, when its cell is absent from the grid, or when its radius (packed row 4) exceeds
-`extent_fraction` of a cell width.
+outside the grid box, when its cell is absent from the grid, when its radius (packed row 4) exceeds
+`extent_fraction` of a cell width, or when the regularization reach of
+`direct_kernel(system)` is a cell width or more.
 """
 function bin_resident_extra_source(::Type{TF}, system,
         grid::Union{RadixGrid,DeviceRadixGrid}, n_cells::Integer;
@@ -57,10 +61,14 @@ function bin_resident_extra_source(::Type{TF}, system,
     side = 1 << ell
     delta = 2 * Float64(grid.h0) / side
     max_radius = extent_fraction * delta
+    kernel = direct_kernel(system)
     cell_of = zeros(Int, n)
     loose = Int[]
     @inbounds for i in 1:n
-        if Float64(raw[4, i]) > max_radius
+        # every supported leaf stencil keeps all adjacent cells direct, so a
+        # pair closer than one cell width never reaches the singular far field
+        if Float64(raw[4, i]) > max_radius ||
+                _extra_regularization_reach(kernel, raw, i) >= delta
             push!(loose, i)
             continue
         end
@@ -121,6 +129,29 @@ function bin_resident_extra_source(::Type{TF}, system,
            loose_buffer
 end
 
+# distance from a body within which its direct kernel differs from the singular
+# one the multipoles represent
+_extra_regularization_reach(kernel, buffer, i) = 0.0
+_extra_regularization_reach(kernel::AbstractRegularizedVortex, buffer, i) =
+    kernel.rho_t * max(Float64(buffer[kernel.sigma_row, i]), 0.0)
+
+# a vortex-kind body writes the chi channel, which a lamb_helmholtz=false cache
+# does not carry
+function _check_extra_tree_lamb_helmholtz(system, ::Val{LH}) where LH
+    LH || !(body_type(system) <: AbstractElement{<:Union{Vortex,SourceVortex}}) ||
+        throw(ArgumentError(
+            "tree source $(typeof(system)) of body type $(body_type(system)) requires " *
+            "the Lamb-Helmholtz channel; construct the cache with lamb_helmholtz=true"))
+    return nothing
+end
+
+# The legacy B2M negates scalar (source and dipole) strengths so that v = grad(phi);
+# the resident slabs hold them unnegated (see resident/resident_b2m.jl), so the
+# strengths are pre-negated here. Vortex strengths are not negated by either.
+_resident_extra_strength_scale(::Type{<:AbstractElement}) = 1
+_resident_extra_strength_scale(::Type{<:AbstractElement{<:Union{Source,Dipole,SourceDipole}}}) = -1
+_resident_extra_strength_scale(::Type{<:Point{SourceVortex}}) = SVector(-1, 1, 1, 1)
+
 """
     resident_extra_b2m!(state, extra)
 
@@ -150,6 +181,7 @@ new.
 function _resident_extra_b2m_kernel!(ph::AbstractMatrix{TF}, ch, system, buffer,
         cell_ranges, cell_centers, leaf_to_node, P_phi::Int, P_chi::Int,
         n_cells::Int, ::Val{LH}) where {TF,LH}
+    _check_extra_tree_lamb_helmholtz(system, Val(LH))
     P = max(P_phi, P_chi)
     # the slabs are ragged: phi is sized to P_phi, chi to P_chi = P_active, and
     # the scatter below is @inbounds, so check the row counts once per call
@@ -172,7 +204,8 @@ function _resident_extra_b2m_kernel!(ph::AbstractMatrix{TF}, ch, system, buffer,
         # the element type leads: the system-first form is a fallback that warns
         # and writes nothing
         body_to_multipole!(body_type(system), system, coefficients, buffer, center,
-            first:(first + count - 1), harmonics, P)
+            first:(first + count - 1), harmonics, P;
+            scale_strength=_resident_extra_strength_scale(body_type(system)))
         for n in 0:P_phi, m in 0:n
             i = harmonic_index(n, m)
             row = flat_basis_index(n, m, 1)
@@ -199,13 +232,13 @@ bodies of the paired target cell, the same pair list the resident near field
 walks.
 """
 function resident_extra_near!(state::DeviceResidentRadixState{TF},
-        extra::ResidentExtraSource, kernel::AbstractDirectKernel) where TF
+        extra::ResidentExtraSource, kernel) where TF
     output = state.output
     bodies = state.source_bodies
     ranges = state.cell_ranges
     n_direct = Int(state.counts.n_direct)
     hs = size(output, 1) >= 13
-    ep = _emits_potential(kernel)
+    ep = _extra_emits_potential(kernel)
     @inbounds for pair_i in 1:n_direct
         target_cell = state.direct_targets[pair_i]
         source_cell = state.direct_sources[pair_i]
@@ -272,12 +305,15 @@ multipoles join the leaves before the upward pass, their near cell pairs are
 swept afterwards, and any body held out of the tree is summed against every
 resident body.
 """
-function run_host_radix_lifecycle_with_extra_tree!(state::DeviceResidentRadixState{TF},
-        systems::Tuple) where TF
+function run_host_radix_lifecycle_with_extra_tree!(state::DeviceResidentRadixState{TF,B,LH},
+        systems::Tuple) where {TF,B,LH}
     isempty(systems) && return run_host_radix_lifecycle!(state)
     n_cells = Int(state.counts.n_cells)
     n = Int(state.counts.n_bodies)
     hs = size(state.output, 1) >= 13
+    for sys in systems
+        _check_extra_tree_lamb_helmholtz(sys, Val(LH))
+    end
     prepared = map(systems) do sys
         binned, loose = bin_resident_extra_source(TF, sys, state.grid, n_cells)
         (binned, loose, direct_kernel(sys))

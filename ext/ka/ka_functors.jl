@@ -67,10 +67,11 @@ const KARegularizedFunctor{TF} =
 # trait parity with the host functors (`_emits_potential` in src/containers.jl)
 FastMultipole._emits_potential(::KARegularizedFunctor) = false
 
-# pass-1 cutoff, mirroring the host `_direct_pair_ug` exactly: both kernels
-# branch at rho_t (TwoPassVortex is refused at cache build).
+# regularization cutoff, mirroring the host `_direct_pair_ug` exactly: the
+# partitioned kernel goes singular beyond rho_t, the regularized kernel
+# regularizes every pair (TwoPassVortex is refused at cache build).
 @inline _ka_pass1_cutoff(k::KAPartitionedVortex) = k.rho_t
-@inline _ka_pass1_cutoff(k::KARegularizedVortex) = k.rho_t
+@inline _ka_pass1_cutoff(k::KARegularizedVortex{TF}) where TF = typemax(TF)
 
 """
     _ka_device_direct_kernel(kernel, ::Type{TF}) -> device functor

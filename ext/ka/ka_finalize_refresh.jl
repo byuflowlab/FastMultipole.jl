@@ -273,6 +273,11 @@ function ka_nearfield_subsort!(ctx, cache::FastMultipole.RadixFMMCache, n::Int,
     (sub > 0 && n > 0 && n_cells > 0) || return nothing
     grid = ctx.grid
     backend = KA.get_backend(grid.perm)
+    # The cell sort's barriers sit inside a loop whose trip count is the cell's
+    # population, which the KA CPU backend cannot lower (it has no group index
+    # in uniform scope). The subsort only reorders bodies within a cell, so the
+    # CPU backend skips it.
+    backend isa KA.CPU && return nothing
     kk = _cached_kernel(ka_subsort_keys_kernel!, backend, 128)
     kk(ctx.subsort_keys, ctx.positions, grid.perm, cache.x_min, cache.h0,
        cache.ell, sub, n; ndrange=n)
@@ -443,6 +448,12 @@ function ka_hier_cache_windows!(hctx::FastMultipole.DeviceHierarchicalM2LContext
     end
     nw = length(windows)
     _KA_UPDATE_TIMERS[] === nothing || push!(get!(_KA_UPDATE_TIMERS[], :win_n_windows, Float64[]), nw)
+    # zero-M2L geometry (e.g. the all-direct fallback cache): no windows, no routes
+    if nw == 0
+        hctx.total_routes = 0
+        hctx.win_valid = true
+        return hctx
+    end
     # One concatenated flag buffer for every window, ONE scan, one sync:
     # window w's flags occupy bases[w]+1 : bases[w]+used[w].
     n_src(L) = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
@@ -461,11 +472,11 @@ function ka_hier_cache_windows!(hctx::FastMultipole.DeviceHierarchicalM2LContext
     end
     total_used > 0 && accumulate!(+, view(prefix_all, 1:total_used), view(flags_all, 1:total_used))
     _utick!(:win_phase1_count, backend)
-    ends = KA.allocate(backend, Int, max(nw, 1)); copyto!(ends, max.(bases .+ used, 1))
+    ends = KA.allocate(backend, Int, nw); copyto!(ends, max.(bases .+ used, 1))
     KA.synchronize(backend)
     host_ends = Array(prefix_all[ends])          # the one D2H sync
     _utick!(:win_sync_d2h, backend)
-    total_routes = nw > 0 ? Int(host_ends[end]) : 0
+    total_routes = Int(host_ends[end])
     _ka_hier_win_ensure!(hctx, backend, total_routes)
     compact_kernel = _cached_kernel(ka_hier_route_compact_global_kernel!, backend, workgroup)
     cursor = 0

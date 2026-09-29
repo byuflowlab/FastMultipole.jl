@@ -896,6 +896,8 @@ function ka_launch_l2b!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
     ncell == 0 && return state
     orders = state.invariant_cache.basis_info.orders
     backend = KA.get_backend(state.output)
+    workgroup = resolve_workgroup(backend, workgroup)
+    workgroup > 0 || throw(ArgumentError("ka_launch_l2b! workgroup must be positive"))
     args = (state.output, state.source_bodies, state.cell_centers, state.cell_ranges,
             state.grid.leaf_to_node, state.locals.phi, state.locals.chi,
             orders.P_phi, orders.P_active, Val(LH), ncell, Val(workgroup))
@@ -935,7 +937,12 @@ end
 # Newton steps (24 -> 48 -> 53 bits), the same trick as _cuda_fast_rsqrt; a
 # full FP64 sqrt+divide was 1.7x of the Float32 nearfield on an H200.
 @inline _ka_invsqrt(r2::Float32) = inv(sqrt(r2))
+# the Float32 seed is only meaningful for r2 in Float32's normal range; outside
+# it (seed Inf or 0) take the full-precision path
+@inline _ka_f32_seed_ok(r2::Float64) =
+    Float64(floatmin(Float32)) <= r2 <= Float64(floatmax(Float32))
 @inline function _ka_invsqrt(r2::Float64)
+    _ka_f32_seed_ok(r2) || return inv(sqrt(r2))
     y = Float64(inv(sqrt(Float32(r2))))
     y = y * (1.5 - 0.5 * r2 * y * y)
     y = y * (1.5 - 0.5 * r2 * y * y)
@@ -962,6 +969,7 @@ end
     ccall("extern __nv_rsqrtf", llvmcall, Cfloat, (Cfloat,), r2)
 @inline _ka_invsqrt(r2::Float32, ::Val{true}) = _ka_rsqrt_approx(r2)
 @inline function _ka_invsqrt(r2::Float64, ::Val{true})
+    _ka_f32_seed_ok(r2) || return inv(sqrt(r2))
     y = Float64(_ka_rsqrt_approx(Float32(r2)))
     y = y * (1.5 - 0.5 * r2 * y * y)
     y = y * (1.5 - 0.5 * r2 * y * y)
@@ -1097,8 +1105,13 @@ function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B
     n_cells = Int(state.counts.n_cells)
     cfg = _nf_config(backend, TF;
         bodies_per_cell = n_cells > 0 ? Int(state.counts.n_bodies) / n_cells : 0)
-    wg = workgroup === nothing ? cfg.wg : workgroup
+    wg = workgroup === nothing ? cfg.wg : resolve_workgroup(backend, workgroup)
+    wg > 0 || throw(ArgumentError("ka_launch_nearfield! workgroup must be positive"))
     lanes = min(cfg.lanes, wg)
+    # a group carries wg ÷ lanes whole pairs; a partial team would re-run the
+    # next group's first pair and add it twice
+    wg % lanes == 0 || throw(ArgumentError(
+        "ka_launch_nearfield! workgroup=$wg must be a multiple of the $lanes lanes per pair"))
     dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF,
         _ka_nf_inv_sigma_row(state))
     kern = _cached_kernel(ka_direct_pairs_warp_kernel!, backend, wg)

@@ -7,7 +7,7 @@
 function _copy_radix_output_to_host_target_buffer!(target_buffer, output, body_perm,
         body_system_ids, body_indices, isys::Integer, derivatives_switch,
         n_bodies::Integer=size(output, 2))
-    reset!(target_buffer)
+    reset_outputs!(target_buffer, derivatives_switch)
     hrange = hessian_range(derivatives_switch)
     isempty(hrange) || size(output, 1) >= 13 ||
         throw(ArgumentError("hessian output requested but the radix output carries " *
@@ -37,7 +37,8 @@ end
 Scatter a host-resident radix lifecycle output back into the user target systems:
 de-permute `state.output` (sorted body order: scalar potential + gradient, plus
 the 9-component hessian when the cache was built with `hessian=true`) into
-per-system target buffers and call [`buffer_to_target!`](@ref). A derivatives
+per-system target buffers (whose metadata rows are filled from
+`target_systems` with [`metadata_to_buffer!`](@ref), as on the legacy path) and call [`buffer_to_target!`](@ref). A derivatives
 switch requesting hessian rows from a 4-row output throws.
 Pass preallocated `target_buffers` (one per system) to keep recurring steps
 allocation-free; otherwise buffers are allocated per call.
@@ -56,6 +57,12 @@ function finalize_radix_output!(state::DeviceResidentRadixState{TF}, target_syst
             throw(ArgumentError("finalize_radix_output! supports host-resident target systems only"))
         target_buffer = target_buffers === nothing ?
             allocate_target_buffer(TF, target_system, switch) : target_buffers[isys]
+        # metadata rows, filled as the legacy path's target_to_buffer! fills them
+        if !isempty(metadata_range(switch))
+            for i_body in 1:get_n_bodies(target_system)
+                metadata_to_buffer!(target_buffer, switch, i_body, target_system, i_body)
+            end
+        end
         _copy_radix_output_to_host_target_buffer!(
             target_buffer, state.output, state.host_body_perm,
             state.host_body_system_ids, state.host_body_indices, isys, switch,

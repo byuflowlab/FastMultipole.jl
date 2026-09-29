@@ -98,6 +98,12 @@ inside a device kernel is a compile error, not a runtime one.)
 """
 _extra_pair_has_hessian(kernel) = false
 
+# Whether an extra source's `u` is written to row 1 (host paths). A kernel that
+# defines `_emits_potential` says so there; a functor that only meets the
+# contract above returns a meaningful `u` by that contract.
+_extra_emits_potential(kernel) =
+    applicable(_emits_potential, kernel) ? _emits_potential(kernel) : true
+
 # Regularized vortex particles as an all-pairs extra source (FLOWVPM's oversize
 # particles): the buffer is the particle source layout -- rows 1:3
 # position, 5:7 strength, `sigma_row` the core -- so the resident near-field pair
@@ -210,20 +216,21 @@ function _host_targets_from_extra_source!(out::AbstractMatrix{TF}, kernel,
         xt::AbstractMatrix, nt::Integer, source_buffer::AbstractMatrix,
         ::Val{HS}) where {TF,HS}
     ns = size(source_buffer, 2)
+    ep = _extra_emits_potential(kernel)
     @inbounds for i in 1:nt
         xi = xt[1, i]; yi = xt[2, i]; zi = xt[3, i]
         for j in 1:ns
             if HS
                 u, gx, gy, gz, h1, h2, h3, h4, h5, h6, h7, h8, h9 =
                     _extra_pair_ugh(kernel, xi, yi, zi, source_buffer, j)
-                out[1, i] += u
+                ep && (out[1, i] += u)
                 out[2, i] += gx; out[3, i] += gy; out[4, i] += gz
                 out[5, i] += h1; out[6, i] += h2; out[7, i] += h3
                 out[8, i] += h4; out[9, i] += h5; out[10, i] += h6
                 out[11, i] += h7; out[12, i] += h8; out[13, i] += h9
             else
                 u, gx, gy, gz = _extra_pair_ug(kernel, xi, yi, zi, source_buffer, j)
-                out[1, i] += u
+                ep && (out[1, i] += u)
                 out[2, i] += gx; out[3, i] += gy; out[4, i] += gz
             end
         end
@@ -232,6 +239,14 @@ function _host_targets_from_extra_source!(out::AbstractMatrix{TF}, kernel,
 end
 
 #------- host drivers -------#
+
+# The resident bodies of a two-pass cache see the pass-1 field plus the pass-2
+# deficit, which together are the regularized kernel up to rho_t and singular
+# beyond: the partitioned kernel. An extra target is evaluated all-pairs, so it
+# takes that kernel in one pass.
+_extra_target_kernel(kernel::AbstractDirectKernel) = kernel
+_extra_target_kernel(kernel::TwoPassVortex) =
+    PartitionedVortex(; sigma_row=kernel.sigma_row, rho_t=kernel.rho_t)
 
 """
     _radix_extra_sources_into_output!(state, extra_sources)
@@ -284,8 +299,9 @@ function _radix_extra_targets_evaluate!(state::DeviceResidentRadixState{TF},
         xt = _radix_extra_target_positions(TF, system)
         out = zeros(TF, HS ? 13 : 4, size(xt, 2))
         # all-pairs from the resident bodies, as on the device step
-        n > 0 && _host_extra_targets_from_main!(out, state.options.direct_kernel, xt,
-            state.source_bodies, n, Val(HS))
+        n > 0 && _host_extra_targets_from_main!(out,
+            _extra_target_kernel(state.options.direct_kernel), xt,
+            state.source_bodies, n, Val(HS), Val(_validated_host_gh_mode()))
         _radix_scatter_extra_target!(TF, system, switch, out)
     end
     return state

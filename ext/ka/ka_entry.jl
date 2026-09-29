@@ -63,7 +63,7 @@ function FastMultipole.direct_rectangular!(out::AnyGPUMatrix{T}, targets::Abstra
     n_targets = size(targets, 2)
     n_targets == 0 && return out
     backend = KA.get_backend(out)
-    kern = ka_rect_kernel!(backend, workgroup)
+    kern = _cached_kernel(ka_rect_kernel!, backend, workgroup)
     kern(out, targets, kernel, sources, size(sources, 2), Val(gradient), Val(scalar_potential);
         ndrange=n_targets)
     KA.synchronize(backend)

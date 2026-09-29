@@ -1076,7 +1076,8 @@ Validity contract: positions, radii (including any radius contributions that
 depend on system state, e.g. regularization offsets folded into the buffer
 radius), body counts, leaf sizes, expansion order, and the requested
 derivative set are all FROZEN at plan construction — only source STRENGTHS
-may change between calls. The plan performs no staleness detection beyond a
+may change between calls (target metadata rows are refilled from the
+target systems on every call). The plan performs no staleness detection beyond a
 body-count check; the caller owns invalidation (rebuild the plan whenever
 geometry or radius-affecting state changes).
 
@@ -1204,8 +1205,9 @@ Update `plan` for a RIGID motion `x -> R*x + t` of the (co-moving) target and
 source systems, so the plan can be reused across timesteps of a rigidly
 moving body instead of being rebuilt: both trees are transformed with
 [`transform_tree!`](@ref) (interaction lists are exactly invariant), and the
-target buffer positions/metadata — frozen at plan build; planned `fmm!` calls
-only zero their output rows — are refreshed from the moved `target_systems`.
+target buffer positions — frozen at plan build; planned `fmm!` calls only
+zero the output rows and refill the metadata rows — are refreshed (with the
+metadata) from the moved `target_systems`.
 Source buffers need no attention here (planned `fmm!` refills them from the
 systems on every call).
 
@@ -1248,9 +1250,23 @@ end
 
 Run the FMM using the precomputed `plan` (see [`FmmPlan`](@ref)): refresh
 source strengths into the plan's sorted source buffers, zero the target
-output rows, and dispatch straight to the prebuilt-tree/prebuilt-list `fmm!`
+output rows and refill the target metadata rows from `target_systems`
+(`reset_targets=true`; target positions stay as frozen at plan build or
+last [`transform_plan!`](@ref)), and dispatch straight to the prebuilt-tree/prebuilt-list `fmm!`
 method. Returns the same tuple as the allocating `fmm!` entry point.
 """
+# metadata rows (e.g. a previous-step influence estimate) are per-call state,
+# refilled from the target systems in the tree's sorted order
+function _refresh_target_metadata!(buffers, systems::Tuple, sort_index_list, switches::Tuple)
+    for (buffer, system, sort_index, switch) in zip(buffers, systems, sort_index_list, switches)
+        isempty(metadata_range(switch)) && continue
+        for i_body in 1:get_n_bodies(system)
+            metadata_to_buffer!(buffer, switch, i_body, system, sort_index[i_body])
+        end
+    end
+    return buffers
+end
+
 function fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
     refresh_strengths::Bool=true, reset_targets::Bool=true, optargs...
 )
@@ -1264,7 +1280,12 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
     # buffers are refilled in the trees' sorted order, exactly as at build
     refresh_strengths && system_to_buffer!(plan.source_tree.buffers,
         source_systems, plan.source_tree.sort_index_list)
-    reset_targets && reset!(plan.target_tree.buffers)
+    if reset_targets
+        # outputs only: rows 1:3+NM carry the frozen positions and the metadata
+        reset_outputs!(plan.target_tree.buffers, plan.derivatives_switches)
+        _refresh_target_metadata!(plan.target_tree.buffers, target_systems,
+            plan.target_tree.sort_index_list, plan.derivatives_switches)
+    end
 
     return fmm!(target_systems, plan.target_tree, source_systems,
         plan.source_tree, plan.leaf_size_source, plan.m2l_list,

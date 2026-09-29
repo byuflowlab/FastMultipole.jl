@@ -1473,7 +1473,8 @@ abstract type AbstractRegularizedVortex <: AbstractDirectKernel end
 @inline function _validate_regularized_vortex_args(name, sigma_row, rho_t)
     sigma_row >= 5 || throw(ArgumentError(
         "$name sigma_row must point at a packed extra-state row " *
-        "(rows 1:4 are position and the MAC radius); got $sigma_row"))
+        "(rows 1:4 are position and the MAC radius, followed by the element " *
+        "strength rows); got $sigma_row"))
     rho_t > 0 || throw(ArgumentError("$name rho_t must be positive"))
     return nothing
 end
@@ -1774,22 +1775,31 @@ struct RadixLifecycleOptions{TF,O<:AbstractM2LOperator,
     # `direct_kernel` trait (defaulting per body type) at cache construction;
     # part of the concrete options type so the pair kernels specialize on it.
     direct_kernel::DK
+    # whether `direct_kernel` was passed by the caller (kept across a body-type
+    # change) or defaulted (follows the body type)
+    direct_kernel_explicit::Bool
 end
 
 # Preserve the historical partial form `RadixLifecycleOptions{TF}(...)` while
-# making all dispatch choices part of the concrete options type.
+# making all dispatch choices part of the concrete options type. An omitted
+# (`nothing`) direct kernel is the body type's default.
 RadixLifecycleOptions{TF}(precision, operator, m2l_strategy,
-        body_type::Type=Point{Source},
-        direct_kernel::AbstractDirectKernel=_default_direct_kernel(body_type)) where TF =
+        body_type::Type=Point{Source}, direct_kernel=nothing) where TF =
+    RadixLifecycleOptions{TF}(precision, operator, m2l_strategy, body_type,
+        direct_kernel === nothing ? _default_direct_kernel(body_type) : direct_kernel,
+        direct_kernel !== nothing)
+
+RadixLifecycleOptions{TF}(precision, operator, m2l_strategy, body_type::Type,
+        direct_kernel::AbstractDirectKernel, direct_kernel_explicit::Bool) where TF =
     RadixLifecycleOptions{TF,typeof(operator),
         typeof(m2l_strategy),body_type,typeof(direct_kernel)}(precision, operator,
-        m2l_strategy, body_type, direct_kernel)
+        m2l_strategy, body_type, direct_kernel, direct_kernel_explicit)
 
 RadixLifecycleOptions{TF}(;
         operator=MaterializedYRotationM2L(),
         m2l_strategy=ConcatenatedFixedZM2L(),
         body_type=Point{Source},
-        direct_kernel=_default_direct_kernel(body_type)) where TF =
+        direct_kernel=nothing) where TF =
     RadixLifecycleOptions(; precision=TF, operator, m2l_strategy,
         body_type, direct_kernel)
 
@@ -1798,7 +1808,7 @@ function RadixLifecycleOptions(;
         operator=MaterializedYRotationM2L(),
         m2l_strategy=ConcatenatedFixedZM2L(),
         body_type::Type=Point{Source},
-        direct_kernel::AbstractDirectKernel=_default_direct_kernel(body_type),
+        direct_kernel::Union{Nothing,AbstractDirectKernel}=nothing,
     ) where TF
     TF <: Union{Float32,Float64} ||
         throw(ArgumentError("CUDA radix lifecycle precision must be Float32 or Float64"))
@@ -1820,14 +1830,14 @@ end
 
 # Rebuild options with a different body type (used by RadixFMMCache construction,
 # which resolves the shared `body_type` trait of the actual source systems). A
-# direct kernel that was defaulted follows the body type; an explicit non-default
-# choice is preserved.
+# direct kernel that was defaulted follows the body type; an explicit choice is
+# preserved, even when it equals the old body type's default.
 function _options_with_body_type(options::RadixLifecycleOptions{TF},
         ::Type{BT}) where {TF,BT}
-    dk = options.direct_kernel == _default_direct_kernel(options.body_type) ?
-        _default_direct_kernel(BT) : options.direct_kernel
+    dk = options.direct_kernel_explicit ? options.direct_kernel :
+        _default_direct_kernel(BT)
     return RadixLifecycleOptions{TF}(options.precision, options.operator,
-        options.m2l_strategy, BT, dk)
+        options.m2l_strategy, BT, dk, options.direct_kernel_explicit)
 end
 
 # Rebuild options with an explicit direct kernel (RadixFMMCache construction,
@@ -1835,7 +1845,7 @@ end
 _options_with_direct_kernel(options::RadixLifecycleOptions{TF},
         dk::AbstractDirectKernel) where TF =
     RadixLifecycleOptions{TF}(options.precision, options.operator,
-        options.m2l_strategy, options.body_type, dk)
+        options.m2l_strategy, options.body_type, dk, options.direct_kernel_explicit)
 
 # Step-varying prefix lengths for a capacity-sized DeviceResidentRadixState (task
 # 023): arrays stay allocated at construction capacity and each count bounds the

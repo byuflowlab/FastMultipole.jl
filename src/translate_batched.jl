@@ -1167,14 +1167,29 @@ end
 # diag(r^-(n+1/2)) * Z * diag(r^-(np+1/2)); see m2l_z_blocks!. One dof×dof GEMM
 # replaces the per-m block loop; the ~2-3x zero-fill flop overhead is irrelevant at
 # these sizes and buys whole-slab launch economics.
-function _m2l_dense_factorial_matrix(exemplar, ::Type{TF}, P_loop::Integer) where TF
+function _m2l_dense_factorial_matrix(exemplar, ::Type{TF}, P_loop::Integer,
+        source_scaled::Bool=_m2l_factorial_overflows(TF, P_loop)) where TF
+    ndof = degree_major_dof(P_loop)
+    Z = zeros(TF, ndof, ndof)
+    if source_scaled
+        # the source degree's np! lives in the source y rows (see
+        # _ymode_stacked_dense); the remaining (n + np)!/np! stays finite
+        @inbounds for m in 0:P_loop, k in (m == 0 ? (1:1) : (2m:(2m + 1)))
+            for np in m:P_loop, n in m:P_loop
+                ratio = 1.0
+                for j in (np + 1):(n + np)
+                    ratio *= j
+                end
+                Z[degree_row_offset(n) + k, degree_row_offset(np) + k] = TF(ratio)
+            end
+        end
+        return _array_like_matrix(exemplar, TF, Z)
+    end
     fact = Vector{TF}(undef, 2 * P_loop + 1)
     fact[1] = one(TF)
     @inbounds for k in 1:(2 * P_loop)
         fact[k + 1] = fact[k] * k
     end
-    ndof = degree_major_dof(P_loop)
-    Z = zeros(TF, ndof, ndof)
     @inbounds for m in 0:P_loop, k in (m == 0 ? (1:1) : (2m:(2m + 1)))
         for np in m:P_loop, n in m:P_loop
             Z[degree_row_offset(n) + k, degree_row_offset(np) + k] = fact[n + np + 1]
@@ -1183,9 +1198,16 @@ function _m2l_dense_factorial_matrix(exemplar, ::Type{TF}, P_loop::Integer) wher
     return _array_like_matrix(exemplar, TF, Z)
 end
 
+# (2P)! does not fit a narrow precision (Float32 from P = 18 on): the dense
+# factorial matrix then moves np! into the source-side y rows, which is exact
+# because those rows are block-diagonal per degree and the r scaling is per row
+_m2l_factorial_overflows(::Type{TF}, P::Integer) where TF =
+    !isfinite(TF(factorial(big(2 * P))))
+
 # Stacked block-diagonal dense forms of the per-degree factored-y mode matrices,
 # built from the host invariant-cache complex mode vectors (see ConcatChannelOps).
-function _ymode_stacked_dense(exemplar, ::Type{TF}, modes_U, modes_V, P::Integer) where TF
+function _ymode_stacked_dense(exemplar, ::Type{TF}, modes_U, modes_V, P::Integer;
+        row_factorial::Bool=false) where TF
     ndof = degree_major_dof(P)
     Ur = zeros(TF, ndof, 2 * ndof)
     Vs = zeros(TF, 2 * ndof, ndof)
@@ -1198,6 +1220,7 @@ function _ymode_stacked_dense(exemplar, ::Type{TF}, modes_U, modes_V, P::Integer
         Ur[rows, rows .+ ndof] .= .-TF.(imag.(segU))
         Vs[rows, rows] .= TF.(real.(segV))
         Vs[rows .+ ndof, rows] .= TF.(imag.(segV))
+        row_factorial && (Ur[rows, :] .*= TF(factorial(big(n))))
     end
     return _array_like_matrix(exemplar, TF, Ur), _array_like_matrix(exemplar, TF, Vs)
 end
@@ -1214,12 +1237,14 @@ end
 
 function ConcatChannelOps(exemplar, ::Type{TF}, invariant::OperatorInvariantCache,
         P::Integer, chunk::Integer) where TF
-    yU_mult, yV_mult = _ymode_stacked_dense(exemplar, TF, invariant.y_mult_U, invariant.y_mult_V, P)
+    source_scaled = _m2l_factorial_overflows(TF, P)
+    yU_mult, yV_mult = _ymode_stacked_dense(exemplar, TF, invariant.y_mult_U,
+        invariant.y_mult_V, P; row_factorial=source_scaled)
     yU_loc, yV_loc = _ymode_stacked_dense(exemplar, TF, invariant.y_loc_U, invariant.y_loc_V, P)
     ndof = degree_major_dof(P)
     return ConcatChannelOps(
         yU_mult, yV_mult, yU_loc, yV_loc,
-        _m2l_dense_factorial_matrix(exemplar, TF, P),
+        _m2l_dense_factorial_matrix(exemplar, TF, P, source_scaled),
         _degree_row_nus(exemplar, TF, P),
         similar(exemplar, TF, ndof, chunk),
         similar(exemplar, TF, ndof, chunk),
@@ -2910,8 +2935,10 @@ function _check_dense_m2l_operator_finite!(K::AbstractMatrix{TF},
         "DenseTranslationM2L materialized a non-finite operator: " *
         "precision=$(TF), P=$P$(active_msg), Lamb-Helmholtz=$(LH), " *
         "displacement offset=$(offset). " *
-        "Use Float64, lower P, disable Lamb-Helmholtz, or choose " *
-        "PrecomputedFactoredYM2L / a factored / concat M2L strategy."))
+        "Use Float64, lower P, disable Lamb-Helmholtz, or choose a strategy " *
+        "that does not materialize the whole operator: the concat plan " *
+        "ConcatenatedFixedZM2L(), or the factored PrecomputedFactoredYM2L() " *
+        "with operator=FactoredRotationM2L()."))
 end
 
 function ResidentM2LDensePlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
@@ -2955,7 +2982,7 @@ function ResidentM2LDensePlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     nops = length(operator_offsets)
     nt = max(1, min(Threads.nthreads(), nops))
     try
-        Threads.@threads :static for t in 1:nt
+        Threads.@threads for t in 1:nt
             workspace = DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
             @inbounds for i in t:nt:nops
                 offset = operator_offsets[i]

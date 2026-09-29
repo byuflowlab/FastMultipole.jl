@@ -419,6 +419,7 @@ end
 
 function _complex_gradient_contract(harmonics, coeffs, P)
     gx = zero(eltype(coeffs)); gy = zero(eltype(coeffs)); gz = zero(eltype(coeffs))
+    half = one(eltype(coeffs)) / 2
     @inbounds for n in 0:(P - 1)
         i0 = harmonic_index(n, 0)
         Rr = harmonics[1, 1, i0]
@@ -433,13 +434,13 @@ function _complex_gradient_contract(harmonics, coeffs, P)
             Rr = harmonics[1, 1, i]
             Ri = harmonics[2, 1, i]
             xr = -(_complex_coeff_im(coeffs, P, n + 1, m - 1) +
-                   _complex_coeff_im(coeffs, P, n + 1, m + 1)) * 0.5
+                   _complex_coeff_im(coeffs, P, n + 1, m + 1)) * half
             xi = (_complex_coeff_re(coeffs, P, n + 1, m - 1) +
-                  _complex_coeff_re(coeffs, P, n + 1, m + 1)) * 0.5
+                  _complex_coeff_re(coeffs, P, n + 1, m + 1)) * half
             yr = (_complex_coeff_re(coeffs, P, n + 1, m - 1) -
-                  _complex_coeff_re(coeffs, P, n + 1, m + 1)) * 0.5
+                  _complex_coeff_re(coeffs, P, n + 1, m + 1)) * half
             yi = (_complex_coeff_im(coeffs, P, n + 1, m - 1) -
-                  _complex_coeff_im(coeffs, P, n + 1, m + 1)) * 0.5
+                  _complex_coeff_im(coeffs, P, n + 1, m + 1)) * half
             zr = -_complex_coeff_re(coeffs, P, n + 1, m)
             zi = -_complex_coeff_im(coeffs, P, n + 1, m)
             gx += 2 * (xr * Rr - xi * Ri)
@@ -454,6 +455,7 @@ end
 # component. Destination components are grouped as (source component, x/y/z).
 function _differentiate_complex_coefficients!(dest, dest_offset, src, src_offset, ncomponents, P)
     @views fill!(dest[:, dest_offset + 1:dest_offset + 3ncomponents, :], zero(eltype(dest)))
+    half = one(eltype(src)) / 2
     @inbounds for component in 1:ncomponents
         s = src_offset + component
         dx = dest_offset + 3(component - 1) + 1
@@ -472,10 +474,10 @@ function _differentiate_complex_coefficients!(dest, dest_offset, src, src_offset
                 im1 = harmonic_index(n + 1, m - 1)
                 ip1 = harmonic_index(n + 1, m + 1)
                 im = harmonic_index(n + 1, m)
-                dest[1, dx, i] = -(src[2, s, im1] + src[2, s, ip1]) * 0.5
-                dest[2, dx, i] =  (src[1, s, im1] + src[1, s, ip1]) * 0.5
-                dest[1, dy, i] =  (src[1, s, im1] - src[1, s, ip1]) * 0.5
-                dest[2, dy, i] =  (src[2, s, im1] - src[2, s, ip1]) * 0.5
+                dest[1, dx, i] = -(src[2, s, im1] + src[2, s, ip1]) * half
+                dest[2, dx, i] =  (src[1, s, im1] + src[1, s, ip1]) * half
+                dest[1, dy, i] =  (src[1, s, im1] - src[1, s, ip1]) * half
+                dest[2, dy, i] =  (src[2, s, im1] - src[2, s, ip1]) * half
                 dest[1, dz, i] = -src[1, s, im]
                 dest[2, dz, i] = -src[2, s, im]
             end

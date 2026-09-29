@@ -19,6 +19,11 @@
 # `_host_radix_sort_permutation` and `_compress_radix_cells`
 # (src/tree_batched.jl), which are exactly these three steps on the CPU.
 
+# leaf index of a scaled coordinate, clamped to 0:G-1 without throwing (NaN
+# lands on an arbitrary in-range cell; the caller flags it)
+@inline _ka_cell_index(s, G) =
+    clamp(unsafe_trunc(Int, floor(clamp(s, zero(s), oftype(s, G)))), 0, G - 1)
+
 @kernel function ka_radix_keys_checked_kernel!(keys, oob_flag, @Const(positions),
         x_min, box_extent, h0, ell, n)
     i = @index(Global)
@@ -42,9 +47,11 @@
              x_min[3] - tz <= pz <= hz + tz)
             oob_flag[1] = Int32(1)
         end
-        ix = clamp(floor(Int, (px - x_min[1]) / delta), 0, G - 1)
-        iy = clamp(floor(Int, (py - x_min[2]) / delta), 0, G - 1)
-        iz = clamp(floor(Int, (pz - x_min[3]) / delta), 0, G - 1)
+        # clamp before the integer conversion: a NaN or huge position must reach
+        # the flag check on the host, not throw InexactError in the kernel
+        ix = _ka_cell_index((px - x_min[1]) / delta, G)
+        iy = _ka_cell_index((py - x_min[2]) / delta, G)
+        iz = _ka_cell_index((pz - x_min[3]) / delta, G)
         keys[i] = ka_morton_key(ix, iy, iz, ell)
     end
 end

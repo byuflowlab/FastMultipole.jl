@@ -21,7 +21,7 @@ end
         # eagerly-defined settings are readable
         @test radix_setting(:CUDA_NEARFIELD_GH_MODE) isa Symbol
         @test radix_setting(:FACTORED_Y_GEMM_MIN_DIM) isa Integer
-        @test RADIX_SETTING_SPECS[:CUDA_NEARFIELD_GH_MODE].lock === :construction
+        @test RADIX_SETTING_SPECS[:CUDA_NEARFIELD_GH_MODE].lock === :runtime
         @test RADIX_SETTING_SPECS[:FACTORED_Y_GEMM_MIN_DIM].lock === :runtime
         # radix_settings() reports defined settings only, as a NamedTuple
         settings = radix_settings()
@@ -65,6 +65,12 @@ end
     end
 
     @testset "construction-lock snapshot + drift detection" begin
+        # no shipped setting is construction-locked; exercise the lock machinery
+        # by locking one temporarily
+        spec0 = RADIX_SETTING_SPECS[:CUDA_NEARFIELD_GH_MODE]
+        RADIX_SETTING_SPECS[:CUDA_NEARFIELD_GH_MODE] =
+            FastMultipole.RadixSettingSpec(:construction, spec0.validate, spec0.doc)
+        try
         snapshot = snapshot_locked_radix_settings()
         @test snapshot isa Vector{Pair{Symbol,Any}}
         # only construction-locked settings are snapshotted
@@ -92,6 +98,9 @@ end
         end
         # ...and restoring the value clears the error
         @test verify_locked_radix_settings(snapshot) === nothing
+        finally
+            RADIX_SETTING_SPECS[:CUDA_NEARFIELD_GH_MODE] = spec0
+        end
     end
 
     @testset "cache carries the snapshot (host construction, P=4)" begin

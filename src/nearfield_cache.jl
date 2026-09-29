@@ -165,8 +165,8 @@ function _nearfield_cache_size_pass(entries, target_ranges, source_ranges,
 end
 
 # per-(target,source)-pair kernel time from one warmed-up single-source
-# direct! sample on the first block (min-of-3); leaves the sampled output
-# rows zeroed
+# direct! sample on the first block (min-of-3); the sampled output rows are
+# restored afterwards
 function _sample_probe_time(target_buffers, source_buffers, source_systems,
         derivatives_switches, entries, target_ranges, source_ranges,
         output_ranges)
@@ -178,12 +178,13 @@ function _sample_probe_time(target_buffers, source_buffers, source_systems,
     source_system = source_systems[i_ss]
     target_range = target_ranges[1]
     i_body = first(source_ranges[1]):first(source_ranges[1])
+    saved = target_buffer[output_ranges[1], target_range]
     # warm up (compile), then time
     direct!(target_buffer, target_range, switch, source_system, source_buffer, i_body)
     t = minimum(@elapsed direct!(target_buffer, target_range, switch,
             source_system, source_buffer, i_body)
         for _ in 1:3)
-    @views target_buffer[output_ranges[1], target_range] .= zero(eltype(target_buffer))
+    target_buffer[output_ranges[1], target_range] .= saved
     return t / length(target_range)
 end
 
@@ -195,9 +196,11 @@ Estimate a [`NearfieldInfluenceCache`](@ref)'s cost WITHOUT building it:
 returns `(; bytes, est_build_time, n_blocks, total_probe_pairs)`. `bytes`
 uses the exact size-pass arithmetic the builder uses; `est_build_time` times
 one warmed-up single-source kernel evaluation and scales it by the number of
-probe pairs (`sample=false` skips the timing and reports `NaN`). Used by the
-builder's `max_build_time` guard and by cached-near-field autotuning
-feasibility checks (non-throwing by design).
+probe pairs (`sample=false` skips the timing and reports `NaN`). The sample
+runs on the first block's target buffer and restores its output rows, so the
+trees are left as they were. The builder's `max_build_time` guard uses the
+same timing sample; this function is for callers that want the estimate
+without building (non-throwing by design).
 """
 function estimate_nearfield_cache(target_tree::Tree, source_tree::Tree,
         direct_list, derivatives_switches::Tuple, source_systems::Tuple;
@@ -416,7 +419,7 @@ function _build_nearfield_cache(entries, target_ranges, source_ranges,
             "NearfieldInfluenceCache build is estimated at " *
             "$(round(est_build_time; digits=2)) s (kernel sample " *
             "$(t_per_pair) s/pair × $(sp.total_probe_pairs) probe pairs / " *
-            "$(length(chunks)) build threads), " *
+            "$(n_workers) build workers), " *
             "exceeding max_build_time = $max_build_time s; raise " *
             "max_build_time or disable the cache"))
     end
@@ -660,7 +663,7 @@ function nearfield_matvec!(target_buffers, cache::NearfieldInfluenceCache{TF},
         _nearfield_matvec_range!(target_buffers, cache, source_buffers, 1:n_blocks, 1)
     else
         assignments = _make_cache_assignments(cache, n_threads)
-        Threads.@threads :static for i_task in eachindex(assignments)
+        Threads.@threads for i_task in eachindex(assignments)
             _nearfield_matvec_range!(target_buffers, cache, source_buffers,
                 assignments[i_task], i_task)
         end

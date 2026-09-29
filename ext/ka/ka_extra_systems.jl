@@ -167,6 +167,8 @@ end
 # RK3 stages of a solver freeze the bodies over the step, and preparing them
 # on the host every stage measured 16% of a sixty-four-rotor step. A source
 # with revision `nothing` is prepared every call.
+const _KA_EXTRA_TREE_CACHE_MAX = 64
+
 function _ka_extra_tree_prepared!(cache::FastMultipole.RadixFMMCache, sys)
     rev = FastMultipole.source_revision(sys)
     rev === nothing && return ka_extra_tree_prepare(cache.state, sys)
@@ -174,13 +176,20 @@ function _ka_extra_tree_prepared!(cache::FastMultipole.RadixFMMCache, sys)
     key = objectid(sys)
     hit = get(ctx.extra_tree_cache, key, nothing)
     kernel = FastMultipole.direct_kernel(sys)     # the prepared form carries the kernel: a changed kernel is a miss
-    if hit !== nothing && hit.revision == rev && hit.epoch == ctx.epoch_id[] && hit.kernel == kernel
+    epoch = ctx.epoch_id[]
+    # `system === sys`: an objectid can be reused by another object after GC
+    if hit !== nothing && hit.system === sys && hit.revision == rev &&
+            hit.epoch == epoch && hit.kernel == kernel
         ctx.extra_tree_hits[] += 1
         return hit.prepared
     end
     ctx.extra_tree_misses[] += 1
+    # entries from an older epoch can never hit again; dropping them releases
+    # their device arrays and the systems they hold
+    filter!(kv -> kv.second.epoch == epoch, ctx.extra_tree_cache)
+    length(ctx.extra_tree_cache) >= _KA_EXTRA_TREE_CACHE_MAX && empty!(ctx.extra_tree_cache)
     prepared = ka_extra_tree_prepare(cache.state, sys)
-    ctx.extra_tree_cache[key] = (; revision = rev, epoch = ctx.epoch_id[], kernel, prepared)
+    ctx.extra_tree_cache[key] = (; system = sys, revision = rev, epoch, kernel, prepared)
     return prepared
 end
 
@@ -425,7 +434,7 @@ The near sweep and the held-out bodies, after the lifecycle has run.
 """
 function ka_extra_tree_finish!(state::FastMultipole.DeviceResidentRadixState{TF},
         prepared; workgroup=KA_AUTO_WORKGROUP) where TF
-    ka_extra_tree_near!(state, prepared)
+    ka_extra_tree_near!(state, prepared; workgroup)
     n = Int(state.counts.n_bodies)
     if n > 0 && size(prepared.loose, 2) > 0
         backend = KA.get_backend(state.output)

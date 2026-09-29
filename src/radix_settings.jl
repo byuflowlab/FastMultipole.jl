@@ -41,9 +41,9 @@ const RADIX_DIRECT_ARM = Ref(false)
 
 const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
     # ---- nearfield -----------------------------------------------------------
-    :CUDA_NEARFIELD_GH_MODE => RadixSettingSpec(:construction,
+    :CUDA_NEARFIELD_GH_MODE => RadixSettingSpec(:runtime,
         _rs_enum((:shipped, :reduced, :fp32, :reduced_fp32)),
-        "g/h evaluation mode for the regularized nearfield on the HOST radix path (:fp32 default). The KernelAbstractions kernels always evaluate the shipped series in the field precision and ignore this setting."),
+        "g/h evaluation mode for the regularized nearfield on the HOST radix path (:fp32 default); read at every host step, so a flip takes effect on the next step. The KernelAbstractions kernels always evaluate the shipped series in the field precision and ignore this setting."),
     # ---- lifecycle/orchestration --------------------------------------------
     :RADIX_DIRECT_ARM => RadixSettingSpec(:runtime, _rs_bool,
         "Evaluate the step as a single all-pairs O(np^2) direct kernel instead of the FMM lifecycle, skipping the grid and route refresh (KA device path only; checked per step at entry). Opt-in: nothing selects it automatically."),
