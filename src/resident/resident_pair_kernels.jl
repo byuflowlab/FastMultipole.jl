@@ -611,7 +611,7 @@ end
 # evaluate the gaussianerf (g, h); each mode was sized so its pointwise error,
 # mapped to the delivered U/J error, stays inside the accuracy budget:
 #
-#   :shipped       the unmodified evaluation above (the control/opt-out; every
+#   :shipped       the unmodified evaluation above (the default; every
 #                  other call path is bitwise-identical to it);
 #   :reduced       12-term series in both precisions (from 19/13), outer
 #                  branch unchanged (deg-2 s(u) fails the mapped budget);
@@ -621,20 +621,18 @@ end
 #                  configurations this is the shipped path (documented no-op);
 #   :reduced_fp32  :fp32 with the 12-term reduced series.
 #
-# Construction-locked (radix_settings.jl): flip it BEFORE cache construction.
-# Despite the name, only the host pair loops read this setting; the KA device
-# kernels do not consult it.
+# Runtime setting (radix_settings.jl): read at every host step, so a flip takes
+# effect on the next step. Despite the name, only the host pair loops read this
+# setting; the KA device kernels do not consult it.
 #
-# DEFAULT = :fp32: on Float64
-# configurations the g/h transcendental (and functor-path assembly) runs in
-# Float32 with Float64 accumulation — measured +6.8-10.2% end-to-end U/J on
-# cube and +7.4-7.8% on the wake at delivered-error deltas of ~1e-8 relative
-# RMS (measured on an H200). On
-# Float32 configurations :fp32 is bitwise the shipped path (documented
-# no-op), so this default changes nothing there. :shipped remains the
-# control/opt-out.
+# DEFAULT = :shipped: Float64 configurations evaluate g/h and assemble U/J in
+# Float64. :fp32 is opt-in: on Float64 configurations regularized pairs then
+# evaluate the g/h transcendental and assemble the pair U/J in Float32,
+# accumulating in Float64 (measured +6.8-10.2% end-to-end U/J on cube and
+# +7.4-7.8% on the wake at delivered-error deltas of ~1e-8 relative RMS, on an
+# H200). On Float32 configurations :fp32 is bitwise the shipped path.
 const NEARFIELD_GH_MODES = (:shipped, :reduced, :fp32, :reduced_fp32)
-const CUDA_NEARFIELD_GH_MODE = Ref{Symbol}(:fp32)
+const CUDA_NEARFIELD_GH_MODE = Ref{Symbol}(:shipped)
 
 # 12-term truncations of the exact series (measured delta vs shipped
 # <= 4.9e-6 relative on the series branch, >= 7x under the coherent-tier
@@ -1330,4 +1328,3 @@ function _flatten_radix_direct_pairs_host(list::RadixInteractionList)
     end
     return direct_targets, direct_sources
 end
-

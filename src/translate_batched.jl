@@ -139,11 +139,15 @@ The entries are filled by a stable recurrence with `rho = inv(t)`
   advanced down output degree by `K_m[n + 1, m] = K_m[n, m] * (n + m + 1) * rho`;
 - across source degree: `K_m[n, np + 1] = K_m[n, np] * (n + np + 1) * rho`.
 
-The multiply order matches `translate_multipole_to_local_z!` in `src/translate.jl`
-so that `apply_m2l_z_flat!` reproduces production bit-for-bit.
+For Float64 the multiply order matches `translate_multipole_to_local_z!` in
+`src/translate.jl`, so `apply_m2l_z_flat!` reproduces production bit-for-bit.
+Narrower element types (Float32) are computed in Float64 and rounded once on
+store; an entry beyond the element type's range stores as `Inf`, which the M2L
+plans reject at construction (`_check_m2l_blocks_finite`).
 """
 function m2l_z_blocks!(blocks, t, P)
-    rho = inv(t)
+    W = promote_type(eltype(blocks), typeof(t), Float64)
+    rho = inv(W(t))
 
     # n!_t_np1 tracks K_m[n, m] for the current (n, m=0): (n + 0)! * rho^(n + 1).
     # It is advanced down n by *(n+1)*rho, exactly as production advances n!_t_np1.
@@ -757,10 +761,11 @@ end
 # Crossover for routing per-degree factored-y applications to BLAS GEMMs: classes at
 # least this wide use `mul!` for degree blocks of dimension at least
 # FACTORED_Y_GEMM_MIN_DIM; everything else keeps the scalar no-alloc kernel, whose
-# per-element cost beats BLAS dispatch on the narrow/sparse classes. Defaults are
-# measured (EPYC 7763 / OpenBLAS): scalar wins at class width <= 7, GEMM wins
-# from width 20 at every P (including the 1x1/3x3 low-degree blocks, so no dim gate);
-# BLAS thread count was immaterial at these block sizes. The column threshold is not
+# per-element cost beats BLAS dispatch on the narrow/sparse classes. On EPYC 7763 /
+# OpenBLAS the scalar kernel wins at class width <= 7 and GEMM wins from width 20
+# at every P (including the 1x1/3x3 low-degree blocks, so no dim gate); the
+# default column threshold 16 lies between those measured widths, and the BLAS
+# thread count is immaterial at these block sizes. The column threshold is not
 # a registered radix setting; it stays a Ref only so the integration test can force
 # each branch.
 const FACTORED_Y_GEMM_MIN_COLS = Ref(16)
@@ -1181,6 +1186,8 @@ function _m2l_dense_factorial_matrix(exemplar, ::Type{TF}, P_loop::Integer,
                 Z[degree_row_offset(n) + k, degree_row_offset(np) + k] = TF(ratio)
             end
         end
+        all(isfinite, Z) || _m2l_range_error(TF, "ConcatenatedFixedZM2L",
+            "factorial ratios (n + np)!/np!", P_loop, nothing)
         return _array_like_matrix(exemplar, TF, Z)
     end
     fact = Vector{TF}(undef, 2 * P_loop + 1)
@@ -1201,6 +1208,70 @@ end
 # because those rows are block-diagonal per degree and the r scaling is per row
 _m2l_factorial_overflows(::Type{TF}, P::Integer) where TF =
     !isfinite(TF(factorial(big(2 * P))))
+
+#------- M2L precision-range checks -------#
+#
+# M2L coefficients are unnormalized: the z-translation factors are
+# (n + np)!/r^(n + np + 1), and the local coefficients of a unit-strength,
+# well-separated source cluster (radius <= r/2) are bounded by n!(2/r)^(n+1).
+# In a narrow precision (Float32) either can exceed floatmax at high expansion
+# order or in a physically small box, and an infinite factor turns every local
+# it touches into Inf/NaN. Every M2L plan
+# checks its range at construction and refuses with the remedies that work.
+# TODO: normalize coordinates to a unit box internally so Float32 caches work at
+# any physical scale and expansion order.
+
+@noinline function _m2l_range_error(::Type{TF}, plan::AbstractString, what::AbstractString,
+        P::Integer, r) where TF
+    geometry = r === nothing ? "" :
+        " and smallest M2L translation distance r=$(Float64(r))"
+    remedies = r === nothing ?
+        "Use precision=Float64 or a lower expansion order." :
+        "Use precision=Float64, a lower expansion order, or scale the geometry " *
+        "toward unit size (nondimensionalize lengths so the box is O(1))."
+    throw(ArgumentError("$plan: $what exceed the $TF range at expansion order " *
+        "P=$P$geometry. $remedies"))
+end
+
+# log(max over n in 0:P of n!(2/r)^(n+1)), evaluated in Float64
+function _m2l_log_local_scale(r, P::Integer)
+    lr = log(Float64(r) / 2)
+    lf = 0.0
+    worst = -lr
+    for n in 1:P
+        lf += log(n)
+        worst = max(worst, lf - (n + 1) * lr)
+    end
+    return worst
+end
+
+"""
+    _check_m2l_range(TF, rs, P, plan)
+
+Throw an `ArgumentError` when the local-coefficient bound `n!(2/r)^(n+1)`
+(`n <= P`, `r = minimum(rs)`) exceeds `floatmax(TF)`.
+"""
+function _check_m2l_range(::Type{TF}, rs, P::Integer, plan::AbstractString) where TF
+    TF <: AbstractFloat || return nothing
+    isempty(rs) && return nothing
+    r = minimum(rs)
+    _m2l_log_local_scale(r, P) < log(Float64(floatmax(TF))) && return nothing
+    return _m2l_range_error(TF, plan,
+        "local expansion coefficients (up to n!(2/r)^(n+1) per unit source strength)", P, r)
+end
+
+"""
+    _check_m2l_blocks_finite(blocks, r, P, plan)
+
+Throw an `ArgumentError` when the materialized z-translation factors
+`(n + np)!/r^(n + np + 1)` in `blocks` are not all finite.
+"""
+function _check_m2l_blocks_finite(blocks::AbstractVector{TF}, r, P::Integer,
+        plan::AbstractString) where TF
+    all(isfinite, blocks) && return nothing
+    return _m2l_range_error(TF, plan,
+        "z-translation factors (n + np)!/r^(n + np + 1)", P, r)
+end
 
 # Stacked block-diagonal dense forms of the per-degree factored-y mode matrices,
 # built from the host invariant-cache complex mode vectors (see ConcatChannelOps).
@@ -1356,6 +1427,7 @@ function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, 
     i == nroutes || throw(ArgumentError(
         "interaction-list batches ($i routes) do not match flattened routes ($nroutes)"))
     chunk = max(min(strategy.chunk, max(nroutes, 1)), 1)
+    _check_m2l_range(TF, rs, LH ? P_active : P_phi, "ConcatenatedFixedZM2L")
     ndof_phi = degree_major_dof(P_phi)
     ndof_chi = LH ? degree_major_dof(P_active) : 0
     lh_arow_unit, lh_brow_unit = LH ?
@@ -1438,6 +1510,10 @@ function _resident_group(exemplar, ::Type{TF}, basis_info, kind::Symbol, level::
     kind === :m2m ? m2m_z_blocks!(blocks, r, P_active) :
         kind === :m2l ? m2l_z_blocks!(blocks, r, P_active) :
         l2l_z_blocks!(blocks, r, P_active)
+    if kind === :m2l && !isempty(rs_host)
+        _check_m2l_range(TF, rs_host, P_active, "FactoredRotationM2L")
+        _check_m2l_blocks_finite(blocks, r, P_active, "FactoredRotationM2L")
+    end
     # The shared M2L group path applies per-m blocks; M2M/L2L groups run the dense
     # whole-slab chain and carry the dof×dof embedding instead.
     if kind === :m2l
@@ -1710,7 +1786,7 @@ end
 
 # Factored M2L for one group of a ResidentM2LFactoredPlan: the group's routes
 # share one set of z-translation blocks, and the per-route (phi, theta) enter
-# through the z-rotation gather/scatter and the Plain-H U/V y-alignment, applied as
+# through the z-rotation gather/scatter and the factored U/V y-rotation, applied as
 # per-degree GEMMs over all routes in the group. No Ts(theta) is materialized.
 function _resident_factored_m2l_group_apply!(state::DeviceResidentRadixState{TF,B,LH},
         group::ResidentOperatorGroup, ws::ResidentOperatorWorkspace{TF,B,LH}) where {TF,B,LH}
@@ -2585,11 +2661,11 @@ function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, 
     nroutes = Int(route_capacity)
     # Flat routes are applied in `strategy.chunk` pieces. Hierarchical routes
     # are generated and applied one complete class window at a time, so their
-    # scratch must cover the full window capacity. Using the flat chunk here
-    # silently wrote past the stage slabs once a window held more routes than
-    # `strategy.chunk`.
+    # scratch must cover the full window capacity; a window may hold more routes
+    # than `strategy.chunk`.
     chunk = whole_window ? max(nroutes, 1) :
         max(min(strategy.chunk, max(nroutes, 1)), 1)
+    _check_m2l_range(TF, rs, LH ? P_active : P_phi, "ConcatenatedFixedZM2L")
     ndof_phi = degree_major_dof(P_phi)
     ndof_chi = LH ? degree_major_dof(P_active) : 0
     lh_arow_unit, lh_brow_unit = LH ?
@@ -2737,8 +2813,10 @@ function ResidentM2LPrecomputedYPlan(::Type{TF}, basis_info::OperatorBasisInfo{B
     blocks = Vector{TF}(undef, m2l_z_block_length(P_active))
     lh_A = LH ? Vector{TF}(undef, _operator_ncomplex(P_active)) : TF[]
     lh_B = similar(lh_A)
+    _check_m2l_range(TF, offset_rs, P_active, "PrecomputedFactoredYM2L")
     @inbounds for i in 1:noffsets
         m2l_z_blocks!(blocks, offset_rs[i], P_active)
+        _check_m2l_blocks_finite(blocks, offset_rs[i], P_active, "PrecomputedFactoredYM2L")
         z_phi[i] = _z_block_matrices_like(exemplar, TF, blocks, :m2l, P_phi, P_active)
         z_chi[i] = LH ? _z_block_matrices_like(exemplar, TF, blocks, :m2l, P_active, P_active) : Matrix{TF}[]
         if LH
@@ -2936,11 +3014,10 @@ function _check_dense_m2l_operator_finite!(K::AbstractMatrix{TF},
     throw(ArgumentError(
         "DenseTranslationM2L materialized a non-finite operator: " *
         "precision=$(TF), P=$P$(active_msg), Lamb-Helmholtz=$(LH), " *
-        "displacement offset=$(offset). " *
-        "Use Float64, lower P, disable Lamb-Helmholtz, or choose a strategy " *
-        "that does not materialize the whole operator: the concat plan " *
-        "ConcatenatedFixedZM2L(), or the factored PrecomputedFactoredYM2L() " *
-        "with operator=FactoredRotationM2L()."))
+        "displacement offset=$(offset). The unnormalized operator entries " *
+        "exceed the $(TF) range at this expansion order and box size. " *
+        "Use precision=Float64, a lower expansion order, or scale the geometry " *
+        "toward unit size (nondimensionalize lengths so the box is O(1))."))
 end
 
 function ResidentM2LDensePlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
@@ -2961,6 +3038,8 @@ function ResidentM2LDensePlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         throw(ArgumentError("hierarchical dense class count must be divisible by offset count"))
     noperators = hierarchical ? hno : nclasses
     D = _dense_m2m_dof(basis_info, Val(LH))
+    _check_m2l_range(TF, (TF(cell_width) * norm(SVector{3,TF}(o)) for o in accepted_offsets),
+        basis_info.orders.P_active, "DenseTranslationM2L")
     class_capacities = Vector{Int}(undef, nclasses)
     @inbounds for i in eachindex(accepted_offsets)
         class_capacities[i] = _dense_m2l_capacity(accepted_offsets[i], nroutes,
@@ -2979,8 +3058,8 @@ function ResidentM2LDensePlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     operator_offsets = hierarchical ?
         @view(accepted_offsets[(nclasses - hno + 1):nclasses]) : accepted_offsets
     # independent per offset: built in parallel, a builder workspace per task
-    # (the serial loop was most of a cache build, ~0.5 s regardless of the
-    # particle count)
+    # (the operator build dominates cache construction and does not depend on
+    # the particle count)
     nops = length(operator_offsets)
     nt = max(1, min(Threads.nthreads(), nops))
     try
@@ -3117,4 +3196,3 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         ystk_phi, ystk_chi,
     )
 end
-

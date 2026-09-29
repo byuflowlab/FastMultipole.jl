@@ -1,9 +1,9 @@
-# Task 032 stage 1: generalized device-system interface, host-resident path.
+# Generalized device-system interface, host-resident path.
 # Covers the canonical all-rows packed layout (data_per_body > 5), the
 # body_type trait with the Point{Vortex} B2M (φ + χ, Lamb-Helmholtz
 # end-to-end), and the 9-component hessian output chosen at cache
-# construction — all without CUDA. Device mirrors are exercised in
-# test/cuda_radix_interface_test.jl.
+# construction — all without a GPU. Device mirrors are exercised by the
+# suites in test/metal_env/.
 
 using FastMultipole
 using FastMultipole.StaticArrays
@@ -21,7 +21,7 @@ if !isdefined(@__MODULE__, :ExtendedVortex)
     include("interface_test_systems.jl")
 end
 
-@testset "device-system interface stage 1 (task 032)" begin
+@testset "device-system interface" begin
 
     seed = 20260805
 
@@ -86,7 +86,7 @@ end
         @test any(!iszero, vcache.state.locals.chi)
     end
 
-    # Float32 at P = 4: relative accuracy floor (task 024: ~5e-4, essentially
+    # Float32 at P = 4: relative accuracy floor (measured ~5e-4, essentially
     # P-independent), so gate loosely relative to the field scale
     v32 = generate_vortex(seed, nv)
     c32 = RadixFMMCache(v32; expansion_order=4, ell=3, hessian=true,
@@ -130,7 +130,7 @@ end
     @test_throws ArgumentError RadixFMMCache((vplain, plain); expansion_order=4, ell=2)
 end
 
-@testset "direct-kernel functor trait stage 2 (task 032)" begin
+@testset "direct-kernel functor trait" begin
 
     seed = 20260805
 
@@ -138,8 +138,8 @@ end
 
     A = sqrt(2 / pi)
     g_ref(rho) = _ref_erf(rho / sqrt(2)) - A * rho * exp(-rho^2 / 2)
-    # the naive h = ρg′ − 3g cancels catastrophically at small ρ (the very §3
-    # hazard), so the series-branch reference is evaluated in BigFloat
+    # the naive h = ρg′ − 3g cancels catastrophically at small ρ (the hazard
+    # the series branch exists for), so the series-branch reference is evaluated in BigFloat
     function gh_big(rho)
         rb = big(rho)
         x = rb / sqrt(big(2))
@@ -154,7 +154,7 @@ end
         hb = Ab * rb^3 * exp(-rb * rb / 2) - 3 * gb
         return Float64(gb), Float64(hb)
     end
-    budget = 0.5e-3 * g_ref(2.0)          # 031a §6.2 absolute budget = 3.69e-4
+    budget = 0.5e-3 * g_ref(2.0)          # absolute budget = 3.69e-4
     for (TF, rtol) in ((Float64, 1e-11), (Float32, 2e-6))
         emax_series = 0.0
         for rho in range(1e-3, 2.0, length=2001)
@@ -234,7 +234,7 @@ end
     end
 
     #--- (d) near-set adequacy: an inadequate geometry demotes to the
-    #    all-direct zero-M2L cache (task 052f) instead of throwing, and the
+    #    all-direct zero-M2L cache instead of throwing, and the
     #    demoted cache still matches the erf-based regularized direct truth ---#
 
     base = generate_vortex(seed, 400)
@@ -250,7 +250,7 @@ end
     fmm!(bad, fat_cache; scalar_potential=false, gradient=true, hessian=true)
     # all pairs are direct, so parity is bounded by the erf-free gaussianerf
     # evaluation itself (outer branch ≤ 2.1e-4 absolute against the 3.69e-4
-    # budget, see the 032 stage-2 kernel block) — not by expansion error
+    # budget, see the direct-kernel functor testset) — not by expansion error
     @test maximum(abs.(base.gradient_stretching[1:3, :] .- U_fat)) /
         maximum(abs.(U_fat)) < 5e-4
     @test maximum(abs.(base.potential[5:13, :] .- J_fat)) /
@@ -276,10 +276,10 @@ end
     @test_throws ArgumentError RegularizedVortex(; sigma_row=8, rho_t=0.0)
 end
 
-@testset "partitioned nearfield stage A (task 032a)" begin
+@testset "partitioned nearfield" begin
 
     seed = 20260806
-    rho_t = 4.252   # shipped split-kernel default since Checkpoint D (2026-08-07)
+    rho_t = 4.252   # split-kernel default
 
     #--- (a) pair-level three-way parity: the partitioned kernel is bitwise the
     #    regularized kernel inside the cutoff and bitwise the singular kernel
@@ -326,7 +326,7 @@ end
 
     nv = 400
     for P in (8, 4), (TF, gtol) in ((Float64, 1e-3), (Float32, 3e-3))
-        tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates (task 032 record)
+        tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates
         base_r = generate_vortex(seed, nv)
         base_p = generate_vortex(seed, nv)
         sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
@@ -369,7 +369,7 @@ end
         options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L(),
             direct_kernel=PartitionedVortex(; sigma_row=8)))
-    # adequacy demotion applies identically to the partitioned kernel (052f)
+    # adequacy demotion applies identically to the partitioned kernel
     fat = PartitionedSmoothedVortex(SmoothedVortex(generate_vortex(seed, 400),
         fill(0.2, 400)))
     fat_pcache = @test_logs (:warn, r"near-set adequacy failed") match_mode=:any RadixFMMCache(
@@ -383,8 +383,8 @@ end
     @test_throws ArgumentError PartitionedVortex(; sigma_row=8, rho_t=0.0)
 end
 
-# Float64 erf-based regularized and singular U/J for one pair (theory §1),
-# used by the stage B tests below as the pair-level truth.
+# Float64 erf-based regularized and singular U/J for one pair, used by the
+# two-pass tests below as the pair-level truth.
 function _ref_pair_uj(d, G, sigma)
     A = sqrt(2 / pi)
     r2 = dot(d, d)
@@ -405,9 +405,9 @@ function _ref_pair_uj(d, G, sigma)
     return reg, sing
 end
 
-@testset "two-pass nearfield stage B (task 032a)" begin
+@testset "two-pass nearfield" begin
 
-    # pass-2 deficit coefficients (031a §6.1) as an effective (g, h) pair, the
+    # pass-2 deficit coefficients as an effective (g, h) pair, the
     # formula the host deficit sweep inlines: g_e = -ḡ, h_e = ρg′ + 3ḡ inside
     # the shell (rho_c, rho_t], zero elsewhere
     function deficit_gh(kernel, rho::T) where T
@@ -417,7 +417,7 @@ end
     end
 
     seed = 20260807
-    rho_t = 4.252   # shipped split-kernel default since Checkpoint D (2026-08-07)
+    rho_t = 4.252   # split-kernel default
     rho_c = 2.0
     tk = TwoPassVortex(; sigma_row=8)
     rk = RegularizedVortex(; sigma_row=8)
@@ -471,7 +471,7 @@ end
 
     nv = 400
     for P in (8, 4), (TF, gtol) in ((Float64, 1e-3), (Float32, 3e-3))
-        tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates (task 032 record)
+        tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates
         base_r = generate_vortex(seed, nv)
         base_t = generate_vortex(seed, nv)
         sigma = 0.02 .+ 0.02 .* rand(MersenneTwister(seed), nv)
@@ -493,7 +493,7 @@ end
         @test maximum(abs.(base_t.gradient_stretching[1:3, :] .- U_ref)) / u_scale < tol
         @test maximum(abs.(base_t.potential[5:13, :] .- J_ref)) / j_scale < tol
         # and differs from regularized-everywhere only by the bounded tail +
-        # accumulator rounding (same bound as the stage A partitioned delta)
+        # accumulator rounding (same bound as the partitioned-kernel delta)
         @test maximum(abs.(base_t.gradient_stretching[1:3, :] .-
             base_r.gradient_stretching[1:3, :])) / u_scale < 5e-4
         @test maximum(abs.(base_t.potential[5:13, :] .-
@@ -501,7 +501,7 @@ end
     end
 
     #--- (c) conditioning guard: the rho_c hybrid must NOT show the Float32
-    #    small-rho amplification (031a §6.1 table: hybrid holds ~1e-7 where the
+    #    small-rho amplification (hybrid holds ~1e-7 where the
     #    plain F32 two-pass loses up to 16%) ---#
 
     # pair level: hybrid total vs Float64 erf truth at the table's rho values
@@ -592,7 +592,7 @@ end
     ctx = tpcache.state.interaction_list
     @test all(sum(abs2, o) <= 3 for o in ctx.tables.near_offsets)
     # ... which is exactly why the partitioned kernel demotes this geometry to
-    # the all-direct zero-M2L fallback (052f) while the two-pass rho_c gate
+    # the all-direct zero-M2L fallback while the two-pass rho_c gate
     # admits it as-is (gate dispatch)
     part_sys = PartitionedSmoothedVortex(SmoothedVortex(
         VortexParticles(copy(posr), copy(strr)), sigr))
@@ -637,7 +637,7 @@ end
     @test_throws ArgumentError RadixFMMCache(fat; expansion_order=4, ell=3,
         options=RadixLifecycleOptions(; precision=Float64,
             m2l_strategy=FastMultipole.ConcatenatedFixedZM2L()))
-    # host-only until stage C: the device path must refuse the kernel rather
+    # the two-pass kernel is host-only: the device path must refuse it rather
     # than silently skip pass 2
     dev = TwoPassSmoothedVortex(SmoothedVortex(generate_vortex(seed, 100),
         fill(0.01, 100)))
@@ -652,7 +652,7 @@ end
     @test_throws ArgumentError TwoPassVortex(; sigma_row=8, rho_t=2.0, rho_c=2.0)
 end
 
-@testset "stage 3 (task 032): recenter!, deprecated hooks" begin
+@testset "recenter!, deprecated hooks" begin
 
     seed = 20260805
     opts64 = RadixLifecycleOptions(; precision=Float64,
@@ -717,7 +717,7 @@ end
     @test cache.step == step0 + 1
 end
 
-@testset "binned nearfield pair stream stage C (task 032a)" begin
+@testset "binned nearfield pair stream" begin
 
     seed = 20260807
     rho_t = 4.789
@@ -787,14 +787,12 @@ end
     end
 end
 
-@testset "cheapened g/h modes (task 037f)" begin
-    # budgets and mode sizing: theory/nearfield-kernel-cheapening-budget.md
-    # (data/kernel_splitting/fm037f_budget.csv); pointwise gates below are the
-    # measured mode errors with ~2x margin
+@testset "cheapened g/h modes" begin
+    # pointwise gates below are the measured mode errors with ~2x margin
 
     seed = 20260814
 
-    # BigFloat series reference (same construction as the stage-2 testset)
+    # BigFloat series reference (same construction as the direct-kernel functor testset)
     function gh_big37f(rho)
         rb = big(rho)
         x = rb / sqrt(big(2))
@@ -815,12 +813,10 @@ end
 
     #--- (a) defaults and validation ---#
 
-    # default = :fp32 for Float64 configurations (user-approved 2026-08-14,
-    # task 037f Work Record); bitwise no-op on Float32 configurations.
-    # :shipped stays available as the control/opt-out (asserted below by the
-    # bitwise-identity tests, which set the mode explicitly).
-    @test FastMultipole.CUDA_NEARFIELD_GH_MODE[] === :fp32
-    @test FastMultipole._validated_host_gh_mode() === :fp32
+    # default = :shipped (full-precision g/h and U/J); :fp32 and the reduced
+    # modes are opt-in (exercised below with the mode set explicitly).
+    @test FastMultipole.CUDA_NEARFIELD_GH_MODE[] === :shipped
+    @test FastMultipole._validated_host_gh_mode() === :shipped
     @test :shipped in FastMultipole.NEARFIELD_GH_MODES
     FastMultipole.CUDA_NEARFIELD_GH_MODE[] = :bogus
     try
@@ -939,11 +935,10 @@ end
     end
 end
 
-@testset "shipped nearfield defaults (task 032a Checkpoint D, 2026-08-07)" begin
-    # user-approved defaults: PartitionedVortex is the recommended σ-carrying
-    # vortex nearfield; the split kernels default to the §6.4 RMS radius
-    # rho_t = 4.252 (confirmed on both Integration Phase cases in Stage D);
-    # RegularizedVortex keeps the §4 per-pair radius as the fallback
+@testset "default nearfield kernels" begin
+    # PartitionedVortex is the recommended σ-carrying vortex nearfield; the
+    # split kernels default to the RMS-error radius rho_t = 4.252;
+    # RegularizedVortex keeps the per-pair radius 4.789 as the fallback
     @test PartitionedVortex(; sigma_row=8).rho_t == 4.252
     @test TwoPassVortex(; sigma_row=8).rho_t == 4.252
     @test TwoPassVortex(; sigma_row=8).rho_c == 2.0

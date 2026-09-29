@@ -1,6 +1,6 @@
-# task 047: consolidated radix settings surface + construction-lock contract.
-# Host-side regression tests of the mechanism; the device wiring
-# (verify at _radix_cache_device_step!) is exercised by the cluster jobs.
+# Consolidated radix settings surface + construction-lock contract.
+# Host-side regression tests of the mechanism; the device-side verification
+# at step entry needs a GPU and is not exercised here.
 
 using Test
 using FastMultipole
@@ -10,7 +10,7 @@ if !isdefined(Main, :Gravitational)
     include("gravitational.jl")
 end
 
-@testset "radix settings surface (047)" begin
+@testset "radix settings surface" begin
 
     @testset "registry + accessors" begin
         # every spec has a lock class and a doc
@@ -53,7 +53,7 @@ end
         @test_throws ArgumentError set_radix_setting!(:NOT_A_SETTING, true)
     end
 
-    @testset "atomic batch + CUDA thread validation" begin
+    @testset "atomic batch validation" begin
         old_gh = radix_setting(:CUDA_NEARFIELD_GH_MODE)
         old_dim = radix_setting(:FACTORED_Y_GEMM_MIN_DIM)
         @test_throws ArgumentError set_radix_settings!((;

@@ -11,8 +11,7 @@ function _has_device_source_to_buffer_method(device_buffer, system, sort_index)
 end
 
 # identity permutation: a range, matching the documented `sort_index` default in
-# compatibility.jl. `collect` here allocated an 8 MB Vector{Int} every step at
-# n=1e6 (14% of per-step host allocation).
+# compatibility.jl, so the per-step fill allocates no index vector.
 function _fill_device_source_buffer!(device_buffer, system)
     sort_index = Base.OneTo(get_n_bodies(system))
     _has_device_source_to_buffer_method(device_buffer, system, sort_index) ||
@@ -66,4 +65,3 @@ function _radix_cache_device_step!(cache::RadixFMMCache, targets::Tuple, switche
     return hook(cache, targets, switches; nearfield_pass, extra_targets,
         extra_target_switches, extra_sources, extra_tree_sources, self_induce)
 end
-

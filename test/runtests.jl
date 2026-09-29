@@ -109,8 +109,7 @@ include("fgs_coloring_test.jl")
 # plausibly present; each suite still checks `dev_functional()` itself.
 # run_suites.sh exits with the number of failing suites; per-suite logs go to
 # test/metal_env/logs/. FASTMULTIPOLE_GPU_TESTS=0|1 overrides detection and
-# FASTMULTIPOLE_GPU_TEST_PROJECT points the suites at another env (the H200
-# checkout runs them under ~/fmauto_env).
+# FASTMULTIPOLE_GPU_TEST_PROJECT points the suites at another env.
 gpu_present = Sys.isapple() || Sys.which("nvidia-smi") !== nothing
 # test/metal_env/Project.toml declares Metal only; an NVIDIA machine must point
 # FASTMULTIPOLE_GPU_TEST_PROJECT at an environment with CUDA (see docs/src/gpu.md)

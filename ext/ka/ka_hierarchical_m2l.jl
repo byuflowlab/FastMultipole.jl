@@ -287,4 +287,3 @@ function ka_hierarchical_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B
         route_class=view(hctx.win_class, 1:n))
     return state
 end
-

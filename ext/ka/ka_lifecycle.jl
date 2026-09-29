@@ -10,16 +10,17 @@
 # This driver calls the ext's `ka_*` stage drivers, so "KA" is unambiguous on
 # every backend.
 #
-# One `KA.synchronize` at the END of the driver, never per stage: per-kernel
-# syncs cost 1.37-2.7x in earlier measurements on this code.
+# One `KA.synchronize` at the END of the driver, never per stage: a sync per
+# kernel costs 1.37-2.7x on this code.
 
 """
     ka_lifecycle_body!(state; extra_tree=())
 
 Run the uniform radix lifecycle over `state` entirely with KA kernels. `state`
 may be resident on any KA backend. The B2M and L2B team sizes are the drivers'
-own defaults (128 and 64): they are the per-cell team size the kernels'
-`@localmem` extents are declared against, not a tuning surface.
+own defaults (128 and 64): each is the per-cell team size its kernel's work
+split is built on (for B2M also the `@localmem` reduction extent), not a
+tuning surface.
 """
 function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
         extra_tree::Tuple=()) where {TF,B,LH}
@@ -67,7 +68,7 @@ end
 M2L stage of [`ka_lifecycle_body!`](@ref), branching on the resident
 interaction context: a
 `DeviceHierarchicalM2LContext` applies its epoch window cache here, and
-anything else (the `host_radix_state` mirror used by the lifecycle gate) is the
+anything else (a `host_radix_state` mirror) is the
 flat whole-route concat apply over `state.route_sources`/`route_targets`.
 
 The branch is not optional: a device cache allocates its flat route arrays
@@ -85,4 +86,3 @@ function ka_launch_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
         state.route_sources, state.route_targets, nroutes)
     return state
 end
-

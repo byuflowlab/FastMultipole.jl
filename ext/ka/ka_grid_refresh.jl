@@ -24,7 +24,7 @@
     clamp(unsafe_trunc(Int, floor(clamp(s, zero(s), oftype(s, G)))), 0, G - 1)
 
 @kernel function ka_radix_keys_checked_kernel!(keys, oob_flag, @Const(positions),
-        x_min, box_extent, h0, ell, n)
+        x_min, box_extent, h0, ell, ell_axes, n)
     i = @index(Global)
     @inbounds if i <= n
         G = 1 << ell
@@ -47,10 +47,12 @@
             oob_flag[1] = Int32(1)
         end
         # clamp before the integer conversion: a NaN or huge position must reach
-        # the flag check on the host, not throw InexactError in the kernel
-        ix = _ka_cell_index((px - x_min[1]) / delta, G)
-        iy = _ka_cell_index((py - x_min[2]) / delta, G)
-        iz = _ka_cell_index((pz - x_min[3]) / delta, G)
+        # the flag check on the host, not throw InexactError in the kernel. Each
+        # axis clamps to its own 2^ell_axes[a] cells: on a rectangular box a body
+        # on the upper face of a short axis would otherwise land one cell past it.
+        ix = _ka_cell_index((px - x_min[1]) / delta, 1 << ell_axes[1])
+        iy = _ka_cell_index((py - x_min[2]) / delta, 1 << ell_axes[2])
+        iz = _ka_cell_index((pz - x_min[3]) / delta, 1 << ell_axes[3])
         keys[i] = ka_morton_key(ix, iy, iz, ell)
     end
 end
@@ -94,21 +96,24 @@ end
 
 """
     ka_radix_keys_checked!(keys, oob_flag, host_oob, positions, x_min, box_extent,
-                           h0, ell; workgroup=KA_AUTO_WORKGROUP)
+                           h0, ell; ell_axes=SVector(ell, ell, ell),
+                           workgroup=KA_AUTO_WORKGROUP)
 
 Morton keys plus the host-side out-of-bounds check. Writes the full-depth (`ell`-level) Morton key of each of
 the `length(keys)` bodies and throws `ArgumentError` if any body lies outside the
-fixed box `[x_min, x_min + box_extent]`. `keys` is scratch on the caller's side,
+fixed box `[x_min, x_min + box_extent]`. Axis `a` spans `2^ell_axes[a]` cells,
+and its coordinate is clamped to that range. `keys` is scratch on the caller's side,
 so throwing here leaves the persistent grid at its previous consistent step.
 """
 function ka_radix_keys_checked!(keys, oob_flag, host_oob, positions, x_min,
-        box_extent, h0, ell::Int; workgroup=KA_AUTO_WORKGROUP)
+        box_extent, h0, ell::Int; ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
+        workgroup=KA_AUTO_WORKGROUP)
     n = length(keys)
     n == 0 && return keys
     backend = KA.get_backend(keys)
     fill!(oob_flag, Int32(0))
     kernel = _cached_kernel(ka_radix_keys_checked_kernel!, backend, workgroup)
-    kernel(keys, oob_flag, positions, x_min, box_extent, h0, ell, n; ndrange=n)
+    kernel(keys, oob_flag, positions, x_min, box_extent, h0, ell, ell_axes, n; ndrange=n)
     KA.synchronize(backend)
     copyto!(host_oob, oob_flag)
     if host_oob[1] != 0
@@ -142,9 +147,9 @@ end
 #     SET, not of within-cell ordering.
 #
 # The gate (`ka_counting_sort_ready`) has two conditions: `ell` must be within
-# `KA_COUNTING_SORT_MAX_ELL`, AND the histogram actually handed in must span the
-# key domain -- otherwise `@inbounds` atomics would run through a length-1
-# array. Falling back is always safe.
+# `KA_COUNTING_SORT_MAX_ELL`, AND the histogram, prefix and cursor actually
+# handed in must each span the key domain -- otherwise `@inbounds` atomics would
+# run through a length-1 array. Falling back is always safe.
 
 @kernel function ka_counting_histogram_kernel!(histogram, @Const(keys), n)
     i = @index(Global)
@@ -178,9 +183,10 @@ const KA_COUNTING_SORT_MAX_ELL = 6
 
 @inline ka_counting_sort_enabled(ell::Int) = ell <= KA_COUNTING_SORT_MAX_ELL
 
-@inline ka_counting_sort_ready(histogram, ell::Int) =
-    histogram !== nothing && ell >= 0 && ka_counting_sort_enabled(ell) &&
-        length(histogram) == 1 << (3 * ell)
+@inline ka_counting_sort_ready(histogram, ell::Int, prefix=histogram, cursor=histogram) =
+    histogram !== nothing && prefix !== nothing && cursor !== nothing && ell >= 0 &&
+        ka_counting_sort_enabled(ell) && length(histogram) == 1 << (3 * ell) &&
+        length(prefix) == length(histogram) && length(cursor) == length(histogram)
 
 """
     ka_counting_sort_into!(perm, sorted_keys, keys, histogram, prefix, cursor;
@@ -229,7 +235,7 @@ function ka_radix_sort_bodies!(perm, sorted_keys, invperm, keys;
     n = length(keys)
     n == 0 && return perm
     backend = KA.get_backend(keys)
-    if ka_counting_sort_ready(histogram, ell)
+    if ka_counting_sort_ready(histogram, ell, prefix, cursor)
         ka_counting_sort_into!(perm, sorted_keys, keys, histogram, prefix, cursor;
             workgroup)
     else
@@ -594,6 +600,3 @@ function ka_radix_node_topology!(node_levels, node_coords, node_centers,
     KA.synchronize(backend)
     return leaf_to_node
 end
-
-
-

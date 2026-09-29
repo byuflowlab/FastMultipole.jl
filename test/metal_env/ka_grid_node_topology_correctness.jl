@@ -1,11 +1,10 @@
 # Correctness gate for stage 4 of the in-place device grid rebuild:
-# `ka_radix_node_topology!` (ext/FastMultipoleKAExt.jl), the KA port of the node
-# geometry / parent-index / child-range trio plus `leaf_to_node` -- the last
-# block of `_cuda_update_radix_grid_in_place!`
-# (former CUDA lifecycle, removed).
+# `ka_radix_node_topology!` (ext/ka/ka_grid_refresh.jl): the node geometry /
+# parent-index / child-range trio plus `leaf_to_node` -- the last block of the
+# rebuild.
 #
 # Oracle: `_refresh_radix_nodes!` (src/tree_batched.jl), the same host node
-# builder stage 3 was gated against. Stage 3 compared the part of its output
+# builder the stage-3 gate uses. That gate compares the part of the output
 # stage 3 owns (`level_offsets`, `node_keys`); this gate compares the rest --
 # `node_levels`, `node_coords`, `node_centers`, `parent_index`, `child_ranges`
 # and `leaf_to_node`. The two agreeing on all of it is the whole grid rebuild

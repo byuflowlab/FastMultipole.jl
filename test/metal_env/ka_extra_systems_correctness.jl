@@ -112,8 +112,8 @@ function make_probes(seed, nprobe, TF)
 end
 
 # A unit run takes the short case list; FM_FULL_SWEEP=1 takes the full one.
-# The sweep is a robustness study, not a check: it belongs in a debugging pass
-# (debug/run_full_sweeps.sh), not in every run.
+# The sweep is a robustness study, not a check: it belongs in a debugging pass,
+# not in every run.
 const CASES_FULL = [
     # P, ell, n, wc, nprobe, nseg
     (4, 3,  256,  8, 16,  8),
@@ -128,7 +128,7 @@ const CASES = haskey(ENV, "FM_FULL_SWEEP") ? CASES_FULL : CASES_SHORT
 const TOL_HOST = 2e-3   # Float32 host lifecycle vs Float64 references
 const TOL_DEV  = 3e-4   # device vs host, both Float32 (ka_device_cache_correctness)
 # Probes are summed all-pairs against the resident bodies on both paths, so
-# this tolerance is loose; it dates from a since-removed grid-carried probe path.
+# this tolerance is deliberately loose.
 const TOL_PROBE = 5e-3
 
 npass = Ref(0); nfail = Ref(0)

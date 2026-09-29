@@ -304,7 +304,18 @@ struct Tree{TF,N}
     leaf_size::SVector{N,Int64}    # max number of bodies in a leaf
     # cost_parameters::MultiCostParameters{N}
     # cost_parameters::SVector{N,Float64}
+    # transform_tree! state: branch boxes before the first rigid transform, and
+    # the rotation accumulated since
+    reference_boxes::Vector{SVector{3,TF}}
+    rotation::Base.RefValue{SMatrix{3,3,TF,9}}
 end
+
+Tree(branches::Vector{Branch{TF,N}}, expansions, levels_index, leaf_index,
+    sort_index_list, inverse_sort_index_list, buffers, small_buffers, expansion_order,
+    leaf_size) where {TF,N} =
+    Tree{TF,N}(branches, expansions, levels_index, leaf_index, sort_index_list,
+        inverse_sort_index_list, buffers, small_buffers, expansion_order, leaf_size,
+        SVector{3,TF}[], Ref(SMatrix{3,3,TF,9}(I)))
 
 """
     RadixGrid{TF}
@@ -481,7 +492,7 @@ ConstantPAnalyticStencil(args...; kwargs...) =
         window_classes=4, dense_occupancy_max_bytes=256 << 20,
         dense_occupancy_max_ell=8)
 
-Host-resident, genuinely hierarchical rigid M2L policy.  The analytic
+Genuinely hierarchical rigid M2L policy, used on the host and on devices.  The analytic
 `config` is retained as an accuracy contract: cache construction verifies that
 its rejected integer offsets are exactly the requested spherical near set.
 This is the default `RadixFMMCache` policy; the flat
@@ -771,10 +782,6 @@ struct FastGaussSeidel{TF,Nsys,TIL,TLC} <: AbstractSolver
     sweep_order::Symbol                   # :lexicographic (default) or :colored
     leaf_colors::Vector{Int}              # color id per leaf (empty when lexicographic)
     leaves_by_color::Vector{Vector{Int}}  # ascending leaf ids per color
-    # set by transform_solver! (rigid-motion tree reuse): once true, solves
-    # requesting gradient outputs refuse — the dense influence matrices embed
-    # build-time gradient rows, which do not rotate with the body
-    transformed::Base.RefValue{Bool}
 end
 
 #--- memory cache ---#
@@ -1643,23 +1650,29 @@ struct DipoleFilamentKernel <: AbstractDirectKernel end
 Nearfield of a straight vortex filament: circulation vector `Γ` (packed rows
 5:7, along the segment) between the vertices in rows 8:10 and 11:13. Singular
 Biot-Savart when `core_row == 0`; otherwise regularized with the core read from
-packed row `core_row` and the family of `direct_rectangular!` (1 Vatistas n=2,
-2 compact support, 3 Gaussian). Velocity and its gradient; no scalar potential.
+packed row `core_row` and the regularization `family` of the bound-vortex closed
+forms in `resident/element_closed_forms.jl` (1 Vatistas n=2, 2 compact support,
+3 Gaussian); any other `family` throws an `ArgumentError`. Velocity and its
+gradient; no scalar potential.
 """
 struct VortexFilamentKernel <: AbstractDirectKernel
     core_row::Int
     family::Int
-    VortexFilamentKernel(; core_row::Integer=0, family::Integer=1) =
-        new(Int(core_row), Int(family))
+    function VortexFilamentKernel(; core_row::Integer=0, family::Integer=1)
+        family in 1:3 || throw(ArgumentError(
+            "VortexFilamentKernel family must be 1 (Vatistas n=2), 2 (compact " *
+            "support) or 3 (Gaussian); got $family"))
+        return new(Int(core_row), Int(family))
+    end
 end
 
 """
     SourcePanelKernel()
 
 Nearfield of a planar triangular source panel of uniform strength (packed row 5)
-with vertices in rows 6:8, 9:11, 12:14: the closed forms of `direct_rectangular!`
-(potential, velocity, velocity gradient), signed so that the panel is the area
-integral of [`SingularSource`](@ref).
+with vertices in rows 6:8, 9:11, 12:14: the planar-triangle closed forms in
+`resident/element_closed_forms.jl` (potential, velocity, velocity gradient),
+signed so that the panel is the area integral of [`SingularSource`](@ref).
 """
 struct SourcePanelKernel <: AbstractDirectKernel end
 
@@ -1688,11 +1701,16 @@ Nearfield of a planar triangular panel of uniform sheet vorticity (packed rows
 5:7), vertices in rows 8:10, 11:13, 14:16: Biot-Savart of the sheet integrated
 with a Dunavant quadrature of the given order over the triangle (1 point at
 order 1, 7 points / degree 5 at order 2, 13 points / degree 7 at order 3), which is exact to expansion accuracy away from the panel and
-approximate within about one panel size of it. No scalar potential.
+approximate within about one panel size of it. Any other `order` throws an
+`ArgumentError`. No scalar potential.
 """
 struct VortexSheetPanelKernel <: AbstractDirectKernel
     order::Int
-    VortexSheetPanelKernel(; order::Integer=2) = new(Int(order))
+    function VortexSheetPanelKernel(; order::Integer=2)
+        order in 1:3 || throw(ArgumentError(
+            "VortexSheetPanelKernel order must be 1, 2 or 3; got $order"))
+        return new(Int(order))
+    end
 end
 
 _default_direct_kernel(::Type{<:Point{Source}}) = SingularSource()

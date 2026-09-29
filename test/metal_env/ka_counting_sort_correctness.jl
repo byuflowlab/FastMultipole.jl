@@ -1,7 +1,7 @@
-# Correctness gate for the KA bounded-key counting sort -- the port of CUDA's
-# `_cuda_counting_sort_into!` fast path (former CUDA lifecycle, removed).
+# Correctness gate for the KA bounded-key counting sort `ka_counting_sort_into!`
+# (ext/ka/ka_grid_refresh.jl).
 #
-# This path is UNSTABLE BY DESIGN, matching CUDA: the scatter claims slots with
+# This path is UNSTABLE BY DESIGN: the scatter claims slots with
 # an atomic cursor, so bodies sharing a cell come out in a run-dependent order.
 # That makes the usual gate -- elementwise `perm` against the stable host sort --
 # the wrong assertion. It would fail on correct code.
@@ -152,7 +152,7 @@ end
 
 println("device = $DEV_NAME\n")
 # n=8192 ell=4 uniform was dropped: same branch as the 4096 case, 10 s for no new coverage
-# FM_FULL_SWEEP=1 adds the larger and deeper cases (debug/run_full_sweeps.sh)
+# FM_FULL_SWEEP=1 adds the larger and deeper cases
 const SORT_CASES = haskey(ENV, "FM_FULL_SWEEP") ?
     ((1024, 3, false), (4096, 4, false), (4096, 3, true)) :
     ((1024, 3, false), (1024, 3, true))

@@ -46,13 +46,13 @@ function _radix_state_arrays(state)
 end
 
 
-@testset "factored resident M2L lifecycle (task 023a)" begin
+@testset "factored resident M2L lifecycle" begin
     seed = 2301
     full = generate_gravitational(seed, 400)
     opts = RadixLifecycleOptions(; operator=FactoredRotationM2L(),
         m2l_strategy=FastMultipole.ConcatenatedFixedZM2L())
     # The grouped-factored resident plan and its `.groups` are FLAT-path structures:
-    # under the task-027 hierarchical default the factored selection routes through
+    # under the hierarchical default the factored selection routes through
     # the bounded concat engine. Pin this testset to the flat classifier.
     cache = RadixFMMCache(full; expansion_order=8, ell=3, max_n_bodies=400,
         bounds=(SVector(-0.5, -0.5, -0.5), 2.0), options=opts,
@@ -91,7 +91,7 @@ end
     @test FastMultipole._launch_resident_m2l!(empty_cache.state) === empty_cache.state
 end
 
-@testset "radix fmm! mock time stepping (task 023)" begin
+@testset "radix fmm! mock time stepping" begin
     N = 1500
     P = 8
     seed = 4023

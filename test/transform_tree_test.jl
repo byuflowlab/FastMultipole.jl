@@ -1,5 +1,5 @@
 #=##############################################################################
-transform_tree!: rigid-motion tree reuse (FLOWPanel BRAINSTORM 021).
+transform_tree!: rigid-motion tree reuse.
 
 Under rigid motion x -> R*x + t, everything a tree encodes about RELATIVE
 geometry is invariant, so transforming the branch centers (and boxes) must

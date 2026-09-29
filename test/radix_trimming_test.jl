@@ -34,8 +34,7 @@ function _trim_sparse_coords(rng, ell_axes::SVector{3,Int}, frac)
     return sort!(unique(coords); by=c -> (c[3], c[2], c[1]))
 end
 
-# Exhaustive exact-once coverage audit (task 037 stage 3, the enforcement of
-# the design record's theory verdict): count how many times each ordered
+# Exhaustive exact-once coverage audit of active-level trimming: count how many times each ordered
 # occupied-leaf pair is covered by direct ∪ (M2L at some active level) and
 # return the nc x nc hit matrix — every entry must be exactly 1.
 function _trim_coverage_hits(cache)
@@ -73,7 +72,7 @@ function _trim_coverage_hits(cache)
     return hits
 end
 
-@testset "radix active-level trimming (task 037 stage 3)" begin
+@testset "radix active-level trimming" begin
 
     #--- (a) root-level resolution and the flat-top cap guard ---#
 
@@ -158,7 +157,7 @@ end
         @test sum(ctx.routes_per_level) == cache.state.counts.n_routes
         hits = _trim_coverage_hits(cache)
         @test all(hits .== 1)
-        # accuracy against direct summation (P=4 truncation gates, task 023)
+        # accuracy against direct summation (P=4 truncation gates)
         ref = _trim_system(coords)
         FastMultipole.direct!(ref; scalar_potential=true, gradient=true)
         @test maximum(abs.(sys.potential[1, :] .- ref.potential[1, :])) < 2e-3
@@ -239,7 +238,7 @@ end
         @test (@allocated TRIM_FM.update_radix_state!(cache, (sys,))) <= 64 * 1024
     end
 
-    #--- (g) zero-M2L degenerate geometry runs pure direct (task 052c) ---#
+    #--- (g) zero-M2L degenerate geometry runs pure direct ---#
     # On a (1,1,2) grid with q = 12 every root offset lies inside the near
     # ball (max |o|^2 = 1 + 1 + 9 = 11), so the hierarchy has zero M2L levels
     # (first_m2l_level == ell + 1). The cache must degenerate to direct-only

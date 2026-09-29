@@ -1,9 +1,7 @@
 # Correctness gate for stage 1 of the in-place device grid rebuild:
 # `ka_radix_keys_checked!`, `ka_radix_sort_bodies!` and
-# `ka_radix_compress_cells!` (ext/FastMultipoleKAExt.jl), the KA port of the
-# first two stages of `_cuda_update_radix_grid_in_place!`
-# (former CUDA lifecycle, removed) -- the last CUDA-only block on the
-# uniform, `sfs=false` path of `update_cuda_radix_state!`.
+# `ka_radix_compress_cells!` (ext/ka/ka_grid_refresh.jl): body keys, the body
+# sort, and leaf-cell compression.
 #
 # Oracle: the host builder's own three steps, `_radix_fill_body_data!`,
 # `_host_radix_sort_permutation` and `_compress_radix_cells`

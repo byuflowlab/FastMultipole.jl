@@ -10,11 +10,16 @@ const KA = KernelAbstractions
 # Constructing a KA kernel object (`some_kernel!(backend, workgroup)`) redoes
 # generic dispatch/partitioning work on every call; caching it per (kernel
 # function, backend type, workgroup) avoids repeating that on the hot path.
+# `_CACHE_LOCK` guards this and the extension's other process-wide caches, so
+# concurrent tasks can launch.
+const _CACHE_LOCK = ReentrantLock()
 const _KERNEL_CACHE = Dict{Tuple{Any,DataType,Int},Any}()
 function _cached_kernel(f, backend, workgroup::Int)
     wg = resolve_workgroup(backend, workgroup)
     key = (f, typeof(backend), wg)
-    return get!(() -> f(backend, wg), _KERNEL_CACHE, key)
+    return lock(_CACHE_LOCK) do
+        get!(() -> f(backend, wg), _KERNEL_CACHE, key)
+    end
 end
 
 

@@ -54,6 +54,10 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
 
     #--- declare/reset variables ---#
 
+    # typed constants keep a Float32 expansion in Float32
+    half = eltype(local_expansion)(0.5)
+    c4π = eltype(local_expansion)(ONE_OVER_4π)
+
     # scalar potential
     u = zero(eltype(local_expansion))
 
@@ -246,10 +250,10 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
                     ϕ_np1_mp1_real = local_expansion[1,1,i_n_m+n+2]
                     ϕ_np1_mp1_imag = local_expansion[2,1,i_n_m+n+2]
 
-                    vx_n_m_real -= (ϕ_np1_mm1_imag + ϕ_np1_mp1_imag) * 0.5
-                    vx_n_m_imag += (ϕ_np1_mm1_real + ϕ_np1_mp1_real) * 0.5
-                    vy_n_m_real += (ϕ_np1_mm1_real - ϕ_np1_mp1_real) * 0.5
-                    vy_n_m_imag += (ϕ_np1_mm1_imag - ϕ_np1_mp1_imag) * 0.5
+                    vx_n_m_real -= (ϕ_np1_mm1_imag + ϕ_np1_mp1_imag) * half
+                    vx_n_m_imag += (ϕ_np1_mm1_real + ϕ_np1_mp1_real) * half
+                    vy_n_m_real += (ϕ_np1_mm1_real - ϕ_np1_mp1_real) * half
+                    vy_n_m_imag += (ϕ_np1_mm1_imag - ϕ_np1_mp1_imag) * half
                     vz_n_m_real -= ϕ_np1_m_real
                     vz_n_m_imag -= ϕ_np1_m_imag
                 end
@@ -260,18 +264,18 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
                     χ_n_mm1_imag = local_expansion[2,2,i_n_m-1]
 
                     # form vector coefficients
-                    vx_n_m_real -= (n+m) * χ_n_mm1_real * 0.5
-                    vx_n_m_imag -= (n+m) * χ_n_mm1_imag * 0.5
-                    vy_n_m_real -= (n+m) * χ_n_mm1_imag * 0.5
-                    vy_n_m_imag += (n+m) * χ_n_mm1_real * 0.5
+                    vx_n_m_real -= (n+m) * χ_n_mm1_real * half
+                    vx_n_m_imag -= (n+m) * χ_n_mm1_imag * half
+                    vy_n_m_real -= (n+m) * χ_n_mm1_imag * half
+                    vy_n_m_imag += (n+m) * χ_n_mm1_real * half
                     if m < n
                         χ_n_mp1_real = local_expansion[1,2,i_n_m+1]
                         χ_n_mp1_imag = local_expansion[2,2,i_n_m+1]
 
-                        vx_n_m_real += (n-m) * χ_n_mp1_real * 0.5
-                        vx_n_m_imag += (n-m) * χ_n_mp1_imag * 0.5
-                        vy_n_m_real -= (n-m) * χ_n_mp1_imag * 0.5
-                        vy_n_m_imag += (n-m) * χ_n_mp1_real * 0.5
+                        vx_n_m_real += (n-m) * χ_n_mp1_real * half
+                        vx_n_m_imag += (n-m) * χ_n_mp1_imag * half
+                        vy_n_m_real -= (n-m) * χ_n_mp1_imag * half
+                        vy_n_m_imag += (n-m) * χ_n_mp1_real * half
                     end
 
                     # extract expansion coefficients
@@ -357,36 +361,36 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
                 # get regular harmonic
                 Rnm_real, Rnm_imag = harmonics[1,1,i_n_m], harmonics[2,1,i_n_m]
 
-                vg_xx_real = -(gradient_n_m[2,1,i_n_m+n] + gradient_n_m[2,1,i_n_m+n+2]) * 0.5
-                vg_xx_imag = (gradient_n_m[1,1,i_n_m+n] + gradient_n_m[1,1,i_n_m+n+2]) * 0.5
+                vg_xx_real = -(gradient_n_m[2,1,i_n_m+n] + gradient_n_m[2,1,i_n_m+n+2]) * half
+                vg_xx_imag = (gradient_n_m[1,1,i_n_m+n] + gradient_n_m[1,1,i_n_m+n+2]) * half
                 vxx += 2 * (vg_xx_real * Rnm_real - vg_xx_imag * Rnm_imag)
 
-                vg_yx_real = (gradient_n_m[1,1,i_n_m+n] - gradient_n_m[1,1,i_n_m+n+2]) * 0.5
-                vg_yx_imag = (gradient_n_m[2,1,i_n_m+n] - gradient_n_m[2,1,i_n_m+n+2]) * 0.5
+                vg_yx_real = (gradient_n_m[1,1,i_n_m+n] - gradient_n_m[1,1,i_n_m+n+2]) * half
+                vg_yx_imag = (gradient_n_m[2,1,i_n_m+n] - gradient_n_m[2,1,i_n_m+n+2]) * half
                 vyx += 2 * (vg_yx_real * Rnm_real - vg_yx_imag * Rnm_imag)
 
                 vg_zx_real = -gradient_n_m[1,1,i_n_m+n+1]
                 vg_zx_imag = -gradient_n_m[2,1,i_n_m+n+1]
                 vzx += 2 * (vg_zx_real * Rnm_real - vg_zx_imag * Rnm_imag)
 
-                vg_xy_real = -(gradient_n_m[2,2,i_n_m+n] + gradient_n_m[2,2,i_n_m+n+2]) * 0.5
-                vg_xy_imag = (gradient_n_m[1,2,i_n_m+n] + gradient_n_m[1,2,i_n_m+n+2]) * 0.5
+                vg_xy_real = -(gradient_n_m[2,2,i_n_m+n] + gradient_n_m[2,2,i_n_m+n+2]) * half
+                vg_xy_imag = (gradient_n_m[1,2,i_n_m+n] + gradient_n_m[1,2,i_n_m+n+2]) * half
                 vxy += 2 * (vg_xy_real * Rnm_real - vg_xy_imag * Rnm_imag)
 
-                vg_yy_real = (gradient_n_m[1,2,i_n_m+n] - gradient_n_m[1,2,i_n_m+n+2]) * 0.5
-                vg_yy_imag = (gradient_n_m[2,2,i_n_m+n] - gradient_n_m[2,2,i_n_m+n+2]) * 0.5
+                vg_yy_real = (gradient_n_m[1,2,i_n_m+n] - gradient_n_m[1,2,i_n_m+n+2]) * half
+                vg_yy_imag = (gradient_n_m[2,2,i_n_m+n] - gradient_n_m[2,2,i_n_m+n+2]) * half
                 vyy += 2 * (vg_yy_real * Rnm_real - vg_yy_imag * Rnm_imag)
 
                 vg_zy_real = -gradient_n_m[1,2,i_n_m+n+1]
                 vg_zy_imag = -gradient_n_m[2,2,i_n_m+n+1]
                 vzy += 2 * (vg_zy_real * Rnm_real - vg_zy_imag * Rnm_imag)
 
-                vg_xz_real = -(gradient_n_m[2,3,i_n_m+n] + gradient_n_m[2,3,i_n_m+n+2]) * 0.5
-                vg_xz_imag = (gradient_n_m[1,3,i_n_m+n] + gradient_n_m[1,3,i_n_m+n+2]) * 0.5
+                vg_xz_real = -(gradient_n_m[2,3,i_n_m+n] + gradient_n_m[2,3,i_n_m+n+2]) * half
+                vg_xz_imag = (gradient_n_m[1,3,i_n_m+n] + gradient_n_m[1,3,i_n_m+n+2]) * half
                 vxz += 2 * (vg_xz_real * Rnm_real - vg_xz_imag * Rnm_imag)
 
-                vg_yz_real = (gradient_n_m[1,3,i_n_m+n] - gradient_n_m[1,3,i_n_m+n+2]) * 0.5
-                vg_yz_imag = (gradient_n_m[2,3,i_n_m+n] - gradient_n_m[2,3,i_n_m+n+2]) * 0.5
+                vg_yz_real = (gradient_n_m[1,3,i_n_m+n] - gradient_n_m[1,3,i_n_m+n+2]) * half
+                vg_yz_imag = (gradient_n_m[2,3,i_n_m+n] - gradient_n_m[2,3,i_n_m+n+2]) * half
                 vyz += 2 * (vg_yz_real * Rnm_real - vg_yz_imag * Rnm_imag)
 
                 vg_zz_real = -gradient_n_m[1,3,i_n_m+n+1]
@@ -397,11 +401,11 @@ function evaluate_local(Δx, harmonics, gradient_n_m, local_expansion, expansion
         end
     end
 
-    base = (u * ONE_OVER_4π, SVector{3}(vx,vy,vz) * ONE_OVER_4π,
-        SMatrix{3,3,eltype(local_expansion),9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz) * ONE_OVER_4π)
+    base = (u * c4π, SVector{3}(vx,vy,vz) * c4π,
+        SMatrix{3,3,eltype(local_expansion),9}(vxx, vxy, vxz, vyx, vyy, vyz, vzx, vzy, vzz) * c4π)
     if TS
         third = _third_derivative_from_gradient_coefficients!(gradient_n_m, harmonics,
-            Int(expansion_order), Val(LH)) * ONE_OVER_4π
+            Int(expansion_order), Val(LH)) * c4π
         return (base..., ThirdDerivativeTensor(third))
     end
     return base

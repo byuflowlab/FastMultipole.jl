@@ -1,13 +1,13 @@
-# Shared systems/references for the task 032 device-system interface tests
-# (host: device_system_interface_test.jl; CUDA: cuda_radix_interface_test.jl).
+# Shared systems/references for the device-system interface tests (host:
+# device_system_interface_test.jl and the regression tests; device:
+# metal_env/ka_regression_correctness.jl).
 # Requires gravitational.jl and vortex.jl to be included first.
 
 using FastMultipole.LinearAlgebra: dot, I
 
 # stdlib-only reference erf (so standalone `julia --project=. test/...` runs work
 # without the test env): Maclaurin series below x = 2 (alternating, converged to
-# eps), continued-fraction erfc above — the same construction the 031a/032
-# fit scripts validate against 256-bit references.
+# eps), continued-fraction erfc above, validated against 256-bit references.
 function _ref_erf(x::Float64)
     ax = abs(x)
     if ax < 2.0
@@ -54,8 +54,8 @@ function _interface_scalar_direct(sys)
 end
 
 # data_per_body > strength rows: a vortex system carrying two extra state rows
-# (rows 8:9) through the packed matrix, opaque to the far field (task 032
-# packed-layout round trip)
+# (rows 8:9) through the packed matrix, opaque to the far field (packed-layout
+# round trip)
 struct ExtendedVortex{TF}
     inner::VortexParticles{TF}
 end
@@ -75,7 +75,7 @@ FastMultipole.buffer_to_target_system!(system::ExtendedVortex, i_target, switch,
     FastMultipole.buffer_to_target_system!(system.inner, i_target, switch, buffer, i_buffer)
 
 # Vortex system with a per-body smoothing radius in packed extra-state row 8,
-# selecting the regularized-everywhere gaussianerf nearfield (task 032 stage 2).
+# selecting the regularized-everywhere gaussianerf nearfield.
 # Row 4 stays the (distinct) MAC radius from the wrapped system, mirroring the
 # FLOWVPM convention of an inflated MAC radius plus a raw σ extra state.
 struct SmoothedVortex{TF}
@@ -97,7 +97,7 @@ FastMultipole.direct_kernel(::SmoothedVortex) = RegularizedVortex(; sigma_row=8)
 FastMultipole.buffer_to_target_system!(system::SmoothedVortex, i_target, switch, buffer, i_buffer) =
     FastMultipole.buffer_to_target_system!(system.inner, i_target, switch, buffer, i_buffer)
 
-# The same smoothed system with the task-032a partitioned-replacement trait:
+# The same smoothed system with the partitioned-replacement trait:
 # delegates everything to an inner SmoothedVortex but selects PartitionedVortex,
 # so the end-to-end A/B runs on identical bodies/σ with only the kernel changed.
 struct PartitionedSmoothedVortex{TF}
@@ -117,7 +117,7 @@ FastMultipole.direct_kernel(::PartitionedSmoothedVortex) = PartitionedVortex(; s
 FastMultipole.buffer_to_target_system!(system::PartitionedSmoothedVortex, i_target, switch, buffer, i_buffer) =
     FastMultipole.buffer_to_target_system!(system.smoothed, i_target, switch, buffer, i_buffer)
 
-# The same smoothed system with the task-032a stage-B two-pass additive
+# The same smoothed system with the two-pass additive
 # correction trait (rho_c = 2 hybrid): identical bodies/σ, only the kernel
 # changes, so the A/B against SmoothedVortex/PartitionedSmoothedVortex is
 # apples-to-apples.
@@ -139,7 +139,7 @@ FastMultipole.buffer_to_target_system!(system::TwoPassSmoothedVortex, i_target, 
     FastMultipole.buffer_to_target_system!(system.smoothed, i_target, switch, buffer, i_buffer)
 
 # O(N²) regularized gaussianerf U/J reference (Float64, stdlib _ref_erf),
-# theory §1 formulas with the source σ. Returns (U 3×n, J 9×n column-major).
+# evaluated with the source σ. Returns (U 3×n, J 9×n column-major).
 function _interface_regularized_direct(system::SmoothedVortex)
     n = FastMultipole.get_n_bodies(system)
     U = zeros(3, n); J = zeros(9, n)

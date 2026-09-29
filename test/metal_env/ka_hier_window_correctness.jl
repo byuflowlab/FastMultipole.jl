@@ -9,7 +9,7 @@
 # (idx -> kloc = (idx-1)÷n_sources+1, s = (idx-1)%n_sources+1), so the
 # comparison is elementwise, not set-wise.
 #
-# Setup: a plain CPU `RadixFMMCache` with the shipped hierarchical policy gives
+# Setup: a plain CPU `RadixFMMCache` with the default hierarchical policy gives
 # the grid, the dense per-level occupancy, and a populated
 # `HostHierarchicalM2LContext`. The device side rebuilds that context on the KA
 # backend via `ka_hierarchical_context` and drives the cache generator directly
@@ -17,8 +17,8 @@
 # `DeviceResidentRadixState` -- and therefore no resident lifecycle -- is needed.
 #
 # `hctx.node_at` is zeroed at construction on both backends and refilled from the
-# resident grid by `ka_hier_refresh_occupancy!` (the KA port of
-# `_cuda_hier_refresh_occupancy!`). This gate drives that port too, and
+# resident grid by `ka_hier_refresh_occupancy!`. This gate drives that
+# refresh too, and
 # checks the resulting device lookup against the host occupancy the CPU cache
 # refreshed before using it -- so a scatter bug surfaces as itself rather than as
 # a downstream window mismatch.
@@ -37,9 +37,9 @@ end
 
 function run_case(seed, n_bodies, ell, P; window_classes=8)
     sys = generate_gravitational(seed, n_bodies)
-    # Pin the concat strategy: the shipped default measures its way to a dense
+    # Pin the concat strategy: the default measures its way to a dense
     # plan, and the route-class ids compared below are the concat convention
-    # (level-true), the same pin cuda_radix_hierarchical_test.jl makes.
+    # (level-true).
     cache = RadixFMMCache(sys; expansion_order=P, ell=ell,
         options=RadixLifecycleOptions(; m2l_strategy=ConcatenatedFixedZM2L()))
     state = cache.state

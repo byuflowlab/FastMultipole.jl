@@ -78,11 +78,12 @@ FastMultipole._emits_potential(::KARegularizedFunctor) = false
     _ka_device_direct_kernel(kernel, ::Type{TF}, inv_sigma_row=0) -> device functor
 
 Host-side conversion, called before each device launch. Singular kernels carry
-no float fields and are returned unchanged; the regularized family is rebuilt
-with `TF` cutoffs and the reciprocal-sigma row `inv_sigma_row` (0: none).
+no float fields and are returned unchanged, as is any other functor (an extra
+source's kernel may implement only the `_extra_pair_ug`/`_extra_pair_ugh`
+contract without subtyping `AbstractDirectKernel`); the regularized family is
+rebuilt with `TF` cutoffs and the reciprocal-sigma row `inv_sigma_row` (0: none).
 """
-_ka_device_direct_kernel(k::FastMultipole.AbstractDirectKernel, ::Type{TF},
-    inv_sigma_row::Integer=0) where TF = k
+_ka_device_direct_kernel(k, ::Type{TF}, inv_sigma_row::Integer=0) where TF = k
 _ka_device_direct_kernel(k::FastMultipole.PartitionedVortex, ::Type{TF},
     inv_sigma_row::Integer=0) where TF =
     KAPartitionedVortex{TF}(k.sigma_row, TF(k.rho_t), Int(inv_sigma_row))
@@ -178,6 +179,3 @@ FastMultipole._extra_pair_has_hessian(::KARegularizedFunctor) = true
     end
     return FastMultipole._vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
 end
-
-
-

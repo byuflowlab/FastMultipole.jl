@@ -2217,10 +2217,13 @@ motion: leaf/body assignments and `bodies_index` are unchanged, branch radii
 are rotation-invariant, and interaction lists built from center distances,
 radii, and the multipole acceptance criterion remain exactly valid. Only the
 branch centers must move with the bodies (`center -> R*center + t`); the
-stored axis-aligned box half-widths are replaced by `abs.(R) * box`, the tight
-axis-aligned bounding box of the rotated box, so the enclosure property
-consumed by the error-bound paths (`minimum_distance`) is preserved (bounds
-can only become more conservative). Expansions are recomputed from the
+stored axis-aligned box half-widths become `abs.(R_total) * box0`, the tight
+axis-aligned bounding box of the rotated reference box, where `box0` is the
+branch box before the tree's first transform and `R_total` the rotation
+accumulated over all transforms. The enclosure property consumed by the
+error-bound paths (`minimum_distance`) is preserved, and repeated small
+rotations do not compound the box growth (each axis stays within `√3` times its
+reference half-width). Expansions are recomputed from the
 buffers on every `fmm!`/`solve!` call, so no expansion data needs updating.
 
 The caller owns buffer freshness: source buffers are refilled from the
@@ -2235,13 +2238,23 @@ function transform_tree!(tree::Tree{TF,<:Any}, R, t) where TF
     R_s = SMatrix{3,3,TF,9}(R)
     t_s = SVector{3,TF}(t)
     _assert_rigid_rotation(R_s)
-    absR = abs.(R_s)
     branches = tree.branches
+    boxes0 = tree.reference_boxes
+    if length(boxes0) != length(branches)
+        resize!(boxes0, length(branches))
+        for i in eachindex(branches)
+            boxes0[i] = branches[i].box
+        end
+        tree.rotation[] = SMatrix{3,3,TF,9}(I)
+    end
+    R_total = R_s * tree.rotation[]
+    tree.rotation[] = R_total
+    absR = abs.(R_total)
     for i in eachindex(branches)
         b = branches[i]
         branches[i] = Branch(b.n_bodies, b.bodies_index, b.n_branches,
             b.branch_index, b.i_parent, b.i_leaf, R_s * b.center + t_s,
-            b.radius, absR * b.box, b.min_potential, b.min_gradient)
+            b.radius, absR * boxes0[i], b.min_potential, b.min_gradient)
     end
     return tree
 end

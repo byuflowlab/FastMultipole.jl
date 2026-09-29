@@ -1,5 +1,4 @@
-# Shared helpers for the native flat coefficient buffer tests (Matrix Operator
-# Refactor, task 017). Convert between the legacy [2,2,nh,batch] arrays the parity
+# Shared helpers for the native flat coefficient buffer tests. Convert between the legacy [2,2,nh,batch] arrays the parity
 # references use and the native FlatCoefficientBuffer the operators now consume.
 #
 # φ is packed/unpacked through P_phi and χ through P_active (Val(true)), matching

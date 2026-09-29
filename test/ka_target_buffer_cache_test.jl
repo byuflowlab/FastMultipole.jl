@@ -1,6 +1,6 @@
 # The per-system device scatter buffer cache in the KernelAbstractions
 # extension holds a grow-only capacity buffer and serves the live body count
-# as a column-prefix view (052 long-run leak, job 13508681): a shedding run
+# as a column-prefix view (a long-run memory leak regression): a shedding run
 # changes the body count every step, and an exact-size cache reallocated a
 # device buffer per step that the host GC never collected. Exercised on the
 # CPU backend, where the contract is the same.

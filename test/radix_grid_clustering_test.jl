@@ -132,7 +132,7 @@ using Test
         [SVector(1, 1), SVector(1, 2), SVector(2, 1), SVector(2, 2)]
 end
 
-@testset "rectangular radix geometry (task 037 stage 1)" begin
+@testset "rectangular radix geometry" begin
     resolve = FastMultipole._resolve_radix_ell_axes
     cap = FastMultipole._radix_level_node_capacity
 

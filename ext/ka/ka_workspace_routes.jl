@@ -13,7 +13,7 @@ backend-generic: every allocation in it goes through `similar(exemplar.phi, ...)
 so handing it a KA-array exemplar returns a KA-resident workspace.
 
 The KA path builds the `ConcatenatedFixedZM2L` plan with
-`MaterializedYRotationM2L`, the strategy gated bit-exact against the host; the
+`MaterializedYRotationM2L`, which matches the host bit for bit; the
 dense and factored strategies stay host-only.
 
 If this ever needs a keyword the generic builder does not already take, fix the

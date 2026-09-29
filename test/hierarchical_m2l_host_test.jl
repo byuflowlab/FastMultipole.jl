@@ -88,7 +88,7 @@ _hier_m2l_allocated(state) =
 _hier_step_allocated(sys, cache) =
     @allocated fmm!(sys, cache; scalar_potential=true, gradient=true)
 
-@testset "hierarchical rigid host M2L (task 026)" begin
+@testset "hierarchical rigid host M2L" begin
     supported_q = (3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20)
     for q in supported_q
         tables = RigidHierarchicalTables(q)
@@ -131,7 +131,7 @@ _hier_step_allocated(sys, cache) =
     end
 
 
-    # Task 028 Stage 7 internal per-level schedule. Every level uses a complete
+    # Internal per-level schedule. Every level uses a complete
     # rigid/cubic orbit table; the leaf radius alone controls direct pairs.
     for schedule in ((5, 5), (6, 5), (6, 6)),
             coords in (dense_coords, boundary_coords, sparse_coords)
@@ -405,7 +405,7 @@ _hier_step_allocated(sys, cache) =
     conflict_sys = generate_gravitational(26035, 20)
     @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; near_radius2=7)
     # 23 is not a sum of three squares (like 7 and 15) so it can never enter
-    # the supported set; 21 was promoted to supported by the 052f widening
+    # the supported set; 21 is supported
     @test_throws ArgumentError RigidHierarchicalTables(23)
     @test_throws ArgumentError rigid_stencil_epsilon(4, 0.5, 3, 7)
     @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; window_classes=0)
@@ -428,7 +428,7 @@ _hier_step_allocated(sys, cache) =
     @test_throws ArgumentError RadixFMMCache(conflict_sys; expansion_order=4,
         ell=3, stencil_epsilon=1e-4, level_radii2=(6, 5))
 
-    # Shipped default geometry (task 028 Stage 7): q = 5 at the leaf with the
+    # Default geometry: q = 5 at the leaf with the
     # coarsest M2L level at q = 6, sized to `ell`. An explicit `near_radius2`
     # means the caller asked for a uniform geometry and must get one.
     for ell_default in (2, 3, 5)
@@ -493,7 +493,7 @@ _hier_step_allocated(sys, cache) =
         policy=ConstantPAnalyticStencil(ConstantPStencilConfig(4, oeps;
             lamb_helmholtz=true)))
     _hier_random_physical!(ohier.state.multipoles, MersenneTwister(0x26c))
-    # Task 037 stage 3: the hierarchical cache trims level 0, so its node
+    # Active-level trimming: the hierarchical cache trims level 0, so its node
     # indexing is shifted against the untrimmed flat cache — align by the leaf
     # blocks (the only columns either engine touches at ell = 2, q = 12).
     onc = ohier.state.counts.n_cells

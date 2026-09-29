@@ -27,13 +27,24 @@
 - Added the validated radix settings API: `radix_settings`, `radix_setting`,
   `set_radix_setting!`, and `set_radix_settings!`. Construction-locked settings
   are snapshotted by a cache and checked at each device step; runtime settings
-  may change between steps.
+  may change between steps. `:CUDA_NEARFIELD_GH_MODE` (runtime, host
+  regularized nearfield) defaults to `:shipped`, the full-precision g/h and U/J
+  evaluation; `:fp32` (g/h and pair U/J in Float32 for Float64 runs, Float64
+  accumulation) and the reduced-series modes are opt-in.
+- Known limitation: a Float32 `RadixFMMCache` throws an `ArgumentError` at
+  construction when a physically small box at a high expansion order would
+  overflow the unnormalized M2L coefficients; use Float64 or scale the
+  geometry toward unit size.
 
 - Added `transform_tree!`, `transform_plan!`, and `transform_solver!` for rigid
   motion of reusable trees, plans, and solvers, subject to their documented
-  cache and output restrictions.
+  cache and output restrictions. A transformed `FastGaussSeidel` solves with
+  any output switches (the default `gradient=true` included): its dense
+  matrices hold the consumer's scalar influence, which is exact under rigid
+  motion when that influence is rigid-invariant.
 - Added the `source_revision(system)` compatibility trait for reusing unchanged
-  extra-tree sources; the default `nothing` disables reuse.
+  extra-tree sources; the default `nothing` disables reuse. It is not exported:
+  overload `FastMultipole.source_revision`.
 - GPU tests can be selected with `FASTMULTIPOLE_GPU_TESTS`; NVIDIA runs require
   `FASTMULTIPOLE_GPU_TEST_PROJECT` to name a CUDA-enabled Julia project.
 - Minimum Julia version 1.10 (the LTS; package extensions with weak dependencies).
@@ -53,8 +64,21 @@
 - Third derivatives: `third_derivative=true` on the host path, packed
   `(xx,xy,xz,yy,yz,zz)` per component in `third_derivative_range`
   (`ThirdDerivativeTensor`, `packed_data`, `dense`); not on the device path.
-- New consumer traits: `residency`, `device_backend`, `body_type`,
-  `direct_kernel`, `supports_third_derivative`, `source_revision`.
+- New consumer traits: `residency`, `body_type`, `direct_kernel`,
+  `supports_third_derivative` (exported), and `device_backend`,
+  `source_revision` (not exported; overload them as
+  `FastMultipole.device_backend` and `FastMultipole.source_revision`).
+- `DerivativesSwitch` gained a sixth type parameter `TS` (third derivatives):
+  `DerivativesSwitch{PS,GS,HS,NO,NM,TS}`. Code that constructs
+  `DerivativesSwitch{PS,GS,HS,NO,NM}()` directly breaks; use the
+  `DerivativesSwitch(...)` constructors or add the parameter.
+- `FastGaussSeidel`: the target tree replays the source tree's topology, and
+  the m2l/direct interaction lists are re-sorted, so the iteration order and
+  the iterates shift relative to v2.3.0. The default `cache_leaf_lu=true`
+  keeps a factorized copy of the self-matrix data (about twice the self-matrix
+  memory; pass `cache_leaf_lu=false` to opt out). New keywords: `sweep_order`
+  (`:lexicographic` default, or `:colored`) on the constructor and `callback`
+  (called as `callback(iteration, residual)`) on `solve!`.
 - Removed exports: `SingleBranch`, `MultiBranch`, `SingleTree`, `MultiTree`,
   `Body`, `buffer_element`, `direct_gpu!`, `unsort!`, `resort!`, `error`.
 - Consumer physics left FastMultipole: the subfilter-scale pass, its
@@ -112,6 +136,24 @@
   `tune=true, horizontal_pass=false`; the KA step syncs before its window-count
   read and runs its geometry gate once; the KA element scratch no longer leaks
   when a state is replaced.
+- Fixes from a second review: on a rectangular `RadixFMMCache` box a body on a
+  short axis' upper face got an out-of-range cell coordinate and overran the
+  cell/node capacities (out-of-bounds writes); Float32 M2L at high expansion
+  order or in a small box produced NaN silently (every M2L plan now checks its
+  range at construction and throws, and the z-translation factors are formed in
+  Float64); the planned `fmm!(targets, sources, plan)` docstring was attached to
+  a helper; repeated `transform_tree!` compounded the branch boxes (boxes are
+  now the rotated build-time boxes); Float32 `evaluate_local` hessian and third
+  derivatives came back Float64; `direct_rectangular!` failed inside a user
+  `Threads.@threads` loop, and rejected host arrays wrapped more than one
+  level deep (e.g. `reshape(view(...))`); an explicit options direct kernel that
+  equalled the body type's default did not raise the conflict with a
+  `direct_kernel(system)` trait; `VortexFilamentKernel(; family)` and
+  `VortexSheetPanelKernel(; order)` accepted invalid values; user keywords to
+  `tune_fmm` could turn its preallocation call into a full evaluation; extra
+  target systems on the host radix path saw zero metadata rows;
+  `transform_solver!` left the source buffers at the old pose for `solve!`'s
+  first right-hand-side evaluation.
 
 ## v0.1.0 - 2024 August
 

@@ -156,7 +156,7 @@ function ka_extra_tree_near!(state::FastMultipole.DeviceResidentRadixState{TF},
     kern(dkernel, state.output, state.source_bodies, state.cell_ranges,
          prepared.buffer, prepared.cell_ranges, state.direct_targets, state.direct_sources,
          n_direct, TF, Val(hs && FastMultipole._extra_pair_has_hessian(dkernel)), Val(wg),
-         Val(FastMultipole._emits_potential(prepared.kernel)); ndrange=n_direct * wg)
+         Val(FastMultipole._extra_emits_potential(prepared.kernel)); ndrange=n_direct * wg)
     return state
 end
 
@@ -167,7 +167,11 @@ end
 # RK3 stages of a solver freeze the bodies over the step, and preparing them
 # on the host every stage measured 16% of a sixty-four-rotor step. A source
 # with revision `nothing` is prepared every call.
-const _KA_EXTRA_TREE_CACHE_MAX = 64
+#
+# Entries from an older epoch are dropped on every miss; past the cap the
+# least recently used entry goes, so a working set above the cap loses one
+# entry per miss rather than the whole cache.
+const _KA_EXTRA_TREE_CACHE_MAX = 256
 
 function _ka_extra_tree_prepared!(cache::FastMultipole.RadixFMMCache, sys)
     rev = FastMultipole.source_revision(sys)
@@ -177,19 +181,26 @@ function _ka_extra_tree_prepared!(cache::FastMultipole.RadixFMMCache, sys)
     hit = get(ctx.extra_tree_cache, key, nothing)
     kernel = FastMultipole.direct_kernel(sys)     # the prepared form carries the kernel: a changed kernel is a miss
     epoch = ctx.epoch_id[]
+    # lookup count as the recency clock
+    used = ctx.extra_tree_hits[] + ctx.extra_tree_misses[]
     # `system === sys`: an objectid can be reused by another object after GC
     if hit !== nothing && hit.system === sys && hit.revision == rev &&
             hit.epoch == epoch && hit.kernel == kernel
         ctx.extra_tree_hits[] += 1
+        ctx.extra_tree_cache[key] = merge(hit, (; used))
         return hit.prepared
     end
     ctx.extra_tree_misses[] += 1
     # entries from an older epoch can never hit again; dropping them releases
     # their device arrays and the systems they hold
     filter!(kv -> kv.second.epoch == epoch, ctx.extra_tree_cache)
-    length(ctx.extra_tree_cache) >= _KA_EXTRA_TREE_CACHE_MAX && empty!(ctx.extra_tree_cache)
+    delete!(ctx.extra_tree_cache, key)
+    while length(ctx.extra_tree_cache) >= _KA_EXTRA_TREE_CACHE_MAX
+        lru = argmin(kv -> kv.second.used, ctx.extra_tree_cache)
+        delete!(ctx.extra_tree_cache, lru.first)
+    end
     prepared = ka_extra_tree_prepare(cache.state, sys)
-    ctx.extra_tree_cache[key] = (; system = sys, revision = rev, epoch, kernel, prepared)
+    ctx.extra_tree_cache[key] = (; system = sys, revision = rev, epoch, kernel, prepared, used)
     return prepared
 end
 
@@ -216,6 +227,10 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     # finalize: only the U/J evaluation differs (a `nearfield_pass` is refused,
     # since the arm builds no direct pairs).
     direct_arm = FastMultipole.radix_setting(:RADIX_DIRECT_ARM)
+    # refused before any work: the direct arm builds no direct pairs
+    direct_arm && nearfield_pass !== nothing && throw(ArgumentError(
+        "nearfield_pass is not supported on the all-pairs direct arm " *
+        "(radix setting :RADIX_DIRECT_ARM): it runs over the U-list direct pairs, which this arm does not build"))
     # The extra-sources-only call needs no routes, but it DOES need the bodies
     # repacked and the permutation refreshed: `finalize` de-permutes through
     # the state's body metadata, and the body count changes between calls in a
@@ -258,10 +273,7 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     if nearfield_pass !== nothing
         # the consumer's own pass over the U-list direct pairs (e.g. an SFS
         # estimator through `radix_nearfield`), at the same point as on the
-        # host (src/fmm.jl); the direct arm builds no pairs
-        direct_arm && throw(ArgumentError(
-            "nearfield_pass is not supported on the all-pairs direct arm " *
-            "(radix setting :RADIX_DIRECT_ARM): it runs over the U-list direct pairs, which this arm does not build"))
+        # host (src/fmm.jl)
         nearfield_pass(cache)
         _utick!(:nearfield_pass, KA.get_backend(state.output))
     end
@@ -348,7 +360,7 @@ end
 # order), loop over an extra source's packed buffer through the source's own
 # functor. ACCUMULATES into the resident output.
 @kernel function ka_targets_from_extra_source_kernel!(kernel, out, @Const(xt), nt,
-        @Const(source_buffer), ns, ::Type{T}, ::Val{HS}) where {T,HS}
+        @Const(source_buffer), ns, ::Type{T}, ::Val{HS}, ::Val{EP}) where {T,HS,EP}
     i = @index(Global)
     @inbounds if i <= nt
         xi = xt[1, i]; yi = xt[2, i]; zi = xt[3, i]
@@ -370,7 +382,9 @@ end
                 u += du; gx += dgx; gy += dgy; gz += dgz
             end
         end
-        out[1, i] += u
+        if EP
+            out[1, i] += u
+        end
         out[2, i] += gx; out[3, i] += gy; out[4, i] += gz
         if HS
             out[5, i] += h1; out[6, i] += h2; out[7, i] += h3
@@ -391,10 +405,12 @@ function _ka_launch_extra_source!(backend, wg, out, xt, nt::Int, system, ::Type{
     # the typed device mirror for the regularized vortex kernels (Float64 fields
     # do not compile on Metal); other kernels pass through unchanged. The extra
     # buffer carries no inverse-sigma row, so the mirror divides (inv_sigma_row 0).
-    kernel = _ka_device_direct_kernel(FastMultipole.direct_kernel(system), TF, 0)
+    host_kernel = FastMultipole.direct_kernel(system)
+    kernel = _ka_device_direct_kernel(host_kernel, TF, 0)
     kern = _cached_kernel(ka_targets_from_extra_source_kernel!, backend, wg)
     kern(kernel, out, xt, nt, buffer, ns, TF,
-         Val(hs && FastMultipole._extra_pair_has_hessian(kernel)); ndrange=cld(nt, wg) * wg)
+         Val(hs && FastMultipole._extra_pair_has_hessian(kernel)),
+         Val(FastMultipole._extra_emits_potential(host_kernel)); ndrange=cld(nt, wg) * wg)
     return out
 end
 
@@ -422,15 +438,17 @@ function ka_points_from_extra_source(backend, xt_h::AbstractMatrix, system, ::Ty
     return Array(out)
 end
 
-# the bodies held out of the tree: a packed buffer rather than a whole system
+# the bodies held out of the tree: a packed buffer rather than a whole system;
+# `ep` is the host kernel's `_extra_emits_potential`
 function _ka_launch_extra_buffer!(backend, wg, out, xt, nt::Int, host_buffer, kernel,
-        ::Type{TF}, hs::Bool) where TF
+        ::Type{TF}, hs::Bool, ep::Bool) where TF
     ns = size(host_buffer, 2)
     ns == 0 && return out
     buffer = _ka_upload(backend, host_buffer)
     kern = _cached_kernel(ka_targets_from_extra_source_kernel!, backend, wg)
     kern(kernel, out, xt, nt, buffer, ns, TF,
-         Val(hs && FastMultipole._extra_pair_has_hessian(kernel)); ndrange=cld(nt, wg) * wg)
+         Val(hs && FastMultipole._extra_pair_has_hessian(kernel)), Val(ep);
+         ndrange=cld(nt, wg) * wg)
     return out
 end
 
@@ -441,13 +459,16 @@ The near sweep and the held-out bodies, after the lifecycle has run.
 """
 function ka_extra_tree_finish!(state::FastMultipole.DeviceResidentRadixState{TF},
         prepared; workgroup=KA_AUTO_WORKGROUP) where TF
-    ka_extra_tree_near!(state, prepared; workgroup)
+    # the near sweep keeps its own default group size (128) unless one is named
+    ka_extra_tree_near!(state, prepared;
+        workgroup=workgroup == KA_AUTO_WORKGROUP ? 128 : workgroup)
     n = Int(state.counts.n_bodies)
     if n > 0 && size(prepared.loose, 2) > 0
         backend = KA.get_backend(state.output)
         wg = resolve_workgroup(backend, workgroup)
         _ka_launch_extra_buffer!(backend, wg, state.output, state.source_bodies, n,
-            prepared.loose, _ka_device_direct_kernel(prepared.kernel, TF, 0), TF, size(state.output, 1) >= 13)
+            prepared.loose, _ka_device_direct_kernel(prepared.kernel, TF, 0), TF,
+            size(state.output, 1) >= 13, FastMultipole._extra_emits_potential(prepared.kernel))
     end
     return state
 end
@@ -523,6 +544,3 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
     end
     return state
 end
-
-
-

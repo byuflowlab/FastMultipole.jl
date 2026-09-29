@@ -1,6 +1,6 @@
 # Isolated per-route gate for the production KA M2L driver
-# `ka_resident_m2l_concat_apply!` (the KA port of `_launch_resident_m2l_concat!`,
-# the ConcatenatedFixedZM2L plan every device cache runs). A single-chunk
+# `ka_resident_m2l_concat_apply!` (the KA counterpart of the host
+# `_launch_resident_m2l_concat!`, the ConcatenatedFixedZM2L plan every device cache runs). A single-chunk
 # ResidentM2LConcatPlan is built below with one geometry class per
 # (source i -> target i) route, so arbitrary (r, theta, phi) are exercised without a
 # tree. The reference is the host per-column pipeline `m2l_operator_batch!`
@@ -151,8 +151,8 @@ for P in (4, 8)
 
             # Absolute Float32 tolerance is too tight for chi (LH row-mix adds an extra
             # gather + GEMM pass over phi's error budget); gate on relative error instead,
-            # matching the "relerr" convention already used to report this kernel chain's
-            # Metal-hardware accuracy in ext/FastMultipoleKAExt.jl's header.
+            # matching the relative-error convention used to report this kernel chain's
+            # Float32 accuracy on Metal hardware.
             rtol = 1e-4  # matches this repo's scalar-potential Float32 tolerance convention
             if phi_relerr >= rtol
                 error("P=$P, LHbool=$LHbool, nbatch=$nbatch: phi_err=$phi_err, phi_relerr=$phi_relerr >= $rtol")

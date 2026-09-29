@@ -6,8 +6,9 @@ paths), reuse across strength changes, guard tree identity, refuse
 direct_conditioning, enforce the memory cap before allocation, and evaluate
 deterministically (bitwise) at any thread count.
 
-Motivated by FLOWPanel BRAINSTORM 021 Phase 2b: ~40% of R1 krylov_ilu solve
-samples are near-field kernel calls; for frozen relative geometry those are a
+Motivation: in matrix-free Krylov panel solves (e.g. FLOWPanel) a large share
+of the time is spent in near-field kernel calls; for frozen relative geometry
+those are a
 linear map cacheable as packed BLAS matvecs.
 =###############################################################################
 
@@ -278,7 +279,7 @@ end
     end
 end
 
-@testset "NearfieldInfluenceCache: assemble_influence_block! hook (030)" begin
+@testset "NearfieldInfluenceCache: assemble_influence_block! hook" begin
 
     n_bodies = 1500
     plan_kwargs = (; expansion_order=6, multipole_acceptance=0.4,
@@ -348,7 +349,7 @@ end
 
 end
 
-@testset "NearfieldInfluenceCache: mixed opted-in + fallback build (030)" begin
+@testset "NearfieldInfluenceCache: mixed opted-in + fallback build" begin
 
     n_targets = 300
     sys_t = generate_gravitational(31, n_targets)

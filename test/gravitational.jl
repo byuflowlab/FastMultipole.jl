@@ -149,7 +149,7 @@ function FastMultipole.direct!(target_system, target_index, derivatives_switch::
     end
 end
 
-#------- opt-in dense influence-block assembly (BRAINSTORM 030) -------#
+#------- opt-in dense influence-block assembly -------#
 
 # Assigns the per-unit-strength kernel values directly instead of probing
 # through `direct!`: every entry is a pure function of buffer positions, so

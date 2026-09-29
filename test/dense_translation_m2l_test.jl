@@ -28,13 +28,13 @@ function _dense_stack_flat(TF, binfo::DENSE_FM.OperatorBasisInfo{B,LH}, flat) wh
     return out
 end
 
-# Task 027 made HierarchicalRigidStencil the default policy. This file verifies the
-# FLAT dense-translation resident plan (task 023e) -- per-class counts/starts,
+# HierarchicalRigidStencil is the default policy. This file verifies the
+# FLAT dense-translation resident plan -- per-class counts/starts,
 # class capacities, and the per-class apply -- which the hierarchical windowed
 # driver deliberately does not populate. Passing stencil_epsilon pins the flat
 # classifier.
 
-@testset "dense translation M2L (task 023e)" begin
+@testset "dense translation M2L" begin
     @test DenseTranslationM2L() isa DenseTranslationM2L
     @test_throws ArgumentError DenseTranslationM2L(max_persistent_bytes=0)
     @test_throws ArgumentError DenseTranslationM2L(max_persistent_bytes=big(typemax(Int)) + 1)
@@ -105,8 +105,8 @@ end
         bad_msg = sprint(showerror, bad32)
         for fragment in ("DenseTranslationM2L", "non-finite", "precision=Float32",
                 "P=12", "Lamb-Helmholtz=$(LH)", "displacement offset=[2, 0, 0]",
-                "Use Float64", "lower P", "disable Lamb-Helmholtz",
-                "PrecomputedFactoredYM2L", "factored", "concat")
+                "precision=Float64", "lower expansion order",
+                "scale the geometry toward unit size")
             @test occursin(fragment, bad_msg)
         end
 
@@ -201,7 +201,7 @@ end
     @test all(iszero, empty_cache.state.locals.phi)
 
     # Fixed-domain time stepping changes valid prefixes only and remains within the
-    # task's warmed full-step allocation budget.
+    # warmed full-step allocation budget.
     full = generate_gravitational(20260724, 160)
     moving = RadixFMMCache(full; stencil_epsilon=1e-4, expansion_order=4, ell=3, max_n_bodies=160,
         bounds=(SVector(-0.1, -0.1, -0.1), 1.2),

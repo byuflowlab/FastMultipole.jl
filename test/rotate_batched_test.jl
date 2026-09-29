@@ -1,6 +1,6 @@
 #=
-Parity tests for the explicit z-rotation operators (Matrix Operator Refactor,
-task 010) in src/rotate_batched.jl. They must reproduce the production
+Parity tests for the explicit z-rotation operators in src/rotate_batched.jl.
+They must reproduce the production
 rotate_z! / back_rotate_z! behavior (src/rotate.jl) bit-for-bit.
 =#
 
@@ -146,8 +146,8 @@ allocated_back_rotate_local_y_op!(out, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag
 end
 
 #=
-Parity tests for the invariant axis-swap / y-rotation operators (Matrix Operator
-Refactor, task 013) in src/rotate_batched.jl. The cached S blocks
+Parity tests for the invariant axis-swap / y-rotation operators in
+src/rotate_batched.jl. The cached S blocks
 (update_S_blocks!) plus build_Ts_from_S! must reconstruct the production Wigner Ts
 (update_Ts!) and, fed through the reused production apply kernels, reproduce
 rotate_multipole_y! / rotate_local_y! and their back variants. The parity target is

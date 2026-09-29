@@ -1254,17 +1254,6 @@ function transform_plan!(plan::FmmPlan, target_systems::Tuple, R, t)
     return plan
 end
 
-"""
-    fmm!(target_systems::Tuple, source_systems::Tuple, plan::FastMultipole.FmmPlan;
-         refresh_strengths=true, reset_targets=true, optargs...)
-
-Run the FMM using the precomputed `plan` (see [`FastMultipole.FmmPlan`](@ref)): refresh
-source strengths into the plan's sorted source buffers, zero the target
-output rows and refill the target metadata rows from `target_systems`
-(`reset_targets=true`; target positions stay as frozen at plan build or
-last [`transform_plan!`](@ref)), and dispatch straight to the prebuilt-tree/prebuilt-list `fmm!`
-method. Returns the same tuple as the allocating `fmm!` entry point.
-"""
 # metadata rows (e.g. a previous-step influence estimate) are per-call state,
 # refilled from the target systems in the tree's sorted order
 function _refresh_target_metadata!(buffers, systems::Tuple, sort_index_list, switches::Tuple)
@@ -1277,6 +1266,17 @@ function _refresh_target_metadata!(buffers, systems::Tuple, sort_index_list, swi
     return buffers
 end
 
+"""
+    fmm!(target_systems::Tuple, source_systems::Tuple, plan::FastMultipole.FmmPlan;
+         refresh_strengths=true, reset_targets=true, optargs...)
+
+Run the FMM using the precomputed `plan` (see [`FastMultipole.FmmPlan`](@ref)): refresh
+source strengths into the plan's sorted source buffers, zero the target
+output rows and refill the target metadata rows from `target_systems`
+(`reset_targets=true`; target positions stay as frozen at plan build or
+last [`transform_plan!`](@ref)), and dispatch straight to the prebuilt-tree/prebuilt-list `fmm!`
+method. Returns the same tuple as the allocating `fmm!` entry point.
+"""
 function fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
     refresh_strengths::Bool=true, reset_targets::Bool=true, optargs...
 )

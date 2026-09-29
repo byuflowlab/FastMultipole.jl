@@ -88,4 +88,3 @@ function run_host_radix_lifecycle!(state::DeviceResidentRadixState)
     _launch_host_resident_operator_pipeline!(state)
     return state
 end
-

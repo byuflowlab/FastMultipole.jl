@@ -419,4 +419,3 @@ function _host_b2m_kernel!(ph::AbstractMatrix{TF}, source_bodies, cell_ranges,
     end
     return ph
 end
-

@@ -1,30 +1,24 @@
 # End-to-end gate for `ka_radix_cache_device_build` + `ka_radix_cache_device_step!`
-# -- a whole `RadixFMMCache` built and stepped on a KA backend, with no CUDA
-# anywhere, compared against FastMultipole's OWN host cache running `fmm!`.
+# -- a whole `RadixFMMCache` built and stepped on a KA backend, compared against FastMultipole's OWN host cache running `fmm!`.
 #
-# Why this closes the chain. Sessions 9-11 ported every stage of the device
+# Why this suite exists. The per-stage suites gate each part of the device
 # lifecycle (grid rebuild stages 1-4, hierarchical occupancy/direct pairs/
-# windows, the lifecycle body, finalize, and the `ka_update_radix_state!` /
-# `ka_radix_cache_device_step!` drivers), but each was gated against its own
-# host oracle in isolation, and the two drivers were gated not at all: their
-# only entry point is a device-resident `RadixFMMCache`, and
-# `RadixFMMCache(...; device=true)` routes to `_radix_cache_device_build`, which
-# allocates from `CUDA.zeros` throughout. No device cache existed off CUDA, so
-# the drivers were load-checked only. This suite builds one and runs a real
-# UJ through it.
+# windows, the lifecycle body, finalize) against its own host oracle in
+# isolation. The `ka_update_radix_state!` / `ka_radix_cache_device_step!`
+# drivers have no entry point other than a device-resident `RadixFMMCache`, so
+# this suite builds one and runs a real UJ through it.
 #
 # Oracle: a second `RadixFMMCache` over an identical system with device=false
 # and the SAME stencil policy, stepped with `fmm!`. That is the host resident
 # lifecycle -- a genuinely independent implementation of every stage, not a
 # transcription -- so an elementwise match on the scattered velocity/potential
-# is the real acceptance check the per-stage suites were standing in for.
+# is the end-to-end acceptance check behind the per-stage suites.
 #
-# Both caches are hierarchical (`window_classes` set), which is the policy
-# FLOWVPM builds and the only one the KA step implements; see
-# [[reference-flowvpm-radix-cache-is-hierarchical]].
+# Both caches are hierarchical (`window_classes` set), which is the policy a
+# vortex particle method builds and the only one the KA step implements.
 #
-# Body type `Point{Vortex}` with Lamb-Helmholtz on: the only type with a KA B2M
-# port, and what FLOWVPM runs.
+# Body type `Point{Vortex}` with Lamb-Helmholtz on: the configuration a vortex
+# particle method runs.
 include("ka_backend.jl")
 using FastMultipole, Random, Test, Printf
 using FastMultipole.StaticArrays
@@ -75,8 +69,8 @@ end
 # P=4 cases sweep ell, n and window_classes for free on one compile; the single
 # P=6 case is what proves the sweep is not P-specific.
 # A unit run takes the short case list; FM_FULL_SWEEP=1 takes the full one.
-# The sweep is a robustness study, not a check: it belongs in a debugging pass
-# (debug/run_full_sweeps.sh), not in every run.
+# The sweep is a robustness study, not a check: it belongs in a debugging pass,
+# not in every run.
 const CASES_FULL = [
     (4, 3,  256, 8),
     (4, 4, 1024, 8),

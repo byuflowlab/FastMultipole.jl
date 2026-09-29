@@ -102,6 +102,12 @@ into the target systems, downloading it once per call into
 `host_output_staging` (the valid column prefix only) when any target is host
 resident, and going through `ka_scatter_output_to_target_buffer!` for
 device-resident ones.
+
+Metadata rows (`metadata_range(switch)`): a host-resident target's buffer has
+them refilled from the system with `metadata_to_buffer!` every call, as on the
+host radix path. A device-resident target's buffer is device memory, which the
+per-body host hook cannot write, so there they are zero (the scatter zero-fills
+the whole buffer) -- never stale data from an earlier call.
 """
 function ka_finalize_radix_output!(state, target_systems;
         derivatives_switches=nothing, host_output_staging=nothing,
@@ -144,6 +150,13 @@ function ka_finalize_radix_output!(state, target_systems;
             target_buffer = target_buffers === nothing ?
                 FastMultipole.allocate_target_buffer(TF, target_system, switch) :
                 target_buffers[isys]
+            # metadata rows, refilled as the host radix finalize fills them
+            if !isempty(FastMultipole.metadata_range(switch))
+                for i_body in 1:FastMultipole.get_n_bodies(target_system)
+                    FastMultipole.metadata_to_buffer!(target_buffer, switch, i_body,
+                        target_system, i_body)
+                end
+            end
             FastMultipole._copy_radix_output_to_host_target_buffer!(
                 target_buffer, host_output, state.host_body_perm,
                 state.host_body_system_ids, state.host_body_indices, isys, switch,
@@ -464,17 +477,20 @@ function ka_hier_cache_windows!(hctx::FastMultipole.DeviceHierarchicalM2LContext
     end
     total_used > 0 && accumulate!(+, view(prefix_all, 1:total_used), view(flags_all, 1:total_used))
     _utick!(:win_phase1_count, backend)
-    ends = KA.allocate(backend, Int, nw); copyto!(ends, max.(bases .+ used, 1))
+    # host_ends[w]: routes in windows 1:w, the inclusive prefix at the window's
+    # last flag; a window ending at flag 0 (empty windows before any flag) has 0
+    last_flag = bases .+ used
+    ends = KA.allocate(backend, Int, nw); copyto!(ends, max.(last_flag, 1))
     KA.synchronize(backend)
     host_ends = Array(prefix_all[ends])          # the one D2H sync
     _utick!(:win_sync_d2h, backend)
-    total_routes = Int(host_ends[end])
+    host_ends = [e == 0 ? 0 : Int(v) for (e, v) in zip(last_flag, host_ends)]
+    total_routes = host_ends[end]
     _ka_hier_win_ensure!(hctx, backend, total_routes)
     compact_kernel = _cached_kernel(ka_hier_route_compact_global_kernel!, backend, workgroup)
-    cursor = 0
     for (w, (L, first_offset, last_offset)) in enumerate(windows)
         used[w] > 0 || continue
-        n = Int(host_ends[w]) - (w > 1 ? Int(host_ends[w-1]) : 0)
+        n = host_ends[w] - (w > 1 ? host_ends[w-1] : 0)
         n == 0 && continue
         class_base = (L - hctx.first_m2l_level) * noffsets
         kn = last_offset - first_offset + 1
@@ -482,13 +498,9 @@ function ka_hier_cache_windows!(hctx::FastMultipole.DeviceHierarchicalM2LContext
             flags_all, prefix_all, bases[w], hctx.node_at, grid.node_coords,
             hctx.d_push_offsets, hctx.level_base[L + 1], hctx.level_offsets[L + 1] + 1,
             n_src(L), first_offset, kn, L, class_base; ndrange=used[w])
-        cursor += n
     end
     _utick!(:win_phase2_compact, backend)
-    hctx.total_routes = cursor
+    hctx.total_routes = total_routes
     hctx.win_valid = true
     return hctx
 end
-
-
-

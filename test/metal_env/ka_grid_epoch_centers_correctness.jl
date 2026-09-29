@@ -1,9 +1,7 @@
 # Correctness gate for stage 2 of the in-place device grid rebuild:
 # `ka_radix_occupancy_changed!` and `ka_radix_cell_centers!`
-# (ext/FastMultipoleKAExt.jl), the KA port of the occupancy-epoch check and the
-# cell-center block of `_cuda_update_radix_grid_in_place!`
-# (former CUDA lifecycle, removed), directly after the leaf-cell
-# compression gated by ka_grid_keys_cells_correctness.jl.
+# (ext/ka/ka_grid_refresh.jl): the occupancy-epoch check and the cell-center
+# block, directly after the leaf-cell compression gated by ka_grid_keys_cells_correctness.jl.
 #
 # Oracle: the cell-center loop of `_refresh_radix_grid!` (src/tree_batched.jl),
 # which is what `_radix_grid` runs on the CPU, plus `morton_decode` for the

@@ -22,9 +22,10 @@ arrays on a device cache (`device` tells which). Fields:
 - `output`: the sorted outputs (row 1 potential, 2:4 gradient, 5:13 hessian
   when the cache carries it); a pass may read it and, for a re-evaluation,
   write it;
-- `cell_ranges` (`2 x n_cells`, first and last sorted body of each cell),
+- `cell_ranges` (`2 x n_cells`: first sorted body and body count of each cell),
   `direct_targets`, `direct_sources` (the `n_direct` near cell pairs of the
-  U-list; each pair once, the self pair included), `n_cells`, `n_bodies`;
+  U-list as ordered (target <- source) pairs: both (A, B) and (B, A) are
+  listed, the self pair (A, A) once), `n_cells`, `n_bodies`;
 - `body_perm`, `body_system_ids`, `body_indices`: sorted position -> global
   body (system id and index), and their host copies `host_body_perm`,
   `host_body_system_ids`, `host_body_indices`.

@@ -59,13 +59,14 @@ KernelAbstractions backend runs the cache.
 | name | default | lock | availability |
 |---|---:|---|---|
 | `:RADIX_DIRECT_ARM` | `false` | runtime | KernelAbstractions device path only |
-| `:CUDA_NEARFIELD_GH_MODE` | `:fp32` | construction | Regularized host nearfield (device kernels ignore it) |
+| `:CUDA_NEARFIELD_GH_MODE` | `:shipped` | runtime | Regularized host nearfield (device kernels ignore it) |
 | `:FACTORED_Y_GEMM_MIN_DIM` | `1` | runtime | Host factored-y operator |
 | `:PRECOMPUTED_Y_GEMM_MIN_COLS` | `16` | runtime | Host precomputed-y operator |
 
-Set construction-locked values before building `RadixFMMCache`. The cache
-snapshots them and a later device step throws if they drift. Runtime settings
-are read at step entry and may change between steps. Use `radix_settings()` for
+Runtime settings are read at step entry and may change between steps (every
+current setting is runtime). A construction-locked setting would have to be set
+before building `RadixFMMCache`: the cache snapshots such settings and a later
+device step throws if they drift. Use `radix_settings()` for
 the current values.
 
 ```@docs

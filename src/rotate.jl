@@ -655,9 +655,9 @@ function update_ζs_mag!(ζs_mag, expansion_order)
     end # otherwise, we already have enough, so do nothing
 end
 
-# the zero must have the magnitude's type: a `0.0` literal made the return type
-# depend on the branch, and in Float32 every call in the rotation loops boxed
-# (7.8 GB of temporaries per operator-table build, 1.6 s instead of 0.09 s)
+# the zero must have the magnitude's type: a `0.0` literal would make the return
+# type depend on the branch, and in Float32 every call in the rotation loops
+# would box
 @inline function ζ_sign(magnitude, mp, m)
     mod = (abs(mp) - abs(m)) % 4
     mod < 0 && (mod += 4)

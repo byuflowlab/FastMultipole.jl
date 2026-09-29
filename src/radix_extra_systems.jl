@@ -271,10 +271,15 @@ end
 
 # scatter a 4/13-row rectangular output into the target system through its
 # derivatives switch, reusing the resident finalize copier with an identity
-# permutation.
+# permutation. Metadata rows are filled first, as in finalize_radix_output!.
 function _radix_scatter_extra_target!(::Type{TF}, system, switch, out::AbstractMatrix) where TF
     nt = size(out, 2)
     target_buffer = allocate_target_buffer(TF, system, switch)
+    if !isempty(metadata_range(switch))
+        for i_body in 1:nt
+            metadata_to_buffer!(target_buffer, switch, i_body, system, i_body)
+        end
+    end
     _copy_radix_output_to_host_target_buffer!(target_buffer, out, 1:nt,
         fill(1, nt), 1:nt, 1, switch, nt)
     buffer_to_target!(system, target_buffer, switch, 1:nt)

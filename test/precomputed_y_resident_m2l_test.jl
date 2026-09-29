@@ -1,6 +1,6 @@
 using LinearAlgebra
 
-@testset "precomputed-y resident M2L (task 023c)" begin
+@testset "precomputed-y resident M2L" begin
     key = FastMultipole._precomputed_y_angle_key
     @test key(SVector(1, 0, 1)) == key(SVector(2, 0, 2))
     @test key(SVector(1, 1, 0)) == key(SVector(2, 2, 0)) == (0, 0, 1)
@@ -20,8 +20,8 @@ using LinearAlgebra
     @test_throws ArgumentError RadixLifecycleOptions(
         m2l_strategy=PrecomputedFactoredYM2L())
 
-    # Task 027 made HierarchicalRigidStencil the default policy. Every cache below
-    # verifies the FLAT precomputed-y resident plan (task 023c) -- angle-major
+    # HierarchicalRigidStencil is the default policy. Every cache below
+    # verifies the FLAT precomputed-y resident plan -- angle-major
     # packing, angle_counts/angle_capacities, and the empty-angle-class property --
     # which the hierarchical windowed driver deliberately does not populate. Passing
     # stencil_epsilon explicitly pins these caches to the flat classifier.
@@ -69,7 +69,7 @@ using LinearAlgebra
         copyto!(plan.angle_counts, saved_counts)
     end
 
-    # Construction-time M_n(theta) agrees with the retained 023a U/D/V kernel.
+    # Construction-time M_n(theta) agrees with the retained factored U/D/V kernel.
     sys = generate_gravitational(seed + 1, 80)
     cache = RadixFMMCache(sys; expansion_order=4, ell=3,
         stencil_epsilon=1e-4,

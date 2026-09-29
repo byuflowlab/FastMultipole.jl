@@ -1,6 +1,5 @@
 #=##############################################################################
-FastGaussSeidel sweep_order=:colored (FLOWPanel BRAINSTORM 021 Phase 2b /
-fgs_determinism_performance_plan Part C2+C3):
+FastGaussSeidel sweep_order=:colored:
 
 1. coloring validity — no two directly-interacting leaves share a color
    (adjacency = rhs row-interval overlap, the conservative conflict set);
@@ -12,8 +11,8 @@ fgs_determinism_performance_plan Part C2+C3):
    reference never depends on nthreads);
 4. convergence sanity — colored GS converges comparably to lexicographic.
 
-Cross-thread-count bitwise verification at the campaign scale runs in
-FLOWPanel's benchmark/fgs_determinism_probe.jl matrix.
+Cross-thread-count bitwise verification at production scale is left to the
+consuming code's benchmarks.
 =###############################################################################
 
 @testset "Fast Gauss Seidel: colored sweeps" begin
@@ -123,8 +122,8 @@ end
 # in fact DIVERGES where lexicographic converges (measured at test authoring —
 # residual ~1e149 after 30 sweeps). That is an iteration-order property, not
 # an implementation bug (the batching theorem above is bitwise). Convergence
-# on production panel systems is therefore gated on the campaign-side A/B
-# (FLOWPanel 021 fgstune staircases) before :colored is adopted anywhere;
+# on production panel systems is therefore gated on A/B convergence studies
+# in the consuming code before :colored is adopted anywhere;
 # here we assert only that short fixed-iteration histories stay finite and
 # that both orders produce them.
 function short_history(fgs_obj)

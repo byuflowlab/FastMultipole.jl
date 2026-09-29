@@ -4,9 +4,13 @@
 # partials (2 x lanes scalars) cross to the host and finish there. The kernel's
 # specialization does not involve `n`, so it compiles once per (backend, eltype)
 # rather than once per distinct length.
+#
+# The lane scratch is a pool per (backend type, device, eltype): a call takes a
+# set out under `_CACHE_LOCK` and returns it when done, so concurrent callers
+# never share buffers and the steady state allocates nothing.
 
 const ROW_EXTREMA_LANES = 1024
-const _ROW_EXTREMA_SCRATCH = Dict{Any,Any}()
+const _ROW_EXTREMA_SCRATCH = Dict{Any,Vector{Any}}()
 
 @kernel function ka_row_extrema_kernel!(lo, hi, @Const(A), row, n, lanes)
     i = @index(Global)
@@ -27,16 +31,27 @@ function FastMultipole._device_row_extrema(A::AnyGPUMatrix, row::Integer, n::Int
     n > 0 || throw(ArgumentError("reducing over an empty row prefix"))
     T = eltype(A)
     backend = KA.get_backend(A)
-    lo, hi, hlo, hhi = get!(_ROW_EXTREMA_SCRATCH, (typeof(backend), T)) do
-        (KA.allocate(backend, T, ROW_EXTREMA_LANES), KA.allocate(backend, T, ROW_EXTREMA_LANES),
-         Vector{T}(undef, ROW_EXTREMA_LANES), Vector{T}(undef, ROW_EXTREMA_LANES))
+    key = (typeof(backend), KA.device(backend), T)
+    scratch = lock(_CACHE_LOCK) do
+        pool = get!(Vector{Any}, _ROW_EXTREMA_SCRATCH, key)
+        isempty(pool) ? nothing : pop!(pool)
     end
-    wg = resolve_workgroup(backend, KA_AUTO_WORKGROUP)
-    kern = _cached_kernel(ka_row_extrema_kernel!, backend, wg)
-    kern(lo, hi, A, Int(row), Int(n), ROW_EXTREMA_LANES; ndrange=ROW_EXTREMA_LANES)
-    KA.synchronize(backend)
-    copyto!(hlo, lo); copyto!(hhi, hi)
-    return minimum(hlo), maximum(hhi)
+    if scratch === nothing
+        scratch = (KA.allocate(backend, T, ROW_EXTREMA_LANES),
+                   KA.allocate(backend, T, ROW_EXTREMA_LANES),
+                   Vector{T}(undef, ROW_EXTREMA_LANES), Vector{T}(undef, ROW_EXTREMA_LANES))
+    end
+    lo, hi, hlo, hhi = scratch
+    try
+        wg = resolve_workgroup(backend, KA_AUTO_WORKGROUP)
+        kern = _cached_kernel(ka_row_extrema_kernel!, backend, wg)
+        kern(lo, hi, A, Int(row), Int(n), ROW_EXTREMA_LANES; ndrange=ROW_EXTREMA_LANES)
+        KA.synchronize(backend)
+        copyto!(hlo, lo); copyto!(hhi, hi)
+        return minimum(hlo), maximum(hhi)
+    finally
+        lock(() -> push!(_ROW_EXTREMA_SCRATCH[key], scratch), _CACHE_LOCK)
+    end
 end
 
 #------- backend workgroup policy -------#
@@ -85,20 +100,16 @@ and CPU).
 """
 function resolve_workgroup(backend, workgroup::Int)
     workgroup == KA_AUTO_WORKGROUP || return workgroup
-    return get!(() -> _backend_default_workgroup(backend), _WORKGROUP_CACHE, typeof(backend))
+    return lock(_CACHE_LOCK) do
+        get!(() -> _backend_default_workgroup(backend), _WORKGROUP_CACHE, typeof(backend))
+    end
 end
 
 # Backend-agnostic M2M building blocks (GPU-native, no host round-trip):
 # device forms of the host primitives `_gather_rotate_z!`,
 # `_rotate_z_scatter_accumulate!` and `_stacked_y_dense!` in
 # src/translate_batched.jl, running on any KernelAbstractions backend.
-#
-# Verified against the host primitives:
-#   - ka_gather_rotate_z!           : max abs err 5.96e-8 vs CPU (n=8x6)
-#   - ka_rotate_z_scatter_accumulate!: max abs err 1.19e-7 vs CPU (w/ KA.@atomic)
-#   - full non-LH M2M group chain    : max abs err 2.14e-6 (relerr 4.2e-7),
-#     gather_rotate_z -> stacked_y_dense -> rotate_z_scatter_accumulate
-# All Float32, on Metal (MetalBackend, M1 Pro).
+
 
 @kernel function ka_gather_rotate_z_kernel!(dst, @Const(src), @Const(flat_idx), @Const(cols),
                                              @Const(row_m), @Const(row_ssign), @Const(row_pair),
@@ -615,8 +626,7 @@ end
 Device form of `_launch_resident_m2l_concat!` (src/translate_batched.jl), the
 `ConcatenatedFixedZM2L` resident M2L apply. Operates on `ws.m2l_concat`
 (a `ResidentM2LConcatPlan`) plus `route_sources`/`route_targets` (GPU index vectors) directly,
-rather than a full `DeviceResidentRadixState`, so the isolated per-route gate
-(test/metal_env/ka_m2l_correctness.jl) can drive it without a tree.
+rather than a full `DeviceResidentRadixState`, so it can be driven without a tree.
 """
 function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets,
         nroutes::Int; route_class=nothing)

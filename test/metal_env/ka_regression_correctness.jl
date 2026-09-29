@@ -11,7 +11,14 @@
 #      is not a whole number of lane teams
 #   5. ka_launch_l2b! resolves workgroup=0 instead of launching nothing
 #   6. checked keys raise ArgumentError for NaN/huge positions on the device
-#   7. ka_extra_tree_finish! passes its workgroup to the near sweep
+#   7. ka_extra_tree_finish! passes its workgroup to the near sweep, and
+#      keeps 128 for the near sweep when none is named
+#   8. rectangular box: a body on a short axis' upper face, all leaf cells
+#      filled, matches the host cache
+#   9. host-resident target metadata rows are refilled every step
+#  10. a contract-only extra source functor (not an AbstractDirectKernel)
+#      carried by the tree matches the same source summed all-pairs
+#  11. concurrent _device_row_extrema callers do not share scratch
 include("ka_backend.jl")
 using FastMultipole, Random, Test, Printf, LinearAlgebra
 using FastMultipole.StaticArrays
@@ -161,6 +168,12 @@ guarded("launch contracts") do
     check(haskey(ext._KERNEL_CACHE, (ext.ka_extra_tree_near_kernel!, typeof(DEV_BACKEND), 32)) &&
         relerr(Array(state.output), ex_ref) < 1e-5,
         "extra-tree finish runs the near sweep at the requested workgroup")
+    key128 = (ext.ka_extra_tree_near_kernel!, typeof(DEV_BACKEND), 128)
+    delete!(ext._KERNEL_CACHE, key128)
+    fill!(state.output, 0); ext.ka_extra_tree_finish!(state, prepared)
+    KernelAbstractions.synchronize(DEV_BACKEND)
+    check(haskey(ext._KERNEL_CACHE, key128) && relerr(Array(state.output), ex_ref) < 1e-5,
+        "extra-tree finish runs the near sweep at 128 by default")
 end
 
 println("3. direct_rectangular! kernel reuse")
@@ -200,6 +213,141 @@ guarded("checked keys") do
         end
         check(threw, "position $bad raises ArgumentError")
     end
+end
+
+# a gravitational system carrying one controlled metadata row, recording the
+# metadata row it sees in buffer_to_target_system!
+struct RegMetaGrav{TF}
+    inner::Gravitational{TF}
+    meta::Vector{TF}
+    seen::Vector{TF}
+end
+RegMetaGrav(inner::Gravitational{TF}) where TF = (n = FM.get_n_bodies(inner);
+    RegMetaGrav{TF}(inner, zeros(TF, n), fill(TF(NaN), n)))
+FM.device_backend(::RegMetaGrav) = DEV_BACKEND
+FM.get_n_bodies(s::RegMetaGrav) = FM.get_n_bodies(s.inner)
+FM.get_position(s::RegMetaGrav, i) = FM.get_position(s.inner, i)
+FM.data_per_body(s::RegMetaGrav) = FM.data_per_body(s.inner)
+FM.strength_dims(s::RegMetaGrav) = FM.strength_dims(s.inner)
+FM.has_vector_potential(::RegMetaGrav) = false
+FM.source_system_to_buffer!(buffer, i_buffer, s::RegMetaGrav, i_body) =
+    FM.source_system_to_buffer!(buffer, i_buffer, s.inner, i_body)
+FM.body_to_multipole!(s::RegMetaGrav, args...) =
+    FM.body_to_multipole!(FM.Point{FM.Source}, s, args...; scale_strength=-1.0)
+FM.direct!(tb, ti, sw::FM.DerivativesSwitch, s::RegMetaGrav, sb, si) =
+    FM.direct!(tb, ti, sw, s.inner, sb, si)
+FM.metadata_per_body(::RegMetaGrav) = 1
+FM.metadata_to_buffer!(buffer, switch, i_buffer, s::RegMetaGrav, i_body) =
+    (buffer[FM.metadata_index(switch, 1), i_buffer] = s.meta[i_body])
+function FM.buffer_to_target_system!(s::RegMetaGrav, i_target, switch, buffer, i_buffer)
+    s.seen[i_target] = buffer[FM.metadata_index(switch, 1), i_buffer]
+    return FM.buffer_to_target_system!(s.inner, i_target, switch, buffer, i_buffer)
+end
+grav_opts(TF) = FM.RadixLifecycleOptions(; precision=TF,
+    m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Source})
+
+println("8. rectangular box, body on a short axis' upper face")
+guarded("rectangular box") do
+    # bounds (8,2,2) at ell=3: unit leaf cells, ell_axes (3,1,1), all 32 leaf
+    # cells filled, plus one body exactly on the y = 2 face
+    Random.seed!(35)
+    cells = collect(Iterators.product(0:7, 0:1, 0:1))
+    nper = 4
+    n = length(cells) * nper + 1
+    bodies = rand(8, n)
+    for (k, (i, j, l)) in enumerate(cells), b in 1:nper
+        bodies[1:3, (k - 1) * nper + b] .= (i, j, l) .+ 0.1 .+ 0.8 .* rand(3)
+    end
+    bodies[1:3, n] .= (3.5, 2.0, 0.5)
+    bodies[4, :] .*= 0.01
+    bodies[5, :] ./= n
+    bounds(TF) = (SVector{3,TF}(0, 0, 0), SVector{3,TF}(8, 2, 2))
+    sysh = RegMetaGrav(Gravitational(copy(bodies)))
+    sysd = RegMetaGrav(Gravitational(DTF.(bodies)))
+    host = RadixFMMCache(sysh; expansion_order=4, ell=3, window_classes=64,
+        bounds=bounds(Float64), options=grav_opts(Float64))
+    dev = RadixFMMCache(sysd; expansion_order=4, ell=3, window_classes=64,
+        bounds=bounds(DTF), device=true, options=grav_opts(DTF))
+    fmm!(sysh, host); fmm!(sysd, dev)
+    check(dev.ell_axes == SVector(3, 1, 1) && dev.state.counts.n_cells == length(cells),
+        "device grid holds exactly the 32 leaf cells (n_cells $(dev.state.counts.n_cells))")
+    e = relerr(sysd.inner.potential[1:7, :], sysh.inner.potential[1:7, :])
+    check(e < 1e-4, @sprintf("device vs host rectangular cache (%.2e)", e))
+end
+
+println("9. metadata rows on a device cache")
+guarded("metadata") do
+    sys = RegMetaGrav(Gravitational(DTF.(rand(8, 300) .* [1, 1, 1, 0.01, 1/300, 1, 1, 1])))
+    cache = RadixFMMCache(sys; expansion_order=4, ell=3, window_classes=64,
+        device=true, options=grav_opts(DTF))
+    ok = true
+    for call in 1:3
+        sys.meta .= DTF.(1:300) .+ 10call
+        fill!(sys.seen, NaN)
+        fmm!(sys, cache)
+        ok &= sys.seen == sys.meta
+    end
+    check(ok, "every step sees its current metadata")
+end
+
+println("10. contract-only extra source functor carried by the tree")
+# not an AbstractDirectKernel, and no `_emits_potential`
+struct ContractKernel end
+@inline function FM._extra_pair_ug(::ContractKernel, tx, ty, tz, buf, j)
+    T = typeof(tx)
+    @inbounds begin
+        dx = tx - buf[1, j]; dy = ty - buf[2, j]; dz = tz - buf[3, j]
+    end
+    r2 = dx * dx + dy * dy + dz * dz
+    r2 > zero(T) || return zero(T), zero(T), zero(T), zero(T)
+    return FM._direct_pair_ug(FM.SingularVortex(), dx, dy, dz, r2, inv(sqrt(r2)), buf, j)
+end
+struct ContractPV{TF}
+    pv::PV{TF}
+end
+FM.get_n_bodies(p::ContractPV) = FM.get_n_bodies(p.pv)
+FM.data_per_body(::ContractPV) = 8
+FM.strength_dims(::ContractPV) = 3
+FM.has_vector_potential(::ContractPV) = true
+FM.body_type(::ContractPV) = FM.Point{FM.Vortex}
+FM.get_position(p::ContractPV, i) = FM.get_position(p.pv, i)
+FM.source_system_to_buffer!(b, ib, p::ContractPV, i) = FM.source_system_to_buffer!(b, ib, p.pv, i)
+FM.direct_kernel(::ContractPV) = ContractKernel()
+guarded("contract functor") do
+    n = 600; ns = 80
+    Random.seed!(36)
+    pos = DTF.(rand(3, n)); str = DTF.(randn(3, n) ./ n)
+    ex = ContractPV(PV([SVector{3,DTF}(rand(3)) for _ in 1:ns],
+        [SVector{3,DTF}(randn(3) ./ ns) for _ in 1:ns]))
+    function velocity(kw)
+        sys = VortexParticles(copy(pos), copy(str), fill(DTF(0.01), n);
+            potential=zeros(DTF, 13, n), gradient_stretching=zeros(DTF, 6, n))
+        cache = RadixFMMCache(sys; expansion_order=4, ell=3, window_classes=64,
+            hessian=true, device=true, options=vortex_opts(DTF))
+        sw = FM.DerivativesSwitch(false, true, false, (sys,))
+        ext.ka_radix_cache_device_step!(cache, (sys,), sw; kw...)
+        st = cache.state; out = Array(st.output); inv = Array(st.grid.invperm)
+        return reduce(hcat, [out[2:4, inv[i]] for i in 1:Int(st.counts.n_bodies)])
+    end
+    base = velocity((;))
+    tree = velocity((; extra_tree_sources=(ex,))) .- base
+    direct = velocity((; extra_sources=(ex,))) .- base
+    e = maximum(abs.(tree .- direct)) / maximum(abs, direct)
+    check(e < 5e-3, @sprintf("tree-carried contract functor vs all-pairs (%.2e)", e))
+end
+
+println("11. concurrent row extrema")
+guarded("row extrema") do
+    Random.seed!(37)
+    Ah = DTF.(randn(4, 5000) .* [1, 10, 100, 1000])
+    A = devarray(Ah)
+    rows = repeat(1:4, 4)
+    # discriminating only with several threads (julia --threads=N); on one
+    # thread the tasks do not interleave inside the call
+    tasks = [Threads.@spawn FM._device_row_extrema(A, r, 5000) for r in rows]
+    got = fetch.(tasks)
+    want = [(minimum(Ah[r, :]), maximum(Ah[r, :])) for r in rows]
+    check(got == want, "16 concurrent callers each get their own row's extrema")
 end
 
 @printf("\n%d passed, %d failed\n", npass[], nfail[])

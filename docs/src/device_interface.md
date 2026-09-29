@@ -118,7 +118,7 @@ this layout:
 This is the same column convention as the legacy host path
 (`source_system_to_buffer!`), promoted to the resident path. The precision
 `TF` is `cache.state.options.precision` (auto-selected from `expansion_order`
-by the measured task 024/028 rules unless you pass `options` explicitly).
+by measured accuracy/speed rules unless you pass `options` explicitly).
 
 **Output.** The framework's canonical output buffer is `TF × 13 ×
 max_n_bodies`:
@@ -224,7 +224,7 @@ Shipped kernels:
 - `SingularVortex()` — singular Biot–Savart kernel; the default for
   `Point{Vortex}`.
 - `PartitionedVortex(; sigma_row, rho_t=4.252)` — **the recommended default
-  for σ-carrying vortex systems** (task 032a Checkpoint D, 2026-08-07):
+  for σ-carrying vortex systems**:
   cancellation-safe regularized `gaussianerf` U/J inside the smoothing cutoff
   `r/σ_src ≤ rho_t`, exact singular Biot–Savart beyond it. Measured
   1.16–1.77x faster step-level than `RegularizedVortex` on H200 at identical
@@ -232,7 +232,7 @@ Shipped kernels:
   stream (class-split compaction + within-cell sub-Morton ordering).
 - `RegularizedVortex(; sigma_row, rho_t=4.789)` — regularized-everywhere
   Biot–Savart with the FLOWVPM default `gaussianerf` regularization (the only
-  regularization supported in the Integration Phase; the evaluation is
+  regularization currently supported; the evaluation is
   erf-free on device). The divergence-proof fallback.
 - `TwoPassVortex(; sigma_row, rho_t=4.252, rho_c=2.0)` — supported
   alternative: unmodified singular FMM plus an additive deficit sweep over
@@ -268,9 +268,8 @@ $$2^{\ell} < \frac{g_{\min}\, L_{\text{box}}}{\rho_t\, \sigma_{\max}}.$$
 
 If the configured geometry fails this test, the evaluation **throws**, naming
 the measured ratio and the admissible depth — it never silently runs on an
-inadequate stencil. The remedy is a smaller `ell` (or, in a later task,
-enlarging the deepest-level near set). `rho_t = 4.789` is the conservative
-cutoff at which the regularized and singular kernels agree to the phase
+inadequate stencil. The remedy is a smaller `ell`. `rho_t = 4.789` is the conservative
+cutoff at which the regularized and singular kernels agree to the
 tolerance $\varepsilon = 10^{-3}$.
 
 ### Custom kernels
@@ -335,11 +334,11 @@ for the legacy path. `DeviceResident()` eliminates those transfers entirely.
 Measured evidence (H200, $n = 10^6$, literature $P = 4$):
 
 - Fully host-resident lifecycle: **159.4 ms** vs **91.4 ms** device-resident
-  at Phase A — a factor of ≈ **1.7×**, entirely per-step body H2D/D2H plus
+  — a factor of ≈ **1.7×**, entirely per-step body H2D/D2H plus
   host-side packing/allocation.
-- After optimization the device-resident verdict cost is **9.591 ms** with
+- After optimization the device-resident step cost is **9.591 ms** with
   `body_uploads = 0`; the "including transfers" boundary added ≈ 2 ms at
-  Phase A scale.
+  this scale.
 
 Rule of thumb for your own scale — estimated per-step transfer time:
 

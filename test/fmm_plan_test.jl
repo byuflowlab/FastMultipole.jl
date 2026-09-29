@@ -3,7 +3,7 @@ FmmPlan: prebuilt-plan fmm! must reproduce the allocating fmm! entry point
 bitwise, across repeated calls with changed source strengths (the plan's
 validity contract: frozen geometry, mutable strengths).
 
-Motivated by FLOWPanel BRAINSTORM 021 Phase 2b: matrix-free Krylov solves
+Motivation: matrix-free Krylov solves (e.g. in FLOWPanel)
 rebuild both trees + lists on every operator apply; the plan path reuses them
 within a solve.
 =###############################################################################

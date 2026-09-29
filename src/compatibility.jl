@@ -781,10 +781,12 @@ get_n_bodies(sys::AbstractMatrix) = size(sys, 2)
 #--- setters ---#
 
 """
-    set_scalar_potential!(target_buffer, i_body, scalar_potential)
+    set_scalar_potential!(target_buffer, derivatives_switch, i_body, scalar_potential)
 
-Accumulates `scalar_potential` to `target_buffer`.
-
+Adds `scalar_potential` to the rows of column `i_body` given by [`scalar_potential_index`](@ref)`(derivatives_switch)`,
+and throws an `ArgumentError` if the switch did not request that output. The
+switchless form `set_scalar_potential!(target_buffer, i_body, scalar_potential)` assumed the fixed row
+layout and throws an `ArgumentError`.
 """
 set_scalar_potential!(system::Matrix, i, scalar_potential) = _switchless("set_scalar_potential!")
 function set_scalar_potential!(system::Matrix, switch::DerivativesSwitch{true,<:Any,<:Any}, i, scalar_potential)
@@ -794,10 +796,12 @@ set_scalar_potential!(system::Matrix, ::DerivativesSwitch{false,<:Any,<:Any}, i,
     throw(ArgumentError("scalar potential output is disabled for this target buffer"))
 
 """
-    set_gradient!(target_buffer, i_body, gradient)
+    set_gradient!(target_buffer, derivatives_switch, i_body, gradient)
 
-Accumulates `gradient` to `target_buffer`.
-
+Adds `gradient` to the rows of column `i_body` given by [`gradient_range`](@ref)`(derivatives_switch)`,
+and throws an `ArgumentError` if the switch did not request that output. The
+switchless form `set_gradient!(target_buffer, i_body, gradient)` assumed the fixed row
+layout and throws an `ArgumentError`.
 """
 set_gradient!(system::Matrix, i, gradient) = _switchless("set_gradient!")
 function set_gradient!(system::Matrix, switch::DerivativesSwitch{<:Any,true,<:Any}, i, gradient)
@@ -810,10 +814,12 @@ set_gradient!(system::Matrix, ::DerivativesSwitch{<:Any,false,<:Any}, i, gradien
     throw(ArgumentError("gradient output is disabled for this target buffer"))
 
 """
-    set_hessian!(target_buffer, i_body, hessian)
+    set_hessian!(target_buffer, derivatives_switch, i_body, hessian)
 
-Accumulates `hessian` to `target_buffer`.
-
+Adds `hessian` to the rows of column `i_body` given by [`hessian_range`](@ref)`(derivatives_switch)`,
+and throws an `ArgumentError` if the switch did not request that output. The
+switchless form `set_hessian!(target_buffer, i_body, hessian)` assumed the fixed row
+layout and throws an `ArgumentError`.
 """
 set_hessian!(system::Matrix, i, hessian) = _switchless("set_hessian!")
 function set_hessian!(system::Matrix, switch::DerivativesSwitch{<:Any,<:Any,true}, i, hessian)

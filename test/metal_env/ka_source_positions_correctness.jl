@@ -1,7 +1,6 @@
 # Correctness gate for `ka_collect_positions!` / `ka_extract_source_positions_kernel!`
-# (ext/FastMultipoleKAExt.jl), the KA port of `_radix_cache_collect_positions!`
-# (former CUDA lifecycle, removed) and `_cuda_extract_source_positions_kernel!`
-# -- the first stage of `update_cuda_radix_state!`, which gathers every
+# (ext/ka/ka_hierarchical_m2l.jl) -- the first step of the device state
+# update, which gathers every
 # system's xyz rows into one concatenated position array and records each body's
 # (system, within-system index) attribution.
 #

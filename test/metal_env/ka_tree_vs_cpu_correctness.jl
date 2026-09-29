@@ -23,7 +23,7 @@
 #     DIFFERENT CELL -- a discrete jump that silently rewrites every downstream
 #     interaction list while every float in sight still looks fine. That is why
 #     perm is compared elementwise WHEN the stable sortperm path is active.
-#     On the production path (CUDA's bounded counting sort, now ported) the
+#     On the production path (the bounded counting sort) the
 #     scatter is unstable by design, so perm is compared as per-cell SETS
 #     instead; ka_counting_sort_correctness.jl is the full gate for that path.
 #
@@ -153,7 +153,7 @@ function arm1(label, hcache, dcache)
     dg.n_cells  == nc || (nfail[] += 1; @printf("    FAIL n_cells %d vs %d\n", nc, dg.n_cells))
     A(x) = Array(x)
     # `perm`/`invperm` are elementwise-comparable ONLY on the stable sortperm
-    # path. The production path now takes CUDA's bounded counting sort, whose
+    # path. The production path takes the bounded counting sort, whose
     # atomic-cursor scatter is unstable by design, so within-cell body order is
     # run-dependent and an elementwise comparison would fail on correct code.
     # There, the invariant claim is cell membership as SETS -- checked below and

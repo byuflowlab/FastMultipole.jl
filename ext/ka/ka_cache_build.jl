@@ -195,4 +195,3 @@ end
 ka_radix_cache_device_build(backend, sources, args...; kwargs...) =
     ka_radix_cache_device_build(backend, FastMultipole.to_tuple(sources), args...;
         kwargs...)
-

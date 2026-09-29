@@ -1,9 +1,6 @@
-# Tests for the native flat coefficient buffer + typed views (Matrix Operator
-# Refactor, task 017). Promotes the standalone
-# MATRIX_OPERATOR_REFACTOR/scripts/coefficient_buffer_layout_verify.jl checks into
-# the suite (basis-index contiguity, legacy<->flat round-trip, channel layouts,
-# fixed-channel slab density, χ pruning), and adds a flat-vs-production kernel
-# round-trip that anchors the relaid flat kernels to the production [2,2,nh]
+# Tests for the native flat coefficient buffer + typed views: basis-index
+# contiguity, legacy<->flat round-trip, channel layouts, fixed-channel slab
+# density, χ pruning, and a flat-vs-production kernel round-trip that anchors the relaid flat kernels to the production [2,2,nh]
 # kernels in src/translate.jl.
 
 isdefined(@__MODULE__, :to_flat_buffer) || include("flat_buffer_helpers.jl")
@@ -15,7 +12,7 @@ using FastMultipole: harmonic_index, flat_basis_index, _operator_ncomplex,
     m2l_z_blocks!, m2l_z_block_length, apply_m2l_z_flat!,
     lamb_helmholtz_local_coeffs!, apply_lamb_helmholtz_local_flat!
 
-@testset "flat coefficient buffer layout (task 017)" begin
+@testset "flat coefficient buffer layout" begin
 
 ORDERS = (0, 1, 3, 6, 9)
 TF = Float64

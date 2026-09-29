@@ -115,11 +115,11 @@ end
 #     T_n(θ) = S_n * Z_n(θ) * S_n^{-1}
 #
 # where S_n is built
-# only from H(π/2) and Z_n(θ) carries the exp(i ν θ) phases. Production rebuilds
-# the full T matrix (Ts) on EVERY translation call via update_Ts! in src/rotate.jl;
-# its inner ν loop multiplies two angle-independent H(π/2) products by a scalar and
-# the angle-dependent cos/sin(ν θ). Profiling found this per-call rebuild to be
-# the dominant cost.
+# only from H(π/2) and Z_n(θ) carries the exp(i ν θ) phases. The octree path
+# rebuilds the full T matrix (Ts) on every translation call via update_Ts! in
+# src/rotate.jl; its inner ν loop multiplies two angle-independent H(π/2) products
+# by a scalar and the angle-dependent cos/sin(ν θ), and that rebuild dominates the
+# per-call cost.
 #
 # These operators move the angle-independent H(π/2) products into a precomputed
 # cache (the S blocks) so the per-call work collapses to a phase-weighted
@@ -253,7 +253,7 @@ For each `(n, m, mp)` with `0 <= mp <= m <= n`:
 with `trig(ν) = cos(ν β)` when `m+mp` is even, else `sin(ν β)`. The result is shared
 between the multipole and local apply kernels.
 
-`update_Ts!` re-runs the `cos/sin(ν β)` recurrence inside every `(n, m, mp)` triple,
+`update_Ts!` runs the `cos/sin(ν β)` recurrence inside every `(n, m, mp)` triple,
 which dominates the rebuild cost. Here the `cos(ν β)` / `sin(ν β)` values for
 `ν in 1:P` depend only on `β`, so they are materialized once (into the `trig`
 scratch, `cos` in `trig[1:P]` and `sin` in `trig[P+1:2P]`) and reused across all

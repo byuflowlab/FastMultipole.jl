@@ -73,11 +73,12 @@ function tune_fmm(target_systems::Tuple, source_systems::Tuple;
     #--- preallocate cache ---#
 
     # kwargs must be forwarded so the cache is allocated with the same target
-    # buffer layout (scalar_potential/gradient/hessian) as the tuning calls below
+    # buffer layout (scalar_potential/gradient/hessian) as the tuning calls below;
+    # they come first so the keywords after them keep this call a no-op evaluation
     t_fmm = @elapsed _, cache, _ = fmm!(target_systems, source_systems;
+                       kwargs...,
                        expansion_order=1, leaf_size_source,
                        nearfield=false, farfield=false, self_induced=false,
-                       kwargs...,
                        tune=true, update_target_systems=false
                       )
 

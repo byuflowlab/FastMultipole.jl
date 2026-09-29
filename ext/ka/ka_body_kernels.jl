@@ -521,11 +521,11 @@ function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
     return state
 end
 
-#------- element B2M: filaments (src/resident_elements.jl on the device) -------#
+#------- element B2M: filaments and panels (src/resident_elements.jl on the device) -------#
 #
 # An element's expansion is a recurrence over its whole (n, m) triangle, so one
 # workgroup per leaf cell strides its threads over the cell's bodies, each
-# running the shared `_res_filament_b2m!` on that body's slice of a
+# running the shared `_res_element_b2m!` on that body's slice of a
 # capacity-sized scratch (harmonics and coefficients per body), and then
 # strides over the flat rows summing the cell's bodies into the leaf node.
 # The scratch is allocated once per state at the body capacity and reused
@@ -547,6 +547,7 @@ function _ka_element_scratch(state, backend, ::Type{TF}, ndof::Integer, nh::Inte
     return sc
 end
 
+# serves every element body type, Filament and Panel alike
 @kernel function ka_b2m_filament_cells_kernel!(phi, chi, coef, harm, ::Val{BT},
         @Const(source_bodies), @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
         P, ndof_phi, ndof_chi, ncell, ::Type{TF}, ::Val{WG}, ::Val{SD}) where {BT,TF,WG,SD}
@@ -679,7 +680,8 @@ end
 # by the inner n loop, so extending that loop to P_active instead of stopping at
 # each target changes no value. The COEFFICIENTS are therefore bit-identical;
 # only the order in which the 13 outputs accumulate over (n,m) changes, which is
-# a Float32 rounding difference and why the gate scores relerr, not equality.
+# a Float32 rounding difference, so results match the host to relative error,
+# not bitwise.
 #
 # KA-ONLY BY CONSTRUCTION: this lives in the extension and the shared
 # `_resident_local_eval_flat*` are left exactly as they are, so the CPU host

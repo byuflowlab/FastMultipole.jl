@@ -102,7 +102,8 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         # ---- grid rebuild, stages 1-4 ----
     _utick!(:collect_positions, backend)
         ka_radix_keys_checked!(view(ctx.keys, 1:n), ctx.oob_flag, ctx.host_oob,
-            ctx.positions, cache.x_min, cache.box_extent, cache.h0, ell; workgroup)
+            ctx.positions, cache.x_min, cache.box_extent, cache.h0, ell;
+            ell_axes=cache.ell_axes, workgroup)
         kv = view(ctx.keys, 1:n)
         sk = view(ctx.sorted_keys, 1:n)
         # the bounded counting sort when the cache was built with a domain-sized
@@ -136,12 +137,9 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     _utick!(:occ_check, backend)
         if occ_changed
             ctx.epoch_id[] += 1
-            if track_epoch
-                copyto!(ctx.epoch_cell_keys, 1, grid.cell_keys, 1, n_cells)
-                ctx.epoch_prev_n[] = n
-                ctx.epoch_prev_n_cells[] = n_cells
-                ctx.epoch_have[] = true
-            end
+            # the snapshot is committed only once every epoch-derived stage has
+            # succeeded (end of this function); until then a retry must rebuild
+            ctx.epoch_have[] = false
             ka_radix_cell_centers!(grid.cell_centers, ctx.cell_coords, ckv, cache.x_min,
                 cache.h0, ell, n_cells; workgroup)
             n_nodes, max_count = ka_radix_level_nodes!(grid.node_keys, cache.level_offsets,
@@ -236,6 +234,15 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     end
     _utick!(:stage_groups, backend)
     KA.synchronize(backend)
+    # occupancy-epoch snapshot, after the node rebuild, direct pairs, windows
+    # and stage groups it stands for: a throw in any of them leaves no snapshot,
+    # so the next call rebuilds instead of trusting half-written state
+    if !direct_only && occ_changed && length(ctx.epoch_cell_keys) > 0
+        copyto!(ctx.epoch_cell_keys, 1, grid.cell_keys, 1, n_cells)
+        ctx.epoch_prev_n[] = n
+        ctx.epoch_prev_n_cells[] = n_cells
+        ctx.epoch_have[] = true
+    end
 
     counts = ctx.counts
     counts.n_bodies = n
@@ -269,4 +276,3 @@ end
 
 ka_update_radix_state!(cache::FastMultipole.RadixFMMCache, systems; kwargs...) =
     ka_update_radix_state!(cache, FastMultipole.to_tuple(systems); kwargs...)
-

@@ -64,9 +64,9 @@ end
 # shared solid-angle (tan) term with the extension-singularity guard.
 # The on-plane clause fires on tRz == 0 alone: tRz is snapped to an exact zero
 # by _elem_tri_source_doublet whenever it is at roundoff scale, so all edges of
-# a panel take the same branch and the PV cannot flip with the sign of FMA
-# junk (a device defect seen in production: den < 0 on 2 of 3
-# edges at a centroid makes atan(num, den) jump by ±π with the sign of num).
+# a panel take the same branch and the PV cannot flip with the sign of
+# roundoff (with fused multiply-add, den < 0 on 2 of 3 edges at a centroid
+# makes atan(num, den) jump by ±π with the sign of num).
 # relative tolerance of the singularity guards (extension line, on-plane snap,
 # self pair): 1e-12 in Float64, 1e-5 in Float32 (roundoff there is ~1e-7)
 @inline _elem_guard_tol(::Type{Float64}) = 1e-12
@@ -97,7 +97,7 @@ end
     tan_term = _elem_solid_angle_tan(tRx, tRy, tRz, ei, hi, ri, eip1, hip1, rip1,
         ds, dx, dy, R_dot_s)
     u = SVector{3,T}(dy/ds*log_term, -dx/ds*log_term, tan_term)
-    # potential term of this edge (PS block of compute_source_dipole), from the same prelims
+    # potential term of this edge (the source-panel potential edge sum), from the same prelims
     pe = ((tRx - vx_i)*dy - (tRy - vy_i)*dx) / ds * log_term + tRz * tan_term
     if !GRAD
         return u, zero(SMatrix{3,3,T,9}), pe

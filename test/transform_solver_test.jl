@@ -1,6 +1,6 @@
 #=##############################################################################
-transform_solver!: rigid-motion FastGaussSeidel reuse (FLOWPanel BRAINSTORM
-021). Requires the Gravitational solver-compat overloads defined at the top
+transform_solver!: rigid-motion FastGaussSeidel reuse. Requires the
+Gravitational solver-compat overloads defined at the top
 of solve_test.jl (influence!, target_influence_to_buffer!, value_to_strength!,
 strength_to_value, buffer_to_system_strength!) — include after solve_test.jl,
 or define them first when running standalone. `_rodrigues` comes from
@@ -95,11 +95,11 @@ fixed iteration count instead.
     @test err_stale > 1e-3                     # premise: staleness bites
     @test err_stale > 1e3 * err_transformed
 
-    # gradient solve on a transformed solver refuses (dense matrices embed
-    # build-time gradient rows, which do not rotate with the body)
-    @test_throws ArgumentError FastMultipole.solve!(sys1, fgs1;
-        scalar_potential=false, gradient=true, max_iterations=2,
-        tolerance=1e-3, verbose=false)
+    # a transformed solver accepts gradient solves: the dense matrices hold
+    # the (rigid-invariant) scalar influence, not gradient rows
+    FastMultipole.solve!(sys1, fgs1; scalar_potential=true, gradient=true,
+        max_iterations=2, tolerance=1e-3, verbose=false)
+    @test all(isfinite(b.strength) for b in sys1.bodies)
 
     # an untransformed solver still accepts gradient solves (scalar_potential
     # stays on: the Gravitational influence! compat reads the potential row)

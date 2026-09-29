@@ -1,8 +1,6 @@
 # Correctness gate for stage 3 of the in-place device grid rebuild:
-# `ka_radix_level_nodes!` (ext/FastMultipoleKAExt.jl), the KA port of the
-# per-level unique-node block of `_cuda_update_radix_grid_in_place!`
-# (former CUDA lifecycle, removed) -- the first block behind the stage-2
-# occupancy-epoch check.
+# `ka_radix_level_nodes!` (ext/ka/ka_grid_refresh.jl), the per-level
+# unique-node block -- the first block behind the stage-2 occupancy-epoch check.
 #
 # Oracle: `_refresh_radix_nodes!` (src/tree_batched.jl), the host node builder
 # `_radix_grid` runs, called on a host-side `DeviceRadixGrid` over plain
@@ -13,8 +11,8 @@
 #
 # Cell keys come from the stage-1 KA path, so the stages are gated on the same
 # data the driver hands between them. Cases sweep `ell` and cluster count (how
-# many levels collapse to a single node) and `first_level` (task 037 active-
-# level trimming: the trimmed columns are never keyed, so `level_counts` reads
+# many levels collapse to a single node) and `first_level` (active-level
+# trimming: the trimmed columns are never keyed, so `level_counts` reads
 # garbage there and the host loop must zero it before it reaches an offset).
 include("ka_backend.jl")
 using FastMultipole, Random, StaticArrays, Test

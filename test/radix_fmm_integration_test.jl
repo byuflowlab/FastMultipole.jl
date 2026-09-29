@@ -16,7 +16,7 @@ end
 _radix_potential_error(sys, ref) = maximum(abs.(sys.potential[1, :] .- ref.potential[1, :]))
 _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.potential[5:7, :]))
 
-@testset "radix fmm! production integration (task 023)" begin
+@testset "radix fmm! production integration" begin
 
     #--- (a) radix fmm! vs direct! through the public API ---#
 
@@ -76,7 +76,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     @test_throws ArgumentError fmm!(box_sys, box_cache)
     # constructor rejections
     @test_throws ArgumentError RadixFMMCache(err_sys; max_n_bodies=10)
-    @test_throws Exception RadixFMMCache(err_sys; device=true)   # no CUDA on test host
+    @test_throws Exception RadixFMMCache(err_sys; device=true)   # no GPU device backend on the test host
 
     #--- (e) Float32 and Lamb-Helmholtz variants ---#
 
@@ -96,7 +96,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     fmm!(sys_lh, cache_lh; scalar_potential=false, gradient=true)
     @test _radix_gradient_error(sys_lh, ref32) < 1e-4
 
-    #--- (f) DEBUG[]-on factored-operator host run (016b guard) ---#
+    #--- (f) DEBUG[]-on factored-operator host run ---#
 
     saved_debug = FastMultipole.DEBUG[]
     try
@@ -121,7 +121,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
         concat = generate_gravitational(seed + 9, nf)
         direct = _radix_direct_reference(seed + 9, nf)
         # The grouped-factored resident plan is a FLAT-path structure: under the
-        # task-027 hierarchical default the factored selection deliberately routes
+        # hierarchical default the factored selection deliberately routes
         # through the bounded concat engine (mirroring the host). Pin both caches
         # to the flat classifier so this block keeps comparing factored vs concat.
         factored_cache = RadixFMMCache(factored; expansion_order=P, ell=3,
@@ -149,7 +149,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
         @test maximum(abs.(factored.potential[5:7, :] .- concat.potential[5:7, :])) < 2e-4
     end
 
-    #--- (f3) factored GEMM branch (023a crossover) parity + allocation ---#
+    #--- (f3) factored GEMM branch (crossover) parity + allocation ---#
 
     # force every degree block through the BLAS branch so the crossover code path is
     # covered regardless of measured default thresholds and observed class widths
@@ -207,7 +207,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     @test _radix_potential_error(sys_b, ref_b) < 1e-6
     @test _radix_gradient_error(sys_b, ref_b) < 1e-4
 
-    #--- (h) measured option defaults (tasks 024 / 028) ---#
+    #--- (h) measured option defaults ---#
 
     # Precision depends only on the expansion order; the strategy also gates on the
     # Lamb-Helmholtz channel, the platform, and the dense operator footprint.
@@ -255,7 +255,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     @test exp_cache.state.options.m2l_strategy isa ConcatenatedFixedZM2L
 
     # Float32 at literature P = 4 must cost no measurable accuracy against Float64
-    # at the same geometry: the stencil truncation error dominates (task 028 §4.3).
+    # at the same geometry: the stencil truncation error dominates.
     f32 = generate_gravitational(seed + 5, 1500)
     f64 = generate_gravitational(seed + 5, 1500)
     ref32 = _radix_direct_reference(seed + 5, 1500)
@@ -270,7 +270,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     @test e32 <= 1.05 * e64
 end
 
-@testset "radix rectangular bounds (task 037 stages 1-2)" begin
+@testset "radix rectangular bounds" begin
 
     seed = 20260813
     origin = SVector(0.0, 0.0, 0.0)
@@ -320,7 +320,7 @@ end
         @test rcache.box_extent == SVector(4.0, 1.0, 1.0)
         @test rcache.h0 == 2.0
         # capacity accounting: per-axis products, not the cubic 8^L bounds;
-        # levels below the flat-top root R=2 are trimmed (task 037 stage 3)
+        # levels below the flat-top root R=2 are trimmed
         @test rcache.root_level == 2
         @test rcache.max_cells == 256          # 2^(4+2+2)
         @test rcache.max_nodes == 4 + 32 + 256 # levels 2:4 only
@@ -346,7 +346,7 @@ end
         oob.bodies[1].strength)
     @test_throws ArgumentError fmm!(oob, ocache)
 
-    #--- (e) rectangular host recenter! (task 037 stage 2) ---#
+    #--- (e) rectangular host recenter! ---#
 
     # aspect ~ 4 : 0.8 : 0.8 so the tight-extent ratio sits comfortably inside
     # the (1/8, 1/4] band that resolves ell_axes = (4, 2, 2) at ell = 4 — the

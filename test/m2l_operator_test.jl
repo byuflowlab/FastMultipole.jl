@@ -3,13 +3,13 @@
 # (`build_dense_m2l_operator!`), against the legacy multipole_to_local!. The
 # pipeline runs uniformly at P_active. For Val(false), P_active = P and every row must match production at P.
 # For Val(true), φ is physical only through P_phi while χ is carried at
-# P_active = P_phi + 1 (theory/lamb-helmholtz-accuracy-order.md): φ above P_phi is
+# P_active = P_phi + 1: φ above P_phi is
 # zero-padded by the pipeline, so the result equals a production run at P_active on
 # a source whose φ padding is zeroed, with no nonphysical φ output above P_phi.
 
-@testset "M2L operator pipeline (task 014)" begin
+@testset "M2L operator pipeline" begin
 
-# native flat coefficient buffer helpers (task 017): operators now consume
+# native flat coefficient buffer helpers: operators consume
 # FlatCoefficientBuffer; the parity references stay in the legacy [2,2,nh] layout.
 isdefined(@__MODULE__, :to_flat_buffer) || include("flat_buffer_helpers.jl")
 
@@ -23,7 +23,7 @@ M2L_OFFSETS = (
 
 # Random *physical* coefficients [2,2,nh]: m = 0 rows are real (zero imaginary),
 # as every real multipole/local expansion is. FactoredRotationM2L's rank-1 mode
-# decomposition (task 013c) reproduces production only on this physical subspace;
+# decomposition reproduces production only on this physical subspace;
 # MaterializedYRotationM2L is a full linear operator (exact for any input).
 function m2l_random_source(P, TF, ::Val{LH}) where LH
     src = FastMultipole.initialize_expansion(P, TF)
@@ -128,7 +128,7 @@ M2L_RTOL = 1e-7
 
 #--- Val(false): uniform order P, all rows vs production at P ---#
 
-# P = 1 covers the smallest order of the 019b always-dense decision (the dense
+# P = 1 covers the smallest order of the always-dense operator path (the dense
 # operator path has no small-P recurrence fallback, so it must be exact there too).
 @testset "parity vs production (Val(false)): $(variant)  P=$(P)" for
         variant in (MaterializedYRotationM2L(),),

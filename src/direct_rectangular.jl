@@ -77,9 +77,11 @@ end
 # before a device backend extension installs its method would land here and
 # die inside Threads.@threads scalar indexing with an opaque error. Fail with
 # the actual fix instead.
+_rect_root_parent(a) = (p = parent(a); p === a ? a : _rect_root_parent(p))
+
 function _rect_assert_host(out, targets, sources)
-    (parent(out) isa Array && parent(targets) isa Array &&
-        parent(sources) isa Array) || throw(ArgumentError(
+    (_rect_root_parent(out) isa Array && _rect_root_parent(targets) isa Array &&
+        _rect_root_parent(sources) isa Array) || throw(ArgumentError(
         "direct_rectangular! host method called with non-host arrays " *
         "($(typeof(out))); for GPU arrays load a device backend extension " *
         "first (and pass out/targets/sources all on the same side)"))
@@ -139,7 +141,7 @@ end
 
 function _rect_host!(out, targets, kernel, sources, grad::Val, pot::Val)
     n_sources = size(sources, 2)
-    Threads.@threads :static for i in 1:size(targets, 2)
+    Threads.@threads for i in 1:size(targets, 2)
         _rect_target!(out, targets, kernel, sources, i, n_sources, grad, pot)
     end
     return nothing

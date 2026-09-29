@@ -2,16 +2,13 @@
 # (nearfield -> B2M -> M2M -> M2L -> L2L -> L2B), run end to end on a KA
 # backend and compared against FastMultipole's OWN host resident lifecycle.
 #
-# Why this file exists: the session-3 note recorded `ka_lifecycle_body!` as
-# "reachable only on a CUDA-resident state", and the acceptance gate was
-# therefore aimed straight at H200. That is not true. `host_radix_state`
-# (src/resident/) builds a complete
-# `DeviceResidentRadixState` with no CUDA anywhere -- host body matrix, host
+# Why this gate runs anywhere: `host_radix_state` (src/resident/) builds a
+# complete `DeviceResidentRadixState` from host arrays -- host body matrix, host
 # tree routes, flat coefficient buffers and a real `ResidentOperatorWorkspace`
 # -- and `run_host_radix_lifecycle!` runs every stage of it on the CPU. The
 # state type carries no array type in its parameters, so the same state is
 # constructible on any KA backend. That makes the whole lifecycle body gateable
-# locally, against an exact CPU oracle, before any HPC round trip.
+# locally, against an exact CPU oracle, without a GPU cluster.
 #
 # The oracle is `run_host_radix_lifecycle!` over host `Array`s: B2M, then the
 # operator pipeline M2M -> M2L -> L2L -> L2B, with `_add_host_direct_pairs!`
@@ -28,11 +25,11 @@
 #      ka_device_cache_correctness.jl and ka_production_driver_correctness.jl.
 #   3. Timing. Metal-vs-CPU numbers say nothing about KA-vs-native on one GPU.
 #
-# What it DOES cover is every stage FLOWVPM's uniform per-step lifecycle runs,
-# plus the sequencing between them -- which is where a silent wrong answer of
-# the kind that bit the M2L branch would show up.
+# What it DOES cover is every stage a vortex particle method's uniform per-step
+# lifecycle runs, plus the sequencing between them -- which is where a silent
+# wrong answer from a mis-sequenced stage would show up.
 #
-# Body types: `Point{Vortex}` with Lamb-Helmholtz on (what FLOWVPM runs), and
+# Body types: `Point{Vortex}` with Lamb-Helmholtz on (the vortex-particle case), and
 # `Point{Source}` with and without the channel (the library default body, the
 # gravitational test system), each against the same host lifecycle.
 include("ka_backend.jl")
@@ -125,11 +122,11 @@ end
 
 #------- cases -------#
 
-# (P, ell, n) -- Float32 throughout, the precision Metal supports and the one
-# the CUDA arm runs for FLOWVPM.
+# (P, ell, n) -- Float32 throughout, the precision Metal supports and the usual
+# choice on CUDA.
 # A unit run takes the short case list; FM_FULL_SWEEP=1 takes the full one.
-# The sweep is a robustness study, not a check: it belongs in a debugging pass
-# (debug/run_full_sweeps.sh), not in every run.
+# The sweep is a robustness study, not a check: it belongs in a debugging pass,
+# not in every run.
 const CASES_FULL = [
     (2, 3,   64),
     (4, 3,  256),

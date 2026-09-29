@@ -87,13 +87,14 @@ function _host_radix_sort_permutation(body_keys::AbstractVector{UInt64})
     return perm
 end
 
-function _radix_fill_body_data!(body_keys, body_system, body_index, systems::Tuple, x_min, h0, ell::Int)
+function _radix_fill_body_data!(body_keys, body_system, body_index, systems::Tuple, x_min, h0, ell::Int,
+        ell_axes::SVector{3,Int}=SVector(ell, ell, ell))
     i_global = 0
     @inbounds for (i_system, system) in enumerate(systems)
         for i_body in 1:get_n_bodies(system)
             i_global += 1
             position = get_position(system, i_body)
-            coord = radix_cell_coord(x_min, h0, ell, position)
+            coord = radix_cell_coord(x_min, h0, ell, position, ell_axes)
             body_keys[i_global] = morton_key(coord, ell)
             body_system[i_global] = i_system
             body_index[i_global] = i_body
@@ -168,14 +169,17 @@ end
 @inline Base.length(grid::RadixGrid) = length(grid.cell_keys)
 @inline Base.length(grid::DeviceRadixGrid) = grid.n_cells
 
-function radix_cell_coord(x_min::SVector{3,TF}, h0::TF, ell::Integer, x) where TF
+# Leaf-cell coordinate of `x`. Axis `a` spans `2^ell_axes[a]` cells (a
+# rectangular box); a body on an axis' upper face clamps into its last cell.
+function radix_cell_coord(x_min::SVector{3,TF}, h0::TF, ell::Integer, x,
+        ell_axes::SVector{3,Int}=SVector(Int(ell), Int(ell), Int(ell))) where TF
     G = 1 << Int(ell)
     Δ = (2 * h0) / G
     xi = TF.(x)
     return SVector{3,Int}(
-        clamp(floor(Int, (xi[1] - x_min[1]) / Δ), 0, G - 1),
-        clamp(floor(Int, (xi[2] - x_min[2]) / Δ), 0, G - 1),
-        clamp(floor(Int, (xi[3] - x_min[3]) / Δ), 0, G - 1),
+        clamp(floor(Int, (xi[1] - x_min[1]) / Δ), 0, (1 << ell_axes[1]) - 1),
+        clamp(floor(Int, (xi[2] - x_min[2]) / Δ), 0, (1 << ell_axes[2]) - 1),
+        clamp(floor(Int, (xi[3] - x_min[3]) / Δ), 0, (1 << ell_axes[3]) - 1),
     )
 end
 
@@ -403,23 +407,27 @@ end
 
 """
     update_radix_grid!(grid, systems, body_keys, sort_scratch, sort_counts,
-        sort_offsets, level_offsets)
+        sort_offsets, level_offsets, first_level=0; ell_axes)
 
 Rebuild a capacity-sized host `DeviceRadixGrid` in place from the systems' current
-positions using the grid's **fixed** `x_min`/`h0`/`ell`. Every array
+positions using the grid's **fixed** `x_min`/`h0`/`ell`. Nodes are built from
+level `first_level` down; levels above it stay empty. `ell_axes` (default
+`(ell, ell, ell)`) gives the per-axis leaf depth of a rectangular box, so a body
+on a short axis' upper face lands in that axis' last cell. Every array
 field keeps its identity; `n_bodies`/`n_cells` are refreshed. Returns the grid.
 """
 function update_radix_grid!(grid::DeviceRadixGrid{TF}, systems::Tuple,
         body_keys::Vector{UInt64}, sort_scratch::Vector{Int}, sort_counts::Vector{Int},
         sort_offsets::Vector{Int}, level_offsets::Vector{Int},
-        first_level::Integer=0) where TF
+        first_level::Integer=0;
+        ell_axes::SVector{3,Int}=SVector(grid.ell, grid.ell, grid.ell)) where TF
     n = get_n_bodies(systems)
     n > 0 || throw(ArgumentError("update_radix_grid! requires at least one body"))
     resize!(body_keys, n)
     resize!(grid.body_system, n)
     resize!(grid.body_index, n)
     _radix_fill_body_data!(body_keys, grid.body_system, grid.body_index, systems,
-        grid.x_min, grid.h0, grid.ell)
+        grid.x_min, grid.h0, grid.ell, ell_axes)
     resize!(grid.perm, n)
     resize!(sort_scratch, n)
     _host_radix_sort_permutation!(grid.perm, sort_scratch, sort_counts, sort_offsets,

@@ -292,12 +292,11 @@ _radix_options_for(::Type{TF}, m2l_strategy) where TF =
     RadixLifecycleOptions(; precision=TF, operator=MaterializedYRotationM2L(),
         m2l_strategy)
 
-# Default separation policy. `HierarchicalRigidStencil` replaced the flat
-# `ConstantPAnalyticStencil` as the production default: the flat classifier's
-# accepted-offset set grows with `ell` (cell width shrinks at fixed epsilon), so its
-# route count scales as `offsets(ell) x cells`, while the rigid stencil's offset set
-# is level-invariant. An explicit `stencil_epsilon` still selects the flat policy, so
-# existing callers keep their exact behavior.
+# Default separation policy: `HierarchicalRigidStencil`. The flat
+# `ConstantPAnalyticStencil` classifier's accepted-offset set grows with `ell` (cell
+# width shrinks at fixed epsilon), so its route count scales as
+# `offsets(ell) x cells`, while the rigid stencil's offset set is level-invariant.
+# An explicit `stencil_epsilon` selects the flat policy.
 function _default_radix_policy(policy, P::Int, ::Type{TF}, LH::Bool, h0, ell::Int,
         device::Bool, stencil_epsilon, near_radius2, window_classes,
         level_radii2=nothing) where TF
@@ -580,7 +579,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     options = _options_with_body_type(options, BT)
     if dk_trait != _default_direct_kernel(BT)
         # explicit trait choice; a conflicting explicit options choice is an error
-        (options.direct_kernel == _default_direct_kernel(BT) ||
+        (!options.direct_kernel_explicit ||
             options.direct_kernel == dk_trait) || throw(ArgumentError(
             "options.direct_kernel=$(options.direct_kernel) conflicts with the " *
             "direct_kernel(system) trait $dk_trait"))
@@ -918,11 +917,10 @@ function recenter!(cache::RadixFMMCache{TF,LH}, systems;
                 ext_tight[3] > zero(TF)) || throw(ArgumentError(
                 "recenter! on a rectangular cache derived a degenerate " *
                 "(zero-extent) axis; pass explicit bounds=(x_min, box_size)"))
-            x_min_new = lo .- TF(padding) .* ext_tight
             L_new = (1 + 2 * TF(padding)) .* ext_tight
             # `_resolve_radix_ell_axes` pads short axes upward to power-of-two
             # leaf counts. Apply that padding equally on both faces for derived
-            # bounds; retaining the raw lower face shifts the leaf lattice and
+            # bounds; keeping the raw lower face would shift the leaf lattice and
             # can inflate occupied/direct/M2L counts for a centered cloud.
             center_new = (lo + hi) / 2
             _, _, snapped_extent =
@@ -1053,7 +1051,7 @@ function _update_host_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) 
     t_stage = profiling ? time_ns() : UInt64(0)
     update_radix_grid!(grid, systems, cache.body_keys, cache.sort_scratch,
         cache.sort_counts, cache.sort_offsets, cache.level_offsets,
-        cache.root_level)
+        cache.root_level; ell_axes=cache.ell_axes)
     profiling && (ctx.update_stage_ns[1] = time_ns() - t_stage)
     n_cells = grid.n_cells
     n_nodes = cache.level_offsets[end]
@@ -1251,5 +1249,3 @@ function _radix_cache_target_buffers!(cache::RadixFMMCache{TF}, switches::Tuple)
         Tuple(zeros(TF, target_buffer_rows(switch), cache.max_n_bodies) for switch in switches)
     end
 end
-
-

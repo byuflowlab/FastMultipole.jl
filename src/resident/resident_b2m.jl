@@ -5,11 +5,10 @@
 # offset `-Δx` evaluated on the fly (matching the scalar resident B2M's
 # per-(n,m) recurrence style), with the octree path's `get_n`/`get_nm1` negative-m
 # conjugate-symmetry rules folded into `_resident_vortex_q`. No sign changes:
-# the octree chain `evaluate_local ∘ multipole_to_local! ∘ vortex B2M` was
-# verified machine-exact against the analytic Biot-Savart field for an
-# off-center vorton, and the resident M2L and L2B were verified numerically
-# identical to those octree stages — so the octree vortex coefficients are the
-# physical convention here. (The octree *Point{Source}* B2M's strength negation
+# the octree chain `evaluate_local ∘ multipole_to_local! ∘ vortex B2M` matches
+# the analytic Biot-Savart field of an off-center vorton to machine precision,
+# and the resident M2L and L2B match those octree stages, so the octree vortex
+# coefficients are the physical convention here. (The octree *Point{Source}* B2M's strength negation
 # is an octree-pipeline quirk the resident scalar B2M deliberately omits; it has
 # no analogue for the vortex.)
 
@@ -365,4 +364,3 @@ function _host_twopass_deficit_kernel!(kernel::TwoPassVortex,
     end
     return output
 end
-

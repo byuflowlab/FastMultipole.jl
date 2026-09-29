@@ -42,6 +42,111 @@ end
 _meta_system(seed, n) = MetaGravitational(generate_gravitational(seed, n),
     collect(1.0:n) .+ 0.5)
 
+# rotation by `theta` about the unit axis `n`
+_core_rot(n, theta) = (k = n / norm(n); K = SMatrix{3,3}(0, k[3], -k[2], -k[3], 0, k[1],
+    k[2], -k[1], 0); SMatrix{3,3}(1.0I) + sin(theta) * K + (1 - cos(theta)) * K * K)
+
+# point sources on a sphere whose solver influence is the gradient projected on
+# the body's outward normal (rows 6:8 of the source buffer) plus a panel-like
+# self term c*q: the adjoint double-layer equation -q/(2A) + dphi/dn = f of a
+# panel method (A the area per body). Rigid-motion invariant.
+struct FluxGravitational{TF}
+    inner::Gravitational{TF}
+    normals::Vector{SVector{3,TF}}
+    flux::Vector{TF}
+    c::TF
+end
+Base.eltype(::FluxGravitational{TF}) where TF = TF
+CORE_FM.get_n_bodies(s::FluxGravitational) = CORE_FM.get_n_bodies(s.inner)
+CORE_FM.get_position(s::FluxGravitational, i) = CORE_FM.get_position(s.inner, i)
+CORE_FM.data_per_body(::FluxGravitational) = 8
+CORE_FM.strength_dims(::FluxGravitational) = 1
+CORE_FM.has_vector_potential(::FluxGravitational) = false
+function CORE_FM.source_system_to_buffer!(buffer, i_buffer, s::FluxGravitational, i_body)
+    CORE_FM.source_system_to_buffer!(buffer, i_buffer, s.inner, i_body)
+    buffer[6:8, i_buffer] .= s.normals[i_body]
+end
+CORE_FM.body_to_multipole!(s::FluxGravitational, args...) =
+    CORE_FM.body_to_multipole!(Point{Source}, s, args...; scale_strength=-1.0)
+function CORE_FM.direct!(tb, ti, sw::CORE_FM.DerivativesSwitch, s::FluxGravitational, sb, si)
+    CORE_FM.direct!(tb, ti, sw, s.inner, sb, si)
+    r = CORE_FM.gradient_range(sw)
+    for i in ti, j in si       # self term, stored along the normal
+        if tb[1, i] == sb[1, j] && tb[2, i] == sb[2, j] && tb[3, i] == sb[3, j]
+            for k in 1:3
+                tb[r[k], i] += s.c * sb[5, j] * sb[5 + k, j]
+            end
+        end
+    end
+end
+CORE_FM.buffer_to_target_system!(s::FluxGravitational, i, sw, buffer, ib) =
+    CORE_FM.buffer_to_target_system!(s.inner, i, sw, buffer, ib)
+function CORE_FM.influence!(influence, target_buffer, sw::CORE_FM.DerivativesSwitch,
+        ::FluxGravitational, source_buffer)
+    r = CORE_FM.gradient_range(sw)
+    for i in eachindex(influence)
+        influence[i] = target_buffer[r[1], i] * source_buffer[6, i] +
+            target_buffer[r[2], i] * source_buffer[7, i] +
+            target_buffer[r[3], i] * source_buffer[8, i]
+    end
+    return influence
+end
+function CORE_FM.target_influence_to_buffer!(target_buffer, i_buffer, sw::CORE_FM.DerivativesSwitch,
+        s::FluxGravitational, i_target)
+    target_buffer[CORE_FM.gradient_range(sw), i_buffer] .= -s.flux[i_target] .* s.normals[i_target]
+end
+CORE_FM.value_to_strength!(source_buffer, ::FluxGravitational, i_body, value) =
+    (source_buffer[5, i_body] = value)
+CORE_FM.strength_to_value(strength, ::FluxGravitational) = strength[1]
+function CORE_FM.buffer_to_system_strength!(s::FluxGravitational, i_body, source_buffer, i_buffer)
+    b = s.inner.bodies[i_body]
+    s.inner.bodies[i_body] = typeof(b)(b.position, b.radius, source_buffer[5, i_buffer])
+end
+
+# n Fibonacci points on the unit sphere at x -> R*x + t, outward normals rotated
+# with them, zero strengths, and a fixed random right-hand side
+function _flux_system(seed, n, R, t)
+    rng = MersenneTwister(seed)
+    flux = 1 .+ 0.5 .* randn(rng, n)
+    b = zeros(8, n)
+    normals = Vector{SVector{3,Float64}}(undef, n)
+    golden = pi * (3 - sqrt(5))
+    for i in 1:n
+        z = 1 - 2 * (i - 0.5) / n
+        rho = sqrt(1 - z^2)
+        p = SVector(rho * cos(golden * i), rho * sin(golden * i), z)
+        normals[i] = R * p
+        b[1:3, i] .= R * p + t
+        b[4, i] = 1e-3
+    end
+    return FluxGravitational(Gravitational(b), normals, flux, -n / (8 * pi))
+end
+
+# rectangular-box leaf fill plus one extra body (8 x 2 x 2 unit leaves)
+function _rect_face_system(extra)
+    pts = SVector{3,Float64}[]
+    for z in 0:1, y in 0:1, x in 0:7
+        push!(pts, SVector(x + 0.5, y + 0.5, z + 0.5))
+    end
+    push!(pts, extra)
+    n = length(pts); b = zeros(8, n)
+    for (i, p) in enumerate(pts)
+        b[1:3, i] .= p; b[4, i] = 1e-3; b[5, i] = 1.0 / n
+    end
+    return Gravitational(b)
+end
+
+# singular point source for direct_rectangular!, rows x y z q
+struct CoreRectSource <: AbstractRectangularKernel end
+CORE_FM.rect_source_rows(::CoreRectSource) = 4
+@inline function CORE_FM.rect_pair(::CoreRectSource, target::SVector{3,T}, sources, q,
+        ::Val{GRAD}, ::Val{POT}) where {T,GRAD,POT}
+    @inbounds d = target - SVector{3,T}(sources[1, q], sources[2, q], sources[3, q])
+    r2 = dot(d, d)
+    u = iszero(r2) ? zero(SVector{3,T}) : sources[4, q] / (4 * T(pi) * r2 * sqrt(r2)) * d
+    return u, zero(SMatrix{3,3,T,9}), zero(T)
+end
+
 @testset "core regressions" begin
 
     @testset "FmmPlan keeps and refreshes target metadata" begin
@@ -201,6 +306,209 @@ _meta_system(seed, n) = MetaGravitational(generate_gravitational(seed, n),
             plan.direct_list, plan.derivatives_switches, (sys,); sample=true)
         @test est.est_build_time >= 0
         @test plan.target_tree.buffers == before
+    end
+
+    @testset "rectangular box: body on a short axis' upper face" begin
+        @test CORE_FM.radix_cell_coord(SVector(0.0, 0.0, 0.0), 4.0, 3,
+            SVector(3.3, 2.0, 1.2), SVector(3, 1, 1)) == SVector(3, 1, 1)
+        for extra in (SVector(3.3, 2.0, 1.2), SVector(7.3, 1.2, 2.0))
+            sys = _rect_face_system(extra)
+            cache = RadixFMMCache(sys; expansion_order=6, ell=3,
+                bounds=(SVector(0.0, 0.0, 0.0), (8.0, 2.0, 2.0)))
+            fmm!(sys, cache; scalar_potential=true)
+            @test cache.state.counts.n_nodes <= cache.max_nodes
+            @test cache.state.counts.n_cells <= cache.max_cells
+            ref = _rect_face_system(extra)
+            direct!(ref; scalar_potential=true)
+            @test maximum(abs.(sys.potential[1, :] .- ref.potential[1, :])) /
+                maximum(abs, ref.potential[1, :]) < 1e-4
+        end
+    end
+
+    @testset "Float32 M2L out of range throws for every plan" begin
+        strategies = (
+            RadixLifecycleOptions(; precision=Float32, m2l_strategy=ConcatenatedFixedZM2L()),
+            RadixLifecycleOptions(; precision=Float32, m2l_strategy=ConcatenatedFixedZM2L(),
+                operator=CORE_FM.FactoredRotationM2L()),
+            RadixLifecycleOptions(; precision=Float32,
+                m2l_strategy=CORE_FM.PrecomputedFactoredYM2L(),
+                operator=CORE_FM.FactoredRotationM2L()),
+            RadixLifecycleOptions(; precision=Float32,
+                m2l_strategy=CORE_FM.DenseTranslationM2L()),
+        )
+        small(seed) = generate_gravitational(seed, 300; bodies_fun=b -> (b[1:4, :] .*= 0.01))
+        for opt in strategies, kw in ((;), (; stencil_epsilon=1e-4))
+            err = try
+                RadixFMMCache(small(81); expansion_order=12, ell=3, options=opt, kw...)
+                nothing
+            catch e
+                e
+            end
+            @test err isa ArgumentError
+            msg = err === nothing ? "" : sprint(showerror, err)
+            @test occursin("Float32 range", msg) || occursin("exceed the Float32", msg)
+            @test occursin("Float64", msg) && occursin("expansion order", msg)
+        end
+        # the materialized z-translation factors alone overflow at r = 1/16, P = 9
+        blocks = zeros(Float32, CORE_FM.m2l_z_block_length(9))
+        CORE_FM.m2l_z_blocks!(blocks, 0.0625f0, 9)
+        @test_throws ArgumentError CORE_FM._check_m2l_blocks_finite(blocks, 0.0625f0, 9,
+            "FactoredRotationM2L")
+        # the concat factorial ratios (n + np)!/np! overflow Float32 from P = 25
+        @test_throws ArgumentError CORE_FM._m2l_dense_factorial_matrix(
+            zeros(Float32, 0, 0), Float32, 25)
+        @test all(isfinite, CORE_FM._m2l_dense_factorial_matrix(zeros(Float32, 0, 0),
+            Float32, 24))
+        # Float64 at the same small box still runs and stays finite
+        sys = small(82)
+        cache = RadixFMMCache(sys; expansion_order=12, ell=3,
+            options=RadixLifecycleOptions(; precision=Float64,
+                m2l_strategy=ConcatenatedFixedZM2L()))
+        fmm!(sys, cache; scalar_potential=true)
+        @test all(isfinite, sys.potential[1, :])
+    end
+
+    @testset "planned fmm! carries its docstring" begin
+        @test occursin("Run the FMM using the precomputed", string(@doc fmm!))
+    end
+
+    @testset "repeated transform_tree! keeps boxes bounded" begin
+        sys = generate_gravitational(91, 400)
+        plan = CORE_FM.FmmPlan((sys,), (sys,); expansion_order=4, leaf_size_source=20)
+        tree = plan.source_tree
+        box0 = [b.box for b in tree.branches]
+        R1 = _core_rot(SVector(0.0, 0.0, 1.0), deg2rad(1.0))
+        # one call is abs.(R) * box
+        CORE_FM.transform_tree!(tree, R1, zero(SVector{3,Float64}))
+        @test all(isapprox(tree.branches[i].box, abs.(R1) * box0[i]; rtol=1e-14)
+            for i in eachindex(box0))
+        for _ in 2:360
+            CORE_FM.transform_tree!(tree, R1, zero(SVector{3,Float64}))
+        end
+        @test all(all(tree.branches[i].box .<= sqrt(3) .* box0[i] .* (1 + 1e-12) .+ 1e-14)
+            for i in eachindex(box0))
+        # a full turn returns the reference boxes
+        @test all(isapprox(tree.branches[i].box, box0[i]; rtol=1e-9, atol=1e-12)
+            for i in eachindex(box0))
+    end
+
+    @testset "Float32 evaluate_local returns Float32" begin
+        P = 5
+        rng = MersenneTwister(5)
+        sw = DerivativesSwitch(true, true, true; third_derivative=true)
+        results = Dict{DataType,Any}()
+        for TF in (Float32, Float64)
+            rng = MersenneTwister(5)
+            loc = CORE_FM.initialize_expansion(P, TF)
+            loc .= TF.(randn(rng, size(loc)...))
+            harm = CORE_FM.initialize_harmonics(P, TF)
+            grad = CORE_FM.initialize_gradient_n_m(P, TF; third_derivative=true)
+            for LH in (false, true)
+                res = CORE_FM.evaluate_local(SVector{3,TF}(0.1, 0.2, -0.15), harm, grad,
+                    loc, P, Val(LH), sw)
+                @test res[1] isa TF
+                @test eltype(res[2]) == TF
+                @test eltype(res[3]) == TF
+                @test eltype(CORE_FM.packed_data(res[4])) == TF
+                results[TF] = res
+            end
+        end
+        @test isapprox(results[Float32][2], results[Float64][2]; rtol=1e-4)
+    end
+
+    @testset "direct_rectangular! runs inside a user @threads loop" begin
+        src = vcat(rand(MersenneTwister(1), 3, 40), rand(MersenneTwister(2), 1, 40))
+        tgt = rand(MersenneTwister(3), 3, 30) .+ 2
+        ref = direct_rectangular!(zeros(3, 30), tgt, CoreRectSource(), src)
+        outs = [zeros(3, 30) for _ in 1:4]
+        Threads.@threads for k in 1:4
+            direct_rectangular!(outs[k], tgt, CoreRectSource(), src)
+        end
+        @test all(o == ref for o in outs)
+        # reshaped views of host arrays are host arrays
+        store = zeros(3 * 30)
+        out = reshape(view(store, 1:(3 * 30)), 3, 30)
+        direct_rectangular!(out, tgt, CoreRectSource(), src)
+        @test out == ref
+    end
+
+    @testset "explicit options kernel conflicting with the trait throws" begin
+        isdefined(Main, :SmoothedVortex) || include("interface_test_systems.jl")
+        sv = SmoothedVortex(generate_vortex(92, 200), fill(0.01, 200))
+        err = try
+            RadixFMMCache(sv; expansion_order=4, ell=3,
+                options=RadixLifecycleOptions(; direct_kernel=SingularVortex()))
+            nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError
+        @test err !== nothing && occursin("conflicts with the direct_kernel(system) trait",
+            sprint(showerror, err))
+        # the trait alone still resolves
+        @test RadixFMMCache(sv; expansion_order=4, ell=3).options.direct_kernel ==
+            RegularizedVortex(; sigma_row=8)
+    end
+
+    @testset "element kernel parameters are validated" begin
+        for family in 1:3
+            @test VortexFilamentKernel(; family).family == family
+        end
+        @test_throws ArgumentError VortexFilamentKernel(; family=0)
+        @test_throws ArgumentError VortexFilamentKernel(; family=4)
+        for order in 1:3
+            @test VortexSheetPanelKernel(; order).order == order
+        end
+        @test_throws ArgumentError VortexSheetPanelKernel(; order=0)
+        @test_throws ArgumentError VortexSheetPanelKernel(; order=4)
+    end
+
+    @testset "extra target systems receive their metadata rows" begin
+        main = generate_gravitational(93, 300)
+        cache = RadixFMMCache(main; expansion_order=4, ell=3)
+        extra = _meta_system(94, 50)
+        for call in 1:2
+            extra.meta .= collect(1.0:50) .* (call + 1)
+            fill!(extra.seen, NaN)
+            fmm!((main, extra), (main,), cache; scalar_potential=true)
+            @test extra.seen == extra.meta
+        end
+    end
+
+    @testset "default solve! after transform_solver!" begin
+        n, seed = 600, 95
+        R = _core_rot(SVector(0.2, 1.0, -0.5), deg2rad(63.0))
+        t = SVector(0.6, -0.3, 0.4)
+        I3 = SMatrix{3,3}(1.0I)
+        kw = (; expansion_order=8, multipole_acceptance=0.5, leaf_size=40)
+        solve_kw = (; max_iterations=30, inner_iterations=1, tolerance=1e-10,
+            final_update=false, verbose=false)
+        strengths(s) = [b.strength for b in s.inner.bodies]
+
+        # reference: built and solved at the original pose
+        s0 = _flux_system(seed, n, I3, zero(t))
+        f0 = FastGaussSeidel((s0,), (s0,); kw...)
+        CORE_FM.solve!(s0, f0; solve_kw...)
+        x0 = strengths(s0)
+        @test all(isfinite, x0) && any(!iszero, x0)
+
+        # built at the original pose, moved rigidly, transformed, then the
+        # default (gradient=true) solve
+        s1 = _flux_system(seed, n, I3, zero(t))
+        f1 = FastGaussSeidel((s1,), (s1,); kw...)
+        moved = _flux_system(seed, n, R, t)
+        s1.inner.bodies .= moved.inner.bodies
+        s1.normals .= moved.normals
+        CORE_FM.transform_solver!(f1, (s1,), R, t)
+        CORE_FM.solve!(s1, f1; solve_kw...)
+        x1 = strengths(s1)
+        @test norm(x1 - x0) / norm(x0) < 1e-8
+
+        # a solver rebuilt at the transformed pose agrees to the FMM accuracy
+        s2 = _flux_system(seed, n, R, t)
+        f2 = FastGaussSeidel((s2,), (s2,); kw...)
+        CORE_FM.solve!(s2, f2; solve_kw...)
+        @test norm(x1 - strengths(s2)) / norm(strengths(s2)) < 1e-5
     end
 
     @testset "threaded loops run nested" begin

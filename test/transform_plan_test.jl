@@ -1,6 +1,6 @@
 #=##############################################################################
 transform_plan!: rigid-motion plan reuse, including NearfieldInfluenceCache
-persistence (FLOWPanel BRAINSTORM 021).
+persistence.
 
 For the scalar-potential operator the cached near-field blocks are EXACTLY
 invariant under rigid motion (scalar kernel of relative distances), so a
