@@ -179,7 +179,7 @@ end
 ```
 
 !!! warning
-    Target buffers are compact. Hard-coded target rows `4`, `5:7`, and `8:16` are valid only when `metadata=0` and only when all preceding standard outputs are enabled. Custom target code should use switch-aware getters, setters, and range helpers.
+    Target buffers are compact, so hard-coded target rows `4`, `5:7`, and `8:16` are wrong whenever an output is disabled or metadata rows are present. The switchless getters and setters (`get_gradient(buffer, i)`, `set_hessian!(buffer, i, h)`, ...) throw an `ArgumentError`; custom target code must use the switch-aware getters, setters, and range helpers.
 
 ## Migrating From the Fixed-Row Buffer Layout
 
@@ -208,10 +208,6 @@ To migrate a consumer:
    range helpers (`scalar_potential_index`, `gradient_range`,
    `hessian_range`, `third_derivative_range`, `extra_output_range`, `metadata_index`).
 
-With metadata disabled and every preceding output enabled, third derivatives occupy rows
-`17:34`. Hessians retain their existing dense 9-row layout. The packed order is
-`(xx,xy,xz,yy,yz,zz)` for each vector component `x`, `y`, then `z`; the last two tensor
-indices are symmetric. `solve!` does not expose third-order output.
 2. Guard each output with its switch parameter (`PS`, `GS`, `HS`) rather than
    writing unconditionally; the switch-aware setters for disabled outputs
    throw instead of corrupting, which converts a silent bug into a loud one.
@@ -222,3 +218,8 @@ indices are symmetric. `solve!` does not expose third-order output.
 4. Re-run your accuracy checks with at least one output disabled
    (e.g. `scalar_potential=false, hessian=true`) — the configuration that
    exposes fixed-row assumptions — in addition to the all-enabled case.
+
+With metadata disabled and every preceding output enabled, third derivatives occupy rows
+`17:34`. Hessians retain their existing dense 9-row layout. The packed order is
+`(xx,xy,xz,yy,yz,zz)` for each vector component `x`, `y`, then `z`; the last two tensor
+indices are symmetric. `solve!` does not expose third-order output.

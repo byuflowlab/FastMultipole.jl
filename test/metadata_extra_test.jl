@@ -127,6 +127,17 @@ end
     @test_throws ArgumentError FastMultipole.set_hessian!(buffer, switch, 1, SMatrix{3,3,Float64,9}(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0))
 end
 
+@testset "switchless accessors throw" begin
+    buffer = zeros(34, 1)
+
+    @test_throws ArgumentError FastMultipole.get_scalar_potential(buffer, 1)
+    @test_throws ArgumentError FastMultipole.get_gradient(buffer, 1)
+    @test_throws ArgumentError FastMultipole.get_hessian(buffer, 1)
+    @test_throws ArgumentError FastMultipole.set_scalar_potential!(buffer, 1, 1.0)
+    @test_throws ArgumentError FastMultipole.set_gradient!(buffer, 1, SVector(1.0, 2.0, 3.0))
+    @test_throws ArgumentError FastMultipole.set_hessian!(buffer, 1, SMatrix{3,3,Float64,9}(1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0))
+end
+
 @testset "fmm cache switch layout mismatch" begin
     system = generate_gravitational(123, 8)
     gradient_switches = FastMultipole.DerivativesSwitch(false, true, false, (system,))

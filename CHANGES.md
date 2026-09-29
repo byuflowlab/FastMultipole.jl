@@ -1,6 +1,6 @@
 # Change Log
 
-## v2.3.0
+## v3.0.0
 
 - GPU execution through a KernelAbstractions package extension (any KA backend; CUDA and Metal tested, AMDGPU and oneAPI untested and may need modification): the
   device-resident radix FMM lifecycle (`RadixFMMCache(...; device=true)`) for
@@ -39,10 +39,11 @@
 
 - Target buffer layout: the output rows follow the `DerivativesSwitch`
   (`scalar_potential_index`, `gradient_range`, `hessian_range`,
-  `third_derivative_range`, `extra_output_range`, `metadata_index`). The
-  switchless accessors (`get_gradient(buffer, i)`, `set_hessian!(buffer, i, h)`,
-  and the scalar-potential and third-derivative forms) now throw an
-  `ArgumentError` naming the switch-aware form; code that indexed rows directly
+  `third_derivative_range`, `extra_output_range`, `metadata_index`). Every
+  switchless get/set form (scalar potential, gradient, hessian, third
+  derivative; e.g. `get_gradient(buffer, i)`, `set_hessian!(buffer, i, h)`) now
+  throws an `ArgumentError` naming the switch-aware form; v2.3.0 read and wrote
+  the legacy rows `4`, `5:7`, `8:16` silently. Code that indexed rows directly
   (`buffer[5:7, i]`) must migrate by hand. `get_previous_influence` is removed;
   carry prior-step values in metadata rows (`metadata_per_body`,
   `metadata_to_buffer!`).

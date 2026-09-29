@@ -251,7 +251,7 @@ Compatibility function used to update target systems. It should be overloaded fo
 
 Note that any system acting only as a source (and not as a target) need not overload `buffer_to_target_system!`.
 
-Target buffers are compact when metadata or disabled outputs are involved. The no-switch matrix getters still read the legacy rows `4`, `5:7`, and `8:16`, but new target-buffer code should use the switch-aware getter functions.
+Target buffers are compact when metadata or disabled outputs are involved. The no-switch matrix getters (`get_scalar_potential(target_buffer, i)` etc.) throw an `ArgumentError`; the switch-aware getter functions are required.
 
 For some slight performance improvements, the booleans `PS`, `GS`, and `HS` can be used as a switch to indicate whether the scalar potential, vector field, and vector gradient are to be stored, respectively. Since they are compile-time parameters, `if` statements relying on them will not incur a runtime cost.
 
@@ -271,7 +271,7 @@ Updates the `target_buffer` with influences from `target_system` for the `i_targ
 * `set_gradient!(target_buffer, derivatives_switch, i_buffer, gradient)` should be used when gradient output is enabled
 * `set_hessian!(target_buffer, derivatives_switch, i_buffer, hessian)` should be used when hessian output is enabled
 
-The no-switch matrix setters still write legacy rows `4`, `5:7`, and `8:16`; switch-aware setters are required for compact target buffers.
+The no-switch matrix setters (`set_scalar_potential!(target_buffer, i, value)` etc.) throw an `ArgumentError`; the switch-aware setters are required.
 
 """
 function target_influence_to_buffer!(target_buffer, i_buffer, derivatives_switch, target_system, i_target)
@@ -732,11 +732,11 @@ function get_position(system::AbstractMatrix{TF}, i) where TF
     return val
 end
 
-# The switchless accessors assumed the fixed pre-2.3 row layout; with a
+# The switchless accessors assumed the legacy fixed row layout (rows 4, 5:7, 8:16); with a
 # preceding output disabled they read or wrote the wrong rows silently. They
 # now refuse, naming the switch-aware form (reviewer request).
 _switchless(name) = throw(ArgumentError(
-    "$name(buffer, i, ...) assumes the fixed row layout of FastMultipole < 2.3 and " *
+    "$name(buffer, i, ...) assumes the legacy fixed row layout (rows 4, 5:7, 8:16) and " *
     "reads or writes the wrong rows when any output is disabled; use " *
     "$name(buffer, derivatives_switch, i, ...) (see docs: Advanced usage, output layout)"))
 get_scalar_potential(system::AbstractMatrix, i) = _switchless("get_scalar_potential")
@@ -749,10 +749,7 @@ get_gradient(system::AbstractMatrix{TF}, switch::DerivativesSwitch{<:Any,true,<:
 get_gradient(system::AbstractMatrix, ::DerivativesSwitch{<:Any,false,<:Any}, i) =
     throw(ArgumentError("gradient output is disabled for this target buffer"))
 
-get_hessian(system::AbstractMatrix{TF}, i) where TF =
-    @inbounds SMatrix{3,3,TF,9}(system[8, i], system[9, i], system[10, i],
-    system[11, i], system[12, i], system[13, i],
-    system[14, i], system[15, i], system[16, i])
+get_hessian(system::AbstractMatrix, i) = _switchless("get_hessian")
 function get_hessian(system::AbstractMatrix{TF}, switch::DerivativesSwitch{<:Any,<:Any,true}, i) where TF
     r = hessian_range(switch)
     return @inbounds SMatrix{3,3,TF,9}(system[r[1], i], system[r[2], i], system[r[3], i],
