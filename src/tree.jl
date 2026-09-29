@@ -355,18 +355,14 @@ end
 
 #--- buffers ---#
 
-function allocate_target_buffer(TF, system, ::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM}
+function allocate_target_buffer(::Val{TF}, system, ::DerivativesSwitch{PS,GS,HS,NO,NM}) where {TF,PS,GS,HS,NO,NM}
     switch = DerivativesSwitch{PS,GS,HS,NO,NM}()
     buffer = zeros(TF, target_buffer_rows(switch), get_n_bodies(system))
     return buffer
 end
 
-function allocate_source_buffer(TF, system)
+function allocate_source_buffer(::Val{TF}, system) where TF
     buffer = zeros(TF, data_per_body(system), get_n_bodies(system))
-    if TF <: ReverseDiff.TrackedReal
-        tp = ReverseDiff.tape(system)
-        init_rd_array!(buffer, tp)
-    end
     return buffer
 end
 
@@ -411,13 +407,13 @@ Allocates buffers for the given systems.
 
     * if `target==false`, each matrix has size `(M,N)`, where `N` is the number of bodies in the system, and `M` is determined by the user-defined [`source_system_to_buffer!`](@ref FastMultipole.source_system_to_buffer!) function
 
-"""
+""" 
 function allocate_buffers(systems::Tuple, target::Bool, TF, switches)
     # create buffers
     if target
-        buffers = [allocate_target_buffer(TF, system, switch) for (system, switch) in zip(systems, switches)]
+        buffers = Array{TF, 2}[allocate_target_buffer(Val(TF), system, switch) for (system, switch) in zip(systems, switches)]
     else
-        buffers = [allocate_source_buffer(TF, system) for system in systems]
+        buffers = Array{TF, 2}[allocate_source_buffer(Val(TF), system) for system in systems]
     end
     return buffers
 end

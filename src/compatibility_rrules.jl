@@ -5,7 +5,8 @@
 #    And the Jacobian/jvp entries would also just be the identity matrix.
 #    Long story short, it's better to write explicit pullbacks for array assignments instead of a general rule.
 
-function target_to_buffer!(buffer::Matrix{<:ReverseDiff.TrackedReal}, system, sort_index=1:get_n_bodies(system))
+#=function target_to_buffer!(buffer::Matrix{<:ReverseDiff.TrackedReal}, system, sort_index=1:get_n_bodies(system))
+    error("needs revisions if ever called")
     buffer_val_star = ReverseDiff.value.(buffer)
     tp = ReverseDiff.tape(system)
     for i_body in 1:get_n_bodies(system)
@@ -50,7 +51,7 @@ end
     end
     return nothing
     
-end
+end=#
 
 function source_system_to_buffer_pullback!(buffer, i_body, system, sort_index_i_body)
     throw("source_system_to_buffer_pullback! not overloaded for type $(typeof(system))")
@@ -251,36 +252,40 @@ function init_rd_array!(arr::AbstractArray{<:ReverseDiff.TrackedReal}, tp)
 
 end
 
-function target_to_buffer!(buffer::Matrix{<:ReverseDiff.TrackedReal}, system, target::Bool, sort_index=1:get_n_bodies(system))
+#=
+function target_to_buffer!(buffer::Matrix, system, sort_index=1:get_n_bodies(system), switch=DerivativesSwitch(true, true, true, system))
+    if Threads.nthreads() > 1 && get_n_bodies(system) > MIN_BODIES
+        target_to_buffer_multithread!(buffer, system, sort_index, switch)
+    else
+        for i_body in 1:get_n_bodies(system)
+            i_sorted = sort_index[i_body]
+            buffer[1:3, i_body] .= get_position(system, i_sorted)
+            metadata_to_buffer!(buffer, switch, i_body, system, i_sorted)
+        end
+    end
+end
+=#
+
+function target_to_buffer!(buffer::Matrix{<:ReverseDiff.TrackedReal}, system, sort_index=1:get_n_bodies(system), switch=DerivativesSwitch(true, true, true, system))
     
     if Threads.nthreads() > 1 && get_n_bodies(system) > MIN_BODIES
         error("multithreading case not implemented for ReverseDiff yet.")
-        target_to_buffer_multithread!(buffer, system, target, sort_index)
+        target_to_buffer_multithread!(buffer, system, sort_index, switch)
     else
-        buffer_star = zeros(ReverseDiff.valtype(eltype(buffer)), 5, get_n_bodies(system))
+        buffer_star = zeros(ReverseDiff.valtype(eltype(buffer)), 3 + metadata_per_body(system), get_n_bodies(system))
         for i_body in 1:get_n_bodies(system)
             i_sorted = sort_index[i_body]
-            buffer_star[1, i_body] = buffer[1, i_body].value
-            buffer_star[2, i_body] = buffer[2, i_body].value
-            buffer_star[3, i_body] = buffer[3, i_body].value
-            buffer_star[4, i_body] = buffer[17, i_body].value
-            buffer_star[5, i_body] = buffer[18, i_body].value
-            x, y, z = get_position(system, i_sorted)
-            buffer[1, i_body].value = x.value
-            buffer[2, i_body].value = y.value
-            buffer[3, i_body].value = z.value
-            if target
-                prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
-                buffer[17, i_body].value = prev_potential.value
-                buffer[18, i_body].value = prev_velocity.value
-            end
+            # since get_position is defined outside FastMultipole, we will also require the forward-mode value-only version and the reverse-mode pullback to be defined outside FastMultipole
+            position_to_buffer__value!(buffer, i_body, system, i_sorted, buffer_star)
+            # same reasoning as position_to_buffer__value!
+            metadata_to_buffer__value!(buffer, switch, i_body, system, i_sorted, buffer_star)
         end
     end
     tp = ReverseDiff.tape(buffer)
     ReverseDiff.record!(tp,
                         ReverseDiff.SpecialInstruction,
                         target_to_buffer2!,
-                        (buffer, system, target, sort_index),
+                        (buffer, system, sort_index, switch),
                         nothing,
                         buffer_star)
     return nothing
@@ -290,27 +295,18 @@ target_to_buffer2!() = error() # dummy function to disambiguate two different ta
 
 function ReverseDiff.special_reverse_exec!(instruction::ReverseDiff.SpecialInstruction{typeof(target_to_buffer2!)})
 
-    buffer, system, target, sort_index = instruction.input
+    buffer, system, sort_index, switch = instruction.input
     buffer_star = instruction.cache
     
     if Threads.nthreads() > 1 && get_n_bodies(system) > MIN_BODIES
         error("multithreading case not implemented for ReverseDiff yet.")
-        target_to_buffer_multithread!(buffer, system, target, sort_index)
+        target_to_buffer_multithread!(buffer, system, sort_index, switch)
     else
         for i_body in 1:get_n_bodies(system)
             i_sorted = sort_index[i_body]
-            get_position_pullback!(system, i_sorted, buffer[1:3, i_body])
-            for j=1:3
-                buffer[j, i_body].value = buffer_star[j, i_body]
-                buffer[j, i_body].deriv = 0.0
-            end
-            if target
-                get_previous_influence_pullback!(system, i_sorted, buffer[17:18, i_body])
-                for j=17:18
-                    buffer[j, i_body].value = buffer_star[j-13, i_body]
-                    buffer[j, i_body].deriv = 0.0
-                end
-            end
+            # we require user definitions for these
+            position_to_buffer__pullback!(buffer, i_body, system, i_sorted, buffer_star)
+            metadata_to_buffer__pullback!(buffer, switch, i_body, system, i_sorted, buffer_star)
         end
     end
     return nothing
@@ -319,25 +315,28 @@ end
 
 function ReverseDiff.special_forward_exec!(instruction::ReverseDiff.SpecialInstruction{typeof(target_to_buffer2!)})
 
-    buffer, system, target, sort_index = instruction.input
+    buffer, system, sort_index, switch = instruction.input
+    buffer_star = instruction.cache
 
     if Threads.nthreads() > 1 && get_n_bodies(system) > MIN_BODIES
         error("multithreading case not implemented for ReverseDiff yet.")
-        target_to_buffer_multithread!(buffer, system, target, sort_index)
+        target_to_buffer_multithread!(buffer, system, sort_index, switch)
     else
         for i_body in 1:get_n_bodies(system)
             i_sorted = sort_index[i_body]
-            x, y, z = get_position(system, i_sorted)
-            buffer[1, i_body].value = x.value
-            buffer[2, i_body].value = y.value
-            buffer[3, i_body].value = z.value
-            if target
-                prev_potential, prev_velocity = get_previous_influence(system, i_sorted)
-                buffer[17, i_body].value = prev_potential.value
-                buffer[18, i_body].value = prev_velocity.value
-            end
+            # since get_position is defined outside FastMultipole, we will also require the forward-mode value-only version and the reverse-mode pullback to be defined outside FastMultipole
+            position_to_buffer__value!(buffer, i_body, system, i_sorted, buffer_star)
+            # same reasoning as position_to_buffer__value!
+            metadata_to_buffer__value!(buffer, switch, i_body, system, i_sorted, buffer_star)
         end
     end
     return nothing
 
 end
+
+position_to_buffer__value!(buffer, i_body, system, i_sorted, buffer_star) = error("position to buffer forward pass not defined")
+metadata_to_buffer__value!(buffer, switch, i_body, system, i_sorted, buffer_star) = error("metadata to buffer forward pass not defined")
+
+position_to_buffer__pullback!(buffer, i_body, system, i_sorted, buffer_star) = error("position to buffer reverse pass not defined")
+metadata_to_buffer__pullback!(buffer, switch, i_buffer, system, i_body, buffer_star) = extra_target_data_to_buffer__pullback!(buffer, i_buffer, system, i_body, buffer_star)
+extra_target_data_to_buffer__pullback!(buffer, i_body, system, i_sorted, buffer_star) = error("metadata to buffer reverse pass (or extra target data to buffer reverse pass) not defined")

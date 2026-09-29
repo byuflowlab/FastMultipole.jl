@@ -157,3 +157,21 @@ function ReverseDiff.special_reverse_exec!(instruction::ReverseDiff.SpecialInstr
     return nothing
     
 end
+
+
+
+function allocate_target_buffer(::Val{TF}, system, ::DerivativesSwitch{PS,GS,HS,NO,NM}) where {PS,GS,HS,NO,NM,TF<:ReverseDiff.TrackedReal}
+    switch = DerivativesSwitch{PS,GS,HS,NO,NM}()
+    buffer = zeros(TF, target_buffer_rows(switch), get_n_bodies(system))
+    tp = ReverseDiff.tape(system)
+    init_rd_array!(buffer, tp)
+    return buffer
+end
+
+function allocate_source_buffer(::Val{TF}, system) where TF <: ReverseDiff.TrackedReal
+    buffer = zeros(TF, data_per_body(system), get_n_bodies(system))
+    tp = ReverseDiff.tape(system)
+    init_rd_array!(buffer, tp)
+    return buffer
+end
+
