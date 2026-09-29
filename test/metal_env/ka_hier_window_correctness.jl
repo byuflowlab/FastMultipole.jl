@@ -53,15 +53,11 @@ function run_case(seed, n_bodies, ell, P; window_classes=8)
     noffsets = length(ctx.tables.push_offsets)
     K = max(min(ctx.window_classes, noffsets), 1)
     lo = ctx.first_m2l_level
-    # widest per-level node count -- bounds the device flag/prefix buffers
-    max_level_nodes = maximum(diff(ctx.level_offsets[1:(grid.ell + 2)]))
 
     # ---- device context ----
-    hctx = ext.ka_hierarchical_context(Float32, DEV_BACKEND, ctx.tables,
-        ctx.class_level, ctx.class_offset, ctx.effective_offsets,
-        ctx.level_class_of, Int[], ctx.apply_plan, Int(grid.ell),
-        ctx.first_m2l_level, Int(max_level_nodes), occ;
-        window_classes=ctx.window_classes)
+    hctx = ext.ka_hierarchical_context(DEV_BACKEND, ctx.tables,
+        ctx.level_class_of, ctx.apply_plan, Int(grid.ell),
+        ctx.first_m2l_level, occ; window_classes=ctx.window_classes)
     # Only the first `n_nodes` columns of the host grid are initialized; the
     # tail is undefined memory, so convert the valid prefix and leave the rest 0.
     n_nodes = ctx.level_offsets[grid.ell + 2]

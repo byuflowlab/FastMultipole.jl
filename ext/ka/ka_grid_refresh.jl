@@ -14,9 +14,10 @@
 # clamp. The bounds test uses the per-axis `box_extent`; the cell size (and so
 # the key) still comes from the cubic `2h0`.
 #
-# Host oracle for the gate: `_radix_fill_body_data!`,
-# `_host_radix_sort_permutation` and `_compress_radix_cells`
-# (src/tree_batched.jl), which are exactly these three steps on the CPU.
+# Host oracle for the gate: `_radix_fill_body_data!` (src/tree_batched.jl)
+# plus the test reference `_host_radix_sort_permutation` and
+# `_compress_radix_cells` (test/radix_reference.jl), which are exactly these
+# three steps on the CPU.
 
 # leaf index of a scaled coordinate, clamped to 0:G-1 without throwing (NaN
 # lands on an arbitrary in-range cell; the caller flags it)

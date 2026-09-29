@@ -26,11 +26,8 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         route_capacity::Int, direct_capacity::Int,
         basis_info::FastMultipole.OperatorBasisInfo{B,LH}, ::Val{LH};
         hierarchical_tables=nothing,
-        class_level::Vector{Int32}=Int32[],
-        class_offset::Matrix{Int32}=Matrix{Int32}(undef, 3, 0),
         hierarchical_level_class_of::Array{Int32,3}=Array{Int32}(undef, 0, 0, 0),
-        hierarchical_level_radii2::Vector{Int}=Int[],
-        max_level_nodes::Int=0, hessian::Bool=false,
+        hessian::Bool=false,
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
         box_extent::SVector{3,TF}=SVector{3,TF}(2 * h0, 2 * h0, 2 * h0),
         root_level::Int=0, first_m2l_level::Int=2,
@@ -103,10 +100,9 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
     # The M2L routes are compacted straight into the epoch window cache
     # (`hctx.win_*`, sized to the measured route total), so no per-window route
     # staging is allocated.
-    hierarchical_ctx = ka_hierarchical_context(TF, backend, hierarchical_tables,
-        class_level, class_offset, accepted, hierarchical_level_class_of,
-        hierarchical_level_radii2, apply_plan, ell, first_m2l_level,
-        max_level_nodes, occupancy; window_classes=stencil_policy.window_classes)
+    hierarchical_ctx = ka_hierarchical_context(backend, hierarchical_tables,
+        hierarchical_level_class_of, apply_plan, ell, first_m2l_level,
+        occupancy; window_classes=stencil_policy.window_classes)
 
     dpb = maximum(FastMultipole.data_per_body(system) for system in sources)
     n_output_rows = hessian ? 13 : 4
@@ -150,7 +146,6 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         epoch_cell_keys=_z(UInt64, max_cells),
         epoch_flag=_z(Int32, 1),
         host_epoch_flag=zeros(Int32, 1),
-        epoch_prev_n=Ref(0),
         epoch_prev_n_cells=Ref(0),
         epoch_have=Ref(false),
         epoch_id=Ref(0),                 # bumps whenever the occupied-cell set changes

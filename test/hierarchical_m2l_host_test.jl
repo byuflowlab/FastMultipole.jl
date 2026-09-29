@@ -2,6 +2,7 @@ using FastMultipole
 using FastMultipole.StaticArrays
 using Random
 using Test
+@isdefined(host_radix_state) || include("radix_reference.jl")
 
 if !isdefined(@__MODULE__, :Gravitational)
     include("gravitational.jl")
@@ -126,7 +127,10 @@ _hier_step_allocated(sys, cache) =
             (ell - 1) * length(ctx.tables.push_offsets)
         @test any(==(2), ctx.class_level)
         @test any(==(ell), ctx.class_level)
+        # route totals are counted by the M2L stage, which generates the windows
+        fmm!(sys, cache; scalar_potential=true, gradient=true)
         @test sum(ctx.routes_per_level) == ctx.total_routes
+        @test ctx.total_routes == cache.state.counts.n_routes
         @test ctx.last_window_routes <= cache.route_capacity
     end
 
@@ -137,7 +141,7 @@ _hier_step_allocated(sys, cache) =
             coords in (dense_coords, boundary_coords, sparse_coords)
         qleaf = last(schedule)
         base = _hier_policy(4, qleaf, ell)
-        policy = HIER_FM._hierarchical_stencil_with_schedule(base, schedule)
+        policy = _hierarchical_stencil_with_schedule(base, schedule)
         sys = _hier_system(coords, ell)
         cache = RadixFMMCache(sys; expansion_order=4, ell,
             bounds=(SVector(0.0, 0.0, 0.0), 1.0), policy)
@@ -176,6 +180,7 @@ _hier_step_allocated(sys, cache) =
         policy=_hier_policy(4, 12, 5))
     big_ctx = big_cache.state.interaction_list
     bigC = big_cache.state.counts.n_cells
+    fmm!(big_sys, big_cache; scalar_potential=true, gradient=true)
     @test big_ctx.total_routes > 0
     @test big_ctx.total_routes < 0.1 * bigC^2
     @test count(>(0), big_ctx.routes_per_level) > 1
@@ -254,7 +259,8 @@ _hier_step_allocated(sys, cache) =
     HIER_FM._launch_host_b2m!(c8.state)
     HIER_FM._launch_host_m2m!(c8.state)
     HIER_FM._launch_host_m2l!(c8.state)
-    @test all(>(0), ctx8.update_stage_ns)
+    @test all(>(0), ctx8.update_stage_ns[[1, 2, 3, 5]])
+    @test ctx8.update_stage_ns[4] == 0     # route generation runs in the M2L stage
     @test all(>(0), ctx8.m2l_level_ns[3:(ell + 1)])
     @test timing_ids ==
         (objectid(ctx8.update_stage_ns), objectid(ctx8.m2l_level_ns))
@@ -409,9 +415,9 @@ _hier_step_allocated(sys, cache) =
     @test_throws ArgumentError RigidHierarchicalTables(23)
     @test_throws ArgumentError rigid_stencil_epsilon(4, 0.5, 3, 7)
     @test_throws ArgumentError HierarchicalRigidStencil(4, 1.0; window_classes=0)
-    @test_throws ArgumentError HIER_FM._hierarchical_stencil_with_schedule(
+    @test_throws ArgumentError _hierarchical_stencil_with_schedule(
         _hier_policy(4, 5, 3), (5, 6))
-    @test_throws ArgumentError HIER_FM._hierarchical_stencil_with_schedule(
+    @test_throws ArgumentError _hierarchical_stencil_with_schedule(
         _hier_policy(4, 5, 3), (6, 6))
     # The schedule is public on the policy constructor and on the cache; the
     # same three invariants are enforced through either entry point.

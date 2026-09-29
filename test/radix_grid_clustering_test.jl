@@ -1,6 +1,7 @@
 using FastMultipole
 using FastMultipole.StaticArrays
 using Test
+@isdefined(host_radix_state) || include("radix_reference.jl")
 
 @testset "radix grid clustering" begin
     @test FastMultipole.morton_key(0, 0, 0, 2) == UInt64(0)
@@ -25,7 +26,7 @@ using Test
         0.0 0.0 0.0 0.0
     ]
     boundary_grid = RadixGrid(boundary_positions, 2)
-    @test FastMultipole.radix_resolution(boundary_grid) == 4
+    @test radix_resolution(boundary_grid) == 4
     @test FastMultipole.radix_cell_coord(boundary_grid, SVector(0.0, 0.0, 0.0))[1] == 0
     @test FastMultipole.radix_cell_coord(boundary_grid, SVector(1.0, 0.0, 0.0))[1] == 3
     @test FastMultipole.radix_cell_coord(boundary_grid, SVector(0.25, 0.0, 0.0))[1] == 1
@@ -51,23 +52,23 @@ using Test
     @test grid.body_system == fill(1, size(positions, 2))
     @test grid.body_index == collect(1:size(positions, 2))
 
-    @test FastMultipole.radix_cell_width(grid) == grid.h0
+    @test radix_cell_width(grid) == grid.h0
 
-    c000 = FastMultipole.radix_cell_center(grid, SVector(0, 0, 0))
-    c111 = FastMultipole.radix_cell_center(grid, SVector(1, 1, 1))
-    @test c111 - c000 ≈ SVector(FastMultipole.radix_cell_width(grid), FastMultipole.radix_cell_width(grid), FastMultipole.radix_cell_width(grid))
+    c000 = radix_cell_center(grid, SVector(0, 0, 0))
+    c111 = radix_cell_center(grid, SVector(1, 1, 1))
+    @test c111 - c000 ≈ SVector(radix_cell_width(grid), radix_cell_width(grid), radix_cell_width(grid))
 
-    i000 = FastMultipole.radix_cell_index(grid, SVector(0, 0, 0))
-    i111 = FastMultipole.radix_cell_index(grid, SVector(1, 1, 1))
+    i000 = radix_cell_index(grid, SVector(0, 0, 0))
+    i111 = radix_cell_index(grid, SVector(1, 1, 1))
     @test i000 == 1
     @test i111 == 3
-    @test FastMultipole.radix_cell_index(grid, SVector(0, 1, 0)) == 0
-    @test FastMultipole.radix_cell_index(grid, SVector(2, 0, 0)) == 0
-    @test FastMultipole.radix_cell_index(grid, SVector(-1, 0, 0)) == 0
-    @test FastMultipole.radix_cell_index(grid, SVector(0, 2, 0)) == 0
-    @test FastMultipole.radix_cell_index(grid, SVector(0, -1, 0)) == 0
-    @test FastMultipole.radix_cell_index(grid, SVector(0, 0, 2)) == 0
-    @test FastMultipole.radix_cell_index(grid, SVector(0, 0, -1)) == 0
+    @test radix_cell_index(grid, SVector(0, 1, 0)) == 0
+    @test radix_cell_index(grid, SVector(2, 0, 0)) == 0
+    @test radix_cell_index(grid, SVector(-1, 0, 0)) == 0
+    @test radix_cell_index(grid, SVector(0, 2, 0)) == 0
+    @test radix_cell_index(grid, SVector(0, -1, 0)) == 0
+    @test radix_cell_index(grid, SVector(0, 0, 2)) == 0
+    @test radix_cell_index(grid, SVector(0, 0, -1)) == 0
     @test collect(body_indices(grid, i000)) == [1, 3]
 
     empty_grid = RadixGrid(zeros(3, 0), 1)
@@ -126,7 +127,7 @@ using Test
     @test [body_ref(tuple_grid, i) for i in 1:n_tuple] ==
         [SVector(1, 1), SVector(1, 2), SVector(1, 3), SVector(2, 1), SVector(2, 2), SVector(2, 3)]
 
-    mixed_cell = FastMultipole.radix_cell_index(tuple_grid, FastMultipole.radix_cell_coord(tuple_grid, SVector(0.10, 0.10, 0.10)))
+    mixed_cell = radix_cell_index(tuple_grid, FastMultipole.radix_cell_coord(tuple_grid, SVector(0.10, 0.10, 0.10)))
     @test collect(body_indices(tuple_grid, mixed_cell)) == [1, 2, 4, 5]
     @test [body_ref(tuple_grid, i) for i in body_indices(tuple_grid, mixed_cell)] ==
         [SVector(1, 1), SVector(1, 2), SVector(2, 1), SVector(2, 2)]

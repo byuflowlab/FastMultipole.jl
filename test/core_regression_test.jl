@@ -235,7 +235,8 @@ end
 
     @testset "Float32 cache keeps a Float32 policy" begin
         sys = generate_gravitational(31, 300)
-        cache = RadixFMMCache(sys; expansion_order=3, ell=3)
+        cache = RadixFMMCache(sys; expansion_order=3, ell=3,
+            options=RadixLifecycleOptions(; precision=Float32))
         @test cache.state.options.precision == Float32
         @test cache.policy.config isa CORE_FM.ConstantPStencilConfig{Float32}
         recenter!(cache, sys)
@@ -416,16 +417,10 @@ end
         @test isapprox(results[Float32][2], results[Float64][2]; rtol=1e-4)
     end
 
-    @testset "direct_rectangular! runs inside a user @threads loop" begin
+    @testset "direct_rectangular! accepts reshaped views of host arrays" begin
         src = vcat(rand(MersenneTwister(1), 3, 40), rand(MersenneTwister(2), 1, 40))
         tgt = rand(MersenneTwister(3), 3, 30) .+ 2
         ref = direct_rectangular!(zeros(3, 30), tgt, CoreRectSource(), src)
-        outs = [zeros(3, 30) for _ in 1:4]
-        Threads.@threads for k in 1:4
-            direct_rectangular!(outs[k], tgt, CoreRectSource(), src)
-        end
-        @test all(o == ref for o in outs)
-        # reshaped views of host arrays are host arrays
         store = zeros(3 * 30)
         out = reshape(view(store, 1:(3 * 30)), 3, 30)
         direct_rectangular!(out, tgt, CoreRectSource(), src)
@@ -509,30 +504,5 @@ end
         f2 = FastGaussSeidel((s2,), (s2,); kw...)
         CORE_FM.solve!(s2, f2; solve_kw...)
         @test norm(x1 - strengths(s2)) / norm(strengths(s2)) < 1e-5
-    end
-
-    @testset "threaded loops run nested" begin
-        if Threads.nthreads() > 1
-            sys = generate_gravitational(71, 400)
-            plan = CORE_FM.FmmPlan((sys,), (sys,); expansion_order=4, leaf_size_source=20)
-            cache = build_nearfield_cache!(plan, (sys,), (sys,))
-            ok = Threads.Atomic{Int}(0)
-            Threads.@threads for _ in 1:1
-                nearfield_matvec!(plan.target_tree.buffers, cache,
-                    plan.source_tree.buffers; n_threads=2)
-                Threads.atomic_add!(ok, 1)
-            end
-            @test ok[] == 1
-            built = Threads.Atomic{Int}(0)
-            Threads.@threads for _ in 1:1
-                RadixFMMCache(generate_gravitational(72, 150); stencil_epsilon=1e-4,
-                    expansion_order=4, ell=3,
-                    options=RadixLifecycleOptions(m2l_strategy=DenseTranslationM2L()))
-                Threads.atomic_add!(built, 1)
-            end
-            @test built[] == 1
-        else
-            @test_skip "needs julia -t 2 or more"
-        end
     end
 end

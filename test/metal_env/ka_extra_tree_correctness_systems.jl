@@ -72,4 +72,3 @@ FM.body_type(::PV) = FM.Point{FM.Vortex}
 FM.get_position(p::PV, i) = p.x[i]
 FM.source_system_to_buffer!(b, ib, p::PV, i) =
     (b[1:3, ib] .= p.x[i]; b[4, ib] = 0; b[5:7, ib] .= p.g[i]; b[8, ib] = 0)
-

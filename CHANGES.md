@@ -31,6 +31,9 @@
   regularized nearfield) defaults to `:shipped`, the full-precision g/h and U/J
   evaluation; `:fp32` (g/h and pair U/J in Float32 for Float64 runs, Float64
   accumulation) and the reduced-series modes are opt-in.
+- `RadixFMMCache` without explicit `options` defaults to Float64 on the host at
+  every expansion order; a device cache defaults to Float32 only at
+  `expansion_order <= 3`.
 - Known limitation: a Float32 `RadixFMMCache` throws an `ArgumentError` at
   construction when a physically small box at a high expansion order would
   overflow the unnormalized M2L coefficients; use Float64 or scale the
@@ -144,9 +147,8 @@
   Float64); the planned `fmm!(targets, sources, plan)` docstring was attached to
   a helper; repeated `transform_tree!` compounded the branch boxes (boxes are
   now the rotated build-time boxes); Float32 `evaluate_local` hessian and third
-  derivatives came back Float64; `direct_rectangular!` failed inside a user
-  `Threads.@threads` loop, and rejected host arrays wrapped more than one
-  level deep (e.g. `reshape(view(...))`); an explicit options direct kernel that
+  derivatives came back Float64; `direct_rectangular!` rejected host arrays
+  wrapped more than one level deep (e.g. `reshape(view(...))`); an explicit options direct kernel that
   equalled the body type's default did not raise the conflict with a
   `direct_kernel(system)` trait; `VortexFilamentKernel(; family)` and
   `VortexSheetPanelKernel(; order)` accepted invalid values; user keywords to

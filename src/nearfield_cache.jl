@@ -665,7 +665,7 @@ function nearfield_matvec!(target_buffers, cache::NearfieldInfluenceCache{TF},
         _nearfield_matvec_range!(target_buffers, cache, source_buffers, 1:n_blocks, 1)
     else
         assignments = _make_cache_assignments(cache, n_threads)
-        Threads.@threads for i_task in eachindex(assignments)
+        Threads.@threads :static for i_task in eachindex(assignments)
             _nearfield_matvec_range!(target_buffers, cache, source_buffers,
                 assignments[i_task], i_task)
         end

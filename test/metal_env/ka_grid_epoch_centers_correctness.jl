@@ -4,7 +4,7 @@
 # block, directly after the leaf-cell compression gated by ka_grid_keys_cells_correctness.jl.
 #
 # Oracle: the cell-center loop of `_refresh_radix_grid!` (src/tree_batched.jl),
-# which is what `_radix_grid` runs on the CPU, plus `morton_decode` for the
+# which is what the reference `_radix_grid` runs on the CPU, plus `morton_decode` for the
 # integer cell coords (the host grid does not store them; `ctx.cell_coords` is
 # device-side only). Cell keys come from the stage-1 KA path, so the two stages
 # are gated on the same data the driver will hand between them.
@@ -45,8 +45,8 @@ function run_case(TF, seed, n, ell, cluster)
         coord = FM.radix_cell_coord(x_min, h0, ell, SVector{3}(positions[:, i]))
         ref_keys[i] = FM.morton_key(coord, ell)
     end
-    ref_perm = FM._host_radix_sort_permutation(ref_keys)
-    ref_cell_keys, _ = FM._compress_radix_cells(ref_keys, ref_perm)
+    ref_perm = _host_radix_sort_permutation(ref_keys)
+    ref_cell_keys, _ = _compress_radix_cells(ref_keys, ref_perm)
     n_cells_ref = length(ref_cell_keys)
 
     # host reference centers/coords, straight out of `_refresh_radix_grid!`

@@ -74,10 +74,8 @@ end
 #
 # Rebuilds the per-level M2M/L2L edge columns -- (source, target) node index
 # pairs plus the spherical angles of the parent-child displacement -- from the
-# refreshed grid, once per occupancy change inside `ka_update_radix_state!`.
-#
-# Scope differs from the host `_refresh_resident_stage_groups!`, which also
-# refills `ws.nonleaf_idx`: that is host-path-only storage and untouched on device.
+# refreshed grid, once per occupancy change inside `ka_update_radix_state!`
+# (the device counterpart of the host `_refresh_resident_stage_groups!`).
 #
 # `TF` is threaded in as a type argument rather than taken from `eltype(phis)`
 # inside the kernel: the group fields are `Any`-typed, and an in-kernel
@@ -224,10 +222,9 @@ end
 # Backend-generic builder of `DeviceHierarchicalM2LContext`, which is
 # array-type generic: every buffer is a KA allocation on `backend`. It covers
 # the concat plan.
-function ka_hierarchical_context(::Type{TF}, backend, tables, class_level,
-        class_offset, effective_offsets, level_class_of::Array{Int32,3},
-        level_radii2, plan, ell::Int, first_m2l_level::Int, max_level_nodes::Int,
-        occupancy; window_classes::Int=typemax(Int)) where {TF}
+function ka_hierarchical_context(backend, tables, level_class_of::Array{Int32,3},
+        plan, ell::Int, first_m2l_level::Int, occupancy;
+        window_classes::Int=typemax(Int))
     plan isa FastMultipole.ResidentM2LConcatPlan || throw(ArgumentError(
         "ka_hierarchical_context covers the ResidentM2LConcatPlan; got $(typeof(plan))"))
     isempty(occupancy.node_at) && throw(ArgumentError(

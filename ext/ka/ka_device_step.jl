@@ -239,7 +239,6 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     # so the next call rebuilds instead of trusting half-written state
     if !direct_only && occ_changed && length(ctx.epoch_cell_keys) > 0
         copyto!(ctx.epoch_cell_keys, 1, grid.cell_keys, 1, n_cells)
-        ctx.epoch_prev_n[] = n
         ctx.epoch_prev_n_cells[] = n_cells
         ctx.epoch_have[] = true
     end

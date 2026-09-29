@@ -46,11 +46,11 @@ function build_m2l_concat_plan_and_workspace(exemplar, ::Type{TF}, invariant_cac
     empty_sm() = similar(exemplar, TF, 0, 0)
     ws = FM.ResidentOperatorWorkspace{TF,B,LH}(
         basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
-        nothing, nothing, nothing, nothing, nothing,
+        nothing, nothing, nothing, nothing,
         empty_sm(), empty_sm(), empty_sm(), empty_sm(),
         empty_sm(), empty_sm(), empty_sm(), empty_sm(),
         empty_sm(), empty_sm(),
-        nothing, nothing, nothing, nothing, nothing, plan,
+        nothing, nothing, plan,
         nothing, nothing,
     )
     return plan, ws

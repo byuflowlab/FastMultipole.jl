@@ -209,14 +209,16 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
 
     #--- (h) measured option defaults ---#
 
-    # Precision depends only on the expansion order; the strategy also gates on the
-    # Lamb-Helmholtz channel, the platform, and the dense operator footprint.
+    # Precision: host caches are always Float64; a device cache is Float32 up to
+    # expansion_order 3. The strategy also gates on the Lamb-Helmholtz channel, the
+    # platform, and the dense operator footprint.
     for (eo, TF) in ((1, Float32), (3, Float32), (4, Float64), (12, Float64))
-        @test FastMultipole._default_radix_precision(eo) === TF
+        @test FastMultipole._default_radix_precision(eo, true) === TF
+        @test FastMultipole._default_radix_precision(eo, false) === Float64
     end
     _sel(eo, LH, device; nclasses=874) = nameof(typeof(
         FastMultipole._default_radix_m2l_strategy(
-            FastMultipole._default_radix_precision(eo), eo, LH, device, nclasses,
+            FastMultipole._default_radix_precision(eo, device), eo, LH, device, nclasses,
             FastMultipole._dense_m2m_dof(
                 FastMultipole.OperatorBasisInfo(
                     FastMultipole.CompressedComplexBasis(), eo, Val(LH)), Val(LH)))))
@@ -238,7 +240,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     # rotation operator its plan is built from.
     auto_sys = generate_gravitational(seed + 2, 400)
     auto_cache = RadixFMMCache(auto_sys; expansion_order=3, ell=4)
-    @test auto_cache.state.options.precision === Float32
+    @test auto_cache.state.options.precision === Float64
     @test auto_cache.state.options.m2l_strategy isa DenseTranslationM2L
     @test auto_cache.state.options.operator isa MaterializedYRotationM2L
     hi_sys = generate_gravitational(seed + 3, 400)
@@ -389,8 +391,8 @@ end
 
     # explicit vector bounds after a drift out of the box: the fixed-box
     # contract throws, then recenter! restores service at the shifted box
-    # components exactly representable in Float32 (the default precision at
-    # this expansion order), so the x_min equality below is exact
+    # components exactly representable in binary floating point, so the x_min
+    # equality below is exact
     shift = SVector(0.5, 0.25, -0.25)
     for i in eachindex(rec.bodies)
         b = rec.bodies[i]

@@ -65,24 +65,14 @@ end
 """
     ka_launch_m2l!(state, ws)
 
-M2L stage of [`ka_lifecycle_body!`](@ref), branching on the resident
-interaction context: a
-`DeviceHierarchicalM2LContext` applies its epoch window cache here, and
-anything else (a `host_radix_state` mirror) is the
-flat whole-route concat apply over `state.route_sources`/`route_targets`.
-
-The branch is not optional: a device cache allocates its flat route arrays
-empty, while `state.counts.n_routes` holds the cached-stream total.
+M2L stage of [`ka_lifecycle_body!`](@ref): applies the epoch window cache of
+the state's `DeviceHierarchicalM2LContext` (every KA device cache is
+hierarchical; a device cache allocates its flat route arrays empty).
 """
 function ka_launch_m2l!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
         ws) where {TF,B,LH}
     hctx = state.interaction_list
-    hctx isa FastMultipole.DeviceHierarchicalM2LContext &&
-        return ka_hierarchical_m2l!(state, hctx, ws)
-    fill!(state.locals.phi, zero(TF))
-    LH && fill!(state.locals.chi, zero(TF))
-    nroutes = state.counts.n_routes
-    nroutes > 0 && ka_resident_m2l_concat_apply!(state.locals, state.multipoles, ws,
-        state.route_sources, state.route_targets, nroutes)
-    return state
+    hctx isa FastMultipole.DeviceHierarchicalM2LContext || throw(ArgumentError(
+        "ka_launch_m2l! requires a DeviceHierarchicalM2LContext; got $(typeof(hctx))"))
+    return ka_hierarchical_m2l!(state, hctx, ws)
 end

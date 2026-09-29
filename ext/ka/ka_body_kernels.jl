@@ -175,7 +175,7 @@ end
 
 @kernel function ka_b2m_vortex_leaf_nodes_kernel!(phi, chi, @Const(source_bodies),
         @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
-        P_phi, P_chi, ncell, ::Type{TF}, ::Val{WG}) where {TF,WG}
+        P_phi, P_chi, ::Type{TF}, ::Val{WG}) where {TF,WG}
     i_cell = @index(Group)
     tid = @index(Local)
     shre = @localmem TF (WG,)
@@ -260,7 +260,7 @@ end
 # offset `x - c`, weighted by `(-1)^(n+m) q`, conjugated into the flat buffer.
 @kernel function ka_b2m_source_leaf_nodes_kernel!(phi, @Const(source_bodies),
         @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
-        P_phi, ncell, ::Type{TF}, ::Val{WG}) where {TF,WG}
+        P_phi, ::Type{TF}, ::Val{WG}) where {TF,WG}
     i_cell = @index(Group)
     tid = @index(Local)
     shre = @localmem TF (WG,)
@@ -313,7 +313,7 @@ end
 # harmonics of x − c), sign and conjugation as the scalar B2M.
 @kernel function ka_b2m_dipole_leaf_nodes_kernel!(phi, @Const(source_bodies),
         @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
-        P_phi, ncell, ::Type{TF}, ::Val{WG}) where {TF,WG}
+        P_phi, ::Type{TF}, ::Val{WG}) where {TF,WG}
     i_cell = @index(Group)
     tid = @index(Local)
     shre = @localmem TF (WG,)
@@ -366,7 +366,7 @@ end
 # vortex strength in rows 6:8 into phi and chi (mirrored vortex B2M).
 @kernel function ka_b2m_sourcevortex_leaf_nodes_kernel!(phi, chi, @Const(source_bodies),
         @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
-        P_phi, P_chi, ncell, ::Type{TF}, ::Val{WG}) where {TF,WG}
+        P_phi, P_chi, ::Type{TF}, ::Val{WG}) where {TF,WG}
     i_cell = @index(Group)
     tid = @index(Local)
     shre = @localmem TF (WG,)
@@ -478,7 +478,7 @@ function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
     kernel = _cached_kernel(ka_b2m_source_leaf_nodes_kernel!, backend, workgroup)
     kernel(state.multipoles.phi, state.source_bodies, state.cell_centers,
         state.cell_ranges, state.grid.leaf_to_node,
-        state.invariant_cache.basis_info.orders.P_phi, ncell, TF, Val(workgroup);
+        state.invariant_cache.basis_info.orders.P_phi, TF, Val(workgroup);
         ndrange=ncell * workgroup)
     return state
 end
@@ -495,7 +495,7 @@ function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
     kernel = _cached_kernel(ka_b2m_dipole_leaf_nodes_kernel!, backend, workgroup)
     kernel(state.multipoles.phi, state.source_bodies, state.cell_centers,
         state.cell_ranges, state.grid.leaf_to_node,
-        state.invariant_cache.basis_info.orders.P_phi, ncell, TF, Val(workgroup);
+        state.invariant_cache.basis_info.orders.P_phi, TF, Val(workgroup);
         ndrange=ncell * workgroup)
     return state
 end
@@ -516,7 +516,7 @@ function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
     kernel = _cached_kernel(ka_b2m_sourcevortex_leaf_nodes_kernel!, backend, workgroup)
     kernel(state.multipoles.phi, state.multipoles.chi, state.source_bodies,
         state.cell_centers, state.cell_ranges, state.grid.leaf_to_node,
-        orders.P_phi, orders.P_active, ncell, TF, Val(workgroup);
+        orders.P_phi, orders.P_active, TF, Val(workgroup);
         ndrange=ncell * workgroup)
     return state
 end
@@ -550,7 +550,7 @@ end
 # serves every element body type, Filament and Panel alike
 @kernel function ka_b2m_filament_cells_kernel!(phi, chi, coef, harm, ::Val{BT},
         @Const(source_bodies), @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
-        P, ndof_phi, ndof_chi, ncell, ::Type{TF}, ::Val{WG}, ::Val{SD}) where {BT,TF,WG,SD}
+        P, ndof_phi, ndof_chi, ::Type{TF}, ::Val{WG}, ::Val{SD}) where {BT,TF,WG,SD}
     i_cell = @index(Group)
     tid = @index(Local)
     @inbounds begin
@@ -621,7 +621,7 @@ function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
     kernel = _cached_kernel(ka_b2m_filament_cells_kernel!, backend, workgroup)
     kernel(state.multipoles.phi, state.multipoles.chi, sc.coef, sc.harm, Val(BT),
         state.source_bodies, state.cell_centers, state.cell_ranges, state.grid.leaf_to_node,
-        P, ndof_phi, ndof_chi, ncell, TF, Val(workgroup), Val(FastMultipole.element_strength_dims(BT));
+        P, ndof_phi, ndof_chi, TF, Val(workgroup), Val(FastMultipole.element_strength_dims(BT));
         ndrange=ncell * workgroup)
     return state
 end
@@ -648,7 +648,7 @@ function ka_launch_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
     kernel = _cached_kernel(ka_b2m_vortex_leaf_nodes_kernel!, backend, workgroup)
     kernel(state.multipoles.phi, state.multipoles.chi, state.source_bodies,
         state.cell_centers, state.cell_ranges, state.grid.leaf_to_node,
-        orders.P_phi, orders.P_active, ncell, TF, Val(workgroup);
+        orders.P_phi, orders.P_active, TF, Val(workgroup);
         ndrange=ncell * workgroup)
     return state
 end
@@ -832,7 +832,7 @@ end
 
 @kernel function ka_l2b_output_kernel!(output, @Const(source_bodies), @Const(cell_centers),
         @Const(cell_ranges), @Const(leaf_to_node), @Const(local_phi), @Const(local_chi),
-        P_phi, P_active, ::Val{LHV}, ncell, ::Val{WG}) where {LHV,WG}
+        P_phi, P_active, ::Val{LHV}, ::Val{WG}) where {LHV,WG}
     cell = @index(Group)
     tid = @index(Local)
     @inbounds begin
@@ -858,7 +858,7 @@ end
 @kernel function ka_l2b_output_hessian_kernel!(output, @Const(source_bodies),
         @Const(cell_centers), @Const(cell_ranges), @Const(leaf_to_node),
         @Const(local_phi), @Const(local_chi), P_phi, P_active, ::Val{LHV},
-        ncell, ::Val{WG}) where {LHV,WG}
+        ::Val{WG}) where {LHV,WG}
     cell = @index(Group)
     tid = @index(Local)
     @inbounds begin
@@ -895,7 +895,7 @@ function ka_launch_l2b!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
     workgroup > 0 || throw(ArgumentError("ka_launch_l2b! workgroup must be positive"))
     args = (state.output, state.source_bodies, state.cell_centers, state.cell_ranges,
             state.grid.leaf_to_node, state.locals.phi, state.locals.chi,
-            orders.P_phi, orders.P_active, Val(LH), ncell, Val(workgroup))
+            orders.P_phi, orders.P_active, Val(LH), Val(workgroup))
     if size(state.output, 1) >= 13
         kernel = _cached_kernel(ka_l2b_output_hessian_kernel!, backend, workgroup)
     else

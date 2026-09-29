@@ -546,20 +546,6 @@ struct HierarchicalRigidStencil{C<:ConstantPStencilConfig} <: RadixSeparationPol
     end
 end
 
-"""
-Return `policy` with its per-level radius schedule replaced. Equivalent to
-constructing the policy with the `level_radii2` keyword; retained because the
-schedule is often chosen after the base policy (benchmarks, sweeps).
-"""
-function _hierarchical_stencil_with_schedule(policy::HierarchicalRigidStencil,
-        level_radii2)
-    isempty(level_radii2) &&
-        throw(ArgumentError("hierarchical level schedule must be nonempty"))
-    return HierarchicalRigidStencil(policy.config;
-        policy.near_radius2, level_radii2, policy.window_classes,
-        policy.dense_occupancy_max_bytes, policy.dense_occupancy_max_ell)
-end
-
 function HierarchicalRigidStencil(P_phi::Integer, epsilon,
         source_strength=one(epsilon); chi_strength=source_strength,
         lamb_helmholtz::Bool=false, normalization::Symbol=:analytic,
@@ -625,6 +611,8 @@ mutable struct HostHierarchicalM2LContext{O<:RadixLevelOccupancy,A}
     routes_per_level::Vector{Int}
     last_window_routes::Int
     profile_stages::Bool
+    # update stages: grid, occupancy, direct pairs, (unused: route generation
+    # moved into the M2L stage, timed per level in m2l_level_ns), tree edges
     update_stage_ns::Vector{UInt64}
     m2l_level_ns::Vector{UInt64}
 end
@@ -1927,8 +1915,6 @@ struct DeviceResidentRadixState{TF,B,LH,
     counts::RadixStepCounts
 end
 
-@inline _radix_count_len(x) = x === nothing ? 0 : length(x)
-
 """
     RadixFMMCache{TF,LH}
 
@@ -2005,16 +1991,6 @@ mutable struct RadixFMMCache{TF,LH}
     # settings (Vector{Pair{Symbol,Any}}); verified at device-step entry so a
     # post-construction flip errors loudly instead of being silently ignored.
     locked_settings::Any
-end
-
-function RadixStepCounts(source_bodies, cell_ranges, multipoles::FlatCoefficientBuffer,
-        route_targets, direct_targets)
-    n_bodies = source_bodies === nothing ? 0 : size(source_bodies, 2)
-    n_cells = cell_ranges === nothing ? 0 : size(cell_ranges, 2)
-    return RadixStepCounts(
-        n_bodies, n_cells, size(multipoles.phi, 2),
-        _radix_count_len(route_targets), _radix_count_len(direct_targets),
-    )
 end
 
 # Partial-application constructor: every call site writes

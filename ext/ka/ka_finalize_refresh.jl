@@ -190,7 +190,7 @@ end
 const KA_SUBSORT_CAPACITY = 1024
 
 @kernel function ka_subsort_keys_kernel!(subsort_keys, @Const(positions), @Const(perm),
-        x_min, h0, ell, sub, n)
+        x_min, h0, ell, ell_axes, sub, n)
     p = @index(Global)
     @inbounds if p <= n
         b = perm[p]
@@ -198,12 +198,14 @@ const KA_SUBSORT_CAPACITY = 1024
         m = Int32((1 << sub) - 1)
         T = eltype(positions)
         delta = (2 * h0) / T(Gs)
+        # each axis clamps to its own 2^(ell_axes[a] + sub) sub-cells, matching
+        # the per-axis clamp of the cell key on a rectangular box
         cx = min(max(unsafe_trunc(Int32, (positions[1, b] - x_min[1]) / delta),
-            Int32(0)), Int32(Gs - 1)) & m
+            Int32(0)), (Int32(1) << ((ell_axes[1] + sub) % Int32)) - Int32(1)) & m
         cy = min(max(unsafe_trunc(Int32, (positions[2, b] - x_min[2]) / delta),
-            Int32(0)), Int32(Gs - 1)) & m
+            Int32(0)), (Int32(1) << ((ell_axes[2] + sub) % Int32)) - Int32(1)) & m
         cz = min(max(unsafe_trunc(Int32, (positions[3, b] - x_min[3]) / delta),
-            Int32(0)), Int32(Gs - 1)) & m
+            Int32(0)), (Int32(1) << ((ell_axes[3] + sub) % Int32)) - Int32(1)) & m
         key = UInt32(0)
         bit = 0
         while bit < sub
@@ -287,7 +289,7 @@ function ka_nearfield_subsort!(ctx, cache::FastMultipole.RadixFMMCache, n::Int,
     backend isa KA.CPU && return nothing
     kk = _cached_kernel(ka_subsort_keys_kernel!, backend, 128)
     kk(ctx.subsort_keys, ctx.positions, grid.perm, cache.x_min, cache.h0,
-       cache.ell, sub, n; ndrange=n)
+       cache.ell, cache.ell_axes, sub, n; ndrange=n)
     _utick!(:subsort_keys, backend)
     # ONE GROUP PER CELL, no grid-stride. A capped group count (e.g. 8192)
     # makes groups loop over a second cell, and `@synchronize` inside that loop

@@ -3,7 +3,7 @@
 # unique-node block -- the first block behind the stage-2 occupancy-epoch check.
 #
 # Oracle: `_refresh_radix_nodes!` (src/tree_batched.jl), the host node builder
-# `_radix_grid` runs, called on a host-side `DeviceRadixGrid` over plain
+# `update_radix_grid!` runs, called on a host-side `DeviceRadixGrid` over plain
 # Vectors. It computes far more than stage 3 does (geometry, parents, child
 # ranges -- stage 4); this gate compares only what stage 3 owns, `level_offsets`
 # and the level-major `node_keys`, plus the derived `max_count` that sets the

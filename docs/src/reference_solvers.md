@@ -7,4 +7,3 @@ FastGaussSeidel
 JacobiPreconditioner
 visualize
 ```
-

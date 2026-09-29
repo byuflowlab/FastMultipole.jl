@@ -86,15 +86,9 @@ end
 
 function device_build_args(hcache)
     sp = hcache.policy; ell = hcache.ell
-    tables, level_class_of, level_radii2, root_level, first_m2l_level =
+    tables, level_class_of, _, root_level, first_m2l_level =
         FM._hierarchical_scheduled_tables(sp, ell, hcache.ell_axes)
-    class_level, class_offset, _ =
-        FM._hierarchical_class_metadata(tables, ell, first_m2l_level)
-    max_level_nodes = ell >= 2 ? maximum(
-        (FM._radix_level_node_capacity(L, hcache.ell_axes, ell, hcache.max_cells)
-         for L in first_m2l_level:ell); init=0) : 0
-    return (; tables, level_class_of, level_radii2, root_level, first_m2l_level,
-        class_level, class_offset, max_level_nodes)
+    return (; tables, level_class_of, root_level, first_m2l_level)
 end
 
 function build_pair(sys_h, sys_d, P, ell, TF)
@@ -110,10 +104,8 @@ function build_pair(sys_h, sys_d, P, ell, TF)
         hcache.rejected_offsets, hcache.max_cells, hcache.max_nodes,
         hcache.route_capacity, hcache.direct_capacity,
         hcache.state.multipoles.basis_info, Val(LH);
-        hierarchical_tables=a.tables, class_level=a.class_level,
-        class_offset=a.class_offset, hierarchical_level_class_of=a.level_class_of,
-        hierarchical_level_radii2=a.level_radii2,
-        max_level_nodes=a.max_level_nodes, hessian=hcache.hessian,
+        hierarchical_tables=a.tables, hierarchical_level_class_of=a.level_class_of,
+        hessian=hcache.hessian,
         ell_axes=hcache.ell_axes, box_extent=hcache.box_extent,
         root_level=a.root_level, first_m2l_level=a.first_m2l_level)
     ext.ka_update_radix_state!(dcache, (sys_d,))

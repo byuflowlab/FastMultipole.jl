@@ -10,6 +10,7 @@ using FastMultipole.StaticArrays
 using FastMultipole.LinearAlgebra
 using Random
 using Test
+@isdefined(host_radix_state) || include("radix_reference.jl")
 
 if !isdefined(@__MODULE__, :generate_gravitational)
     include("gravitational.jl")
@@ -188,12 +189,12 @@ end
         st.direct_sources, st.counts.n_direct)
     ref = zeros(13, size(st.output, 2))
     got = zeros(13, size(st.output, 2))
-    FastMultipole._host_direct_pairs_hessian_kernel!(ref, args...)
+    _host_direct_pairs_hessian_kernel!(ref, args...)
     FastMultipole._host_direct_pairs_functor_kernel!(SingularSource(), got, args...,
         Val(true))
     @test maximum(abs.(got .- ref)) == 0.0          # identical operation order
     fill!(ref, 0.0); fill!(got, 0.0)
-    FastMultipole._host_direct_pairs_kernel!(view(ref, 1:4, :), args...)
+    _host_direct_pairs_kernel!(view(ref, 1:4, :), args...)
     FastMultipole._host_direct_pairs_functor_kernel!(SingularSource(),
         view(got, 1:4, :), args..., Val(false))
     @test maximum(abs.(got .- ref)) == 0.0
@@ -209,7 +210,7 @@ end
         vst.direct_sources, vst.counts.n_direct)
     vref = zeros(13, size(vst.output, 2))
     vgot = zeros(13, size(vst.output, 2))
-    FastMultipole._host_direct_pairs_vortex_kernel!(vref, vargs..., Val(true))
+    _host_direct_pairs_vortex_kernel!(vref, vargs..., Val(true))
     FastMultipole._host_direct_pairs_functor_kernel!(SingularVortex(), vgot,
         vargs..., Val(true))
     scale = maximum(abs.(vref))

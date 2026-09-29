@@ -8,10 +8,6 @@
 # host CPU refresh, run over the same grid. Both walk levels in the same order
 # and emit one edge per child node in ascending flat node index, so the
 # comparison is elementwise per group.
-#
-# The host function additionally refills `ws.nonleaf_idx`; that is host-path-only
-# storage (see the note in src/translate_batched.jl) and the KA refresh
-# does not touch it, so it is deliberately not compared.
 include("ka_backend.jl")
 include("../gravitational.jl")
 using FastMultipole, Test

@@ -21,7 +21,6 @@ function _radix_state_arrays(state)
         value isa Array && (arrays["grid.$field"] = value)
     end
     ws = state.scratch
-    arrays["scratch.nonleaf_idx"] = ws.nonleaf_idx
     for (kind, groups) in (("m2m", ws.m2m_groups), ("l2l", ws.l2l_groups))
         for (gi, group) in enumerate(groups)
             arrays["scratch.$kind[$gi].source_idx"] = group.source_idx

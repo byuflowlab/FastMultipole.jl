@@ -25,7 +25,6 @@ FastMultipole.RadixLevelOccupancy
 FastMultipole.RadixM2LBatch
 FastMultipole.RadixInteractionList
 FastMultipole.constant_p_stencil_bound
-FastMultipole.build_radix_interaction_list
 FastMultipole.RadixRouteSelection
 build_interaction_lists
 InteractionList
@@ -41,8 +40,6 @@ DenseTranslationM2L
 ConcatenatedFixedZM2L
 PrecomputedFactoredYM2L
 RadixDeviceUnavailable
-FastMultipole.host_resident_radix_grid
-FastMultipole.host_radix_state
 FastMultipole.run_host_radix_lifecycle!
 FastMultipole.finalize_radix_output!
 update_radix_state!
@@ -88,4 +85,3 @@ FastMultipole.TargetTree
 source_to_buffer
 output_view
 ```
-

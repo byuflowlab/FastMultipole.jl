@@ -669,7 +669,6 @@ struct DegreeMajorMaps{RM,RI}
     row_up::RI
     z_re_rows::Vector{RI}
     z_im_rows::Vector{RI}
-    nus::Vector{RM}
 end
 
 function _array_like_vector(exemplar, ::Type{T}, values::AbstractVector) where T
@@ -717,15 +716,10 @@ function DegreeMajorMaps(::Type{TF}, P::Integer, exemplar) where TF
         z_re_rows[m + 1] = _array_like_vector(exemplar, Int, re)
         z_im_rows[m + 1] = _array_like_vector(exemplar, Int, im)
     end
-    nus = Vector{typeof(row_m_dev)}(undef, P + 1)
-    @inbounds for n in 0:P
-        nus[n + 1] = _array_like_vector(exemplar, TF, TF.(-n:n))
-    end
     return DegreeMajorMaps(
         row_m_dev, row_ssign_dev, row_pair_dev, row_down_dev, row_up_dev,
         z_re_rows,
         z_im_rows,
-        nus,
     )
 end
 
@@ -1000,16 +994,6 @@ function _degree_major_to_flat_indices(P::Integer)
     return idx
 end
 
-function _degree_major_buffer_like(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
-        exemplar::FlatCoefficientBuffer, batch::Integer) where {TF,B,LH}
-    phi = similar(exemplar.phi, TF, degree_major_dof(basis_info.orders.P_phi), batch)
-    chi = LH ? similar(exemplar.chi, TF, degree_major_dof(basis_info.orders.P_active), batch) :
-        similar(exemplar.phi, TF, 0, 0)
-    fill!(phi, zero(TF))
-    fill!(chi, zero(TF))
-    return DegreeMajorRealBuffer{TF,typeof(phi),B,LH}(phi, chi, basis_info)
-end
-
 # One per-(level, radius) M2M/L2L group or per-(r,θ,φ) shared-M2L subgroup.
 # `target_idx` is per-column (targets may repeat for M2M; the launchers accumulate
 # atomically). `phi_blocks`/`chi_blocks` are the per-m z matrices used by the shared
@@ -1038,7 +1022,7 @@ end
 # buffers, stage matrices, geometry vectors, and homogeneous group vectors.  Optional
 # LH plans/channels retain separate parameters because `nothing` is a real layout.
 struct ResidentOperatorWorkspace{TF,B<:AbstractOperatorBasis,LH,
-        I,M<:DegreeMajorMaps,YB,NLI,SM,GV,GSTAGE,PLAN,YSP,YSC}
+        I,M<:DegreeMajorMaps,YB,SM,GSTAGE,PLAN,YSP,YSC}
     basis_info::OperatorBasisInfo{B,LH}
     phi_flat_idx::I
     chi_flat_idx::I
@@ -1048,7 +1032,6 @@ struct ResidentOperatorWorkspace{TF,B<:AbstractOperatorBasis,LH,
     y_mult_V::YB
     y_loc_U::YB
     y_loc_V::YB
-    nonleaf_idx::NLI
     aphi::SM
     yphi::SM
     zphi::SM
@@ -1059,9 +1042,6 @@ struct ResidentOperatorWorkspace{TF,B<:AbstractOperatorBasis,LH,
     rchi::SM
     cphi::SM
     cchi::SM
-    phis::GV
-    thetas::GV
-    rs::GV
     m2m_groups::GSTAGE
     l2l_groups::GSTAGE
     m2l_concat::PLAN
@@ -1076,19 +1056,18 @@ end
 # method signature and typeassert keeps matching unchanged. Field order duplicates the
 # struct above; an arity mismatch fails loudly at the first construction.
 function ResidentOperatorWorkspace{TF,B,LH}(basis_info, phi_flat_idx, chi_flat_idx,
-        maps_phi, maps_chi, y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx,
+        maps_phi, maps_chi, y_mult_U, y_mult_V, y_loc_U, y_loc_V,
         aphi, yphi, zphi, rphi, achi, ychi,
-        zchi, rchi, cphi, cchi, phis, thetas, rs, m2m_groups, l2l_groups,
+        zchi, rchi, cphi, cchi, m2m_groups, l2l_groups,
         m2l_concat, ystk_phi, ystk_chi) where {TF,B,LH}
     return ResidentOperatorWorkspace{TF,B,LH,
         typeof(phi_flat_idx),typeof(maps_phi),typeof(y_mult_U),
-        typeof(nonleaf_idx),typeof(aphi),typeof(phis),
-        typeof(m2m_groups),typeof(m2l_concat),
+        typeof(aphi),typeof(m2m_groups),typeof(m2l_concat),
         typeof(ystk_phi),typeof(ystk_chi)}(
         basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
-        y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx,
+        y_mult_U, y_mult_V, y_loc_U, y_loc_V,
         aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi,
-        cphi, cchi, phis, thetas, rs, m2m_groups, l2l_groups,
+        cphi, cchi, m2m_groups, l2l_groups,
         m2l_concat, ystk_phi, ystk_chi,
     )
 end
@@ -1383,81 +1362,6 @@ function _degree_row_exponents(exemplar, ::Type{TF}, P::Integer) where TF
     return _array_like_vector(exemplar, TF, rexp)
 end
 
-function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, exemplar,
-        strategy::ConcatenatedFixedZM2L, invariant::OperatorInvariantCache,
-        list::RadixInteractionList, leaf_level::Integer,
-        host_route_targets, host_route_sources, host_node_centers) where {TF,B,LH}
-    P_phi = basis_info.orders.P_phi
-    P_active = basis_info.orders.P_active
-    nroutes = length(host_route_targets)
-    # Per-class geometry: flattened route order is batch-major, and every route of a
-    # leaf-level batch shares the same center displacement (source coord = target
-    # coord - offset on the uniform grid), so one (r, θ, φ) per such batch suffices.
-    # Batches below the leaf level pair leaf descendants with varying displacements
-    # and get one class per route.
-    route_class = Vector{Int32}(undef, nroutes)
-    phis = TF[]
-    thetas = TF[]
-    rs = TF[]
-    route_geometry = i -> begin
-        t = host_route_targets[i]
-        s = host_route_sources[i]
-        dx = host_node_centers[1, t] - host_node_centers[1, s]
-        dy = host_node_centers[2, t] - host_node_centers[2, s]
-        dz = host_node_centers[3, t] - host_node_centers[3, s]
-        cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
-    end
-    push_class! = (r, theta, phi) -> begin
-        push!(rs, TF(r)); push!(thetas, TF(theta)); push!(phis, TF(phi))
-        return Int32(length(rs))
-    end
-    i = 0
-    for batch in list.m2l_batches
-        nb = length(batch.targets)
-        if batch.level == leaf_level
-            cls = push_class!(route_geometry(i + 1)...)
-            fill!(view(route_class, (i + 1):(i + nb)), cls)
-        else
-            for j in 1:nb
-                route_class[i + j] = push_class!(route_geometry(i + j)...)
-            end
-        end
-        i += nb
-    end
-    i == nroutes || throw(ArgumentError(
-        "interaction-list batches ($i routes) do not match flattened routes ($nroutes)"))
-    chunk = max(min(strategy.chunk, max(nroutes, 1)), 1)
-    _check_m2l_range(TF, rs, LH ? P_active : P_phi, "ConcatenatedFixedZM2L")
-    ndof_phi = degree_major_dof(P_phi)
-    ndof_chi = LH ? degree_major_dof(P_active) : 0
-    lh_arow_unit, lh_brow_unit = LH ?
-        _resident_lh_rows_like(exemplar, TF, P_phi, P_active, one(TF), :local) :
-        (nothing, nothing)
-    mkphi() = similar(exemplar, TF, ndof_phi, chunk)
-    mkchi() = similar(exemplar, TF, ndof_chi, LH ? chunk : 0)
-    return ResidentM2LConcatPlan(
-        nroutes, chunk,
-        _array_like_vector(exemplar, TF, phis),
-        _array_like_vector(exemplar, TF, thetas),
-        _array_like_vector(exemplar, TF, rs),
-        _array_like_vector(exemplar, TF, inv.(rs)),
-        _array_like_vector(exemplar, Int32, route_class),
-        similar(exemplar, TF, chunk),
-        similar(exemplar, TF, chunk),
-        similar(exemplar, TF, chunk),
-        similar(exemplar, TF, chunk),
-        _degree_row_exponents(exemplar, TF, P_phi),
-        LH ? _degree_row_exponents(exemplar, TF, P_active) : nothing,
-        ConcatChannelOps(exemplar, TF, invariant, P_phi, chunk),
-        LH ? ConcatChannelOps(exemplar, TF, invariant, P_active, chunk) : nothing,
-        lh_arow_unit, lh_brow_unit,
-        mkphi(), mkphi(), mkphi(), mkphi(),
-        mkchi(), mkchi(), mkchi(), mkchi(),
-        LH ? mkphi() : similar(exemplar, TF, 0, 0), mkchi(),
-        LH ? mkphi() : nothing, LH ? mkchi() : nothing,
-    )
-end
-
 function _matrix_col_view(mat, nbatch::Integer)
     return @view mat[:, 1:nbatch]
 end
@@ -1561,40 +1465,6 @@ function _zero_resident_nonleaf_multipoles!(state::DeviceResidentRadixState{TF,B
     return state
 end
 
-function _collect_level_edges(parent_routes, child_routes, node_levels, node_centers,
-        level::Integer, direction::Symbol, ::Type{TF}) where TF
-    parents = Int[]
-    children = Int[]
-    phis = TF[]
-    thetas = TF[]
-    rs = TF[]
-    @inbounds for edge in eachindex(parent_routes)
-        parent = parent_routes[edge]
-        child = child_routes[edge]
-        parent == 0 && continue
-        if direction === :parent_to_child
-            node_levels[child] == level || continue
-            dx = node_centers[1, child] - node_centers[1, parent]
-            dy = node_centers[2, child] - node_centers[2, parent]
-            dz = node_centers[3, child] - node_centers[3, parent]
-        elseif direction === :child_to_parent
-            node_levels[parent] == level || continue
-            dx = node_centers[1, parent] - node_centers[1, child]
-            dy = node_centers[2, parent] - node_centers[2, child]
-            dz = node_centers[3, parent] - node_centers[3, child]
-        else
-            throw(ArgumentError("unknown resident edge direction $direction"))
-        end
-        r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
-        push!(parents, parent)
-        push!(children, child)
-        push!(rs, TF(r))
-        push!(thetas, TF(theta))
-        push!(phis, TF(phi))
-    end
-    return parents, children, phis, thetas, rs
-end
-
 # Convert generated groups explicitly to one concrete element type.  A heterogeneous
 # result is a construction error: silently widening it would restore dynamic dispatch
 # in every resident group loop.
@@ -1608,113 +1478,6 @@ function _homogeneous_groups(groups::AbstractVector)
     result = Vector{T}(groups)
     @assert isconcretetype(eltype(result))
     return result
-end
-
-function _resident_m2m_groups(exemplar, ::Type{TF}, basis_info, grid, parent_routes,
-        child_routes, node_levels, node_centers) where TF
-    groups = ResidentOperatorGroup[]
-    for level in (grid.ell - 1):-1:0
-        parents, children, phis, thetas, rs = _collect_level_edges(
-            parent_routes, child_routes, node_levels, node_centers, level, :child_to_parent, TF,
-        )
-        isempty(children) && continue
-        for r_group in unique(rs)
-            group = findall(==(r_group), rs)
-            # target_idx is per-column (one parent per child); the launcher
-            # accumulates atomically, so repeated parents need no scatter matrix.
-            push!(groups, _resident_group(
-                exemplar, TF, basis_info, :m2m, level,
-                children[group], parents[group], phis[group], thetas[group], rs[group],
-            ))
-        end
-    end
-    return _homogeneous_groups(groups)
-end
-
-function _resident_l2l_groups(exemplar, ::Type{TF}, basis_info, grid, parent_routes,
-        child_routes, node_levels, node_centers) where TF
-    groups = ResidentOperatorGroup[]
-    for level in 1:grid.ell
-        parents, children, phis, thetas, rs = _collect_level_edges(
-            parent_routes, child_routes, node_levels, node_centers, level, :parent_to_child, TF,
-        )
-        isempty(children) && continue
-        for r_group in unique(rs)
-            group = findall(==(r_group), rs)
-            push!(groups, _resident_group(
-                exemplar, TF, basis_info, :l2l, level,
-                parents[group], children[group], phis[group], thetas[group], rs[group],
-            ))
-        end
-    end
-    return _homogeneous_groups(groups)
-end
-
-function ResidentOperatorWorkspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
-        exemplar::FlatCoefficientBuffer, grid, list, host_m2m_parent_routes,
-        host_m2m_child_routes, host_l2l_parent_routes, host_l2l_child_routes,
-        host_node_levels, host_node_centers, host_route_targets, host_route_sources;
-        m2l_strategy::AbstractResidentM2LStrategy=ConcatenatedFixedZM2L(),
-        operator::AbstractM2LOperator=MaterializedYRotationM2L()) where {TF,B,LH}
-    # List-based construction serves `host_radix_state`, the host reference the
-    # tests compare the KA lifecycle against; it runs the concatenated
-    # materialized-y plan. Production caches build their workspace through
-    # `_radix_cache_workspace`.
-    (m2l_strategy isa ConcatenatedFixedZM2L && operator isa MaterializedYRotationM2L) ||
-        throw(ArgumentError("list-based ResidentOperatorWorkspace supports only " *
-            "ConcatenatedFixedZM2L with MaterializedYRotationM2L; got " *
-            "$(typeof(m2l_strategy)) with $(typeof(operator))"))
-    phi_flat_idx = _array_like_vector(exemplar.phi, Int, _degree_major_to_flat_indices(basis_info.orders.P_phi))
-    chi_flat_idx = LH ?
-        _array_like_vector(exemplar.chi, Int, _degree_major_to_flat_indices(basis_info.orders.P_active)) :
-        _array_like_vector(exemplar.phi, Int, Int[])
-    maps_phi = DegreeMajorMaps(TF, basis_info.orders.P_phi, exemplar.phi)
-    maps_chi = LH ? DegreeMajorMaps(TF, basis_info.orders.P_active, exemplar.chi) : maps_phi
-    invariant = OperatorInvariantCache(TF, basis_info)
-    y_mult_U = _ymode_real_blocks(_array_like_vector(exemplar.phi, Complex{TF}, invariant.y_mult_U), basis_info.orders.P_active, TF)
-    y_mult_V = _ymode_real_blocks(_array_like_vector(exemplar.phi, Complex{TF}, invariant.y_mult_V), basis_info.orders.P_active, TF)
-    y_loc_U = _ymode_real_blocks(_array_like_vector(exemplar.phi, Complex{TF}, invariant.y_loc_U), basis_info.orders.P_active, TF)
-    y_loc_V = _ymode_real_blocks(_array_like_vector(exemplar.phi, Complex{TF}, invariant.y_loc_V), basis_info.orders.P_active, TF)
-    nonleaf_idx = _array_like_vector(exemplar.phi, Int, findall(<(grid.ell), host_node_levels))
-
-    m2m_groups = _resident_m2m_groups(
-        exemplar.phi, TF, basis_info, grid, host_m2m_parent_routes, host_m2m_child_routes,
-        host_node_levels, host_node_centers,
-    )
-    m2l_concat = ResidentM2LConcatPlan(
-        TF, basis_info, exemplar.phi, m2l_strategy, invariant, list, grid.ell,
-        host_route_targets, host_route_sources, host_node_centers,
-    )
-    l2l_groups = _resident_l2l_groups(
-        exemplar.phi, TF, basis_info, grid, host_l2l_parent_routes, host_l2l_child_routes,
-        host_node_levels, host_node_centers,
-    )
-    max_batch = maximum((
-        maximum((length(g.source_idx) for g in m2m_groups); init=0),
-        maximum((length(g.source_idx) for g in l2l_groups); init=0),
-        1,
-    ))
-
-    m2l_sources = _degree_major_buffer_like(TF, basis_info, exemplar, max_batch)
-    aphi = similar(m2l_sources.phi); yphi = similar(m2l_sources.phi)
-    zphi = similar(m2l_sources.phi); rphi = similar(m2l_sources.phi)
-    achi = similar(m2l_sources.chi); ychi = similar(m2l_sources.chi)
-    zchi = similar(m2l_sources.chi); rchi = similar(m2l_sources.chi)
-    cphi = similar(m2l_sources.phi); cchi = similar(m2l_sources.chi)
-    phis = similar(exemplar.phi, TF, max_batch)
-    thetas = similar(exemplar.phi, TF, max_batch)
-    rs = similar(exemplar.phi, TF, max_batch)
-    ystk_phi = StackedYChannel(exemplar.phi, TF, invariant, basis_info.orders.P_phi, max_batch)
-    ystk_chi = LH ?
-        StackedYChannel(exemplar.phi, TF, invariant, basis_info.orders.P_active, max_batch) :
-        nothing
-    return ResidentOperatorWorkspace{TF,B,LH}(
-        basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
-        y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx,
-        aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi, cphi, cchi,
-        phis, thetas, rs, m2m_groups, l2l_groups, m2l_concat,
-        ystk_phi, ystk_chi,
-    )
 end
 
 # Whole-slab resident M2M/L2L group application (the concat treatment of the M2M/L2L
@@ -3063,7 +2826,7 @@ function ResidentM2LDensePlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     nops = length(operator_offsets)
     nt = max(1, min(Threads.nthreads(), nops))
     try
-        Threads.@threads for t in 1:nt
+        Threads.@threads :static for t in 1:nt
             workspace = DenseM2LBuilderWorkspace(TF, basis_info, invariant, build_width)
             @inbounds for i in t:nt:nops
                 offset = operator_offsets[i]
@@ -3141,7 +2904,6 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     y_mult_V = _ymode_real_blocks(_array_like_vector(exemplar.phi, Complex{TF}, invariant.y_mult_V), P_active, TF)
     y_loc_U = _ymode_real_blocks(_array_like_vector(exemplar.phi, Complex{TF}, invariant.y_loc_U), P_active, TF)
     y_loc_V = _ymode_real_blocks(_array_like_vector(exemplar.phi, Complex{TF}, invariant.y_loc_V), P_active, TF)
-    nonleaf_idx = collect(1:max_nodes)      # capacity; resize!d by the step refresh
 
     child_radius(Lc) = sqrt(TF(3)) * h0 / (1 << Lc)
     # active-level trimming: stage groups exist only for the
@@ -3183,16 +2945,13 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     aphi = mkphi(); yphi = mkphi(); zphi = mkphi(); rphi = mkphi()
     achi = mkchi(); ychi = mkchi(); zchi = mkchi(); rchi = mkchi()
     cphi = mkphi(); cchi = mkchi()
-    phis = similar(exemplar.phi, TF, max_batch)
-    thetas = similar(exemplar.phi, TF, max_batch)
-    rs = similar(exemplar.phi, TF, max_batch)
     ystk_phi = StackedYChannel(exemplar.phi, TF, invariant, P_phi, max_batch)
     ystk_chi = LH ? StackedYChannel(exemplar.phi, TF, invariant, P_active, max_batch) : nothing
     return ResidentOperatorWorkspace{TF,B,LH}(
         basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
-        y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx,
+        y_mult_U, y_mult_V, y_loc_U, y_loc_V,
         aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi, cphi, cchi,
-        phis, thetas, rs, m2m_groups, l2l_groups, m2l_concat,
+        m2m_groups, l2l_groups, m2l_concat,
         ystk_phi, ystk_chi,
     )
 end

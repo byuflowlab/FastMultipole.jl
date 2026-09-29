@@ -1,7 +1,10 @@
 using FastMultipole
 using KernelAbstractions, GPUArraysCore   # together, the trigger of the device extension
 # internals the tests exercise directly (not part of the exported surface)
-using FastMultipole: RadixGrid, DeviceRadixGrid, ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L, RigidHierarchicalTables, RadixLevelOccupancy, RadixM2LBatch, RadixInteractionList, TreeRole, SourceTree, TargetTree, element_strength_dims, DeviceResidentRadixState, AbstractOperatorBasis, CompressedComplexBasis, OperatorOrders, OperatorBasisInfo, OperatorInvariantCache, OperatorScratch, FlatCoefficientBuffer, AbstractM2LOperator, MaterializedYRotationM2L, FactoredRotationM2L, M2LOperatorScratch, rigid_stencil_epsilon, constant_p_stencil_bound, build_radix_interaction_list, RadixRouteSelection, host_radix_state, host_resident_radix_grid, run_host_radix_lifecycle!, finalize_radix_output!, snapshot_locked_radix_settings, verify_locked_radix_settings, rect_source_rows, rect_output_rows
+using FastMultipole: RadixGrid, DeviceRadixGrid, ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L, RigidHierarchicalTables, RadixLevelOccupancy, RadixM2LBatch, RadixInteractionList, TreeRole, SourceTree, TargetTree, element_strength_dims, DeviceResidentRadixState, AbstractOperatorBasis, CompressedComplexBasis, OperatorOrders, OperatorBasisInfo, OperatorInvariantCache, OperatorScratch, FlatCoefficientBuffer, AbstractM2LOperator, MaterializedYRotationM2L, FactoredRotationM2L, M2LOperatorScratch, rigid_stencil_epsilon, constant_p_stencil_bound, RadixRouteSelection, run_host_radix_lifecycle!, finalize_radix_output!, snapshot_locked_radix_settings, verify_locked_radix_settings, rect_source_rows, rect_output_rows
+# test-only radix reference code (standalone RadixGrid, ParentNeighborM2L list,
+# host_radix_state, reference direct-pair kernels)
+include("radix_reference.jl")
 
 using FLOWMath
 using ForwardDiff

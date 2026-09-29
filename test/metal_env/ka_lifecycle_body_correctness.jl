@@ -1,8 +1,8 @@
-# Local gate for `ka_lifecycle_body!` -- the whole uniform radix lifecycle
-# (nearfield -> B2M -> M2M -> M2L -> L2L -> L2B), run end to end on a KA
-# backend and compared against FastMultipole's OWN host resident lifecycle.
+# Local gate for the stages of `ka_lifecycle_body!` -- the whole uniform radix
+# lifecycle (nearfield -> B2M -> M2M -> M2L -> L2L -> L2B), run end to end on a
+# KA backend and compared against FastMultipole's OWN host resident lifecycle.
 #
-# Why this gate runs anywhere: `host_radix_state` (src/resident/) builds a
+# Why this gate runs anywhere: `host_radix_state` (test/radix_reference.jl) builds a
 # complete `DeviceResidentRadixState` from host arrays -- host body matrix, host
 # tree routes, flat coefficient buffers and a real `ResidentOperatorWorkspace`
 # -- and `run_host_radix_lifecycle!` runs every stage of it on the CPU. The
@@ -12,15 +12,19 @@
 #
 # The oracle is `run_host_radix_lifecycle!` over host `Array`s: B2M, then the
 # operator pipeline M2M -> M2L -> L2L -> L2B, with `_add_host_direct_pairs!`
-# folded into L2B. `ka_lifecycle_body!` runs nearfield first (clearing output)
-# and folds direct into that stage instead; the stage ORDER differs but the sum
-# does not, because output accumulates and starts zeroed on both sides.
+# folded into L2B. `ka_lifecycle_body_flat!` below runs nearfield first
+# (clearing output) and folds direct into that stage instead; the stage ORDER
+# differs but the sum does not, because output accumulates and starts zeroed on
+# both sides.
 #
 # What this deliberately does NOT cover, so no one reads it as the acceptance
 # gate:
-#   1. `ka_hierarchical_m2l!`. `host_radix_state` stores a flat
-#      `RadixInteractionList`, so `ka_launch_m2l!` takes its flat branch here;
-#      the hierarchical branch is gated by ka_production_driver_correctness.jl.
+#   1. `ka_hierarchical_m2l!` and `ka_lifecycle_body!` itself. `host_radix_state`
+#      stores a flat `RadixInteractionList`, and the production M2L stage
+#      (`ka_launch_m2l!`) is hierarchical only, so `ka_lifecycle_body_flat!`
+#      below runs the same stage sequence with the flat whole-route concat
+#      apply in the M2L slot; the hierarchical body is gated by
+#      ka_production_driver_correctness.jl.
 #   2. The cache-level call (`fmm!` through a `RadixFMMCache`), gated by
 #      ka_device_cache_correctness.jl and ka_production_driver_correctness.jl.
 #   3. Timing. Metal-vs-CPU numbers say nothing about KA-vs-native on one GPU.
@@ -51,6 +55,30 @@ ext !== nothing || error("FastMultipoleKAExt did not load")
 
 relerr(a, b) = (d = maximum(abs.(Array(a) .- Array(b))); s = maximum(abs.(Array(b)));
                 s == 0 ? d : d / s)
+
+# `ka_lifecycle_body!` with the flat whole-route concat apply over
+# `state.route_sources`/`route_targets` in the M2L slot.
+function ka_lifecycle_body_flat!(state::FM.DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
+    ws = state.scratch
+    backend = ext.KA.get_backend(state.output)
+    ext.ka_launch_nearfield!(state; clear=true)
+    ext.ka_launch_b2m!(state)
+    FM._zero_resident_nonleaf_multipoles!(state)
+    for group in ws.m2m_groups
+        ext.ka_resident_stage_group_apply!(state.multipoles, state.multipoles, group, ws, :m2m)
+    end
+    fill!(state.locals.phi, zero(TF))
+    LH && fill!(state.locals.chi, zero(TF))
+    nroutes = state.counts.n_routes
+    nroutes > 0 && ext.ka_resident_m2l_concat_apply!(state.locals, state.multipoles, ws,
+        state.route_sources, state.route_targets, nroutes)
+    for group in ws.l2l_groups
+        ext.ka_resident_stage_group_apply!(state.locals, state.locals, group, ws, :l2l)
+    end
+    ext.ka_launch_l2b!(state)
+    ext.KA.synchronize(backend)
+    return state
+end
 
 #------- host state -> device state -------#
 #
@@ -88,15 +116,15 @@ function dev_state(hs::FM.DeviceResidentRadixState{TF,B,LH}, backend) where {TF,
     src = to_dev(hs.source_bodies)
     mult = dev_flat(backend, hs.multipoles)
     locs = dev_flat(backend, hs.locals)
-    # The workspace must be built through the SAME constructor `host_radix_state`
-    # uses, off the concrete grid and list -- it is backend-generic, deciding
+    # The workspace must be built through the SAME builder `host_radix_state`
+    # uses (`list_resident_workspace`), off the concrete grid and list -- it is backend-generic, deciding
     # every array type from the `exemplar` buffer, so a device exemplar puts the
     # whole workspace on the backend. The cache-shaped `ka_radix_cache_workspace`
     # is NOT interchangeable here: it builds stage groups from capacity plus an
     # accepted-offset set rather than from this grid's node table, so its
     # m2m/l2l groups do not address the same nodes and M2M silently fills
     # nothing.
-    ws = FM.ResidentOperatorWorkspace(TF, hs.invariant_cache.basis_info, mult,
+    ws = list_resident_workspace(TF, hs.invariant_cache.basis_info, mult,
         hs.grid, hs.interaction_list,
         hs.m2m_parent_routes, hs.m2m_child_routes,
         hs.l2l_parent_routes, hs.l2l_child_routes,
@@ -157,11 +185,11 @@ for (ci, (P, ell, n)) in pairs(CASES)
         gradient_stretching=zeros(TF, 6, n))
 
     grid = FM.RadixGrid(system, ell)
-    list = FM.build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
+    list = build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Vortex})
 
-    hs = FM.host_radix_state(system, grid, list, P, Val(true); options=opts)
+    hs = host_radix_state(system, grid, list, P, Val(true); options=opts)
 
     local ds
     try
@@ -174,10 +202,10 @@ for (ci, (P, ell, n)) in pairs(CASES)
 
     FM.run_host_radix_lifecycle!(hs)
     try
-        ext.ka_lifecycle_body!(ds)
+        ka_lifecycle_body_flat!(ds)
     catch err
         nfail[] += 1
-        println("case $ci (P=$P, ell=$ell, n=$n): ka_lifecycle_body! THREW: $err")
+        println("case $ci (P=$P, ell=$ell, n=$n): ka_lifecycle_body_flat! THREW: $err")
         continue
     end
 
@@ -190,7 +218,7 @@ for (ci, (P, ell, n)) in pairs(CASES)
         "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
 end
 
-println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (Point{Vortex}): $(npass[])/$(length(CASES)) pass")
+println("\nka_lifecycle_body_flat! vs run_host_radix_lifecycle! (Point{Vortex}): $(npass[])/$(length(CASES)) pass")
 nfail[] == 0 || error("lifecycle gate failed (vortex)")
 
 # --- Point{Source}: the gravitational system, with and without Lamb-Helmholtz ---
@@ -205,10 +233,10 @@ for (ci, (P, ell, n)) in pairs(CASES), lh in (false, true)
     bodies[5, :] ./= TF(n)
     system = Gravitational(bodies)
     grid = FM.RadixGrid(system, ell)
-    list = FM.build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
+    list = build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Source})
-    hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
+    hs = host_radix_state(system, grid, list, P, Val(lh); options=opts)
     local ds
     try
         ds = dev_state(hs, DEV_BACKEND)
@@ -219,10 +247,10 @@ for (ci, (P, ell, n)) in pairs(CASES), lh in (false, true)
     end
     FM.run_host_radix_lifecycle!(hs)
     try
-        ext.ka_lifecycle_body!(ds)
+        ka_lifecycle_body_flat!(ds)
     catch err
         nfail[] += 1
-        println("source case $ci LH=$lh (P=$P, ell=$ell, n=$n): ka_lifecycle_body! THREW: $err")
+        println("source case $ci LH=$lh (P=$P, ell=$ell, n=$n): ka_lifecycle_body_flat! THREW: $err")
         continue
     end
     e_mul = relerr(ds.multipoles.phi, hs.multipoles.phi)
@@ -233,7 +261,7 @@ for (ci, (P, ell, n)) in pairs(CASES), lh in (false, true)
     println("[$(round(Int, time() - t_case))s] source case $ci LH=$lh (P=$P, ell=$ell, n=$n): ", ok ? "PASS" : "FAIL",
         "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
 end
-println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (Point{Source}): $(npass[])/$ncase pass")
+println("\nka_lifecycle_body_flat! vs run_host_radix_lifecycle! (Point{Source}): $(npass[])/$ncase pass")
 nfail[] == 0 || error("lifecycle gate failed (source)")
 
 # --- Point{Dipole} and Point{SourceVortex}: packed-matrix systems ---
@@ -261,10 +289,10 @@ for (ci, (P, ell, n)) in pairs(CASES),
     data = rand(TF, dpb, n); data[4, :] .= TF(1e-3); data[5:end, :] .= (data[5:end, :] .- TF(0.5)) ./ TF(n)
     system = PackedPoints{TF,BT}(data)
     grid = FM.RadixGrid(system, ell)
-    list = FM.build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
+    list = build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=BT)
-    hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
+    hs = host_radix_state(system, grid, list, P, Val(lh); options=opts)
     local ds
     try
         ds = dev_state(hs, DEV_BACKEND)
@@ -275,10 +303,10 @@ for (ci, (P, ell, n)) in pairs(CASES),
     end
     FM.run_host_radix_lifecycle!(hs)
     try
-        ext.ka_lifecycle_body!(ds)
+        ka_lifecycle_body_flat!(ds)
     catch err
         nfail[] += 1
-        println("$label case $ci (P=$P, ell=$ell, n=$n): ka_lifecycle_body! THREW: $err")
+        println("$label case $ci (P=$P, ell=$ell, n=$n): ka_lifecycle_body_flat! THREW: $err")
         continue
     end
     e_mul = relerr(ds.multipoles.phi, hs.multipoles.phi)
@@ -289,7 +317,7 @@ for (ci, (P, ell, n)) in pairs(CASES),
     println("[$(round(Int, time() - t_case))s] $label case $ci (P=$P, ell=$ell, n=$n): ", ok ? "PASS" : "FAIL",
         "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
 end
-println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (Point{Dipole}, Point{SourceVortex}): $(npass[])/$ncase pass")
+println("\nka_lifecycle_body_flat! vs run_host_radix_lifecycle! (Point{Dipole}, Point{SourceVortex}): $(npass[])/$ncase pass")
 nfail[] == 0 || error("$(nfail[]) case(s) failed")
 
 # --- straight filaments: packed systems with vertices ---
@@ -333,10 +361,10 @@ for (ci, (P, ell, n)) in pairs(CASES),
     end
     system = PackedFilaments{TF,BT}(data)
     grid = FM.RadixGrid(system, ell)
-    list = FM.build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
+    list = build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=BT)
-    hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
+    hs = host_radix_state(system, grid, list, P, Val(lh); options=opts)
     local ds
     try
         ds = dev_state(hs, DEV_BACKEND)
@@ -347,10 +375,10 @@ for (ci, (P, ell, n)) in pairs(CASES),
     end
     FM.run_host_radix_lifecycle!(hs)
     try
-        ext.ka_lifecycle_body!(ds)
+        ka_lifecycle_body_flat!(ds)
     catch err
         nfail[] += 1
-        println("$label case $ci (P=$P, ell=$ell, n=$n): ka_lifecycle_body! THREW: $err")
+        println("$label case $ci (P=$P, ell=$ell, n=$n): ka_lifecycle_body_flat! THREW: $err")
         continue
     end
     e_mul = relerr(ds.multipoles.phi, hs.multipoles.phi)
@@ -361,5 +389,5 @@ for (ci, (P, ell, n)) in pairs(CASES),
     println("[$(round(Int, time() - t_case))s] $label case $ci (P=$P, ell=$ell, n=$n): ", ok ? "PASS" : "FAIL",
         "  multipoles=", e_mul, "  locals=", e_loc, "  output=", e_out)
 end
-println("\nka_lifecycle_body! vs run_host_radix_lifecycle! (filaments, panels): $(npass[])/$ncase pass")
+println("\nka_lifecycle_body_flat! vs run_host_radix_lifecycle! (filaments, panels): $(npass[])/$ncase pass")
 nfail[] == 0 || error("$(nfail[]) filament case(s) failed")

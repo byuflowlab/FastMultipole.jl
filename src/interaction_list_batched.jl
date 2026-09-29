@@ -583,9 +583,8 @@ function build_hierarchical_direct_pairs!(direct_targets, direct_sources,
     return n_direct
 end
 
-# Grid-free constant-P bound from the fixed Morton domain: identical
-# arithmetic to the RadixGrid method, with cell_half_width = h0 / G and
-# displacement = offset * (2 h0 / G).
+# Constant-P bound from the fixed Morton domain: the per-offset method with
+# cell_half_width = h0 / G and displacement = offset * (2 h0 / G).
 function constant_p_stencil_bound(h0::Real, ell::Integer, config::ConstantPStencilConfig,
         offset::SVector{3,<:Integer})
     G = 1 << Int(ell)
@@ -629,148 +628,9 @@ end
     return Int(@inbounds cell_at[coord[1] + 1, coord[2] + 1, coord[3] + 1])
 end
 
-#------- ParentNeighborM2L interaction list (test reference) -------#
-#
-# The classic multi-level parent-neighbor list over a standalone `RadixGrid`. It
-# is a test reference, not a production path: `host_radix_state` builds its
-# reference state from it, and the tests compare the KA lifecycle against that
-# state operator by operator (M2M/L2L groups included, which a leaf-only
-# constant-P list would leave idle).
-
-@inline _chebyshev_norm(d::SVector{3,<:Integer}) =
-    max(abs(Int(d[1])), abs(Int(d[2])), abs(Int(d[3])))
-
-@inline _radix_is_m2l(::ParentNeighborM2L, child_offset::SVector{3,<:Integer},
-        parent_offset::SVector{3,<:Integer}) =
-    _chebyshev_norm(parent_offset) <= 1 && _chebyshev_norm(child_offset) > 1
-
-const _RADIX_CHILD_PHASES = ntuple(i -> SVector{3,Int}(
-    (i - 1) & 0x1,
-    ((i - 1) >> 1) & 0x1,
-    ((i - 1) >> 2) & 0x1,
-), 8)
-
-const _RADIX_DIRECT_OFFSETS = let offsets = SVector{3,Int}[]
-    for k in -1:1, j in -1:1, i in -1:1
-        push!(offsets, SVector{3,Int}(i, j, k))
-    end
-    Tuple(offsets)
-end
-
-function _radix_parent_neighbor_m2l_candidates(target_phase::SVector{3,<:Integer})
-    target_child_coord = SVector{3,Int}(target_phase[1], target_phase[2], target_phase[3])
-    candidates = SVector{3,Int}[]
-    for k_parent in -1:1, j_parent in -1:1, i_parent in -1:1
-        parent_offset = SVector{3,Int}(i_parent, j_parent, k_parent)
-        for source_phase in _RADIX_CHILD_PHASES
-            source_child_coord = 2 * (-parent_offset) + source_phase
-            child_offset = target_child_coord - source_child_coord
-            if _radix_is_m2l(ParentNeighborM2L(), child_offset, parent_offset)
-                push!(candidates, child_offset)
-            end
-        end
-    end
-    sort!(candidates; by=o -> (o[3], o[2], o[1]))
-    return Tuple(candidates)
-end
-
-const _RADIX_PARENT_NEIGHBOR_M2L_CANDIDATES = ntuple(
-    i -> _radix_parent_neighbor_m2l_candidates(_RADIX_CHILD_PHASES[i]), 8,
-)
-
-@inline _radix_phase_index(phase::SVector{3,<:Integer}) =
-    Int(phase[1] + 2 * phase[2] + 4 * phase[3] + 1)
-
-@inline _radix_leaf_phase(coord::SVector{3,<:Integer}) =
-    SVector{3,Int}(coord[1] & 0x1, coord[2] & 0x1, coord[3] & 0x1)
-
-@inline _radix_m2l_candidates(::ParentNeighborM2L, target_phase::SVector{3,<:Integer}) =
-    _RADIX_PARENT_NEIGHBOR_M2L_CANDIDATES[_radix_phase_index(target_phase)]
-
-@inline _radix_direct_offsets(::ParentNeighborM2L) = _RADIX_DIRECT_OFFSETS
-
-@inline _radix_level_coord(leaf_coord::SVector{3,<:Integer}, leaf_level::Integer, level::Integer) =
-    SVector{3,Int}(
-        Int(leaf_coord[1]) >> (Int(leaf_level) - Int(level)),
-        Int(leaf_coord[2]) >> (Int(leaf_level) - Int(level)),
-        Int(leaf_coord[3]) >> (Int(leaf_level) - Int(level)),
-    )
-
-function _radix_ancestor_leaf_map(grid::RadixGrid)
-    map = Dict{Tuple{Int,SVector{3,Int}},Vector{Int}}()
-    for cell in eachindex(grid.cell_keys)
-        leaf_coord = radix_cell_coord(grid, cell)
-        for level in 0:grid.ell
-            coord = _radix_level_coord(leaf_coord, grid.ell, level)
-            push!(get!(() -> Int[], map, (level, coord)), cell)
-        end
-    end
-    return map
-end
-
 @inline _radix_coord_inbounds_at_level(coord::SVector{3,<:Integer}, level::Integer) = begin
     G = 1 << Int(level)
     0 <= coord[1] < G && 0 <= coord[2] < G && 0 <= coord[3] < G
-end
-
-# Call `f(level, offset, target_cell, source_cell)` for each M2L route.
-function _foreach_radix_m2l_route(f, policy::ParentNeighborM2L, grid::RadixGrid)
-    ancestor_leaf_cells = _radix_ancestor_leaf_map(grid)
-    for target_cell in eachindex(grid.cell_keys)
-        target_leaf_coord = radix_cell_coord(grid, target_cell)
-        for level in 1:grid.ell
-            target_coord = _radix_level_coord(target_leaf_coord, grid.ell, level)
-            target_phase = _radix_leaf_phase(target_coord)
-            for offset in _radix_m2l_candidates(policy, target_phase)
-                source_coord = target_coord - offset
-                _radix_coord_inbounds_at_level(source_coord, level) || continue
-                source_cells = get(ancestor_leaf_cells, (level, source_coord), nothing)
-                source_cells === nothing && continue
-                for source_cell in source_cells
-                    f(level, offset, target_cell, source_cell)
-                end
-            end
-        end
-    end
-    return nothing
-end
-
-# Call `f(target_cell, source_cell)` for each direct (near or self) leaf pair.
-function _foreach_radix_direct_pair(f, policy::ParentNeighborM2L, grid::RadixGrid)
-    for target_cell in eachindex(grid.cell_keys)
-        target_coord = radix_cell_coord(grid, target_cell)
-        for offset in _radix_direct_offsets(policy)
-            source_cell = radix_cell_index(grid, target_coord - offset)
-            source_cell == 0 && continue
-            f(target_cell, source_cell)
-        end
-    end
-    return nothing
-end
-
-"""
-    build_radix_interaction_list(policy::ParentNeighborM2L, grid::RadixGrid)
-
-Materialize the multi-level parent-neighbor M2L batches and direct leaf pairs of a
-standalone [`RadixGrid`](@ref), for [`host_radix_state`](@ref). Batches are sorted
-by `(level, z, y, x)` offset. A test reference; production caches build their
-routes in place with `build_radix_routes!`.
-"""
-function build_radix_interaction_list(policy::ParentNeighborM2L, grid::RadixGrid)
-    batches_by_route = Dict{Tuple{Int,SVector{3,Int}},RadixM2LBatch{Int}}()
-    _foreach_radix_m2l_route(policy, grid) do level, offset, target_cell, source_cell
-        route = (level, offset)
-        batch = get!(() -> RadixM2LBatch(level, offset, Int[], Int[]), batches_by_route, route)
-        push!(batch.targets, target_cell)
-        push!(batch.sources, source_cell)
-    end
-    direct_pairs = SVector{2,Int}[]
-    _foreach_radix_direct_pair(policy, grid) do target_cell, source_cell
-        push!(direct_pairs, SVector{2,Int}(target_cell, source_cell))
-    end
-    batches = collect(values(batches_by_route))
-    sort!(batches; by=batch -> (batch.level, batch.offset[3], batch.offset[2], batch.offset[1]))
-    return RadixInteractionList{Int}(batches, direct_pairs)
 end
 
 """

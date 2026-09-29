@@ -243,7 +243,8 @@ const RADIX_DEVICE_WINDOW_CLASSES = 4096
 # platform, and the dense operator footprint — measured to be sufficient
 # selectors — and both are overridden by passing an explicit `options`.
 #
-# Precision. Float32 is the chosen default only for literature P <= 4
+# Precision. Host caches always default to Float64: the CPU gains nothing from
+# Float32. A device cache defaults to Float32 only for literature P <= 4
 # (expansion_order <= 3). There the stencil's own truncation error dominates:
 # at n = 1e6 the max gradient error was 3.186e-4 in Float32 vs 3.185e-4 in
 # Float64 (+0.03%), and Float32 was 1.14x faster. Above P = 4 the default is
@@ -251,8 +252,8 @@ const RADIX_DEVICE_WINDOW_CLASSES = 4096
 # against a Float64 all-pairs reference, the Float32 FMM error keeps falling with
 # P (to ~6e-7 on a wake case at P ≈ 8-10), so a Float32 cache at higher order is
 # a legitimate explicit choice.
-_default_radix_precision(expansion_order::Int) =
-    expansion_order <= 3 ? Float32 : Float64
+_default_radix_precision(expansion_order::Int, device::Bool) =
+    device && expansion_order <= 3 ? Float32 : Float64
 
 # Host strategy, from the measured recurring-step rules: dense wins every measured
 # P = 4 and P = 8 case; precomputed-y wins P = 12, where dense is either unsupported
@@ -413,15 +414,16 @@ When no `options` are passed, precision and M2L strategy follow measured rules:
 
 | selector | precision | M2L strategy |
 |---|---|---|
-| `expansion_order <= 3` (literature `P <= 4`) | `Float32` | dense |
+| `expansion_order <= 3` (literature `P <= 4`) | `Float32` on a device cache, `Float64` on the host | dense |
 | `expansion_order <= 7`, no Lamb-Helmholtz | `Float64` | dense |
 | `expansion_order <= 7`, Lamb-Helmholtz | `Float64` | dense (host; a device cache always builds `ConcatenatedFixedZM2L`) |
 | `expansion_order >= 8` (literature `P >= 12`) | `Float64` | precomputed-y |
 | dense operator payload over its gate | unchanged | precomputed-y |
 
-`Float32` is the default only at literature `P <= 4`, where the stencil's own
-truncation error dominates and Float32 matched Float64 accuracy (+0.03%) while
-running 1.14x faster; above that the default is `Float64`. Pass explicit `options`
+A host cache always defaults to `Float64`. A device cache defaults to `Float32`
+only at literature `P <= 4`, where the stencil's own truncation error dominates
+and Float32 matched Float64 accuracy (+0.03%) while running 1.14x faster; above
+that the default is `Float64`. Pass explicit `options`
 to run Float32 at a higher order. Dense trades a large construction cost for the
 best steady state (~300-370
 break-even steps in the benchmarked configuration), which suits this repeated-step cache; pass
@@ -486,7 +488,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     auto_options = options === nothing
     if auto_options
         options = RadixLifecycleOptions(;
-            precision=_default_radix_precision(Int(expansion_order)),
+            precision=_default_radix_precision(Int(expansion_order), device),
             m2l_strategy=ConcatenatedFixedZM2L())
     end
     TF = options.precision
@@ -610,10 +612,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         cache = _radix_cache_device_build(sources, P, Int(ell), x_min, h0, maxn,
             options, stencil_policy, accepted, rejected, max_cells, max_nodes,
             route_capacity, direct_capacity, basis_info, Val(LH);
-            hierarchical_tables, class_level, class_offset,
-            hierarchical_level_class_of, hierarchical_level_radii2,
-            max_level_nodes, hessian, ell_axes, box_extent,
-            root_level, first_m2l_level)
+            hierarchical_tables, hierarchical_level_class_of, hessian,
+            ell_axes, box_extent, root_level, first_m2l_level)
         cache.built = true
         return cache
     end
@@ -703,9 +703,8 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     return cache
 end
 
-# Refresh the per-level M2M/L2L group edge columns and the nonleaf index from the
-# freshly updated grid. Nodes are level-major, so each level's children occupy one
-# contiguous index block and the nonleaf prefix is exactly 1:level_offsets[ell + 1].
+# Refresh the per-level M2M/L2L group edge columns from the freshly updated grid.
+# Nodes are level-major, so each level's children occupy one contiguous index block.
 function _refresh_resident_stage_groups!(ws::ResidentOperatorWorkspace{TF},
         grid::DeviceRadixGrid, level_offsets::Vector{Int}) where TF
     ell = grid.ell
@@ -719,11 +718,6 @@ function _refresh_resident_stage_groups!(ws::ResidentOperatorWorkspace{TF},
     end
     for (gi, child_level) in enumerate((first_level + 1):ell)
         _refresh_group_edges!(ws.l2l_groups[gi], grid, level_offsets, child_level, :l2l)
-    end
-    n_nonleaf = level_offsets[ell + 1]
-    resize!(ws.nonleaf_idx, n_nonleaf)
-    @inbounds for i in 1:n_nonleaf
-        ws.nonleaf_idx[i] = i
     end
     return ws
 end
@@ -813,30 +807,6 @@ function _pack_radix_source_bodies!(source_bodies::AbstractMatrix{TF}, perm, bod
         end
     end
     return source_bodies
-end
-
-function _refresh_hierarchical_route_telemetry!(state,
-        ctx::HostHierarchicalM2LContext)
-    noffsets = length(ctx.tables.push_offsets)
-    total = 0
-    fill!(ctx.routes_per_level, 0)
-    last_count = 0
-    for level in ctx.first_m2l_level:state.grid.ell
-        level_total = 0
-        for first_offset in 1:ctx.window_classes:noffsets
-            last_offset = min(first_offset + ctx.window_classes - 1, noffsets)
-            last_count = build_hierarchical_routes_window!(
-                state.route_levels, state.route_offsets, state.route_targets,
-                state.route_sources, ctx.apply_plan.route_class,
-                ctx, state.grid, level, first_offset, last_offset)
-            level_total += last_count
-        end
-        ctx.routes_per_level[level + 1] = level_total
-        total += level_total
-    end
-    ctx.total_routes = total
-    ctx.last_window_routes = last_count
-    return total
 end
 
 """
@@ -1021,6 +991,9 @@ Refresh every step-varying part of the cache's resident state from the systems'
 current positions and strengths: grid (fixed Morton domain), packed source
 bodies, occupancy map, M2L routes + direct pairs, tree edges, per-level operator
 group columns, and the step counts. No array is reallocated. Returns the cache.
+Under the hierarchical policy the M2L routes are generated window by window
+inside the M2L stage instead, which also sets `counts.n_routes` and the
+context's route totals; until then `counts.n_routes` is 0.
 A device cache is refreshed by the backend extension (`_RADIX_DEVICE_UPDATE_HOOK`);
 a host cache by `_update_host_radix_state!`.
 """
@@ -1086,9 +1059,7 @@ function _update_host_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) 
         n_direct = build_hierarchical_direct_pairs!(state.direct_targets,
             state.direct_sources, ctx, grid, n_cells)
         profiling && (ctx.update_stage_ns[3] = time_ns() - t_stage)
-        t_stage = profiling ? time_ns() : UInt64(0)
-        n_routes = _refresh_hierarchical_route_telemetry!(state, ctx)
-        profiling && (ctx.update_stage_ns[4] = time_ns() - t_stage)
+        n_routes = 0    # counted by the M2L stage, which generates the windows
     else
         n_routes, n_direct = build_radix_routes!(
             state.route_levels, state.route_offsets, state.route_targets,

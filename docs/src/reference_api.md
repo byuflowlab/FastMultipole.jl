@@ -137,4 +137,3 @@ initialize_harmonics
 multipole_error
 local_error
 ```
-

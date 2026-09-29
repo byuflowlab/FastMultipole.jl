@@ -1,92 +1,5 @@
 const RADIX_GRID_MAX_ELL = 21
 
-# The standalone, allocating `RadixGrid` constructors below build a fresh grid
-# from the systems' bounding box. They serve the reference host lists and the
-# tests; a `RadixFMMCache` instead refreshes a capacity-sized `DeviceRadixGrid`
-# in place (below). The sort, cell-compression and Morton helpers in between
-# are shared by both.
-function RadixGrid(system, ell::Integer; TF=numtype(system), h0_fallback=one(TF))
-    TF = promote_type(TF, numtype(system))
-    return _radix_grid((system,), ell, TF, h0_fallback)
-end
-
-function RadixGrid(systems::Tuple, ell::Integer; TF=get_type(systems),
-        h0_fallback=one(TF))
-    for system in systems
-        TF = promote_type(TF, numtype(system))
-    end
-    return _radix_grid(systems, ell, TF, h0_fallback)
-end
-
-function _radix_grid(systems::Tuple, ell::Integer, ::Type{TF}, h0_fallback) where TF
-    ell < 0 && throw(ArgumentError("RadixGrid depth ell must be nonnegative"))
-    ell > RADIX_GRID_MAX_ELL && throw(ArgumentError("RadixGrid depth ell must be <= $RADIX_GRID_MAX_ELL for UInt64 Morton keys"))
-
-    n_bodies = get_n_bodies(systems)
-    fallback = TF(h0_fallback)
-    fallback > zero(TF) || throw(ArgumentError("h0_fallback must be positive"))
-
-    body_system = Vector{Int}(undef, n_bodies)
-    body_index = Vector{Int}(undef, n_bodies)
-
-    if n_bodies == 0
-        return RadixGrid{TF}(zero(SVector{3,TF}), fallback, Int(ell), Int[], Int[], UInt64[], Matrix{Int}(undef, 2, 0), body_system, body_index)
-    end
-
-    x_min_data, x_max_data = _radix_bounds(systems, TF)
-    center = (x_min_data + x_max_data) * TF(0.5)
-    box = (x_max_data - x_min_data) * TF(0.5)
-    h0 = max(box[1], box[2], box[3])
-    h0 = ifelse(h0 > zero(TF), h0, fallback)
-    x_min = center - SVector{3,TF}(h0, h0, h0)
-
-    body_keys = Vector{UInt64}(undef, n_bodies)
-    _radix_fill_body_data!(body_keys, body_system, body_index, systems, x_min, h0, Int(ell))
-
-    perm = _host_radix_sort_permutation(body_keys)
-    invperm = Vector{Int}(undef, n_bodies)
-    @inbounds for i_sorted in eachindex(perm)
-        invperm[perm[i_sorted]] = i_sorted
-    end
-
-    cell_keys, cell_ranges = _compress_radix_cells(body_keys, perm)
-
-    return RadixGrid{TF}(x_min, h0, Int(ell), perm, invperm, cell_keys, cell_ranges, body_system, body_index)
-end
-
-function _host_radix_sort_permutation(body_keys::AbstractVector{UInt64})
-    n = length(body_keys)
-    perm = collect(1:n)
-    n <= 1 && return perm
-
-    scratch = similar(perm)
-    counts = zeros(Int, 256)
-    offsets = Vector{Int}(undef, 256)
-
-    @inbounds for shift in 0:8:56
-        fill!(counts, 0)
-        for i in perm
-            counts[Int((body_keys[i] >> shift) & UInt64(0xff)) + 1] += 1
-        end
-
-        next = 1
-        for ibucket in 1:256
-            offsets[ibucket] = next
-            next += counts[ibucket]
-        end
-
-        for i in perm
-            ibucket = Int((body_keys[i] >> shift) & UInt64(0xff)) + 1
-            scratch[offsets[ibucket]] = i
-            offsets[ibucket] += 1
-        end
-
-        perm, scratch = scratch, perm
-    end
-
-    return perm
-end
-
 function _radix_fill_body_data!(body_keys, body_system, body_index, systems::Tuple, x_min, h0, ell::Int,
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell))
     i_global = 0
@@ -123,52 +36,6 @@ function _radix_bounds(systems::Tuple, ::Type{TF}) where TF
     return x_min, x_max
 end
 
-function _compress_radix_cells(body_keys::AbstractVector{UInt64}, perm::AbstractVector{Int})
-    n_bodies = length(perm)
-    n_bodies == 0 && return UInt64[], Matrix{Int}(undef, 2, 0)
-
-    cell_keys = UInt64[]
-    firsts = Int[]
-    counts = Int[]
-    current_key = body_keys[perm[1]]
-    current_first = 1
-    current_count = 1
-
-    for i_sorted in 2:n_bodies
-        key = body_keys[perm[i_sorted]]
-        if key == current_key
-            current_count += 1
-        else
-            push!(cell_keys, current_key)
-            push!(firsts, current_first)
-            push!(counts, current_count)
-            current_key = key
-            current_first = i_sorted
-            current_count = 1
-        end
-    end
-
-    push!(cell_keys, current_key)
-    push!(firsts, current_first)
-    push!(counts, current_count)
-
-    cell_ranges = Matrix{Int}(undef, 2, length(cell_keys))
-    @inbounds for i_cell in eachindex(cell_keys)
-        cell_ranges[1, i_cell] = firsts[i_cell]
-        cell_ranges[2, i_cell] = counts[i_cell]
-    end
-    return cell_keys, cell_ranges
-end
-
-@inline radix_resolution(grid::RadixGrid) = 1 << grid.ell
-@inline radix_resolution(grid::DeviceRadixGrid) = 1 << grid.ell
-@inline radix_cell_width(grid::RadixGrid) = (2 * grid.h0) / radix_resolution(grid)
-@inline radix_cell_width(grid::DeviceRadixGrid) = (2 * grid.h0) / radix_resolution(grid)
-@inline Base.eltype(::RadixGrid{TF}) where TF = TF
-@inline Base.eltype(::DeviceRadixGrid{TF}) where TF = TF
-@inline Base.length(grid::RadixGrid) = length(grid.cell_keys)
-@inline Base.length(grid::DeviceRadixGrid) = grid.n_cells
-
 # Leaf-cell coordinate of `x`. Axis `a` spans `2^ell_axes[a]` cells (a
 # rectangular box); a body on an axis' upper face clamps into its last cell.
 function radix_cell_coord(x_min::SVector{3,TF}, h0::TF, ell::Integer, x,
@@ -182,8 +49,6 @@ function radix_cell_coord(x_min::SVector{3,TF}, h0::TF, ell::Integer, x,
         clamp(floor(Int, (xi[3] - x_min[3]) / Δ), 0, (1 << ell_axes[3]) - 1),
     )
 end
-
-@inline radix_cell_coord(grid::RadixGrid, x) = radix_cell_coord(grid.x_min, grid.h0, grid.ell, x)
 
 function morton_key(coord::SVector{3,<:Integer}, ell::Integer)
     ell < 0 && throw(ArgumentError("Morton depth ell must be nonnegative"))
@@ -199,11 +64,6 @@ end
 
 morton_key(i::Integer, j::Integer, k::Integer, ell::Integer) = morton_key(SVector{3,Int}(i, j, k), ell)
 
-function _radix_coord_inbounds(coord::SVector{3,<:Integer}, ell::Integer)
-    G = 1 << Int(ell)
-    return 0 <= coord[1] < G && 0 <= coord[2] < G && 0 <= coord[3] < G
-end
-
 function morton_decode(key::UInt64, ell::Integer)
     ell < 0 && throw(ArgumentError("Morton depth ell must be nonnegative"))
     ell > RADIX_GRID_MAX_ELL && throw(ArgumentError("Morton depth ell must be <= $RADIX_GRID_MAX_ELL for UInt64 keys"))
@@ -217,23 +77,6 @@ function morton_decode(key::UInt64, ell::Integer)
     end
     return SVector{3,Int}(i, j, k)
 end
-
-@inline radix_cell_coord(grid::RadixGrid, i_cell::Integer) = morton_decode(grid.cell_keys[i_cell], grid.ell)
-
-function radix_cell_center(grid::RadixGrid{TF}, coord::SVector{3,<:Integer}) where TF
-    Δ = radix_cell_width(grid)
-    return grid.x_min + Δ * (SVector{3,TF}(coord[1], coord[2], coord[3]) + SVector{3,TF}(TF(0.5), TF(0.5), TF(0.5)))
-end
-
-@inline radix_cell_center(grid::RadixGrid, i_cell::Integer) = radix_cell_center(grid, radix_cell_coord(grid, i_cell))
-
-function radix_cell_index(grid::RadixGrid, key::UInt64)
-    i = searchsortedfirst(grid.cell_keys, key)
-    return (i <= length(grid.cell_keys) && grid.cell_keys[i] == key) ? i : 0
-end
-
-@inline radix_cell_index(grid::RadixGrid, coord::SVector{3,<:Integer}) =
-    _radix_coord_inbounds(coord, grid.ell) ? radix_cell_index(grid, morton_key(coord, grid.ell)) : 0
 
 #------- in-place radix grid refresh -------#
 #
@@ -314,10 +157,11 @@ function _refresh_radix_cells!(cell_keys::Vector{UInt64}, cell_ranges::AbstractM
     return n_cells
 end
 
-# In-place level-major node metadata rebuild, matching host_resident_radix_grid
-# exactly: node keys per level are the sorted distinct shifted leaf keys, parents
-# resolve by a sorted merge against the previous level, and each parent's children
-# are contiguous in the next level. Returns n_nodes; fills level_offsets
+# In-place level-major node metadata rebuild, matching the test reference
+# `host_resident_radix_grid` (test/radix_reference.jl) exactly: node keys per
+# level are the sorted distinct shifted leaf keys, parents resolve by a sorted
+# merge against the previous level, and each parent's children are contiguous
+# in the next level. Returns n_nodes; fills level_offsets
 # (level_offsets[L + 2] - level_offsets[L + 1] nodes at level L).
 function _refresh_radix_nodes!(grid::DeviceRadixGrid{TF}, level_offsets::Vector{Int},
         n_cells::Integer, first_level::Integer=0) where TF

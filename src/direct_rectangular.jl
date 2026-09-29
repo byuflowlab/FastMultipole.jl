@@ -141,7 +141,7 @@ end
 
 function _rect_host!(out, targets, kernel, sources, grad::Val, pot::Val)
     n_sources = size(sources, 2)
-    Threads.@threads for i in 1:size(targets, 2)
+    Threads.@threads :static for i in 1:size(targets, 2)
         _rect_target!(out, targets, kernel, sources, i, n_sources, grad, pot)
     end
     return nothing

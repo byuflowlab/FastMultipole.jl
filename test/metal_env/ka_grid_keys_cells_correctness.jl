@@ -3,9 +3,10 @@
 # `ka_radix_compress_cells!` (ext/ka/ka_grid_refresh.jl): body keys, the body
 # sort, and leaf-cell compression.
 #
-# Oracle: the host builder's own three steps, `_radix_fill_body_data!`,
-# `_host_radix_sort_permutation` and `_compress_radix_cells`
-# (src/tree_batched.jl), which is what `_radix_grid` runs on the CPU. Both the
+# Oracle: the host builder's three steps, `_radix_fill_body_data!`
+# (src/tree_batched.jl) plus `_host_radix_sort_permutation` and
+# `_compress_radix_cells` (test/radix_reference.jl), which is what the
+# reference `_radix_grid` runs on the CPU. Both the
 # host radix sort and the device `sortperm!` are stable, so `perm` is compared
 # elementwise, not as a per-cell set.
 #
@@ -53,11 +54,11 @@ function run_case(TF, seed, n, ell, cluster)
 
     # ---- host reference ----
     ref_keys = host_keys(positions, x_min, h0, ell)
-    ref_perm = FM._host_radix_sort_permutation(ref_keys)
+    ref_perm = _host_radix_sort_permutation(ref_keys)
     ref_invperm = Vector{Int}(undef, n)
     for i in eachindex(ref_perm); ref_invperm[ref_perm[i]] = i; end
     ref_sorted = ref_keys[ref_perm]
-    ref_cell_keys, ref_cell_ranges = FM._compress_radix_cells(ref_keys, ref_perm)
+    ref_cell_keys, ref_cell_ranges = _compress_radix_cells(ref_keys, ref_perm)
     n_cells_ref = length(ref_cell_keys)
 
     # ---- device: capacity-sized storage, as in the cache ----
