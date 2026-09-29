@@ -5,8 +5,7 @@
 # The epsilon and the pi below must carry the INPUT's float type. Defaulting
 # them to Float64 literals promotes an otherwise-Float32 computation to
 # Float64, which CUDA silently tolerates but Apple GPUs reject outright
-# ("unsupported use of double value") -- the adaptive S2L/M2T kernels call this
-# from device code. For Float64 inputs these are bit-identical to the previous
+# ("unsupported use of double value") in device code. For Float64 inputs these are bit-identical to the previous
 # `1e-10` / `π` literals, so the host path is unchanged.
 @inline _c2s_epsilon(x::AbstractFloat) = oftype(x, 1e-10)
 @inline _c2s_epsilon(x) = 1e-10

@@ -13,7 +13,7 @@ end
 """
 Designed for use with a vortex ring panel.
 """
-function induced(target, vertices, normal, kernel, derivatives_switch=DerivativesSwitch(true,false,true,true))
+function induced(target, vertices, normal, kernel, derivatives_switch=DerivativesSwitch(true,false,true; third_derivative=true))
 
     potential, velocity, hessian = _induced(target, vertices, normal, strength, centroid, kernel, derivatives_switch)
 

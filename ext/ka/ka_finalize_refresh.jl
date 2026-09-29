@@ -1,14 +1,13 @@
 #------- output finalization -------#
 #
-# Backend-agnostic port of `finalize_cuda_radix_output!`
-# (src/translate_batched_cuda.jl:5686): de-permute the lifecycle's sorted-order
+# Backend-agnostic output finalize: de-permute the lifecycle's sorted-order
 # `state.output` back into each target system's own body order and hand it to
 # `buffer_to_target!`.
 #
 # Only one of the two branches contains anything device-specific. The
 # host-resident branch is already generic -- a prefix `copyto!` into the pinned
 # staging, then `_copy_radix_output_to_host_target_buffer!`, both of which live
-# in translate_batched_resident.jl and never mention CUDA -- so it is reproduced
+# in src/resident/resident_finalize.jl and never mention CUDA -- so it is reproduced
 # verbatim, including the download-once-per-call sharing of `host_output` across
 # systems and the `influence_downloads` counter bump. The device-resident branch
 # needs the scatter kernel, which is what this ports.
@@ -162,8 +161,8 @@ end
 
 #------- stage 19: within-cell sub-Morton nearfield subsort -------#
 #
-# Port of `_cuda_nearfield_subsort!` (src/translate_batched_cuda.jl:8209) and
-# its two kernels. Mechanism (a) of 032a stage C: compose a within-cell
+# Within-cell sub-Morton nearfield subsort (mechanism (a) of 032a stage C):
+# compose a within-cell
 # sub-Morton ordering into `grid.perm` after the sort and before body packing,
 # so consecutive sorted bodies -- adjacent lanes in the nearfield kernel -- span
 # a compact spatial sub-block of their cell.
@@ -298,19 +297,16 @@ end
 
 
 
-#------- hierarchical refresh: direct pairs, symmetric compaction, window cache -------#
+#------- hierarchical refresh: direct pairs, window cache -------#
 #
-# The three pieces of the hierarchical branch of `update_cuda_radix_state!`
-# (src/translate_batched_cuda.jl:6857) that were still CUDA-only. This is the
+# The hierarchical branch of `ka_update_radix_state!`. This is the
 # branch FLOWVPM actually takes: its cache is built with `window_classes`, so
 # `RadixFMMCache` selects a `HierarchicalRigidStencil` and `hierarchical_ctx` is
-# non-`nothing`. The flat `ka_generate_radix_routes!` above serves the
-# `hctx === nothing` path only -- it is NOT what the production refresh calls.
+# non-`nothing`.
 #
-# `ka_hier_refresh_occupancy!` (above) already covered the per-level occupancy
-# lookup and `ka_hier_generate_window_core!` the single-window generator, so
-# what is added here is the direct-pair generator, the symmetric compaction, and
-# the loop that concatenates every level's windows into the epoch cache.
+# `ka_hier_refresh_occupancy!` (ka_hierarchical_m2l.jl) covers the per-level
+# occupancy lookup; what is added here is the direct-pair generator and the
+# generator that concatenates every level's windows into the epoch cache.
 #
 # Direct pairs differ from the flat path's in what they index: the flat kernels
 # look up `cell_at` by decoded leaf Morton key, these look up the hierarchical
@@ -405,74 +401,11 @@ function ka_hier_generate_direct_pairs!(ctx, hctx::FastMultipole.DeviceHierarchi
     return n_direct
 end
 
-@kernel function ka_symmetric_pair_flags_kernel!(flags, @Const(direct_targets),
-        @Const(direct_sources), @Const(cell_ranges), n_direct, max_bodies)
-    i = @index(Global)
-    @inbounds if i <= n_direct
-        t = direct_targets[i]
-        s = direct_sources[i]
-        oversized = cell_ranges[2, t] > max_bodies || cell_ranges[2, s] > max_bodies
-        flags[i] = (oversized || t <= s) ? Int32(1) : Int32(0)
-    end
-end
-
-@kernel function ka_symmetric_pair_compact_kernel!(targets, sources, @Const(flags),
-        @Const(prefix), @Const(direct_targets), @Const(direct_sources),
-        @Const(cell_ranges), n_direct, max_bodies)
-    i = @index(Global)
-    @inbounds if i <= n_direct && flags[i] == Int32(1)
-        t = direct_targets[i]
-        s = direct_sources[i]
-        oversized = cell_ranges[2, t] > max_bodies || cell_ranges[2, s] > max_bodies
-        p = Int(prefix[i])
-        # oversized cells keep BOTH directed entries and encode the dense
-        # fallback as a negative target id, so the selection stays on device
-        targets[p] = oversized ? -t : t
-        sources[p] = s
-    end
-end
-
-"""
-    ka_compact_symmetric_pairs!(ctx, hctx, cell_ranges, n_direct, max_bodies;
-                                workgroup=KA_AUTO_WORKGROUP)
-
-Port of `_cuda_compact_symmetric_pairs!`: reduce the directed leaf-cell pair
-list to one unordered entry per ordinary pair, keeping both directed entries for
-oversized cells (negative target id = dense fallback). Writes
-`hctx.symmetric_targets`/`symmetric_sources`, sets `hctx.n_symmetric_pairs`, and
-returns it. Refreshes every step, not only on occupancy change: the oversized
-selection reads the per-cell body counts, which move with the bodies.
-"""
-function ka_compact_symmetric_pairs!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LContext,
-        cell_ranges, n_direct::Int, max_bodies::Int; workgroup=KA_AUTO_WORKGROUP)
-    n_direct == 0 && (hctx.n_symmetric_pairs = 0; return 0)
-    n_direct <= length(ctx.direct_flags) || throw(AssertionError(
-        "symmetric compaction exceeds direct scratch capacity"))
-    backend = KA.get_backend(ctx.direct_flags)
-    flagk = _cached_kernel(ka_symmetric_pair_flags_kernel!, backend, workgroup)
-    flagk(ctx.direct_flags, ctx.direct_targets, ctx.direct_sources, cell_ranges,
-        n_direct, max_bodies; ndrange=n_direct)
-    accumulate!(+, view(ctx.direct_prefix, 1:n_direct), view(ctx.direct_flags, 1:n_direct))
-    KA.synchronize(backend)
-    copyto!(ctx.host_scalar32, 1, ctx.direct_prefix, n_direct, 1)
-    n = Int(ctx.host_scalar32[1])
-    n <= length(hctx.symmetric_targets) || throw(AssertionError(
-        "symmetric pair buffer exceeded capacity"))
-    if n > 0
-        compactk = _cached_kernel(ka_symmetric_pair_compact_kernel!, backend, workgroup)
-        compactk(hctx.symmetric_targets, hctx.symmetric_sources, ctx.direct_flags,
-            ctx.direct_prefix, ctx.direct_targets, ctx.direct_sources, cell_ranges,
-            n_direct, max_bodies; ndrange=n_direct)
-        KA.synchronize(backend)
-    end
-    hctx.n_symmetric_pairs = n
-    return n
-end
-
-# Grow the cached-window arrays to `needed`, preserving the first `cursor`
-# entries. Generic form of `_cuda_hier_win_ensure!`; growth happens only inside
-# epoch regeneration, so this allocation recurs exactly with occupancy change.
-function _ka_hier_win_ensure!(hctx, backend, cursor::Int, needed::Int)
+# Grow the cached-window arrays to `needed`. The contents are not preserved:
+# the caller regenerates every window into the fresh arrays. Growth happens only
+# inside epoch regeneration, so this allocation recurs exactly with occupancy
+# change.
+function _ka_hier_win_ensure!(hctx, backend, needed::Int)
     old_class = hctx.win_class
     cap = old_class === nothing ? 0 : length(old_class)
     needed <= cap && return nothing
@@ -480,11 +413,6 @@ function _ka_hier_win_ensure!(hctx, backend, cursor::Int, needed::Int)
     new_class = KA.allocate(backend, Int32, newcap)
     new_sources = KA.allocate(backend, Int, newcap)
     new_targets = KA.allocate(backend, Int, newcap)
-    if cursor > 0
-        copyto!(new_class, 1, old_class, 1, cursor)
-        copyto!(new_sources, 1, hctx.win_sources, 1, cursor)
-        copyto!(new_targets, 1, hctx.win_targets, 1, cursor)
-    end
     hctx.win_class = new_class
     hctx.win_sources = new_sources
     hctx.win_targets = new_targets
@@ -492,24 +420,23 @@ function _ka_hier_win_ensure!(hctx, backend, cursor::Int, needed::Int)
 end
 
 """
-    ka_hier_cache_windows!(ctx, hctx, grid; workgroup=KA_AUTO_WORKGROUP)
+    ka_hier_cache_windows!(hctx, grid; workgroup=KA_AUTO_WORKGROUP)
 
-Port of `_cuda_hier_cache_windows!`: regenerate the complete per-level window
-concatenation for the current occupancy epoch, reusing the single-window
-generator verbatim so the cached routes are byte-identical to what the M2L stage
-would have generated window by window. Runs inside the refresh, which is legal
-because windows read node metadata only, never expansions.
+Regenerate the complete per-level window concatenation for the current
+occupancy epoch, in the same (level, offset-class window, class, source) order
+as the host `build_hierarchical_routes_window!`. Runs inside the refresh, which
+is legal because windows read node metadata only, never expansions.
 """
-function ka_hier_cache_windows!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LContext,
+function ka_hier_cache_windows!(hctx::FastMultipole.DeviceHierarchicalM2LContext,
         grid; workgroup=KA_AUTO_WORKGROUP)
     plan = hctx.apply_plan
     route_class = plan.route_class
-    backend = KA.get_backend(ctx.route_targets)
+    backend = KA.get_backend(hctx.node_at)
     noffsets = hctx.noffsets
     K = hctx.window_classes
     ell = hctx.ell
-    # `class_base` follows the live loop in `ka_hierarchical_m2l!`: a cache built
-    # with 0 would apply every level with level-2 operators.
+    # `class_base` is (L - first_m2l_level) * noffsets: a cache built with 0
+    # would apply every level with level-2 operators.
     windows = Tuple{Int,Int,Int}[]
     for L in hctx.first_m2l_level:ell, first_offset in 1:K:noffsets
         push!(windows, (L, first_offset, min(first_offset + K - 1, noffsets)))
@@ -535,22 +462,14 @@ function ka_hier_cache_windows!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LCo
     total_used > 0 && accumulate!(+, view(prefix_all, 1:total_used), view(flags_all, 1:total_used))
     _utick!(:win_phase1_count, backend)
     ends = KA.allocate(backend, Int, max(nw, 1)); copyto!(ends, max.(bases .+ used, 1))
+    KA.synchronize(backend)
     host_ends = Array(prefix_all[ends])          # the one D2H sync
     _utick!(:win_sync_d2h, backend)
     total_routes = nw > 0 ? Int(host_ends[end]) : 0
-    _ka_hier_win_ensure!(hctx, backend, 0, total_routes)
-    fill!(hctx.win_level_starts, 0)
-    fill!(hctx.win_level_counts, 0)
-    fill!(hctx.routes_per_level, 0)
+    _ka_hier_win_ensure!(hctx, backend, total_routes)
     compact_kernel = _cached_kernel(ka_hier_route_compact_global_kernel!, backend, workgroup)
-    cursor = 0; level_total = 0; current_L = -1
+    cursor = 0
     for (w, (L, first_offset, last_offset)) in enumerate(windows)
-        if L != current_L
-            current_L == -1 || (hctx.win_level_counts[current_L + 1] = level_total;
-                                hctx.routes_per_level[current_L + 1] = level_total)
-            current_L = L; level_total = 0
-            hctx.win_level_starts[L + 1] = cursor
-        end
         used[w] > 0 || continue
         n = Int(host_ends[w]) - (w > 1 ? Int(host_ends[w-1]) : 0)
         n == 0 && continue
@@ -561,13 +480,9 @@ function ka_hier_cache_windows!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LCo
             hctx.d_push_offsets, hctx.level_base[L + 1], hctx.level_offsets[L + 1] + 1,
             n_src(L), first_offset, kn, L, class_base; ndrange=used[w])
         cursor += n
-        level_total += n
     end
-    current_L == -1 || (hctx.win_level_counts[current_L + 1] = level_total;
-                        hctx.routes_per_level[current_L + 1] = level_total)
     _utick!(:win_phase2_compact, backend)
     hctx.total_routes = cursor
-    hctx.last_window_routes = 0
     hctx.win_valid = true
     return hctx
 end

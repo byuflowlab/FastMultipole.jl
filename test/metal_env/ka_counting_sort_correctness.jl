@@ -1,5 +1,5 @@
 # Correctness gate for the KA bounded-key counting sort -- the port of CUDA's
-# `_cuda_counting_sort_into!` fast path (src/translate_batched_cuda.jl:223).
+# `_cuda_counting_sort_into!` fast path (former CUDA lifecycle, removed).
 #
 # This path is UNSTABLE BY DESIGN, matching CUDA: the scatter claims slots with
 # an atomic cursor, so bodies sharing a cell come out in a run-dependent order.

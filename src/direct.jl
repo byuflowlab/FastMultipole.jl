@@ -76,7 +76,7 @@ function direct_singlethread!(target_systems::Tuple, source_systems::Tuple; targ
 
     if !isnothing(nearfield_cache)
         _refuse_conditioning(direct_conditioning, "standalone direct! evaluation")
-        nearfield_matvec!(target_buffers, nearfield_cache, source_buffers; n_threads=1)
+        nearfield_matvec!(target_buffers, nearfield_cache, source_buffers; n_threads=1, derivatives_switches)
     elseif has_direct_conditioning(direct_conditioning)
         for (i_source_system, (source_system, source_buffer)) in enumerate(zip(source_systems, source_buffers))
             for (i_target_system, (target_system, target_buffer, derivatives_switch)) in enumerate(zip(target_systems, target_buffers, derivatives_switches))
@@ -127,7 +127,7 @@ function direct_multithread!(target_systems::Tuple, source_systems::Tuple, n_thr
 
     if !isnothing(nearfield_cache)
         _refuse_conditioning(direct_conditioning, "standalone direct! evaluation")
-        nearfield_matvec!(target_buffers, nearfield_cache, source_buffers; n_threads)
+        nearfield_matvec!(target_buffers, nearfield_cache, source_buffers; n_threads, derivatives_switches)
     elseif has_direct_conditioning(direct_conditioning)
         for (i_source_system, (source_system, source_buffer)) in enumerate(zip(source_systems, source_buffers))
             n_source_bodies = get_n_bodies(source_system)

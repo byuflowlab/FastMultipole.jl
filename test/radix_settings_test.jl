@@ -20,9 +20,9 @@ end
         end
         # eagerly-defined settings are readable
         @test radix_setting(:CUDA_NEARFIELD_GH_MODE) isa Symbol
-        @test radix_setting(:FACTORED_Y_GEMM_MIN_COLS) isa Integer
-        @test radix_setting_lock(:CUDA_NEARFIELD_GH_MODE) === :construction
-        @test radix_setting_lock(:FACTORED_Y_GEMM_MIN_COLS) === :runtime
+        @test radix_setting(:FACTORED_Y_GEMM_MIN_DIM) isa Integer
+        @test RADIX_SETTING_SPECS[:CUDA_NEARFIELD_GH_MODE].lock === :construction
+        @test RADIX_SETTING_SPECS[:FACTORED_Y_GEMM_MIN_DIM].lock === :runtime
         # radix_settings() reports defined settings only, as a NamedTuple
         settings = radix_settings()
         @test settings isa NamedTuple
@@ -30,7 +30,6 @@ end
         # unknown names throw
         @test_throws ArgumentError radix_setting(:NOT_A_SETTING)
         @test_throws ArgumentError set_radix_setting!(:NOT_A_SETTING, 1)
-        @test_throws ArgumentError radix_setting_lock(:NOT_A_SETTING)
     end
 
     @testset "validation" begin
@@ -43,9 +42,9 @@ end
             @test_throws ArgumentError set_radix_setting!(:CUDA_NEARFIELD_GH_MODE, :bogus)
             @test_throws ArgumentError set_radix_setting!(:CUDA_NEARFIELD_GH_MODE, 3)
             @test radix_setting(:CUDA_NEARFIELD_GH_MODE) === :shipped
-            @test_throws ArgumentError set_radix_setting!(:FACTORED_Y_GEMM_MIN_COLS, -1)
-            @test_throws ArgumentError set_radix_setting!(:FACTORED_Y_GEMM_MIN_COLS, 1.5)
-            @test_throws ArgumentError set_radix_setting!(:FACTORED_Y_GEMM_MIN_COLS, true)
+            @test_throws ArgumentError set_radix_setting!(:FACTORED_Y_GEMM_MIN_DIM, -1)
+            @test_throws ArgumentError set_radix_setting!(:FACTORED_Y_GEMM_MIN_DIM, 1.5)
+            @test_throws ArgumentError set_radix_setting!(:FACTORED_Y_GEMM_MIN_DIM, true)
         finally
             set_radix_setting!(:CUDA_NEARFIELD_GH_MODE, old)
         end
@@ -56,20 +55,20 @@ end
 
     @testset "atomic batch + CUDA thread validation" begin
         old_gh = radix_setting(:CUDA_NEARFIELD_GH_MODE)
-        old_cols = radix_setting(:FACTORED_Y_GEMM_MIN_COLS)
+        old_dim = radix_setting(:FACTORED_Y_GEMM_MIN_DIM)
         @test_throws ArgumentError set_radix_settings!((;
             CUDA_NEARFIELD_GH_MODE=:shipped,
-            FACTORED_Y_GEMM_MIN_COLS=-1,
+            FACTORED_Y_GEMM_MIN_DIM=-1,
         ))
         @test radix_setting(:CUDA_NEARFIELD_GH_MODE) === old_gh
-        @test radix_setting(:FACTORED_Y_GEMM_MIN_COLS) == old_cols
+        @test radix_setting(:FACTORED_Y_GEMM_MIN_DIM) == old_dim
     end
 
     @testset "construction-lock snapshot + drift detection" begin
         snapshot = snapshot_locked_radix_settings()
         @test snapshot isa Vector{Pair{Symbol,Any}}
         # only construction-locked settings are snapshotted
-        @test all(FastMultipole.radix_setting_lock(name) === :construction
+        @test all(RADIX_SETTING_SPECS[name].lock === :construction
                   for (name, _) in snapshot)
         @test any(name === :CUDA_NEARFIELD_GH_MODE for (name, _) in snapshot)
         # unchanged snapshot verifies clean; nothing (legacy caches) verifies clean
@@ -109,10 +108,6 @@ end
         target_tagged = Tree((sys,), TargetTree(), switches; leaf_size=SVector{1}(32))
         @test source_tagged isa Tree
         @test target_tagged isa Tree
-        @test Tree(sys, SourceTree(), switches[1]; leaf_size=SVector{1}(32)) isa Tree
-        @test Tree(sys, TargetTree(), switches[1]; leaf_size=SVector{1}(32)) isa Tree
-        @test FastMultipole._device_nearfield(HostNearfield()) === false
-        @test FastMultipole._device_nearfield(DeviceNearfield()) === true
     end
 
 end

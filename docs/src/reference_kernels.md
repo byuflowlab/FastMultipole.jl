@@ -14,28 +14,15 @@ transform_solver!
 ```@docs
 FastMultipole.AbstractOperatorBasis
 FastMultipole.CompressedComplexBasis
-FastMultipole.RealSolidHarmonicBasis
 FastMultipole.OperatorOrders
 FastMultipole.OperatorBasisInfo
 FastMultipole.OperatorInvariantCache
 FastMultipole.OperatorScratch
-FastMultipole.ThreadedOperatorScratch
 FastMultipole.FlatCoefficientBuffer
-FastMultipole.real_basis_index
-FastMultipole.complex_to_real_basis!
-FastMultipole.real_to_complex_basis!
 FastMultipole.AbstractM2LOperator
 FastMultipole.MaterializedYRotationM2L
 FastMultipole.FactoredRotationM2L
 FastMultipole.M2LOperatorScratch
-FastMultipole.AbstractM2MOperator
-FastMultipole.MaterializedYRotationM2M
-FastMultipole.FactoredRotationM2M
-FastMultipole.M2MOperatorScratch
-FastMultipole.AbstractL2LOperator
-FastMultipole.MaterializedYRotationL2L
-FastMultipole.FactoredRotationL2L
-FastMultipole.L2LOperatorScratch
 ```
 
 

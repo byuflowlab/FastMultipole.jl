@@ -5,7 +5,7 @@
 # Why this file exists: the session-3 note recorded `ka_lifecycle_body!` as
 # "reachable only on a CUDA-resident state", and the acceptance gate was
 # therefore aimed straight at H200. That is not true. `host_radix_state`
-# (src/translate_batched_resident.jl) builds a complete
+# (src/resident/) builds a complete
 # `DeviceResidentRadixState` with no CUDA anywhere -- host body matrix, host
 # tree routes, flat coefficient buffers and a real `ResidentOperatorWorkspace`
 # -- and `run_host_radix_lifecycle!` runs every stage of it on the CPU. The
@@ -22,12 +22,10 @@
 # What this deliberately does NOT cover, so no one reads it as the acceptance
 # gate:
 #   1. `ka_hierarchical_m2l!`. `host_radix_state` stores a flat
-#      `RadixInteractionList`, so `ka_launch_m2l!` takes its flat branch here.
-#      The hierarchical branch reuses `_cuda_hier_generate_window!` for window
-#      generation, which is CUDA-only by construction, so it stays an H200 gate.
-#   2. The cache-level call. `_radix_cache_device_step!` is a stub that throws
-#      `CUDARadixUnavailable` until translate_batched_cuda.jl redefines it, so
-#      a full `UJ_fmm` through a `RadixFMMCache` cannot run off CUDA.
+#      `RadixInteractionList`, so `ka_launch_m2l!` takes its flat branch here;
+#      the hierarchical branch is gated by ka_production_driver_correctness.jl.
+#   2. The cache-level call (`fmm!` through a `RadixFMMCache`), gated by
+#      ka_device_cache_correctness.jl and ka_production_driver_correctness.jl.
 #   3. Timing. Metal-vs-CPU numbers say nothing about KA-vs-native on one GPU.
 #
 # What it DOES cover is every stage FLOWVPM's uniform per-step lifecycle runs,
@@ -103,19 +101,17 @@ function dev_state(hs::FM.DeviceResidentRadixState{TF,B,LH}, backend) where {TF,
     # nothing.
     ws = FM.ResidentOperatorWorkspace(TF, hs.invariant_cache.basis_info, mult,
         hs.grid, hs.interaction_list,
-        hs.host_m2m_parent_routes, hs.host_m2m_child_routes,
-        hs.host_l2l_parent_routes, hs.host_l2l_child_routes,
-        hs.host_node_levels, hs.host_node_centers,
-        hs.host_route_targets, hs.host_route_sources;
+        hs.m2m_parent_routes, hs.m2m_child_routes,
+        hs.l2l_parent_routes, hs.l2l_child_routes,
+        hs.host_node_levels, hs.grid.node_centers,
+        hs.route_targets, hs.route_sources;
         m2l_strategy=FM.ConcatenatedFixedZM2L(),
         operator=hs.options.operator)
     return FM.DeviceResidentRadixState{TF,B,LH}(
-        g, hs.interaction_list, src, src,
+        g, hs.interaction_list, src,
         to_dev(hs.body_perm), to_dev(hs.body_system_ids), to_dev(hs.body_indices),
         hs.host_body_perm, hs.host_body_system_ids, hs.host_body_indices,
-        hs.host_cell_centers, hs.host_m2m_parent_routes, hs.host_m2m_child_routes,
-        hs.host_l2l_parent_routes, hs.host_l2l_child_routes, hs.host_node_levels,
-        hs.host_node_centers, hs.host_route_targets, hs.host_route_sources,
+        hs.host_node_levels,
         to_dev(hs.cell_centers), to_dev(hs.cell_ranges),
         to_dev(hs.m2m_parent_routes), to_dev(hs.m2m_child_routes),
         to_dev(hs.l2l_parent_routes), to_dev(hs.l2l_child_routes),
@@ -164,8 +160,7 @@ for (ci, (P, ell, n)) in pairs(CASES)
         gradient_stretching=zeros(TF, 6, n))
 
     grid = FM.RadixGrid(system, ell)
-    list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
-        FM.ParentNeighborM2L(), grid)
+    list = FM.build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Vortex})
 
@@ -213,8 +208,7 @@ for (ci, (P, ell, n)) in pairs(CASES), lh in (false, true)
     bodies[5, :] ./= TF(n)
     system = Gravitational(bodies)
     grid = FM.RadixGrid(system, ell)
-    list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
-        FM.ParentNeighborM2L(), grid)
+    list = FM.build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Source})
     hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
@@ -270,8 +264,7 @@ for (ci, (P, ell, n)) in pairs(CASES),
     data = rand(TF, dpb, n); data[4, :] .= TF(1e-3); data[5:end, :] .= (data[5:end, :] .- TF(0.5)) ./ TF(n)
     system = PackedPoints{TF,BT}(data)
     grid = FM.RadixGrid(system, ell)
-    list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
-        FM.ParentNeighborM2L(), grid)
+    list = FM.build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=BT)
     hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)
@@ -343,8 +336,7 @@ for (ci, (P, ell, n)) in pairs(CASES),
     end
     system = PackedFilaments{TF,BT}(data)
     grid = FM.RadixGrid(system, ell)
-    list = FM.build_radix_interaction_list(FM.LazyMaterializedBatches(1),
-        FM.ParentNeighborM2L(), grid)
+    list = FM.build_radix_interaction_list(FM.ParentNeighborM2L(), grid)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=BT)
     hs = FM.host_radix_state(system, grid, list, P, Val(lh); options=opts)

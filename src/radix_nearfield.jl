@@ -33,8 +33,7 @@ The arrays are the cache's own: capacity-sized, valid over the live prefix,
 and reused every step.
 """
 function radix_nearfield(cache::RadixFMMCache)
-    state = cache.adaptive === nothing ? cache.state :
-        (cache.adaptive_state::AdaptiveResidentLifecycle).state
+    state = cache.state
     c = state.counts
     return (; source_bodies = state.source_bodies, output = state.output,
               cell_ranges = state.cell_ranges,

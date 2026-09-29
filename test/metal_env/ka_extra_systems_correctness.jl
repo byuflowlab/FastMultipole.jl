@@ -127,12 +127,8 @@ const CASES_SHORT = [
 const CASES = haskey(ENV, "FM_FULL_SWEEP") ? CASES_FULL : CASES_SHORT
 const TOL_HOST = 2e-3   # Float32 host lifecycle vs Float64 references
 const TOL_DEV  = 3e-4   # device vs host, both Float32 (ka_device_cache_correctness)
-# Probes are evaluated through the grid since 2026-09-19 (their cell's local
-# expansion plus the near cells directly), so against the exact sum they carry
-# the lifecycle's own truncation: at P=4, ell=3, n=256 the particles' own
-# error is 1.3e-3 and the probes' 1.3e-4 to 3.2e-3 depending on where they
-# fall. The all-pairs probes this tolerance was set for were exact.
-# ka_extra_targets_tree_correctness sweeps P and checks the error falls.
+# Probes are summed all-pairs against the resident bodies on both paths, so
+# this tolerance is loose; it dates from a since-removed grid-carried probe path.
 const TOL_PROBE = 5e-3
 
 npass = Ref(0); nfail = Ref(0)

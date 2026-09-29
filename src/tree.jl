@@ -8,8 +8,6 @@ Tree(systems::Tuple, ::TargetTree, switches, TF=get_type(systems); kwargs...) =
     Tree(systems, true, switches, TF; kwargs...)
 Tree(systems::Tuple, ::SourceTree, switches, TF=get_type(systems); kwargs...) =
     Tree(systems, false, switches, TF; kwargs...)
-Tree(system, role::TreeRole, switches, TF=numtype(system); optargs...) =
-    Tree((system,), role, switches isa Tuple ? switches : (switches,), TF; optargs...)
 
 function Tree(systems::Tuple, target::Bool, switches, TF=get_type(systems); buffers=allocate_buffers(systems, target, TF, switches), small_buffers = allocate_small_buffers(systems, TF, switches; target), expansion_order=7, leaf_size=default_leaf_size(systems), n_divisions=20, shrink=false, recenter=false, allocation_safety_factor=1.0, estimate_cost=false, read_cost_file=false, write_cost_file=false, interaction_list_method=SelfTuning())
 
@@ -2248,7 +2246,7 @@ function transform_tree!(tree::Tree{TF,<:Any}, R, t) where TF
     return tree
 end
 
-function _assert_rigid_rotation(R::SMatrix{3,3,TF,9}; atol=1e-10) where TF
+function _assert_rigid_rotation(R::SMatrix{3,3,TF,9}; atol=sqrt(eps(TF))) where TF
     err = maximum(abs.(R' * R - SMatrix{3,3,TF,9}(I)))
     err <= atol || throw(ArgumentError(
         "transform_tree! requires a proper rotation: R'R deviates from I by " *

@@ -2,21 +2,18 @@
 # Refactor, task 017). Promotes the standalone
 # MATRIX_OPERATOR_REFACTOR/scripts/coefficient_buffer_layout_verify.jl checks into
 # the suite (basis-index contiguity, legacy<->flat round-trip, channel layouts,
-# fixed-channel slab density, χ pruning), and adds a flat-vs-legacy kernel
-# round-trip that anchors the relaid flat kernels to the proven legacy [2,2,nh]
-# reference kernels.
+# fixed-channel slab density, χ pruning), and adds a flat-vs-production kernel
+# round-trip that anchors the relaid flat kernels to the production [2,2,nh]
+# kernels in src/translate.jl.
 
 isdefined(@__MODULE__, :to_flat_buffer) || include("flat_buffer_helpers.jl")
 
 using FastMultipole: harmonic_index, flat_basis_index, _operator_ncomplex,
-    OperatorBasisInfo, FlatCoefficientBuffer, phi_slab, chi_slab, phi_physical_view,
+    OperatorBasisInfo, FlatCoefficientBuffer, phi_slab, chi_slab,
     initialize_expansion,
-    m2l_z_blocks!, m2l_z_block_length, apply_m2l_z!, apply_m2l_z_flat!,
-    m2m_z_blocks!, m2m_z_block_length, apply_m2m_z!, apply_m2m_z_flat!,
-    l2l_z_blocks!, l2l_z_block_length, apply_l2l_z!, apply_l2l_z_flat!,
-    lamb_helmholtz_local_coeffs!, lamb_helmholtz_multipole_coeffs!,
-    apply_lamb_helmholtz_local!, apply_lamb_helmholtz_local_flat!,
-    apply_lamb_helmholtz_multipole!, apply_lamb_helmholtz_multipole_flat!
+    translate_multipole_to_local_z!, transform_lamb_helmholtz_local!,
+    m2l_z_blocks!, m2l_z_block_length, apply_m2l_z_flat!,
+    lamb_helmholtz_local_coeffs!, apply_lamb_helmholtz_local_flat!
 
 @testset "flat coefficient buffer layout (task 017)" begin
 
@@ -46,7 +43,6 @@ end
     # fixed-channel slab is a dense GEMM target
     @test stride(phi_slab(buf), 1) == 1
     @test stride(phi_slab(buf), 2) == info.basis_dof_phi
-    @test size(phi_physical_view(buf)) == (info.basis_dof_phi, batch)
 
     if LHbool
         @test info.channel_count == 2
@@ -103,8 +99,9 @@ end
     @test maxerr == 0.0
 end
 
-# Flat kernels reproduce the proven legacy [2,2,nh] order-aware kernels bit-for-bit
-# (same arithmetic, same multiply order; only indexing moves). Single-column.
+# Flat kernels reproduce the production [2,2,nh] kernels run at the padded order
+# P_active, restricted to the physical rows (φ through P_phi, χ through P_active).
+# Single-column.
 function random_physical_frame(P_active, LHbool)
     src = initialize_expansion(P_active, TF)
     for n in 0:P_active, m in 0:n
@@ -117,7 +114,7 @@ function random_physical_frame(P_active, LHbool)
     return src
 end
 
-@testset "flat vs legacy kernel round-trip: LH=$(LHbool) P=$(P)" for
+@testset "flat vs production kernel round-trip: LH=$(LHbool) P=$(P)" for
         LHbool in (false, true), P in (2, 4, 7)
 
     Random.seed!(170017 + P + (LHbool ? 100 : 0))
@@ -164,26 +161,8 @@ end
     # M2L z-translation
     let (src, ref, sbuf, obuf) = mkcase()
         blocks = Vector{TF}(undef, m2l_z_block_length(P_active)); m2l_z_blocks!(blocks, r, P_active)
-        apply_m2l_z!(ref, src, blocks, info, Val(:overwrite))
+        translate_multipole_to_local_z!(ref, src, r, P_active, lh)
         apply_m2l_z_flat!(obuf, sbuf, 1, blocks, Val(:overwrite))
-        out = fill(TF(NaN), 2, 2, nh, 1); from_flat_buffer!(out, obuf)
-        cmp_physical(ref, view(out, :, :, :, 1))
-    end
-
-    # M2M z-translation (order-aware legacy uses uniform-P kernel; compare physical)
-    let (src, ref, sbuf, obuf) = mkcase()
-        blocks = Vector{TF}(undef, m2m_z_block_length(P_active)); m2m_z_blocks!(blocks, r, P_active)
-        apply_m2m_z!(ref, src, blocks, P_active, lh, Val(:overwrite))
-        apply_m2m_z_flat!(obuf, sbuf, 1, blocks, Val(:overwrite))
-        out = fill(TF(NaN), 2, 2, nh, 1); from_flat_buffer!(out, obuf)
-        cmp_physical(ref, view(out, :, :, :, 1))
-    end
-
-    # L2L z-translation
-    let (src, ref, sbuf, obuf) = mkcase()
-        blocks = Vector{TF}(undef, l2l_z_block_length(P_active)); l2l_z_blocks!(blocks, r, P_active)
-        apply_l2l_z!(ref, src, blocks, P_active, lh, Val(:overwrite))
-        apply_l2l_z_flat!(obuf, sbuf, 1, blocks, Val(:overwrite))
         out = fill(TF(NaN), 2, 2, nh, 1); from_flat_buffer!(out, obuf)
         cmp_physical(ref, view(out, :, :, :, 1))
     end
@@ -192,16 +171,8 @@ end
         # Lamb-Helmholtz local (separate buffers)
         let (src, ref, sbuf, obuf) = mkcase()
             A = zeros(TF, nh); B = zeros(TF, nh); lamb_helmholtz_local_coeffs!(A, B, r, P_active)
-            apply_lamb_helmholtz_local!(ref, src, A, B, info, Val(:overwrite))
+            ref .= src; transform_lamb_helmholtz_local!(ref, r, P_active)
             apply_lamb_helmholtz_local_flat!(obuf, sbuf, 1, A, B, Val(:overwrite))
-            out = fill(TF(NaN), 2, 2, nh, 1); from_flat_buffer!(out, obuf)
-            cmp_physical(ref, view(out, :, :, :, 1))
-        end
-        # Lamb-Helmholtz multipole (separate buffers)
-        let (src, ref, sbuf, obuf) = mkcase()
-            A = zeros(TF, nh); B = zeros(TF, nh); lamb_helmholtz_multipole_coeffs!(A, B, r, P_active)
-            apply_lamb_helmholtz_multipole!(ref, src, A, B, info, Val(:overwrite))
-            apply_lamb_helmholtz_multipole_flat!(obuf, sbuf, 1, A, B, Val(:overwrite))
             out = fill(TF(NaN), 2, 2, nh, 1); from_flat_buffer!(out, obuf)
             cmp_physical(ref, view(out, :, :, :, 1))
         end

@@ -219,7 +219,6 @@ end
 # the dipole filament: u = -p . grad(u_s), g_j = -p_i H_ij, h_jk = -p_i T_ijk
 # (no closures: a kernel must not capture a reassigned accumulator)
 @inline _ls_delta(i, k, ::Type{T}) where T = i == k ? one(T) : zero(T)
-@inline _ls_e(e1, e2, i, w1, w2) = e1[i] * w1 + e2[i] * w2
 # S_ij and S_ijk summed over the two endpoints
 @inline function _ls_Sij(e1, e2, i1, i2, i, k)
     T = typeof(i1)
@@ -610,19 +609,6 @@ end
     return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
 end
 
-# Two-pass deficit coefficients (031a §6.1) as an effective (g, h) pair for the
-# shared vortex U/J assembly: with g_e = −ḡ and h_e = ρg′ + 3ḡ,
-# `_vortex_pair_ug(h)` yields exactly ΔU = −ḡC, Δa = h_e/r² = (ρg′+3ḡ)/r², and
-# Δb = −g_e/(4πr³) = ḡ/(4πr³), and (singular) + (deficit) = (regularized)
-# identically: (1 − ḡ, ρg′ + 3ḡ − 3) = (g, ρg′ − 3g). Pairs outside the shell
-# (rho_c, rho_t] contribute nothing (ρ ≤ rho_c is fully handled by pass 1's
-# regularized branch; beyond rho_t the tail is inside the §4 error budget).
-@inline function _twopass_deficit_gh(kernel::TwoPassVortex, rho::T) where T<:AbstractFloat
-    (T(kernel.rho_c) < rho <= T(kernel.rho_t)) || return zero(T), zero(T)
-    gbar, rhogp = _gaussianerf_gbar_rhogp(rho)
-    return -gbar, muladd(T(3), gbar, rhogp)
-end
-
 #------- cheapened g/h evaluation modes -------#
 #
 # `CUDA_NEARFIELD_GH_MODE` selects how the regularized-family pair functors
@@ -638,16 +624,9 @@ end
 #                  (13-term series + deg-3 outer), pair U/J assembled in
 #                  Float32, accumulated in Float64.  On Float32
 #                  configurations this is the shipped path (documented no-op);
-#   :reduced_fp32  :fp32 with the 12-term reduced series;
-#   :lut           device-only shared-memory lookup table (see
-#                  translate_batched_cuda.jl).  The HOST reference path falls
-#                  back to :shipped under :lut — host/device parity for :lut
-#                  is gated at its budgeted pointwise error, not bitwise.
+#   :reduced_fp32  :fp32 with the 12-term reduced series.
 #
-# Like the stage-C mechanism Refs, the CUDA side reads this inside the
-# lifecycle body, so the selection is baked into a captured CUDA graph at
-# record time: flip it only BEFORE cache construction (or force a new epoch),
-# or a replayed graph keeps the old mode silently.
+# Construction-locked (radix_settings.jl): flip it BEFORE cache construction.
 #
 # DEFAULT = :fp32: on Float64
 # configurations the g/h transcendental (and functor-path assembly) runs in
@@ -657,7 +636,7 @@ end
 # Float32 configurations :fp32 is bitwise the shipped path (documented
 # no-op), so this default changes nothing there. :shipped remains the
 # control/opt-out.
-const NEARFIELD_GH_MODES = (:shipped, :reduced, :fp32, :reduced_fp32, :lut)
+const NEARFIELD_GH_MODES = (:shipped, :reduced, :fp32, :reduced_fp32)
 const CUDA_NEARFIELD_GH_MODE = Ref{Symbol}(:fp32)
 
 # 12-term truncations of the exact series (the port sizing: delta vs shipped
@@ -685,15 +664,12 @@ const _GAUSSERF_H_COEFFS32_R = _GAUSSERF_H_COEFFS32[1:12]
     return g, rhogp - 3 * g
 end
 
-# scalar mode dispatch (:lut resolves at the kernel level on the device and
-# falls back to :shipped here; the fp32 modes narrow rho when the caller has
-# not already narrowed the whole pair computation)
+# scalar mode dispatch (the fp32 modes narrow rho when the caller has not
+# already narrowed the whole pair computation)
 @inline _gaussianerf_g_h(rho::T, ::Val{:shipped}) where T<:AbstractFloat =
     _gaussianerf_g_h(rho)
 @inline _gaussianerf_g_h(rho::T, ::Val{:reduced}) where T<:AbstractFloat =
     _gaussianerf_g_h_reduced(rho)
-@inline _gaussianerf_g_h(rho::T, ::Val{:lut}) where T<:AbstractFloat =
-    _gaussianerf_g_h(rho)
 @inline _gaussianerf_g_h(rho::Float32, ::Val{:fp32}) = _gaussianerf_g_h(rho)
 @inline _gaussianerf_g_h(rho::Float32, ::Val{:reduced_fp32}) =
     _gaussianerf_g_h_reduced(rho)
@@ -744,7 +720,7 @@ end
 @inline function _direct_pair_ug(kernel::AbstractRegularizedVortex, dx, dy, dz,
         r2, invr, source_bodies, j, ::Val{GH}) where GH
     T = typeof(r2)
-    if GH === :shipped || GH === :lut || (GH === :fp32 && T === Float32)
+    if GH === :shipped || (GH === :fp32 && T === Float32)
         return _direct_pair_ug(kernel, dx, dy, dz, r2, invr, source_bodies, j)
     elseif (GH === :fp32 || GH === :reduced_fp32) && T === Float64
         @inbounds gsx = Float32(source_bodies[5, j])
@@ -771,7 +747,7 @@ end
 @inline function _direct_pair_ugh(kernel::AbstractRegularizedVortex, dx, dy, dz,
         r2, invr, source_bodies, j, ::Val{GH}) where GH
     T = typeof(r2)
-    if GH === :shipped || GH === :lut || (GH === :fp32 && T === Float32)
+    if GH === :shipped || (GH === :fp32 && T === Float32)
         return _direct_pair_ugh(kernel, dx, dy, dz, r2, invr, source_bodies, j)
     elseif (GH === :fp32 || GH === :reduced_fp32) && T === Float64
         @inbounds gsx = Float32(source_bodies[5, j])
@@ -795,94 +771,12 @@ end
     end
 end
 
-# Host-side :lut table builder (the port; also the construction source of the
-# device table).  Linear interpolation in x = rho^2 over [0, rho_t^2] of the
-# NORMALIZED functions G(x) = g/rho^3 and H(x) = h/rho^5 — analytic in x with
-# G(0) = A/3 != 0, so the table preserves relative accuracy down to rho -> 0.
-# Values sample the shipped Float64 evaluator, so the LUT inherits (never adds
-# to) the shipped outer-fit error; Float32 storage; N = 1024 sized in
-# fm037f_budget.csv (interp delta <= 3.0e-6 relative, 6x under budget).
-const _NF_GH_LUT_N = 1024
-
-function _build_gh_lut(rho_t::Float64)
-    x_max = rho_t * rho_t
-    tab = Matrix{Float32}(undef, 2, _NF_GH_LUT_N)
-    tab[1, 1] = Float32(_GAUSSERF_A / 3)
-    tab[2, 1] = Float32(-_GAUSSERF_A / 5)
-    for i in 2:_NF_GH_LUT_N
-        x = x_max * (i - 1) / (_NF_GH_LUT_N - 1)
-        rho = sqrt(x)
-        g, h = _gaussianerf_g_h(rho)
-        tab[1, i] = Float32(g / rho^3)
-        tab[2, i] = Float32(h / rho^5)
-    end
-    return tab
-end
-
-# Shared LUT lookup (host mirror of the device math; `tab` is any 2 x N
-# indexable).  Returns the singular (1, -3) for x >= x_max — the partitioned
-# cutoff itself (half-open boundary, measure zero vs the shipped `<=`).
-@inline function _gh_from_lut(tab, rho::T, x_max::T) where T
-    x = rho * rho
-    x >= x_max && return one(T), -T(3)
-    t = x * (T(_NF_GH_LUT_N - 1) / x_max)
-    i0 = unsafe_trunc(Int32, t)
-    f = t - T(i0)
-    i1 = i0 + Int32(1)
-    @inbounds G0 = T(tab[1, i1])
-    @inbounds G1 = T(tab[1, i1 + Int32(1)])
-    @inbounds H0 = T(tab[2, i1])
-    @inbounds H1 = T(tab[2, i1 + Int32(1)])
-    G = muladd(f, G1 - G0, G0)
-    H = muladd(f, H1 - H0, H0)
-    return rho * x * G, rho * x * x * H
-end
-
-# LUT-mode pair math for the regularized family: identical branch structure to
-# `_direct_pair_ug(h)` (sigma <= 0 -> singular; split kernels switch at the
-# pass-1 cutoff; x >= rho_t^2 -> singular, the table's own domain end).
-@inline _lut_pair_cutoff(kernel::AbstractRegularizedVortex) = kernel.rho_t
-@inline _lut_pair_cutoff(kernel::TwoPassVortex) = kernel.rho_c
-
-@inline function _lut_pair_gh(kernel::AbstractRegularizedVortex, shlut,
-        r2::T, invr::T, sigma::T) where T
-    g = one(T)
-    h = -T(3)
-    if sigma > zero(T)
-        rho = r2 * invr / sigma
-        if rho <= T(_lut_pair_cutoff(kernel))
-            g, h = _gh_from_lut(shlut, rho, T(kernel.rho_t)^2)
-        end
-    end
-    return g, h
-end
-
-@inline function _lut_pair_ug(kernel::AbstractRegularizedVortex, shlut,
-        dx, dy, dz, r2, invr, source_bodies, j)
-    @inbounds gsx = source_bodies[5, j]
-    @inbounds gsy = source_bodies[6, j]
-    @inbounds gsz = source_bodies[7, j]
-    @inbounds sigma = source_bodies[kernel.sigma_row, j]
-    g, _ = _lut_pair_gh(kernel, shlut, r2, invr, sigma)
-    return _vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
-end
-
-@inline function _lut_pair_ugh(kernel::AbstractRegularizedVortex, shlut,
-        dx, dy, dz, r2, invr, source_bodies, j)
-    @inbounds gsx = source_bodies[5, j]
-    @inbounds gsy = source_bodies[6, j]
-    @inbounds gsz = source_bodies[7, j]
-    @inbounds sigma = source_bodies[kernel.sigma_row, j]
-    g, h = _lut_pair_gh(kernel, shlut, r2, invr, sigma)
-    return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
-end
-
-# Validated host-side mode (the host reference path maps :lut -> :shipped)
+# Validated host-side mode
 function _validated_host_gh_mode()
     m = radix_setting(:CUDA_NEARFIELD_GH_MODE)
     m in NEARFIELD_GH_MODES || throw(ArgumentError(
         "CUDA_NEARFIELD_GH_MODE must be one of $(NEARFIELD_GH_MODES); got $m"))
-    return m === :lut ? :shipped : m
+    return m
 end
 
 # Singular Biot-Savart direct kernel for Point{Vortex} sources ():
@@ -1353,7 +1247,10 @@ its packed-body copy, flattened routes, expansions, scratch space, output, and
 transfer counters, and retains the supplied grid metadata. The `RadixGrid`
 overload first creates a fresh host-resident grid with
 [`host_resident_radix_grid`](@ref). This is a host-only construction even though
-its container type is shared with device backends.
+its container type is shared with device backends. `list` comes from
+[`build_radix_interaction_list`](@ref); `options` must select the
+`ConcatenatedFixedZM2L` materialized-y plan (the default). It is the reference
+state of the KA lifecycle gate, not a production path.
 """
 function host_radix_state(systems, grid::RadixGrid, list::RadixInteractionList,
         P::Integer, lamb_helmholtz::Val{LH}=Val(false);
@@ -1395,12 +1292,9 @@ function host_radix_state(systems, grid::DeviceRadixGrid, list::RadixInteraction
         m2l_strategy=options.m2l_strategy, operator=options.operator,
     )
     return DeviceResidentRadixState{TF,CompressedComplexBasis,LH}(
-        grid, list, source_bodies, source_bodies,
+        grid, list, source_bodies,
         body_perm, body_system_ids, body_indices,
-        host_body_perm, host_body_system_ids, host_body_indices,
-        grid.cell_centers, m2m_parent_routes, m2m_child_routes,
-        l2l_parent_routes, l2l_child_routes, grid.node_levels, grid.node_centers,
-        targets, sources,
+        host_body_perm, host_body_system_ids, host_body_indices, grid.node_levels,
         grid.cell_centers, grid.cell_ranges,
         m2m_parent_routes, m2m_child_routes, l2l_parent_routes, l2l_child_routes,
         multipoles, locals, levels, offsets, targets, sources,

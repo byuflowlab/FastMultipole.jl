@@ -76,8 +76,6 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     @test_throws ArgumentError fmm!(box_sys, box_cache)
     # constructor rejections
     @test_throws ArgumentError RadixFMMCache(err_sys; max_n_bodies=10)
-    @test_throws ArgumentError RadixFMMCache(err_sys;
-        options=RadixLifecycleOptions(; m2l_strategy=FastMultipole.SharedRotationM2L()))
     @test_throws Exception RadixFMMCache(err_sys; device=true)   # no CUDA on test host
 
     #--- (e) Float32 and Lamb-Helmholtz variants ---#
@@ -222,20 +220,19 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
             FastMultipole._dense_m2m_dof(
                 FastMultipole.OperatorBasisInfo(
                     FastMultipole.CompressedComplexBasis(), eo, Val(LH)), Val(LH)))))
-    # the host falls back to precomputed-y; the device (the KA extension, which
-    # has no factored plan) falls back to concat
-    for (device, fallback) in ((false, :PrecomputedFactoredYM2L), (true, :ConcatenatedFixedZM2L))
-        @test _sel(3, false, device) === :DenseTranslationM2L      # literature P = 4
-        @test _sel(3, true, device) === :DenseTranslationM2L
-        @test _sel(7, false, device) === :DenseTranslationM2L      # P = 8, LH off
-        @test _sel(8, false, device) === fallback                  # P >= 12
-        @test _sel(11, true, device) === fallback
-    end
-    # P = 8 with Lamb-Helmholtz is the one measured platform split.
-    @test _sel(7, true, false) === :DenseTranslationM2L
-    @test _sel(7, true, true) === :ConcatenatedFixedZM2L
+    # host: dense where the literature favors it, precomputed-y otherwise
+    @test _sel(3, false, false) === :DenseTranslationM2L          # literature P = 4
+    @test _sel(3, true, false) === :DenseTranslationM2L
+    @test _sel(7, false, false) === :DenseTranslationM2L          # P = 8, LH off
+    @test _sel(7, true, false) === :DenseTranslationM2L           # P = 8, LH on
+    @test _sel(8, false, false) === :PrecomputedFactoredYM2L      # P >= 12
+    @test _sel(11, true, false) === :PrecomputedFactoredYM2L
     # A dense operator payload over its gate falls back instead of throwing.
-    @test _sel(7, false, true; nclasses=10^7) === :ConcatenatedFixedZM2L
+    @test _sel(7, false, false; nclasses=10^7) === :PrecomputedFactoredYM2L
+    # device: the KA extension builds the concatenated plan only, at every order
+    for eo in (3, 7, 8, 11), LH in (false, true)
+        @test _sel(eo, LH, true) === :ConcatenatedFixedZM2L
+    end
 
     # The resolved choice must reach the cache, and each strategy must carry the
     # rotation operator its plan is built from.

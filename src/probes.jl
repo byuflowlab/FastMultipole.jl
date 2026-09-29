@@ -16,17 +16,6 @@ function ProbeSystemArray(n_bodies, TF=Float64)
     return ProbeSystemArray{TF}(position, scalar_potential, gradient, hessian, third_derivative)
 end
 
-ProbeSystemStatic{TF}(position, scalar_potential, gradient, hessian) where TF =
-    ProbeSystemStatic{TF}(position, scalar_potential, gradient, hessian,
-        fill(ThirdDerivativeTensor(zero(SVector{18,TF})), length(scalar_potential)))
-ProbeSystemArray{TF}(position, scalar_potential, gradient, hessian) where TF =
-    ProbeSystemArray{TF}(position, scalar_potential, gradient, hessian,
-        zeros(TF, 3, 3, 3, length(scalar_potential)))
-ProbeSystemStatic(position, scalar_potential::Vector{TF}, gradient, hessian) where TF =
-    ProbeSystemStatic{TF}(position, scalar_potential, gradient, hessian)
-ProbeSystemArray(position, scalar_potential::Vector{TF}, gradient, hessian) where TF =
-    ProbeSystemArray{TF}(position, scalar_potential, gradient, hessian)
-
 function reset!(system::ProbeSystem{TF}) where TF
     system.scalar_potential .= zero(TF)
     for i in eachindex(system.gradient)
@@ -90,7 +79,11 @@ function FastMultipole.buffer_to_target_system!(target_system::ProbeSystemStatic
         hessian = FastMultipole.get_hessian(target_buffer, switch, i_buffer)
         target_system.hessian[i_target] += hessian
     end
-    TS && (target_system.third_derivative[i_target] = FastMultipole.get_third_derivative(target_buffer, switch, i_buffer))
+    if TS
+        t = FastMultipole.get_third_derivative(target_buffer, switch, i_buffer)
+        target_system.third_derivative[i_target] = ThirdDerivativeTensor(
+            packed_data(target_system.third_derivative[i_target]) + packed_data(t))
+    end
 end
 
 function FastMultipole.buffer_to_target_system!(target_system::ProbeSystemArray, i_target, switch::FastMultipole.DerivativesSwitch{PS,GS,HS,NO,NM,TS}, target_buffer, i_buffer) where {PS,GS,HS,NO,NM,TS}
@@ -106,5 +99,5 @@ function FastMultipole.buffer_to_target_system!(target_system::ProbeSystemArray,
         hessian = FastMultipole.get_hessian(target_buffer, switch, i_buffer)
         target_system.hessian[:, :, i_target] .+= hessian
     end
-    TS && (target_system.third_derivative[:, :, :, i_target] .= FastMultipole.dense(FastMultipole.get_third_derivative(target_buffer, switch, i_buffer)))
+    TS && (target_system.third_derivative[:, :, :, i_target] .+= FastMultipole.dense(FastMultipole.get_third_derivative(target_buffer, switch, i_buffer)))
 end

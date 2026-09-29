@@ -91,9 +91,9 @@ export Branch, Tree, ConstantPAnalyticStencil, HierarchicalRigidStencil, classic
     SingularSourceVortex, RegularizedVortex, SourceFilamentKernel, DipoleFilamentKernel,
     VortexFilamentKernel, SourcePanelKernel, DipolePanelKernel, SourceDipolePanelKernel,
     VortexSheetPanelKernel, PartitionedVortex, TwoPassVortex, RadixTransferCounters,
-    RadixLifecycleOptions, AbstractResidentM2MStrategy, DenseTranslationM2M, SharedRotationM2M,
-    AbstractResidentM2LStrategy, DenseTranslationM2L, SharedRotationM2L, ConcatenatedFixedZM2L,
-    PrecomputedFactoredYM2L, RadixFMMCache, AdaptiveTreePolicy
+    RadixLifecycleOptions,
+    AbstractResidentM2LStrategy, DenseTranslationM2L, ConcatenatedFixedZM2L,
+    PrecomputedFactoredYM2L, RadixFMMCache
 
 include("complex.jl")
 include("derivatives.jl")
@@ -117,7 +117,6 @@ include("resident/resident_pair_kernels.jl")
 include("resident/resident_finalize.jl")
 include("resident/radix_cache.jl")
 include("resident/resident_device_plumbing.jl")
-include("resident/adaptive_lifecycle.jl")
 export update_radix_state!
 
 include("resident_elements.jl")
@@ -152,7 +151,8 @@ Base.showerror(io::IO, err::RadixDeviceUnavailable) = print(io, err.reason)
 # The device-resident radix lifecycle is provided by a package extension
 # (ext/FastMultipoleKAExt.jl for KernelAbstractions backends: CUDA, Metal, ...).
 # The extension REGISTERS its entry points here from its `__init__`, and the
-# stubs in translate_batched_resident.jl consult the registry before throwing.
+# host entry points (`RadixFMMCache(...; device=true)`, `fmm!`,
+# `update_radix_state!`) consult the registry before throwing.
 # The former hand-written CUDA lifecycle (runtime-`include`d into this module)
 # was removed after the KA port reached parity with it.
 const _RADIX_DEVICE_BACKEND_NAME = Ref{Any}(nothing)
@@ -179,9 +179,6 @@ end
 
 "A non-CUDA device-resident radix lifecycle is registered."
 radix_device_backend_available() = _RADIX_DEVICE_STEP_HOOK[] !== nothing
-
-"Name of the registered non-CUDA radix backend, or `nothing`."
-radix_device_backend_name() = _RADIX_DEVICE_BACKEND_NAME[]
 
 function radix_device_status()
     name = _RADIX_DEVICE_BACKEND_NAME[]
@@ -257,32 +254,6 @@ export assemble_influence_block!, overrides_block_assembly
 include("extra_farfield.jl")
 
 export FastGaussSeidel, JacobiPreconditioner, transform_solver!
-
-#------- KERNELABSTRACTIONS GPU SUPPORT -------#
-
-"""
-    ka_m2m_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
-
-KernelAbstractions-compatible M2M kernel. Loaded via FastMultipoleKAExt extension when KernelAbstractions is available.
-"""
-function ka_m2m_operator_batch! end
-
-
-"""
-    ka_m2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
-
-KernelAbstractions-compatible M2L kernel. Loaded via FastMultipoleKAExt extension when KernelAbstractions is available.
-"""
-function ka_m2l_operator_batch! end
-
-
-"""
-    ka_l2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
-
-KernelAbstractions-compatible L2L kernel. Loaded via FastMultipoleKAExt extension when KernelAbstractions is available.
-"""
-function ka_l2l_operator_batch! end
-
 
 #------- PRECALCULATIONS -------#
 

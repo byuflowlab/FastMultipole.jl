@@ -47,8 +47,7 @@ make_system(seed, n, TF) = (Random.seed!(seed);
         potential=zeros(TF, 13, n), gradient_stretching=zeros(TF, 6, n)))
 
 # Re-derive the construction arguments the host constructor computes between its
-# policy selection and its `device` branch (src/translate_batched_resident.jl:
-# 2547-2596). Everything else comes off the host cache's own fields, so the two
+# policy selection and its `device` branch (src/resident/radix_cache.jl). Everything else comes off the host cache's own fields, so the two
 # caches are guaranteed to be built for the same geometry, capacities and
 # stencil -- a divergence here would make the comparison meaningless rather
 # than merely failing.

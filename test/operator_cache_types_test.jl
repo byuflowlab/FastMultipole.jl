@@ -53,13 +53,7 @@
             S_neg = zeros(TF, FastMultipole.length_Ss(P))
             FastMultipole.update_S_blocks!(S_pos, S_neg, Hs_pi2, P)
 
-            T_y_pos90 = zeros(TF, FastMultipole.length_Ts(P))
-            T_y_neg90 = zeros(TF, FastMultipole.length_Ts(P))
-            y_trig = Vector{TF}(undef, 2 * max(P, 1))
-            FastMultipole.build_Ts_from_S!(T_y_pos90, S_pos, S_neg, TF(pi / 2), P, y_trig)
-            FastMultipole.build_Ts_from_S!(T_y_neg90, S_pos, S_neg, TF(-pi / 2), P, y_trig)
-
-            return Hs_pi2, zeta_mag, eta_mag, M_tilde, L_tilde, S_pos, S_neg, T_y_pos90, T_y_neg90
+            return Hs_pi2, zeta_mag, eta_mag, M_tilde, L_tilde, S_pos, S_neg
         end
 
         for TF in (Float32, Float64), lamb_helmholtz in (Val(false), Val(true))
@@ -76,10 +70,8 @@
             @test eltype(cache.L_tilde) === TF
             @test eltype(cache.S_pos) === TF
             @test eltype(cache.S_neg) === TF
-            @test eltype(cache.T_y_pos90) === TF
-            @test eltype(cache.T_y_neg90) === TF
             expected_Hs_pi2, expected_zeta_mag, expected_eta_mag, expected_M_tilde, expected_L_tilde,
-                expected_S_pos, expected_S_neg, expected_T_y_pos90, expected_T_y_neg90 = expected_invariants(P_active, TF)
+                expected_S_pos, expected_S_neg = expected_invariants(P_active, TF)
             @test cache.Hs_pi2 == expected_Hs_pi2
             @test cache.zeta_mag == expected_zeta_mag
             @test cache.eta_mag == expected_eta_mag
@@ -87,12 +79,8 @@
             @test cache.L_tilde == expected_L_tilde
             @test cache.S_pos == expected_S_pos
             @test cache.S_neg == expected_S_neg
-            @test cache.T_y_pos90 == expected_T_y_pos90
-            @test cache.T_y_neg90 == expected_T_y_neg90
             @test length(cache.S_pos) == FastMultipole.length_Ss(P_active)
             @test length(cache.S_neg) == FastMultipole.length_Ss(P_active)
-            @test length(cache.T_y_pos90) == FastMultipole.length_Ts(P_active)
-            @test length(cache.T_y_neg90) == FastMultipole.length_Ts(P_active)
 
             scratch = OperatorScratch(TF, basis_info)
             expected_expansion = initialize_expansion(P_active, TF)
@@ -109,22 +97,6 @@
             @test length(scratch.Ts) == FastMultipole.length_Ts(P_active)
             @test length(scratch.y_trig) == 2 * max(P_active, 1)
             @test size(scratch.eimphis) == (2, P_active + 1)
-
-            threaded = ThreadedOperatorScratch(TF, basis_info)
-            @test length(threaded.scratch) == Threads.nthreads()
-            @test all(s -> s.basis_info === basis_info, threaded.scratch)
-            @test all(s -> s.Ts !== scratch.Ts, threaded.scratch)
-            @test all(s -> s.y_trig !== scratch.y_trig, threaded.scratch)
-            @test all(s -> s.eimphis !== scratch.eimphis, threaded.scratch)
-            @test all(s -> s.weights_tmp_1 !== scratch.weights_tmp_1, threaded.scratch)
-            for i in 1:length(threaded.scratch), j in i+1:length(threaded.scratch)
-                @test threaded.scratch[i].Ts !== threaded.scratch[j].Ts
-                @test threaded.scratch[i].y_trig !== threaded.scratch[j].y_trig
-                @test threaded.scratch[i].eimphis !== threaded.scratch[j].eimphis
-                @test threaded.scratch[i].weights_tmp_1 !== threaded.scratch[j].weights_tmp_1
-                @test threaded.scratch[i].weights_tmp_2 !== threaded.scratch[j].weights_tmp_2
-                @test threaded.scratch[i].weights_tmp_3 !== threaded.scratch[j].weights_tmp_3
-            end
         end
     end
 end
@@ -217,14 +189,12 @@ end
     basis_info = OperatorBasisInfo(P, Val(false))
     cache = OperatorInvariantCache(TF, basis_info)
     scratch = OperatorScratch(TF, basis_info)
-    threaded = ThreadedOperatorScratch(TF, basis_info)
 
     after = legacy_outputs(P, TF)
 
     @test before == after
     @test length(cache.Hs_pi2) == FastMultipole.length_Hs(P)
     @test length(scratch.Ts) == FastMultipole.length_Ts(P)
-    @test !isempty(threaded.scratch)
     @test global_lengths == (
         length(FastMultipole.Hs_π2),
         length(FastMultipole.ζs_mag),

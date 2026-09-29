@@ -1,10 +1,7 @@
-# Parity tests for the full M2L operator pipeline (Matrix Operator Refactor, task 014).
-#
-# The two swappable whole-M2L variants (MaterializedYRotationM2L and
-# FactoredRotationM2L) are composed from the task 010-013c stages and validated
-# side-by-side against the production multipole_to_local! (the side-by-side,
-# parity-only first pass per the 008b re-plan). The pipeline runs uniformly at
-# P_active. For Val(false), P_active = P and every row must match production at P.
+# Parity tests for the per-column M2L operator pipeline `m2l_operator_batch!`
+# (MaterializedYRotationM2L), which builds the DenseTranslationM2L class matrices
+# (`build_dense_m2l_operator!`), against the legacy multipole_to_local!. The
+# pipeline runs uniformly at P_active. For Val(false), P_active = P and every row must match production at P.
 # For Val(true), φ is physical only through P_phi while χ is carried at
 # P_active = P_phi + 1 (theory/lamb-helmholtz-accuracy-order.md): φ above P_phi is
 # zero-padded by the pipeline, so the result equals a production run at P_active on
@@ -134,7 +131,7 @@ M2L_RTOL = 1e-7
 # P = 1 covers the smallest order of the 019b always-dense decision (the dense
 # operator path has no small-P recurrence fallback, so it must be exact there too).
 @testset "parity vs production (Val(false)): $(variant)  P=$(P)" for
-        variant in (MaterializedYRotationM2L(), FactoredRotationM2L()),
+        variant in (MaterializedYRotationM2L(),),
         P in (1, 2, 4, 6, 8)
 
     lh = Val(false)
@@ -179,7 +176,7 @@ end
 #--- Val(true): φ at P_phi, χ at P_active = P_phi + 1 ---#
 
 @testset "parity vs production (Val(true)): $(variant)  P_phi=$(P_phi)" for
-        variant in (MaterializedYRotationM2L(), FactoredRotationM2L()),
+        variant in (MaterializedYRotationM2L(),),
         P_phi in (1, 2, 4, 6, 8)
 
     lh = Val(true)
@@ -227,41 +224,6 @@ end
         FastMultipole.m2l_operator_batch!(variant, tb1, sb1, [phis[j]], [thetas[j]], [rs[j]], cache, scratch1, lh)
         tgt1 = zeros(TF, 2, 2, nh, 1); from_flat_buffer!(tgt1, tb1)
         m2l_check_lh!(view(tgt1, :, :, :, 1), refs[j], P_phi, P_active, M2L_ATOL, M2L_RTOL)
-    end
-end
-
-#--- Cross-variant parity: materialized vs factored agree (incl. padding) ---#
-
-@testset "cross-variant parity: materialized vs factored  LH=$(LHbool)  P=$(P)" for
-        LHbool in (false, true), P in (3, 6)
-
-    lh = Val(LHbool)
-    cache = OperatorInvariantCache(TF, P, lh)
-    P_active = cache.basis_info.orders.P_active
-    nbatch = length(M2L_OFFSETS)
-    nh = ((P_active + 1) * (P_active + 2)) >> 1
-
-    sources = zeros(TF, 2, 2, nh, nbatch)
-    phis = zeros(TF, nbatch); thetas = zeros(TF, nbatch); rs = zeros(TF, nbatch)
-    for j in 1:nbatch
-        src = LHbool ? m2l_lh_sentinel_source(P, P_active, TF) : m2l_random_source(P_active, TF, lh)
-        sources[:, :, :, j] .= src
-        r, θ, ϕ = FastMultipole.cartesian_to_spherical(M2L_OFFSETS[j])
-        rs[j] = r; thetas[j] = θ; phis[j] = ϕ
-    end
-
-    sm = M2LOperatorScratch(TF, cache.basis_info, nbatch)
-    sf = M2LOperatorScratch(TF, cache.basis_info, nbatch)
-    sbuf = to_flat_buffer(sources, cache.basis_info)
-    tmbuf = FlatCoefficientBuffer(TF, cache.basis_info, nbatch)
-    tfbuf = FlatCoefficientBuffer(TF, cache.basis_info, nbatch)
-    FastMultipole.m2l_operator_batch!(MaterializedYRotationM2L(), tmbuf, sbuf, phis, thetas, rs, cache, sm, lh)
-    FastMultipole.m2l_operator_batch!(FactoredRotationM2L(), tfbuf, sbuf, phis, thetas, rs, cache, sf, lh)
-    tm = zeros(TF, 2, 2, nh, nbatch); from_flat_buffer!(tm, tmbuf)
-    tf = zeros(TF, 2, 2, nh, nbatch); from_flat_buffer!(tf, tfbuf)
-
-    for i in eachindex(tm)
-        @test isapprox(tf[i], tm[i]; atol=M2L_ATOL, rtol=M2L_RTOL)
     end
 end
 

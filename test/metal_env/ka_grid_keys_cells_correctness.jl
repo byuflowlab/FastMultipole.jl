@@ -2,7 +2,7 @@
 # `ka_radix_keys_checked!`, `ka_radix_sort_bodies!` and
 # `ka_radix_compress_cells!` (ext/FastMultipoleKAExt.jl), the KA port of the
 # first two stages of `_cuda_update_radix_grid_in_place!`
-# (src/translate_batched_cuda.jl:6591) -- the last CUDA-only block on the
+# (former CUDA lifecycle, removed) -- the last CUDA-only block on the
 # uniform, `sfs=false` path of `update_cuda_radix_state!`.
 #
 # Oracle: the host builder's own three steps, `_radix_fill_body_data!`,
@@ -14,8 +14,7 @@
 # Cases sweep the two things that break here: `ell` (key width, and whether the
 # grid is sparsely or fully occupied) and the body distribution (clustered
 # positions put many bodies in one cell, which is what exercises the
-# flag/scan/compact cell compression). The out-of-bounds guard -- the reason
-# this needed a second key kernel rather than reusing `ka_radix_keys!` -- is
+# flag/scan/compact cell compression). The out-of-bounds guard is
 # checked on its own at the end.
 include("ka_backend.jl")
 using FastMultipole, Random, StaticArrays, Test

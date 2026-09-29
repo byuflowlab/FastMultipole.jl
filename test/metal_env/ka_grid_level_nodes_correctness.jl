@@ -1,7 +1,7 @@
 # Correctness gate for stage 3 of the in-place device grid rebuild:
 # `ka_radix_level_nodes!` (ext/FastMultipoleKAExt.jl), the KA port of the
 # per-level unique-node block of `_cuda_update_radix_grid_in_place!`
-# (src/translate_batched_cuda.jl:6591) -- the first block behind the stage-2
+# (former CUDA lifecycle, removed) -- the first block behind the stage-2
 # occupancy-epoch check.
 #
 # Oracle: `_refresh_radix_nodes!` (src/tree_batched.jl), the host node builder

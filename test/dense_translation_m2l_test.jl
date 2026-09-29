@@ -45,14 +45,6 @@ end
     @test_throws ArgumentError RadixLifecycleOptions(
         operator=FactoredRotationM2L(), m2l_strategy=DenseTranslationM2L())
 
-    # CUDA-headroom keyword (task 023f): defaults, nonnegativity, Int-representability;
-    # host numerical behavior is unchanged (the field is device-only).
-    @test DenseTranslationM2L().cuda_headroom_bytes == 1 << 30
-    @test DenseTranslationM2L(cuda_headroom_bytes=0).cuda_headroom_bytes == 0
-    @test DenseTranslationM2L(cuda_headroom_bytes=2 << 30).cuda_headroom_bytes == 2 << 30
-    @test_throws ArgumentError DenseTranslationM2L(cuda_headroom_bytes=-1)
-    @test_throws ArgumentError DenseTranslationM2L(cuda_headroom_bytes=big(typemax(Int)) + 1)
-    @test_throws ArgumentError DenseTranslationM2L(cuda_headroom_bytes=1.5)
 
     # Exact payload accounting and the inclusive persistent-memory gate on a small
     # synthetic displacement universe.
@@ -138,17 +130,6 @@ end
         got = psmall.operators[cls] * _dense_stack_flat(Float64, bsmall, src)
         @test got ≈ _dense_stack_flat(Float64, bsmall, tgt) rtol=1e-10 atol=1e-10
     end
-
-    # One-shot construction and execution use distinct represented offsets only.
-    one_sys = generate_gravitational(20260720, 80)
-    one_grid = RadixGrid(one_sys, 3)
-    one_list = build_radix_interaction_list(
-        LazyMaterializedBatches(1), ParentNeighborM2L(), one_grid)
-    one = host_radix_state(one_sys, one_grid, one_list, 4;
-        options=RadixLifecycleOptions(m2l_strategy=
-            DenseTranslationM2L(apply_chunk=8, build_chunk=8)))
-    @test one.scratch.m2l_concat isa DENSE_FM.ResidentM2LDensePlan
-    @test run_host_radix_lifecycle!(one) === one
 
     # Recurring parity, partial chunks, refresh identities, and stage allocation.
     for (TF, LH) in ((Float64, false), (Float64, true),

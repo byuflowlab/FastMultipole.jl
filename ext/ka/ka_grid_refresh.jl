@@ -1,16 +1,15 @@
 #------- in-place grid rebuild, stage 1: keys + sort + leaf-cell compression -------#
 #
-# First two stages of `_cuda_update_radix_grid_in_place!`
-# (src/translate_batched_cuda.jl:6591), the last CUDA-only block on the uniform,
-# `sfs=false` path of `update_cuda_radix_state!`. Ported and gated stage by stage
+# First two stages of the in-place grid rebuild on the uniform path of
+# `ka_update_radix_state!`. Gated stage by stage
 # rather than big-bang: this covers everything through the occupied-leaf-cell
 # compression, which is the natural seam -- `perm`/`invperm`/`cell_ranges` are
 # functions of the body positions and always refresh, while everything after the
 # compression is a pure function of the occupied cell SET and sits behind the
 # occupancy-epoch check.
 #
-# `ka_radix_keys!` (above) already ports the key kernel for the from-scratch
-# benchmark build, but deliberately drops the out-of-bounds flag. The live
+# The key kernel here carries an out-of-bounds flag, which a from-scratch build
+# could drop. The live
 # refresh loop cannot: the fixed Morton box is part of the cache's invariant
 # contract, and a body leaving it must throw rather than clamp. Hence a second,
 # checked kernel here, which also takes the per-axis `box_extent` (the port
@@ -118,10 +117,9 @@ function ka_radix_keys_checked!(keys, oob_flag, host_oob, positions, x_min,
     return keys
 end
 
-#------- bounded-key counting sort: KA port of the CUDA Stage 6 fast path -------#
+#------- bounded-key counting sort: the stage 6 fast path -------#
 #
-# Port of `_cuda_counting_sort_into!` and its three kernels
-# (src/translate_batched_cuda.jl:183-236). The cache's fixed Morton depth bounds
+# The cache's fixed Morton depth bounds
 # keys to `0:2^(3ell)-1`, so a histogram over the whole key domain plus one scan
 # and an atomic-cursor scatter replaces the comparison sort.
 #
@@ -139,10 +137,10 @@ end
 #     centers and the whole node table are pure functions of the occupied-cell
 #     SET, not of within-cell ordering.
 #
-# The gate mirrors CUDA's two conditions (`_cuda_counting_sort_ready`): the
-# setting must be on for this `ell`, AND the histogram actually handed in must
-# span the key domain -- flipping the knob on after construction would otherwise
-# drive `@inbounds` atomics through a length-1 array. Falling back is always safe.
+# The gate mirrors CUDA's two conditions (`_cuda_counting_sort_ready`): `ell`
+# must be within `KA_COUNTING_SORT_MAX_ELL`, AND the histogram actually handed in
+# must span the key domain -- otherwise `@inbounds` atomics would run through a
+# length-1 array. Falling back is always safe.
 
 @kernel function ka_counting_histogram_kernel!(histogram, @Const(keys), n)
     i = @index(Global)
@@ -171,9 +169,11 @@ end
     end
 end
 
-@inline ka_counting_sort_enabled(ell::Int) =
-    _ka_radix_setting(:RADIX_CUDA_COUNTING_SORT, true) &&
-        ell <= _ka_radix_setting(:RADIX_CUDA_COUNTING_SORT_MAX_ELL, 6)
+# Deepest uniform level whose full 8^ell key-domain histogram is allocated for
+# the counting sort; deeper grids take the stable `sortperm!` path.
+const KA_COUNTING_SORT_MAX_ELL = 6
+
+@inline ka_counting_sort_enabled(ell::Int) = ell <= KA_COUNTING_SORT_MAX_ELL
 
 @inline ka_counting_sort_ready(histogram, ell::Int) =
     histogram !== nothing && ell >= 0 && ka_counting_sort_enabled(ell) &&
@@ -275,8 +275,7 @@ end
 
 #------- in-place grid rebuild, stage 2: occupancy-epoch check + cell centers -------#
 #
-# Third stage of `_cuda_update_radix_grid_in_place!`
-# (src/translate_batched_cuda.jl:6591), directly after the leaf-cell compression
+# Third stage of the in-place grid rebuild, directly after the leaf-cell compression
 # ported in stage 1. This is the seam the epoch check defines: everything from
 # here on -- cell centers, per-level unique node keys, node geometry/parent/child
 # topology, leaf_to_node -- is a pure function of the occupied leaf-cell SET
@@ -360,8 +359,7 @@ end
 
 #------- in-place grid rebuild, stage 3: per-level unique node keys -------#
 #
-# Fourth stage of `_cuda_update_radix_grid_in_place!`
-# (src/translate_batched_cuda.jl:6591), the first block behind the stage-2
+# Fourth stage of the in-place grid rebuild, the first block behind the stage-2
 # occupancy-epoch check. `cell_keys` is ascending and a right shift is monotone,
 # so each level's ancestor keys are *already sorted* -- no per-level sort is
 # needed, and the same flag/scan/compact triple that compressed bodies into
@@ -478,8 +476,7 @@ end
 
 #------- in-place grid rebuild, stage 4: node geometry, parents, children -------#
 #
-# Final stage of `_cuda_update_radix_grid_in_place!`
-# (src/translate_batched_cuda.jl:6591): with the level-major `node_keys` and the
+# Final stage of the in-place grid rebuild: with the level-major `node_keys` and the
 # `level_offsets` prefix in hand from stage 3, fill each node's level/coord/
 # center, its parent index, and its contiguous child range, then map each leaf
 # cell to its deepest-level node.
@@ -488,7 +485,7 @@ end
 # active level runs concurrently and the per-level launch loop collapses to one
 # launch. The KA ports keep that -- one launch over all levels -- but **flatten**
 # the grid to 1D and decode the level from the flat index, the same idiom the
-# route generator uses (`ka_route_flags_kernel!`). A 2D `ndrange` would have to
+# hierarchical route generator uses. A 2D `ndrange` would have to
 # carry a matching 2D workgroup size, which the per-backend scalar workgroup
 # policy above does not produce; flattening keeps one tunable launch geometry
 # for both backends. The x-extent is `max_count` from stage 3, so the flat range

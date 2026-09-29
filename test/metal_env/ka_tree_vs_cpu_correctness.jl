@@ -165,7 +165,7 @@ function arm1(label, hcache, dcache)
         sort(perm) == collect(1:nb) ||
             (nfail[] += 1; @printf("    FAIL perm is not a permutation of 1:%d\n", nb))
         # slot -> global body is `perm`; `body_index` is indexed BY the global
-        # id (see _pack_radix_source_bodies!, translate_batched_resident.jl:2893),
+        # id (see _pack_radix_source_bodies!, src/resident/),
         # so indexing it by a sorted slot is a category error.
         hs = [Set(hg.perm[hg.cell_ranges[1,c]:(hg.cell_ranges[1,c]+hg.cell_ranges[2,c]-1)])
               for c in 1:nc]

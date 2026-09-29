@@ -121,8 +121,8 @@ FastMultipole.applies(::AdjacentPairs, i_source_system, i_target_system) =
 The callbacks mutate `source_buffer`, not the original source object. Direct
 kernels read source data from the sorted source buffer, so conditioning the
 buffer is both the fastest and the most direct way to affect the interaction.
-Conditioning is supported for CPU `fmm!` nearfield work and `direct!`; it is not
-currently used with custom device nearfield overloads (`nearfield_device=true`).
+Conditioning is supported for CPU `fmm!` nearfield work and `direct!`; the
+device radix path does not apply it.
 
 ## Metadata and Extra Outputs
 

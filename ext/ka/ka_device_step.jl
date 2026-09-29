@@ -1,27 +1,19 @@
 #------- backend-agnostic device step (the whole uniform sfs=false lifecycle) -------#
 #
-# KA form of `update_cuda_radix_state!` + `_radix_cache_device_step!`
-# (src/translate_batched_cuda.jl:6791 and :6948) for the branch FLOWVPM runs:
-# `cache.adaptive === nothing` (uniform grid) with a `HierarchicalRigidStencil`,
-# hence `ctx.hierarchical_ctx !== nothing`. Everything it calls now exists off
-# CUDA -- the four grid-rebuild stages, the hierarchical occupancy/direct-pair/
+# Device-resident state refresh for the branch FLOWVPM runs: a uniform grid
+# with a `HierarchicalRigidStencil`, hence
+# `ctx.hierarchical_ctx !== nothing`. Everything it calls is backend-agnostic --
+# the four grid-rebuild stages, the hierarchical occupancy/direct-pair/
 # window-cache refresh, the stage-group edges, the lifecycle body, and the
-# output finalize -- so this driver is what closes the loop: with it, no part of
-# the uniform `sfs=false` step needs `translate_batched_cuda.jl` to be loaded.
+# output finalize.
 #
-# Two deliberate omissions, both perf-only and both following the precedent set
-# by the stage-1 counting sort:
-#
-#   * `_cuda_nearfield_subsort!` (CUDA_NEARFIELD_SUBSORT, default on with
-#     PartitionedVortex) composes a within-cell sub-Morton reordering into
-#     `perm` for nearfield locality. It changes no cell key, cell range or node
-#     -- only the order bodies are summed in -- so omitting it costs locality,
-#     not correctness, and keeps the KA arm's summation order deterministic.
-#   * CUDA graph capture/replay has no KA equivalent; the body is launched
-#     directly every step.
-#
-#   * a consumer near-field pass (`nearfield_pass`) runs between the lifecycle body and the
-#     U/J finalize, in CUDA's order.
+# Notes:
+#   * the within-cell sub-Morton reordering (always on with PartitionedVortex)
+#     changes no cell key, cell range or node -- only the
+#     order bodies are summed in -- so it is locality-only, never correctness.
+#   * there is no graph capture/replay; the body is launched directly every step.
+#   * a consumer near-field pass (`nearfield_pass`) runs between the lifecycle
+#     body and the U/J finalize.
 
 """
     ka_update_radix_state!(cache, systems; workgroup=KA_AUTO_WORKGROUP)
@@ -33,12 +25,6 @@ occupancy / direct pairs / cached M2L windows on occupancy change, and refresh
 the per-level operator-group edges. Returns the cache with `cache.state` built
 (first step) or refreshed in place.
 """
-# `radix_setting` throws for a CUDA-only tunable until `load_cuda_radix_lifecycle!()`
-# has defined its Ref -- which never happens on a non-CUDA backend, so every
-# read below would abort the KA step. The KA arm honours the same tunables when
-# CUDA has been loaded and falls back to the shipped default otherwise (the
-# values in translate_batched_cuda.jl, kept in sync by the assertion at each
-# call site's comment). It is a read-only fallback: nothing here can set one.
 @kernel function ka_iota_kernel!(perm, invperm, n)
     i = @index(Global)
     @inbounds if i <= n
@@ -56,27 +42,12 @@ function _ka_identity_perm!(perm, invperm, n::Int; workgroup=KA_AUTO_WORKGROUP)
     return perm
 end
 
-# Settings the former native lifecycle defined (CUDA_NEARFIELD_SUBSORT,
-# CUDA_CACHED_WINDOWS, ...) have no Ref once it is gone, so the KA path uses
-# its own defaults; `_KA_SETTING_OVERRIDES` lets a probe or a user flip one.
-const _KA_SETTING_OVERRIDES = Dict{Symbol,Any}()
-_ka_radix_setting(name::Symbol, default) =
-    haskey(_KA_SETTING_OVERRIDES, name) ? _KA_SETTING_OVERRIDES[name] :
-    FastMultipole._radix_setting_ref(name) === nothing ? default :
-        FastMultipole.radix_setting(name)
-
 # Optional per-stage timers for ka_update_radix_state!, used by the attribution
 # probe: set `_KA_UPDATE_TIMERS[] = Dict{Symbol,Vector{Float64}}()` and every
 # `_utick!` syncs the backend and records the time since the previous tick.
 # `nothing` (the default) makes each tick a no-op.
 const _KA_UPDATE_TIMERS = Ref{Any}(nothing)
 const _KA_UPDATE_T0 = Ref{Float64}(0.0)
-# FM_SLOW_STAGE=<seconds>: with the timers armed, a stage that takes longer
-# than this is printed as it completes, so a runaway stage in a run that
-# never reaches its summary is still named in the log.
-# (set from the environment in `__init__`, not here: a top-level read is
-# evaluated when the extension precompiles and would bake that process's
-# environment into the image)
 @inline function _utick!(name::Symbol, backend)
     d = _KA_UPDATE_TIMERS[]
     d === nothing && return nothing
@@ -92,9 +63,6 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     ctx = cache.device_ctx
     ctx === nothing &&
         throw(ArgumentError("ka_update_radix_state! requires a cache built with device=true"))
-    cache.adaptive === nothing ||
-        throw(ArgumentError("ka_update_radix_state! covers the uniform path only; " *
-            "the adaptive device lifecycle is CUDA-only"))
     length(systems) == cache.n_systems ||
         throw(ArgumentError("cache was built for $(cache.n_systems) source systems, got $(length(systems))"))
     n = FastMultipole.get_n_bodies(systems)
@@ -138,7 +106,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         sk = view(ctx.sorted_keys, 1:n)
         # branch exactly where `_cuda_update_radix_grid_in_place!` branches: the
         # bounded counting sort when the cache was built with a domain-sized
-        # histogram and the setting is on for this `ell`, else the stable sortperm
+        # histogram (ell <= KA_COUNTING_SORT_MAX_ELL), else the stable sortperm
     _utick!(:keys, backend)
         ka_radix_sort_bodies!(view(grid.perm, 1:n), sk, grid.invperm, kv; workgroup,
             ell=ell, histogram=ctx.counting_histogram, prefix=ctx.counting_prefix,
@@ -152,8 +120,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
 
         # occupancy epoch: everything past this point is a pure function of the
         # occupied leaf-cell SET inside the fixed box
-        track_epoch = length(ctx.epoch_cell_keys) > 0 &&
-            _ka_radix_setting(:CUDA_CACHED_WINDOWS, true)
+        track_epoch = length(ctx.epoch_cell_keys) > 0
     _utick!(:sort_compress, backend)
         # The epoch is keyed on the occupied-cell SET, not on the body count:
         # bodies added to already-occupied cells (a shedding solver, every step)
@@ -193,15 +160,13 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
 
     # 032a stage C mechanism (a): optional within-cell sub-Morton ordering,
     # composed into the perm before packing (the sorted cell keys, cell ranges
-    # and node metadata are unaffected). Same gate as CUDA's at cuda:6807.
+    # and node metadata are unaffected).
     _utick!(:grid_rebuild, backend)
     # (hung above 8192 cells through the grid-stride loop in
     # `ka_subsort_cell_sort_kernel!`'s launch; fixed there, one group per cell.
     # FM_SUBSORT_DUMP=path writes the kernel's inputs before the launch for a
     # standalone reproduction.)
-    if !direct_only && _ka_radix_setting(:CUDA_NEARFIELD_SUBSORT, true) &&
-            cache.options.direct_kernel isa Union{FastMultipole.PartitionedVortex,
-                                                  FastMultipole.TwoPassVortex}
+    if !direct_only && cache.options.direct_kernel isa FastMultipole.PartitionedVortex
         # NOT the refresh's `workgroup`: the local-memory sort's group size is
         # baked into the kernel (Val(WG) against a fixed capacity), so it is the
         # kernel's own constant, not a tuning surface
@@ -224,14 +189,11 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     # An inadequate hierarchical geometry demotes to the all-direct zero-M2L
     # cache and re-runs the refresh, as on the host (052f); the rebuilt cache's
     # gate is vacuous, so the recursion terminates after one demotion.
-    if !direct_only && cache.adaptive === nothing &&
-            FastMultipole._direct_kernel_geometry_gate!(cache,
-                cache.options.direct_kernel, ctx.source_bodies, n) === :alldirect
+    if !direct_only && FastMultipole._direct_kernel_geometry_gate!(cache,
+            cache.options.direct_kernel, ctx.source_bodies, n) === :alldirect
         FastMultipole._alldirect_geometry_fallback!(cache, systems)
         return ka_update_radix_state!(cache, systems; workgroup)
     end
-    direct_only || cache.adaptive !== nothing ||
-        FastMultipole._direct_kernel_geometry_gate!(cache, cache.options.direct_kernel, ctx.source_bodies, n)
 
     # host mirrors serve host-resident target finalization only
     _utick!(:pack, backend)
@@ -248,19 +210,9 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         n_routes = 0
         n_direct = 0
     else
-        # multi-root tree edges: every node at root_level is a root
-        n_root_nodes = cache.level_offsets[cache.root_level + 2]
-        n_edges = max(n_nodes - n_root_nodes, 0)
-        if occ_changed && n_edges > 0
-            ka_tree_routes!(ctx.m2m_parent_routes, ctx.m2m_child_routes,
-                ctx.l2l_parent_routes, ctx.l2l_child_routes,
-                view(grid.parent_index, 1:n_nodes), n_root_nodes; workgroup)
-        end
-
         hctx === nothing && throw(ArgumentError(
             "ka_update_radix_state! covers the hierarchical stencil path only; " *
             "build the cache with window_classes (FLOWVPM's default)"))
-    _utick!(:tree_routes, backend)
         if occ_changed
             hctx.epoch_id += 1
             hctx.win_valid = false
@@ -272,26 +224,12 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
             n_direct = hctx.epoch_n_direct
         end
     _utick!(:refresh_occ_direct_pairs, backend)
-        if isempty(hctx.symmetric_targets)
-            hctx.n_symmetric_pairs = 0
-        else
-            # oversized-cell fallback selection reads per-cell body counts, so the
-            # symmetric compaction refreshes every step
-            ka_compact_symmetric_pairs!(ctx, hctx, grid.cell_ranges, n_direct,
-                _ka_radix_setting(:SYMMETRIC_CUDA_MAX_CELL_BODIES, 128); workgroup)
-        end
-        # Occupancy-epoch window cache. CUDA arms this only for the dense FUSED
-        # apply (`_cuda_windows_cacheable`, cuda:7353) because its GEMM reference
-        # driver additionally consumes per-window class starts/counts. KA's dense
-        # apply IS that reference driver, so dense stays uncached here -- but the
-        # CONCAT apply consumes only (class, source, target), which is exactly what
-        # the cache stores, and it takes no level argument because the level is
-        # already baked into the class. So concat is cacheable on KA even though it
-        # is not on CUDA, and the whole epoch collapses to one apply.
-    _utick!(:symmetric, backend)
-        if _ka_radix_setting(:CUDA_CACHED_WINDOWS, true) && !hctx.win_valid &&
-                hctx.apply_plan isa FastMultipole.ResidentM2LConcatPlan
-            ka_hier_cache_windows!(ctx, hctx, grid; workgroup)
+        # Occupancy-epoch window cache. The CONCAT apply consumes only
+        # (class, source, target), which is exactly what the cache stores, and it
+        # takes no level argument because the level is already baked into the
+        # class, so the whole epoch collapses to one apply.
+        if !hctx.win_valid && hctx.apply_plan isa FastMultipole.ResidentM2LConcatPlan
+            ka_hier_cache_windows!(hctx, grid; workgroup)
         end
         n_routes = hctx.win_valid ? hctx.total_routes : 0
 
@@ -315,15 +253,17 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         # every array here is persistent; the wrapper is built once and
         # refreshed in place on later steps
         cache.state = FastMultipole.DeviceResidentRadixState{TF,FastMultipole.CompressedComplexBasis,LH}(
-            grid, hctx, ctx.source_bodies, ctx.source_bodies,
+            grid, hctx, ctx.source_bodies,
             grid.perm, grid.body_system, grid.body_index,
-            ctx.host_perm, ctx.host_body_system, ctx.host_body_index,
-            nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing, nothing,
+            ctx.host_perm, ctx.host_body_system, ctx.host_body_index, nothing,
             grid.cell_centers, grid.cell_ranges,
             ctx.m2m_parent_routes, ctx.m2m_child_routes,
             ctx.l2l_parent_routes, ctx.l2l_child_routes,
             ctx.multipoles, ctx.locals,
-            ctx.route_levels, ctx.route_offsets, ctx.route_targets, ctx.route_sources,
+            # flat route staging: only the host lifecycle's flat M2L reads it;
+            # the device M2L applies the epoch window cache (`hctx.win_*`)
+            KA.zeros(backend, Int, 0), KA.zeros(backend, Int, 3, 0),
+            KA.zeros(backend, Int, 0), KA.zeros(backend, Int, 0),
             ctx.direct_targets, ctx.direct_sources, ctx.output,
             ctx.invariant, ctx.workspace, counters, cache.options, counts;
         )

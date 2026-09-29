@@ -155,8 +155,6 @@ end
     @test maximum(warm_allocs) < 512_000
     # host path never counts transfers
     @test cache.state.counters.expansion_host_copies == 0
-    @test cache.state.counters.route_uploads == 0
-    @test cache.state.counters.operator_uploads == 0
     @test cache.state.counters.body_uploads == 0
     # loose timing sanity: a full step (update + lifecycle + finalize) should be
     # within a small factor of the bare lifecycle (hard guarantees are the

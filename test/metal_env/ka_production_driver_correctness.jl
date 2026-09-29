@@ -1,21 +1,8 @@
-# Gate for steps 1 and 2 of the dispatch-wiring plan: the KA kernels reached
-# through FastMultipole's *production* stage drivers, not through the ext's
-# standalone re-implementations.
-#
-# The premise being tested: `_resident_stage_group_apply!` and
-# `_launch_resident_m2l_concat!` (src/translate_batched.jl) are already
-# backend-agnostic -- apart from views, broadcast, `mul!` and `fill!`, the only
-# device work they do goes through four primitives, and CUDA's far-field "port"
-# is literally a passthrough to these same drivers with those four primitives
-# specialized on `CUDA.AnyCuArray`. Step 1 adds the `AnyGPUMatrix`/`AnyGPUVector`
-# overloads; if the premise holds, the generic driver now runs on a KA backend
-# and produces the same numbers as on the host.
-#
-# The oracle is therefore the SAME driver over host `Array`s -- an exact
-# apples-to-apples comparison that isolates the backend and nothing else. A
-# failure here means a generic driver does host scalar indexing that `Array`
-# and `CuArray` tolerated, which is the documented go/no-go for the whole
-# migration.
+# Gate for the production KA M2M stage driver (`ka_resident_stage_group_apply!`,
+# what `ka_lifecycle_body!` runs) over a real `ka_radix_cache_workspace`, against
+# the host stage driver `_resident_stage_group_apply!` (src/translate_batched.jl)
+# over the equivalent host workspace: same group, same random edges, same
+# multipoles, so the comparison isolates the backend and nothing else.
 include("ka_backend.jl")
 using FastMultipole, Random, Test, LinearAlgebra
 using StaticArrays: SVector
@@ -66,19 +53,18 @@ for (case_i, (P, lh, nbatch, ell)) in pairs(CASES)
         lh ? zeros(TF, basis_info.basis_dof_chi, 1) : zeros(TF, 0, 0), basis_info)
     ws_host = FM._radix_cache_workspace(TF, basis_info, host_ex, ell, h0, max_cells,
         max_nodes, route_capacity, offs, invariant,
-        FM.ConcatenatedFixedZM2L(), FM.MaterializedYRotationM2L();
-        compact_cuda_factored=false)
+        FM.ConcatenatedFixedZM2L(), FM.MaterializedYRotationM2L())
 
     isempty(ws_host.m2m_groups) && (println("  SKIP case $case_i: no m2m groups"); continue)
 
-    # --- step 2 gate: the workspace itself must build identically (pure host math) ---
+    # --- the workspace itself must build identically (pure host math) ---
     ok_ws = true
     for f in (:phi_flat_idx, :chi_flat_idx)
         ok_ws &= Array(getfield(ws_dev, f)) == getfield(ws_host, f)
     end
     ok_ws || (nfail[] += 1; println("  FAIL case $case_i: workspace flat-index mismatch"); continue)
 
-    # --- step 1 gate: run the generic production driver on both backends ---
+    # --- host stage driver vs the production KA stage driver ---
     gi = min(1, length(ws_host.m2m_groups))
     gh = ws_host.m2m_groups[gi]; gd = ws_dev.m2m_groups[gi]
     m = min(length(gh.phis), nbatch)
@@ -105,7 +91,7 @@ for (case_i, (P, lh, nbatch, ell)) in pairs(CASES)
     local res_h, res_d
     try
         res_h = FM._resident_stage_group_apply!(host_buf, host_buf, gh, ws_host, :m2m)
-        res_d = FM._resident_stage_group_apply!(dev_buf, dev_buf, gd, ws_dev, :m2m)
+        res_d = ext.ka_resident_stage_group_apply!(dev_buf, dev_buf, gd, ws_dev, :m2m)
         KernelAbstractions.synchronize(DEV_BACKEND)
     catch e
         nfail[] += 1
@@ -126,6 +112,6 @@ for (case_i, (P, lh, nbatch, ell)) in pairs(CASES)
     end
 end
 
-println("\nProduction stage driver over $(DEV_NAME): $(npass[]) passed, $(nfail[]) failed")
+println("\nProduction KA stage driver over $(DEV_NAME): $(npass[]) passed, $(nfail[]) failed")
 nfail[] == 0 || error("production driver gate failed")
-println("✓✓✓ Steps 1+2 gate passed on $(DEV_NAME) ✓✓✓")
+println("✓✓✓ Production KA stage driver gate passed on $(DEV_NAME) ✓✓✓")

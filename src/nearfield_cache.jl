@@ -634,9 +634,16 @@ boundaries, so all blocks writing one target branch run serially on one
 owner, in fixed order).
 """
 function nearfield_matvec!(target_buffers, cache::NearfieldInfluenceCache{TF},
-        source_buffers; n_threads::Integer=Threads.nthreads()) where TF
+        source_buffers; n_threads::Integer=Threads.nthreads(),
+        derivatives_switches=nothing) where TF
 
     # cheap validity guards; Tree identity is checked by tree-based callers
+    if !isnothing(derivatives_switches)
+        derivatives_switches == cache.derivatives_switches ||
+            throw(ArgumentError("NearfieldInfluenceCache was built for derivatives " *
+                "switches $(cache.derivatives_switches) but this call requests " *
+                "$derivatives_switches — rebuild the cache with matching switches"))
+    end
     n_targets = sum(size(b, 2) for b in target_buffers; init=0)
     n_sources = sum(size(b, 2) for b in source_buffers; init=0)
     n_targets == cache.n_target_bodies && n_sources == cache.n_source_bodies ||
@@ -673,6 +680,10 @@ function _nearfield_matvec_range!(target_buffers, cache::NearfieldInfluenceCache
         target_range = cache.target_ranges[k]
         source_range = cache.source_ranges[k]
         out_range = cache.output_ranges[k]
+        (last(target_range) <= size(target_buffer, 2) && last(source_range) <= size(source_buffer, 2)) ||
+            throw(ArgumentError("NearfieldInfluenceCache block $k addresses bodies past the end of " *
+                "target system $i_ts or source system $i_ss: the per-system body counts changed " *
+                "since the cache was built; rebuild it"))
         sd = cache.n_comp[k]
         n_out = cache.n_out[k]
 

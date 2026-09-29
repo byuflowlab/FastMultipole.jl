@@ -300,8 +300,6 @@ function _host_b2m_element_kernel!(::Type{BT}, ph::AbstractMatrix{TF}, ch, sourc
     end
     return ph
 end
-# the filament-only name the device suites call
-_host_b2m_filament_kernel!(::Type{BT}, args...) where BT = _host_b2m_element_kernel!(BT, args...)
 
 function _launch_host_b2m!(state::DeviceResidentRadixState, ::Type{BT}) where BT
     throw(ArgumentError("the resident radix lifecycle implements body-to-multipole for the " *

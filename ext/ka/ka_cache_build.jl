@@ -1,14 +1,9 @@
-#------- device-resident cache construction: KA port of
-#         `_radix_cache_device_build` (src/translate_batched_cuda.jl:6289) -------#
+#------- device-resident cache construction -------#
 #
-# The last CUDA-only link in the chain. `RadixFMMCache(...; device=true)` routes
-# to the CUDA builder, which allocates the whole ctx NamedTuple from `CUDA.zeros`
-# and the hierarchical context from `_build_cuda_hierarchical_context`, so no
-# device cache could be constructed on a non-CUDA backend at all -- which left
-# `ka_finalize_radix_output!` and `ka_radix_cache_device_step!` load-checked but
-# ungated. This builder closes that: it produces a real `RadixFMMCache` whose
-# `device_ctx` is backend-allocated, so `ka_radix_cache_device_step!` runs end to
-# end and a full UJ can be gated against the host lifecycle.
+# `RadixFMMCache(...; device=true)` reaches this builder through the device
+# backend registry. It produces a real `RadixFMMCache` whose `device_ctx` is
+# backend-allocated, so `ka_radix_cache_device_step!` runs end to end and a
+# full UJ can be gated against the host lifecycle.
 #
 # Scope, matching what the KA step actually implements (each omission is a guard,
 # not a silent fallback):
@@ -19,14 +14,13 @@
 #     `ConcatenatedFixedZM2L`/`MaterializedYRotationM2L`, the same pair the CUDA
 #     builder selects for a non-specialized hierarchical cache. A dense or
 #     precomputed-y strategy would silently get a different plan, so it throws.
-#   * no SFS pass, no adaptive octree mirror.
+#   * no SFS pass.
 #
 # Two allocation differences from the CUDA original, both inert on this path:
 # the pinned host mirrors become plain `Array`s (pinning is a CUDA transfer
 # optimization); `CUDA.enable_synchronization!` has no KA analogue and no
-# side-stream exists here to need it. The nearfield bin context is likewise
-# not built: `ka_launch_nearfield!` runs the unbinned functor kernel and never
-# reads `hctx.nearfield`, so a `PartitionedVortex` cache is correct without it
+# side-stream exists here to need it. `ka_launch_nearfield!` runs the unbinned
+# functor kernel, so a `PartitionedVortex` cache needs no distance-binned scratch
 # (binning is locality only).
 function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         x_min::SVector{3,TF}, h0::TF, maxn::Int,
@@ -82,7 +76,6 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         _z(Int, max_nodes), _z(Int, 2, max_nodes),
         _z(Int, max_cells),
     )
-    n_edges_capacity = max(max_nodes - 1, 0)
 
     # per-system source staging: host-resident systems get a host buffer plus a
     # persistent device buffer (one upload per step); device-resident systems get
@@ -108,34 +101,16 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         "(dense_occupancy_max_bytes=$(stencil_policy.dense_occupancy_max_bytes), " *
         "dense_occupancy_max_ell=$(stencil_policy.dense_occupancy_max_ell)); the " *
         "host Morton binary-search fallback has no device implementation"))
-    # DEVIATION (dense). CUDA builds the workspace ITSELF with the dense
-    # strategy (cuda:6331, `workspace_strategy`), so `workspace.m2l_concat`
-    # becomes the dense plan and `hctx.apply_plan` is that same object. Routing
-    # the plan through `_radix_cache_workspace` would need a backend the dense
-    # builder's signature does not carry, so KA keeps the concat workspace and
-    # builds the dense plan alongside it, handing it to the context directly.
-    # Behaviourally identical on the dense path -- nothing reads
-    # `workspace.m2l_concat` once `apply_plan` is dense -- at the cost of one
-    # unused concat operator table.
-    #
-    # Classes are the UNSCALED push offsets built at the leaf cell width
-    # (cuda:6326), matching `class_base = 0` in `ka_hierarchical_m2l!`.
-    cell_width = (2 * h0) / (1 << ell)
+    # The concat plan is the apply plan (the dense strategy is refused above).
+    # Classes are the UNSCALED push offsets built at the leaf cell width.
     apply_plan = workspace.m2l_concat
-    # The per-window route staging (`route_levels/offsets/targets/sources`, 48 B
-    # per entry at `route_capacity` = window_classes x max_level_nodes) is only
-    # consumed by the per-window M2L drivers. The concat plan with cached windows
-    # compacts straight into the epoch cache (`hctx.win_*`, sized to the measured
-    # route total), so on that path the staging is never touched: allocate one
-    # entry. 400 MB at ell 5, 8x per level. Flipping :CUDA_CACHED_WINDOWS off
-    # AFTER construction is caught by the generators' capacity checks.
-    window_staging = !_ka_radix_setting(:CUDA_CACHED_WINDOWS, true)
-    staging_capacity = window_staging ? route_capacity : 1
+    # The M2L routes are compacted straight into the epoch window cache
+    # (`hctx.win_*`, sized to the measured route total), so no per-window route
+    # staging is allocated.
     hierarchical_ctx = ka_hierarchical_context(TF, backend, hierarchical_tables,
         class_level, class_offset, accepted, hierarchical_level_class_of,
         hierarchical_level_radii2, apply_plan, ell, first_m2l_level,
-        max_level_nodes, occupancy; window_classes=stencil_policy.window_classes,
-        window_staging)
+        max_level_nodes, occupancy; window_classes=stencil_policy.window_classes)
 
     dpb = maximum(FastMultipole.data_per_body(system) for system in sources)
     n_output_rows = hessian ? 13 : 4
@@ -148,14 +123,8 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         cell_at=_z(Int32, 0, 0, 0),
         hierarchical_ctx,
         d_accepted, d_rejected, class_chunk=1,
-        route_levels=_z(Int, staging_capacity),
-        route_offsets=_z(Int, 3, staging_capacity),
-        route_targets=_z(Int, staging_capacity),
-        route_sources=_z(Int, staging_capacity),
         direct_targets=_z(Int, direct_capacity),
         direct_sources=_z(Int, direct_capacity),
-        route_flags=_z(Int32, 0),
-        route_prefix=_z(Int32, 0),
         direct_flags=_z(Int32, direct_capacity),
         direct_prefix=_z(Int32, direct_capacity),
         # grid-update scratch: persistent, so the recurring step allocates
@@ -164,7 +133,7 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         keys=_z(UInt64, maxn),
         sorted_keys=_z(UInt64, maxn),
         # bounded counting-sort domain buffers, sized by the same rule as the
-        # CUDA builder (translate_batched_cuda.jl:6462): the full 2^(3ell) key
+        # host builder: the full 2^(3ell) key
         # domain when the fast path is enabled for this `ell`, else length 1,
         # which is itself the signal `ka_counting_sort_ready` falls back on
         counting_histogram=_z(Int32, ka_counting_sort_enabled(ell) ? 1 << (3 * ell) : 1),
@@ -194,10 +163,12 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         # `_ka_extra_tree_prepared!`)
         extra_tree_cache=Dict{UInt,Any}(),
         extra_tree_hits=Ref(0), extra_tree_misses=Ref(0),   # reuse accounting, for profiles
-        m2m_parent_routes=_z(Int, n_edges_capacity),
-        m2m_child_routes=_z(Int, n_edges_capacity),
-        l2l_parent_routes=_z(Int, n_edges_capacity),
-        l2l_child_routes=_z(Int, n_edges_capacity),
+        # tree-edge route arrays: fields of `DeviceResidentRadixState` that only
+        # the host lifecycle reads; the KA M2M/L2L walk the stage-group edges
+        m2m_parent_routes=_z(Int, 0),
+        m2m_child_routes=_z(Int, 0),
+        l2l_parent_routes=_z(Int, 0),
+        l2l_child_routes=_z(Int, 0),
         host_stagings, device_sources,
         # host mirrors/staging for the step downloads
         host_oob=zeros(Int32, 1),
@@ -219,7 +190,6 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         nothing, zeros(Int32, 0, 0, 0), SVector{3,Int}[], zeros(Int, ell + 2),
         UInt64[], Int[], Int[], Int[], nothing, nothing, ctx,
         length(sources), false, 0,
-        nothing, nothing, nothing, nothing,
         FastMultipole.snapshot_locked_radix_settings(),
     )
     ka_update_radix_state!(cache, sources; workgroup)
@@ -231,11 +201,3 @@ ka_radix_cache_device_build(backend, sources, args...; kwargs...) =
     ka_radix_cache_device_build(backend, FastMultipole.to_tuple(sources), args...;
         kwargs...)
 
-
-"""
-    ka_radix_cache_device_step!(cache, targets, switches; workgroup=KA_AUTO_WORKGROUP)
-
-Backend-agnostic `_radix_cache_device_step!`: refresh the device state, run the
-uniform lifecycle body, and scatter the output back into the target systems.
-No CUDA dependency.
-"""

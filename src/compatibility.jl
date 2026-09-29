@@ -5,7 +5,7 @@
 
 Return whether a system's canonical FastMultipole buffers live on the host or on
 the active device. Systems are host-resident by default. Device-backed systems
-may opt into CUDA device-native materialization by overloading this method to
+may opt into device-native materialization by overloading this method to
 return [`DeviceResident()`](@ref).
 """
 residency(system) = HostResident()
@@ -208,13 +208,13 @@ for i_source in source_index
 
         # update appropriate quantities
         if PS
-            set_scalar_potential!(target_buffer, i_target, scalar_potential)
+            set_scalar_potential!(target_buffer, derivatives_switch, i_target, scalar_potential)
         end
         if GS
-            set_gradient!(target_buffer, i_target, gradient)
+            set_gradient!(target_buffer, derivatives_switch, i_target, gradient)
         end
         if HS
-            set_hessian!(target_buffer, i_target, hessian)
+            set_hessian!(target_buffer, derivatives_switch, i_target, hessian)
         end
 
     end
@@ -847,9 +847,9 @@ end
 
 Accumulates the packed third derivative `value` — a [`ThirdDerivativeTensor`](@ref) or an
 `SVector{18}` in the packed `(xx,xy,xz,yy,yz,zz)`-per-component order — into the 18
-third-derivative rows for the `i_body`th body of `target_buffer`. The three-argument form
-assumes the default layout (rows 17:34); the switch-aware form uses
-[`third_derivative_range`](@ref) and throws an `ArgumentError` if the switch did not
+third-derivative rows for the `i_body`th body of `target_buffer`. The three-argument
+(switchless) form throws: the switch-aware form is required, uses
+[`third_derivative_range`](@ref), and throws an `ArgumentError` if the switch did not
 request third derivatives.
 """
 set_third_derivative!(system::Matrix, i, value) = _switchless("set_third_derivative!")

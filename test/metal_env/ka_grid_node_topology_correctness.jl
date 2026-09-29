@@ -2,7 +2,7 @@
 # `ka_radix_node_topology!` (ext/FastMultipoleKAExt.jl), the KA port of the node
 # geometry / parent-index / child-range trio plus `leaf_to_node` -- the last
 # block of `_cuda_update_radix_grid_in_place!`
-# (src/translate_batched_cuda.jl:6591).
+# (former CUDA lifecycle, removed).
 #
 # Oracle: `_refresh_radix_nodes!` (src/tree_batched.jl), the same host node
 # builder stage 3 was gated against. Stage 3 compared the part of its output

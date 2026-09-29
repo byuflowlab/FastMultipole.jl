@@ -660,11 +660,11 @@ end
 @inline _rect_lg_split_h2(::Type{Float64}) = 1e-8
 @inline _rect_lg_split_h2(::Type{T}) where T = T(3e-4)
 @inline _rect_lg_endpoint_split_guard(ĥ2::T, ẑ1, ẑ2, R̂1, R̂2) where T =
-    ĥ2 < _rect_lg_split_h2(T) * T(_RECT_LG_SMALL_R)^2 && min(abs(ẑ1), abs(ẑ2)) < _RECT_LG_SMALL_R &&
-    max(R̂1, R̂2) >= _RECT_LG_SMALL_R
+    ĥ2 < _rect_lg_split_h2(T) * T(_RECT_LG_SMALL_R)^2 && min(abs(ẑ1), abs(ẑ2)) < T(_RECT_LG_SMALL_R) &&
+    max(R̂1, R̂2) >= T(_RECT_LG_SMALL_R)
 
 function _rect_lg_endpoint_split_MD(ẑ1::T, ẑ2::T, ĥ2::T) where T
-    if abs(ẑ1) < _RECT_LG_SMALL_R
+    if abs(ẑ1) < T(_RECT_LG_SMALL_R)
         split = -T(_RECT_LG_SMALL_R)
         Mc, Dc = _rect_lg_small_radius_MD(ẑ1, split, ĥ2)
         Mf = _rect_lg_psi(split) - _rect_lg_psi(ẑ2)
@@ -680,7 +680,7 @@ end
 function _rect_lg_M(ẑ1::T, ẑ2::T, ĥ2::T, R̂1::T, R̂2::T) where T
     if ĥ2 == 0
         return _rect_lg_psi(ẑ1) - _rect_lg_psi(ẑ2)
-    elseif max(R̂1, R̂2) < _RECT_LG_SMALL_R
+    elseif max(R̂1, R̂2) < T(_RECT_LG_SMALL_R)
         M, _ = _rect_lg_small_radius_MD(ẑ1, ẑ2, ĥ2)
         return M
     elseif _rect_lg_endpoint_split_guard(ĥ2, ẑ1, ẑ2, R̂1, R̂2)
@@ -748,7 +748,7 @@ end
     k1 = _rect_lg_kfun(R̂1)
     k2 = _rect_lg_kfun(R̂2)
     duθdz = C * ĥ * (k1 - k2)
-    if max(R̂1, R̂2) < _RECT_LG_SMALL_R
+    if max(R̂1, R̂2) < T(_RECT_LG_SMALL_R)
         _, radial = _rect_lg_small_radius_MD(ẑ1, ẑ2, ĥ2)
         duθdh = C * radial
     elseif _rect_lg_endpoint_split_guard(ĥ2, ẑ1, ẑ2, R̂1, R̂2)
@@ -1033,11 +1033,12 @@ function _rect_validate_panel_sources(sources::AbstractMatrix;
     tags = view(sources, 1, :)
     nvs = view(sources, 2, :)
     ok = all(@. (tags == round(tags)) & (tags >= 1) & (tags <= 5) &
-                ((nvs == 3) | (nvs == 4) | ((nvs == 2) & (tags == 3))))
+                ((nvs == 3) | ((nvs == 4) & (tags != 4)) | ((nvs == 2) & (tags == 3))))
     ok || throw(ArgumentError(
         "RectangularPanelInfluence sources: row 1 must be an integral tag " *
-        "in 1:5 and row 2 a vertex count in {3, 4} ({2, 3, 4} for tag 3; " *
-        "nv == 2 is an open bound-vortex filament)"))
+        "in 1:5 and row 2 a vertex count in {3, 4} ({2, 3, 4} for tag 3, where " *
+        "nv == 2 is an open bound-vortex filament; 3 only for tag 4, whose ring " *
+        "is evaluated as a triangle)"))
     if scalar_potential
         potential_ok = all(@. !((tags == 3) & (nvs != 3)))
         potential_ok || throw(ArgumentError(

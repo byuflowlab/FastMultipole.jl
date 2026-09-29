@@ -2,7 +2,7 @@
 # `ka_radix_occupancy_changed!` and `ka_radix_cell_centers!`
 # (ext/FastMultipoleKAExt.jl), the KA port of the occupancy-epoch check and the
 # cell-center block of `_cuda_update_radix_grid_in_place!`
-# (src/translate_batched_cuda.jl:6591), directly after the leaf-cell
+# (former CUDA lifecycle, removed), directly after the leaf-cell
 # compression gated by ka_grid_keys_cells_correctness.jl.
 #
 # Oracle: the cell-center loop of `_refresh_radix_grid!` (src/tree_batched.jl),

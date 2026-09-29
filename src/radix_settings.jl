@@ -2,21 +2,19 @@
 Consolidated settings surface for the GPU/radix production path.
 
 Every mechanism tunable of the radix lifecycle is a process-global `Ref`
-(most defined in the lazily-include'd translate_batched_cuda.jl). This file
-provides the single documented, validated access surface plus the
-construction-lock contract:
+defined in this file. This file provides the single documented, validated
+access surface plus the construction-lock contract:
 
 - `radix_settings()`            -> NamedTuple of current values (defined Refs only)
 - `radix_setting(name)`         -> current value
 - `set_radix_setting!(name, v)` -> validated write (throws on unknown name,
                                    bad type, or out-of-domain value)
-- `radix_setting_lock(name)`    -> :construction | :runtime
 
+Each spec carries a lock class, `:construction` or `:runtime`.
 Lock contract (047): `:construction` settings are read at cache/device-context
-construction or inside the graph-captured lifecycle body (baked at record
-time; a re-record happens only on an occupancy epoch), so flipping them after
-a `RadixFMMCache` is built used to silently keep the old mechanism — the
-documented hazard. Both cache constructors now snapshot the
+construction (they size buffers or select the mechanism the cache is built
+around), so flipping them after a `RadixFMMCache` is built used to silently
+keep the old mechanism — the documented hazard. Both cache constructors now snapshot the
 construction-locked settings (`snapshot_locked_radix_settings`), and the
 device step entry verifies the snapshot (`verify_locked_radix_settings`),
 throwing a loud, actionable error on drift. `:runtime` settings are read
@@ -33,24 +31,9 @@ struct RadixSettingSpec
 end
 
 _rs_bool(v) = v isa Bool ? nothing : throw(ArgumentError("expected Bool, got $(typeof(v))"))
-_rs_posint(v) = (v isa Integer && !(v isa Bool) && v >= 1 && v <= typemax(Int)) ? nothing :
-    throw(ArgumentError("expected a non-Bool Integer in 1:$(typemax(Int)), got $(repr(v))"))
 _rs_nonnegint(v) = (v isa Integer && !(v isa Bool) && v >= 0 && v <= typemax(Int)) ? nothing :
     throw(ArgumentError("expected a non-Bool Integer in 0:$(typemax(Int)), got $(repr(v))"))
-_rs_cuda_threads(v) = (v isa Int && 32 <= v <= 1024 && v % 32 == 0) ? nothing :
-    throw(ArgumentError("expected Int warp multiple in 32:1024, got $(repr(v))"))
 _rs_enum(vals) = v -> v in vals ? nothing : throw(ArgumentError("expected one of $(vals), got $(repr(v))"))
-_rs_ka_workgroup(v) = (v isa Int && (v == 0 || (32 <= v <= 1024 && v % 32 == 0))) ? nothing :
-    throw(ArgumentError("expected 0 (auto) or an Int warp multiple in 32:1024, got $(repr(v))"))
-
-
-# Workgroup size for the auto-tuned KA launches. `0` means "let the backend decide" --
-# FastMultipoleKAExt.resolve_workgroup then picks per backend (256 on
-# CUDA/ROCm/oneAPI, 64 on Metal and CPU), which is the point: 64 suits Metal's
-# small threadgroups but wastes scheduler slots on an A100. Does not affect the
-# launches where `workgroup` is a team size the kernel's @localmem extents are
-# declared against (b2m, l2b, nearfield, adaptive m2t/s2l).
-const KA_WORKGROUP = Ref(0)
 
 # All-pairs direct arm. Swaps `ka_lifecycle_body!` for a single
 # O(np^2) kernel and skips the grid/route refresh entirely. Off by default and
@@ -60,40 +43,22 @@ const KA_WORKGROUP = Ref(0)
 const RADIX_DIRECT_ARM = Ref(false)
 
 const RADIX_SETTING_SPECS = Dict{Symbol,RadixSettingSpec}(
-    # ---- tree/refresh --------------------------------------------------------
-    :RADIX_CUDA_COUNTING_SORT => RadixSettingSpec(:construction, _rs_bool,
-        "Use the device counting-sort refresh when ell <= RADIX_CUDA_COUNTING_SORT_MAX_ELL (histogram sized at construction)."),
-    :RADIX_CUDA_COUNTING_SORT_MAX_ELL => RadixSettingSpec(:construction, _rs_nonnegint,
-        "Max uniform depth for the counting-sort refresh (8^ell histogram allocated at construction)."),
     # ---- nearfield -----------------------------------------------------------
     :CUDA_NEARFIELD_GH_MODE => RadixSettingSpec(:construction,
-        _rs_enum((:shipped, :reduced, :fp32, :reduced_fp32, :lut)),
-        "g/h evaluation mode for the regularized nearfield (037f; :fp32 default; :lut needs the construction-built table)."),
-    :CUDA_NEARFIELD_SUBSORT => RadixSettingSpec(:runtime, _rs_bool,
-        "Sub-Morton ordering inside cells during the (uncaptured) host refresh; flippable per step."),
-    :SYMMETRIC_CUDA_MAX_CELL_BODIES => RadixSettingSpec(:runtime, _rs_posint,
-        "Cell-size cap for symmetric-pair eligibility (host refresh; flippable per step)."),
-    # ---- M2L strategies ------------------------------------------------------
+        _rs_enum((:shipped, :reduced, :fp32, :reduced_fp32)),
+        "g/h evaluation mode for the regularized nearfield on the HOST radix path (:fp32 default). The KernelAbstractions kernels always evaluate the shipped series in the field precision and ignore this setting."),
     # ---- lifecycle/orchestration --------------------------------------------
-    :CUDA_CACHED_WINDOWS => RadixSettingSpec(:runtime, _rs_bool,
-        "Occupancy-epoch window caching (checked per step; also gates graph eligibility)."),
-    :KA_EXTRA_TARGETS_GRID => RadixSettingSpec(:runtime, _rs_bool,
-        "Evaluate extra targets through the resident grid instead of all-pairs (opt-in: an open per-call race)."),
     :RADIX_DIRECT_ARM => RadixSettingSpec(:runtime, _rs_bool,
         "Evaluate the step as a single all-pairs O(np^2) direct kernel instead of the FMM lifecycle, skipping the grid and route refresh (KA device path only; checked per step at entry). Opt-in: nothing selects it automatically."),
-    :KA_WORKGROUP => RadixSettingSpec(:runtime, _rs_ka_workgroup,
-        "Workgroup size for auto-tuned KA launches; 0 (default) resolves per backend. Team-size launches (b2m/l2b/nearfield/adaptive) are unaffected."),
     # ---- host GEMM thresholds ------------------------------------------------
-    :FACTORED_Y_GEMM_MIN_COLS => RadixSettingSpec(:runtime, _rs_nonnegint,
-        "Host factored-y GEMM column threshold."),
     :FACTORED_Y_GEMM_MIN_DIM => RadixSettingSpec(:runtime, _rs_nonnegint,
         "Host factored-y GEMM dimension threshold."),
     :PRECOMPUTED_Y_GEMM_MIN_COLS => RadixSettingSpec(:runtime, _rs_nonnegint,
         "Host precomputed-y GEMM column threshold."),
 )
 
-"Return the `Ref` behind a setting name, or `nothing` if its defining file
-(a device backend extension) has not been loaded yet."
+"Return the `Ref` behind a setting name (every registered setting has one),
+or `nothing` for a registered name whose `Ref` is not defined."
 function _radix_setting_ref(name::Symbol)
     haskey(RADIX_SETTING_SPECS, name) ||
         throw(ArgumentError("unknown radix setting $(repr(name)); known: $(sort!(collect(keys(RADIX_SETTING_SPECS))))"))
@@ -104,13 +69,12 @@ end
 """
     radix_setting(name::Symbol)
 
-Current value of a radix-lifecycle tunable. Throws on unknown names and on
-device-only settings before a backend extension has loaded.
+Current value of a radix-lifecycle tunable. Throws on unknown names.
 """
 function radix_setting(name::Symbol)
     r = _radix_setting_ref(name)
     r === nothing && throw(ArgumentError(
-        "radix setting $(repr(name)) is defined by a device backend that is not loaded; load a backend extension first"))
+        "radix setting $(repr(name)) has no backing Ref"))
     return r[]
 end
 
@@ -118,7 +82,7 @@ end
     set_radix_setting!(name::Symbol, value)
 
 Validated write to a radix-lifecycle tunable. Construction-locked settings
-(`radix_setting_lock(name) == :construction`) must be set BEFORE constructing
+(`RADIX_SETTING_SPECS[name].lock == :construction`) must be set BEFORE constructing
 a `RadixFMMCache`; a later flip is caught at the next device step by
 `verify_locked_radix_settings` with a loud error.
 """
@@ -134,7 +98,7 @@ function set_radix_setting!(name::Symbol, value)
     end
     r = _radix_setting_ref(name)
     r === nothing && throw(ArgumentError(
-        "radix setting $(repr(name)) is defined by a device backend that is not loaded; load a backend extension first"))
+        "radix setting $(repr(name)) has no backing Ref"))
     r[] = value
     return value
 end
@@ -164,7 +128,7 @@ function set_radix_settings!(settings::NamedTuple)
         end
         r = _radix_setting_ref(name)
         r === nothing && throw(ArgumentError(
-            "radix setting $(repr(name)) is defined by a device backend that is not loaded; load a backend extension first"))
+            "radix setting $(repr(name)) has no backing Ref"))
         T = typeof(r[])
         value_t = try
             convert(T, value)
@@ -190,20 +154,11 @@ function set_radix_settings!(settings::NamedTuple)
     return settings
 end
 
-"Lock class of a setting: `:construction` (baked at cache construction /
-graph record — locked once a cache exists) or `:runtime` (flippable per step)."
-function radix_setting_lock(name::Symbol)
-    haskey(RADIX_SETTING_SPECS, name) ||
-        throw(ArgumentError("unknown radix setting $(repr(name))"))
-    return RADIX_SETTING_SPECS[name].lock
-end
-
 """
     radix_settings()
 
-NamedTuple of all currently-defined radix settings (CUDA-only settings appear
-after a backend extension loads). See `RADIX_SETTING_SPECS` for lock
-classes and docs.
+NamedTuple of all radix settings. See `RADIX_SETTING_SPECS` for lock classes
+and docs.
 """
 function radix_settings()
     names = sort!(collect(keys(RADIX_SETTING_SPECS)))
@@ -234,7 +189,7 @@ end
 Throw a loud error if any construction-locked setting drifted from the value
 it had when the cache was built. Called at device-step entry (047 contract):
 previously a late flip silently kept the old mechanism (the value is baked
-into constructed buffers or the captured CUDA graph).
+into constructed buffers).
 """
 function verify_locked_radix_settings(snapshot::Vector{Pair{Symbol,Any}})
     for (name, locked) in snapshot
@@ -245,7 +200,7 @@ function verify_locked_radix_settings(snapshot::Vector{Pair{Symbol,Any}})
             error(
                 "radix setting $(name) is construction-locked but was changed after the RadixFMMCache was built " *
                 "(built with $(repr(locked)), now $(repr(current))). The value is baked into construction-sized " *
-                "buffers or the captured CUDA graph, so the flip would be silently ignored. Either restore " *
+                "buffers, so the flip would be silently ignored. Either restore " *
                 "FastMultipole.set_radix_setting!($(repr(name)), $(repr(locked))) or rebuild the cache " *
                 "(construct a new RadixFMMCache; from FLOWVPM use radix_fmm_settings!/clear_radix_fmm_cache!).")
         end

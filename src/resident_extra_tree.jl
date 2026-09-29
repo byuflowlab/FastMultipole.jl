@@ -14,33 +14,33 @@ near sweep over `direct_targets`/`direct_sources` when the two cells are near,
 and by the extra body's cell multipole otherwise. An extra body is held out of
 the tree and summed against every resident body ("loose") when
 
-  * its cell holds no resident body, so there is no node to carry a multipole,
+  * it lies outside the grid box, or its cell holds no resident body, so there
+    is no node to carry a multipole,
   * or its own extent is not small against a cell, since a multipole about the
     cell center is only valid outside the source's extent.
 =#
 
 """
-    ResidentExtraSource(system, buffer, cell_ranges, loose)
+    ResidentExtraSource(system, buffer, cell_ranges)
 
 An extra source system binned onto a resident cache's grid. `buffer` holds
 every body packed and reordered so that the bodies of one cell are contiguous,
 `cell_ranges[:, i]` is the `(first, count)` of cell `i` in the cache's own cell
-order, and `loose` lists the columns of `buffer` that must be summed directly
-against every resident body. See [`bin_resident_extra_source`](@ref).
+order. The loose bodies (summed directly against every resident body) come back
+in a separate buffer. See [`bin_resident_extra_source`](@ref).
 """
 struct ResidentExtraSource{TF,S}
     system::S
     buffer::Matrix{TF}
     cell_ranges::Matrix{Int}
-    loose::Vector{Int}
 end
 
 """
     bin_resident_extra_source(TF, system, grid, n_cells; extent_fraction = 0.5)
 
 Pack `system` and sort it onto `grid`'s cells, returning a
-[`ResidentExtraSource`](@ref). A body goes to the loose set when its cell is
-absent from the grid or when its radius (packed row 4) exceeds
+[`ResidentExtraSource`](@ref). A body goes to the loose set when it lies
+outside the grid box, when its cell is absent from the grid, or when its radius (packed row 4) exceeds
 `extent_fraction` of a cell width.
 """
 function bin_resident_extra_source(::Type{TF}, system,
@@ -64,9 +64,18 @@ function bin_resident_extra_source(::Type{TF}, system,
             push!(loose, i)
             continue
         end
-        ix = clamp(floor(Int, (Float64(raw[1, i]) - Float64(grid.x_min[1])) / delta), 0, side - 1)
-        iy = clamp(floor(Int, (Float64(raw[2, i]) - Float64(grid.x_min[2])) / delta), 0, side - 1)
-        iz = clamp(floor(Int, (Float64(raw[3, i]) - Float64(grid.x_min[3])) / delta), 0, side - 1)
+        sx = (Float64(raw[1, i]) - Float64(grid.x_min[1])) / delta
+        sy = (Float64(raw[2, i]) - Float64(grid.x_min[2])) / delta
+        sz = (Float64(raw[3, i]) - Float64(grid.x_min[3])) / delta
+        # outside the closed grid box: no cell center it lies near, so loose
+        # (the clamp below only folds the upper face into the last cell)
+        if !(0 <= sx <= side && 0 <= sy <= side && 0 <= sz <= side)
+            push!(loose, i)
+            continue
+        end
+        ix = min(floor(Int, sx), side - 1)
+        iy = min(floor(Int, sy), side - 1)
+        iz = min(floor(Int, sz), side - 1)
         key = morton_key(SVector{3,Int}(ix, iy, iz), ell)
         j = searchsortedfirst(view(cell_keys, 1:min(n_cells, length(cell_keys))), key)
         if j <= n_cells && j <= length(cell_keys) && cell_keys[j] == key
@@ -108,7 +117,7 @@ function bin_resident_extra_source(::Type{TF}, system,
             loose_buffer[r, k] = raw[r, i]
         end
     end
-    return ResidentExtraSource{TF,typeof(system)}(system, buffer, cell_ranges, Int[]),
+    return ResidentExtraSource{TF,typeof(system)}(system, buffer, cell_ranges),
            loose_buffer
 end
 

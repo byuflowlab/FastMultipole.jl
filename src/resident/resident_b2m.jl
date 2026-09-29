@@ -135,93 +135,11 @@ function _host_b2m_vortex_kernel!(ph::AbstractMatrix{TF}, ch, source_bodies,
 end
 
 function _launch_host_m2m!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
-    return _launch_resident_m2m!(state, state.options.m2m_strategy)
-end
-
-function _launch_host_m2l_flat_oracle!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
-    cache = state.invariant_cache
-    op = state.options.operator isa FactoredRotationM2L ? state.options.operator : MaterializedYRotationM2L()
-    scratch = M2LOperatorScratch(TF, cache.basis_info, max(length(state.route_targets), 1))
-    fill!(state.locals.phi, zero(TF))
-    LH && fill!(state.locals.chi, zero(TF))
-
-    route_i = 0
-    @inbounds for batch in state.interaction_list.m2l_batches
-        nbatch = length(batch.targets)
-        nbatch == 0 && continue
-        targets = FlatCoefficientBuffer(TF, cache.basis_info, nbatch)
-        sources = FlatCoefficientBuffer(TF, cache.basis_info, nbatch)
-        phis = Vector{TF}(undef, nbatch)
-        thetas = Vector{TF}(undef, nbatch)
-        rs = Vector{TF}(undef, nbatch)
-        for j in 1:nbatch
-            route_i += 1
-            target = state.route_targets[route_i]
-            source = state.route_sources[route_i]
-            sources.phi[:, j] .= state.multipoles.phi[:, source]
-            LH && (sources.chi[:, j] .= state.multipoles.chi[:, source])
-            dx = state.grid.node_centers[1, target] - state.grid.node_centers[1, source]
-            dy = state.grid.node_centers[2, target] - state.grid.node_centers[2, source]
-            dz = state.grid.node_centers[3, target] - state.grid.node_centers[3, source]
-            r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
-            rs[j] = TF(r)
-            thetas[j] = TF(theta)
-            phis[j] = TF(phi)
-        end
-        m2l_operator_batch!(op, targets, sources, phis, thetas, rs, cache, scratch, Val(LH))
-        for j in 1:nbatch
-            target = state.route_targets[route_i - nbatch + j]
-            state.locals.phi[:, target] .+= targets.phi[:, j]
-            LH && (state.locals.chi[:, target] .+= targets.chi[:, j])
-        end
-    end
-    return state
+    return _launch_resident_m2m!(state)
 end
 
 function _launch_host_m2l!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
     return _launch_resident_m2l!(state, state.options.m2l_strategy)
-end
-
-function _launch_host_l2l_flat_oracle!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
-    cache = state.invariant_cache
-    op = state.options.operator isa FactoredRotationM2L ? FactoredRotationL2L() : MaterializedYRotationL2L()
-    scratch = L2LOperatorScratch(TF, cache.basis_info, 8)
-    @inbounds for level in 1:state.grid.ell
-        parents = Int[]
-        children = Int[]
-        phis = TF[]
-        thetas = TF[]
-        rs = TF[]
-        for edge in eachindex(state.l2l_parent_routes)
-            parent = state.l2l_parent_routes[edge]
-            child = state.l2l_child_routes[edge]
-            parent == 0 && continue
-            state.grid.node_levels[child] == level || continue
-            dx = state.grid.node_centers[1, child] - state.grid.node_centers[1, parent]
-            dy = state.grid.node_centers[2, child] - state.grid.node_centers[2, parent]
-            dz = state.grid.node_centers[3, child] - state.grid.node_centers[3, parent]
-            r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
-            push!(parents, parent)
-            push!(children, child)
-            push!(rs, TF(r))
-            push!(thetas, TF(theta))
-            push!(phis, TF(phi))
-        end
-        isempty(children) && continue
-        nbatch = length(children)
-        targets = FlatCoefficientBuffer(TF, cache.basis_info, nbatch)
-        sources = FlatCoefficientBuffer(TF, cache.basis_info, nbatch)
-        for j in 1:nbatch
-            sources.phi[:, j] .= state.locals.phi[:, parents[j]]
-            LH && (sources.chi[:, j] .= state.locals.chi[:, parents[j]])
-        end
-        l2l_operator_batch!(op, targets, sources, phis, thetas, rs, cache, scratch, Val(LH))
-        for j in 1:nbatch
-            state.locals.phi[:, children[j]] .+= targets.phi[:, j]
-            LH && (state.locals.chi[:, children[j]] .+= targets.chi[:, j])
-        end
-    end
-    return state
 end
 
 function _launch_host_l2l!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
@@ -232,12 +150,12 @@ end
 # interaction list so the recurring update path never rebuilds the list object;
 # function barrier as in _launch_host_b2m!. Since stage 2 the pair math comes
 # from the `direct_kernel` functor stamped into the options at construction
-# (compile-time specialization; the legacy hard-coded kernels below remain as
-# the functor-abstraction benchmark reference).
+# (compile-time specialization; the hard-coded `_host_direct_pairs_*_kernel!`
+# in resident_pair_kernels.jl remain as the functor-abstraction test reference).
 function _add_host_direct_pairs!(state::DeviceResidentRadixState)
     hsv = size(state.output, 1) >= 13 ? Val(true) : Val(false)
-    # cheapened g/h mode (host maps :lut -> :shipped, see
-    # _validated_host_gh_mode); Val() barrier specializes the loop per mode
+    # cheapened g/h mode (see _validated_host_gh_mode); Val() barrier
+    # specializes the loop per mode
     _host_direct_pairs_functor_kernel!(state.options.direct_kernel, state.output,
         state.source_bodies, state.cell_ranges, state.direct_targets,
         state.direct_sources, state.counts.n_direct, hsv,
@@ -300,7 +218,7 @@ function _host_direct_pairs_functor_kernel!(kernel::AbstractDirectKernel,
     return output
 end
 
-#------- two-pass additive-correction deficit sweep () -------#
+#------- two-pass additive-correction deficit sweep -------#
 #
 # Pass 2 of the TwoPassVortex hybrid: after the unmodified pass 1 (singular far
 # field + the rho_c-partitioned direct nearfield above), add the 031a §6.1

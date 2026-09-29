@@ -3,9 +3,8 @@
 # These four lived in the former native CUDA lifecycle file, which was loaded
 # only when CUDA was available, but none of them contains a CUDA type or launch:
 # they are `source_to_buffer!` dispatch, a `copyto!`, and a residency query, all
-# generic over the array type. Their placement made them CUDA-only at run time
-# — the same defect as `_radix_offsets_matrix` — and
-# `_recenter_union_bounds` (above) already calls `_fill_device_source_buffer!`
+# generic over the array type. Their placement made them CUDA-only at run time,
+# and `_recenter_union_bounds` (above) already calls `_fill_device_source_buffer!`
 # from generic code. Moved here so a KA `_radix_cache_device_step!` can reach
 # them; behavior is unchanged and the CUDA path resolves the same methods.
 
@@ -21,7 +20,7 @@ function _fill_device_source_buffer!(device_buffer, system)
     sort_index = Base.OneTo(get_n_bodies(system))
     _has_device_source_to_buffer_method(device_buffer, system, sort_index) ||
         throw(ArgumentError(
-            "DeviceResident CUDA source systems must overload FastMultipole.source_to_buffer!(device_buffer, system, sort_index)",
+            "DeviceResident source systems must overload FastMultipole.source_to_buffer!(device_buffer, system, sort_index)",
         ))
     source_to_buffer!(device_buffer, system, sort_index)
     return device_buffer

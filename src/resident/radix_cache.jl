@@ -57,99 +57,6 @@ end
 _leaf_stencil_min_gap(cache::RadixFMMCache) =
     _leaf_stencil_min_gap(cache.policy, cache.accepted_offsets)
 
-#------- distance-binned nearfield pair stream () -------#
-#
-# Shared bucket rule for the §6.3 class-level pre-split (mechanism c): a direct
-# cell pair at integer offset (ox, oy, oz) is classified from its AABB distance
-# extrema against the source cell's σ extrema. The pure buckets are exactly the
-# pairs whose *every* body pair falls on one side of the ρ = r/σ_src cutoff, so
-# the branch-free kernels applied to them are bitwise the split kernel's own
-# branch outcome; the mixed bucket keeps the predicated (or queued) kernel.
-# Pure Julia arithmetic — shared verbatim by the host reference/tests and the
-# CUDA classification kernel.
-#
-#   1 = pure singular:    d_min > rho_cut · σ_max(source cell)   (or σ_max ≤ 0)
-#   2 = pure regularized: d_max ≤ rho_cut · σ_min(source cell) and σ_min > 0
-#   3 = mixed
-#
-# d_min/d_max are the exact axis-aligned cell-AABB distance extrema at lattice
-# offset o with cube cell size h: per axis max(|o_q|−1, 0)·h and (|o_q|+1)·h.
-@inline function _nearfield_pair_bucket(ox::Integer, oy::Integer, oz::Integer,
-        h_leaf::T, rho_cut::T, sigma_max_s::T, sigma_min_s::T) where T<:AbstractFloat
-    gx = T(max(abs(ox) - 1, 0)); mx = T(abs(ox) + 1)
-    gy = T(max(abs(oy) - 1, 0)); my = T(abs(oy) + 1)
-    gz = T(max(abs(oz) - 1, 0)); mz = T(abs(oz) + 1)
-    h2 = h_leaf * h_leaf
-    dmin2 = (gx * gx + gy * gy + gz * gz) * h2
-    dmax2 = (mx * mx + my * my + mz * mz) * h2
-    if !(sigma_max_s > zero(T))
-        return Int32(1)
-    end
-    cmax = rho_cut * sigma_max_s
-    dmin2 > cmax * cmax && return Int32(1)
-    if sigma_min_s > zero(T)
-        cmin = rho_cut * sigma_min_s
-        dmax2 <= cmin * cmin && return Int32(2)
-    end
-    return Int32(3)
-end
-
-# exact target-point/source-cell-AABB reachability predicate for the
-# mixed-bucket pair-level fast path (`CUDA_NEARFIELD_PAIR_AABB`). Returns true
-# when the point (xi, yi, zi) can reach the source-cell AABB
-# [slo, slo + h_leaf]^3 within rho_cut·σ_max(source cell), i.e. when at least
-# one source body in that cell COULD satisfy the regularized branch predicate
-# ρ = r/σ ≤ rho_cut. The point-to-AABB gap arithmetic mirrors the 037a-validated
-# `_cuda_twopass_deficit_kernel!` qx/near2 form exactly. Pure Julia scalar
-# arithmetic — shared verbatim by the CUDA kernels, the host unit tests, and
-# the fm037e scoping script.
-@inline function _nearfield_point_aabb_reach(xi::T, yi::T, zi::T, slo_x::T,
-        slo_y::T, slo_z::T, h_leaf::T, rho_cut::T,
-        sigma_max_s::T) where T<:AbstractFloat
-    sigma_max_s > zero(T) || return false
-    shi_x = slo_x + h_leaf
-    shi_y = slo_y + h_leaf
-    shi_z = slo_z + h_leaf
-    qx = xi < slo_x ? slo_x - xi : (xi > shi_x ? xi - shi_x : zero(T))
-    qy = yi < slo_y ? slo_y - yi : (yi > shi_y ? yi - shi_y : zero(T))
-    qz = zi < slo_z ? slo_z - zi : (zi > shi_z ? zi - shi_z : zero(T))
-    near2 = qx * qx + qy * qy + qz * qz
-    return near2 <= (rho_cut * sigma_max_s)^2
-end
-
-# Construction-sized compacted offset ball for the device TwoPassVortex pass-2
-# sweep (Stage-B open risk): every integer offset with lattice gap
-# gap(o) = √Σ max(|o_q|−1, 0)² ≤ reach_cap_cells, sorted gap-ascending so the
-# live ball {o : gap(o)·h_leaf ≤ rho_t·σ_max} is always a prefix-selectable
-# subset (the deficit kernel tests gap²·h² ≤ (rho_t·σ_max)² per entry from the
-# device σ_max scalar — no per-step list rebuild). The capacity reach is
-# gate-derived: pass-1 adequacy asserts rho_c·σ_max < g_min·h_leaf per step,
-# so rho_t·σ_max < (rho_t/rho_c)·g_min·h_leaf ≡ reach_cap_cells·h_leaf always.
-function _twopass_offset_ball(reach_cap_cells::Float64)
-    reach_cap_cells >= 0 || throw(ArgumentError("reach_cap_cells must be nonnegative"))
-    R = floor(Int, reach_cap_cells) + 1
-    offs = NTuple{3,Int}[]
-    gap2s = Int[]
-    cap2 = reach_cap_cells * reach_cap_cells
-    for oz in -R:R, oy in -R:R, ox in -R:R
-        g2 = max(abs(ox) - 1, 0)^2 + max(abs(oy) - 1, 0)^2 + max(abs(oz) - 1, 0)^2
-        g2 <= cap2 || continue
-        push!(offs, (ox, oy, oz))
-        push!(gap2s, g2)
-    end
-    p = sortperm(gap2s)
-    K = length(p)
-    offsets = Matrix{Int32}(undef, 3, K)
-    gap2 = Vector{Int32}(undef, K)
-    for (k, idx) in enumerate(p)
-        offsets[1, k] = Int32(offs[idx][1])
-        offsets[2, k] = Int32(offs[idx][2])
-        offsets[3, k] = Int32(offs[idx][3])
-        gap2[k] = Int32(gap2s[idx])
-    end
-    return offsets, gap2
-end
-
 _direct_kernel_geometry_gate!(cache::RadixFMMCache, ::AbstractDirectKernel,
     source_bodies, n::Int) = nothing
 
@@ -191,10 +98,7 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
     h_leaf = 2 * Float64(cache.h0) / (1 << cache.ell)
     rho_reach, rho_name = _gate_reach_rho(kernel)
     cutoff = rho_reach * sigma_max
-    if g_min * h_leaf > cutoff
-        _twopass_device_reach_check(cache, kernel, sigma_max, h_leaf)
-        return nothing
-    end
+    g_min * h_leaf > cutoff && return nothing
     x = g_min * 2 * Float64(cache.h0) / cutoff   # admissible 2^ℓ bound
     ell_max = floor(Int, log2(x))
     2.0^ell_max < x || (ell_max -= 1)
@@ -215,9 +119,8 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
     # arrays/device, and no pair can reach the singular far field. The
     # demotion is terminal for the cache — the degenerate geometry has no
     # accepted offsets, so this gate goes vacuous and never fires again.
-    # TwoPassVortex is excluded: its pass-2 sweep capacity is derived from the
-    # gate-passing geometry (`_twopass_device_reach_check`), so the degenerate
-    # grid would trade this loud ArgumentError for an internal AssertionError.
+    # TwoPassVortex is excluded: its pass-2 deficit sweep is sized from the
+    # gate-passing geometry, so the degenerate grid is not admissible for it.
     if cache.policy isa HierarchicalRigidStencil && !(kernel isa TwoPassVortex)
         @warn "$msg Falling back to the all-direct zero-M2L geometry: the " *
             "cache is rebuilt at ell = 2 with a full-grid near ball (q = 27) " *
@@ -229,7 +132,7 @@ end
 
 # all-direct demotion for a cache whose sigma_max outgrew every
 # admissible stencil geometry. Mirrors the recenter! rebuild-and-swap idiom
-# (same bounds, same capacities, same options/adaptive wiring) but forces
+# (same bounds, same capacities, same options) but forces
 # ell = 2 with a full-grid near ball: at ell = 2 every leaf offset satisfies
 # |o|^2 <= 27, so _radix_root_level reports L_allnear = ell, the scheduled
 # tables degenerate to the zero-M2L form (052c), and the whole evaluation is
@@ -262,63 +165,12 @@ function _alldirect_geometry_fallback!(cache::RadixFMMCache{TF,LH},
         bounds=(cache.x_min, cache.box_extent),
         lamb_helmholtz=LH, hessian=cache.hessian, device=cache.device,
         options=cache.options,
-        policy=newpolicy,
-        adaptive=cache.adaptive)
+        policy=newpolicy)
     for f in fieldnames(RadixFMMCache)
         setfield!(cache, f, getfield(fresh, f))
     end
     return cache
 end
-
-# Defensive pass-2 capacity assertion for device TwoPassVortex caches (the port
-# stage C): the construction-sized offset ball covers (rho_t/rho_c)·g_min cells,
-# and the pass-1 gate just passed rho_c·σ_max < g_min·h_leaf, so this can only
-# fire on an internal-consistency bug — never on user geometry.
-_twopass_device_reach_check(cache::RadixFMMCache, ::AbstractDirectKernel,
-    sigma_max, h_leaf) = nothing
-
-function _twopass_device_reach_check(cache::RadixFMMCache, kernel::TwoPassVortex,
-        sigma_max::Float64, h_leaf::Float64)
-    cache.device || return nothing
-    nfctx = _cache_nearfield_bin_ctx(cache)
-    nfctx === nothing && return nothing
-    reach_cells = kernel.rho_t * sigma_max / h_leaf
-    reach_cells <= nfctx.twopass_reach_cap_cells * (1 + 1e-12) ||
-        throw(AssertionError(
-            "TwoPassVortex device pass-2 offset ball capacity exceeded: live " *
-            "reach $(reach_cells) cells > capacity $(nfctx.twopass_reach_cap_cells) " *
-            "cells despite a passing pass-1 gate (internal inconsistency)"))
-    return nothing
-end
-
-# 032a stage C: the device pass-2 deficit sweep (and the §6.3 binned pair
-# stream) live on the hierarchical device context; a flat-policy device cache
-# would run pass 1 but silently skip the pass-2 deficit sweep, so it is refused
-# at construction.
-function _assert_device_kernel_policy(device::Bool, dk, hierarchical::Bool)
-    device && dk isa TwoPassVortex && !hierarchical && throw(ArgumentError(
-        "TwoPassVortex on a device cache requires the hierarchical stencil " *
-        "policy (the flat-policy device path has no pass-2 deficit sweep); " *
-        "use the default HierarchicalRigidStencil, build the cache with " *
-        "device=false, or select another nearfield kernel"))
-    return nothing
-end
-
-# The stage-C nearfield bin context lives on the hierarchical device context;
-# flat-policy or host caches have none.
-function _cache_nearfield_bin_ctx(cache::RadixFMMCache)
-    cache.device || return nothing
-    ctx = cache.device_ctx
-    ctx === nothing && return nothing
-    hctx = ctx.hierarchical_ctx
-    hctx === nothing && return nothing
-    return hctx.nearfield
-end
-
-# Legacy cubic arity; the per-axis method below is the contractual check
-# (cubic caches pass box_extent = (2h0, 2h0, 2h0), same values).
-_assert_radix_positions_in_box(systems::Tuple, x_min::SVector{3,TF}, h0::TF) where TF =
-    _assert_radix_positions_in_box(systems, x_min, SVector{3,TF}(2 * h0, 2 * h0, 2 * h0))
 
 function _assert_radix_positions_in_box(systems::Tuple, x_min::SVector{3,TF},
         box_extent::SVector{3,TF}) where TF
@@ -402,33 +254,29 @@ const RADIX_DEVICE_WINDOW_CLASSES = 4096
 _default_radix_precision(expansion_order::Int) =
     expansion_order <= 3 ? Float32 : Float64
 
-# Strategy. the earlier stage's recurring-step rules: dense wins every measured P = 4 case on
-# both platforms and every P = 8 case with LH off; with LH on at P = 8 the platforms
-# split (H200 precomputed-y, CPU dense); precomputed-y wins P = 12 everywhere, where
-# dense is either unsupported (Float32) or over its memory gate. the port confirmed
-# dense over precomputed-y on the hierarchical path at n = 1e6 (106.3 vs 172.3 ms).
-# Concat/factored won no steady-state case on either platform, so the historical
-# `ConcatenatedFixedZM2L` default was not the measured choice at any order.
+# Host strategy, from the measured recurring-step rules: dense wins every measured
+# P = 4 and P = 8 case; precomputed-y wins P = 12, where dense is either unsupported
+# (Float32) or over its memory gate. The port confirmed dense over precomputed-y on
+# the hierarchical path at n = 1e6 (106.3 vs 172.3 ms). A device cache always takes
+# `ConcatenatedFixedZM2L`: it is the only plan the KernelAbstractions build has.
 #
 # Dense trades construction for steady state (~20 s build and ~300-370 break-even
 # steps at the task-028 target), which suits the repeated-step cache this is, but not
 # one-shot evaluation: pass `PrecomputedFactoredYM2L()` explicitly for that.
 function _default_radix_m2l_strategy(::Type{TF}, expansion_order::Int, LH::Bool,
         device::Bool, nclasses::Int, ndof::Int) where TF
-    dense = DenseTranslationM2L()
     # The device lifecycle is the KernelAbstractions extension, which builds the
-    # concatenated or the dense plan and has no plan for the factored strategy
-    # (that was the native CUDA lifecycle's, removed); so wherever the host
-    # would fall back to precomputed-y, the device falls back to concat.
-    fallback = device ? ConcatenatedFixedZM2L() : PrecomputedFactoredYM2L()
+    # concatenated hierarchical plan only (dense and factored are host-only).
+    device && return ConcatenatedFixedZM2L()
+    dense = DenseTranslationM2L()
+    fallback = PrecomputedFactoredYM2L()
     # 024 found the operator payload is dense's binding constraint; keep a margin
     # under its own gate so the auto choice never construction-errors on storage.
     dense_bytes = nclasses * ndof * ndof * sizeof(TF)
     dense_bytes <= (dense.max_persistent_bytes * 3) ÷ 4 || return fallback
     expansion_order <= 3 && return dense                  # literature P <= 4
     expansion_order <= 7 || return fallback               # literature P >= 12
-    LH || return dense                                    # P = 8, LH off
-    return device ? fallback : dense                      # P = 8, LH on: platform split
+    return dense                                          # P = 8
 end
 
 _default_radix_options(::Type{TF}, expansion_order::Int, LH::Bool, device::Bool,
@@ -565,7 +413,7 @@ of tasks 024 and 028:
 |---|---|---|
 | `expansion_order <= 3` (literature `P <= 4`) | `Float32` | dense |
 | `expansion_order <= 7`, no Lamb-Helmholtz | `Float64` | dense |
-| `expansion_order <= 7`, Lamb-Helmholtz | `Float64` | precomputed-y on device, dense on host |
+| `expansion_order <= 7`, Lamb-Helmholtz | `Float64` | dense (host; a device cache always builds `ConcatenatedFixedZM2L`) |
 | `expansion_order >= 8` (literature `P >= 12`) | `Float64` | precomputed-y |
 | dense operator payload over its gate | unchanged | precomputed-y |
 
@@ -595,8 +443,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         near_radius2::Union{Nothing,Integer}=nothing,
         level_radii2=nothing,
         window_classes::Union{Nothing,Integer}=nothing,
-        policy::Union{Nothing,ConstantPAnalyticStencil,HierarchicalRigidStencil}=nothing,
-        adaptive::Union{Nothing,AdaptiveTreePolicy}=nothing)
+        policy::Union{Nothing,ConstantPAnalyticStencil,HierarchicalRigidStencil}=nothing)
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
     _assert_radix_targets_are_sources(targets, sources)
@@ -673,16 +520,6 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         x_min = SVector{3,TF}(bounds[1])
         ell_axes, h0, box_extent = _resolve_radix_ell_axes(bounds[2], Int(ell), TF)
     end
-
-    # Validate the requested strategy before any policy-dependent substitution.
-    # The hierarchical path routes the concatenated and grouped-factored selections
-    # through the bounded concat engine, which would otherwise silently accept an
-    # unsupported strategy that the flat path rejects.
-    options.m2l_strategy isa Union{ConcatenatedFixedZM2L,PrecomputedFactoredYM2L,
-        DenseTranslationM2L} || throw(ArgumentError(
-        "RadixFMMCache supports ConcatenatedFixedZM2L, PrecomputedFactoredYM2L, " *
-        "or DenseTranslationM2L; got $(typeof(options.m2l_strategy)) (the " *
-        "SharedRotationM2L group layout is not refreshable in place)"))
 
     P = Int(expansion_order)
     stencil_policy = _default_radix_policy(policy, P, TF, LH, h0, Int(ell), device,
@@ -761,63 +598,6 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
                 "row sigma_row"))
         end
     end
-    _assert_device_kernel_policy(device, dk, hierarchical)
-
-    # Opt-in adaptive octree (tasks 039/040): host-only, cubic-domain-only.
-    # Refreshed alongside the uniform structures by update_radix_state!; with
-    # the policy armed the host fmm! branch runs the ADAPTIVE lifecycle (task
-    # 040) instead of the uniform one. Production defaults are unchanged.
-    if adaptive !== nothing
-        # the device mirror supports the same lifecycle surface as
-        # the host path. The S2L stage supports Point{Source}/Point{Vortex}
-        # only — guard at construction (040 approval note) instead of the
-        # former runtime throw alone.
-        options.body_type <: Union{Point{Source},Point{Vortex}} ||
-            throw(ArgumentError(
-                "the adaptive octree S2L stage supports Point{Source} and " *
-                "Point{Vortex} body types; got $(options.body_type)"))
-        device && adaptive.split_veto && throw(ArgumentError(
-            "the adaptive device path does not implement the §5.4 split veto " *
-            "(default OFF, pending user ratification); construct with " *
-            "split_veto=false or run host-resident"))
-        ell_axes == SVector(Int(ell), Int(ell), Int(ell)) || throw(ArgumentError(
-            "the adaptive octree requires a cubic Morton domain; " *
-            "rectangular ell_axes support is a recorded deferral"))
-        if adaptive.sigma_row > 0
-            for system in sources
-                adaptive.sigma_row <= data_per_body(system) || throw(ArgumentError(
-                    "AdaptiveTreePolicy sigma_row=$(adaptive.sigma_row) exceeds " *
-                    "data_per_body=$(data_per_body(system)) for $(typeof(system))"))
-            end
-        end
-        # the port lifecycle guards.
-        if dk isa Union{TwoPassVortex,PartitionedVortex}
-            throw(ArgumentError(
-                "the adaptive octree lifecycle does not support " *
-                "$(nameof(typeof(dk))) (deferred: the two-pass/" *
-                "partitioned nearfield assumes the uniform leaf lattice); use " *
-                "RegularizedVortex or a singular kernel"))
-        end
-        if dk isa AbstractRegularizedVortex
-            rho_reach, rho_name = _gate_reach_rho(dk)
-            (adaptive.rho_t >= rho_reach && adaptive.sigma_row == dk.sigma_row) ||
-                throw(ArgumentError(
-                "a regularized nearfield on the adaptive octree requires the " *
-                "per-cell sigma gate (theory §5): AdaptiveTreePolicy(rho_t >= " *
-                "$rho_name = $rho_reach, sigma_row = $(dk.sigma_row)); got " *
-                "rho_t=$(adaptive.rho_t), sigma_row=$(adaptive.sigma_row). The " *
-                "global geometry gate is replaced by sticky per-cell demotion " *
-                "on the adaptive path, so the gate must be armed."))
-        end
-        if hessian && LH
-            throw(ArgumentError(
-                "hessian output on the adaptive lifecycle with " *
-                "lamb_helmholtz=true is a task-040 deferral (the W-list M2T " *
-                "Lamb-Helmholtz hessian is not implemented); use hessian=false " *
-                "or the uniform path"))
-        end
-    end
-
     if device
         cache = _radix_cache_device_build(sources, P, Int(ell), x_min, h0, maxn,
             options, stencil_policy, accepted, rejected, max_cells, max_nodes,
@@ -825,8 +605,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
             hierarchical_tables, class_level, class_offset,
             hierarchical_level_class_of, hierarchical_level_radii2,
             max_level_nodes, hessian, ell_axes, box_extent,
-            root_level, first_m2l_level,
-            adaptive_policy=adaptive, dpb_adaptive=dpb)
+            root_level, first_m2l_level)
         cache.built = true
         return cache
     end
@@ -887,12 +666,9 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         zeros(Int, Int(ell) + 2), 0, zeros(Int, Int(ell) + 1), 0,
         false, zeros(UInt64, 5), zeros(UInt64, Int(ell) + 1)) : nothing
     state = DeviceResidentRadixState{TF,CompressedComplexBasis,LH}(
-        grid, hierarchical_ctx, source_bodies, source_bodies,
+        grid, hierarchical_ctx, source_bodies,
         grid.perm, grid.body_system, grid.body_index,
-        grid.perm, grid.body_system, grid.body_index,
-        grid.cell_centers, m2m_parent_routes, m2m_child_routes,
-        l2l_parent_routes, l2l_child_routes, grid.node_levels, grid.node_centers,
-        route_targets, route_sources,
+        grid.perm, grid.body_system, grid.body_index, grid.node_levels,
         grid.cell_centers, grid.cell_ranges,
         m2m_parent_routes, m2m_child_routes, l2l_parent_routes, l2l_child_routes,
         multipoles, locals, route_levels, route_offsets, route_targets, route_sources,
@@ -903,14 +679,6 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
 
     G = 1 << Int(ell)
     source_buffers = Tuple(Matrix{TF}(undef, data_per_body(system), maxn) for system in sources)
-    adaptive_tree = adaptive === nothing ? nothing :
-        _allocate_adaptive_radix_tree(TF, x_min, h0, adaptive, maxn)
-    adaptive_lists = adaptive === nothing ? nothing :
-        AdaptiveInteractionLists(adaptive_tree)
-    adaptive_state = adaptive === nothing ? nothing :
-        _allocate_adaptive_resident_lifecycle(TF, basis_info, options,
-            adaptive_tree, adaptive_lists, invariant, dpb, maxn, hessian;
-            )
     cache = RadixFMMCache{TF,LH}(
         P, Int(ell), x_min, h0, ell_axes, box_extent, root_level, maxn, device,
         hessian, options, stencil_policy,
@@ -920,10 +688,9 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         zeros(Int, Int(ell) + 2), Vector{UInt64}(undef, maxn), Vector{Int}(undef, maxn),
         zeros(Int, 256), zeros(Int, 256), source_buffers, nothing, nothing,
         length(sources), false, 0,
-        adaptive, adaptive_tree, adaptive_lists, adaptive_state,
         snapshot_locked_radix_settings(),
     )
-    update_radix_state!(cache, sources)
+    _update_host_radix_state!(cache, to_tuple(sources))
     cache.built = true
     return cache
 end
@@ -1177,8 +944,7 @@ function recenter!(cache::RadixFMMCache{TF,LH}, systems;
         lamb_helmholtz=LH, hessian=cache.hessian, device=cache.device,
         options=cache.options,
         policy=_recentered_policy(cache.policy, cache.expansion_order,
-            maximum(L_new) / 2, cache.ell, TF, LH),
-        adaptive=cache.adaptive)
+            maximum(L_new) / 2, cache.ell, TF, LH))
     for f in fieldnames(RadixFMMCache)
         setfield!(cache, f, getfield(fresh, f))
     end
@@ -1221,12 +987,13 @@ function _recenter_union_bounds(cache::RadixFMMCache{TF}, systems::Tuple) where 
                 "DeviceResident system $isys requires a device=true cache"))
             buf = cache.device_ctx.device_sources[isys]
             _fill_device_source_buffer!(view(buf, :, 1:n_sys), system)
-            lox = min(lox, TF(minimum(view(buf, 1, 1:n_sys))))
-            loy = min(loy, TF(minimum(view(buf, 2, 1:n_sys))))
-            loz = min(loz, TF(minimum(view(buf, 3, 1:n_sys))))
-            hix = max(hix, TF(maximum(view(buf, 1, 1:n_sys))))
-            hiy = max(hiy, TF(maximum(view(buf, 2, 1:n_sys))))
-            hiz = max(hiz, TF(maximum(view(buf, 3, 1:n_sys))))
+            # fixed-geometry reductions (see _device_row_extrema): a view
+            # reduction compiles one kernel per distinct n_sys on Metal
+            x_lo, x_hi = _device_row_extrema(buf, 1, n_sys)
+            y_lo, y_hi = _device_row_extrema(buf, 2, n_sys)
+            z_lo, z_hi = _device_row_extrema(buf, 3, n_sys)
+            lox = min(lox, TF(x_lo)); loy = min(loy, TF(y_lo)); loz = min(loz, TF(z_lo))
+            hix = max(hix, TF(x_hi)); hiy = max(hiy, TF(y_hi)); hiz = max(hiz, TF(z_hi))
         else
             for i in 1:n_sys
                 x = get_position(system, i)
@@ -1245,8 +1012,19 @@ Refresh every step-varying part of the cache's resident state from the systems'
 current positions and strengths: grid (fixed Morton domain), packed source
 bodies, occupancy map, M2L routes + direct pairs, tree edges, per-level operator
 group columns, and the step counts. No array is reallocated. Returns the cache.
+A device cache is refreshed by the backend extension (`_RADIX_DEVICE_UPDATE_HOOK`);
+a host cache by `_update_host_radix_state!`.
 """
-function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where {TF,LH}
+function update_radix_state!(cache::RadixFMMCache, systems)
+    if cache.device
+        hook = _RADIX_DEVICE_UPDATE_HOOK[]
+        hook === nothing && throw(RadixDeviceUnavailable(radix_device_status()))
+        return hook(cache, to_tuple(systems))
+    end
+    return _update_host_radix_state!(cache, to_tuple(systems))
+end
+
+function _update_host_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where {TF,LH}
     length(systems) == cache.n_systems ||
         throw(ArgumentError("cache was built for $(cache.n_systems) source systems, got $(length(systems))"))
     state = cache.state
@@ -1274,17 +1052,13 @@ function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where 
     end
     _pack_radix_source_bodies!(state.source_bodies, grid.perm, grid.body_system,
         grid.body_index, cache.source_buffers, n)
-    # with the adaptive lifecycle armed, the global geometry gate is
-    # replaced by the theory §5 per-cell sticky demotion gate (construction
-    # requires it armed for regularized kernels), so the global throw is
-    # skipped — one locally fat sigma must not force a globally shallow tree.
     # an inadequate hierarchical geometry demotes to the all-direct
     # zero-M2L cache and re-runs the refresh; the rebuilt cache's gate is
     # vacuous, so the recursion terminates after one demotion.
-    if cache.adaptive === nothing && _direct_kernel_geometry_gate!(cache,
+    if _direct_kernel_geometry_gate!(cache,
             state.options.direct_kernel, state.source_bodies, n) === :alldirect
         _alldirect_geometry_fallback!(cache, systems)
-        return update_radix_state!(cache, systems)
+        return _update_host_radix_state!(cache, systems)
     end
 
     resize!(cache.coords, n_cells)
@@ -1347,12 +1121,6 @@ function update_radix_state!(cache::RadixFMMCache{TF,LH}, systems::Tuple) where 
     counts.n_nodes = n_nodes
     counts.n_routes = n_routes
     counts.n_direct = n_direct
-
-    # opt-in adaptive octree refresh: rebuilds the adaptive tree and
-    # its U/V/W/X lists in place within capacity; no-op unless the cache was
-    # constructed with an AdaptiveTreePolicy. The uniform structures above are
-    # unaffected.
-    cache.adaptive_tree === nothing || _refresh_adaptive_radix!(cache, systems)
 
     cache.step += 1
     return cache
@@ -1457,15 +1225,6 @@ function _refresh_factored_m2l_routes!(plan::ResidentM2LFactoredPlan{R,G},
         group.count[] = j
     end
     return plan
-end
-
-function update_radix_state!(cache::RadixFMMCache, systems)
-    if cache.device
-        hook = _RADIX_DEVICE_UPDATE_HOOK[]
-        hook === nothing && throw(RadixDeviceUnavailable(radix_device_status()))
-        return hook(cache, to_tuple(systems))
-    end
-    return update_radix_state!(cache, to_tuple(systems))
 end
 
 # Preallocated per-switch-layout scatter buffers for the recurring finalize,

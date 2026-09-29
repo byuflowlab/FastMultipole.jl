@@ -70,7 +70,6 @@ function get_matrix_vector(ms::Matrices, k::Int)
 end
 
 function build_leaf_lu_cache(self_matrices::Matrices{TF}) where TF
-    start_time = time_ns()
     data = copy(self_matrices.data)
     factors = map(eachindex(self_matrices.sizes)) do k
         m, n = self_matrices.sizes[k]
@@ -80,9 +79,7 @@ function build_leaf_lu_cache(self_matrices::Matrices{TF}) where TF
         factor_matrix = reshape(view(data, matrix_range), m, n)
         lu!(factor_matrix; check=true)
     end
-    build_time = (time_ns() - start_time) * 1e-9
-    bytes = sizeof(data) + sum(sizeof(F.ipiv) for F in factors)
-    return LeafLUCache{TF,eltype(factors)}(data, factors, build_time, bytes)
+    return LeafLUCache{TF,eltype(factors)}(data, factors)
 end
 
 @inline function solve_leaf!(leaf_strengths, self_matrices::Matrices,
@@ -1050,7 +1047,9 @@ One Gauss-Seidel sweep over all source leaves.
   the legacy loop iterated `enumerate(reverse(leaf_index))` but used only the
   enumeration counter `i_leaf`, so the "reverse" sweep visited leaves in
   FORWARD order; both sweep orders keep that behavior (flagged for review —
-  changing it would alter the reverse_pass iteration).
+  changing it would alter the reverse_pass iteration). Consequently the
+  `reverse_sweep` argument is currently IGNORED: `reverse_pass=true` runs a
+  second forward sweep identical to the first.
 - `sweep_order == :colored`: within each color, leaf solves and nonself
   PRODUCTS run in parallel (all writes per leaf are disjoint); the RHS
   scatter then runs serially in ascending leaf order at the color boundary.

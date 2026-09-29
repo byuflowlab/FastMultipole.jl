@@ -508,8 +508,6 @@ end
     @test cache.data !== cached.self_matrices.data
     @test cache.data != cached.self_matrices.data
     @test cached.self_matrices.data == self_data
-    @test cache.build_time >= 0.0
-    @test cache.bytes == sizeof(cache.data) + sum(sizeof(F.ipiv) for F in cache.factorizations)
     @test all(parent(parent(F.factors)) === cache.data for F in cache.factorizations)
 
     uncached = FastMultipole.FastGaussSeidel((system,), (system,);

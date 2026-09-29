@@ -11,14 +11,14 @@
 # and the comparison simply execute in double. Metal has no Float64 at all, so
 # the same IR fails to compile outright:
 #
-#   InvalidIRError: ... gpu_ka_direct_pairs_functor_kernel!(::PartitionedVortex,
+#   InvalidIRError: ... gpu_ka_direct_pairs_warp_kernel!(::PartitionedVortex,
 #   ...) resulted in invalid LLVM IR / Reason: unsupported use of double value
 #
 # The per-pair ARITHMETIC is already precision-generic and needs no change:
-# `_direct_pair_ug`/`_ugh` convert with `T(_pass1_regularized_cutoff(kernel))`
-# (src/translate_batched_resident.jl:843, :861), `_gaussianerf_g_h` converts
+# `_direct_pair_ug`/`_ugh` convert the cutoff with `T(...)`
+# (src/resident/resident_pair_kernels.jl), `_gaussianerf_g_h` converts
 # every constant with `T(...)`, and Float32 series coefficients already exist
-# (`_gausserf_series_g(z::Float32)`, :686). The double is materialized by the
+# (`_gausserf_series_g(z::Float32)`). The double is materialized by the
 # FIELD LOAD, which happens before any of that -- so no use-site conversion can
 # remove it. The type has to arrive on the device already carrying `TF`.
 #
@@ -28,9 +28,9 @@
 # still runs in Float64 -- this is not a downcast, it is the removal of a
 # HARDCODED Float64 from a type that should always have been parameterized.
 #
-# NOTHING ON THE CUDA PATH IS TOUCHED. `src/containers.jl` and
-# `src/translate_batched_resident.jl` are unmodified; CUDA keeps building and
-# consuming the stock `PartitionedVortex`. Conversion happens once on the host,
+# NOTHING IN src/ IS TOUCHED. `src/containers.jl` and
+# `src/resident/resident_pair_kernels.jl` are unmodified; the host path keeps
+# building and consuming the stock `PartitionedVortex`. Conversion happens once on the host,
 # in `_ka_device_direct_kernel`, at cache build.
 #
 # The duplicated code is the ~10-line functor WRAPPER only. All real math --
@@ -51,19 +51,6 @@ struct KAPartitionedVortex{TF} <: FastMultipole.AbstractDirectKernel
 end
 
 """
-    KATwoPassVortex{TF}(sigma_row, rho_t, rho_c)
-
-Device mirror of `TwoPassVortex`; pass 1 branches at `rho_c`, matching
-`_pass1_regularized_cutoff(::TwoPassVortex)` (src/translate_batched_resident.jl:831).
-"""
-struct KATwoPassVortex{TF} <: FastMultipole.AbstractDirectKernel
-    sigma_row::Int
-    rho_t::TF
-    rho_c::TF
-    inv_sigma_row::Int
-end
-
-"""
     KARegularizedVortex{TF}(sigma_row, rho_t)
 
 Device mirror of `RegularizedVortex`.
@@ -75,16 +62,15 @@ struct KARegularizedVortex{TF} <: FastMultipole.AbstractDirectKernel
 end
 
 const KARegularizedFunctor{TF} =
-    Union{KAPartitionedVortex{TF},KATwoPassVortex{TF},KARegularizedVortex{TF}}
+    Union{KAPartitionedVortex{TF},KARegularizedVortex{TF}}
 
 # trait parity with src/containers.jl:2132
 FastMultipole._emits_potential(::KARegularizedFunctor) = false
 
-# pass-1 cutoff, mirroring src/translate_batched_resident.jl:830-831 exactly:
-# PartitionedVortex branches at rho_t, TwoPassVortex at rho_c.
+# pass-1 cutoff, mirroring the host `_direct_pair_ug` exactly: both kernels
+# branch at rho_t (TwoPassVortex is refused at cache build).
 @inline _ka_pass1_cutoff(k::KAPartitionedVortex) = k.rho_t
 @inline _ka_pass1_cutoff(k::KARegularizedVortex) = k.rho_t
-@inline _ka_pass1_cutoff(k::KATwoPassVortex) = k.rho_c
 
 """
     _ka_device_direct_kernel(kernel, ::Type{TF}) -> device functor
@@ -101,9 +87,6 @@ _ka_device_direct_kernel(k::FastMultipole.PartitionedVortex, ::Type{TF},
 _ka_device_direct_kernel(k::FastMultipole.RegularizedVortex, ::Type{TF},
     inv_sigma_row::Integer=0) where TF =
     KARegularizedVortex{TF}(k.sigma_row, TF(k.rho_t), Int(inv_sigma_row))
-_ka_device_direct_kernel(k::FastMultipole.TwoPassVortex, ::Type{TF},
-    inv_sigma_row::Integer=0) where TF =
-    KATwoPassVortex{TF}(k.sigma_row, TF(k.rho_t), TF(k.rho_c), Int(inv_sigma_row))
 
 """
     _ka_kernel_sigma_row(kernel) -> Int
@@ -114,7 +97,6 @@ sigma. Host-side only; decides whether the reciprocal-sigma row is allocated.
 _ka_kernel_sigma_row(::FastMultipole.AbstractDirectKernel) = 0
 _ka_kernel_sigma_row(k::FastMultipole.PartitionedVortex) = k.sigma_row
 _ka_kernel_sigma_row(k::FastMultipole.RegularizedVortex) = k.sigma_row
-_ka_kernel_sigma_row(k::FastMultipole.TwoPassVortex) = k.sigma_row
 
 # rho = |r|/sigma for the regularized family, plus the guard value the caller
 # tests for `> 0`. With the reciprocal-sigma row wired (`inv_sigma_row > 0`) this
@@ -136,8 +118,8 @@ _ka_kernel_sigma_row(k::FastMultipole.TwoPassVortex) = k.sigma_row
     end
 end
 
-# Port of `_direct_pair_ug(::Union{PartitionedVortex,TwoPassVortex}, ...)`
-# (src/translate_batched_resident.jl:833-848). Statement for statement identical;
+# Port of the host `_direct_pair_ug(::PartitionedVortex, ...)`
+# (src/resident/resident_pair_kernels.jl). Statement for statement identical;
 # the only difference is that the cutoff needs no `T(...)` because it is already
 # `TF`. `_gaussianerf_g_h` and `_vortex_pair_ug` are FastMultipole's own.
 @inline function FastMultipole._direct_pair_ug(kernel::KARegularizedFunctor,
@@ -156,7 +138,6 @@ end
     return FastMultipole._vortex_pair_ug(dx, dy, dz, invr, gsx, gsy, gsz, g)
 end
 
-# Port of `_direct_pair_ugh(...)` (src/translate_batched_resident.jl:850-866).
 # all-pairs extra-source hooks for the mirror kernels (oversize particles): the
 # host definitions in src/radix_extra_systems.jl, on the typed functor
 @inline function FastMultipole._extra_pair_ug(kernel::KARegularizedFunctor, tx, ty, tz, source_buffer, j)

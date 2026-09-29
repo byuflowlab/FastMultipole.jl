@@ -36,31 +36,22 @@ using Test
         0.10 0.90 0.10 0.40 0.90 0.40
     ]
     grid = RadixGrid(positions, 1)
-    host_grid = radix_grid(positions, 1; sort=HostRadixSort())
-    auto_grid = radix_grid(positions, 1; sort=AutoRadixSort(min_device_bodies=0))
 
     @test grid.perm == [1, 3, 4, 6, 2, 5]
-    @test host_grid.perm == grid.perm
-    @test auto_grid.perm == grid.perm
-    @test host_grid.cell_keys == grid.cell_keys
-    @test auto_grid.cell_ranges == grid.cell_ranges
-    @test_throws ArgumentError radix_grid(positions, 1; sort=DeviceRadixSort())
     @test all(grid.invperm[grid.perm[s]] == s for s in eachindex(grid.perm))
     @test all(grid.perm[grid.invperm[i]] == i for i in 1:size(positions, 2))
     @test grid.cell_keys == sort(grid.cell_keys)
     @test grid.cell_ranges == [1 3 5; 2 2 2]
-    @test vcat([collect(FastMultipole.radix_body_range(grid, i)) for i in 1:length(grid)]...) == collect(1:size(positions, 2))
+    body_range(g, i) = g.cell_ranges[1, i]:(g.cell_ranges[1, i] + g.cell_ranges[2, i] - 1)
+    body_indices(g, i) = view(g.perm, body_range(g, i))
+    body_ref(g, i) = SVector(g.body_system[i], g.body_index[i])
+    @test vcat([collect(body_range(grid, i)) for i in 1:length(grid)]...) == collect(1:size(positions, 2))
     @test sort(grid.perm) == collect(1:size(positions, 2))
     @test length(unique(grid.perm)) == size(positions, 2)
     @test grid.body_system == fill(1, size(positions, 2))
     @test grid.body_index == collect(1:size(positions, 2))
-    @test FastMultipole.radix_body_system(grid, 4) == 1
-    @test FastMultipole.radix_body_index(grid, 4) == 4
-    @test FastMultipole.radix_body_ref(grid, 4) == SVector(1, 4)
 
-    @test FastMultipole.radix_cell_half_width(grid) == grid.h0 / 2
     @test FastMultipole.radix_cell_width(grid) == grid.h0
-    @test FastMultipole.radix_cell_radius(grid) ≈ FastMultipole.radix_cell_half_width(grid) * sqrt(3)
 
     c000 = FastMultipole.radix_cell_center(grid, SVector(0, 0, 0))
     c111 = FastMultipole.radix_cell_center(grid, SVector(1, 1, 1))
@@ -77,9 +68,7 @@ using Test
     @test FastMultipole.radix_cell_index(grid, SVector(0, -1, 0)) == 0
     @test FastMultipole.radix_cell_index(grid, SVector(0, 0, 2)) == 0
     @test FastMultipole.radix_cell_index(grid, SVector(0, 0, -1)) == 0
-    @test collect(FastMultipole.radix_body_indices(grid, i000)) == [1, 3]
-    @test FastMultipole.radix_offset(grid, i111, i000) == SVector(1, 1, 1)
-    @test FastMultipole.radix_displacement(grid, i111, i000) ≈ SVector(FastMultipole.radix_cell_width(grid), FastMultipole.radix_cell_width(grid), FastMultipole.radix_cell_width(grid))
+    @test collect(body_indices(grid, i000)) == [1, 3]
 
     empty_grid = RadixGrid(zeros(3, 0), 1)
     @test isempty(empty_grid.perm)
@@ -106,7 +95,7 @@ using Test
         0.1 0.1 0.1 0.1 0.9 0.9 0.9
         0.1 0.1 0.1 0.1 0.9 0.9 0.9
     ]
-    duplicate_grid = RadixGrid(duplicate_positions, 1; sort=HostRadixSort())
+    duplicate_grid = RadixGrid(duplicate_positions, 1)
     @test duplicate_grid.perm == collect(1:7)
     @test duplicate_grid.cell_ranges == [1 5; 4 3]
 
@@ -132,14 +121,14 @@ using Test
     @test all(tuple_grid.invperm[tuple_grid.perm[s]] == s for s in eachindex(tuple_grid.perm))
     @test all(tuple_grid.perm[tuple_grid.invperm[i]] == i for i in 1:n_tuple)
     @test tuple_grid.cell_keys == sort(tuple_grid.cell_keys)
-    @test vcat([collect(FastMultipole.radix_body_indices(tuple_grid, i)) for i in 1:length(tuple_grid)]...) == tuple_grid.perm
-    @test sort(vcat([collect(FastMultipole.radix_body_indices(tuple_grid, i)) for i in 1:length(tuple_grid)]...)) == collect(1:n_tuple)
-    @test [FastMultipole.radix_body_ref(tuple_grid, i) for i in 1:n_tuple] ==
+    @test vcat([collect(body_indices(tuple_grid, i)) for i in 1:length(tuple_grid)]...) == tuple_grid.perm
+    @test sort(vcat([collect(body_indices(tuple_grid, i)) for i in 1:length(tuple_grid)]...)) == collect(1:n_tuple)
+    @test [body_ref(tuple_grid, i) for i in 1:n_tuple] ==
         [SVector(1, 1), SVector(1, 2), SVector(1, 3), SVector(2, 1), SVector(2, 2), SVector(2, 3)]
 
     mixed_cell = FastMultipole.radix_cell_index(tuple_grid, FastMultipole.radix_cell_coord(tuple_grid, SVector(0.10, 0.10, 0.10)))
-    @test collect(FastMultipole.radix_body_indices(tuple_grid, mixed_cell)) == [1, 2, 4, 5]
-    @test [FastMultipole.radix_body_ref(tuple_grid, i) for i in FastMultipole.radix_body_indices(tuple_grid, mixed_cell)] ==
+    @test collect(body_indices(tuple_grid, mixed_cell)) == [1, 2, 4, 5]
+    @test [body_ref(tuple_grid, i) for i in body_indices(tuple_grid, mixed_cell)] ==
         [SVector(1, 1), SVector(1, 2), SVector(2, 1), SVector(2, 2)]
 end
 
@@ -179,9 +168,9 @@ end
     @test_throws ArgumentError resolve(0.0, 3, Float64)
     @test_throws ArgumentError resolve((1.0, 0.0, 1.0), 3, Float64)
 
-    # cubic capacity delegation is unchanged
+    # cubic arity: 8^L nodes at level L
     for L in 0:4
-        @test cap(L, SVector(4, 4, 4), 4, 10^9) == cap(L, 10^9)
+        @test cap(L, SVector(4, 4, 4), 4, 10^9) == 8^L
     end
     # rectangular capacities are per-axis products (axes saturate coarsening)
     axes422 = SVector(4, 2, 2)

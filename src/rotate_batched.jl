@@ -141,14 +141,6 @@ end
 # intentionally internal/non-exported.
 
 """
-    length_S_block(n)
-
-Number of `TF` entries in the degree-`n` axis-swap block for one polarity: the
-`length_H(n)` stored `(mp, m)` pairs each carry `n + 1` coefficients (ν in `0:n`).
-"""
-@inline length_S_block(n) = length_H(n) * (n + 1)
-
-"""
     length_Ss(P)
 
 Total number of `TF` entries needed to store one polarity of the axis-swap blocks
@@ -166,18 +158,6 @@ i.e. the summed size of blocks `0:n-1`.
     # sum_{j=1}^n j^2(j+1)/2 = (sum(j^3) + sum(j^2)) / 2
     n2 = n * (n + 1)
     return (div(n2 * n2, 4) + div(n2 * (2n + 1), 6)) >> 1
-end
-
-"""
-    S_index(n, mp, m, ν)
-
-Flat index of the `ν`-th coefficient (ν in `0:n`) of the `(mp, m)` pair within the
-degree-`n` axis-swap block. The pair enumeration matches `update_Ts!`
-(`m in 0:n`, `mp in 0:m`) via [`H_index`](@ref), so each `(mp, m)` pair owns the
-contiguous run `0:n`.
-"""
-@inline function S_index(n, mp, m, ν)
-    return S_block_offset(n) + (H_index(mp, m) - 1) * (n + 1) + ν + 1
 end
 
 """
@@ -208,7 +188,7 @@ function update_S_blocks!(S_pos, S_neg, Hs_π2, P)
     @inbounds S_pos[1] = one(TF)
     @inbounds S_neg[1] = one(TF)
 
-    _1_n = -1.0
+    _1_n = -one(TF)
     @inbounds for n in 1:P
         H_π2 = get_H(Hs_π2, n)
         base = S_block_offset(n)
@@ -216,7 +196,7 @@ function update_S_blocks!(S_pos, S_neg, Hs_π2, P)
 
         for m in 0:n
             H_π2_n_m_0 = H_π2[H_index(0, m)]
-            _1_mp_odd = 1.0
+            _1_mp_odd = one(TF)
             m_mp = m
             _1_n_mp = _1_n
 
@@ -344,12 +324,8 @@ function build_Ts_from_S!(Ts, S_pos, S_neg, β, P, trig)
     return Ts
 end
 
-# Convenience method: allocates the trig scratch. Hot paths should pass their own.
-build_Ts_from_S!(Ts, S_pos, S_neg, β, P) =
-    build_Ts_from_S!(Ts, S_pos, S_neg, β, P, Vector{eltype(Ts)}(undef, 2 * max(P, 1)))
-
 """
-    rotate_multipole_y_op!(out, source, Ts, S_pos, S_neg, ζs_mag, β, P, lamb_helmholtz[, trig])
+    rotate_multipole_y_op!(out, source, Ts, S_pos, S_neg, ζs_mag, β, P, lamb_helmholtz, trig)
 
 Forward multipole y-alignment built from the cached axis-swap blocks: reconstruct
 `Ts` for angle `β` via [`build_Ts_from_S!`](@ref), then apply the production
@@ -362,130 +338,17 @@ function rotate_multipole_y_op!(out, source, Ts, S_pos, S_neg, ζs_mag, β, P, l
     return out
 end
 
-rotate_multipole_y_op!(out, source, Ts, S_pos, S_neg, ζs_mag, β, P, lamb_helmholtz::Val{LH}) where LH =
-    rotate_multipole_y_op!(
-        out, source, Ts, S_pos, S_neg, ζs_mag, β, P, lamb_helmholtz,
-        Vector{eltype(Ts)}(undef, 2 * max(P, 1)),
-    )
-
 """
-    back_rotate_multipole_y_op!(target, source, Ts, S_pos, S_neg, ζs_mag, β, P, lamb_helmholtz[, trig])
+    back_rotate_local_y_op!(target, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P, lamb_helmholtz, trig)
 
-Back multipole y-alignment. Like [`rotate_multipole_y_op!`](@ref) it resets
-`target` (it is not an accumulating inverse); accumulation into tree targets
-happens at the final `back_rotate_z!`. Matches `back_rotate_multipole_y!`.
-"""
-function back_rotate_multipole_y_op!(target, source, Ts, S_pos, S_neg, ζs_mag, β, P, lamb_helmholtz::Val{LH}, trig) where LH
-    build_Ts_from_S!(Ts, S_pos, S_neg, β, P, trig)
-    _rotate_multipole_y!(target, source, Ts, ζs_mag, P, lamb_helmholtz)
-    return target
-end
-
-back_rotate_multipole_y_op!(target, source, Ts, S_pos, S_neg, ζs_mag, β, P, lamb_helmholtz::Val{LH}) where LH =
-    back_rotate_multipole_y_op!(
-        target, source, Ts, S_pos, S_neg, ζs_mag, β, P, lamb_helmholtz,
-        Vector{eltype(Ts)}(undef, 2 * max(P, 1)),
-    )
-
-"""
-    rotate_local_y_op!(out, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P, lamb_helmholtz[, trig])
-
-Forward local y-alignment built from the cached axis-swap blocks. Shares the `Ts`
-reconstruction with the multipole path; the local kernel (`_rotate_local_y!`) uses
-the `η` sign table (and the `Hs_π2` blocks for negative-order reconstruction) and
-resets `out`. Matches `rotate_local_y!` (`src/rotate.jl`).
-"""
-function rotate_local_y_op!(out, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P, lamb_helmholtz::Val{LH}, trig) where LH
-    build_Ts_from_S!(Ts, S_pos, S_neg, β, P, trig)
-    _rotate_local_y!(out, source, Ts, Hs_π2, ηs_mag, P, lamb_helmholtz)
-    return out
-end
-
-rotate_local_y_op!(out, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P, lamb_helmholtz::Val{LH}) where LH =
-    rotate_local_y_op!(
-        out, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P, lamb_helmholtz,
-        Vector{eltype(Ts)}(undef, 2 * max(P, 1)),
-    )
-
-"""
-    back_rotate_local_y_op!(target, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P, lamb_helmholtz[, trig])
-
-Back local y-alignment. Resets `target` (not an accumulating inverse). Matches
-`back_rotate_local_y!`.
+Back local y-alignment built from the cached axis-swap blocks; the local kernel
+(`_rotate_local_y!`) uses the `η` sign table. Resets `target` (not an
+accumulating inverse). Matches `back_rotate_local_y!`.
 """
 function back_rotate_local_y_op!(target, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P, lamb_helmholtz::Val{LH}, trig) where LH
     build_Ts_from_S!(Ts, S_pos, S_neg, β, P, trig)
     _rotate_local_y!(target, source, Ts, Hs_π2, ηs_mag, P, lamb_helmholtz)
     return target
-end
-
-back_rotate_local_y_op!(target, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P, lamb_helmholtz::Val{LH}) where LH =
-    back_rotate_local_y_op!(
-        target, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag, β, P, lamb_helmholtz,
-        Vector{eltype(Ts)}(undef, 2 * max(P, 1)),
-    )
-
-#------- FIXED Y-SWAP PRIMITIVES (Matrix Operator Refactor) -------#
-#
-# These are the primitive fixed ±π/2 y stages for the explicit factored rotation
-# path. They intentionally do not assemble the full Z_phi -> S -> Z_theta -> S_inv
-# chain; that composition is a later task. The supplied T_y_*90 matrices are
-# precomputed with build_Ts_from_S! from the cached S_pos/S_neg blocks and then
-# applied through the same production-parity kernels as the materialized
-# arbitrary-y wrappers above. The kernels reset destination storage, including the
-# inactive chi channel for Val(false).
-#
-# Note: the pos90/neg90 function bodies are identical — the ±π/2 sign is carried
-# ENTIRELY by the supplied T_y_pos90 / T_y_neg90 matrix, not by the function. The
-# distinct names exist so the 013c factored-alignment composition can name the
-# forward swap (S) and inverse swap (S⁻¹) stages explicitly.
-
-"""
-    multipole_y_swap_pos90!(out, source, T_y_pos90, ζs_mag, P, lamb_helmholtz)
-
-Apply the fixed `R_y(+π/2)` multipole y-swap stage using a precomputed
-production-parity `T_y_pos90` matrix. Internal/non-exported primitive for task
-013b.
-"""
-function multipole_y_swap_pos90!(out, source, T_y_pos90, ζs_mag, P, lamb_helmholtz::Val{LH}) where LH
-    _rotate_multipole_y!(out, source, T_y_pos90, ζs_mag, P, lamb_helmholtz)
-    return out
-end
-
-"""
-    multipole_y_swap_neg90!(out, source, T_y_neg90, ζs_mag, P, lamb_helmholtz)
-
-Apply the fixed `R_y(-π/2)` multipole inverse y-swap stage using a precomputed
-production-parity `T_y_neg90` matrix. Internal/non-exported primitive for task
-013b.
-"""
-function multipole_y_swap_neg90!(out, source, T_y_neg90, ζs_mag, P, lamb_helmholtz::Val{LH}) where LH
-    _rotate_multipole_y!(out, source, T_y_neg90, ζs_mag, P, lamb_helmholtz)
-    return out
-end
-
-"""
-    local_y_swap_pos90!(out, source, T_y_pos90, Hs_π2, ηs_mag, P, lamb_helmholtz)
-
-Apply the fixed `R_y(+π/2)` local y-swap stage using a precomputed
-production-parity `T_y_pos90` matrix. Internal/non-exported primitive for task
-013b.
-"""
-function local_y_swap_pos90!(out, source, T_y_pos90, Hs_π2, ηs_mag, P, lamb_helmholtz::Val{LH}) where LH
-    _rotate_local_y!(out, source, T_y_pos90, Hs_π2, ηs_mag, P, lamb_helmholtz)
-    return out
-end
-
-"""
-    local_y_swap_neg90!(out, source, T_y_neg90, Hs_π2, ηs_mag, P, lamb_helmholtz)
-
-Apply the fixed `R_y(-π/2)` local inverse y-swap stage using a precomputed
-production-parity `T_y_neg90` matrix. Internal/non-exported primitive for task
-013b.
-"""
-function local_y_swap_neg90!(out, source, T_y_neg90, Hs_π2, ηs_mag, P, lamb_helmholtz::Val{LH}) where LH
-    _rotate_local_y!(out, source, T_y_neg90, Hs_π2, ηs_mag, P, lamb_helmholtz)
-    return out
 end
 
 #------- GLOBALLY BATCHED FACTORED ROTATION ALIGNMENT (Matrix Operator Refactor) -------#
@@ -505,118 +368,14 @@ end
 # kernels and rank-1-factoring each angular Fourier component of Y_n (every component is
 # rank 1); see update_factored_y_modes!. The ζ (multipole) and η (local) paths get
 # separate U/V (the dressing is baked into the fixed modes), so the staged apply is
-# identical for both and is selected purely by which modes the caller passes. The earlier
-# ζ-dressed ±π/2 swap primitives (013b T_y_pos90/T_y_neg90) cannot reproduce R_y(θ) when
-# composed with a z-rotation — (ζS)·Z·(ζS⁻¹) ≠ ζ·(S·Z·S⁻¹), ζ does not commute through
-# the swap — so they are not used here (see the roadmap/derivation amendment for 013c).
-
-mutable struct FactoredRotationStageStats
-    z_phi_calls::Int
-    z_theta_calls::Int
-    fixed_swap_calls::Int
-end
-
-FactoredRotationStageStats() = FactoredRotationStageStats(0, 0, 0)
-
-@inline _maybe_count_z_phi!(stats::Nothing) = nothing
-@inline _maybe_count_z_phi!(stats::FactoredRotationStageStats) = (stats.z_phi_calls += 1)
-@inline _maybe_count_z_theta!(stats::Nothing) = nothing
-@inline _maybe_count_z_theta!(stats::FactoredRotationStageStats) = (stats.z_theta_calls += 1)
-@inline _maybe_count_fixed_swap!(stats::Nothing) = nothing
-@inline _maybe_count_fixed_swap!(stats::FactoredRotationStageStats) = (stats.fixed_swap_calls += 1)
-
-"""
-    apply_z_rotation_batch!(out, in, phis, P, lamb_helmholtz, mode)
-
-Apply a z-rotation to a batch of production-layout coefficient columns stored as
-`[real_or_imag, component, harmonic_index, batch_column]`. Each batch column uses
-its own angle from `phis`. `mode = Val(:overwrite)` writes `out`; `mode =
-Val(:accumulate)` applies the conjugate phase and accumulates into `out`.
-"""
-function apply_z_rotation_batch!(out, in, phis, P, lamb_helmholtz::Val{LH}, ::Val{:overwrite}) where LH
-    nbatch = length(phis)
-    @boundscheck size(out, 4) >= nbatch || throw(ArgumentError("out batch dimension is smaller than phis"))
-    @boundscheck size(in, 4) >= nbatch || throw(ArgumentError("in batch dimension is smaller than phis"))
-
-    @inbounds for j in 1:nbatch
-        sϕ, cϕ = sincos(phis[j])
-        cm, sm = one(cϕ), zero(cϕ)
-        i = 1
-        for m in 0:P
-            for n in m:P
-                i = harmonic_index(n, m)
-                a, b = in[1,1,i,j], in[2,1,i,j]
-                out[1,1,i,j] = cm * a - sm * b
-                out[2,1,i,j] = sm * a + cm * b
-                if LH
-                    a, b = in[1,2,i,j], in[2,2,i,j]
-                    out[1,2,i,j] = cm * a - sm * b
-                    out[2,2,i,j] = sm * a + cm * b
-                end
-            end
-            cm_old = cm
-            cm = cm_old * cϕ - sm * sϕ
-            sm = cm_old * sϕ + sm * cϕ
-        end
-    end
-    return out
-end
-
-function apply_z_rotation_batch!(out, in, phis, P, lamb_helmholtz::Val{LH}, ::Val{:accumulate}) where LH
-    nbatch = length(phis)
-    @boundscheck size(out, 4) >= nbatch || throw(ArgumentError("out batch dimension is smaller than phis"))
-    @boundscheck size(in, 4) >= nbatch || throw(ArgumentError("in batch dimension is smaller than phis"))
-
-    @inbounds for j in 1:nbatch
-        sϕ, cϕ = sincos(phis[j])
-        cm, sm = one(cϕ), zero(cϕ)
-        for m in 0:P
-            for n in m:P
-                i = harmonic_index(n, m)
-                a, b = in[1,1,i,j], in[2,1,i,j]
-                out[1,1,i,j] += cm * a + sm * b
-                out[2,1,i,j] += -sm * a + cm * b
-                if LH
-                    a, b = in[1,2,i,j], in[2,2,i,j]
-                    out[1,2,i,j] += cm * a + sm * b
-                    out[2,2,i,j] += -sm * a + cm * b
-                end
-            end
-            cm_old = cm
-            cm = cm_old * cϕ - sm * sϕ
-            sm = cm_old * sϕ + sm * cϕ
-        end
-    end
-    return out
-end
-
-function z_theta_batch_diagonals!(Cθ, Sθ, thetas, P)
-    nbatch = length(thetas)
-    @boundscheck size(Cθ, 1) >= max(P, 1) || throw(ArgumentError("Cθ must have at least P rows"))
-    @boundscheck size(Sθ, 1) >= max(P, 1) || throw(ArgumentError("Sθ must have at least P rows"))
-    @boundscheck size(Cθ, 2) >= nbatch || throw(ArgumentError("Cθ batch dimension is smaller than thetas"))
-    @boundscheck size(Sθ, 2) >= nbatch || throw(ArgumentError("Sθ batch dimension is smaller than thetas"))
-
-    @inbounds for j in 1:nbatch
-        sθ, cθ = sincos(thetas[j])
-        cprev, sprev = one(cθ), zero(cθ)
-        for ν in 1:P
-            cν = cθ * cprev - sθ * sprev
-            sν = sθ * cprev + cθ * sprev
-            Cθ[ν,j] = cν
-            Sθ[ν,j] = sν
-            cprev = cν
-            sprev = sν
-        end
-    end
-    return Cθ, Sθ
-end
+# identical for both and is selected purely by which modes the caller passes. A ζ-dressed
+# fixed ±π/2 swap cannot stand in for these modes: (ζS)·Z·(ζS⁻¹) ≠ ζ·(S·Z·S⁻¹), since ζ
+# does not commute through the swap.
 
 # Per-degree fixed mode matrices U_n, V_n (each (2n+1)x(2n+1) complex). Y_n(θ) =
 # U_n diag(e^{iνθ}) V_n, with every Fourier component of Y_n rank 1, so U_n holds the
 # left mode vectors (columns, index by νidx = ν+n+1) and V_n the right mode covectors
 # (rows). Flat column-major storage per degree; offsets below.
-@inline length_ymode_block(n) = (2n + 1)^2
 @inline ymode_offset(n) = div(n * (2n - 1) * (2n + 1), 3)   # Σ_{k=0}^{n-1}(2k+1)^2
 @inline length_ymodes(P) = ymode_offset(P + 1)
 
@@ -641,7 +400,7 @@ kernels at expansion order `n`), DFT'd into its angular Fourier components
 factored `Cν = uν vν^*` by a pivot (largest-magnitude entry) outer-product split.
 `U[:,νidx] = uν` and `V[νidx,:] = vν^*`. This is a one-time cache-build cost; the
 runtime stage applies the fixed `U`/`V` with a cheap `e^{iνθ}` diagonal between them
-(`_factored_y_batch!`), an `O(P^3)`-per-column, batch-shared GEMM shape that never
+(`_factored_y_degree_major_auto!`, src/translate_batched.jl), an `O(P^3)`-per-column, batch-shared GEMM shape that never
 rebuilds a per-angle `Ts(θ)`. `is_local::Val` selects the η (local) vs ζ (multipole)
 production kernel; the resulting modes carry that path's sign/dressing.
 """
@@ -704,288 +463,6 @@ function update_factored_y_modes!(U, V, Hs_pi2, sign_mag, P, lamb_helmholtz::Val
     end
     return U, V
 end
-
-# Apply the genuinely factored y stage over a batch of coefficient columns:
-#   forward fixed swap g = V_n x  (batch-shared)  ->  middle diag e^{iνθ_j} (per column)
-#   ->  back fixed swap y = real(U_n g).
-# Resets `out` (y stages reset; final accumulation is the inverse Z_phi). For Val(false)
-# the inactive χ channel is left zero. `gbuf` is a complex scratch of length >= 2P+1.
-function _factored_y_batch!(out, source, U, V, gbuf, thetas, P, lamb_helmholtz::Val{LH}, stats) where LH
-    TF = real(eltype(U))
-    nbatch = length(thetas)
-    @boundscheck size(source, 4) >= nbatch || throw(ArgumentError("source batch dimension is smaller than thetas"))
-    @boundscheck size(out, 4) >= nbatch || throw(ArgumentError("out batch dimension is smaller than thetas"))
-    @boundscheck length(gbuf) >= 2P + 1 || throw(ArgumentError("gbuf must have length >= 2P+1"))
-    out .= zero(eltype(out))
-    _maybe_count_fixed_swap!(stats)   # forward V swap (fixed, batch-shared)
-    _maybe_count_z_theta!(stats)      # diagonal e^{iνθ}
-    @inbounds for j in 1:nbatch
-        θ = thetas[j]
-        for ch in 1:(LH ? 2 : 1)
-            for n in 0:P
-                d = 2n + 1
-                off = ymode_offset(n)
-                for νidx in 1:d
-                    gr = zero(TF); gi = zero(TF)
-                    for k in 1:d
-                        ri, m = _ymode_dof_to_storage(k)
-                        xk = source[ri, ch, harmonic_index(n, m), j]
-                        v = V[off + (k - 1) * d + νidx]
-                        gr += real(v) * xk
-                        gi += imag(v) * xk
-                    end
-                    ν = νidx - n - 1
-                    s, c = sincos(ν * θ)
-                    gbuf[νidx] = complex(c * gr - s * gi, s * gr + c * gi)
-                end
-                for r in 1:d
-                    acc = zero(TF)
-                    for νidx in 1:d
-                        u = U[off + (νidx - 1) * d + r]
-                        g = gbuf[νidx]
-                        acc += real(u) * real(g) - imag(u) * imag(g)
-                    end
-                    ri, m = _ymode_dof_to_storage(r)
-                    out[ri, ch, harmonic_index(n, m), j] = acc
-                end
-            end
-        end
-    end
-    _maybe_count_fixed_swap!(stats)   # back U swap (fixed, batch-shared)
-    return out
-end
-
-function _factored_source_alignment_batch!(out, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz::Val{LH}, stats) where LH
-    # Z_phi (per-column diagonal) overwrites tmp; the factored y stage then resets out.
-    _maybe_count_z_phi!(stats)
-    apply_z_rotation_batch!(tmp, source, phis, P, lamb_helmholtz, Val(:overwrite))
-    _factored_y_batch!(out, tmp, U, V, gbuf, thetas, P, lamb_helmholtz, stats)
-    return out
-end
-
-function _factored_return_alignment_batch!(target, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz::Val{LH}, stats) where LH
-    # factored y stage resets tmp; final inverse Z_phi is the only accumulating stage.
-    _factored_y_batch!(tmp, source, U, V, gbuf, thetas, P, lamb_helmholtz, stats)
-    _maybe_count_z_phi!(stats)
-    apply_z_rotation_batch!(target, tmp, phis, P, lamb_helmholtz, Val(:accumulate))
-    return target
-end
-
-# Public stage API. The multipole vs local distinction is carried entirely by the
-# fixed mode matrices `U`/`V` the caller supplies (`y_mult_U`/`y_mult_V` for the ζ
-# path, `y_loc_U`/`y_loc_V` for the η path); the staged arithmetic is identical.
-#
-# Physical-subspace invariant (016b, watch item 2). The factored rank-1 mode
-# decomposition reads only the real m=0 row (`_ymode_dof_to_storage(1) == (1, 0)`),
-# so it reproduces the production y-operator exactly only for *physical* inputs:
-# expansions whose m=0 imaginary component is zero. Every real solid-harmonic
-# expansion is physical, so this holds throughout the production FMM. A
-# hypothetical intermediate buffer carrying a nonzero m=0 imaginary part would
-# silently diverge from production on the factored path, while the materialized
-# `Ts(θ)` path stays exact for any input. Use `_assert_factored_input_physical`
-# (below) to make that boundary loud rather than silent; it is to be wired in at
-# the 023 integration boundary.
-multipole_factored_source_alignment_batch!(out, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz::Val; stats=nothing) =
-    _factored_source_alignment_batch!(out, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz, stats)
-
-local_factored_source_alignment_batch!(out, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz::Val; stats=nothing) =
-    _factored_source_alignment_batch!(out, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz, stats)
-
-multipole_factored_return_alignment_batch!(target, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz::Val; stats=nothing) =
-    _factored_return_alignment_batch!(target, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz, stats)
-
-local_factored_return_alignment_batch!(target, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz::Val; stats=nothing) =
-    _factored_return_alignment_batch!(target, source, tmp, gbuf, phis, thetas, U, V, P, lamb_helmholtz, stats)
-
-# Physical-subspace check for the factored path (016b, watch item 2). Returns
-# `true` when every column's m=0 imaginary row is (numerically) zero, i.e. the
-# input lies on the physical subspace where the rank-1 mode factorization matches
-# production. `source` is the batched `[re/im, channel, harmonic_index, column]`
-# layout; only the active channels (1 for `Val(false)`, 2 for `Val(true)`) are
-# checked. This is intentionally a whole-buffer scan, NOT an inner-loop guard.
-function _factored_input_is_physical(source, P, lamb_helmholtz::Val{LH}; atol=nothing) where LH
-    TF = real(eltype(source))
-    tol = atol === nothing ? sqrt(eps(TF)) : atol
-    nchan = LH ? 2 : 1
-    ncol = size(source, 4)
-    @inbounds for j in 1:ncol, ch in 1:nchan, n in 0:P
-        if abs(source[2, ch, harmonic_index(n, 0), j]) > tol
-            return false
-        end
-    end
-    return true
-end
-
-# Debug-gated assertion wrapper. OFF by default (`DEBUG[] == false`) and zero-cost
-# in production; flip `FastMultipole.DEBUG[] = true` to arm it. Intended to be
-# wired in at the 023 integration boundary on factored-path inputs so a
-# non-physical m=0 imaginary component fails loudly instead of silently diverging.
-@inline function _assert_factored_input_physical(source, P, lamb_helmholtz::Val)
-    DEBUG[] || return nothing
-    _factored_input_is_physical(source, P, lamb_helmholtz) || error(
-        "factored-path input is non-physical: a nonzero m=0 imaginary component " *
-        "was found. The FactoredRotation* operators are exact only on the physical " *
-        "subspace (m=0 imag == 0); use a MaterializedYRotation* operator for such input.")
-    return nothing
-end
-
-#------- NATIVE FLAT FACTORED ROTATION (Matrix Operator Refactor) -------#
-#
-# Flat ragged-buffer counterparts of the factored y-rotation stages. They consume
-# FlatCoefficientBuffer storage directly: the φ channel is rotated through P_phi and
-# the χ channel through P_active (Val(true)), with no φ padding. The arithmetic is
-# identical to the [2,2,nh,B] kernels above (kept as the parity reference); only the
-# indexing moves to flat_basis_index over per-channel matrices. Rotations are
-# block-diagonal in degree n, so φ through P_phi is self-contained — the ragged φ
-# matrix needs no rows above P_phi.
-
-function apply_z_rotation_batch_flat!(out::FlatCoefficientBuffer{TF,A,B,LH}, in::FlatCoefficientBuffer, phis, ::Val{:overwrite}) where {TF,A,B,LH}
-    P_phi = out.basis_info.orders.P_phi
-    P_active = out.basis_info.orders.P_active
-    nbatch = length(phis)
-    op = phi_slab(out); ip = phi_slab(in)
-    oc = chi_slab(out); ic = chi_slab(in)
-    @inbounds for j in 1:nbatch
-        sϕ, cϕ = sincos(phis[j])
-        cm, sm = one(cϕ), zero(cϕ)
-        for m in 0:P_active
-            for n in m:P_phi
-                fr = flat_basis_index(n, m, 1)
-                a, b = ip[fr, j], ip[fr + 1, j]
-                op[fr, j] = cm * a - sm * b
-                op[fr + 1, j] = sm * a + cm * b
-            end
-            if LH
-                for n in m:P_active
-                    fr = flat_basis_index(n, m, 1)
-                    a, b = ic[fr, j], ic[fr + 1, j]
-                    oc[fr, j] = cm * a - sm * b
-                    oc[fr + 1, j] = sm * a + cm * b
-                end
-            end
-            cm_old = cm
-            cm = cm_old * cϕ - sm * sϕ
-            sm = cm_old * sϕ + sm * cϕ
-        end
-    end
-    return out
-end
-
-function apply_z_rotation_batch_flat!(out::FlatCoefficientBuffer{TF,A,B,LH}, in::FlatCoefficientBuffer, phis, ::Val{:accumulate}) where {TF,A,B,LH}
-    P_phi = out.basis_info.orders.P_phi
-    P_active = out.basis_info.orders.P_active
-    nbatch = length(phis)
-    op = phi_slab(out); ip = phi_slab(in)
-    oc = chi_slab(out); ic = chi_slab(in)
-    @inbounds for j in 1:nbatch
-        sϕ, cϕ = sincos(phis[j])
-        cm, sm = one(cϕ), zero(cϕ)
-        for m in 0:P_active
-            for n in m:P_phi
-                fr = flat_basis_index(n, m, 1)
-                a, b = ip[fr, j], ip[fr + 1, j]
-                op[fr, j] += cm * a + sm * b
-                op[fr + 1, j] += -sm * a + cm * b
-            end
-            if LH
-                for n in m:P_active
-                    fr = flat_basis_index(n, m, 1)
-                    a, b = ic[fr, j], ic[fr + 1, j]
-                    oc[fr, j] += cm * a + sm * b
-                    oc[fr + 1, j] += -sm * a + cm * b
-                end
-            end
-            cm_old = cm
-            cm = cm_old * cϕ - sm * sϕ
-            sm = cm_old * sϕ + sm * cϕ
-        end
-    end
-    return out
-end
-
-# Apply the genuinely factored y stage over one channel matrix (degrees 0:P) for a
-# batch of columns. Mirrors `_factored_y_batch!` exactly, flat-indexed; the same
-# fixed `U`/`V` modes are reused for φ (0:P_phi) and χ (0:P_active).
-function _factored_y_channel_flat!(out_slab, in_slab, U, V, gbuf, thetas, P, nbatch)
-    TF = real(eltype(U))
-    @inbounds for j in 1:nbatch
-        θ = thetas[j]
-        for n in 0:P
-            d = 2n + 1
-            off = ymode_offset(n)
-            for νidx in 1:d
-                gr = zero(TF); gi = zero(TF)
-                for k in 1:d
-                    ri, m = _ymode_dof_to_storage(k)
-                    xk = in_slab[flat_basis_index(n, m, ri), j]
-                    v = V[off + (k - 1) * d + νidx]
-                    gr += real(v) * xk
-                    gi += imag(v) * xk
-                end
-                ν = νidx - n - 1
-                s, c = sincos(ν * θ)
-                gbuf[νidx] = complex(c * gr - s * gi, s * gr + c * gi)
-            end
-            for r in 1:d
-                acc = zero(TF)
-                for νidx in 1:d
-                    u = U[off + (νidx - 1) * d + r]
-                    g = gbuf[νidx]
-                    acc += real(u) * real(g) - imag(u) * imag(g)
-                end
-                ri, m = _ymode_dof_to_storage(r)
-                out_slab[flat_basis_index(n, m, ri), j] = acc
-            end
-        end
-    end
-    return out_slab
-end
-
-function _factored_y_batch_flat!(out::FlatCoefficientBuffer{TF,A,B,LH}, source::FlatCoefficientBuffer, U, V, gbuf, thetas, stats) where {TF,A,B,LH}
-    P_phi = out.basis_info.orders.P_phi
-    P_active = out.basis_info.orders.P_active
-    nbatch = length(thetas)
-    @boundscheck length(gbuf) >= 2 * P_active + 1 || throw(ArgumentError("gbuf must have length >= 2*P_active+1"))
-    out_phi = phi_slab(out)
-    out_chi = chi_slab(out)
-    source_phi = phi_slab(source)
-    source_chi = chi_slab(source)
-    out_phi .= zero(eltype(out_phi))
-    LH && (out_chi .= zero(eltype(out_chi)))
-    _maybe_count_fixed_swap!(stats)   # forward V swap (fixed, batch-shared)
-    _maybe_count_z_theta!(stats)      # diagonal e^{iνθ}
-    _factored_y_channel_flat!(out_phi, source_phi, U, V, gbuf, thetas, P_phi, nbatch)
-    LH && _factored_y_channel_flat!(out_chi, source_chi, U, V, gbuf, thetas, P_active, nbatch)
-    _maybe_count_fixed_swap!(stats)   # back U swap (fixed, batch-shared)
-    return out
-end
-
-function _factored_source_alignment_batch_flat!(out, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz::Val{LH}, stats) where LH
-    _maybe_count_z_phi!(stats)
-    apply_z_rotation_batch_flat!(tmp, source, phis, Val(:overwrite))
-    _factored_y_batch_flat!(out, tmp, U, V, gbuf, thetas, stats)
-    return out
-end
-
-function _factored_return_alignment_batch_flat!(target, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz::Val{LH}, stats) where LH
-    _factored_y_batch_flat!(tmp, source, U, V, gbuf, thetas, stats)
-    _maybe_count_z_phi!(stats)
-    apply_z_rotation_batch_flat!(target, tmp, phis, Val(:accumulate))
-    return target
-end
-
-# Public flat stage API (multipole vs local selected by the U/V modes passed).
-multipole_factored_source_alignment_batch_flat!(out, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz::Val; stats=nothing) =
-    _factored_source_alignment_batch_flat!(out, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz, stats)
-
-local_factored_source_alignment_batch_flat!(out, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz::Val; stats=nothing) =
-    _factored_source_alignment_batch_flat!(out, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz, stats)
-
-multipole_factored_return_alignment_batch_flat!(target, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz::Val; stats=nothing) =
-    _factored_return_alignment_batch_flat!(target, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz, stats)
-
-local_factored_return_alignment_batch_flat!(target, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz::Val; stats=nothing) =
-    _factored_return_alignment_batch_flat!(target, source, tmp, gbuf, phis, thetas, U, V, lamb_helmholtz, stats)
 
 # Flat physical-subspace check / guard (016b watch item 2), FlatCoefficientBuffer
 # form: scans the m=0 imaginary rows of φ (0:P_phi) and χ (0:P_active). Wired in at

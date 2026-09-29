@@ -1,17 +1,60 @@
-# Isolated M2L correctness check for the ext/FastMultipoleKAExt.jl KA M2L building
-# blocks (ka_gather_values!, ka_resident_m2l_concat_apply!, reusing M2M's
-# ka_gather_rotate_z!/ka_stacked_y_dense!/ka_gather_rows!/ka_rotate_z_scatter_accumulate!),
-# the KA-ported form of the real production resident M2L path
-# (_launch_resident_m2l_concat!, src/translate_batched.jl:3828, the ConcatenatedFixedZM2L
-# strategy -- confirmed the real GPU path via RadixFMMCache, see session notes). Dispatch
-# entry point is FastMultipole.ka_m2l_operator_batch!, which builds a single-chunk
-# ResidentM2LConcatPlan on the fly, one geometry class per (source i -> target i) route
-# (no tree required -- isolated per-route check, per the ka-migration plan's step-3 scope)
-# and compares against the CPU non-resident m2l_operator_batch! (MaterializedYRotationM2L).
+# Isolated per-route gate for the production KA M2L driver
+# `ka_resident_m2l_concat_apply!` (the KA port of `_launch_resident_m2l_concat!`,
+# the ConcatenatedFixedZM2L plan every device cache runs). A single-chunk
+# ResidentM2LConcatPlan is built below with one geometry class per
+# (source i -> target i) route, so arbitrary (r, theta, phi) are exercised without a
+# tree. The reference is the host per-column pipeline `m2l_operator_batch!`
+# (MaterializedYRotationM2L; production use: building DenseTranslationM2L class
+# matrices), an independent factorization of the same M2L math.
 include("ka_backend.jl")
 using KernelAbstractions, FastMultipole, StaticArrays, Random
 using FastMultipole: FlatCoefficientBuffer, M2LOperatorScratch, OperatorInvariantCache,
                      MaterializedYRotationM2L
+
+const FM = FastMultipole
+ext = Base.get_extension(FastMultipole, :FastMultipoleKAExt)
+
+# One ResidentM2LConcatPlan + the M2L-only slice of a ResidentOperatorWorkspace on
+# `exemplar`'s backend: `nbatch` independent (i -> i) routes, one class per route.
+# `offsets` only sizes the class count; the per-class (r, theta, phi) tables are
+# overwritten with the test angles right after construction.
+function build_m2l_concat_plan_and_workspace(exemplar, ::Type{TF}, invariant_cache,
+        phis_host::Vector{TF}, thetas_host::Vector{TF}, rs_host::Vector{TF},
+        ::Val{LH}) where {TF,LH}
+    basis_info = invariant_cache.basis_info
+    B = typeof(basis_info.basis)
+    nbatch = length(phis_host)
+    P_phi = basis_info.orders.P_phi
+    P_active = basis_info.orders.P_active
+
+    offsets = [SVector{3,Int}(i, 0, 0) for i in 1:nbatch]
+    plan = FM.ResidentM2LConcatPlan(TF, basis_info, exemplar,
+        FM.ConcatenatedFixedZM2L(nbatch), invariant_cache, offsets, one(TF), nbatch)
+    copyto!(plan.phis, phis_host)
+    copyto!(plan.thetas, thetas_host)
+    copyto!(plan.rs, rs_host)
+    copyto!(plan.invrs, inv.(rs_host))
+    copyto!(plan.route_class, Int32.(1:nbatch))
+
+    phi_flat_idx = FM._array_like_vector(exemplar, Int, FM._degree_major_to_flat_indices(P_phi))
+    chi_flat_idx = LH ?
+        FM._array_like_vector(exemplar, Int, FM._degree_major_to_flat_indices(P_active)) :
+        FM._array_like_vector(exemplar, Int, Int[])
+    maps_phi = FM.DegreeMajorMaps(TF, P_phi, exemplar)
+    maps_chi = LH ? FM.DegreeMajorMaps(TF, P_active, exemplar) : maps_phi
+
+    empty_sm() = similar(exemplar, TF, 0, 0)
+    ws = FM.ResidentOperatorWorkspace{TF,B,LH}(
+        basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
+        nothing, nothing, nothing, nothing, nothing,
+        empty_sm(), empty_sm(), empty_sm(), empty_sm(),
+        empty_sm(), empty_sm(), empty_sm(), empty_sm(),
+        empty_sm(), empty_sm(),
+        nothing, nothing, nothing, nothing, nothing, plan,
+        nothing, nothing,
+    )
+    return plan, ws
+end
 
 # `FlatCoefficientBuffer.phi .= devarray(host)` silently no-ops (broadcasting a
 # host-array destination from a device-array source does not perform the transfer);
@@ -85,13 +128,15 @@ for P in (4, 8)
                                               phis, thetas, rs,
                                               cache, scratch, lh)
 
-            # Device (Metal) path via the real ka_m2l_operator_batch! dispatch
+            # Device path: the production KA concat driver over a one-chunk plan
             sources_metal = to_metal(sources)
             targets_metal = to_metal(FlatCoefficientBuffer(TF, cache.basis_info, nbatch))
 
-            FastMultipole.ka_m2l_operator_batch!(op, targets_metal, sources_metal,
-                                                 phis, thetas, rs,
-                                                 cache, scratch, lh)
+            plan, ws = build_m2l_concat_plan_and_workspace(targets_metal.phi, TF, cache,
+                phis, thetas, rs, lh)
+            idx = FM._array_like_vector(targets_metal.phi, Int, collect(1:nbatch))
+            ext.ka_resident_m2l_concat_apply!(targets_metal, sources_metal, ws, idx, idx, nbatch)
+            KernelAbstractions.synchronize(DEV_BACKEND)
 
             targets_metal_cpu = to_cpu(targets_metal)
 

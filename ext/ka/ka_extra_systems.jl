@@ -184,6 +184,12 @@ function _ka_extra_tree_prepared!(cache::FastMultipole.RadixFMMCache, sys)
     return prepared
 end
 
+"""
+    ka_radix_cache_device_step!(cache, targets, switches; workgroup=KA_AUTO_WORKGROUP)
+
+Backend-agnostic device step: refresh the device state, run the
+uniform lifecycle body, and scatter the output back into the target systems.
+"""
 function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         targets::Tuple, switches::Tuple; nearfield_pass=nothing,
         workgroup=KA_AUTO_WORKGROUP, extra_targets::Tuple=(),
@@ -195,7 +201,7 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     # Below the FMM/direct crossover the whole lifecycle is replaced by one
     # all-pairs kernel, and the grid/route refresh is skipped with it (task
     # 053). Same finalize, same SFS hook: only the U/J evaluation differs.
-    direct_arm = _ka_radix_setting(:RADIX_DIRECT_ARM, false)
+    direct_arm = FastMultipole.radix_setting(:RADIX_DIRECT_ARM)
     # The extra-sources-only call needs no routes, but it DOES need the bodies
     # repacked and the permutation refreshed: `finalize` de-permutes through
     # the state's body metadata, and the body count changes between calls in a
@@ -253,17 +259,11 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         target_buffers=FastMultipole._radix_cache_target_buffers!(cache, switches),
         device_target_buffers=cache.device_ctx.device_target_buffers)
     _utick!(:finalize, KA.get_backend(state.output))
-    # Extra targets are summed all-pairs unless :KA_EXTRA_TARGETS_GRID is set.
-    # The grid-carried path (bin, local expansion, near sweep) has a per-call
-    # race: on the NREL 5MW, a check every step from the step-450 checkpoint
-    # returned probe velocities 2-3x the exact sum on a quarter of the steps,
-    # differently on each repeat of the identical call, and the all-pairs
-    # kernel on the same steps was at 2e-4 everywhere. Until the
-    # race is found the grid path is opt-in; all-pairs was a wash for speed.
+    # Extra targets are summed all-pairs against the packed resident bodies,
+    # which reads no local expansion or near list, so it is also correct on
+    # the direct arm (whose lifecycle state is stale).
     self_induce &&
-        ka_extra_targets_evaluate!(state, extra_targets, extra_target_switches; workgroup,
-                                   allpairs_only=direct_arm ||
-                                       !_ka_radix_setting(:KA_EXTRA_TARGETS_GRID, false))
+        ka_extra_targets_evaluate!(state, extra_targets, extra_target_switches; workgroup)
     isempty(extra_targets) || _utick!(:extra_targets, KA.get_backend(state.output))
     return cache
 end
@@ -406,13 +406,6 @@ function ka_points_from_extra_source(backend, xt_h::AbstractMatrix, system, ::Ty
     return Array(out)
 end
 
-"""
-    ka_extra_sources_into_output!(state, extra_sources; workgroup)
-
-Apply every extra source system to the resident bodies, accumulating into
-`state.output` in slot order (slot positions are rows 1:3 of
-`state.source_bodies`), after the lifecycle body and before finalize.
-"""
 # the bodies held out of the tree: a packed buffer rather than a whole system
 function _ka_launch_extra_buffer!(backend, wg, out, xt, nt::Int, host_buffer, kernel,
         ::Type{TF}, hs::Bool) where TF
@@ -443,6 +436,13 @@ function ka_extra_tree_finish!(state::FastMultipole.DeviceResidentRadixState{TF}
     return state
 end
 
+"""
+    ka_extra_sources_into_output!(state, extra_sources; workgroup)
+
+Apply every extra source system to the resident bodies, accumulating into
+`state.output` in slot order (slot positions are rows 1:3 of
+`state.source_bodies`), after the lifecycle body and before finalize.
+"""
 function ka_extra_sources_into_output!(state::FastMultipole.DeviceResidentRadixState{TF},
         extra_sources::Tuple; workgroup=KA_AUTO_WORKGROUP) where TF
     isempty(extra_sources) && return state
@@ -465,124 +465,14 @@ end
 Evaluate every extra target system from the resident bodies on the device,
 then scatter through the target's switch on the host.
 """
-# Extra targets through the resident grid (host mirror: `_host_extra_targets_tree!`
-# in src/radix_extra_systems.jl). Binning is on the host -- a few hundred to a
-# few thousand probes -- and two kernels run on the device: one reads each
-# binned target's cell local expansion, the other sweeps the resident near
-# pairs. Targets the grid cannot place go through the all-pairs kernel above.
-
-# one thread per binned target: no two threads share a target, so no atomics
-@kernel function ka_extra_targets_far_kernel!(out, @Const(xt), @Const(order), @Const(cellk), nb,
-        @Const(cell_centers), @Const(leaf_to_node), @Const(local_phi), @Const(local_chi),
-        P_phi, P_active, ::Val{LHV}, ::Val{HS}) where {LHV,HS}
-    k = @index(Global)
-    @inbounds if k <= nb
-        i = order[k]
-        cell = cellk[k]
-        node = leaf_to_node[cell]
-        dx = xt[1, i] - cell_centers[1, cell]
-        dy = xt[2, i] - cell_centers[2, cell]
-        dz = xt[3, i] - cell_centers[3, cell]
-        if HS
-            vals = ka_local_eval_flat(local_phi, local_chi, node, dx, dy, dz,
-                P_phi, P_active, Val(LHV), Val(true))
-            Base.Cartesian.@nexprs 13 r -> (out[r, i] += vals[r])
-        else
-            sp, gx, gy, gz = ka_local_eval_flat(local_phi, local_chi, node, dx, dy, dz,
-                P_phi, P_active, Val(LHV), Val(false))
-            out[1, i] += sp
-            out[2, i] += gx
-            out[3, i] += gy
-            out[4, i] += gz
-        end
-    end
-end
-
-# one workgroup per near cell pair, threads striding over the target cell's
-# binned targets; a target is written by several pairs, hence the atomics
-@kernel function ka_extra_targets_near_kernel!(kernel, out, @Const(xt), @Const(order),
-        @Const(tranges), @Const(bodies), @Const(cell_ranges), @Const(direct_targets),
-        @Const(direct_sources), n_direct, ::Type{T}, ::Val{HS}, ::Val{WG}, ::Val{EP}) where {T,HS,WG,EP}
-    tid = @index(Local)
-    pair_i = @index(Group)
-    ghv = Val(:shipped)
-    @inbounds if pair_i <= n_direct
-        c = direct_targets[pair_i]
-        s = direct_sources[pair_i]
-        tcnt = tranges[2, c]
-        if tcnt > 0
-            sfirst = cell_ranges[1, s]
-            scnt = cell_ranges[2, s]
-            k = tranges[1, c] + tid - 1
-            while k <= tranges[1, c] + tcnt - 1
-                i = order[k]
-                xi = xt[1, i]; yi = xt[2, i]; zi = xt[3, i]
-                u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
-                h1 = zero(T); h2 = zero(T); h3 = zero(T)
-                h4 = zero(T); h5 = zero(T); h6 = zero(T)
-                h7 = zero(T); h8 = zero(T); h9 = zero(T)
-                for j in sfirst:(sfirst + scnt - 1)
-                    dx = xi - bodies[1, j]
-                    dy = yi - bodies[2, j]
-                    dz = zi - bodies[3, j]
-                    r2 = dx * dx + dy * dy + dz * dz
-                    if r2 > zero(r2)
-                        invr = inv(sqrt(r2))
-                        if HS
-                            du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
-                                FastMultipole._direct_pair_ugh(kernel, dx, dy, dz, r2, invr,
-                                    bodies, j, ghv)
-                            u += du; gx += dgx; gy += dgy; gz += dgz
-                            h1 += dh1; h2 += dh2; h3 += dh3
-                            h4 += dh4; h5 += dh5; h6 += dh6
-                            h7 += dh7; h8 += dh8; h9 += dh9
-                        else
-                            du, dgx, dgy, dgz = FastMultipole._direct_pair_ug(kernel,
-                                dx, dy, dz, r2, invr, bodies, j, ghv)
-                            u += du; gx += dgx; gy += dgy; gz += dgz
-                        end
-                    end
-                end
-                if EP
-                    KA.@atomic out[1, i] += u
-                end
-                KA.@atomic out[2, i] += gx
-                KA.@atomic out[3, i] += gy
-                KA.@atomic out[4, i] += gz
-                if HS
-                    KA.@atomic out[5, i] += h1
-                    KA.@atomic out[6, i] += h2
-                    KA.@atomic out[7, i] += h3
-                    KA.@atomic out[8, i] += h4
-                    KA.@atomic out[9, i] += h5
-                    KA.@atomic out[10, i] += h6
-                    KA.@atomic out[11, i] += h7
-                    KA.@atomic out[12, i] += h8
-                    KA.@atomic out[13, i] += h9
-                end
-                k += WG
-            end
-        end
-    end
-end
-
-# The last checked call's device output and its all-pairs reference, for a
-
 function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH},
-        extra_targets::Tuple, switches::Tuple; workgroup=KA_AUTO_WORKGROUP,
-        allpairs_only::Bool=false) where {TF,B,LH}
+        extra_targets::Tuple, switches::Tuple; workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
     isempty(extra_targets) && return state
     n = Int(state.counts.n_bodies)
-    n_cells = Int(state.counts.n_cells)
     backend = KA.get_backend(state.output)
     wg = resolve_workgroup(backend, workgroup)
     dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF, 0)
-    ep = FastMultipole._emits_potential(state.options.direct_kernel)
-    orders = state.invariant_cache.basis_info.orders
     allpairs = _cached_kernel(ka_extra_targets_from_main_kernel!, backend, wg)
-    far = _cached_kernel(ka_extra_targets_far_kernel!, backend, wg)
-    near = _cached_kernel(ka_extra_targets_near_kernel!, backend, wg)
-    up(A) = (d = KA.allocate(backend, eltype(A), size(A)...); copyto!(d, A); d)
     for (system, switch) in zip(extra_targets, switches)
         hs = !isempty(FastMultipole.hessian_range(switch))
         hs && size(state.output, 1) < 13 && throw(ArgumentError(
@@ -592,62 +482,28 @@ function ka_extra_targets_evaluate!(state::FastMultipole.DeviceResidentRadixStat
         nt = size(xt_h, 2)
         nt == 0 && continue
         rows = hs ? 13 : 4
-        out = KA.allocate(backend, TF, rows, nt); fill!(out, zero(TF))
-        if n > 0
-            # The all-pairs direct arm runs no lifecycle, so the local
-            # expansions and the near-pair list are whatever the previous
-            # call left: every target is then loose. Reading them anyway gave
-            # the 5MW spot check reference errors of 30 to 3500 at random
-            # steps while the FMM arm itself was at 1e-5.
-            order_h, tr_h, loose = allpairs_only ?
-                (Int[], zeros(Int, 2, n_cells), collect(1:nt)) :
-                FastMultipole.bin_resident_extra_targets(xt_h, state.grid, n_cells)
-            nb = length(order_h)
-            if nb > 0
-                xt = _ka_upload(backend, xt_h)
-                cellk_h = zeros(Int32, nb)
-                for c in 1:n_cells, k in tr_h[1, c]:(tr_h[1, c] + tr_h[2, c] - 1)
-                    cellk_h[k] = c
-                end
-                order = up(Int32.(order_h))
-                cellk = up(cellk_h)
-                tranges = up(Int32.(tr_h))
-                far(out, xt, order, cellk, nb, state.cell_centers, state.grid.leaf_to_node,
-                    state.locals.phi, state.locals.chi, orders.P_phi, orders.P_active,
-                    Val(LH), Val(hs); ndrange=cld(nb, wg) * wg)
-                nd = Int(state.counts.n_direct)
-                nd > 0 && near(dkernel, out, xt, order, tranges, state.source_bodies,
-                    state.cell_ranges, state.direct_targets, state.direct_sources, nd,
-                    TF, Val(hs), Val(wg), Val(ep); ndrange=nd * wg)
-            end
-            if !isempty(loose)
-                # no cell to read: all-pairs, as before, over the loose subset
-                nl = length(loose)
-                xl = _ka_upload(backend, xt_h[:, loose])
-                nchunk = max(1, min(cld(n, 256), cld(65_536, nl)))
-                chunk = cld(n, nchunk)
-                # The kernel writes part[:, i, c] only for chunks that hold a
-                # body. With nchunk chosen first and chunk rounded up, the last
-                # chunk can be EMPTY ((nchunk-1)*chunk >= n), and its slab of
-                # the uninitialized buffer was summed in: garbage from the pool,
-                # different on every call, only for target counts whose chunk
-                # arithmetic leaves that gap (53-69 loose probes at 326k
-                # particles did; 180 did not). That was the "race".
-                # Size the chunk count from the chunk, and zero.
-                nchunk = cld(n, chunk)
-                part = KA.allocate(backend, TF, rows, nl, nchunk)
-                fill!(part, zero(TF))
-                allpairs(dkernel, part, xl, nl, state.source_bodies, n, chunk, TF, Val(hs);
-                         ndrange=(cld(nl, wg) * wg, nchunk))
-                KA.synchronize(backend)
-                outl = nchunk == 1 ? reshape(part, rows, nl) : dropdims(sum(part; dims=3); dims=3)
-                KA.synchronize(backend)
-                out_h = Array(out)
-                out_h[:, loose] .+= Array(outl)
-                FastMultipole._radix_scatter_extra_target!(TF, system, switch, out_h)
-                continue
-            end
+        if n == 0
+            FastMultipole._radix_scatter_extra_target!(TF, system, switch, zeros(TF, rows, nt))
+            continue
         end
+        xt = _ka_upload(backend, xt_h)
+        nchunk = max(1, min(cld(n, 256), cld(65_536, nt)))
+        chunk = cld(n, nchunk)
+        # The kernel writes part[:, i, c] only for chunks that hold a
+        # body. With nchunk chosen first and chunk rounded up, the last
+        # chunk can be EMPTY ((nchunk-1)*chunk >= n), and its slab of
+        # the uninitialized buffer was summed in: garbage from the pool,
+        # different on every call, only for target counts whose chunk
+        # arithmetic leaves that gap (53-69 probes at 326k particles
+        # did; 180 did not). That was the "race".
+        # Size the chunk count from the chunk, and zero.
+        nchunk = cld(n, chunk)
+        part = KA.allocate(backend, TF, rows, nt, nchunk)
+        fill!(part, zero(TF))
+        allpairs(dkernel, part, xt, nt, state.source_bodies, n, chunk, TF, Val(hs);
+                 ndrange=(cld(nt, wg) * wg, nchunk))
+        KA.synchronize(backend)
+        out = nchunk == 1 ? reshape(part, rows, nt) : dropdims(sum(part; dims=3); dims=3)
         KA.synchronize(backend)
         FastMultipole._radix_scatter_extra_target!(TF, system, switch, Array(out))
     end

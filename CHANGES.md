@@ -25,7 +25,7 @@
   `set_radix_setting!`, and `set_radix_settings!`. Construction-locked settings
   are snapshotted by a cache and checked at each device step; runtime settings
   may change between steps.
-- Added the opt-in `AdaptiveTreePolicy` and adaptive radix-tree lifecycle.
+
 - Added `transform_tree!`, `transform_plan!`, and `transform_solver!` for rigid
   motion of reusable trees, plans, and solvers, subject to their documented
   cache and output restrictions.
@@ -60,6 +60,52 @@
   `zeta_to_target!`, `output_from_target!`, `radix_zeta!`, `radix_sfs_repass!`)
   are gone; a consumer runs its own pass through `nearfield_pass` and reads
   `radix_nearfield(cache)` (FLOWVPM does).
+- Review cuts (2026-09-28): code with no caller in production or in the
+  known consumers (FLOWVPM, FLOWUnsteadyCore, LiftingLines, VortexLattice,
+  FLOWPanel) was left out of this release. The full list, with what replaced
+  each item, is in the PR. In summary: the adaptive radix-tree lifecycle
+  (host and KernelAbstractions; `AdaptiveTreePolicy` is gone); the flat KA
+  route generator and `ka_fmm!`; the operator-refactor alternatives that
+  production never selects (shared-rotation batching and its
+  `SharedRotationM2L`/`SharedRotationM2M`/`DenseTranslationM2M` tags, the flat
+  M2M/L2L operator pipelines and their tags, the factored flat rotation
+  pipeline, the ±π/2 y-swap tables, the legacy `[2,2,nh]` kernels,
+  `RealSolidHarmonicBasis` and its conversions, `ThreadedOperatorScratch`);
+  the standalone radix-grid and constant-P interaction-list API (sort
+  backends, traversal-strategy types, `radix_grid`, `foreach_radix_*`,
+  `accepted_radix_stencil`, `constant_p_stencil_accepts`); `tune_fmm_perturb`
+  and the `tune_nearfield_cache` route with the third `tune_fmm` return;
+  `NearfieldExecution`/`HostNearfield`/`DeviceNearfield` and
+  `nearfield_device!` (`fmm!(...; nearfield_device=true)` now throws on the
+  legacy octree path); the device two-pass helpers and the `:lut` g/h mode; the
+  uncached KA window generator and the KA grid path for extra targets;
+  `radix_setting_lock` and the settings `:KA_WORKGROUP`,
+  `:FACTORED_Y_GEMM_MIN_COLS`, `:CUDA_CACHED_WINDOWS`,
+  `:KA_EXTRA_TARGETS_GRID`, `:RADIX_CUDA_COUNTING_SORT`,
+  `:RADIX_CUDA_COUNTING_SORT_MAX_ELL`, `:CUDA_NEARFIELD_SUBSORT`,
+  `:SYMMETRIC_CUDA_MAX_CELL_BODIES` (each fixed at its former default);
+  `RadixLifecycleOptions.m2m_strategy` (the `m2l_strategy` default is now
+  `ConcatenatedFixedZM2L`); unread fields of `DeviceHierarchicalM2LContext`,
+  `DeviceResidentRadixState`, `ResidentOperatorWorkspace`, `RadixTransferCounters`
+  (`route_uploads`, `operator_uploads`) and `DenseTranslationM2L`
+  (`cuda_headroom_bytes`); the positional `DerivativesSwitch(ps, gs, hs, ts)`,
+  the 4-argument `ProbeSystemStatic`/`ProbeSystemArray` constructors, the
+  single-system `Tree(system, ::TreeRole, ...)` method, `phi_physical_view`,
+  and the `CUDARadixTransferCounters` alias.
+- Fixes from the same review: `update_radix_state!` with a tuple of systems on
+  a device cache ran the host refresh (method shadowing); automatic option
+  selection could hand a device cache `DenseTranslationM2L`, which the KA build
+  rejects (a device cache now always builds `ConcatenatedFixedZM2L`);
+  `RectangularPanelInfluence` accepted a four-vertex combined source+ring panel
+  whose ring was evaluated as a triangle; `ProbeSystem` third derivatives now
+  accumulate like the other outputs; `direct!(...; nearfield_cache)` rejects
+  derivatives switches that differ from the cache's; `_assert_rigid_rotation`
+  scales its tolerance with the float type; a tree-carried extra source outside
+  the grid box is summed directly instead of being clamped into an edge cell;
+  the legacy multithreaded `fmm!` no longer hits an undefined `t_m2l` with
+  `tune=true, horizontal_pass=false`; the KA step syncs before its window-count
+  read and runs its geometry gate once; the KA element scratch no longer leaks
+  when a state is replaced.
 
 ## v0.1.0 - 2024 August
 

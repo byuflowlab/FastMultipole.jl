@@ -67,74 +67,6 @@ function l2l_z_blocks!(blocks, t, P)
     return blocks
 end
 
-function apply_m2m_z!(out, in, blocks, P, lamb_helmholtz::Val{LH}, ::Val{:overwrite}) where LH
-    i_out = 1
-    @inbounds for n in 0:P
-        for m in 0:n
-            val1_real = zero(eltype(out))
-            val1_imag = zero(eltype(out))
-            if LH
-                val2_real = zero(eltype(out))
-                val2_imag = zero(eltype(out))
-            end
-
-            for np in m:n
-                k = blocks[m2m_z_block_index(n, np, m, P)]
-                i_in = harmonic_index(np, m)
-                val1_real += k * in[1, 1, i_in]
-                val1_imag += k * in[2, 1, i_in]
-                if LH
-                    val2_real += k * in[1, 2, i_in]
-                    val2_imag += k * in[2, 2, i_in]
-                end
-            end
-
-            out[1, 1, i_out] = val1_real
-            out[2, 1, i_out] = val1_imag
-            if LH
-                out[1, 2, i_out] = val2_real
-                out[2, 2, i_out] = val2_imag
-            end
-            i_out += 1
-        end
-    end
-    return out
-end
-
-function apply_l2l_z!(out, in, blocks, P, lamb_helmholtz::Val{LH}, ::Val{:overwrite}) where LH
-    i_out = 1
-    @inbounds for n in 0:P
-        for m in 0:n
-            val1_real = zero(eltype(out))
-            val1_imag = zero(eltype(out))
-            if LH
-                val2_real = zero(eltype(out))
-                val2_imag = zero(eltype(out))
-            end
-
-            for np in n:P
-                k = blocks[l2l_z_block_index(n, np, m, P)]
-                i_in = harmonic_index(np, m)
-                val1_real += k * in[1, 1, i_in]
-                val1_imag += k * in[2, 1, i_in]
-                if LH
-                    val2_real += k * in[1, 2, i_in]
-                    val2_imag += k * in[2, 2, i_in]
-                end
-            end
-
-            out[1, 1, i_out] = val1_real
-            out[2, 1, i_out] = val1_imag
-            if LH
-                out[1, 2, i_out] = val2_real
-                out[2, 2, i_out] = val2_imag
-            end
-            i_out += 1
-        end
-    end
-    return out
-end
-
 #------- EXPLICIT M2L Z-TRANSLATION BLOCKS (Matrix Operator Refactor) -------#
 #
 # The z-aligned multipole-to-local translation is block-diagonal in the azimuthal
@@ -211,7 +143,7 @@ The entries are filled by the approved stable recurrence with `rho = inv(t)`
 - across source degree: `K_m[n, np + 1] = K_m[n, np] * (n + np + 1) * rho`.
 
 The multiply order matches `translate_multipole_to_local_z!` in `src/translate.jl`
-so that [`apply_m2l_z!`](@ref) reproduces production bit-for-bit.
+so that `apply_m2l_z_flat!` reproduces production bit-for-bit.
 """
 function m2l_z_blocks!(blocks, t, P)
     rho = inv(t)
@@ -246,119 +178,6 @@ function m2l_z_blocks!(blocks, t, P)
     return blocks
 end
 
-"""
-    apply_m2l_z!(out, in, blocks, P, lamb_helmholtz::Val, ::Val{:overwrite})
-
-Apply the explicit fixed-`m` M2L z-translation blocks (see [`m2l_z_blocks!`](@ref))
-to the source coefficients `in`, overwriting `out`. Both arrays use the production
-layout `[real_or_imag, component, harmonic_index]`. For each output `(n, m)`,
-
-    out[:, c, i(n,m)] = sum(np = m:P) K_m[n, np] * in[:, c, i(np,m)]
-
-with `i = harmonic_index`, summed in increasing `np` order to match
-`translate_multipole_to_local_z!`. The z-aligned M2L block overwrites its
-destination (it does not accumulate); accumulation into the target expansion
-happens later in the full M2L pipeline via the inverse z-rotation.
-
-`lamb_helmholtz` selects whether the second (χ) component channel is processed in
-addition to the scalar φ channel; both channels use the same real blocks.
-"""
-function apply_m2l_z!(out, in, blocks, P, lamb_helmholtz::Val{LH}, ::Val{:overwrite}) where LH
-    i_out = 1
-    @inbounds for n in 0:P
-        for m in 0:n
-            val1_real = zero(eltype(out))
-            val1_imag = zero(eltype(out))
-            if LH
-                val2_real = zero(eltype(out))
-                val2_imag = zero(eltype(out))
-            end
-
-            w = P - m + 1
-            base = m2l_z_block_offset(m, P) + (n - m)  # column 0 (np = m), row (n-m)
-            for np in m:P
-                k = blocks[base + (np - m) * w + 1]
-                i_in = harmonic_index(np, m)
-                val1_real += k * in[1, 1, i_in]
-                val1_imag += k * in[2, 1, i_in]
-                if LH
-                    val2_real += k * in[1, 2, i_in]
-                    val2_imag += k * in[2, 2, i_in]
-                end
-            end
-
-            out[1, 1, i_out] = val1_real
-            out[2, 1, i_out] = val1_imag
-            if LH
-                out[1, 2, i_out] = val2_real
-                out[2, 2, i_out] = val2_imag
-            end
-
-            i_out += 1
-        end
-    end
-
-    return out
-end
-
-"""
-    apply_m2l_z!(out, in, blocks, basis_info::OperatorBasisInfo, ::Val{:overwrite})
-
-Order-aware M2L z-translation driven by the task-`009` order accessors. The scalar
-φ channel (component 1) is translated through `basis_info.orders.P_phi`; for
-`Val(true)` the Lamb-Helmholtz χ channel (component 2) is translated through the
-padded active order `basis_info.orders.P_active = P_chi = P_phi + 1`. The `blocks`
-buffer must be sized for `P_active` (see [`m2l_z_blocks!`](@ref)); φ rows above
-`P_phi` are padding/scratch and are not written as physical output.
-"""
-function apply_m2l_z!(out, in, blocks, basis_info::OperatorBasisInfo{<:CompressedComplexBasis,LH}, ::Val{:overwrite}) where LH
-    P_active = basis_info.orders.P_active
-    P_phi = basis_info.orders.P_phi
-
-    # φ channel (component 1): translate through P_phi only.
-    i_out = 1
-    @inbounds for n in 0:P_phi
-        for m in 0:n
-            val_real = zero(eltype(out))
-            val_imag = zero(eltype(out))
-            w = P_active - m + 1
-            base = m2l_z_block_offset(m, P_active) + (n - m)
-            for np in m:P_phi
-                k = blocks[base + (np - m) * w + 1]
-                i_in = harmonic_index(np, m)
-                val_real += k * in[1, 1, i_in]
-                val_imag += k * in[2, 1, i_in]
-            end
-            out[1, 1, i_out] = val_real
-            out[2, 1, i_out] = val_imag
-            i_out += 1
-        end
-    end
-
-    # χ channel (component 2): translate through the padded P_active = P_phi + 1.
-    if LH
-        i_out = 1
-        @inbounds for n in 0:P_active
-            for m in 0:n
-                val_real = zero(eltype(out))
-                val_imag = zero(eltype(out))
-                w = P_active - m + 1
-                base = m2l_z_block_offset(m, P_active) + (n - m)
-                for np in m:P_active
-                    k = blocks[base + (np - m) * w + 1]
-                    i_in = harmonic_index(np, m)
-                    val_real += k * in[1, 2, i_in]
-                    val_imag += k * in[2, 2, i_in]
-                end
-                out[1, 2, i_out] = val_real
-                out[2, 2, i_out] = val_imag
-                i_out += 1
-            end
-        end
-    end
-
-    return out
-end
 
 #------- EXPLICIT LAMB-HELMHOLTZ OPERATORS (Matrix Operator Refactor) -------#
 #
@@ -402,9 +221,8 @@ end
 Materialize the multipole-side Lamb-Helmholtz factors over the compressed harmonic
 index: `A[harmonic_index(n,m)] = r*m/(n+1)` (same-degree φ-from-χ) and
 `B[harmonic_index(n,m)] = r/n` (lower-neighbor χ-from-χ, `χ_{n-1} -> χ_n`) for all
-`0 <= m <= n <= P`. The `n = 0` entry of `B` is set to zero (no lower neighbor);
-it is never read by [`apply_lamb_helmholtz_multipole!`](@ref). `A` and `B` must
-each have length at least `((P+1)*(P+2))>>1`.
+`0 <= m <= n <= P`. The `n = 0` entry of `B` is set to zero (no lower neighbor).
+`A` and `B` must each have length at least `((P+1)*(P+2))>>1`.
 """
 function lamb_helmholtz_multipole_coeffs!(A, B, r, P)
     i = 1
@@ -439,201 +257,6 @@ function lamb_helmholtz_local_coeffs!(A, B, r, P)
     return A, B
 end
 
-"""
-    apply_lamb_helmholtz_multipole!(out, in, A, B, P, ::Val{:overwrite})
-
-Apply the multipole-side Lamb-Helmholtz transform (factors from
-[`lamb_helmholtz_multipole_coeffs!`](@ref)) to `in`, overwriting `out`. Both arrays
-use the production layout `[real_or_imag, component, harmonic_index]`. For each
-stored `(n, m)` with `i = harmonic_index(n, m)` and `a = A[i]`, `b = B[i]`:
-
-    φ_n^m  = φ̂_n^m + a * (im-rotated χ̂_n^m)     (real: +a*χ̂_im, imag: -a*χ̂_re)
-    χ_n^m  = χ̂_n^m + b * χ̂_{n-1}^m              (b applied only for n > m)
-
-Reproduces `transform_lamb_helmholtz_multipole!` bit-for-bit. The `(0,0)`
-coefficient is copied through unchanged (left untouched by production).
-"""
-function apply_lamb_helmholtz_multipole!(out, in, A, B, P, ::Val{:overwrite})
-    @inbounds for n in 0:P
-        for m in 0:n
-            i = harmonic_index(n, m)
-
-            # φ channel: same-degree coupling from χ_n (zero factor when m == 0)
-            a = A[i]
-            chi_re = in[1, 2, i]
-            chi_im = in[2, 2, i]
-            out[1, 1, i] = in[1, 1, i] + a * chi_im
-            out[2, 1, i] = in[2, 1, i] - a * chi_re
-
-            # χ channel: lower-neighbor coupling χ_{n-1} -> χ_n (exists only for n > m)
-            if n > m
-                b = B[i]
-                i_lo = i - n  # harmonic_index(n-1, m)
-                out[1, 2, i] = chi_re + b * in[1, 2, i_lo]
-                out[2, 2, i] = chi_im + b * in[2, 2, i_lo]
-            else
-                out[1, 2, i] = chi_re
-                out[2, 2, i] = chi_im
-            end
-        end
-    end
-    return out
-end
-
-"""
-    apply_lamb_helmholtz_local!(out, in, A, B, P, ::Val{:overwrite})
-
-Apply the local-side Lamb-Helmholtz transform (factors from
-[`lamb_helmholtz_local_coeffs!`](@ref)) to `in`, overwriting `out`. Both arrays use
-the production layout `[real_or_imag, component, harmonic_index]`. For each stored
-`(n, m)` with `i = harmonic_index(n, m)`, `a = A[i]`, `b = B[i]`:
-
-    φ_n^m  = φ̂_n^m - a * (im-rotated χ̂_n^m)     (real: -a*χ̂_im, imag: +a*χ̂_re), n > 0
-    χ_n^m  = χ̂_n^m - b * χ̂_{n+1}^m              (only for n < P; χ_P^m copied through)
-
-Reproduces `transform_lamb_helmholtz_local!` bit-for-bit, including the truncation
-`χ_{P+1}^m = 0` at the top degree. The `(0,0)` φ coefficient is copied through.
-"""
-function apply_lamb_helmholtz_local!(out, in, A, B, P, ::Val{:overwrite})
-    @inbounds for n in 0:P
-        for m in 0:n
-            i = harmonic_index(n, m)
-
-            # φ channel: same-degree coupling from χ_n, skipped for n == 0
-            if n > 0
-                a = A[i]
-                out[1, 1, i] = in[1, 1, i] - a * in[2, 2, i]
-                out[2, 1, i] = in[2, 1, i] + a * in[1, 2, i]
-            else
-                out[1, 1, i] = in[1, 1, i]
-                out[2, 1, i] = in[2, 1, i]
-            end
-
-            # χ channel: upper-neighbor coupling χ_{n+1} -> χ_n; truncated at n == P
-            if n < P
-                b = B[i]
-                i_hi = i + (n + 1)  # harmonic_index(n+1, m)
-                out[1, 2, i] = in[1, 2, i] - b * in[1, 2, i_hi]
-                out[2, 2, i] = in[2, 2, i] - b * in[2, 2, i_hi]
-            else
-                out[1, 2, i] = in[1, 2, i]
-                out[2, 2, i] = in[2, 2, i]
-            end
-        end
-    end
-    return out
-end
-
-"""
-    apply_lamb_helmholtz_multipole!(out, in, A, B, basis_info::OperatorBasisInfo, ::Val{:overwrite})
-
-Order-aware multipole-side Lamb-Helmholtz transform driven by the task-`009` order
-accessors. The physical φ output is produced through `orders.P_phi`, while the χ
-channel is carried through the padded active order `orders.P_active = P_phi + 1`
-so the lower-neighbor recurrence has its full χ input. `A`/`B` must be sized for
-`P_active` (see [`lamb_helmholtz_multipole_coeffs!`](@ref)). For `Val(false)`,
-`P_active == P_phi` and the χ channel is absent.
-"""
-function apply_lamb_helmholtz_multipole!(out, in, A, B, basis_info::OperatorBasisInfo{<:CompressedComplexBasis,LH}, ::Val{:overwrite}) where LH
-    P_phi = basis_info.orders.P_phi
-    P_active = basis_info.orders.P_active
-
-    # φ channel (component 1): physical output through P_phi.
-    @inbounds for n in 0:P_phi
-        for m in 0:n
-            i = harmonic_index(n, m)
-            if LH
-                a = A[i]
-                out[1, 1, i] = in[1, 1, i] + a * in[2, 2, i]
-                out[2, 1, i] = in[2, 1, i] - a * in[1, 2, i]
-            else
-                out[1, 1, i] = in[1, 1, i]
-                out[2, 1, i] = in[2, 1, i]
-                out[1, 2, i] = zero(eltype(out))
-                out[2, 2, i] = zero(eltype(out))
-            end
-        end
-    end
-
-    # χ channel (component 2): carried through the padded P_active.
-    if LH
-        @inbounds for n in 0:P_active
-            for m in 0:n
-                i = harmonic_index(n, m)
-                chi_re = in[1, 2, i]
-                chi_im = in[2, 2, i]
-                if n > m
-                    b = B[i]
-                    i_lo = i - n
-                    out[1, 2, i] = chi_re + b * in[1, 2, i_lo]
-                    out[2, 2, i] = chi_im + b * in[2, 2, i_lo]
-                else
-                    out[1, 2, i] = chi_re
-                    out[2, 2, i] = chi_im
-                end
-            end
-        end
-    end
-    return out
-end
-
-"""
-    apply_lamb_helmholtz_local!(out, in, A, B, basis_info::OperatorBasisInfo, ::Val{:overwrite})
-
-Order-aware local-side Lamb-Helmholtz transform driven by the task-`009` order
-accessors. The physical φ output is produced through `orders.P_phi`. The χ channel
-is carried through the padded active order `orders.P_active = P_phi + 1`, which is
-exactly what supplies the upper-neighbor `χ_{P_phi+1} -> χ_{P_phi}` row required by
-`theory/lamb-helmholtz-accuracy-order.md`: the χ truncation moves up to
-`P_active`, so every retained χ row `n <= P_phi` is computed with its true upper
-neighbor instead of a zeroed boundary value. `A`/`B` must be sized for `P_active`
-(see [`lamb_helmholtz_local_coeffs!`](@ref)). For `Val(false)`,
-`P_active == P_phi` and the χ channel is absent.
-"""
-function apply_lamb_helmholtz_local!(out, in, A, B, basis_info::OperatorBasisInfo{<:CompressedComplexBasis,LH}, ::Val{:overwrite}) where LH
-    P_phi = basis_info.orders.P_phi
-    P_active = basis_info.orders.P_active
-
-    # φ channel (component 1): physical output through P_phi.
-    @inbounds for n in 0:P_phi
-        for m in 0:n
-            i = harmonic_index(n, m)
-            if !LH
-                out[1, 1, i] = in[1, 1, i]
-                out[2, 1, i] = in[2, 1, i]
-                out[1, 2, i] = zero(eltype(out))
-                out[2, 2, i] = zero(eltype(out))
-            elseif n > 0
-                a = A[i]
-                out[1, 1, i] = in[1, 1, i] - a * in[2, 2, i]
-                out[2, 1, i] = in[2, 1, i] + a * in[1, 2, i]
-            else
-                out[1, 1, i] = in[1, 1, i]
-                out[2, 1, i] = in[2, 1, i]
-            end
-        end
-    end
-
-    # χ channel (component 2): carried through P_active; upper-neighbor row at
-    # n = P_phi uses the real χ_{P_phi+1} value, truncation moves to P_active.
-    if LH
-        @inbounds for n in 0:P_active
-            for m in 0:n
-                i = harmonic_index(n, m)
-                if n < P_active
-                    b = B[i]
-                    i_hi = i + (n + 1)
-                    out[1, 2, i] = in[1, 2, i] - b * in[1, 2, i_hi]
-                    out[2, 2, i] = in[2, 2, i] - b * in[2, 2, i_hi]
-                else
-                    out[1, 2, i] = in[1, 2, i]
-                    out[2, 2, i] = in[2, 2, i]
-                end
-            end
-        end
-    end
-    return out
-end
 
 #------- NATIVE FLAT KERNELS (Matrix Operator Refactor) -------#
 #
@@ -693,120 +316,10 @@ function apply_m2l_z_flat!(out::FlatCoefficientBuffer{TF,A,B,LH}, in::FlatCoeffi
     return out
 end
 
-function apply_m2m_z_flat!(out::FlatCoefficientBuffer{TF,A,B,LH}, in::FlatCoefficientBuffer, j, blocks, ::Val{:overwrite}) where {TF,A,B,LH}
-    P_active = out.basis_info.orders.P_active
-    P_phi = out.basis_info.orders.P_phi
-    op = phi_slab(out); ip = phi_slab(in)
-    @inbounds for n in 0:P_phi
-        for m in 0:n
-            vr = zero(TF); vi = zero(TF)
-            for np in m:n
-                k = blocks[m2m_z_block_index(n, np, m, P_active)]
-                fr = flat_basis_index(np, m, 1)
-                vr += k * ip[fr, j]
-                vi += k * ip[fr + 1, j]
-            end
-            fr = flat_basis_index(n, m, 1)
-            op[fr, j] = vr
-            op[fr + 1, j] = vi
-        end
-    end
-    if LH
-        oc = chi_slab(out); ic = chi_slab(in)
-        @inbounds for n in 0:P_active
-            for m in 0:n
-                vr = zero(TF); vi = zero(TF)
-                for np in m:n
-                    k = blocks[m2m_z_block_index(n, np, m, P_active)]
-                    fr = flat_basis_index(np, m, 1)
-                    vr += k * ic[fr, j]
-                    vi += k * ic[fr + 1, j]
-                end
-                fr = flat_basis_index(n, m, 1)
-                oc[fr, j] = vr
-                oc[fr + 1, j] = vi
-            end
-        end
-    end
-    return out
-end
-
-function apply_l2l_z_flat!(out::FlatCoefficientBuffer{TF,A,B,LH}, in::FlatCoefficientBuffer, j, blocks, ::Val{:overwrite}) where {TF,A,B,LH}
-    P_active = out.basis_info.orders.P_active
-    P_phi = out.basis_info.orders.P_phi
-    op = phi_slab(out); ip = phi_slab(in)
-    @inbounds for n in 0:P_phi
-        for m in 0:n
-            vr = zero(TF); vi = zero(TF)
-            for np in n:P_phi
-                k = blocks[l2l_z_block_index(n, np, m, P_active)]
-                fr = flat_basis_index(np, m, 1)
-                vr += k * ip[fr, j]
-                vi += k * ip[fr + 1, j]
-            end
-            fr = flat_basis_index(n, m, 1)
-            op[fr, j] = vr
-            op[fr + 1, j] = vi
-        end
-    end
-    if LH
-        oc = chi_slab(out); ic = chi_slab(in)
-        @inbounds for n in 0:P_active
-            for m in 0:n
-                vr = zero(TF); vi = zero(TF)
-                for np in n:P_active
-                    k = blocks[l2l_z_block_index(n, np, m, P_active)]
-                    fr = flat_basis_index(np, m, 1)
-                    vr += k * ic[fr, j]
-                    vi += k * ic[fr + 1, j]
-                end
-                fr = flat_basis_index(n, m, 1)
-                oc[fr, j] = vr
-                oc[fr + 1, j] = vi
-            end
-        end
-    end
-    return out
-end
-
-# Lamb-Helmholtz flat coupling. Only invoked for Val(true) (the driver guards on
-# LH), so there is no `!LH` branch. φ writes (channel 1) and χ reads (channel 2) are
-# always distinct matrices, so the multipole lower-neighbor and local upper-neighbor
-# recurrences keep the same in-place safety as the legacy kernels: the local form
-# (used in-place by M2L) reads only the same-or-higher χ degree before overwriting.
-function apply_lamb_helmholtz_multipole_flat!(out::FlatCoefficientBuffer, in::FlatCoefficientBuffer, j, Acoef, Bcoef, ::Val{:overwrite})
-    P_phi = out.basis_info.orders.P_phi
-    P_active = out.basis_info.orders.P_active
-    op = phi_slab(out); ip = phi_slab(in); oc = chi_slab(out); ic = chi_slab(in)
-    @inbounds for n in 0:P_phi
-        for m in 0:n
-            i = harmonic_index(n, m)
-            a = Acoef[i]
-            fr = flat_basis_index(n, m, 1)
-            chi_re = ic[fr, j]; chi_im = ic[fr + 1, j]
-            op[fr, j] = ip[fr, j] + a * chi_im
-            op[fr + 1, j] = ip[fr + 1, j] - a * chi_re
-        end
-    end
-    @inbounds for n in 0:P_active
-        for m in 0:n
-            i = harmonic_index(n, m)
-            fr = flat_basis_index(n, m, 1)
-            chi_re = ic[fr, j]; chi_im = ic[fr + 1, j]
-            if n > m
-                b = Bcoef[i]
-                flo = flat_basis_index(n - 1, m, 1)
-                oc[fr, j] = chi_re + b * ic[flo, j]
-                oc[fr + 1, j] = chi_im + b * ic[flo + 1, j]
-            else
-                oc[fr, j] = chi_re
-                oc[fr + 1, j] = chi_im
-            end
-        end
-    end
-    return out
-end
-
+# Lamb-Helmholtz local flat coupling. Only invoked for Val(true) (the driver guards
+# on LH), so there is no `!LH` branch. φ writes (channel 1) and χ reads (channel 2)
+# are always distinct matrices; the upper-neighbor recurrence reads only the
+# same-or-higher χ degree before overwriting, so in-place use by M2L is safe.
 function apply_lamb_helmholtz_local_flat!(out::FlatCoefficientBuffer, in::FlatCoefficientBuffer, j, Acoef, Bcoef, ::Val{:overwrite})
     P_phi = out.basis_info.orders.P_phi
     P_active = out.basis_info.orders.P_active
@@ -912,10 +425,10 @@ end
 #------- FULL M2L OPERATOR PIPELINE (Matrix Operator Refactor) -------#
 #
 # Compose the complete multipole-to-local translation from the explicit operator
-# stages built in tasks 010-013c, validated side-by-side against the production
-# `multipole_to_local!` / `multipole_to_local_II!` (this is the parity-only first
-# pass per the 008b re-plan; production internals are not replaced — that is task
-# 023). The production pipeline is, per source/target offset
+# stages, validated against the legacy `multipole_to_local!` /
+# `multipole_to_local_II!`. Its production use is building the complete per-class
+# matrices of `DenseTranslationM2L` (`build_dense_m2l_operator!`). The legacy
+# pipeline is, per source/target offset
 # `r, θ, ϕ = cartesian_to_spherical(target.center - source.center)`:
 #
 #   1. rotate_z!(ϕ)                  : source  -> aligned-φ
@@ -925,13 +438,9 @@ end
 #   5. back_rotate_local_y!(θ)       (η y-rotation)
 #   6. back_rotate_z!(ϕ)             : accumulate into target
 #
-# The two swappable variants differ only in stages 2/5 (the arbitrary-angle
-# y-alignment): MaterializedYRotationM2L reconstructs Ts(θ) per column from the
-# cached S_pos/S_neg blocks; FactoredRotationM2L applies the genuinely
-# factored Z_phi -> Y(θ) -> ... -> inverse Z_phi using the fixed per-degree mode
-# matrices U_n/V_n (Plain-H modes `y_*_U`/`y_*_V`, never the 013b
-# T_y_*90 primitives). Both reuse the shared task-011 z-translation blocks and
-# task-012 Lamb-Helmholtz coupling.
+# Stages 2/5 (the arbitrary-angle y-alignment) reconstruct Ts(θ) per column from
+# the cached S_pos/S_neg blocks (MaterializedYRotationM2L); stages 3/4 use the
+# explicit z-translation blocks and Lamb-Helmholtz coupling.
 #
 # The whole pipeline runs at a single uniform order `P = basis_info.orders.P_active`.
 # For `Val(true)`, φ is physical only through `P_phi` while χ is carried at
@@ -942,8 +451,8 @@ end
 """
     m2l_operator_batch!(op, targets, sources, phis, thetas, rs, invariant_cache, scratch, lamb_helmholtz)
 
-Apply the full batched M2L operator pipeline. `op` is the operator tag
-([`MaterializedYRotationM2L`](@ref) or [`FactoredRotationM2L`](@ref)). `sources`
+Apply the full batched M2L operator pipeline. `op` is
+[`MaterializedYRotationM2L`](@ref), the only per-column variant. `sources`
 and `targets` are native [`FlatCoefficientBuffer`](@ref) batches; `phis`, `thetas`,
 `rs` are length-`B` vectors of the per-pair rotation angles and z-separation.
 `targets` is **accumulated** into (matching production `back_rotate_z!`), so callers
@@ -955,8 +464,7 @@ scratch of `scratch::M2LOperatorScratch`. The pipeline runs at
 `P_phi` and χ through `P_active`, so no φ-padding zeroing is needed (the order-aware
 flat kernels never feed a φ row above `P_phi` into the physical output).
 """
-function m2l_operator_batch!(op::AbstractM2LOperator, targets::FlatCoefficientBuffer, sources::FlatCoefficientBuffer, phis, thetas, rs, invariant_cache, scratch::M2LOperatorScratch, lamb_helmholtz::Val{LH}) where LH
-    _require_compressed_complex_operator_buffers(targets, sources, invariant_cache, scratch)
+function m2l_operator_batch!(op::MaterializedYRotationM2L, targets::FlatCoefficientBuffer, sources::FlatCoefficientBuffer, phis, thetas, rs, invariant_cache, scratch::M2LOperatorScratch, lamb_helmholtz::Val{LH}) where LH
     P = invariant_cache.basis_info.orders.P_active
     nbatch = length(phis)
     A = scratch.work_a
@@ -1001,12 +509,6 @@ function _m2l_source_alignment!(::MaterializedYRotationM2L, A, sources, B, phis,
     return A
 end
 
-function _m2l_source_alignment!(::FactoredRotationM2L, A, sources, B, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    # batched Z_phi -> factored Y(θ); B is the Z_phi tmp, gbuf reuses the embedded ν-space buffer.
-    multipole_factored_source_alignment_batch_flat!(A, sources, B, scratch.base.y_mode_buf, phis, thetas, cache.y_mult_U, cache.y_mult_V, lamb_helmholtz)
-    return A
-end
-
 #--- return alignment (stages 5-6: back Y(θ) then inverse Z_phi, accumulate) ---#
 
 function _m2l_return_alignment!(::MaterializedYRotationM2L, targets, B, A, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
@@ -1025,156 +527,7 @@ function _m2l_return_alignment!(::MaterializedYRotationM2L, targets, B, A, phis,
     return targets
 end
 
-function _m2l_return_alignment!(::FactoredRotationM2L, targets, B, A, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    # batched factored back-Y(θ) -> inverse Z_phi (accumulating); A is the tmp.
-    local_factored_return_alignment_batch_flat!(targets, B, A, scratch.base.y_mode_buf, phis, thetas, cache.y_loc_U, cache.y_loc_V, lamb_helmholtz)
-    return targets
-end
-
-#------- FULL M2M/L2L OPERATOR PIPELINES (Matrix Operator Refactor) -------#
-
-function m2m_operator_batch!(op::AbstractM2MOperator, targets::FlatCoefficientBuffer, sources::FlatCoefficientBuffer, phis, thetas, rs, invariant_cache, scratch::M2MOperatorScratch, lamb_helmholtz::Val{LH}) where LH
-    _require_compressed_complex_operator_buffers(targets, sources, invariant_cache, scratch)
-    P = invariant_cache.basis_info.orders.P_active
-    nbatch = length(phis)
-    A = scratch.work_a
-    B = scratch.work_b
-
-    _m2m_source_alignment!(op, A, sources, B, phis, thetas, invariant_cache, scratch, lamb_helmholtz, nbatch)
-
-    @inbounds for j in 1:nbatch
-        m2m_z_blocks!(scratch.blocks, rs[j], P)
-        apply_m2m_z_flat!(B, A, j, scratch.blocks, Val(:overwrite))
-        if LH
-            lamb_helmholtz_multipole_coeffs!(scratch.lh_A, scratch.lh_B, rs[j], P)
-            apply_lamb_helmholtz_multipole_flat!(A, B, j, scratch.lh_A, scratch.lh_B, Val(:overwrite))
-        end
-    end
-
-    mid = LH ? A : B
-    tmp = LH ? B : A
-    _m2m_return_alignment!(op, targets, mid, tmp, phis, thetas, invariant_cache, scratch, lamb_helmholtz, nbatch)
-
-    return targets
-end
-
-function l2l_operator_batch!(op::AbstractL2LOperator, targets::FlatCoefficientBuffer, sources::FlatCoefficientBuffer, phis, thetas, rs, invariant_cache, scratch::L2LOperatorScratch, lamb_helmholtz::Val{LH}) where LH
-    _require_compressed_complex_operator_buffers(targets, sources, invariant_cache, scratch)
-    P = invariant_cache.basis_info.orders.P_active
-    nbatch = length(phis)
-    A = scratch.work_a
-    B = scratch.work_b
-
-    _l2l_source_alignment!(op, A, sources, B, phis, thetas, invariant_cache, scratch, lamb_helmholtz, nbatch)
-
-    @inbounds for j in 1:nbatch
-        l2l_z_blocks!(scratch.blocks, rs[j], P)
-        apply_l2l_z_flat!(B, A, j, scratch.blocks, Val(:overwrite))
-        if LH
-            lamb_helmholtz_local_coeffs!(scratch.lh_A, scratch.lh_B, rs[j], P)
-            apply_lamb_helmholtz_local_flat!(A, B, j, scratch.lh_A, scratch.lh_B, Val(:overwrite))
-        end
-    end
-
-    mid = LH ? A : B
-    tmp = LH ? B : A
-    _l2l_return_alignment!(op, targets, mid, tmp, phis, thetas, invariant_cache, scratch, lamb_helmholtz, nbatch)
-
-    return targets
-end
-
-function _require_compressed_complex_operator_buffers(targets, sources, invariant_cache, scratch)
-    targets.basis_info.basis isa CompressedComplexBasis &&
-        sources.basis_info.basis isa CompressedComplexBasis &&
-        invariant_cache.basis_info.basis isa CompressedComplexBasis &&
-        scratch.base.basis_info.basis isa CompressedComplexBasis && return nothing
-    throw(ArgumentError("native real-basis M2M/M2L/L2L operator execution is deferred; transform through CompressedComplexBasis before calling batched operators"))
-end
-
-# M2M/L2L alignment uses the same per-column repack-to-legacy materialized stage as
-# M2L (production-parity z/y rotation kernels reused unchanged). The Factored* M2M/
-# L2L tags remain parity-first fallbacks delegating to the materialized stage (task
-# 016): the dedicated factored M2M/L2L path is benchmarked/approved later.
-
-function _m2m_source_alignment!(::MaterializedYRotationM2M, A, sources, B, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    base = scratch.base
-    P = cache.basis_info.orders.P_active
-    P_phi = cache.basis_info.orders.P_phi
-    li = base.weights_tmp_1; lm = base.weights_tmp_2; lo = base.weights_tmp_3
-    @inbounds for j in 1:nbatch
-        _pack_flat_column!(li, sources, j, P_phi, P, lamb_helmholtz)
-        z_rotation_diagonals!(base.z_cos, base.z_sin, phis[j], P)
-        apply_z_rotation!(lm, li, base.z_cos, base.z_sin, P, lamb_helmholtz, Val(:overwrite))
-        rotate_multipole_y_op!(lo, lm, base.Ts, cache.S_pos, cache.S_neg, cache.zeta_mag, thetas[j], P, lamb_helmholtz, base.y_trig)
-        _unpack_flat_column!(A, lo, j, P_phi, P, lamb_helmholtz)
-    end
-    return A
-end
-
-function _m2m_source_alignment!(::FactoredRotationM2M, A, sources, B, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    return _m2m_source_alignment!(MaterializedYRotationM2M(), A, sources, B, phis, thetas, cache, scratch, lamb_helmholtz, nbatch)
-end
-
-function _m2m_return_alignment!(::MaterializedYRotationM2M, targets, mid, tmp, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    base = scratch.base
-    P = cache.basis_info.orders.P_active
-    P_phi = cache.basis_info.orders.P_phi
-    li = base.weights_tmp_1; lm = base.weights_tmp_2; lo = base.weights_tmp_3
-    @inbounds for j in 1:nbatch
-        _pack_flat_column!(li, mid, j, P_phi, P, lamb_helmholtz)
-        back_rotate_multipole_y_op!(lm, li, base.Ts, cache.S_pos, cache.S_neg, cache.zeta_mag, thetas[j], P, lamb_helmholtz, base.y_trig)
-        z_rotation_diagonals!(base.z_cos, base.z_sin, phis[j], P)
-        lo .= zero(eltype(lo))
-        apply_z_rotation!(lo, lm, base.z_cos, base.z_sin, P, lamb_helmholtz, Val(:accumulate))
-        _unpack_flat_column_accumulate!(targets, lo, j, P_phi, P, lamb_helmholtz)
-    end
-    return targets
-end
-
-function _m2m_return_alignment!(::FactoredRotationM2M, targets, mid, tmp, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    return _m2m_return_alignment!(MaterializedYRotationM2M(), targets, mid, tmp, phis, thetas, cache, scratch, lamb_helmholtz, nbatch)
-end
-
-function _l2l_source_alignment!(::MaterializedYRotationL2L, A, sources, B, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    base = scratch.base
-    P = cache.basis_info.orders.P_active
-    P_phi = cache.basis_info.orders.P_phi
-    li = base.weights_tmp_1; lm = base.weights_tmp_2; lo = base.weights_tmp_3
-    @inbounds for j in 1:nbatch
-        _pack_flat_column!(li, sources, j, P_phi, P, lamb_helmholtz)
-        z_rotation_diagonals!(base.z_cos, base.z_sin, phis[j], P)
-        apply_z_rotation!(lm, li, base.z_cos, base.z_sin, P, lamb_helmholtz, Val(:overwrite))
-        rotate_local_y_op!(lo, lm, base.Ts, cache.Hs_pi2, cache.S_pos, cache.S_neg, cache.eta_mag, thetas[j], P, lamb_helmholtz, base.y_trig)
-        _unpack_flat_column!(A, lo, j, P_phi, P, lamb_helmholtz)
-    end
-    return A
-end
-
-function _l2l_source_alignment!(::FactoredRotationL2L, A, sources, B, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    return _l2l_source_alignment!(MaterializedYRotationL2L(), A, sources, B, phis, thetas, cache, scratch, lamb_helmholtz, nbatch)
-end
-
-function _l2l_return_alignment!(::MaterializedYRotationL2L, targets, mid, tmp, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    base = scratch.base
-    P = cache.basis_info.orders.P_active
-    P_phi = cache.basis_info.orders.P_phi
-    li = base.weights_tmp_1; lm = base.weights_tmp_2; lo = base.weights_tmp_3
-    @inbounds for j in 1:nbatch
-        _pack_flat_column!(li, mid, j, P_phi, P, lamb_helmholtz)
-        back_rotate_local_y_op!(lm, li, base.Ts, cache.Hs_pi2, cache.S_pos, cache.S_neg, cache.eta_mag, thetas[j], P, lamb_helmholtz, base.y_trig)
-        z_rotation_diagonals!(base.z_cos, base.z_sin, phis[j], P)
-        lo .= zero(eltype(lo))
-        apply_z_rotation!(lo, lm, base.z_cos, base.z_sin, P, lamb_helmholtz, Val(:accumulate))
-        _unpack_flat_column_accumulate!(targets, lo, j, P_phi, P, lamb_helmholtz)
-    end
-    return targets
-end
-
-function _l2l_return_alignment!(::FactoredRotationL2L, targets, mid, tmp, phis, thetas, cache, scratch, lamb_helmholtz::Val{LH}, nbatch) where LH
-    return _l2l_return_alignment!(MaterializedYRotationL2L(), targets, mid, tmp, phis, thetas, cache, scratch, lamb_helmholtz, nbatch)
-end
-
-#------- RESIDENT BATCHED-M2M GEMM STRATEGIES (Matrix Operator Refactor) -------#
+#------- STACKED DEGREE-MAJOR LAYOUT + DENSE M2L OPERATORS (Matrix Operator Refactor) -------#
 #
 # These operate on the GEMM-native `DegreeMajorRealBuffer` layout so per-degree blocks
 # are ready `mul!` operands with no repack. A node's coefficients are the stacked real
@@ -1189,44 +542,6 @@ end
 @inline function _stacked_chi_rows(basis_info)
     off = degree_major_dof(basis_info.orders.P_phi)
     return (off + 1):(off + degree_major_dof(basis_info.orders.P_active))
-end
-
-"""
-    build_dense_m2m_operator(TF, basis_info, r, theta, phi, Val(LH)) -> Matrix{TF}
-
-Materialize the complete dense M2M operator (stacked [phi;chi] degree-major, `D×D`
-real) for one translation geometry, by pushing the `D` identity columns through the
-validated task-016 `m2m_operator_batch!(MaterializedYRotationM2M(), …)`. Correctness by
-construction (the operator is linear in the source coefficients). Host build only.
-"""
-function build_dense_m2m_operator(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
-        r, theta, phi, lamb_helmholtz::Val{LH}) where {TF,B,LH}
-    D = _dense_m2m_dof(basis_info, lamb_helmholtz)
-    cache = OperatorInvariantCache(TF, basis_info)
-    scratch = M2MOperatorScratch(TF, basis_info, D)
-    src = FlatCoefficientBuffer(TF, basis_info, D)
-    tgt = FlatCoefficientBuffer(TF, basis_info, D)
-    src_dm = DegreeMajorRealBuffer(TF, basis_info, D)
-    prow = _stacked_phi_rows(basis_info)
-    @inbounds for (j, row) in enumerate(prow)
-        src_dm.phi[row, j] = one(TF)
-    end
-    if LH
-        crow = _stacked_chi_rows(basis_info)
-        @inbounds for (i, row) in enumerate(crow)
-            src_dm.chi[i, row] = one(TF)   # chi dof i lives in stacked column `row` (= Dp + i)
-        end
-    end
-    to_flat_buffer!(src, src_dm)
-    phis = fill(TF(phi), D); thetas = fill(TF(theta), D); rs = fill(TF(r), D)
-    fill!(tgt.phi, zero(TF)); LH && fill!(tgt.chi, zero(TF))
-    m2m_operator_batch!(MaterializedYRotationM2M(), tgt, src, phis, thetas, rs, cache, scratch, lamb_helmholtz)
-    tgt_dm = DegreeMajorRealBuffer(TF, basis_info, D)
-    to_gemm_buffer!(tgt_dm, tgt)
-    K = zeros(TF, D, D)
-    @inbounds K[_stacked_phi_rows(basis_info), :] .= tgt_dm.phi
-    LH && (@inbounds K[_stacked_chi_rows(basis_info), :] .= tgt_dm.chi)
-    return K
 end
 
 # Reusable host construction workspace for complete M2L matrices. Identity columns
@@ -1307,21 +622,6 @@ function build_dense_m2l_operator!(K::AbstractMatrix{TF}, r, theta, phi,
     return K
 end
 
-"""
-    build_dense_m2l_operator(TF, basis_info, r, theta, phi, Val(LH))
-
-Allocating test/debug convenience builder for one complete host M2L matrix.
-"""
-function build_dense_m2l_operator(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
-        r, theta, phi, lamb_helmholtz::Val{LH}) where {TF,B,LH}
-    D = _dense_m2m_dof(basis_info, lamb_helmholtz)
-    invariant = OperatorInvariantCache(TF, basis_info)
-    workspace = DenseM2LBuilderWorkspace(TF, basis_info, invariant, D)
-    K = Matrix{TF}(undef, D, D)
-    return build_dense_m2l_operator!(K, r, theta, phi, invariant, workspace,
-        lamb_helmholtz)
-end
-
 # Stack a DegreeMajorRealBuffer's channels into a single [phi;chi] × batch matrix, and
 # split back. `dest`/`src` are plain matrices of the buffer's array type.
 function stack_degree_major!(dest, buf::DegreeMajorRealBuffer{TF,A,B,LH}) where {TF,A,B,LH}
@@ -1338,7 +638,7 @@ function unstack_degree_major!(buf::DegreeMajorRealBuffer{TF,A,B,LH}, src) where
     return buf
 end
 
-# --- Strategy B (SharedRotationM2M) primitives, degree-major real buffer ---
+# --- Shared-rotation primitives, degree-major real buffer ---
 #
 # The expensive y-rotation is the batch-shared, θ-independent per-degree modes U_n/V_n
 # (Y_n(θ)=U_n diag(e^{iνθ}) V_n); everything per-vector (Z_φ diagonal, e^{iνθ}, z blocks)
@@ -1430,115 +730,6 @@ function DegreeMajorMaps(::Type{TF}, P::Integer, exemplar) where TF
     )
 end
 
-# Z_φ on a degree-major channel matrix: per column, per degree, rotate each (re_m,im_m)
-# pair by mφ (m=0 unchanged). `inverse=false` matches apply_z_rotation overwrite
-# (re',im')=(cm*re - sm*im, sm*re + cm*im); `inverse=true` is the transpose.
-function _zphi_degree_major!(slab, phis, P::Integer, inverse::Bool)
-    TF = eltype(slab)
-    @inbounds for j in axes(slab, 2)
-        for n in 0:P
-            base = degree_row_offset(n)
-            for m in 1:n
-                cm, sm = cos(TF(m) * phis[j]), sin(TF(m) * phis[j])
-                rr = base + 2m; ir = base + 2m + 1
-                a = slab[rr, j]; b = slab[ir, j]
-                if inverse
-                    slab[rr, j] = cm * a + sm * b
-                    slab[ir, j] = -sm * a + cm * b
-                else
-                    slab[rr, j] = cm * a - sm * b
-                    slab[ir, j] = sm * a + cm * b
-                end
-            end
-        end
-    end
-    return slab
-end
-
-function _zphi_degree_major_gen!(slab, phis, maps::DegreeMajorMaps, inverse::Bool)
-    A = maps.row_m .* transpose(phis)
-    C = cos.(A)
-    S = sin.(A)
-    sw = slab[maps.row_pair, :]
-    sgn = inverse ? -one(eltype(slab)) : one(eltype(slab))
-    slab .= C .* slab .+ (sgn .* maps.row_ssign .* S) .* sw
-    return slab
-end
-
-# Forward factored Y over a degree-major channel matrix (out and in are (P+1)^2 × N).
-# Uses shared per-degree blocks; per-column e^{iνθ} middle diagonal.
-function _factored_y_degree_major!(out_slab, in_slab, Ublocks, Vblocks, thetas, P::Integer)
-    TF = eltype(out_slab)
-    @inbounds for n in 0:P
-        d = 2n + 1; rows = degree_row_range(n)
-        Vre, Vim = Vblocks[n + 1]; Ure, Uim = Ublocks[n + 1]
-        X = @view in_slab[rows, :]
-        Gre = Vre * X; Gim = Vim * X            # d × N (real GEMMs)
-        for j in axes(X, 2)
-            θ = thetas[j]
-            for νidx in 1:d
-                ν = νidx - n - 1
-                s, c = sincos(ν * θ)
-                gr = Gre[νidx, j]; gi = Gim[νidx, j]
-                Gre[νidx, j] = c * gr - s * gi
-                Gim[νidx, j] = s * gr + c * gi
-            end
-        end
-        out_slab[rows, :] .= Ure * Gre .- Uim * Gim   # real GEMMs
-    end
-    return out_slab
-end
-
-function _factored_y_degree_major_gen!(out_slab, in_slab, Ublocks, Vblocks, thetas,
-        maps::DegreeMajorMaps, P::Integer)
-    @inbounds for n in 0:P
-        rows = degree_row_range(n)
-        Vre, Vim = Vblocks[n + 1]
-        Ure, Uim = Ublocks[n + 1]
-        X = @view in_slab[rows, :]
-        Gre = Vre * X
-        Gim = Vim * X
-        A = maps.nus[n + 1] .* transpose(thetas)
-        Cd = cos.(A)
-        Sd = sin.(A)
-        Gre2 = Cd .* Gre .- Sd .* Gim
-        Gim2 = Sd .* Gre .+ Cd .* Gim
-        out_slab[rows, :] .= Ure * Gre2 .- Uim * Gim2
-    end
-    return out_slab
-end
-
-# Allocation-free sibling for the resident grouped path. Degree rows are contiguous,
-# so each U/V application remains a GEMM; the Fourier phase is applied in place to
-# two reusable degree-major scratch slabs.
-function _factored_y_degree_major_scratch!(out_slab, in_slab, Ublocks, Vblocks,
-        thetas, scratch_re, scratch_im, scratch_tmp, P::Integer)
-    @inbounds for n in 0:P
-        rows = degree_row_range(n)
-        Vre, Vim = Vblocks[n + 1]
-        Ure, Uim = Ublocks[n + 1]
-        X = @view in_slab[rows, :]
-        Gre = @view scratch_re[rows, :]
-        Gim = @view scratch_im[rows, :]
-        Tmp = @view scratch_tmp[rows, :]
-        Y = @view out_slab[rows, :]
-        mul!(Gre, Vre, X)
-        mul!(Gim, Vim, X)
-        for j in axes(X, 2), nu_idx in axes(X, 1)
-            nu = nu_idx - n - 1
-            s, c = sincos(nu * thetas[j])
-            gr = Gre[nu_idx, j]
-            gi = Gim[nu_idx, j]
-            Gre[nu_idx, j] = c * gr - s * gi
-            Gim[nu_idx, j] = s * gr + c * gi
-        end
-        mul!(Y, Ure, Gre)
-        mul!(Tmp, Uim, Gim)
-        Y .-= Tmp
-    end
-    return out_slab
-end
-
 @inline function _factored_y_degree_block_noalloc!(out_slab, in_slab,
         Ure, Uim, Vre, Vim, thetas, scratch_re, scratch_im,
         row0::Int, d::Int, ncols::Int)
@@ -1568,24 +759,15 @@ end
     return out_slab
 end
 
-function _factored_y_degree_major_noalloc!(out_slab, in_slab, Ublocks, Vblocks,
-        thetas, scratch_re, scratch_im, P::Integer, ncols::Integer)
-    @inbounds for n in 0:P
-        Ure, Uim = Ublocks[n + 1]
-        Vre, Vim = Vblocks[n + 1]
-        _factored_y_degree_block_noalloc!(out_slab, in_slab, Ure, Uim, Vre, Vim,
-            thetas, scratch_re, scratch_im, degree_row_offset(n) + 1, 2n + 1, Int(ncols))
-    end
-    return out_slab
-end
-
 # Crossover for routing per-degree factored-y applications to BLAS GEMMs: classes at
 # least this wide use `mul!` for degree blocks of dimension at least
 # FACTORED_Y_GEMM_MIN_DIM; everything else keeps the scalar no-alloc kernel, whose
 # per-element cost beats BLAS dispatch on the narrow/sparse classes. Defaults are
 # measured (023a, EPYC 7763 / OpenBLAS): scalar wins at class width <= 7, GEMM wins
 # from width 20 at every P (including the 1x1/3x3 low-degree blocks, so no dim gate);
-# BLAS thread count was immaterial at these block sizes.
+# BLAS thread count was immaterial at these block sizes. The column threshold is not
+# a registered radix setting; it stays a Ref only so the integration test can force
+# each branch.
 const FACTORED_Y_GEMM_MIN_COLS = Ref(16)
 const FACTORED_Y_GEMM_MIN_DIM = Ref(1)
 
@@ -1628,7 +810,7 @@ end
 function _factored_y_degree_major_auto!(out_slab, in_slab, Ublocks, Vblocks,
         thetas, scratch_re, scratch_im, scratch_tmp, P::Integer, ncols::Integer)
     n_cols = Int(ncols)
-    use_gemm = n_cols >= radix_setting(:FACTORED_Y_GEMM_MIN_COLS)
+    use_gemm = n_cols >= FACTORED_Y_GEMM_MIN_COLS[]
     min_dim = radix_setting(:FACTORED_Y_GEMM_MIN_DIM)
     @inbounds for n in 0:P
         d = 2n + 1
@@ -1646,34 +828,6 @@ function _factored_y_degree_major_auto!(out_slab, in_slab, Ublocks, Vblocks,
     return out_slab
 end
 
-# Per-column M2M z-translation on a degree-major channel (reuses m2m_z_blocks). The
-# block table is sized/indexed by `P_block` (= P_active, matching apply_m2m_z_flat!);
-# the channel loops degrees to `P_loop` (P_phi for φ, P_active for χ). `blocks` is a
-# preallocated table of length `m2m_z_block_length(P_block)`.
-function _m2m_ztranslate_degree_major!(out_slab, in_slab, blocks, rs, P_loop::Integer, P_block::Integer)
-    TF = eltype(out_slab)
-    @inbounds for j in axes(out_slab, 2)
-        m2m_z_blocks!(blocks, rs[j], P_block)
-        for n in 0:P_loop
-            base_n = degree_row_offset(n)
-            for m in 0:n
-                kre = m == 0 ? 1 : 2m
-                kim = m == 0 ? 0 : 2m + 1
-                accr = zero(TF); acci = zero(TF)
-                for np in m:n
-                    coeff = blocks[m2m_z_block_index(n, np, m, P_block)]
-                    base_np = degree_row_offset(np)
-                    accr += coeff * in_slab[base_np + kre, j]
-                    kim > 0 && (acci += coeff * in_slab[base_np + kim, j])
-                end
-                out_slab[base_n + kre, j] = accr
-                kim > 0 && (out_slab[base_n + kim, j] = acci)
-            end
-        end
-    end
-    return out_slab
-end
-
 function _m2m_z_block_matrix(::Type{TF}, blocks, m::Integer, P_loop::Integer, P_block::Integer) where TF
     w = P_loop - m + 1
     Bm = zeros(TF, w, w)
@@ -1684,22 +838,6 @@ function _m2m_z_block_matrix(::Type{TF}, blocks, m::Integer, P_loop::Integer, P_
         end
     end
     return Bm
-end
-
-function _m2m_ztranslate_shared!(out_slab, in_slab, blocks, maps::DegreeMajorMaps,
-        P_loop::Integer, P_block::Integer)
-    TF = eltype(out_slab)
-    fill!(out_slab, zero(TF))
-    @inbounds for m in 0:P_loop
-        Bm = _array_like_matrix(out_slab, TF, _m2m_z_block_matrix(TF, blocks, m, P_loop, P_block))
-        re_rows = maps.z_re_rows[m + 1]
-        out_slab[re_rows, :] .= Bm * in_slab[re_rows, :]
-        if m > 0
-            im_rows = maps.z_im_rows[m + 1]
-            out_slab[im_rows, :] .= Bm * in_slab[im_rows, :]
-        end
-    end
-    return out_slab
 end
 
 function _m2l_z_block_matrix(::Type{TF}, blocks, m::Integer, P_loop::Integer, P_block::Integer) where TF
@@ -1713,22 +851,6 @@ function _m2l_z_block_matrix(::Type{TF}, blocks, m::Integer, P_loop::Integer, P_
     return Bm
 end
 
-function _m2l_ztranslate_shared!(out_slab, in_slab, blocks, maps::DegreeMajorMaps,
-        P_loop::Integer, P_block::Integer)
-    TF = eltype(out_slab)
-    fill!(out_slab, zero(TF))
-    @inbounds for m in 0:P_loop
-        Bm = _array_like_matrix(out_slab, TF, _m2l_z_block_matrix(TF, blocks, m, P_loop, P_block))
-        re_rows = maps.z_re_rows[m + 1]
-        out_slab[re_rows, :] .= Bm * in_slab[re_rows, :]
-        if m > 0
-            im_rows = maps.z_im_rows[m + 1]
-            out_slab[im_rows, :] .= Bm * in_slab[im_rows, :]
-        end
-    end
-    return out_slab
-end
-
 function _l2l_z_block_matrix(::Type{TF}, blocks, m::Integer, P_loop::Integer, P_block::Integer) where TF
     w = P_loop - m + 1
     Bm = zeros(TF, w, w)
@@ -1739,22 +861,6 @@ function _l2l_z_block_matrix(::Type{TF}, blocks, m::Integer, P_loop::Integer, P_
         end
     end
     return Bm
-end
-
-function _l2l_ztranslate_shared!(out_slab, in_slab, blocks, maps::DegreeMajorMaps,
-        P_loop::Integer, P_block::Integer)
-    TF = eltype(out_slab)
-    fill!(out_slab, zero(TF))
-    @inbounds for m in 0:P_loop
-        Bm = _array_like_matrix(out_slab, TF, _l2l_z_block_matrix(TF, blocks, m, P_loop, P_block))
-        re_rows = maps.z_re_rows[m + 1]
-        out_slab[re_rows, :] .= Bm * in_slab[re_rows, :]
-        if m > 0
-            im_rows = maps.z_im_rows[m + 1]
-            out_slab[im_rows, :] .= Bm * in_slab[im_rows, :]
-        end
-    end
-    return out_slab
 end
 
 function _z_block_matrices_like(exemplar, ::Type{TF}, blocks, kind::Symbol,
@@ -1797,21 +903,6 @@ function _z_dense_matrix_like(exemplar, ::Type{TF}, blocks, kind::Symbol,
     return _array_like_matrix(exemplar, TF, Z)
 end
 
-function _ztranslate_shared_precomputed!(out_slab, in_slab, block_mats,
-        maps::DegreeMajorMaps, P_loop::Integer)
-    TF = eltype(out_slab)
-    fill!(out_slab, zero(TF))
-    @inbounds for m in 0:P_loop
-        re_rows = maps.z_re_rows[m + 1]
-        out_slab[re_rows, :] .= block_mats[m + 1] * in_slab[re_rows, :]
-        if m > 0
-            im_rows = maps.z_im_rows[m + 1]
-            out_slab[im_rows, :] .= block_mats[m + 1] * in_slab[im_rows, :]
-        end
-    end
-    return out_slab
-end
-
 function _ztranslate_shared_precomputed_noalloc!(out_slab, in_slab, block_mats,
         maps::DegreeMajorMaps, P_loop::Integer, ncols::Integer)
     @inbounds for j in 1:ncols, i in axes(out_slab, 1)
@@ -1847,48 +938,6 @@ function _lh_local_shared_rows_noalloc!(out_phi, out_chi, in_phi, in_chi, arow,
     return out_chi
 end
 
-# Degree-major LH multipole coupling (mirrors apply_m2m_z_flat!'s LH sibling
-# apply_lamb_helmholtz_multipole_flat!). Touches only stored dofs: φ gets a χ mix for
-# m>=1 (the m=0 φ contribution is a*χ_im(m0)=0), χ gets the (n-1,m) recurrence. The
-# transient φ_im(m0) the flat kernel writes is dropped here — it never reaches the
-# output (return factored-Y ignores im(m0); Z_φ^{-1} is identity at m=0).
-function _lh_multipole_degree_major!(out_phi, out_chi, in_phi, in_chi, lh_A, lh_B, rs,
-        P_phi::Integer, P_active::Integer)
-    TF = eltype(out_phi)
-    @inbounds for j in axes(out_phi, 2)
-        lamb_helmholtz_multipole_coeffs!(lh_A, lh_B, rs[j], P_active)
-        Acoef = lh_A; Bcoef = lh_B
-        for n in 0:P_phi
-            base = degree_row_offset(n)
-            for m in 1:n
-                a = Acoef[harmonic_index(n, m)]
-                rr = base + 2m; ir = base + 2m + 1
-                chi_re = in_chi[rr, j]; chi_im = in_chi[ir, j]
-                out_phi[rr, j] = in_phi[rr, j] + a * chi_im
-                out_phi[ir, j] = in_phi[ir, j] - a * chi_re
-            end
-            out_phi[base + 1, j] = in_phi[base + 1, j]   # φ_re(m0): += a*χ_im(m0)=0
-        end
-        for n in 0:P_active
-            base = degree_row_offset(n)
-            for m in 0:n
-                kre = m == 0 ? 1 : 2m
-                kim = m == 0 ? 0 : 2m + 1
-                if n > m
-                    b = Bcoef[harmonic_index(n, m)]
-                    blo = degree_row_offset(n - 1)
-                    out_chi[base + kre, j] = in_chi[base + kre, j] + b * in_chi[blo + kre, j]
-                    kim > 0 && (out_chi[base + kim, j] = in_chi[base + kim, j] + b * in_chi[blo + kim, j])
-                else
-                    out_chi[base + kre, j] = in_chi[base + kre, j]
-                    kim > 0 && (out_chi[base + kim, j] = in_chi[base + kim, j])
-                end
-            end
-        end
-    end
-    return out_chi
-end
-
 function _lh_row_coefficients(::Type{TF}, P_phi::Integer, P_active::Integer, lh_A, lh_B) where TF
     ndof_phi = degree_major_dof(P_phi)
     ndof_chi = degree_major_dof(P_active)
@@ -1914,24 +963,6 @@ function _lh_row_coefficients(::Type{TF}, P_phi::Integer, P_active::Integer, lh_
     return arow, brow
 end
 
-function _lh_multipole_shared_gen!(out_phi, out_chi, in_phi, in_chi, lh_A, lh_B,
-        maps_phi::DegreeMajorMaps, maps_chi::DegreeMajorMaps, P_phi::Integer, P_active::Integer)
-    TF = eltype(out_phi)
-    arow, brow = _lh_row_coefficients(TF, P_phi, P_active, lh_A, lh_B)
-    arow_dev = _array_like_vector(out_phi, TF, arow)
-    brow_dev = _array_like_vector(out_chi, TF, brow)
-    out_phi .= in_phi .+ arow_dev .* in_chi[maps_phi.row_pair, :]
-    out_chi .= in_chi .+ brow_dev .* in_chi[maps_chi.row_down, :]
-    return out_chi
-end
-
-function _lh_multipole_shared_rows!(out_phi, out_chi, in_phi, in_chi, arow, brow,
-        maps_phi::DegreeMajorMaps, maps_chi::DegreeMajorMaps)
-    out_phi .= in_phi .+ arow .* in_chi[maps_phi.row_pair, :]
-    out_chi .= in_chi .+ brow .* in_chi[maps_chi.row_down, :]
-    return out_chi
-end
-
 function _lh_local_row_coefficients(::Type{TF}, P_phi::Integer, P_active::Integer, lh_A, lh_B) where TF
     ndof_phi = degree_major_dof(P_phi)
     ndof_chi = degree_major_dof(P_active)
@@ -1955,250 +986,6 @@ function _lh_local_row_coefficients(::Type{TF}, P_phi::Integer, P_active::Intege
         end
     end
     return arow, brow
-end
-
-function _lh_local_shared_gen!(out_phi, out_chi, in_phi, in_chi, lh_A, lh_B,
-        maps_phi::DegreeMajorMaps, maps_chi::DegreeMajorMaps, P_phi::Integer, P_active::Integer)
-    TF = eltype(out_phi)
-    arow, brow = _lh_local_row_coefficients(TF, P_phi, P_active, lh_A, lh_B)
-    arow_dev = _array_like_vector(out_phi, TF, arow)
-    brow_dev = _array_like_vector(out_chi, TF, brow)
-    out_phi .= in_phi .+ arow_dev .* in_chi[maps_phi.row_pair, :]
-    out_chi .= in_chi .+ brow_dev .* in_chi[maps_chi.row_up, :]
-    return out_chi
-end
-
-function _lh_local_shared_rows!(out_phi, out_chi, in_phi, in_chi, arow, brow,
-        maps_phi::DegreeMajorMaps, maps_chi::DegreeMajorMaps)
-    out_phi .= in_phi .+ arow .* in_chi[maps_phi.row_pair, :]
-    out_chi .= in_chi .+ brow .* in_chi[maps_chi.row_up, :]
-    return out_chi
-end
-
-"""
-    resident_m2m_batch!(strategy, targets, sources, phis, thetas, rs, cache, Val(LH))
-
-Batched M2M on the GEMM-native [`DegreeMajorRealBuffer`](@ref) layout, **accumulating**
-into `targets` (zero it first). `strategy` is [`SharedRotationM2M`](@ref) (batch-shared
-`U_n`/`V_n` GEMMs, per-vector z-axis pieces) or [`DenseTranslationM2M`](@ref) (full
-per-vector operator). Array-generic through `mul!` (`Array`/`CuArray`).
-"""
-function resident_m2m_batch!(::SharedRotationM2M, targets::DegreeMajorRealBuffer{TF,A,B,LH},
-        sources::DegreeMajorRealBuffer, phis, thetas, rs, cache, ::Val{LH}) where {TF,A,B,LH}
-    P_phi = cache.basis_info.orders.P_phi
-    P_active = cache.basis_info.orders.P_active
-    r_level = isempty(rs) ? zero(TF) : TF(first(rs))
-    all(r -> r == r_level, rs) ||
-        throw(ArgumentError("SharedRotationM2M resident batch requires a uniform translation radius"))
-    phis_work = _array_like_vector(sources.phi, TF, phis)
-    thetas_work = _array_like_vector(sources.phi, TF, thetas)
-    maps_phi = DegreeMajorMaps(TF, P_phi, sources.phi)
-    maps_chi = LH ? DegreeMajorMaps(TF, P_active, sources.chi) : maps_phi
-    Ub = _ymode_real_blocks(cache.y_mult_U, P_active, TF)
-    Vb = _ymode_real_blocks(cache.y_mult_V, P_active, TF)
-    blocks = Vector{TF}(undef, m2m_z_block_length(P_active))
-    m2m_z_blocks!(blocks, r_level, P_active)
-
-    # φ channel: Z_φ -> Y -> z-translate
-    aphi = copy(sources.phi)
-    _zphi_degree_major_gen!(aphi, phis_work, maps_phi, false)
-    yphi = similar(aphi); _factored_y_degree_major_gen!(yphi, aphi, Ub, Vb, thetas_work, maps_phi, P_phi)
-    zphi = similar(aphi); _m2m_ztranslate_shared!(zphi, yphi, blocks, maps_phi, P_phi, P_active)
-
-    if LH
-        achi = copy(sources.chi)
-        _zphi_degree_major_gen!(achi, phis_work, maps_chi, false)
-        ychi = similar(achi); _factored_y_degree_major_gen!(ychi, achi, Ub, Vb, thetas_work, maps_chi, P_active)
-        zchi = similar(achi); _m2m_ztranslate_shared!(zchi, ychi, blocks, maps_chi, P_active, P_active)
-        lh_A = Vector{TF}(undef, _operator_ncomplex(P_active))
-        lh_B = Vector{TF}(undef, _operator_ncomplex(P_active))
-        lamb_helmholtz_multipole_coeffs!(lh_A, lh_B, r_level, P_active)
-        cphi = similar(zphi); cchi = similar(zchi)
-        _lh_multipole_shared_gen!(cphi, cchi, zphi, zchi, lh_A, lh_B, maps_phi, maps_chi, P_phi, P_active)
-        zphi = cphi; zchi = cchi
-        # return: Y -> Z_φ^{-1} (accumulate) on χ
-        rchi = similar(zchi); _factored_y_degree_major_gen!(rchi, zchi, Ub, Vb, thetas_work, maps_chi, P_active)
-        _zphi_degree_major_gen!(rchi, phis_work, maps_chi, true)
-        @inbounds targets.chi .+= rchi
-    end
-
-    # return: Y -> Z_φ^{-1} (accumulate) on φ
-    rphi = similar(zphi); _factored_y_degree_major_gen!(rphi, zphi, Ub, Vb, thetas_work, maps_phi, P_phi)
-    _zphi_degree_major_gen!(rphi, phis_work, maps_phi, true)
-    @inbounds targets.phi .+= rphi
-    return targets
-end
-
-function resident_m2m_batch!(::DenseTranslationM2M, targets::DegreeMajorRealBuffer{TF,A,B,LH},
-        sources::DegreeMajorRealBuffer, phis, thetas, rs, cache, ::Val{LH}) where {TF,A,B,LH}
-    # Per-column operator build+apply (correctness-first; the launcher groups columns by
-    # translation-vector class so one K is reused across the class's GEMM).
-    binfo = cache.basis_info
-    D = _dense_m2m_dof(binfo, Val(LH))
-    N = flat_nbatch(sources)
-    S = zeros(TF, D, N); stack_degree_major!(S, sources)
-    Tstack = zeros(TF, D, N)
-    @inbounds for j in 1:N
-        K = build_dense_m2m_operator(TF, binfo, rs[j], thetas[j], phis[j], Val(LH))
-        @views mul!(Tstack[:, j:j], K, S[:, j:j])
-    end
-    tmp = DegreeMajorRealBuffer(TF, binfo, N); unstack_degree_major!(tmp, Tstack)
-    @inbounds targets.phi .+= tmp.phi
-    LH && (@inbounds targets.chi .+= tmp.chi)
-    return targets
-end
-
-"""
-    resident_m2l_batch!(strategy, targets, sources, phis, thetas, rs, cache, Val(LH))
-
-Degree-major resident M2L. The resident path ignores `RadixLifecycleOptions.operator`;
-the free-function strategy selects either the batch-shared factored-mode form or,
-for `DenseTranslationM2L`, complete matrices constructed from the materialized-y
-oracle. Production lifecycle constructors validate the corresponding operator
-pairing explicitly.
-"""
-function resident_m2l_batch!(::SharedRotationM2L, targets::DegreeMajorRealBuffer{TF,A,B,LH},
-        sources::DegreeMajorRealBuffer, phis, thetas, rs, cache, ::Val{LH}) where {TF,A,B,LH}
-    P_phi = cache.basis_info.orders.P_phi
-    P_active = cache.basis_info.orders.P_active
-    r_batch = isempty(rs) ? zero(TF) : TF(first(rs))
-    phi_batch = isempty(phis) ? zero(TF) : TF(first(phis))
-    theta_batch = isempty(thetas) ? zero(TF) : TF(first(thetas))
-    all(r -> r == r_batch, rs) ||
-        throw(ArgumentError("SharedRotationM2L resident batch requires a uniform translation radius"))
-    all(ϕ -> ϕ == phi_batch, phis) ||
-        throw(ArgumentError("SharedRotationM2L resident batch requires a uniform phi"))
-    all(θ -> θ == theta_batch, thetas) ||
-        throw(ArgumentError("SharedRotationM2L resident batch requires a uniform theta"))
-
-    phis_work = _array_like_vector(sources.phi, TF, phis)
-    thetas_work = _array_like_vector(sources.phi, TF, thetas)
-    maps_phi = DegreeMajorMaps(TF, P_phi, sources.phi)
-    maps_chi = LH ? DegreeMajorMaps(TF, P_active, sources.chi) : maps_phi
-    Um = _ymode_real_blocks(cache.y_mult_U, P_active, TF)
-    Vm = _ymode_real_blocks(cache.y_mult_V, P_active, TF)
-    Ul = _ymode_real_blocks(cache.y_loc_U, P_active, TF)
-    Vl = _ymode_real_blocks(cache.y_loc_V, P_active, TF)
-    blocks = Vector{TF}(undef, m2l_z_block_length(P_active))
-    m2l_z_blocks!(blocks, r_batch, P_active)
-
-    aphi = copy(sources.phi)
-    _zphi_degree_major_gen!(aphi, phis_work, maps_phi, false)
-    yphi = similar(aphi)
-    _factored_y_degree_major_gen!(yphi, aphi, Um, Vm, thetas_work, maps_phi, P_phi)
-    zphi = similar(aphi)
-    _m2l_ztranslate_shared!(zphi, yphi, blocks, maps_phi, P_phi, P_active)
-
-    if LH
-        achi = copy(sources.chi)
-        _zphi_degree_major_gen!(achi, phis_work, maps_chi, false)
-        ychi = similar(achi)
-        _factored_y_degree_major_gen!(ychi, achi, Um, Vm, thetas_work, maps_chi, P_active)
-        zchi = similar(achi)
-        _m2l_ztranslate_shared!(zchi, ychi, blocks, maps_chi, P_active, P_active)
-        lh_A = Vector{TF}(undef, _operator_ncomplex(P_active))
-        lh_B = Vector{TF}(undef, _operator_ncomplex(P_active))
-        lamb_helmholtz_local_coeffs!(lh_A, lh_B, r_batch, P_active)
-        cphi = similar(zphi); cchi = similar(zchi)
-        _lh_local_shared_gen!(cphi, cchi, zphi, zchi, lh_A, lh_B, maps_phi, maps_chi, P_phi, P_active)
-        zphi = cphi; zchi = cchi
-        rchi = similar(zchi)
-        _factored_y_degree_major_gen!(rchi, zchi, Ul, Vl, thetas_work, maps_chi, P_active)
-        _zphi_degree_major_gen!(rchi, phis_work, maps_chi, true)
-        @inbounds targets.chi .+= rchi
-    end
-
-    rphi = similar(zphi)
-    _factored_y_degree_major_gen!(rphi, zphi, Ul, Vl, thetas_work, maps_phi, P_phi)
-    _zphi_degree_major_gen!(rphi, phis_work, maps_phi, true)
-    @inbounds targets.phi .+= rphi
-    return targets
-end
-
-function resident_m2l_batch!(::DenseTranslationM2L,
-        targets::DegreeMajorRealBuffer{TF,A,B,LH},
-        sources::DegreeMajorRealBuffer, phis, thetas, rs, cache,
-        lamb_helmholtz::Val{LH}) where {TF,A,B,LH}
-    N = flat_nbatch(sources)
-    flat_nbatch(targets) == N || throw(DimensionMismatch(
-        "dense resident M2L source and target widths must match"))
-    length(phis) == N && length(thetas) == N && length(rs) == N ||
-        throw(DimensionMismatch("dense resident M2L geometry must have one value per column"))
-    D = _dense_m2m_dof(cache.basis_info, lamb_helmholtz)
-    stacked_source = zeros(TF, D, N)
-    stacked_target = zeros(TF, D, N)
-    stack_degree_major!(stacked_source, sources)
-    @inbounds for j in 1:N
-        K = build_dense_m2l_operator(TF, cache.basis_info, rs[j], thetas[j],
-            phis[j], lamb_helmholtz)
-        for i in 1:D
-            acc = zero(TF)
-            for k in 1:D
-                acc += K[i, k] * stacked_source[k, j]
-            end
-            stacked_target[i, j] = acc
-        end
-    end
-    tmp = DegreeMajorRealBuffer(TF, cache.basis_info, N)
-    unstack_degree_major!(tmp, stacked_target)
-    targets.phi .+= tmp.phi
-    LH && (targets.chi .+= tmp.chi)
-    return targets
-end
-
-"""
-    resident_l2l_batch!(targets, sources, phis, thetas, rs, cache, Val(LH))
-
-Degree-major resident L2L over local-mode factored rotations. Callers group by
-uniform `r`; per-edge `theta`/`phi` may vary within the group.
-"""
-function resident_l2l_batch!(targets::DegreeMajorRealBuffer{TF,A,B,LH},
-        sources::DegreeMajorRealBuffer, phis, thetas, rs, cache, ::Val{LH}) where {TF,A,B,LH}
-    P_phi = cache.basis_info.orders.P_phi
-    P_active = cache.basis_info.orders.P_active
-    r_level = isempty(rs) ? zero(TF) : TF(first(rs))
-    all(r -> r == r_level, rs) ||
-        throw(ArgumentError("resident L2L batch requires a uniform translation radius"))
-    phis_work = _array_like_vector(sources.phi, TF, phis)
-    thetas_work = _array_like_vector(sources.phi, TF, thetas)
-    maps_phi = DegreeMajorMaps(TF, P_phi, sources.phi)
-    maps_chi = LH ? DegreeMajorMaps(TF, P_active, sources.chi) : maps_phi
-    Ub = _ymode_real_blocks(cache.y_loc_U, P_active, TF)
-    Vb = _ymode_real_blocks(cache.y_loc_V, P_active, TF)
-    blocks = Vector{TF}(undef, l2l_z_block_length(P_active))
-    l2l_z_blocks!(blocks, r_level, P_active)
-
-    aphi = copy(sources.phi)
-    _zphi_degree_major_gen!(aphi, phis_work, maps_phi, false)
-    yphi = similar(aphi)
-    _factored_y_degree_major_gen!(yphi, aphi, Ub, Vb, thetas_work, maps_phi, P_phi)
-    zphi = similar(aphi)
-    _l2l_ztranslate_shared!(zphi, yphi, blocks, maps_phi, P_phi, P_active)
-
-    if LH
-        achi = copy(sources.chi)
-        _zphi_degree_major_gen!(achi, phis_work, maps_chi, false)
-        ychi = similar(achi)
-        _factored_y_degree_major_gen!(ychi, achi, Ub, Vb, thetas_work, maps_chi, P_active)
-        zchi = similar(achi)
-        _l2l_ztranslate_shared!(zchi, ychi, blocks, maps_chi, P_active, P_active)
-        lh_A = Vector{TF}(undef, _operator_ncomplex(P_active))
-        lh_B = Vector{TF}(undef, _operator_ncomplex(P_active))
-        lamb_helmholtz_local_coeffs!(lh_A, lh_B, r_level, P_active)
-        cphi = similar(zphi); cchi = similar(zchi)
-        _lh_local_shared_gen!(cphi, cchi, zphi, zchi, lh_A, lh_B, maps_phi, maps_chi, P_phi, P_active)
-        zphi = cphi; zchi = cchi
-        rchi = similar(zchi)
-        _factored_y_degree_major_gen!(rchi, zchi, Ub, Vb, thetas_work, maps_chi, P_active)
-        _zphi_degree_major_gen!(rchi, phis_work, maps_chi, true)
-        @inbounds targets.chi .+= rchi
-    end
-
-    rphi = similar(zphi)
-    _factored_y_degree_major_gen!(rphi, zphi, Ub, Vb, thetas_work, maps_phi, P_phi)
-    _zphi_degree_major_gen!(rphi, phis_work, maps_phi, true)
-    @inbounds targets.phi .+= rphi
-    return targets
 end
 
 function _degree_major_to_flat_indices(P::Integer)
@@ -2251,7 +1038,7 @@ end
 # buffers, stage matrices, geometry vectors, and homogeneous group vectors.  Optional
 # LH plans/channels retain separate parameters because `nothing` is a real layout.
 struct ResidentOperatorWorkspace{TF,B<:AbstractOperatorBasis,LH,
-        I,M<:DegreeMajorMaps,YB,NLI,DB,SM,GV,GSTAGE,GM2L,PLAN,YSP,YSC}
+        I,M<:DegreeMajorMaps,YB,NLI,SM,GV,GSTAGE,PLAN,YSP,YSC}
     basis_info::OperatorBasisInfo{B,LH}
     phi_flat_idx::I
     chi_flat_idx::I
@@ -2262,9 +1049,6 @@ struct ResidentOperatorWorkspace{TF,B<:AbstractOperatorBasis,LH,
     y_loc_U::YB
     y_loc_V::YB
     nonleaf_idx::NLI
-    max_batch::Int
-    m2l_sources::DB
-    m2l_targets::DB
     aphi::SM
     yphi::SM
     zphi::SM
@@ -2279,7 +1063,6 @@ struct ResidentOperatorWorkspace{TF,B<:AbstractOperatorBasis,LH,
     thetas::GV
     rs::GV
     m2m_groups::GSTAGE
-    m2l_groups::GM2L
     l2l_groups::GSTAGE
     m2l_concat::PLAN
     ystk_phi::YSP
@@ -2294,33 +1077,22 @@ end
 # struct above; an arity mismatch fails loudly at the first construction.
 function ResidentOperatorWorkspace{TF,B,LH}(basis_info, phi_flat_idx, chi_flat_idx,
         maps_phi, maps_chi, y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx,
-        max_batch, m2l_sources, m2l_targets, aphi, yphi, zphi, rphi, achi, ychi,
-        zchi, rchi, cphi, cchi, phis, thetas, rs, m2m_groups, m2l_groups, l2l_groups,
+        aphi, yphi, zphi, rphi, achi, ychi,
+        zchi, rchi, cphi, cchi, phis, thetas, rs, m2m_groups, l2l_groups,
         m2l_concat, ystk_phi, ystk_chi) where {TF,B,LH}
     return ResidentOperatorWorkspace{TF,B,LH,
         typeof(phi_flat_idx),typeof(maps_phi),typeof(y_mult_U),
-        typeof(nonleaf_idx),typeof(m2l_sources),typeof(aphi),typeof(phis),
-        typeof(m2m_groups),typeof(m2l_groups),typeof(m2l_concat),
+        typeof(nonleaf_idx),typeof(aphi),typeof(phis),
+        typeof(m2m_groups),typeof(m2l_concat),
         typeof(ystk_phi),typeof(ystk_chi)}(
         basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
-        y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx, max_batch,
-        m2l_sources, m2l_targets, aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi,
-        cphi, cchi, phis, thetas, rs, m2m_groups, m2l_groups, l2l_groups,
+        y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx,
+        aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi,
+        cphi, cchi, phis, thetas, rs, m2m_groups, l2l_groups,
         m2l_concat, ystk_phi, ystk_chi,
     )
 end
 
-"""
-    ResidentM2LConcatPlan
-
-Whole-pass M2L execution plan for [`ConcatenatedFixedZM2L`](@ref). Routes are
-processed in `chunk`-column slabs in flattened route order (matching
-`state.route_targets`/`state.route_sources`); no per-(r,theta,phi) grouping is
-required because every stage is per-column parameterized: z rotations and the
-factored y rotation take per-column angles, the z-translation uses the separable
-form `K_m(r)[n,np] = r^-(n+1/2) (n+np)! r^-(np+1/2)` (per-column diagonal scaling
-around fixed factorial GEMMs), and the Lamb-Helmholtz local rows are linear in `r`.
-"""
 # Whole-slab dense operators and stacked scratch for one channel of the concatenated
 # M2L plan. `yU_*`/`yV_*` are the stacked block-diagonal factored-y mode matrices
 # (Vs = [blockdiag(Vre); blockdiag(Vim)] :: 2ndof×ndof, Ur = [blockdiag(Ure)
@@ -2344,6 +1116,17 @@ struct ConcatChannelOps{M,V}
     G2::M
 end
 
+"""
+    ResidentM2LConcatPlan
+
+Whole-pass M2L execution plan for [`ConcatenatedFixedZM2L`](@ref). Routes are
+processed in `chunk`-column slabs in flattened route order (matching
+`state.route_targets`/`state.route_sources`); no per-(r,theta,phi) grouping is
+required because every stage is per-column parameterized: z rotations and the
+factored y rotation take per-column angles, the z-translation uses the separable
+form `K_m(r)[n,np] = r^-(n+1/2) (n+np)! r^-(np+1/2)` (per-column diagonal scaling
+around fixed factorial GEMMs), and the Lamb-Helmholtz local rows are linear in `r`.
+"""
 struct ResidentM2LConcatPlan{GV,RC,XP,XC,OP,OC,LHR,SM,LHS}
     nroutes::Int
     chunk::Int
@@ -2481,17 +1264,12 @@ function StackedYChannel(exemplar, ::Type{TF}, invariant::OperatorInvariantCache
 end
 
 # Whole-slab factored y application: out = Ur * (e^{iνθ} ∘ (Vs * in)), the dense
-# stacked replacement for the per-degree loop in _factored_y_degree_major_gen!.
+# stacked form of the per-degree U/V mode application (`_factored_y_degree_major_auto!`).
 # `C`/`S` are the precomputed per-chunk cos/sin(νθ) tables (ndof×n); the paired
 # rotation acts on the contiguous [re; im] halves of the stacked scratch, so it is
-# allocation-free strided broadcasting on both Array and CuArray.
-# C = A * B for the resident operator chain. The generic method is plain
-# `mul!`; the CUDA extension overrides it () to call
-# `CUBLAS.gemm!` with construction-staged device alpha/beta scalars, because in
-# CUBLAS_POINTER_MODE_DEVICE a scalar-alpha/beta `mul!` stages a fresh `CuRef`
-# per call — one device allocation plus one pageable H2D memcpy, which is both
-# the dominant M2M/L2L host-overhead term (job 13059955: 101 pageable H2Ds per
-# step) and a CUDA-graph-capture blocker.
+# allocation-free strided broadcasting on any array type.
+# C = A * B for the resident operator chain; a single seam so a backend extension
+# can substitute its own GEMM (none currently does).
 _resident_mul!(C, A, B) = mul!(C, A, B)
 
 function _stacked_y_dense!(out_slab, in_slab, Ur, Vs, C, S, G, G2, ndof::Integer)
@@ -2588,13 +1366,6 @@ function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, 
     )
 end
 
-function _degree_major_buffer_view(buf::DegreeMajorRealBuffer{TF,A,B,LH},
-        nbatch::Integer) where {TF,A,B,LH}
-    phi = @view buf.phi[:, 1:nbatch]
-    chi = LH ? (@view buf.chi[:, 1:nbatch]) : (@view buf.chi[:, 1:0])
-    return DegreeMajorRealBuffer{TF,typeof(phi),B,LH}(phi, chi, buf.basis_info)
-end
-
 function _matrix_col_view(mat, nbatch::Integer)
     return @view mat[:, 1:nbatch]
 end
@@ -2683,31 +1454,14 @@ function _resident_group(exemplar, ::Type{TF}, basis_info, kind::Symbol, level::
 end
 
 function _zero_resident_nonleaf_multipoles!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
-    # DeviceRadixGrid nodes are level-major with leaves last, so the nonleaf set is
-    # exactly the first (n_nodes - n_cells) columns; the prefix fill works for both
-    # host and CUDA arrays and stays correct under per-step counts.
-    if state.grid isa DeviceRadixGrid && state.counts.n_nodes > 0
-        n_nonleaf = state.counts.n_nodes - state.counts.n_cells
-        n_nonleaf <= 0 && return state
-        fill!(view(state.multipoles.phi, :, 1:n_nonleaf), zero(TF))
-        LH && fill!(view(state.multipoles.chi, :, 1:n_nonleaf), zero(TF))
-        return state
-    end
-    if state.scratch isa ResidentOperatorWorkspace
-        idx = state.scratch.nonleaf_idx
-        length(idx) == 0 && return state
-        state.multipoles.phi[:, idx] .= zero(TF)
-        LH && (state.multipoles.chi[:, idx] .= zero(TF))
-        return state
-    end
-    levels = state.host_node_levels
-    levels === nothing &&
-        throw(ArgumentError("resident nonleaf zeroing requires host node-level metadata or ResidentOperatorWorkspace scratch"))
-    nonleaf = findall(<(state.grid.ell), levels)
-    isempty(nonleaf) && return state
-    idx = _array_like_vector(state.multipoles.phi, Int, nonleaf)
-    state.multipoles.phi[:, idx] .= zero(TF)
-    LH && (state.multipoles.chi[:, idx] .= zero(TF))
+    # Every resident state carries a DeviceRadixGrid, whose nodes are level-major
+    # with leaves last, so the nonleaf set is exactly the first (n_nodes - n_cells)
+    # columns; the prefix fill works for host and device arrays and stays correct
+    # under per-step counts.
+    n_nonleaf = state.counts.n_nodes - state.counts.n_cells
+    n_nonleaf <= 0 && return state
+    fill!(view(state.multipoles.phi, :, 1:n_nonleaf), zero(TF))
+    LH && fill!(view(state.multipoles.chi, :, 1:n_nonleaf), zero(TF))
     return state
 end
 
@@ -2743,13 +1497,6 @@ function _collect_level_edges(parent_routes, child_routes, node_levels, node_cen
         push!(phis, TF(phi))
     end
     return parents, children, phis, thetas, rs
-end
-
-function _assert_m2l_subgroup_targets_unique!(target_nodes, group)
-    targets = target_nodes[group]
-    length(unique(targets)) == length(targets) ||
-        throw(AssertionError("resident M2L requires unique targets within each concrete translation-vector subgroup"))
-    return nothing
 end
 
 # Convert generated groups explicitly to one concrete element type.  A heterogeneous
@@ -2788,40 +1535,6 @@ function _resident_m2m_groups(exemplar, ::Type{TF}, basis_info, grid, parent_rou
     return _homogeneous_groups(groups)
 end
 
-function _resident_m2l_groups(exemplar, ::Type{TF}, basis_info, list, route_sources,
-        route_targets, node_centers) where TF
-    groups_out = ResidentOperatorGroup[]
-    route_i = 0
-    @inbounds for batch in list.m2l_batches
-        nbatch = length(batch.targets)
-        nbatch == 0 && continue
-        route_range = (route_i + 1):(route_i + nbatch)
-        route_i += nbatch
-        source_nodes = route_sources[route_range]
-        target_nodes = route_targets[route_range]
-        groups = Dict{Tuple{TF,TF,TF},Vector{Int}}()
-        for j in 1:nbatch
-            target = target_nodes[j]
-            source = source_nodes[j]
-            dx = node_centers[1, target] - node_centers[1, source]
-            dy = node_centers[2, target] - node_centers[2, source]
-            dz = node_centers[3, target] - node_centers[3, source]
-            r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
-            push!(get!(() -> Int[], groups, (TF(r), TF(theta), TF(phi))), j)
-        end
-        for ((r, theta, phi), group) in groups
-            _assert_m2l_subgroup_targets_unique!(target_nodes, group)
-            ngroup = length(group)
-            push!(groups_out, _resident_group(
-                exemplar, TF, basis_info, :m2l, batch.level,
-                source_nodes[group], target_nodes[group], fill(phi, ngroup),
-                fill(theta, ngroup), fill(r, ngroup),
-            ))
-        end
-    end
-    return _homogeneous_groups(groups_out)
-end
-
 function _resident_l2l_groups(exemplar, ::Type{TF}, basis_info, grid, parent_routes,
         child_routes, node_levels, node_centers) where TF
     groups = ResidentOperatorGroup[]
@@ -2845,8 +1558,15 @@ function ResidentOperatorWorkspace(::Type{TF}, basis_info::OperatorBasisInfo{B,L
         exemplar::FlatCoefficientBuffer, grid, list, host_m2m_parent_routes,
         host_m2m_child_routes, host_l2l_parent_routes, host_l2l_child_routes,
         host_node_levels, host_node_centers, host_route_targets, host_route_sources;
-        m2l_strategy::AbstractResidentM2LStrategy=SharedRotationM2L(),
+        m2l_strategy::AbstractResidentM2LStrategy=ConcatenatedFixedZM2L(),
         operator::AbstractM2LOperator=MaterializedYRotationM2L()) where {TF,B,LH}
+    # List-based construction serves `host_radix_state`, the host oracle of the KA
+    # lifecycle gate, which runs the concatenated materialized-y plan. Production
+    # caches build their workspace through `_radix_cache_workspace`.
+    (m2l_strategy isa ConcatenatedFixedZM2L && operator isa MaterializedYRotationM2L) ||
+        throw(ArgumentError("list-based ResidentOperatorWorkspace supports only " *
+            "ConcatenatedFixedZM2L with MaterializedYRotationM2L; got " *
+            "$(typeof(m2l_strategy)) with $(typeof(operator))"))
     phi_flat_idx = _array_like_vector(exemplar.phi, Int, _degree_major_to_flat_indices(basis_info.orders.P_phi))
     chi_flat_idx = LH ?
         _array_like_vector(exemplar.chi, Int, _degree_major_to_flat_indices(basis_info.orders.P_active)) :
@@ -2864,73 +1584,21 @@ function ResidentOperatorWorkspace(::Type{TF}, basis_info::OperatorBasisInfo{B,L
         exemplar.phi, TF, basis_info, grid, host_m2m_parent_routes, host_m2m_child_routes,
         host_node_levels, host_node_centers,
     )
-    # Per-(r,theta,phi) M2L groups (and their per-group device uploads) are only
-    # needed by the group-looping SharedRotationM2L path; the concatenated strategy
-    # replaces them with a whole-pass plan.
-    concat = m2l_strategy isa ConcatenatedFixedZM2L
-    precomputed_y = m2l_strategy isa PrecomputedFactoredYM2L
-    dense = m2l_strategy isa DenseTranslationM2L
-    factored = operator isa FactoredRotationM2L
-    dense && factored && throw(ArgumentError(
-        "DenseTranslationM2L requires operator=MaterializedYRotationM2L()"))
-    m2l_groups = ((concat && !factored) || precomputed_y || dense) ? ResidentOperatorGroup[] : _resident_m2l_groups(
-        exemplar.phi, TF, basis_info, list, host_route_sources, host_route_targets,
-        host_node_centers,
-    )
-    if dense
-        accepted_offsets = unique(batch.offset for batch in list.m2l_batches)
-        m2l_concat = ResidentM2LDensePlan(TF, basis_info, accepted_offsets,
-            (2 * grid.h0) / (1 << grid.ell), length(host_route_targets),
-            max(grid.n_cells, 1), 1 << grid.ell, m2l_strategy, invariant)
-        offset_id = Dict(offset => i for (i, offset) in enumerate(accepted_offsets))
-        route_i = 0
-        for batch in list.m2l_batches
-            count = length(batch.targets)
-            fill!(view(m2l_concat.route_class, (route_i + 1):(route_i + count)),
-                Int32(offset_id[batch.offset]))
-            route_i += count
-        end
-        _refresh_dense_m2l_routes!(m2l_concat, host_route_sources,
-            host_route_targets, length(host_route_targets))
-    elseif precomputed_y
-        factored || throw(ArgumentError(
-            "PrecomputedFactoredYM2L requires operator=FactoredRotationM2L()"))
-        accepted_offsets = unique(batch.offset for batch in list.m2l_batches)
-        m2l_concat = ResidentM2LPrecomputedYPlan(TF, basis_info, exemplar.phi,
-            accepted_offsets, (2 * grid.h0) / (1 << grid.ell),
-            length(host_route_targets), max(grid.n_cells, 1), 1 << grid.ell, invariant)
-        offset_id = Dict(offset => i for (i, offset) in enumerate(accepted_offsets))
-        route_i = 0
-        for batch in list.m2l_batches
-            count = length(batch.targets)
-            fill!(view(m2l_concat.route_class, (route_i + 1):(route_i + count)),
-                Int32(offset_id[batch.offset]))
-            route_i += count
-        end
-        _refresh_precomputed_y_m2l_routes!(m2l_concat, host_route_sources,
-            host_route_targets, length(host_route_targets))
-    else
-        m2l_concat = factored ? ResidentM2LFactoredPlan(
-        _array_like_vector(exemplar.phi, Int32, zeros(Int32, length(host_route_targets))),
-        m2l_groups,
-    ) : concat ? ResidentM2LConcatPlan(
+    m2l_concat = ResidentM2LConcatPlan(
         TF, basis_info, exemplar.phi, m2l_strategy, invariant, list, grid.ell,
         host_route_targets, host_route_sources, host_node_centers,
-    ) : nothing
-    end
+    )
     l2l_groups = _resident_l2l_groups(
         exemplar.phi, TF, basis_info, grid, host_l2l_parent_routes, host_l2l_child_routes,
         host_node_levels, host_node_centers,
     )
     max_batch = maximum((
         maximum((length(g.source_idx) for g in m2m_groups); init=0),
-        maximum((length(g.source_idx) for g in m2l_groups); init=0),
         maximum((length(g.source_idx) for g in l2l_groups); init=0),
         1,
     ))
 
     m2l_sources = _degree_major_buffer_like(TF, basis_info, exemplar, max_batch)
-    m2l_targets = _degree_major_buffer_like(TF, basis_info, exemplar, max_batch)
     aphi = similar(m2l_sources.phi); yphi = similar(m2l_sources.phi)
     zphi = similar(m2l_sources.phi); rphi = similar(m2l_sources.phi)
     achi = similar(m2l_sources.chi); ychi = similar(m2l_sources.chi)
@@ -2945,10 +1613,9 @@ function ResidentOperatorWorkspace(::Type{TF}, basis_info::OperatorBasisInfo{B,L
         nothing
     return ResidentOperatorWorkspace{TF,B,LH}(
         basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
-        y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx, max_batch,
-        m2l_sources, m2l_targets,
+        y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx,
         aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi, cphi, cchi,
-        phis, thetas, rs, m2m_groups, m2l_groups, l2l_groups, m2l_concat,
+        phis, thetas, rs, m2m_groups, l2l_groups, m2l_concat,
         ystk_phi, ystk_chi,
     )
 end
@@ -3020,41 +1687,6 @@ function _resident_stage_group_apply!(dest::FlatCoefficientBuffer, src::FlatCoef
     return dest
 end
 
-function _resident_execute_shared_m2l!(targets::DegreeMajorRealBuffer{TF,A,B,LH},
-        sources::DegreeMajorRealBuffer, group::ResidentOperatorGroup,
-        ws::ResidentOperatorWorkspace{TF,B,LH}) where {TF,A,B,LH}
-    P_phi = ws.basis_info.orders.P_phi
-    P_active = ws.basis_info.orders.P_active
-    n = flat_nbatch(sources)
-    group_phis = _vector_prefix_view(group.phis, n)
-    group_thetas = _vector_prefix_view(group.thetas, n)
-    aphi = _matrix_col_view(ws.aphi, n); yphi = _matrix_col_view(ws.yphi, n)
-    zphi = _matrix_col_view(ws.zphi, n); rphi = _matrix_col_view(ws.rphi, n)
-    copyto!(aphi, sources.phi)
-    _zphi_degree_major_gen!(aphi, group_phis, ws.maps_phi, false)
-    _factored_y_degree_major_gen!(yphi, aphi, ws.y_mult_U, ws.y_mult_V, group_thetas, ws.maps_phi, P_phi)
-    _ztranslate_shared_precomputed!(zphi, yphi, group.phi_blocks, ws.maps_phi, P_phi)
-    if LH
-        achi = _matrix_col_view(ws.achi, n); ychi = _matrix_col_view(ws.ychi, n)
-        zchi = _matrix_col_view(ws.zchi, n); rchi = _matrix_col_view(ws.rchi, n)
-        cphi = _matrix_col_view(ws.cphi, n); cchi = _matrix_col_view(ws.cchi, n)
-        copyto!(achi, sources.chi)
-        _zphi_degree_major_gen!(achi, group_phis, ws.maps_chi, false)
-        _factored_y_degree_major_gen!(ychi, achi, ws.y_mult_U, ws.y_mult_V, group_thetas, ws.maps_chi, P_active)
-        _ztranslate_shared_precomputed!(zchi, ychi, group.chi_blocks, ws.maps_chi, P_active)
-        _lh_local_shared_rows!(cphi, cchi, zphi, zchi, group.lh_phi_rows, group.lh_chi_rows, ws.maps_phi, ws.maps_chi)
-        copyto!(zphi, cphi)
-        _factored_y_degree_major_gen!(rchi, cchi, ws.y_loc_U, ws.y_loc_V, group_thetas, ws.maps_chi, P_active)
-        _zphi_degree_major_gen!(rchi, group_phis, ws.maps_chi, true)
-        targets.chi .+= rchi
-    end
-    _factored_y_degree_major_gen!(rphi, zphi, ws.y_loc_U, ws.y_loc_V, group_thetas, ws.maps_phi, P_phi)
-    _zphi_degree_major_gen!(rphi, group_phis, ws.maps_phi, true)
-    targets.phi .+= rphi
-    return targets
-end
-
-# Grouped factored M2L directly between flat resident buffers. The offset class
 # supplies one shared (phi, theta, r), so the Plain-H U/V applications below are
 # per-degree GEMMs over all routes in the class. No Ts(theta) is materialized.
 function _resident_factored_m2l_group_apply!(state::DeviceResidentRadixState{TF,B,LH},
@@ -3116,15 +1748,12 @@ function _resident_factored_m2l_group_apply!(state::DeviceResidentRadixState{TF,
     return state
 end
 
-function _launch_resident_m2m!(state::DeviceResidentRadixState{TF,B,LH},
-        strategy::AbstractResidentM2MStrategy=state.options.m2m_strategy) where {TF,B,LH}
+function _launch_resident_m2m!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
     state.grid isa DeviceRadixGrid ||
         throw(ArgumentError("resident M2M requires DeviceRadixGrid-shaped node metadata"))
     ws = state.scratch
     ws isa ResidentOperatorWorkspace ||
         throw(ArgumentError("resident M2M requires ResidentOperatorWorkspace scratch"))
-    strategy isa SharedRotationM2M ||
-        throw(ArgumentError("resident workspace M2M currently supports SharedRotationM2M"))
     _zero_resident_nonleaf_multipoles!(state)
     # Groups run top-down (level ell-1 -> 0): each group reads finalized child
     # multipoles one level below the parents it accumulates into.
@@ -3152,9 +1781,8 @@ function _launch_resident_m2l!(state::DeviceResidentRadixState{TF,B,LH},
     state.options.operator isa MaterializedYRotationM2L ||
         throw(ArgumentError("unsupported resident M2L operator $(typeof(state.options.operator))"))
     strategy isa ConcatenatedFixedZM2L && return _launch_resident_m2l_concat!(state)
-    strategy isa SharedRotationM2L ||
-        throw(ArgumentError("resident workspace M2L supports SharedRotationM2L and ConcatenatedFixedZM2L"))
-    return _launch_resident_m2l_shared!(state)
+    throw(ArgumentError("resident workspace M2L supports ConcatenatedFixedZM2L, " *
+        "PrecomputedFactoredYM2L, or DenseTranslationM2L; got $(typeof(strategy))"))
 end
 
 # On a hierarchical-policy state `state.route_*` holds only the last generated
@@ -3636,40 +2264,6 @@ function _launch_resident_m2l_precomputed_y_plan!(
     return state
 end
 
-# Group-looping shared-rotation M2L through the generic (allocating) degree-major
-# helpers. Production path for SharedRotationM2L (over `ws.m2l_groups`); also the
-# functional-baseline reference the 023a benchmark runs over a factored plan's
-# capacity groups, which carry the same per-group fields.
-function _launch_resident_m2l_shared!(state::DeviceResidentRadixState{TF,B,LH},
-        groups=nothing) where {TF,B,LH}
-    _assert_flat_resident_state(state)
-    ws = state.scratch
-    ws isa ResidentOperatorWorkspace ||
-        throw(ArgumentError("resident M2L requires ResidentOperatorWorkspace scratch"))
-    m2l_groups = groups === nothing ? ws.m2l_groups : groups
-    fill!(state.locals.phi, zero(TF))
-    LH && fill!(state.locals.chi, zero(TF))
-    for group in m2l_groups
-        nbatch = group.count[]
-        nbatch == 0 && continue
-        source_idx = _vector_prefix_view(group.source_idx, nbatch)
-        target_idx = _vector_prefix_view(group.target_idx, nbatch)
-        src_dm = _degree_major_buffer_view(ws.m2l_sources, nbatch)
-        tgt_dm = _degree_major_buffer_view(ws.m2l_targets, nbatch)
-        fill!(tgt_dm.phi, zero(TF)); LH && fill!(tgt_dm.chi, zero(TF))
-        src_dm.phi .= state.multipoles.phi[ws.phi_flat_idx, source_idx]
-        LH && (src_dm.chi .= state.multipoles.chi[ws.chi_flat_idx, source_idx])
-        _resident_execute_shared_m2l!(tgt_dm, src_dm, group, ws)
-        state.locals.phi[ws.phi_flat_idx, target_idx] =
-            state.locals.phi[ws.phi_flat_idx, target_idx] .+ tgt_dm.phi
-        if LH
-            state.locals.chi[ws.chi_flat_idx, target_idx] =
-                state.locals.chi[ws.chi_flat_idx, target_idx] .+ tgt_dm.chi
-        end
-    end
-    return state
-end
-
 function _launch_resident_m2l_factored!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
     _assert_flat_resident_state(state)
     ws = state.scratch
@@ -3693,8 +2287,8 @@ end
 """
     _launch_resident_l2l!(state)
 
-Resident top-down L2L. Translation vectors are `child - parent`, matching
-`_launch_host_l2l_flat_oracle!` and opposite the M2M upward `parent - child` vector.
+Resident top-down L2L. Translation vectors are `child - parent`, opposite the M2M
+upward `parent - child` vector.
 The resident path ignores `options.operator`; that option belongs to the retained
 flat/oracle launchers.
 """
@@ -3712,24 +2306,11 @@ function _launch_resident_l2l!(state::DeviceResidentRadixState{TF,B,LH}) where {
     return state
 end
 
-# Accumulate a degree-major slab into flat-layout target columns:
-# dest[row_idx[i], col_targets[j]] += slab[i, j]. Targets may repeat, so this must
-# accumulate; the CUDA specialization (translate_batched_cuda.jl) uses an atomic
-# scatter kernel.
-function _scatter_accumulate_columns!(dest::AbstractMatrix, row_idx, col_targets, slab)
-    @inbounds for (j, tgt) in enumerate(col_targets)
-        for (i, row) in enumerate(row_idx)
-            dest[row, tgt] += slab[i, j]
-        end
-    end
-    return dest
-end
-
 # Fused flat-to-degree-major column gather + z rotation for the concatenated M2L
 # chain: dst[i, j] = c*a + sgn*ssign[i]*s*b with (s, c) = sincos(row_m[i]*phis[j]),
-# a = src[flat_idx[i], cols[j]], b its (re,im) pair row. Replaces the allocating
-# fancy-index gather plus _zphi_degree_major_gen! (and its temporaries); the CUDA
-# specialization (translate_batched_cuda.jl) is a single kernel.
+# a = src[flat_idx[i], cols[j]], b its (re,im) pair row. Replaces an allocating
+# fancy-index gather plus a separate z rotation (and their temporaries); the KA
+# extension has a single-kernel counterpart.
 function _gather_rotate_z!(dst::AbstractMatrix, src::AbstractMatrix, flat_idx, cols,
         row_m, row_ssign, row_pair, phis, inverse::Bool)
     TF = eltype(dst)
@@ -3766,7 +2347,7 @@ end
 
 # Fused inverse z rotation + accumulating scatter of a degree-major slab into flat
 # target columns: dest[flat_idx[i], col_targets[j]] += Z_phi^{-1}(slab)[i, j]. Targets
-# may repeat, so this must accumulate; the CUDA specialization uses an atomic kernel.
+# may repeat, so this must accumulate; the KA counterpart uses an atomic kernel.
 function _rotate_z_scatter_accumulate!(dest::AbstractMatrix, slab, flat_idx, col_targets,
         row_m, row_ssign, row_pair, phis)
     @inbounds for j in eachindex(col_targets)
@@ -3795,7 +2376,7 @@ function _rotate_z_scatter_accumulate_n!(dest::AbstractMatrix, slab, flat_idx,
 end
 
 # Allocation-free row gather dst[i, :] = src[rows[i], :] (the LH row-mix operand
-# gathers); the CUDA specialization is a single kernel.
+# gathers); the KA counterpart is a single kernel.
 function _gather_rows!(dst::AbstractMatrix, src::AbstractMatrix, rows)
     @inbounds for j in axes(dst, 2)
         for i in eachindex(rows)
@@ -3806,7 +2387,7 @@ function _gather_rows!(dst::AbstractMatrix, src::AbstractMatrix, rows)
 end
 
 # Allocation-free value gather dst[i] = src[ids[i]] (per-chunk column parameters from
-# the per-class geometry tables); the CUDA specialization is a single kernel.
+# the per-class geometry tables); the KA counterpart is a single kernel.
 function _gather_values!(dst::AbstractVector, src::AbstractVector, ids)
     @inbounds for i in eachindex(dst)
         dst[i] = src[ids[i]]
@@ -3821,7 +2402,7 @@ Whole-pass resident M2L for [`ConcatenatedFixedZM2L`](@ref): iterates flattened
 routes in `chunk`-column slabs, running the per-column-parameterized stage chain
 `gather -> Z_phi -> Y(theta) -> scale -> fixed z GEMMs -> scale -> [LH rows] ->
 Y_loc(theta) -> Z_phi^-1 -> scatter-accumulate` from the
-[`ResidentM2LConcatPlan`](@ref). Matches the SharedRotationM2L group path up to
+[`ResidentM2LConcatPlan`](@ref). Matches the per-column M2L operator up to
 floating-point reassociation of the z-translation (the separable scaling form).
 """
 function _launch_resident_m2l_concat!(state::DeviceResidentRadixState{TF,B,LH};
@@ -3960,11 +2541,6 @@ function _radix_level_node_capacity(level::Integer, ell_axes::SVector{3,Int},
     return min(1 << s, max_cells)
 end
 
-# Legacy cubic arity: every axis at full depth.
-_radix_level_node_capacity(level::Integer, max_cells::Integer) =
-    _radix_level_node_capacity(level, SVector(Int(level), Int(level), Int(level)),
-        Int(level), max_cells)
-
 # Capacity ResidentM2LConcatPlan from the fixed accepted-offset classes.
 function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, exemplar,
         strategy::ConcatenatedFixedZM2L, invariant::OperatorInvariantCache,
@@ -4024,50 +2600,20 @@ end
 function ResidentM2LFactoredPlan(::Type{TF}, basis_info::OperatorBasisInfo,
         exemplar, accepted_offsets::AbstractVector{SVector{3,Int}}, cell_width::Real,
         route_capacity::Integer, max_cells::Integer,
-        invariant::OperatorInvariantCache; build_groups::Bool=true) where TF
-    P_active = basis_info.orders.P_active
+        invariant::OperatorInvariantCache) where TF
     nclasses = length(accepted_offsets)
-    groups = build_groups ? Vector{ResidentOperatorGroup}(undef, nclasses) : ResidentOperatorGroup[]
-    class_theta = Vector{TF}(undef, nclasses)
-    class_phi = Vector{TF}(undef, nclasses)
-    class_r = Vector{TF}(undef, nclasses)
-    zlen = m2l_z_block_length(P_active)
-    z_flat_host = Matrix{TF}(undef, zlen, nclasses)
+    groups = Vector{ResidentOperatorGroup}(undef, nclasses)
     @inbounds for (k, offset) in enumerate(accepted_offsets)
         d = SVector{3,TF}(TF(offset[1]), TF(offset[2]), TF(offset[3])) * TF(cell_width)
         r, theta, phi = cartesian_to_spherical(d)
-        if build_groups
-            groups[k] = _resident_group(exemplar, TF, basis_info, :m2l, 0,
-                ones(Int, max_cells), ones(Int, max_cells), fill(TF(phi), max_cells),
-                fill(TF(theta), max_cells), fill(TF(r), max_cells))
-            groups[k].count[] = 0
-        end
-        class_theta[k] = TF(theta)
-        class_phi[k] = TF(phi)
-        class_r[k] = TF(r)
-        m2l_z_blocks!(view(z_flat_host, :, k), TF(r), P_active)
+        groups[k] = _resident_group(exemplar, TF, basis_info, :m2l, 0,
+            ones(Int, max_cells), ones(Int, max_cells), fill(TF(phi), max_cells),
+            fill(TF(theta), max_cells), fill(TF(r), max_cells))
+        groups[k].count[] = 0
     end
-    # Flat Plain-H mode blocks and per-class z tables for the fused device kernels
-    #; host paths carry them too (construction-time only, small).
-    ym_flat = (
-        mult_U_re = _array_like_vector(exemplar, TF, TF.(real.(invariant.y_mult_U))),
-        mult_U_im = _array_like_vector(exemplar, TF, TF.(imag.(invariant.y_mult_U))),
-        mult_V_re = _array_like_vector(exemplar, TF, TF.(real.(invariant.y_mult_V))),
-        mult_V_im = _array_like_vector(exemplar, TF, TF.(imag.(invariant.y_mult_V))),
-        loc_U_re = _array_like_vector(exemplar, TF, TF.(real.(invariant.y_loc_U))),
-        loc_U_im = _array_like_vector(exemplar, TF, TF.(imag.(invariant.y_loc_U))),
-        loc_V_re = _array_like_vector(exemplar, TF, TF.(real.(invariant.y_loc_V))),
-        loc_V_im = _array_like_vector(exemplar, TF, TF.(imag.(invariant.y_loc_V))),
-    )
     return ResidentM2LFactoredPlan(
         _array_like_vector(exemplar, Int32, Vector{Int32}(undef, route_capacity)),
         _homogeneous_groups(groups),
-        _array_like_vector(exemplar, Int32, zeros(Int32, nclasses)),
-        zeros(Int32, nclasses),
-        zeros(Int, nclasses + 1),
-        class_theta, class_phi, class_r, ym_flat,
-        _array_like_matrix(exemplar, TF, z_flat_host),
-        Ref{Any}(nothing),
     )
 end
 
@@ -4122,7 +2668,7 @@ end
 function ResidentM2LPrecomputedYPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         exemplar, accepted_offsets::AbstractVector{SVector{3,Int}}, cell_width::Real,
         route_capacity::Integer, max_cells::Integer, grid_resolution::Integer,
-        invariant::OperatorInvariantCache; compact_device::Bool=false) where {TF,B,LH}
+        invariant::OperatorInvariantCache) where {TF,B,LH}
     P_phi = basis_info.orders.P_phi
     P_active = basis_info.orders.P_active
     keys, offset_to_angle, angle_offset_starts, angle_offsets =
@@ -4146,57 +2692,12 @@ function ResidentM2LPrecomputedYPlan(::Type{TF}, basis_info::OperatorBasisInfo{B
         angle_thetas[angle] = cartesian_to_spherical(d)[2]
     end
 
-    # Host mode blocks in every case: _precomputed_y_block assembles the dense
-    # M_n(theta) products on the host even when the plan's exemplar is a device
-    # array (the compact path uploads only the finished flat tables).
+    # Host mode blocks: _precomputed_y_block assembles the dense M_n(theta)
+    # products on the host even when the plan's exemplar is a device array.
     Um = _ymode_real_blocks(Vector{Complex{TF}}(invariant.y_mult_U), P_active, TF)
     Vm = _ymode_real_blocks(Vector{Complex{TF}}(invariant.y_mult_V), P_active, TF)
     Ul = _ymode_real_blocks(Vector{Complex{TF}}(invariant.y_loc_U), P_active, TF)
     Vl = _ymode_real_blocks(Vector{Complex{TF}}(invariant.y_loc_V), P_active, TF)
-
-    if compact_device
-        # Compact device plan: flat operator tables replace the nested
-        # host storage, the packed route arrays stay empty (device routes remain in
-        # emission order), and route_class lives on the device where route
-        # generation writes it directly.
-        ymlen = length_ymodes(P_active)
-        y_flat_mult_host = Matrix{TF}(undef, ymlen, nangles)
-        y_flat_loc_host = Matrix{TF}(undef, ymlen, nangles)
-        @inbounds for a in 1:nangles, n in 0:P_active
-            d = 2 * n + 1
-            off = ymode_offset(n)
-            Mm = _precomputed_y_block(TF, Um, Vm, angle_thetas[a], n)
-            Ml = _precomputed_y_block(TF, Ul, Vl, angle_thetas[a], n)
-            for q in 1:d, k in 1:d
-                y_flat_mult_host[off + (q - 1) * d + k, a] = Mm[k, q]
-                y_flat_loc_host[off + (q - 1) * d + k, a] = Ml[k, q]
-            end
-        end
-        zlen = m2l_z_block_length(P_active)
-        z_flat_host = Matrix{TF}(undef, zlen, noffsets)
-        @inbounds for i in 1:noffsets
-            m2l_z_blocks!(view(z_flat_host, :, i), offset_rs[i], P_active)
-        end
-        empty_slab = similar(exemplar, TF, 0, 0)
-        scratch = (aphi=empty_slab, yphi=empty_slab, zphi=empty_slab,
-            rphi=empty_slab, cphi=empty_slab, achi=empty_slab, ychi=empty_slab,
-            zchi=empty_slab, rchi=empty_slab, cchi=empty_slab)
-        return ResidentM2LPrecomputedYPlan(
-            _array_like_vector(exemplar, Int32, Vector{Int32}(undef, route_capacity)),
-            offset_to_angle, keys, angle_thetas, angle_offset_starts, angle_offsets,
-            zeros(Int, nangles), zeros(Int, nangles), zeros(Int, nangles + 1),
-            zeros(Int, noffsets), zeros(Int, noffsets + 1), Int[], Int[], TF[],
-            offset_phis, Vector{Vector{Matrix{TF}}}(), Vector{Vector{Matrix{TF}}}(),
-            Vector{Vector{Matrix{TF}}}(), Vector{Vector{Matrix{TF}}}(),
-            Vector{Vector{TF}}(), Vector{Vector{TF}}(), scratch,
-            _array_like_vector(exemplar, Int32, zeros(Int32, noffsets)),
-            zeros(Int32, noffsets),
-            _array_like_matrix(exemplar, TF, y_flat_mult_host),
-            _array_like_matrix(exemplar, TF, y_flat_loc_host),
-            _array_like_matrix(exemplar, TF, z_flat_host),
-            offset_rs, Ref{Any}(nothing),
-        )
-    end
 
     y_mult = [[_array_like_matrix(exemplar, TF,
         _precomputed_y_block(TF, Um, Vm, angle_thetas[a], n)) for n in 0:P_active]
@@ -4516,15 +3017,9 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         accepted_offsets::Vector{SVector{3,Int}}, invariant::OperatorInvariantCache,
         m2l_strategy::AbstractResidentM2LStrategy,
         operator::AbstractM2LOperator=MaterializedYRotationM2L();
-        compact_cuda_factored::Bool=false,
-        dense_cuda_estimated_peak_bytes::Int=0,
         hierarchical_noffsets::Int=0,
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
         first_level::Int=0) where {TF,B,LH}
-    m2l_strategy isa Union{ConcatenatedFixedZM2L,PrecomputedFactoredYM2L,DenseTranslationM2L} ||
-        throw(ArgumentError("RadixFMMCache supports ConcatenatedFixedZM2L, " *
-            "PrecomputedFactoredYM2L, or DenseTranslationM2L; the SharedRotationM2L " *
-            "group layout is not refreshable in place"))
     m2l_strategy isa PrecomputedFactoredYM2L && !(operator isa FactoredRotationM2L) &&
         throw(ArgumentError("PrecomputedFactoredYM2L requires operator=FactoredRotationM2L()"))
     m2l_strategy isa DenseTranslationM2L && !(operator isa MaterializedYRotationM2L) &&
@@ -4568,22 +3063,14 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
             hierarchical_noffsets) :
         m2l_strategy isa PrecomputedFactoredYM2L ?
         ResidentM2LPrecomputedYPlan(TF, basis_info, exemplar.phi, accepted_offsets,
-            cell_width, route_capacity, max_cells, 1 << ell, invariant;
-            compact_device=compact_cuda_factored) :
+            cell_width, route_capacity, max_cells, 1 << ell, invariant) :
         operator isa FactoredRotationM2L ?
         ResidentM2LFactoredPlan(TF, basis_info, exemplar.phi, accepted_offsets,
-            cell_width, route_capacity, max_cells, invariant;
-            build_groups=!compact_cuda_factored) :
+            cell_width, route_capacity, max_cells, invariant) :
         ResidentM2LConcatPlan(TF, basis_info, exemplar.phi, m2l_strategy,
             invariant, accepted_offsets, cell_width, route_capacity;
             whole_window=hierarchical_noffsets > 0)
 
-    # The factored plan reuses the degree-major stage slabs at max_cells width;
-    # concat needs only unit-sized legacy shared-M2L buffers.
-    factored = operator isa FactoredRotationM2L
-    m2l_width = factored && !(m2l_strategy isa PrecomputedFactoredYM2L) ? max(max_cells, 1) : 1
-    m2l_sources = _degree_major_buffer_like(TF, basis_info, exemplar, m2l_width)
-    m2l_targets = _degree_major_buffer_like(TF, basis_info, exemplar, m2l_width)
     ndof_phi = degree_major_dof(P_phi)
     ndof_chi = LH ? degree_major_dof(P_active) : 0
     mkphi() = similar(exemplar.phi, TF, ndof_phi, max_batch)
@@ -4598,394 +3085,10 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
     ystk_chi = LH ? StackedYChannel(exemplar.phi, TF, invariant, P_active, max_batch) : nothing
     return ResidentOperatorWorkspace{TF,B,LH}(
         basis_info, phi_flat_idx, chi_flat_idx, maps_phi, maps_chi,
-        y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx, max_batch,
-        m2l_sources, m2l_targets,
+        y_mult_U, y_mult_V, y_loc_U, y_loc_V, nonleaf_idx,
         aphi, yphi, zphi, rphi, achi, ychi, zchi, rchi, cphi, cchi,
-        phis, thetas, rs, m2m_groups, ResidentOperatorGroup[], l2l_groups, m2l_concat,
+        phis, thetas, rs, m2m_groups, l2l_groups, m2l_concat,
         ystk_phi, ystk_chi,
     )
 end
 
-#------- adaptive octree host lifecycle: M2T/S2L operators + stage launchers -------#
-#
-# The host resident lifecycle over the task-039 adaptive octree
-# (theory/adaptive-radix-octree.md §2.6). V-list M2L, M2M/L2L, B2M/L2B, and the
-# U-list direct nearfield all reuse the existing resident machinery UNCHANGED
-# (see translate_batched_resident.jl for the state assembly); this section adds
-# the two genuinely new body-mediated operators:
-#
-#   M2T (§4.1, W list): evaluate a source cell's multipole expansion directly at
-#     a coarse target leaf's bodies — irregular solid harmonics of the physical
-#     displacement, the multipole sibling of the resident L2B evaluation. The
-#     Lamb-Helmholtz channel follows 008e/008h: velocity reads phi_{n+1}
-#     (degree shift) and chi_n (same degree, chi carried at P_active = P_phi+1).
-#   S2L (§4.2, X list): accumulate a coarse source leaf's bodies directly into a
-#     finer target cell's local expansion — the irregular-harmonic mirror of the
-#     production B2M rules (scalar: L_n^m += -(-1)^(n+m) q conj(S_n^m); vortex:
-#     the verbatim strength-to-channel map of test/bodytolocal.jl, chi rows
-#     carried through P_active).
-#
-# Conventions: the formulas are the LEGACY evaluate_multipole /
-# body_to_local_point! forms ported verbatim to the flat resident buffers. For
-# the scalar channel both the resident multipole/local coefficients AND the
-# resident outputs are the negatives of their legacy counterparts, so the
-# legacy formulas (including the -u sign flip on the M2T potential) transfer
-# unchanged by linearity; the vortex channel is convention-identical. Both
-# operators are gated by the exact M2L-composition oracles of theory §4 in
-# test/adaptive_lifecycle_test.jl.
-#
-# No new operator tables are introduced (both operators are body-mediated,
-# like L2B/B2M). Kernels use the validated legacy irregular_harmonics! into a
-# preallocated scratch (host, single-threaded); zero per-step allocation.
-
-# Irregular-harmonic accessor pair for the legacy scratch layout H[1:2, 1, i].
-@inline _adt_S_re(H, i) = @inbounds H[1, 1, i]
-@inline _adt_S_im(H, i) = @inbounds H[2, 1, i]
-
-# Evaluate the truncated multipole field (potential + gradient) of expansion
-# column `node` at displacement (dx, dy, dz) from the expansion center.
-# `H` must be pre-filled with irregular harmonics of that displacement to
-# order >= P_phi + 1 (the caller fills to P_phi + 2). Mirrors
-# _resident_local_eval_flat's structure and output conventions.
-function _resident_multipole_eval_flat(ph, ch, node, H, P_phi::Int,
-        P_active::Int, ::Val{LH}) where LH
-    TF = eltype(ph)
-    c = inv(TF(4) * TF(pi))
-    u = zero(TF)
-    vx = zero(TF); vy = zero(TF); vz = zero(TF)
-    @inbounds for n in 0:P_active
-        for m in 0:n
-            i_n_m = harmonic_index(n, m)
-            s_m = m > 0 ? TF(2) : TF(1)
-            Sre = _adt_S_re(H, i_n_m)
-            Sim = _adt_S_im(H, i_n_m)
-            if n <= P_phi
-                pre = _resident_flat_phi_re(ph, node, P_phi, n, m)
-                pim = _resident_flat_phi_im(ph, node, P_phi, n, m)
-                # scalar potential (same LH gating as the resident local eval)
-                if !LH || (n == 0 && m == 0)
-                    u += s_m * (Sre * pre - Sim * pim)
-                end
-                # gradient due to phi: S_{n+1, m-1 | m | m+1}
-                ip = harmonic_index(n + 1, m)
-                Sp0re = _adt_S_re(H, ip); Sp0im = _adt_S_im(H, ip)
-                Sppre = _adt_S_re(H, ip + 1); Sppim = _adt_S_im(H, ip + 1)
-                local Spmre::TF, Spmim::TF
-                if m == 0
-                    Spmre = -Sppre; Spmim = Sppim
-                else
-                    Spmre = _adt_S_re(H, ip - 1); Spmim = _adt_S_im(H, ip - 1)
-                end
-                vx += s_m * TF(-0.5) * (pre * (Sppim + Spmim) + pim * (Sppre + Spmre))
-                vy += s_m * TF(0.5) * (pre * (Sppre - Spmre) - pim * (Sppim - Spmim))
-                vz += s_m * (-pre * Sp0re + pim * Sp0im)
-            end
-            # gradient due to chi (same degree, 008h: chi carried at P_active)
-            if LH && n > 0
-                cre = _resident_flat_chi_re(ch, node, P_active, n, m)
-                cim = _resident_flat_chi_im(ch, node, P_active, n, m)
-                local Snpre::TF, Snpim::TF, Snmre::TF, Snmim::TF
-                if m < n
-                    Snpre = _adt_S_re(H, i_n_m + 1); Snpim = _adt_S_im(H, i_n_m + 1)
-                else
-                    Snpre = zero(TF); Snpim = zero(TF)
-                end
-                if m == 0
-                    Snmre = -Snpre; Snmim = Snpim
-                else
-                    Snmre = _adt_S_re(H, i_n_m - 1); Snmim = _adt_S_im(H, i_n_m - 1)
-                end
-                vx += s_m * (cre * TF(0.5) * (-(n + m) * Snmre + (n - m) * Snpre) -
-                             cim * TF(0.5) * (-(n + m) * Snmim + (n - m) * Snpim))
-                vy += s_m * (cre * TF(0.5) * ((n + m) * Snmim + (n - m) * Snpim) +
-                             cim * TF(0.5) * ((n + m) * Snmre + (n - m) * Snpre))
-                vz += s_m * m * (cre * Sim + cim * Sre)
-            end
-        end
-    end
-    # note: the legacy evaluate_multipole returns -u/4pi; the resident scalar
-    # pipeline carries no legacy strength negation (see the resident B2M note),
-    # so the resident-convention potential is +u/4pi (dev-verified against the
-    # resident direct kernel and locked by the M2L-composition oracle test)
-    return u * c, vx * c, vy * c, vz * c
-end
-
-# Hessian-emitting variant (scalar phi channel only — the Lamb-Helmholtz
-# multipole hessian is a recorded task-040 deferral, excluded at cache
-# construction). `H` must be filled to order P_phi + 2. Returns the same
-# 13-tuple order as _resident_local_eval_flat_hessian.
-function _resident_multipole_eval_flat_hessian(ph, ch, node, H, P_phi::Int,
-        P_active::Int, lhv::Val{LH}) where LH
-    TF = eltype(ph)
-    LH && throw(ArgumentError(
-        "the Lamb-Helmholtz M2T hessian is a task-040 deferral"))
-    u, vx, vy, vz = _resident_multipole_eval_flat(ph, ch, node, H, P_phi,
-        P_active, lhv)
-    c = inv(TF(4) * TF(pi))
-    hxx = zero(TF); hxy = zero(TF); hxz = zero(TF)
-    hyx = zero(TF); hyy = zero(TF); hyz = zero(TF)
-    hzx = zero(TF); hzy = zero(TF); hzz = zero(TF)
-    @inbounds for n in 0:P_phi
-        for m in 0:n
-            s_m = m > 0 ? TF(2) : TF(1)
-            pre = _resident_flat_phi_re(ph, node, P_phi, n, m)
-            pim = _resident_flat_phi_im(ph, node, P_phi, n, m)
-            i2 = harmonic_index(n + 2, m)
-            S0re = _adt_S_re(H, i2); S0im = _adt_S_im(H, i2)
-            Sp1re = _adt_S_re(H, i2 + 1); Sp1im = _adt_S_im(H, i2 + 1)
-            Sp2re = _adt_S_re(H, i2 + 2); Sp2im = _adt_S_im(H, i2 + 2)
-            local Sm1re::TF, Sm1im::TF, Sm2re::TF, Sm2im::TF
-            if m == 0
-                Sm1re = -Sp1re; Sm1im = Sp1im
-                Sm2re = Sp2re; Sm2im = -Sp2im
-            elseif m == 1
-                Sm1re = _adt_S_re(H, i2 - 1); Sm1im = _adt_S_im(H, i2 - 1)
-                Sm2re = -S0re; Sm2im = S0im
-            else
-                Sm1re = _adt_S_re(H, i2 - 1); Sm1im = _adt_S_im(H, i2 - 1)
-                Sm2re = _adt_S_re(H, i2 - 2); Sm2im = _adt_S_im(H, i2 - 2)
-            end
-            hxx += s_m * TF(0.25) * (-pre * (Sp2re + 2 * S0re + Sm2re) +
-                                     pim * (Sp2im + 2 * S0im + Sm2im))
-            t_xy = s_m * TF(-0.25) * (pre * (Sp2im - Sm2im) + pim * (Sp2re - Sm2re))
-            hxy += t_xy
-            hyx += t_xy
-            t_xz = s_m * TF(0.5) * (pre * (Sp1im + Sm1im) + pim * (Sp1re + Sm1re))
-            hxz += t_xz
-            hzx += t_xz
-            hyy += s_m * TF(0.25) * (pre * (Sp2re - 2 * S0re + Sm2re) -
-                                     pim * (Sp2im - 2 * S0im + Sm2im))
-            t_yz = s_m * TF(0.5) * (-pre * (Sp1re - Sm1re) + pim * (Sp1im - Sm1im))
-            hyz += t_yz
-            hzy += t_yz
-            hzz += s_m * (pre * S0re - pim * S0im)
-        end
-    end
-    return u, vx, vy, vz,
-        hxx * c, hxy * c, hxz * c, hyx * c, hyy * c, hyz * c,
-        hzx * c, hzy * c, hzz * c
-end
-
-# W-list M2T sweep: for every W pair (coarse target leaf `ia`, finer source
-# cell `ib`, both flat adaptive node indices), evaluate ib's multipole at every
-# body of ia and accumulate into the output slab.
-function _host_m2t_pairs_kernel!(output::AbstractMatrix{TF}, source_bodies,
-        node_lo, node_hi, node_centers, w_targets, w_sources, n_w::Int,
-        ph, ch, H, P_phi::Int, P_active::Int, lhv::Val{LH},
-        ::Val{HS}) where {TF,LH,HS}
-    Hord = P_phi + 2
-    @inbounds for k in 1:n_w
-        ia = w_targets[k]
-        ib = w_sources[k]
-        cx = node_centers[1, ib]
-        cy = node_centers[2, ib]
-        cz = node_centers[3, ib]
-        for i in node_lo[ia]:node_hi[ia]
-            dx = source_bodies[1, i] - cx
-            dy = source_bodies[2, i] - cy
-            dz = source_bodies[3, i] - cz
-            r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
-            irregular_harmonics!(H, r, theta, phi, Hord)
-            if HS
-                vals = _resident_multipole_eval_flat_hessian(ph, ch, ib, H,
-                    P_phi, P_active, lhv)
-                for row in 1:13
-                    output[row, i] += vals[row]
-                end
-            else
-                u, gx, gy, gz = _resident_multipole_eval_flat(ph, ch, ib, H,
-                    P_phi, P_active, lhv)
-                output[1, i] += u
-                output[2, i] += gx
-                output[3, i] += gy
-                output[4, i] += gz
-            end
-        end
-    end
-    return output
-end
-
-# X-list scalar S2L sweep: for every X pair (finer target cell `ia`, coarse
-# source leaf `ib`), accumulate ib's point sources into ia's local expansion:
-# L_n^m += (-1)^(n+m) q conj(S_n^m(x_s - c_A)). This is the theory §4.2 rule
-# WITHOUT the legacy strength negation — the resident scalar pipeline carries
-# none (resident direct u = +q/4pi r; dev-verified and locked by the
-# P2M-M2L composition oracle test).
-function _host_s2l_pairs_kernel!(lp::AbstractMatrix{TF}, source_bodies,
-        node_lo, node_hi, node_centers, x_targets, x_sources, n_x::Int,
-        H, P_phi::Int) where TF
-    @inbounds for k in 1:n_x
-        ia = x_targets[k]
-        ib = x_sources[k]
-        cx = node_centers[1, ia]
-        cy = node_centers[2, ia]
-        cz = node_centers[3, ia]
-        for s in node_lo[ib]:node_hi[ib]
-            dx = source_bodies[1, s] - cx
-            dy = source_bodies[2, s] - cy
-            dz = source_bodies[3, s] - cz
-            q = source_bodies[5, s]
-            r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
-            irregular_harmonics!(H, r, theta, phi, P_phi)
-            for n in 0:P_phi, m in 0:n
-                i = harmonic_index(n, m)
-                sq = isodd(n + m) ? -q : q
-                row = flat_basis_index(n, m, 1)
-                lp[row, ia] += sq * _adt_S_re(H, i)
-                lp[row + 1, ia] -= sq * _adt_S_im(H, i)
-            end
-        end
-    end
-    return lp
-end
-
-# X-list vortex S2L sweep: verbatim port of test/bodytolocal.jl
-# body_to_local_point!(Point{Vortex}, ...) to the flat resident layout, with
-# the chi rows carried through P_active = P_phi + 1 (008h). The vortex
-# coefficient conventions are legacy-identical on the resident path (see the
-# resident vortex B2M note), so no sign adjustments are needed.
-function _host_s2l_vortex_pairs_kernel!(lp::AbstractMatrix{TF}, lc,
-        source_bodies, node_lo, node_hi, node_centers, x_targets, x_sources,
-        n_x::Int, H, P_phi::Int, P_active::Int) where TF
-    Hord = P_phi + 2
-    @inbounds for k in 1:n_x
-        ia = x_targets[k]
-        ib = x_sources[k]
-        cx = node_centers[1, ia]
-        cy = node_centers[2, ia]
-        cz = node_centers[3, ia]
-        for s in node_lo[ib]:node_hi[ib]
-            dx = source_bodies[1, s] - cx
-            dy = source_bodies[2, s] - cy
-            dz = source_bodies[3, s] - cz
-            wx = source_bodies[5, s]
-            wy = source_bodies[6, s]
-            wz = source_bodies[7, s]
-            r, theta, phi = cartesian_to_spherical(SVector{3,TF}(dx, dy, dz))
-            irregular_harmonics!(H, r, theta, phi, Hord)
-            # phi channel (phi_00 = 0)
-            for n in 1:P_phi
-                _1_n = isodd(n) ? -one(TF) : one(TF)
-                n_inv = inv(TF(n))
-                for m in 0:n
-                    _1_m = isodd(m) ? -one(TF) : one(TF)
-                    i = harmonic_index(n, m)
-                    local Spre::TF, Spim::TF, Smre::TF, Smim::TF
-                    if m < n
-                        Spre = -_1_m * _adt_S_re(H, i + 1)
-                        Spim = _1_m * _adt_S_im(H, i + 1)
-                    else
-                        Spre = zero(TF); Spim = zero(TF)
-                    end
-                    Sre = _1_m * _adt_S_re(H, i)
-                    Sim = -_1_m * _adt_S_im(H, i)
-                    if m == 0
-                        Smre = -_1_m * Spre; Smim = _1_m * Spim
-                    else
-                        Smre = -_1_m * _adt_S_re(H, i - 1)
-                        Smim = _1_m * _adt_S_im(H, i - 1)
-                    end
-                    row = flat_basis_index(n, m, 1)
-                    lp[row, ia] -= _1_n * n_inv * (
-                        (n - m) * TF(0.5) * (wx * Spre - wy * Spim) -
-                        (n + m) * TF(0.5) * (wx * Smre + wy * Smim) +
-                        wz * m * Sim)
-                    lp[row + 1, ia] -= _1_n * n_inv * (
-                        (n - m) * TF(0.5) * (wx * Spim + wy * Spre) -
-                        (n + m) * TF(0.5) * (wx * Smim - wy * Smre) -
-                        wz * m * Sre)
-                end
-            end
-            # chi channel, carried through P_active (008h neighbor row included)
-            for n in 0:P_active
-                _1_np1 = isodd(n + 1) ? -one(TF) : one(TF)
-                np1_inv = inv(TF(n + 1))
-                for m in 0:n
-                    _1_m = isodd(m) ? -one(TF) : one(TF)
-                    i_np1 = harmonic_index(n + 1, m)
-                    Sp1pre = -_1_m * _adt_S_re(H, i_np1 + 1)
-                    Sp1pim = _1_m * _adt_S_im(H, i_np1 + 1)
-                    Sp1re = _1_m * _adt_S_re(H, i_np1)
-                    Sp1im = -_1_m * _adt_S_im(H, i_np1)
-                    local Sp1mre::TF, Sp1mim::TF
-                    if m == 0
-                        Sp1mre = -_1_m * Sp1pre; Sp1mim = _1_m * Sp1pim
-                    else
-                        Sp1mre = -_1_m * _adt_S_re(H, i_np1 - 1)
-                        Sp1mim = _1_m * _adt_S_im(H, i_np1 - 1)
-                    end
-                    row = flat_basis_index(n, m, 1)
-                    lc[row, ia] += _1_np1 * np1_inv * (
-                        TF(0.5) * (wy * Sp1mre - wx * Sp1mim) -
-                        TF(0.5) * (wy * Sp1pre + wx * Sp1pim) - wz * Sp1re)
-                    lc[row + 1, ia] += _1_np1 * np1_inv * (
-                        TF(0.5) * (wy * Sp1mim + wx * Sp1mre) -
-                        TF(0.5) * (wy * Sp1pim - wx * Sp1pre) - wz * Sp1im)
-                end
-            end
-        end
-    end
-    return lp
-end
-
-# Adaptive M2M: the existing per-level edge groups (refreshed from the adaptive
-# node table) applied bottom-up. The uniform launcher's nonleaf prefix zeroing
-# (_zero_resident_nonleaf_multipoles!, nonleaf = first n_nodes - n_cells
-# columns) would zero coarse adaptive LEAVES, so it is deliberately omitted:
-# the adaptive B2M launcher refills the whole multipole buffer every step
-# (leaves written, internal nodes zero), which is exactly the required state.
-function _launch_adaptive_resident_m2m!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
-    ws = state.scratch
-    ws isa ResidentOperatorWorkspace ||
-        throw(ArgumentError("adaptive M2M requires ResidentOperatorWorkspace scratch"))
-    for group in ws.m2m_groups
-        _resident_stage_group_apply!(state.multipoles, state.multipoles, group, ws, :m2m)
-    end
-    return state
-end
-
-# Adaptive V-list M2L: consume the task-039 class-partitioned CSR route stream
-# through the UNCHANGED resident window plans. The stream is level-major in
-# canonical class order — the exact _hierarchical_class_metadata ordering the
-# plans were built over — so plan.route_class receives the global class ids
-# directly. Windows are contiguous CSR ranges bounded by the state's route
-# capacity; a window may split a class (each window accumulates
-# independently, clear_locals=false).
-function _launch_adaptive_resident_m2l!(state::DeviceResidentRadixState{TF,B,LH},
-        lists::AdaptiveInteractionLists, window_capacity::Int) where {TF,B,LH}
-    ws = state.scratch
-    ws isa ResidentOperatorWorkspace ||
-        throw(ArgumentError("adaptive M2L requires ResidentOperatorWorkspace scratch"))
-    plan = ws.m2l_concat
-    plan isa Union{ResidentM2LConcatPlan,ResidentM2LPrecomputedYPlan,
-        ResidentM2LDensePlan} || throw(ArgumentError(
-        "adaptive M2L requires a concat, precomputed-y, or dense window plan; " *
-        "got $(typeof(plan))"))
-    fill!(state.locals.phi, zero(TF))
-    LH && fill!(state.locals.chi, zero(TF))
-    nroutes = lists.n_routes
-    i = 1
-    @inbounds while i <= nroutes
-        count = min(window_capacity, nroutes - i + 1)
-        copyto!(state.route_targets::Vector{Int}, 1, lists.route_targets, i, count)
-        copyto!(state.route_sources::Vector{Int}, 1, lists.route_sources, i, count)
-        copyto!(plan.route_class::Vector{Int32}, 1, lists.route_class, i, count)
-        state.counts.n_routes = count
-        if plan isa ResidentM2LDensePlan
-            _refresh_dense_m2l_routes!(plan, state.route_sources::Vector{Int},
-                state.route_targets::Vector{Int}, count)
-            _launch_resident_m2l_dense_plan!(state, ws, plan; clear_locals=false)
-        elseif plan isa ResidentM2LPrecomputedYPlan
-            _refresh_precomputed_y_m2l_routes!(plan, state.route_sources::Vector{Int},
-                state.route_targets::Vector{Int}, count)
-            _launch_resident_m2l_precomputed_y_plan!(state, ws, plan;
-                clear_locals=false)
-        else
-            _launch_hierarchical_concat_window!(state, ws,
-                plan::ResidentM2LConcatPlan, count)
-        end
-        i += count
-    end
-    state.counts.n_routes = nroutes
-    return state
-end

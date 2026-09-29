@@ -260,8 +260,6 @@ _hier_step_allocated(sys, cache) =
         (objectid(ctx8.update_stage_ns), objectid(ctx8.m2l_level_ns))
     ctx8.profile_stages = false
     @test c8.state.counters.expansion_host_copies == 0
-    @test c8.state.counters.route_uploads == 0
-    @test c8.state.counters.operator_uploads == 0
 
     # A hierarchical class window is applied whole. Its stage slabs must cover
     # the full route-window capacity rather than the flat strategy's chunk;
@@ -474,7 +472,6 @@ _hier_step_allocated(sys, cache) =
     # Flat launchers must refuse a hierarchical-policy state outright: its
     # route arrays hold only the last generated window.
     @test_throws ArgumentError HIER_FM._launch_resident_m2l_concat!(neg_state)
-    @test_throws ArgumentError HIER_FM._launch_resident_m2l_shared!(neg_state)
 
     # Independent flat-engine oracle for the hierarchical dual-channel path:
     # at ell = 2 with near_radius2 = 12 every parent offset is near, so the

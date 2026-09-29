@@ -1,7 +1,6 @@
 #------- STAGE 0: real `fmm!` dispatch, through the src/ backend registry -------#
 #
-# `ka_fmm!` (above) still exists as the direct entry the bench and suites call.
-# What follows wires the REAL one: `fmm!(targets, sources, cache)` reaches
+# `fmm!(targets, sources, cache)` reaches
 # `FastMultipole._radix_cache_device_step!`, whose stub now consults the
 # registry in `register_radix_device_backend!` instead of throwing. CUDA is
 # unaffected -- its runtime `include` replaces the consulting stub outright, so
@@ -9,11 +8,7 @@
 
 
 
-function _ka_radix_device_build_hook(sources::Tuple, args...;
-        adaptive_policy=nothing, dpb_adaptive::Int=0, kwargs...)
-    adaptive_policy === nothing || throw(ArgumentError(
-        "the KA radix backend has no adaptive octree lifecycle; " *
-        "build the cache with adaptive=nothing"))
+function _ka_radix_device_build_hook(sources::Tuple, args...; kwargs...)
     backend = FastMultipole.radix_sources_backend(sources)
     backend === nothing && throw(ArgumentError(
         "RadixFMMCache(device=true) resolved to the KA backend, but no source " *

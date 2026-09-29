@@ -1,17 +1,17 @@
 # Correctness gate for `ka_refresh_resident_stage_groups!` /
 # `ka_refresh_group_edges_kernel!` (ext/FastMultipoleKAExt.jl), the KA port of
-# `_cuda_refresh_resident_stage_groups!` (src/translate_batched_cuda.jl:6120).
+# `_cuda_refresh_resident_stage_groups!` (former CUDA lifecycle, removed).
 # This is the stage of `update_cuda_radix_state!` that rebuilds the per-level
 # M2M/L2L edge columns -- the (source, target) node index pairs and the
 # spherical angles of each parent-child displacement -- after an occupancy change.
 #
-# Oracle: `_refresh_resident_stage_groups!` (translate_batched_resident.jl), the
+# Oracle: `_refresh_resident_stage_groups!` (src/resident/), the
 # host CPU refresh, run over the same grid. Both walk levels in the same order
 # and emit one edge per child node in ascending flat node index, so the
 # comparison is elementwise per group.
 #
 # The host function additionally refills `ws.nonleaf_idx`; that is host-path-only
-# storage (see the note at translate_batched_resident.jl:3589) and neither the
+# storage (see the note in src/translate_batched.jl) and neither the
 # CUDA nor the KA refresh touches it, so it is deliberately not compared.
 include("ka_backend.jl")
 include("../gravitational.jl")

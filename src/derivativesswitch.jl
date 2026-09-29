@@ -33,11 +33,6 @@ function DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool
     return DerivativesSwitch{scalar_potential, gradient, hessian, Int(extra_outputs), Int(metadata), third_derivative}()
 end
 
-DerivativesSwitch(scalar_potential::Bool, gradient::Bool, hessian::Bool,
-    third_derivative::Bool; extra_outputs=0, metadata=0) =
-    DerivativesSwitch(scalar_potential, gradient, hessian;
-        third_derivative, extra_outputs, metadata)
-
 """
     DerivativesSwitch(scalar_potential, gradient, hessian, target_systems)
 

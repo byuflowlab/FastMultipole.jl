@@ -20,16 +20,6 @@ using LinearAlgebra
     @test_throws ArgumentError RadixLifecycleOptions(
         m2l_strategy=PrecomputedFactoredYM2L())
 
-    one_shot_sys = generate_gravitational(20260718, 80)
-    one_shot_grid = RadixGrid(one_shot_sys, 3)
-    one_shot_list = build_radix_interaction_list(
-        LazyMaterializedBatches(1), ParentNeighborM2L(), one_shot_grid)
-    one_shot = host_radix_state(one_shot_sys, one_shot_grid, one_shot_list, 4;
-        options=RadixLifecycleOptions(; operator=FactoredRotationM2L(),
-            m2l_strategy=PrecomputedFactoredYM2L()))
-    @test one_shot.scratch.m2l_concat isa FastMultipole.ResidentM2LPrecomputedYPlan
-    @test run_host_radix_lifecycle!(one_shot) === one_shot
-
     # Task 027 made HierarchicalRigidStencil the default policy. Every cache below
     # verifies the FLAT precomputed-y resident plan (task 023c) -- angle-major
     # packing, angle_counts/angle_capacities, and the empty-angle-class property --

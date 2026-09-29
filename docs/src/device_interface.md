@@ -45,8 +45,8 @@ Each `fmm!(system, cache)` call performs, in order (device-resident case):
    consume the results.
 
 The counter contract makes "resident" checkable: after the first
-call, `cache.state.counters.body_uploads`, `influence_downloads`,
-`route_uploads`, and `operator_uploads` stay flat across steps, and
+call, `cache.state.counters.body_uploads` and `influence_downloads`
+stay flat across steps, and
 `expansion_host_copies == 0` always.
 
 ## The consumer surface

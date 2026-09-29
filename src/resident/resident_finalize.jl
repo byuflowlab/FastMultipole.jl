@@ -4,13 +4,6 @@
 # order). These scatter it back to user target buffers/systems; hoisted from the
 # CUDA-only file so the pure-host path can finalize without loading CUDA.
 
-function _copy_radix_output_to_host_target_buffer!(target_buffer, output, grid::RadixGrid,
-        isys::Integer, derivatives_switch)
-    return _copy_radix_output_to_host_target_buffer!(
-        target_buffer, output, grid.perm, grid.body_system, grid.body_index, isys, derivatives_switch,
-    )
-end
-
 function _copy_radix_output_to_host_target_buffer!(target_buffer, output, body_perm,
         body_system_ids, body_indices, isys::Integer, derivatives_switch,
         n_bodies::Integer=size(output, 2))
@@ -36,14 +29,6 @@ function _copy_radix_output_to_host_target_buffer!(target_buffer, output, body_p
         end
     end
     return target_buffer
-end
-
-function _copy_radix_output_to_host_target_buffer!(target_buffer, output,
-        grid::DeviceRadixGrid, isys::Integer, derivatives_switch)
-    throw(ArgumentError(
-        "DeviceRadixGrid host finalization requires DeviceResidentRadixState host metadata mirrors; " *
-        "finalize on the device backend or pass explicit host metadata",
-    ))
 end
 
 """
