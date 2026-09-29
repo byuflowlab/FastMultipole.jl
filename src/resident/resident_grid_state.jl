@@ -97,7 +97,7 @@ function _host_radix_source_buffers(systems::Tuple, ::Type{TF}) where TF
 end
 
 function _host_radix_body_matrix(grid::DeviceRadixGrid{TF}, source_buffers::Tuple) where TF
-    # canonical all-rows packed layout (spec §3 decision (c)): every
+    # canonical all-rows packed layout: every
     # source-buffer row is carried, including radius row 4; systems narrower than
     # the widest are zero-padded
     nrows = maximum(size(buffer, 1) for buffer in source_buffers)

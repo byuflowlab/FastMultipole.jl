@@ -73,7 +73,7 @@ Here `dx, dy, dz = target - source`, `r2 = dx^2+dy^2+dz^2 > 0`, and
 `source_bodies[:, j]` is the packed source
 column (`[x, y, z, radius, strength..., extras...]`), giving the kernel access
 to per-source extra states such as a smoothing radius. This flat-argument form
-deviates from the spec §5 column-view signature so the same code compiles as a
+avoids a column-view signature so the same code compiles as a
 CUDA device function without constructing a view per pair.
 """
 direct_kernel(system) = _default_direct_kernel(body_type(system))

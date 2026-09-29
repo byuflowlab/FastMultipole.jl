@@ -497,7 +497,7 @@ end
 # --- Integration with FastMultipole's real M2M call path ---
 #
 # `ka_resident_stage_group_apply!` mirrors `_resident_stage_group_apply!`
-# (src/translate_batched.jl:2962) -- the real production M2M/L2L group-apply
+# (src/translate_batched.jl) -- the real production M2M/L2L group-apply
 # reached via `_launch_resident_m2m!` -- substituting the four KA building blocks
 # above for its CPU/CUDA-specific primitives. It operates on the same
 # `FlatCoefficientBuffer`/`ResidentOperatorGroup`/`ResidentOperatorWorkspace` types,
@@ -584,10 +584,10 @@ end
 # --- M2L (horizontal pass) ---
 #
 # The real production GPU M2L path is `ConcatenatedFixedZM2L`/`_launch_resident_m2l_concat!`
-# (src/translate_batched.jl:3828, `ResidentM2LConcatPlan`/`ConcatChannelOps`) -- confirmed
+# (src/translate_batched.jl, `ResidentM2LConcatPlan`/`ConcatChannelOps`) -- confirmed
 # by checking `RadixFMMCache`'s default/allowed M2L strategies (src/resident/radix_cache.jl),
 # not the `FactoredRotationM2L`/`_resident_factored_m2l_group_apply!` path, whose per-degree
-# y-rotation blocks are type-asserted as plain CPU `Matrix{TF}` (translate_batched.jl:3077-3080)
+# y-rotation blocks are type-asserted as plain CPU `Matrix{TF}`
 # and never dispatch to CUBLAS/Metal GPU matmul -- that path is CPU-only.
 #
 # `_launch_resident_m2l_concat!`'s primitives are, beyond the M2M-shared ones above:
@@ -602,7 +602,7 @@ end
 """
     ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets, nroutes)
 
-Backend-agnostic port of `_launch_resident_m2l_concat!` (src/translate_batched.jl:3828),
+Backend-agnostic port of `_launch_resident_m2l_concat!` (src/translate_batched.jl),
 the real production `ConcatenatedFixedZM2L` resident M2L apply. Operates on `ws.m2l_concat`
 (a `ResidentM2LConcatPlan`) plus `route_sources`/`route_targets` (GPU index vectors) directly,
 rather than a full `DeviceResidentRadixState`, so the isolated per-route gate

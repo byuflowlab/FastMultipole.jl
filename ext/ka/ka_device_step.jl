@@ -158,7 +158,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         grid.n_cells = n_cells
     end
 
-    # 032a stage C mechanism (a): optional within-cell sub-Morton ordering,
+    # optional within-cell sub-Morton ordering,
     # composed into the perm before packing (the sorted cell keys, cell ranges
     # and node metadata are unaffected).
     _utick!(:grid_rebuild, backend)
@@ -187,7 +187,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     # the adequacy gate guards the M2L far field; on the all-pairs arm there is
     # none, so it is vacuous (same reasoning as the zero-M2L degenerate cache).
     # An inadequate hierarchical geometry demotes to the all-direct zero-M2L
-    # cache and re-runs the refresh, as on the host (052f); the rebuilt cache's
+    # cache and re-runs the refresh, as on the host; the rebuilt cache's
     # gate is vacuous, so the recursion terminates after one demotion.
     if !direct_only && FastMultipole._direct_kernel_geometry_gate!(cache,
             cache.options.direct_kernel, ctx.source_bodies, n) === :alldirect

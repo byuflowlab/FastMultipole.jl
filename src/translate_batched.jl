@@ -78,9 +78,7 @@ end
 # where t is the z-axis separation. The same real scalar K_m[n, np] multiplies
 # both the real and imaginary lanes, and (for Val(true)) both the φ and χ
 # component channels. There is no conjugation or extra sign in the z-aligned
-# block; azimuthal phase signs are owned by the approved z-rotation operators
-#. See the approved theory artifact
-# MATRIX_OPERATOR_REFACTOR/theory/m2l-z-translation-scaling.md.
+# block; azimuthal phase signs are owned by the z-rotation operators.
 #
 # This stage materializes the fixed-m blocks explicitly (rather than fusing the
 # recurrence into a single per-call kernel) so the blocks can be built once and
@@ -92,8 +90,8 @@ end
 # to production.
 #
 # These operate on the existing production coefficient layout
-# weights[real_or_imag, component, harmonic_index]; native flat buffers are a
-# later task (017). The functions are intentionally internal/non-exported.
+# weights[real_or_imag, component, harmonic_index]; the FlatCoefficientBuffer
+# forms are further below. The functions are intentionally internal/non-exported.
 
 """
     m2l_z_block_length(P)
@@ -182,8 +180,7 @@ end
 #------- EXPLICIT LAMB-HELMHOLTZ OPERATORS (Matrix Operator Refactor) -------#
 #
 # The Lamb-Helmholtz transforms couple the φ (component 1) and χ (component 2)
-# channels after a z-aligned translation. They are sparse by construction (see the
-# approved theory artifact MATRIX_OPERATOR_REFACTOR/theory/lamb-helmholtz-operator-form.md):
+# channels after a z-aligned translation. They are sparse by construction:
 #
 #   - no cross-m coupling;
 #   - same-degree φ-from-χ coupling only;
@@ -264,7 +261,7 @@ end
 # Lamb-Helmholtz kernels above. They consume FlatCoefficientBuffer storage through
 # its channel matrices: the φ channel is processed through P_phi and the χ channel
 # through P_active = P_phi + 1 (Val(true)), so the φ matrix carries no padding rows
-# and the task-014/016 `_zero_phi_padding!` step is unnecessary. Arithmetic and
+# and the `_zero_phi_padding!` step is unnecessary. Arithmetic and
 # multiply order are identical to the legacy [2,2,nh] kernels above (kept as the
 # parity reference); only the indexing moves to
 # `flat_basis_index(n,m,reim) = 2*(harmonic_index(n,m)-1)+reim` over a column `j`.
@@ -444,7 +441,7 @@ end
 #
 # The whole pipeline runs at a single uniform order `P = basis_info.orders.P_active`.
 # For `Val(true)`, φ is physical only through `P_phi` while χ is carried at
-# `P_active = P_phi + 1` per theory/lamb-helmholtz-accuracy-order.md; the φ padding
+# `P_active = P_phi + 1` (χ is carried one order above φ); the φ padding
 # rows are zeroed before z-translation and again before return alignment so the
 # nonphysical top φ row cannot leak into the output.
 
@@ -763,7 +760,7 @@ end
 # least this wide use `mul!` for degree blocks of dimension at least
 # FACTORED_Y_GEMM_MIN_DIM; everything else keeps the scalar no-alloc kernel, whose
 # per-element cost beats BLAS dispatch on the narrow/sparse classes. Defaults are
-# measured (023a, EPYC 7763 / OpenBLAS): scalar wins at class width <= 7, GEMM wins
+# measured (EPYC 7763 / OpenBLAS): scalar wins at class width <= 7, GEMM wins
 # from width 20 at every P (including the 1x1/3x3 low-degree blocks, so no dim gate);
 # BLAS thread count was immaterial at these block sizes. The column threshold is not
 # a registered radix setting; it stays a Ref only so the integration test can force

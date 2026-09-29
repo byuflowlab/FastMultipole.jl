@@ -286,7 +286,7 @@ end
 # downloads on the steady occupancy-static step.
 #
 # Host oracle for the gate: the cell-center loop of `_refresh_radix_grid!`
-# (src/tree_batched.jl:485), plus `morton_decode` for the integer coords, which
+# (src/tree_batched.jl), plus `morton_decode` for the integer coords, which
 # the host grid does not store (`ctx.cell_coords` is device-side only).
 
 @kernel function ka_keys_differ_kernel!(flag, @Const(keys), @Const(snapshot), n)

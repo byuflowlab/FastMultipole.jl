@@ -1,21 +1,18 @@
-#------- gaussianerf g/h evaluation and direct-kernel pair functors (032 stage 2) -------#
+#------- gaussianerf g/h evaluation and direct-kernel pair functors -------#
 #
 # Erf-free evaluation of the gaussianerf regularization factor
 #   g(ρ) = erf(ρ/√2) − Aρe^{−ρ²/2},  A = √(2/π),
 # and the combined Jacobian numerator h(ρ) = ρg′(ρ) − 3g(ρ), used by the
-# `RegularizedVortex` nearfield (`theory/kernel-splitting-nearfield.md` §3, §6.2).
+# `RegularizedVortex` nearfield.
 #
 # Below ρ = 2: the cancellation-safe alternating Horner series
 #   g = Aρ³ Σ_k (−1)^k ρ^{2k}/((2k+3) 2^k k!),  h = Aρ⁵ Σ_k (−1)^{k+1} ρ^{2k}/((2k+5) 2^k k!),
-# with term counts measured against a 256-bit reference over the whole branch
-# (scripts/fit_032_nearfield_g.jl → data/kernel_splitting/nearfield_g_eval.csv):
+# with term counts measured against a 256-bit reference over the whole branch:
 # 13 terms hold ≤ 6.8e-7 relative in Float32 and 19 terms ≤ 1.7e-12 in Float64
-# (the theory-§3 6/10-term counts are valid only to its ρ = 0.5 partitioning
-# switch; the erf-free design runs the series to ρ = 2, hence the re-measured
-# counts). Above ρ = 2: ḡ = e^{−ρ²/2}(Aρ + s), with s ≈ degree-3 polynomial in
+# (the series runs to ρ = 2, so it needs more terms than a ρ = 0.5 switch would). Above ρ = 2: ḡ = e^{−ρ²/2}(Aρ + s), with s ≈ degree-3 polynomial in
 # u = 1/ρ² least-squares fitted on [2, 4.789]; g = 1 − ḡ holds ≤ 2.1e-4 absolute
-# against the 3.69e-4 budget (031a §6.2: absolute tolerance suffices where the
-# retained result is O(1)), decaying like e^{−ρ²/2} beyond ρ_t, with the correct
+# against the 3.69e-4 budget (absolute tolerance suffices where the retained
+# result is O(1)), decaying like e^{−ρ²/2} beyond ρ_t, with the correct
 # singular limit (g→1, h→−3). One hardware exp, no erf, both branches GPU-safe.
 const _GAUSSERF_A = 0.7978845608028654           # √(2/π)
 const _GAUSSERF_G_COEFFS = Tuple(Float64((isodd(k) ? -1 : 1) //
@@ -34,9 +31,9 @@ const _GAUSSERF_S_COEFFS = (0.082593826443677007, 2.0801015208954681,
 @inline _gausserf_series_h(z::Float32) = evalpoly(z, _GAUSSERF_H_COEFFS32)
 
 # Outer-branch (ρ > 2) complement pair: ḡ = e^{−ρ²/2}(Aρ + s(1/ρ²)) with the
-# 031a §6.2 degree-3 fit of s, and ρg′ = Aρ³e^{−ρ²/2} reusing the same
+# degree-3 fit of s, and ρg′ = Aρ³e^{−ρ²/2} reusing the same
 # exponential. Factored out of `_gaussianerf_g_h` so the two-pass deficit
-# () consumes ḡ directly to absolute tolerance instead of
+# consumes ḡ directly to absolute tolerance instead of
 # reconstructing it as 1 − g.
 @inline function _gaussianerf_gbar_rhogp(rho::T) where T<:AbstractFloat
     z = rho * rho
@@ -65,7 +62,7 @@ end
 # Per-pair math behind the `direct_kernel` functor trait. Shared verbatim by the
 # host loops and the CUDA pair kernels (arithmetic + exp only); the caller
 # computes `invr` with its preferred reciprocal sqrt and skips r2 == 0 pairs.
-# Conventions (theory §1 / legacy direct!): dx,dy,dz = target − source;
+# Conventions (as the legacy direct!): dx,dy,dz = target − source;
 # crss_i = −(Δx×Γ)_i/(4πr³); U = g·crss; J[i,j] = ∂u_i/∂x_j column-major with
 # a = h/r², b = −g/(4πr³).
 
@@ -561,7 +558,7 @@ end
     return _vortex_pair_ugh(dx, dy, dz, r2, invr, gsx, gsy, gsz, g, h)
 end
 
-# Partitioned replacement (the port candidate 2, theory §2): stable regularized
+# Partitioned replacement: stable regularized
 # g/h inside the smoothing cutoff, exact singular limits beyond it — the branch
 # selects HOW a direct pair is evaluated, never WHICH pairs are direct (the
 # adequacy gate guarantees every cutoff pair is in the direct set).
@@ -611,12 +608,11 @@ end
 #------- cheapened g/h evaluation modes -------#
 #
 # `CUDA_NEARFIELD_GH_MODE` selects how the regularized-family pair functors
-# evaluate the gaussianerf (g, h) — budgets, sizing, and the pointwise ->
-# delivered-error mapping in `theory/nearfield-kernel-cheapening-budget.md`
-# (derivation script `scripts/fm037f_error_budget.jl`):
+# evaluate the gaussianerf (g, h); each mode was sized so its pointwise error,
+# mapped to the delivered U/J error, stays inside the accuracy budget:
 #
 #   :shipped       the unmodified evaluation above (default; every other call
-#                  path is bitwise-identical to pre-037f code);
+#                  path is bitwise-identical to it);
 #   :reduced       12-term series in both precisions (from 19/13), outer
 #                  branch unchanged (deg-2 s(u) fails the mapped budget);
 #   :fp32          Float64 configurations only: the shipped Float32 math
@@ -631,7 +627,7 @@ end
 # configurations the g/h transcendental (and functor-path assembly) runs in
 # Float32 with Float64 accumulation — measured +6.8-10.2% end-to-end U/J on
 # cube and +7.4-7.8% on the wake at delivered-error deltas of ~1e-8 relative
-# RMS (fm037f_screen.csv / fm037f_decomposition.csv, H200 job 13170769). On
+# RMS (measured on an H200). On
 # Float32 configurations :fp32 is bitwise the shipped path (documented
 # no-op), so this default changes nothing there. :shipped remains the
 # control/opt-out.
@@ -640,7 +636,7 @@ const CUDA_NEARFIELD_GH_MODE = Ref{Symbol}(:fp32)
 
 # 12-term truncations of the exact series (the port sizing: delta vs shipped
 # <= 4.9e-6 relative on the series branch, >= 7x under the coherent-tier
-# delivered budget B = 2.66e-4; fm037f_budget.csv)
+# delivered budget B = 2.66e-4)
 const _GAUSSERF_G_COEFFS_R = _GAUSSERF_G_COEFFS[1:12]
 const _GAUSSERF_H_COEFFS_R = _GAUSSERF_H_COEFFS[1:12]
 const _GAUSSERF_G_COEFFS32_R = _GAUSSERF_G_COEFFS32[1:12]
@@ -778,8 +774,8 @@ function _validated_host_gh_mode()
     return m
 end
 
-# Singular Biot-Savart direct kernel for Point{Vortex} sources ():
-# U = -Δx×Γ/(4πr³), J per theory §1 with g→1 (transcribed from the legacy
+# Singular Biot-Savart direct kernel for Point{Vortex} sources:
+# U = -Δx×Γ/(4πr³), J as above with g→1 (transcribed from the legacy
 # test-reference vortex direct!). No scalar potential is produced. Retained
 # verbatim (with the scalar kernels below) as the hard-coded reference for the
 # stage-2 functor-abstraction benchmark; production dispatch now routes through
@@ -1223,7 +1219,7 @@ _radix_uses_factored_rotation(options::RadixLifecycleOptions) =
 
 function _launch_host_resident_operator_pipeline!(state::DeviceResidentRadixState)
     _launch_host_m2m!(state)
-    # 016b watch item 2: the FactoredRotation* operators are exact only on the
+    # the FactoredRotation* operators are exact only on the
     # physical subspace (m = 0 imaginary rows == 0); guard the upward-pass output
     # once per lifecycle run, DEBUG[]-gated (off in production).
     if DEBUG[] && _radix_uses_factored_rotation(state.options)

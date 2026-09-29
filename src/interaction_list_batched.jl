@@ -239,7 +239,7 @@ root level of the hierarchy — node build and stage groups retain levels `R:ell
 only. `L_allnear` is the largest level at which every root-grid offset lies in
 the rigid near ball `{o : |o|^2 <= q}`; passing the *leaf* near radius (the
 schedule minimum) keeps the trim conservative and schedule-independent, so the
-task-025 exact-once base case holds for any non-increasing level schedule.
+exact-once base case holds for any non-increasing level schedule.
 `R = max(ell - minimum(ell_axes), L_allnear)`, lowered while the flat-top class
 count at `R` exceeds `RADIX_FLAT_TOP_CLASS_CAP`; at `R == L_allnear` the
 flat-top table is empty and the hierarchy degenerates to the legacy schedule
@@ -418,7 +418,7 @@ function _verify_hierarchical_classifier!(h0, ell::Int,
         "HierarchicalRigidStencil requires ell >= 2 (the first M2L level is 2)"))
     # root-level accuracy gate. Every flat-top offset `o`
     # runs M2L at the root level `R`, whose cells are the leaf cells of the
-    # same box at depth `R` — so the exact level-true task-025 bound is the
+    # same box at depth `R` — so the exact level-true bound is the
     # analytic classifier evaluated at `(h0, R)` (this is the `2^(ell-L)`
     # rescaling of the leaf bound, with the Lamb-Helmholtz displacement scaled
     # consistently). The gate: every emitted flat-top offset satisfies the
@@ -439,7 +439,7 @@ function _verify_hierarchical_classifier!(h0, ell::Int,
                 "rigid_stencil_epsilon at this box"))
         end
     end
-    # The task-025 accepted/rejected boundary lies strictly inside the rigid
+    # The accepted/rejected boundary lies strictly inside the rigid
     # push-union cube.  Evaluate the production analytic
     # classifier on that complete cube without materializing the full
     # `(2^(ell+1)-1)^3` flat route-class domain.

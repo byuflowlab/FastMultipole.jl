@@ -18,7 +18,7 @@
 # constant reaching the `Val`-wrapped `SharedMemory` call, and computing it
 # inside the kernel as `TF = eltype(phi)` does NOT qualify -- on Metal that
 # compiles but raises a device-side "undefined variable error" at launch (KA's
-# `@localmem` expansion, KernelAbstractions.jl:242). Pass the element type as a
+# `@localmem` expansion). Pass the element type as a
 # `::Type{TF}` kernel argument instead. `Val{WG}` dims are fine either way.
 #
 # Float32 discipline: every literal stays in TF. Apple GPUs reject Float64
@@ -1042,7 +1042,7 @@ end
 
 # (A register-tiled variant -- two targets per thread through one source pass
 # -- was tried and REMOVED: 10% slower at 115k and 249k on the H200 and 4%
-# slower in Float64, job 13569195. The loop is not load-bound.)
+# slower in Float64. The loop is not load-bound.)
 
 # CONVENTION: for a regularized kernel (sigma_row > 0) both allocators size
 # `source_bodies` one row past the packed body rows and the packers fill that
@@ -1056,8 +1056,7 @@ end
 # Per-backend nearfield launch configuration (see the block above). Only the
 # backend TYPE NAME is consulted, so this extension stays free of CUDA.
 #
-# Defaults measured on an H200, NREL wake np=248714 (jobs 13567846/931/8101,
-# 20 calls, median): one block per pair with ALL its lanes on that pair, and
+# Defaults measured on an H200, NREL wake np=248714 (20 calls, median): one block per pair with ALL its lanes on that pair, and
 # the lane count is what matters -- 64 lanes 0.099 s, 128 0.072, 256 0.069,
 # 512 0.074 in Float32 (native CUDA lifecycle: 0.067-0.074); Float64 128 lanes
 # 0.130, 256 0.135 (native 0.18-0.19). The native warp-per-pair geometry

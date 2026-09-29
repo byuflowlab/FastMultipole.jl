@@ -405,11 +405,11 @@ abstract type RadixSeparationPolicy end
 # were added earlier: a regularized nearfield at overlap beta = 2 needs
 # g_min*h_leaf > rho_t*sigma_max, which forces a large leaf near set, while the
 # fixed 1e-3 velocity gate needs more accuracy than q = 12 delivers at P = 4
-# (measured 1.088e-3, job 13058532) — q = 16 raises g_min from sqrt(5) to
+# (measured 1.088e-3) — q = 16 raises g_min from sqrt(5) to
 # sqrt(6), q = 20 to 3. Radii 21-27 (23 has no lattice shell) were added by
 # the port for the all-direct adequacy fallback: q = 27 covers every offset
 # of the 4^3 leaf grid at ell = 2, producing the zero-M2L degenerate cache
-# (052c) in which every pair is evaluated by the regularized direct kernel.
+# in which every pair is evaluated by the regularized direct kernel.
 const _SUPPORTED_RIGID_NEAR_RADII2 =
     (3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27)
 const _SUPPORTED_RIGID_NEAR_RADII2_TEXT =
@@ -615,7 +615,7 @@ end
 
 """
 Device mirror of [`HostHierarchicalM2LContext`](@ref).  It owns the
-step-invariant task-025 stencil tables uploaded once at construction, the
+step-invariant hierarchical stencil tables uploaded once at construction, the
 persistent per-level occupancy lookup, and the occupancy-epoch route-window cache.
 
 Array fields are parameterized rather than named so this container stays free of
@@ -885,14 +885,14 @@ OperatorBasisInfo(P::Integer, lamb_helmholtz::Val) =
 #
 # The native coefficient storage for the batched operators. re/im are interleaved
 # into the leading basis dimension and each channel is a dense `basis_dof x batch`
-# matrix (the BLAS/cuBLAS GEMM slab); see theory/coefficient-buffer-layout.md.
+# matrix (the BLAS/cuBLAS GEMM slab).
 #
 #     flat_basis_index(n, m, reim) = 2 * (harmonic_index(n, m) - 1) + reim,  reim in 1:2
 #
 # Default backing is RAGGED: a separate dense φ matrix
 # sized to `basis_dof_phi` (order `P_phi`) and a separate dense χ matrix sized to
 # `basis_dof_chi` (order `P_active = P_chi`). φ therefore carries no padding rows,
-# so the task-014/016 `_zero_phi_padding!` machinery is unnecessary here; the
+# so the `_zero_phi_padding!` machinery is unnecessary here; the
 # physical φ/χ bounds are instead enforced structurally by the order-aware operator
 # kernels (`P_phi` for φ, `P_active` for χ). `Val(false)` allocates φ only (the dead
 # χ channel is pruned). `harmonic_index(n,m)` is P-independent, so the same
@@ -1174,7 +1174,7 @@ abstract type AbstractM2LOperator end
 "M2L operator using materialized y-axis rotations."
 struct MaterializedYRotationM2L <: AbstractM2LOperator end
 
-# Physical-subspace invariant (016b): the FactoredRotation* operators reproduce
+# Physical-subspace invariant: the FactoredRotation* operators reproduce
 # production exactly only for *physical* inputs (m=0 imaginary part == 0). Every
 # real solid-harmonic expansion is physical, so this holds throughout production;
 # the MaterializedYRotation* operators stay exact for any input. See the
@@ -1497,8 +1497,8 @@ end
 """
     PartitionedVortex(; sigma_row, rho_t=4.252)
 
-Partitioned-replacement Biot-Savart nearfield for `Point{Vortex}` sources
-(candidate 2 of `031a` §6), and **the recommended default for
+Partitioned-replacement Biot-Savart nearfield for `Point{Vortex}` sources,
+and **the recommended default for
 σ-carrying vortex systems**: pairs
 inside the smoothing cutoff `r/σ_src ≤ rho_t` are evaluated with the
 cancellation-safe regularized U/J formulas (the same erf-free `g`/`h`
@@ -1511,15 +1511,16 @@ makes this kernel exact-once is the same geometry `RegularizedVortex` already
 requires, and the `rho_t` branch never changes which pairs are direct — only
 how they are evaluated.
 
-The 032a Stage D H200 A/B measured this kernel (with the Stage-C
-classsplit + sub-Morton pair stream) 1.16-1.77x faster step-level than the
-regularized-everywhere baseline on both Integration Phase test cases at every
-measured `n` and precision, with identical 1e-3-gate accuracy.
+Measured on an H200 (with the class-split and sub-Morton pair ordering), this
+kernel ran 1.16-1.77x faster per step than the regularized-everywhere baseline
+on a cube and a rotor-wake particle field at every measured `n` and precision,
+with identical accuracy at the 1e-3 velocity tolerance.
 
 `sigma_row` and `rho_t` follow the [`RegularizedVortex`](@ref) contract. The
-default `rho_t = 4.252` is the `031a` §6.4 RMS J radius at `ε = 1e-3`,
-confirmed on both test cases by the Stage D sampled-direct measurement (worst
-gate margin 9.35e-4 at cube n=1e6); the §4 per-pair worst-case radius 4.789
+default `rho_t = 4.252` is the radius at which the RMS velocity-gradient
+difference between the regularized and singular kernels reaches `ε = 1e-3`,
+confirmed on both test fields by a sampled direct sum (worst tolerance margin
+9.35e-4 at cube n=1e6); the per-pair worst-case radius 4.789
 remains available for consumers needing the conservative per-pair bound.
 """
 struct PartitionedVortex <: AbstractRegularizedVortex
@@ -1535,7 +1536,7 @@ end
     TwoPassVortex(; sigma_row, rho_t=4.252, rho_c=2.0)
 
 Two-pass additive-correction Biot-Savart nearfield for `Point{Vortex}` sources
-(candidate 3 of `031a` §6.1), in the `rho_c` hybrid form. The FMM
+in the `rho_c` hybrid form. The FMM
 routing is left entirely unmodified:
 
 - **Pass 1** is the ordinary direct evaluation with the stable regularized U/J
@@ -1545,8 +1546,8 @@ routing is left entirely unmodified:
   kernel asserts `g_min·h_leaf > rho_c·σ_max`, not the full `rho_t` reach.
 - **Pass 2** sweeps every pair with `rho_c < ρ ≤ rho_t` — regardless of
   whether pass 1 handled it as direct or M2L — and adds only the deficit
-  `ΔU = -ḡC`, `Δa = (ρg'+3ḡ)/r²`, `Δb = ḡ/(4πr³)` (`031a` §6.1), with `ḡ`
-  from the shipped §6.2 one-`exp` outer form. Its traversal is a self-sizing
+  `ΔU = -ḡC`, `Δa = (ρg'+3ḡ)/r²`, `Δb = ḡ/(4πr³)`, with `ḡ = 1 − g`
+  from the one-`exp` outer form of the `g` evaluation. Its traversal is a self-sizing
   offset ball of lattice radius `⌊rho_t·σ_max/h_leaf⌋+1` with per-offset
   minimum-gap pruning, enumerated arithmetically from the live `σ_max` each
   evaluation, so pass-2 reach covers `rho_t·σ_max` by construction with zero
@@ -1555,7 +1556,7 @@ routing is left entirely unmodified:
 `rho_c = 2` is the measured hybrid switch: below it the accumulator-level
 singular-plus-deficit cancellation amplifies rounding by up to `~ρ⁻³` (fatal in
 Float32); at `rho_c = 2` the amplification is 3.3 and the hybrid holds
-working precision at every `ρ` (`031a` §6.1 conditioning table). `sigma_row`
+working precision at every `ρ`. `sigma_row`
 and `rho_t` follow the [`RegularizedVortex`](@ref) contract. Supported on the
 host lifecycle only; device caches refuse it at construction.
 """

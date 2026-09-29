@@ -74,7 +74,7 @@ end
 
 # Per-system cached device scatter buffer, the generic form of
 # `_cuda_cached_target_buffer`: allocated undef and reused, since the scatter
-# zero-fills it anyway. Capacity contract (052 long-run leak, job 13508681): a
+# zero-fills it anyway. Capacity contract (found as a long-run leak): a
 # shedding run changes `nb` every step, and an exact-size cache then
 # reallocates every step -- the replaced device buffer survives a full step
 # before dying, gets promoted, and no major GC ever runs because device bytes
@@ -161,7 +161,7 @@ end
 
 #------- stage 19: within-cell sub-Morton nearfield subsort -------#
 #
-# Within-cell sub-Morton nearfield subsort (mechanism (a) of 032a stage C):
+# Within-cell sub-Morton nearfield subsort:
 # compose a within-cell
 # sub-Morton ordering into `grid.perm` after the sort and before body packing,
 # so consecutive sorted bodies -- adjacent lanes in the nearfield kernel -- span

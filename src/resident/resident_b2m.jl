@@ -221,7 +221,7 @@ end
 #------- two-pass additive-correction deficit sweep -------#
 #
 # Pass 2 of the TwoPassVortex hybrid: after the unmodified pass 1 (singular far
-# field + the rho_c-partitioned direct nearfield above), add the 031a §6.1
+# field + the rho_c-partitioned direct nearfield above), add the regularization
 # deficit for every pair with rho_c < ρ = r/σ_src ≤ rho_t, wherever pass 1
 # routed that pair (direct or M2L — the deficit is additive, so no exact-once
 # bookkeeping exists to get wrong).

@@ -2,8 +2,7 @@
 #
 # The z-rotation is block-diagonal in the azimuthal order m: each stored
 # coefficient (n, m) is multiplied by the complex phase e^{imϕ}, i.e. the real
-# 2x2 rotation block acting on the [real, imag] pair. See the approved theory
-# artifact MATRIX_OPERATOR_REFACTOR/theory/z-rotation-operators.md.
+# 2x2 rotation block acting on the [real, imag] pair.
 #
 # Storage-light representation: two diagonal vectors over the compressed
 # harmonic index, C[i] = cos(m(i)ϕ) and S[i] = sin(m(i)ϕ), where
@@ -117,13 +116,12 @@ end
 #
 #     T_n(θ) = S_n * Z_n(θ) * S_n^{-1}
 #
-# (see the approved theory artifact
-# MATRIX_OPERATOR_REFACTOR/theory/axis-swap-conventions.md), where S_n is built
+# where S_n is built
 # only from H(π/2) and Z_n(θ) carries the exp(i ν θ) phases. Production rebuilds
 # the full T matrix (Ts) on EVERY translation call via update_Ts! in src/rotate.jl;
 # its inner ν loop multiplies two angle-independent H(π/2) products by a scalar and
-# the angle-dependent cos/sin(ν θ). The 008c baseline flagged this per-call rebuild
-# as the dominant cost.
+# the angle-dependent cos/sin(ν θ). Profiling found this per-call rebuild to be
+# the dominant cost.
 #
 # These operators move the angle-independent H(π/2) products into a precomputed
 # cache (the S blocks) so the per-call work collapses to a phase-weighted
@@ -137,7 +135,7 @@ end
 # multipole and local paths; those differ only in the sign table (ζ vs η) passed
 # to the existing production apply kernels, which this stage reuses unchanged.
 # These operate on the production layout weights[real_or_imag, component,
-# harmonic_index]; native flat buffers are a later task (017). The functions are
+# harmonic_index]; the FlatCoefficientBuffer forms are further below. The functions are
 # intentionally internal/non-exported.
 
 """
@@ -356,13 +354,12 @@ end
 # Genuinely factored y-rotation. For every degree n the production y-operator factors
 # as  Y_n(θ) = U_n · diag(e^{iνθ}) · V_n  (ν = -n..n), with U_n / V_n FIXED (angle- and
 # geometry-independent) per-degree matrices and the only θ dependence the cheap diagonal
-# e^{iνθ}. This is the S_n · Z_n(θ) · S_n^{-1} form of theory/axis-swap-conventions.md
+# e^{iνθ}. This is the S_n · Z_n(θ) · S_n^{-1} form above
 # realized as two batch-shared fixed swaps around a per-column z-rotation: forward swap
 # V (apply once per batch), diagonal e^{iνθ_j} (per column), back swap U. Cost is
 # O(P^3) per column with batch-shared fixed matrices — NOT the per-call materialized
-# Ts(θ) rebuild of the 013 path, and NOT the per-(n,m,mp) Σ_ν S·trig(νθ) contraction
-# that two earlier 013c attempts collapsed into (which is the same O(P^4) materialized
-# arithmetic in disguise).
+# Ts(θ) rebuild, and NOT the per-(n,m,mp) Σ_ν S·trig(νθ) contraction (which is the
+# same O(P^4) materialized arithmetic in disguise).
 #
 # The fixed modes are obtained at cache build by sampling the production-parity y
 # kernels and rank-1-factoring each angular Fourier component of Y_n (every component is
@@ -464,7 +461,7 @@ function update_factored_y_modes!(U, V, Hs_pi2, sign_mag, P, lamb_helmholtz::Val
     return U, V
 end
 
-# Flat physical-subspace check / guard (016b watch item 2), FlatCoefficientBuffer
+# Flat physical-subspace check / guard, FlatCoefficientBuffer
 # form: scans the m=0 imaginary rows of φ (0:P_phi) and χ (0:P_active). Wired in at
 # the 023 integration boundary; OFF by default in production.
 function _factored_input_is_physical(source::FlatCoefficientBuffer{TF,A,B,LH}; atol=nothing) where {TF,A,B,LH}

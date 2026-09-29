@@ -3,7 +3,7 @@
 # WHY THIS EXISTS. `PartitionedVortex`, `RegularizedVortex` and `TwoPassVortex`
 # store their cutoffs as HARD `Float64` fields -- `rho_t::Float64` /
 # `rho_c::Float64`, force-coerced by the inner constructors
-# (src/containers.jl:2031, :2068, :2090). The direct-pair kernels take the
+# (src/containers.jl). The direct-pair kernels take the
 # functor BY VALUE for compile-time specialization, so those fields cross into
 # device code as doubles.
 #
@@ -64,7 +64,7 @@ end
 const KARegularizedFunctor{TF} =
     Union{KAPartitionedVortex{TF},KARegularizedVortex{TF}}
 
-# trait parity with src/containers.jl:2132
+# trait parity with the host functors (`_emits_potential` in src/containers.jl)
 FastMultipole._emits_potential(::KARegularizedFunctor) = false
 
 # pass-1 cutoff, mirroring the host `_direct_pair_ug` exactly: both kernels

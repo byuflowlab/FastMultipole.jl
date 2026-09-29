@@ -11,7 +11,7 @@ access surface plus the construction-lock contract:
                                    bad type, or out-of-domain value)
 
 Each spec carries a lock class, `:construction` or `:runtime`.
-Lock contract (047): `:construction` settings are read at cache/device-context
+Lock contract: `:construction` settings are read at cache/device-context
 construction (they size buffers or select the mechanism the cache is built
 around), so flipping them after a `RadixFMMCache` is built used to silently
 keep the old mechanism — the documented hazard. Both cache constructors now snapshot the
@@ -19,9 +19,6 @@ construction-locked settings (`snapshot_locked_radix_settings`), and the
 device step entry verifies the snapshot (`verify_locked_radix_settings`),
 throwing a loud, actionable error on drift. `:runtime` settings are read
 per-step outside capture and may be flipped freely.
-
-Read-timing classification per tunable is from the 047 audit (recorded in
-MATRIX_OPERATOR_REFACTOR/047-impl-production-settings-hardening.md).
 =###############################################################################
 
 struct RadixSettingSpec

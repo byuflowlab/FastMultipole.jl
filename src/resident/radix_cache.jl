@@ -10,18 +10,17 @@ function _assert_radix_targets_are_sources(targets::Tuple, sources::Tuple)
     return nothing
 end
 
-#------- near-set adequacy gate for regularized nearfield kernels (032 stage 2) -------#
+#------- near-set adequacy gate for regularized nearfield kernels -------#
 #
 # The FMM far field is singular under every nearfield strategy, so the direct
 # geometry must contain every pair inside the smoothing cutoff r/σ_src ≤ ρ_t or
-# the accuracy gate is silently missed (spec §5, theory §5.1-§5.2). The binding
+# the accuracy gate is silently missed. The binding
 # quantity is the smallest AABB gap the stencil leaves to M2L: adequacy is
 # g_min·h_leaf > ρ_t·σ_max, evaluated per step from the live geometry (σ may
 # grow, e.g. under core spreading). The box-filling n/8^ℓ form is design-time
 # sizing only and must NOT be asserted here — it mis-ranks clustered fields by
-# one to two levels. Per user decision an inadequate configuration
-# is REJECTED with the measured ratio and admissible depth; enlarging the
-# deepest-level near set is row 032a.
+# one to two levels. An inadequate configuration is REJECTED with the
+# measured ratio and admissible depth.
 
 @inline _offset_gap2(o) =
     Float64(max(0, abs(o[1]) - 1)^2 + max(0, abs(o[2]) - 1)^2 + max(0, abs(o[3]) - 1)^2)
@@ -39,7 +38,7 @@ function _ball_stencil_min_gap(q::Int)
 end
 
 # Leaf-level minimum M2L gap in units of the leaf cell size. The constraint
-# binds only at the leaf level (theory §5.1: ρ_tσ/h halves with each level up
+# binds only at the leaf level (ρ_tσ/h halves with each level up
 # while the coarse-level gap in leaf units doubles), so coarser levels of the
 # hierarchical schedule need no separate check.
 function _leaf_stencil_min_gap(policy, accepted_offsets)
@@ -114,7 +113,7 @@ function _direct_kernel_geometry_gate!(cache::RadixFMMCache,
     # a hierarchical cache no longer
     # throws here. sigma can outgrow every admissible stencil geometry mid-run
     # (core spreading + merging fatten sigma_max monotonically), so the caller
-    # demotes the cache to the all-direct zero-M2L geometry (052c) instead:
+    # demotes the cache to the all-direct zero-M2L geometry instead:
     # every pair is evaluated by the regularized direct kernel on the same
     # arrays/device, and no pair can reach the singular far field. The
     # demotion is terminal for the cache — the degenerate geometry has no
@@ -135,7 +134,7 @@ end
 # (same bounds, same capacities, same options) but forces
 # ell = 2 with a full-grid near ball: at ell = 2 every leaf offset satisfies
 # |o|^2 <= 27, so _radix_root_level reports L_allnear = ell, the scheduled
-# tables degenerate to the zero-M2L form (052c), and the whole evaluation is
+# tables degenerate to the zero-M2L form, and the whole evaluation is
 # the regularized direct near field on the original arrays/device. Cost mirrors
 # recenter!: one construction-equivalent rebuild (device caches transiently
 # ~2x device memory), after which the adequacy gate is vacuous forever.
@@ -227,7 +226,7 @@ end
 # campaign; on the GPU the per-window flag/scan/compact carries a fixed ~50 us
 # device-to-host round trip, so route generation scales as
 # `(ell - 1) * ceil(noffsets / K)` and K = 4 spends 72-164 ms per step on latency
-# alone. H200 job 12992039 measured route generation falling 109-193x from K = 4 to
+# alone. On an H200, route generation fell 109-193x from K = 4 to
 # a whole-level window.
 #
 # then measured the residual at n = 1e6: K = 256 still spent
@@ -261,7 +260,7 @@ _default_radix_precision(expansion_order::Int) =
 # `ConcatenatedFixedZM2L`: it is the only plan the KernelAbstractions build has.
 #
 # Dense trades construction for steady state (~20 s build and ~300-370 break-even
-# steps at the task-028 target), which suits the repeated-step cache this is, but not
+# steps in the benchmarked configuration), which suits the repeated-step cache this is, but not
 # one-shot evaluation: pass `PrecomputedFactoredYM2L()` explicitly for that.
 function _default_radix_m2l_strategy(::Type{TF}, expansion_order::Int, LH::Bool,
         device::Bool, nclasses::Int, ndof::Int) where TF
@@ -328,7 +327,7 @@ function _default_radix_policy(policy, P::Int, ::Type{TF}, LH::Bool, h0, ell::In
         return ConstantPAnalyticStencil(
             ConstantPStencilConfig(P, TF(1e-4); lamb_helmholtz=LH))
     end
-    # Only the untouched default carries the task-028 Stage 7 level schedule: an
+    # Only the untouched default carries the level schedule: an
     # explicit `near_radius2` is honored as the uniform geometry the caller asked
     # for. The schedule covers M2L levels 2:ell and is non-increasing with depth.
     qs = if level_radii2 !== nothing
@@ -377,7 +376,7 @@ is reallocated over the cache's lifetime.
   are selected from the measured 024/028 rules (see below); passed explicitly, it is
   used verbatim. The resolved choice is readable as `cache.state.options`.
 - `near_radius2`: rigid leaf near set `{o : |o|^2 <= near_radius2}` of the default
-  hierarchical policy (default `$(RADIX_DEFAULT_NEAR_RADIUS2)`; `12` is the `024b`
+  hierarchical policy (default `$(RADIX_DEFAULT_NEAR_RADIUS2)`; `12` is the
   `theta=0.5` stencil and `3` the classic FMM one). Passing it explicitly also
   selects the *uniform* geometry, i.e. it drops the default level schedule below.
 - `level_radii2`: per-M2L-level near radii, coarse to fine; must be
@@ -396,10 +395,9 @@ is reallocated over the cache's lifetime.
   `level_radii2`, or `window_classes` throws; likewise `stencil_epsilon` (flat)
   rejects `near_radius2`.
 
-the default policy is [`HierarchicalRigidStencil`](@ref); since task
-028 Stage 7 its default geometry is `near_radius2=$(RADIX_DEFAULT_NEAR_RADIUS2)` with
+the default policy is [`HierarchicalRigidStencil`](@ref); its default geometry is `near_radius2=$(RADIX_DEFAULT_NEAR_RADIUS2)` with
 the level schedule `($(RADIX_DEFAULT_COARSE_NEAR_RADIUS2), $(RADIX_DEFAULT_NEAR_RADIUS2), ...)`,
-the fastest configuration inside the earlier stage's `P = 4` accuracy gate. Its tolerance is
+the fastest measured configuration inside the `P = 4` accuracy tolerance. Its tolerance is
 derived by [`rigid_stencil_epsilon`](@ref) so the analytic accuracy gate is satisfied
 by construction; pass `near_radius2=12` for the previous, more accurate and slower
 default. The flat
@@ -421,7 +419,7 @@ of tasks 024 and 028:
 gradient error, essentially independent of `P`) to sit below the stencil's own
 truncation error; above `P = 4` it would discard accuracy the higher order was paid
 for. Dense trades a large construction cost for the best steady state (~300-370
-break-even steps at the task-028 target), which suits this repeated-step cache; pass
+break-even steps in the benchmarked configuration), which suits this repeated-step cache; pass
 `options=RadixLifecycleOptions(; m2l_strategy=PrecomputedFactoredYM2L(),
 operator=FactoredRotationM2L())` for one-shot evaluation, or any explicit `options`
 to bypass the rules entirely.
@@ -527,7 +525,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     hierarchical = stencil_policy isa HierarchicalRigidStencil
     # Active-level trimming (): hierarchical caches retain node
     # levels root_level:ell and run M2L on levels first_m2l_level:ell (the
-    # flat-top root level plus the task-025 transition levels). Cubic caches
+    # flat-top root level plus the transition levels). Cubic caches
     # degenerate to root_level = 1 with an empty flat-top (first_m2l_level = 2,
     # the legacy schedule); flat-policy caches stay untrimmed (root_level = 0).
     if hierarchical
@@ -834,7 +832,7 @@ end
 """
     recenter!(cache::RadixFMMCache, systems; bounds=nothing, padding=0.05)
 
-Re-anchor the cache's fixed domain box (spec §4). The box is part of
+Re-anchor the cache's fixed domain box. The box is part of
 the cache's invariant contract: bodies leaving it make the next `fmm!` throw,
 and `fmm!` never recenters implicitly. When the physical domain should move or
 resize, the consumer calls `recenter!` explicitly between evaluations, before
