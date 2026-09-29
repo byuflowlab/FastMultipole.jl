@@ -34,66 +34,16 @@ end
 
 #------- direct_rectangular! on device arrays (all pairs, one work-item per target) -------#
 #
-# Mirrors _rect_points_host! / _rect_panels_host! (src/direct_rectangular.jl):
-# the pair functions are device-compilable as written, so the device methods
-# only supply the target-parallel loop. out, targets and sources must all be
-# device arrays of the same element type.
+# One kernel for every AbstractRectangularKernel: each work-item runs the same
+# per-target sum as the host loop (FastMultipole._rect_target!), which calls the
+# kernel type's `rect_pair`. A consumer package that defines `rect_pair` for its
+# own isbits kernel type gets this device method without further code. out,
+# targets and sources must all be device arrays on one backend.
 
-@kernel function ka_rect_points_kernel!(out, @Const(targets), @Const(sources), n_sources, ::Val{GRAD}) where GRAD
+@kernel function ka_rect_kernel!(out, @Const(targets), kernel, @Const(sources), n_sources,
+        grad::Val, pot::Val)
     i = @index(Global)
-    T = eltype(out)
-    @inbounds begin
-        tx = targets[1, i]; ty = targets[2, i]; tz = targets[3, i]
-        u1 = zero(T); u2 = zero(T); u3 = zero(T)
-        j1 = zero(T); j2 = zero(T); j3 = zero(T); j4 = zero(T); j5 = zero(T)
-        j6 = zero(T); j7 = zero(T); j8 = zero(T); j9 = zero(T)
-        for q in 1:n_sources
-            Ux, Uy, Uz, a1, a2, a3, a4, a5, a6, a7, a8, a9 =
-                FastMultipole._rect_point_pair(FastMultipole.RectangularGaussianErfVortex(), tx, ty, tz,
-                    sources[1, q], sources[2, q], sources[3, q],
-                    sources[4, q], sources[5, q], sources[6, q],
-                    sources[7, q], Val(GRAD))
-            u1 += Ux; u2 += Uy; u3 += Uz
-            if GRAD
-                j1 += a1; j2 += a2; j3 += a3; j4 += a4; j5 += a5
-                j6 += a6; j7 += a7; j8 += a8; j9 += a9
-            end
-        end
-        out[1, i] += u1; out[2, i] += u2; out[3, i] += u3
-        if GRAD
-            out[4, i] += j1; out[5, i] += j2; out[6, i] += j3
-            out[7, i] += j4; out[8, i] += j5; out[9, i] += j6
-            out[10, i] += j7; out[11, i] += j8; out[12, i] += j9
-        end
-    end
-end
-
-@kernel function ka_rect_panels_kernel!(out, @Const(targets), @Const(sources), n_sources,
-        ::Val{GRAD}, ::Val{POT}, ::Val{REG}) where {GRAD,POT,REG}
-    i = @index(Global)
-    T = eltype(out)
-    @inbounds begin
-        target = SVector{3,T}(targets[1, i], targets[2, i], targets[3, i])
-        u = zero(SVector{3,T})
-        g = zero(SMatrix{3,3,T,9})
-        p = zero(T)
-        for q in 1:n_sources
-            tag, nv, v1, v2, v3, v4, s1, s2, koff =
-                FastMultipole._rect_load_panel_source(sources, q, T)
-            uq, gq, pq = FastMultipole._rect_panel_pair(FastMultipole.RectangularPanelInfluence(), target,
-                tag, nv, v1, v2, v3, v4, s1, s2, koff, Val(GRAD), Val(REG), Val(POT))
-            u += uq
-            GRAD && (g += gq)
-            POT && (p += pq)
-        end
-        out[1, i] += u[1]; out[2, i] += u[2]; out[3, i] += u[3]
-        if GRAD
-            for j in 1:3, k in 1:3
-                out[3 + (j-1)*3 + k, i] += g[k, j]
-            end
-        end
-        POT && (out[FastMultipole.rect_potential_row(GRAD), i] += p)
-    end
+    FastMultipole._rect_target!(out, targets, kernel, sources, i, n_sources, grad, pot)
 end
 
 function _ka_rect_assert_device(out, targets, sources)
@@ -106,31 +56,16 @@ function _ka_rect_assert_device(out, targets, sources)
 end
 
 function FastMultipole.direct_rectangular!(out::AnyGPUMatrix{T}, targets::AbstractMatrix{T},
-        kernel::FastMultipole.RectangularGaussianErfVortex, sources::AbstractMatrix{T};
+        kernel::FastMultipole.AbstractRectangularKernel, sources::AbstractMatrix{T};
         gradient::Bool=false, scalar_potential::Bool=false, workgroup::Int=64) where T
     FastMultipole._rect_check_args(out, targets, kernel, sources, gradient, scalar_potential)
     _ka_rect_assert_device(out, targets, sources)
     n_targets = size(targets, 2)
     n_targets == 0 && return out
     backend = KA.get_backend(out)
-    kern = ka_rect_points_kernel!(backend, workgroup)
-    kern(out, targets, sources, size(sources, 2), Val(gradient); ndrange=n_targets)
+    kern = ka_rect_kernel!(backend, workgroup)
+    kern(out, targets, kernel, sources, size(sources, 2), Val(gradient), Val(scalar_potential);
+        ndrange=n_targets)
     KA.synchronize(backend)
     return out
 end
-
-function FastMultipole.direct_rectangular!(out::AnyGPUMatrix{T}, targets::AbstractMatrix{T},
-        kernel::FastMultipole.RectangularPanelInfluence, sources::AbstractMatrix{T};
-        gradient::Bool=false, scalar_potential::Bool=false, workgroup::Int=64) where T
-    FastMultipole._rect_check_args(out, targets, kernel, sources, gradient, scalar_potential)
-    _ka_rect_assert_device(out, targets, sources)
-    n_targets = size(targets, 2)
-    n_targets == 0 && return out
-    backend = KA.get_backend(out)
-    regv = FastMultipole._rect_reg_val(kernel.filament_reg)
-    kern = ka_rect_panels_kernel!(backend, workgroup)
-    kern(out, targets, sources, size(sources, 2), Val(gradient), Val(scalar_potential), regv; ndrange=n_targets)
-    KA.synchronize(backend)
-    return out
-end
-

@@ -12,15 +12,18 @@
   and concatenated M2L operators, `FmmPlan` for repeated calls on frozen geometry,
   nearfield influence cache, extra sources and targets.
 - New kernels: `SingularVortex`, `SingularDipole`, `SingularSourceVortex`,
-  `RegularizedVortex`, `PartitionedVortex`, `TwoPassVortex`, `RectangularGaussianErfVortex`,
+  `RegularizedVortex`, `PartitionedVortex`, `TwoPassVortex`,
   the filament nearfield kernels `SourceFilamentKernel`, `DipoleFilamentKernel`, `VortexFilamentKernel`
   and the panel nearfield kernels `SourcePanelKernel`, `DipolePanelKernel`, `SourceDipolePanelKernel`, `VortexSheetPanelKernel`.
 - Known limit: one GPU and one stream per cache; multi-GPU and stream overlap are future work.
-- `RectangularPanelInfluence` accepts Float32 (its singularity guards and the LineGauss
-  series/axis crossovers scale with the precision; LineGauss in Float32 tracks Float64 to
-  about 3e-5 in velocity and 2e-3 in gradient of the field scale near the segment axis); `VortexSheetPanelKernel(; order=3)`
-  selects a 13-point degree-7 Dunavant rule. `direct_rectangular!` runs on device arrays
-  through the KernelAbstractions extension (all-pairs, one work-item per target).
+- `VortexSheetPanelKernel(; order=3)` selects a 13-point degree-7 Dunavant rule.
+- `direct_rectangular!(out, targets, kernel, sources; gradient, scalar_potential)`:
+  brute-force evaluation from a source set at a distinct target set. The pair
+  math comes from the consumer: a kernel type `<: AbstractRectangularKernel`
+  defines `rect_source_rows` and `rect_pair` (optionally `rect_has_potential`,
+  `rect_check_sources`). The same `rect_pair` runs in the threaded host loop and,
+  through the KernelAbstractions extension, on device arrays (one work-item per
+  target), with no device code on the consumer side.
 - Added the validated radix settings API: `radix_settings`, `radix_setting`,
   `set_radix_setting!`, and `set_radix_settings!`. Construction-locked settings
   are snapshotted by a cache and checked at each device step; runtime settings
@@ -61,6 +64,9 @@
   `zeta_to_target!`, `output_from_target!`, `radix_zeta!`, `radix_sfs_repass!`)
   are gone; a consumer runs its own pass through `nearfield_pass` and reads
   `radix_nearfield(cache)` (FLOWVPM does).
+- Consumer kernels left FastMultipole: the gaussianerf particle kernel
+  `RectangularGaussianErfVortex` is FLOWVPM's and the panel-element kernel
+  `RectangularPanelInfluence` is FLOWPanel's, each implementing `rect_pair`.
 - Review cuts (2026-09-28): code with no caller in production or in the
   known consumers (FLOWVPM, FLOWUnsteadyCore, LiftingLines, VortexLattice,
   FLOWPanel) was left out of this release. The full list, with what replaced
@@ -97,8 +103,7 @@
   a device cache ran the host refresh (method shadowing); automatic option
   selection could hand a device cache `DenseTranslationM2L`, which the KA build
   rejects (a device cache now always builds `ConcatenatedFixedZM2L`);
-  `RectangularPanelInfluence` accepted a four-vertex combined source+ring panel
-  whose ring was evaluated as a triangle; `ProbeSystem` third derivatives now
+  `ProbeSystem` third derivatives now
   accumulate like the other outputs; `direct!(...; nearfield_cache)` rejects
   derivatives switches that differ from the cache's; `_assert_rigid_rotation`
   scales its tolerance with the float type; a tree-carried extra source outside

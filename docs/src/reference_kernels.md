@@ -35,10 +35,11 @@ DipolePanelKernel
 SourceDipolePanelKernel
 VortexSheetPanelKernel
 AbstractRectangularKernel
-RectangularGaussianErfVortex
-RectangularPanelInfluence
 direct_rectangular!
 FastMultipole.rect_source_rows
+FastMultipole.rect_pair
+FastMultipole.rect_has_potential
+FastMultipole.rect_check_sources
 FastMultipole.rect_output_rows
 ```
 

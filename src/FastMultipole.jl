@@ -113,6 +113,7 @@ include("interaction_list_batched.jl")
 
 include("resident/resident_grid_state.jl")
 include("resident/resident_b2m.jl")
+include("resident/element_closed_forms.jl")
 include("resident/resident_pair_kernels.jl")
 include("resident/resident_finalize.jl")
 include("resident/radix_cache.jl")
@@ -129,7 +130,7 @@ export radix_settings, radix_setting
 export set_radix_setting!, set_radix_settings!
 
 include("direct_rectangular.jl")
-export AbstractRectangularKernel, RectangularGaussianErfVortex, RectangularPanelInfluence
+export AbstractRectangularKernel
 export direct_rectangular!
 
 

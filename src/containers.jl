@@ -1438,29 +1438,32 @@ struct SingularVortex <: AbstractDirectKernel end
 """
     RegularizedVortex(; sigma_row, rho_t=4.789)
 
-Regularized-everywhere Biot-Savart nearfield for `Point{Vortex}` sources with the
-FLOWVPM default `gaussianerf` regularization (the only kernel supported in the
-Integration Phase). The smoothing radius `σ` is read from packed extra-state row
-`sigma_row` of each **source** body (never radius row 4, which carries the
-MAC/error radius, e.g. FLOWVPM's inflated `ρ_σ·σ`). Sources with `σ <= 0`
-(e.g. zero-padded columns of narrower systems) fall back to the singular kernel.
+Regularized Biot-Savart nearfield for `Point{Vortex}` sources, evaluated for
+every near pair. A source of strength `Γ` induces at offset `x = target − source`,
+`r = |x|`,
 
-`rho_t` is the conservative smoothing cutoff `r/σ` beyond which the regularized
-and singular kernels agree to the phase tolerance (`031a` §4; 4.789 at
-`ε = 1e-3`). It is used only by the near-set adequacy gate: every evaluation
-asserts `g_min·h_leaf > rho_t·σ_max` from the live geometry and **throws**
-naming the measured ratio and the admissible depth if the direct near set fails
-to cover the smoothing neighborhood — the FMM far field is singular, so running
-on an inadequate stencil would silently miss the accuracy gate (spec §5).
+    u = −g(ρ) / (4π r³) · (x × Γ),   ρ = r/σ,
+    g(ρ) = erf(ρ/√2) − √(2/π) ρ e^{−ρ²/2},
 
-The `g(ρ)`/`h(ρ) = ρg'−3g` evaluation is erf-free: the theory-§3 Horner series
-below `ρ = 2` and the `031a` §6.2 one-`exp` form above (constants measured by
-`MATRIX_OPERATOR_REFACTOR/scripts/fit_032_nearfield_g.jl`).
+the singular kernel scaled by the Gaussian-erf smoothing factor `g` (g → 1 as
+ρ → ∞); the velocity gradient uses `h(ρ) = ρg′(ρ) − 3g(ρ)`. The smoothing radius
+`σ` is read from packed extra-state row `sigma_row` of each **source** body (not
+radius row 4, which carries the MAC/error radius). Sources with `σ <= 0` (e.g.
+zero-padded columns of narrower systems) fall back to the singular kernel.
 
-Since the 032a Stage D measurement this
-kernel is the **divergence-proof fallback**: [`PartitionedVortex`](@ref) is
-the recommended default for σ-carrying vortex systems (1.16-1.77x faster
-step-level at identical gate accuracy on both Integration Phase test cases).
+`rho_t` is the smoothing cutoff `r/σ` beyond which the regularized and singular
+kernels agree to the expansion tolerance (4.789 for a relative difference of
+1e-3). The FMM far field is singular, so the direct near set must cover every
+source's smoothing neighborhood: each evaluation checks
+`g_min·h_leaf > rho_t·σ_max` from the live geometry and **throws**, naming the
+measured ratio and the admissible depth, when the near set is too small.
+
+`g` and `h` are evaluated without `erf`: a cancellation-safe alternating series
+below `ρ = 2` and a one-`exp` fitted form above.
+
+[`PartitionedVortex`](@ref) is the recommended default for σ-carrying vortex
+systems; it is faster at the same accuracy. This kernel is the fallback that
+evaluates every near pair regularized.
 """
 # Regularized vortex nearfields share the sigma_row/rho_t contract and the
 # near-set adequacy gate; they differ only in how pairs beyond the smoothing

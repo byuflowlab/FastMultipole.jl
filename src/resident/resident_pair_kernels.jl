@@ -294,7 +294,7 @@ end
     return _line_source_dipole(_line_source_setup(tx, ty, tz, source_bodies, j, 8)..., px, py, pz)
 end
 
-# vortex filament: the bound-vortex functions of direct_rectangular.jl, with
+# vortex filament: the bound-vortex functions of element_closed_forms.jl, with
 # r1 = x1 - target, r2 = x2 - target and the circulation Γ . d/|d| (Γ points
 # along the segment; a reversed Γ flips the sign)
 @inline function _vortex_filament_pair(kernel::VortexFilamentKernel, dx, dy, dz, source_bodies, j, ::Val{GRAD}) where GRAD
@@ -322,14 +322,14 @@ end
     # the Gaussian family divides by core^2; with no core it is the singular kernel
     fam = core == zero(T) ? 1 : kernel.family
     if fam == 2
-        u = _rect_bound_vortex_velocity(r1, r2, core, Val(2))
-        g = GRAD ? _rect_bound_vortex_gradient(r1, r2, core, Val(2)) : zero(SMatrix{3,3,T,9})
+        u = _elem_bound_vortex_velocity(r1, r2, core, Val(2))
+        g = GRAD ? _elem_bound_vortex_gradient(r1, r2, core, Val(2)) : zero(SMatrix{3,3,T,9})
     elseif fam == 3
-        u = _rect_bound_vortex_velocity(r1, r2, core, Val(3))
-        g = GRAD ? _rect_bound_vortex_gradient(r1, r2, core, Val(3)) : zero(SMatrix{3,3,T,9})
+        u = _elem_bound_vortex_velocity(r1, r2, core, Val(3))
+        g = GRAD ? _elem_bound_vortex_gradient(r1, r2, core, Val(3)) : zero(SMatrix{3,3,T,9})
     else
-        u = _rect_bound_vortex_velocity(r1, r2, core, Val(1))
-        g = GRAD ? _rect_bound_vortex_gradient(r1, r2, core, Val(1)) : zero(SMatrix{3,3,T,9})
+        u = _elem_bound_vortex_velocity(r1, r2, core, Val(1))
+        g = GRAD ? _elem_bound_vortex_gradient(r1, r2, core, Val(1)) : zero(SMatrix{3,3,T,9})
     end
     return gamma * u, gamma * g
 end
@@ -351,10 +351,10 @@ end
 
 #------- planar triangular panels -------#
 #
-# Source and dipole panels use the closed forms of direct_rectangular.jl
-# (`_rect_panel_pair` with `Val(true)` for the potential: velocity, gradient and
-# potential from one pass over the edges, with the self-pair limits). Those follow FLOWPanel's sign
-# convention, in which a source panel's potential is −σ/(4π) ∫ dA/r; the
+# Source and dipole panels use the closed forms of element_closed_forms.jl
+# (`_elem_tri_panel_pair`: velocity, gradient and potential from one pass over
+# the edges, with the self-pair limits). Those use the sign convention in which
+# a source panel's potential is −σ/(4π) ∫ dA/r; the
 # resident lifecycle's sources are +q/(4π r), so the panel results are negated
 # to be the area integrals of the point kernels.
 @inline function _panel_vertices(source_bodies, j, v1row, ::Type{T}) where T
@@ -370,8 +370,7 @@ end
     T = typeof(dx)
     @inbounds target = SVector{3,T}(source_bodies[1, j] + dx, source_bodies[2, j] + dy, source_bodies[3, j] + dz)
     v1, v2, v3 = _panel_vertices(source_bodies, j, v1row, T)
-    u, g, p = _rect_panel_pair(RectangularPanelInfluence(), target, tag, 3, v1, v2, v3, v3,
-        T(s1), T(s2), zero(T), Val(GRAD), Val(1), Val(true))
+    u, g, p = _elem_tri_panel_pair(target, tag, v1, v2, v3, T(s1), T(s2), Val(GRAD))
     return -p, -u, -g
 end
 
