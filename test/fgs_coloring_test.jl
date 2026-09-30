@@ -151,3 +151,55 @@ lex = make_fgs(:lexicographic)
 @test isempty(lex.leaves_by_color)
 
 end
+
+@testset "Fast Gauss Seidel: reverse sweeps" begin
+
+# a reverse sweep equals serial Gauss-Seidel with immediate per-leaf updates in
+# reverse leaf order (:lexicographic) or reverse color-major order (:colored)
+system = generate_gravitational(20260930, 800)
+direct!(system; scalar_potential=true, gradient=false)
+system.potential[1, :] .*= -1.0
+
+function seed_reverse_state!(s)
+    s.self_matrices.rhs .= sin.(eachindex(s.self_matrices.rhs))
+    s.nonself_matrices.rhs .= 0
+    s.old_influence_storage .= 0
+    s.strengths .= 0
+    return nothing
+end
+
+for sweep_order in (:lexicographic, :colored)
+    make() = FastMultipole.FastGaussSeidel((system,), (system,);
+        expansion_order=4, multipole_acceptance=0.5, leaf_size=40,
+        shrink=true, recenter=false, sweep_order)
+    fgs, fgs_ref = make(), make()
+    @test length(fgs.source_tree.leaf_index) > 1
+    @test !isempty(fgs.direct_list)
+    seed_reverse_state!(fgs); seed_reverse_state!(fgs_ref)
+
+    FastMultipole.gs_sweep!(fgs.strengths, fgs.self_matrices, fgs.leaf_lu_cache,
+        fgs.self_matrices.rhs, fgs.nonself_matrices, fgs.old_influence_storage,
+        fgs.source_tree, fgs.target_tree, fgs.strengths_by_leaf, fgs.index_map,
+        fgs.direct_list, fgs.targets_by_branch, fgs, true)
+
+    order = sweep_order === :colored ?
+        reduce(vcat, reverse(fgs_ref.leaves_by_color)) :
+        reverse(1:length(fgs_ref.source_tree.leaf_index))
+    for i_leaf in order
+        leaf_strengths = view(fgs_ref.strengths, fgs_ref.strengths_by_leaf[i_leaf])
+        FastMultipole.solve_leaf!(leaf_strengths, fgs_ref.self_matrices,
+            fgs_ref.leaf_lu_cache, i_leaf)
+        FastMultipole.update_nonself_influence!(fgs_ref.self_matrices.rhs,
+            fgs_ref.strengths, fgs_ref.nonself_matrices,
+            fgs_ref.old_influence_storage, i_leaf, fgs_ref.source_tree,
+            fgs_ref.target_tree, fgs_ref.strengths_by_leaf, fgs_ref.index_map,
+            fgs_ref.direct_list, fgs_ref.targets_by_branch)
+    end
+
+    @test fgs.strengths == fgs_ref.strengths                    # bitwise
+    @test fgs.self_matrices.rhs == fgs_ref.self_matrices.rhs    # bitwise
+    @test any(!iszero, fgs.strengths)                           # non-vacuous
+end
+
+end
+

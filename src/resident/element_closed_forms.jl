@@ -368,6 +368,13 @@ end
     u = zero(SVector{3,T})
     g = zero(SMatrix{3,3,T,9})
     p = zero(T)
+    # a zero-area triangle has no normal and induces nothing
+    e1 = v2 - v1
+    e2 = v3 - v1
+    nxc = e1[2]*e2[3] - e1[3]*e2[2]
+    nyc = e1[3]*e2[1] - e1[1]*e2[3]
+    nzc = e1[1]*e2[2] - e1[2]*e2[1]
+    iszero(nxc*nxc + nyc*nyc + nzc*nzc) && return u, g, p
     if tag == 1 || tag == 5
         us, gs, ps = _elem_tri_source_doublet(target, v1, v2, v3, zero(T), Val(false), Val(GRAD))
         u += s1 * us

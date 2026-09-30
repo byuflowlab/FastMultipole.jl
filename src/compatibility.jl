@@ -504,6 +504,42 @@ function metadata_per_body(system)
 end
 
 """
+    metadata_to_device_buffer!(buffer, switch, system)
+
+**OPTIONAL OVERLOAD** for a [`DeviceResident`](@ref) target system with
+`metadata_per_body(system) > 0`: fill rows `metadata_range(switch)` of the
+device target buffer (column `i` is body `i`) with device-to-device
+operations. The device radix path calls it every evaluation, before
+[`buffer_to_target!`](@ref); the per-body [`metadata_to_buffer!`](@ref) hook
+cannot write device memory. A device-resident system with metadata and no
+overload is rejected by `fmm!` before any work. Metadata only feeds the
+octree's relative error control, which the radix path does not use, so such
+a system can instead be evaluated with `fmm!(...; metadata=0)`.
+"""
+function metadata_to_device_buffer!(buffer, switch, system)
+    throw(ArgumentError(_device_metadata_message(system)))
+end
+
+_device_metadata_message(system) =
+    "$(typeof(system)) is DeviceResident and carries $(metadata_per_body(system)) " *
+    "metadata rows, but has no FastMultipole.metadata_to_device_buffer!(buffer, switch, system) " *
+    "method, so the device path cannot deliver them. Metadata only feeds the octree's " *
+    "relative error control, which the radix/GPU path does not use: pass metadata=0 to " *
+    "fmm! to evaluate without it, or overload metadata_to_device_buffer! to fill " *
+    "metadata_range(switch) on the device."
+
+function _check_device_metadata(target_systems, switches)
+    default_method = which(metadata_to_device_buffer!, Tuple{Any,Any,Any})
+    for (system, switch) in zip(target_systems, switches)
+        residency(system) isa DeviceResident || continue
+        isempty(metadata_range(switch)) && continue
+        which(metadata_to_device_buffer!, Tuple{Any,Any,typeof(system)}) === default_method &&
+            throw(ArgumentError(_device_metadata_message(system)))
+    end
+    return nothing
+end
+
+"""
     previous_potential_metadata_index(system)
 
 Returns the 1-based metadata row used as the previous scalar-potential estimate

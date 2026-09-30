@@ -454,6 +454,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
     _assert_radix_targets_are_sources(targets, sources)
     0 <= ell <= RADIX_GRID_MAX_ELL || throw(ArgumentError(
         "RadixFMMCache ell=$ell must lie in 0:$(RADIX_GRID_MAX_ELL) (64-bit Morton keys)"))
+    _check_expansion_order(expansion_order)
     LH = lamb_helmholtz === nothing ? has_vector_potential(sources) : Bool(lamb_helmholtz)
     # B2M element resolution: one shared body type per cache, checked
     # here so a Point{Vortex} system with the χ channel off fails at construction

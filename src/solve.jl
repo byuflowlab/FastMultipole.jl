@@ -614,6 +614,7 @@ function FastGaussSeidel(target_systems::Tuple, source_systems::Tuple;
 )
     sweep_order in (:lexicographic, :colored) || throw(ArgumentError(
         "sweep_order must be :lexicographic or :colored (got $(repr(sweep_order)))"))
+    _check_expansion_order(expansion_order)
 
     #--- identical source and target trees ---#
 
@@ -1058,9 +1059,9 @@ One Gauss-Seidel sweep over all source leaves.
   reproduces sequential GS in color-major leaf order exactly (see
   `color_leaves`), deterministically at any thread count.
 
-The `reverse_sweep` argument is ignored by both sweep orders: leaves are
-always visited in forward order, so `reverse_pass=true` runs a second forward
-sweep identical to the first.
+`reverse_sweep == true` visits leaves (`:lexicographic`) or colors
+(`:colored`) in reverse order, so `reverse_pass=true` makes each inner
+iteration a symmetric Gauss-Seidel sweep (forward, then backward).
 """
 function gs_sweep!(strengths, self_matrices, leaf_lu_cache, right_hand_side,
                    nonself_matrices, old_influence_storage, source_tree,
@@ -1069,7 +1070,9 @@ function gs_sweep!(strengths, self_matrices, leaf_lu_cache, right_hand_side,
 
     if solver.sweep_order === :colored
 
-        for leaves in solver.leaves_by_color
+        n_colors = length(solver.leaves_by_color)
+        for i_color in (reverse_sweep ? (n_colors:-1:1) : (1:1:n_colors))
+            leaves = solver.leaves_by_color[i_color]
             # parallel: per-leaf-disjoint writes only (strengths block +
             # nonself product/old-influence blocks)
             Threads.@threads for i_leaf in leaves
@@ -1093,7 +1096,8 @@ function gs_sweep!(strengths, self_matrices, leaf_lu_cache, right_hand_side,
 
     else # :lexicographic — serial loop
 
-        for (i_leaf, i_branch) in enumerate(source_tree.leaf_index)
+        n_leaves = length(source_tree.leaf_index)
+        for i_leaf in (reverse_sweep ? (n_leaves:-1:1) : (1:1:n_leaves))
             leaf_strengths = view(strengths, strengths_by_leaf[i_leaf])
             solve_leaf!(leaf_strengths, self_matrices, leaf_lu_cache, i_leaf)
             length(direct_list) > 0 && update_nonself_influence!(

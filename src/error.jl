@@ -183,7 +183,7 @@ function multipole_error(t⃗, r_mp, multipole_expansion, P, error_method, lamb_
     return ε_mp * ONE_OVER_4π
 end
 
-function local_error(local_branch, multipole_branch, i_source_branch, expansions, P, error_method::Union{UnequalSpheres, UnequalBoxes}, lamb_helmholtz)
+function local_error(local_branch, multipole_branch, i_source_branch, expansions, P, error_method::Union{UnequalSpheres, UnequalBoxes}, ::Val{LH}) where LH
 
     @assert LH == false "$(error_method) not implmemented with `lamb_helmholtz=true`"
 
@@ -207,7 +207,7 @@ function local_error(local_branch, multipole_branch, i_source_branch, expansions
     return abs(ε) * ONE_OVER_4π
 end
 
-function local_error(local_branch, multipole_branch, i_source_branch, expansions, P, error_method::Union{UniformUnequalSpheres, UniformUnequalBoxes}, lamb_helmholtz)
+function local_error(local_branch, multipole_branch, i_source_branch, expansions, P, error_method::Union{UniformUnequalSpheres, UniformUnequalBoxes}, ::Val{LH}) where LH
 
     @assert LH == false "$(error_method) not implmemented with `lamb_helmholtz=true`"
 
@@ -511,12 +511,12 @@ function predict_error(target_branch, source_weights, source_branch, weights_tmp
     for k in 0:p
         P2 = zero(eltype(source_weights))
         m = 0
-        in_index = (k*(k+1))>>1 + k + m + 1
+        in_index = (k*(k+1))>>1 + m + 1
         coeff_real = source_weights[1,1,in_index]
         coeff_imag = source_weights[2,1,in_index]
         P2 += abs(coeff_real + im * coeff_imag)^2 * Float64(factorial(big(k - m))) * Float64(factorial(big(k + m)))
         for m in 1:k
-            in_index = (k*(k+1))>>1 + k + m + 1
+            in_index = (k*(k+1))>>1 + m + 1
             coeff_real = source_weights[1,1,in_index]
             coeff_imag = source_weights[2,1,in_index]
             P2 += 2 * abs(coeff_real + im * coeff_imag)^2 * Float64(factorial(big(k - m))) * Float64(factorial(big(k + m)))

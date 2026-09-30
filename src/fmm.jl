@@ -824,6 +824,9 @@ path is only selected by passing a `RadixFMMCache`.
   sources are added and before delivery: a consumer's own pairwise pass over
   the near field (see [`radix_nearfield`](@ref)); requires the self-inducing call
 - `lamb_helmholtz=nothing`: optional cross-check against the cache's `LH` parameter
+- `metadata=nothing`: metadata rows per target (default `metadata_per_body`);
+  `metadata=0` drops them, which a device-resident target without a
+  [`metadata_to_device_buffer!`](@ref) overload needs on a device cache
 
 The cache's systems must lead `target_systems` (same order). When they also
 lead `source_systems` the call is self-inducing; when none of them is a source
@@ -844,7 +847,8 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
         third_derivative::Bool=false,
         tree_sources::Tuple=(),
         nearfield_pass=nothing,
-        lamb_helmholtz::Union{Nothing,Bool}=nothing) where {TF,LH}
+        lamb_helmholtz::Union{Nothing,Bool}=nothing,
+        metadata=nothing) where {TF,LH}
     targets = to_tuple(target_systems)
     sources = to_tuple(source_systems)
     split = _split_radix_systems(cache.n_systems, targets, sources)
@@ -865,7 +869,8 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
     all_switches = DerivativesSwitch(
         to_vector(scalar_potential, length(targets)),
         to_vector(gradient, length(targets)),
-        hessian_v, targets)
+        hessian_v, targets; metadata)
+    cache.device && _check_device_metadata(targets, all_switches)
     switches = Tuple(all_switches[i] for i in split.main_index)
     extra_switches = Tuple(all_switches[i] for i in split.extra_target_index)
     main = split.main
@@ -1126,6 +1131,7 @@ function FmmPlan(target_systems::Tuple, source_systems::Tuple;
 )
     # mirror of fmm!(targets, sources) construction (see the methods above),
     # stopping short of the passes
+    _check_expansion_order(expansion_order)
     TF = get_type(target_systems, source_systems)
     scalar_potential_v = to_vector(scalar_potential, length(target_systems))
     gradient_v = to_vector(gradient, length(target_systems))
@@ -1306,6 +1312,12 @@ function fmm!(target_systems::Tuple, source_systems::Tuple, plan::FmmPlan;
         nearfield_cache=plan.nearfield_cache[], optargs...)
 end
 
+function _check_expansion_order(expansion_order)
+    expansion_order >= 1 || throw(ArgumentError(
+        "expansion_order must be >= 1, got $expansion_order: order 0 keeps only each cluster's total strength and yields no gradient"))
+    return nothing
+end
+
 function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, source_tree::Tree, leaf_size_source, m2l_list, direct_list, derivatives_switches::Tuple, interaction_list_method::InteractionListMethod;
     expansion_order=5, error_tolerance=nothing,
     upward_pass::Bool=true, horizontal_pass::Bool=true, downward_pass::Bool=true,
@@ -1320,6 +1332,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
     direct_conditioning=(),
     nearfield_cache=nothing,
 )
+
+    _check_expansion_order(expansion_order)
 
     #--- check if lamb-helmholtz decomposition is required ---#
 
@@ -1384,16 +1398,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
         # increment the expansion order if error_tolerance !== nothing
         # error_check = !(isnothing(error_tolerance))
 
-        # precompute y-axis rotation by π/2 matrices (if not already done)
-        update_Hs_π2!(Hs_π2, expansion_order)
-
-        # precompute y-axis Wigner matrix normalization (if not already done)
-        update_ζs_mag!(ζs_mag, expansion_order)
-        update_ηs_mag!(ηs_mag, expansion_order)
-
-        # precompute error prediction normalization (if not already done)
-        update_M̃!(M̃, expansion_order)
-        update_L̃!(L̃, expansion_order)
+        # grow the shared rotation, normalization and error-prediction tables
+        # (if not already done)
+        ensure_tables!(expansion_order)
 
         # available threads
         n_threads = Threads.nthreads()
@@ -1432,8 +1439,8 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
 
                 # check number of interactions
                 if tune
-                    n_interactions = 0
                     for i_source_system in eachindex(source_systems)
+                        n_interactions = 0
                         for (i_target, i_source) in direct_list
                             source_branch = source_tree.branches[i_source]
                             target_branch = target_tree.branches[i_target]
@@ -1487,7 +1494,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                         t_m2l /= length(m2l_list)
 
                         # t_per_interaction * LS^2 = t_per_m2l
-                        leaf_size_source = SVector{length(source_systems),Int}(Int(ceil(sqrt(t_m2l / t_direct[i]))) for i in eachindex(source_systems))
+                        # a source system with no direct interactions has no
+                        # timing to fit (t_direct is Inf or NaN); keep its leaf size
+                        leaf_size_source = SVector{length(source_systems),Int}(isfinite(t_direct[i]) ? Int(ceil(sqrt(t_m2l / t_direct[i]))) : leaf_size_source[i] for i in eachindex(source_systems))
                     else
                         # make leaf size smaller so that some m2l operations exist
                         leaf_size_source = max.(leaf_size_source .>> 1, Ref(1))
@@ -1574,7 +1583,9 @@ function fmm!(target_systems::Tuple, target_tree::Tree, source_systems::Tuple, s
                         t_m2l /= length(m2l_list)
 
                         # t_per_interaction * LS^2 = t_per_m2l
-                        leaf_size_source = SVector{length(source_systems),Int}(Int(ceil(sqrt(t_m2l / t_direct[i]))) for i in eachindex(source_systems))
+                        # a source system with no direct interactions has no
+                        # timing to fit (t_direct is Inf or NaN); keep its leaf size
+                        leaf_size_source = SVector{length(source_systems),Int}(isfinite(t_direct[i]) ? Int(ceil(sqrt(t_m2l / t_direct[i]))) : leaf_size_source[i] for i in eachindex(source_systems))
                     else
                         # make leaf size smaller so that some m2l operations exist
                         leaf_size_source = max.(leaf_size_source .>> 1, Ref(1))

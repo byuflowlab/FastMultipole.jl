@@ -147,6 +147,30 @@ CORE_FM.rect_source_rows(::CoreRectSource) = 4
     return u, zero(SMatrix{3,3,T,9}), zero(T)
 end
 
+# device-resident targets with metadata rows, with and without the device hook
+struct DevMetaNoHook end
+struct DevMetaHook end
+for T in (DevMetaNoHook, DevMetaHook)
+    CORE_FM.residency(::T) = CORE_FM.DeviceResident()
+    CORE_FM.metadata_per_body(::T) = 2
+end
+CORE_FM.metadata_to_device_buffer!(buffer, switch, ::DevMetaHook) = buffer
+
+# a source whose block-assembly hook throws, for the cache-build restore test
+struct ThrowingAssemblySource{TF}
+    inner::Gravitational{TF}
+end
+Base.eltype(s::ThrowingAssemblySource) = eltype(s.inner)
+CORE_FM.strength_dims(s::ThrowingAssemblySource) = CORE_FM.strength_dims(s.inner)
+CORE_FM.get_n_bodies(s::ThrowingAssemblySource) = CORE_FM.get_n_bodies(s.inner)
+CORE_FM.data_per_body(s::ThrowingAssemblySource) = CORE_FM.data_per_body(s.inner)
+function CORE_FM.assemble_influence_block!(block::AbstractMatrix,
+        target_buffer::AbstractMatrix, target_range::UnitRange{Int},
+        switch::CORE_FM.DerivativesSwitch, source_system::ThrowingAssemblySource,
+        source_buffer::AbstractMatrix, source_range::UnitRange{Int})
+    error("assembly hook failed")
+end
+
 @testset "core regressions" begin
 
     @testset "FmmPlan keeps and refreshes target metadata" begin
@@ -504,5 +528,106 @@ end
         f2 = FastGaussSeidel((s2,), (s2,); kw...)
         CORE_FM.solve!(s2, f2; solve_kw...)
         @test norm(x1 - strengths(s2)) / norm(strengths(s2)) < 1e-5
+    end
+
+    @testset "tune with no direct interactions keeps a positive leaf size" begin
+        t = generate_gravitational(1, 3000)
+        s = generate_gravitational(2, 3000)
+        for i in eachindex(s.bodies)
+            b = s.bodies[i]
+            s.bodies[i] = Body(b.position .+ SVector(100.0, 0.0, 0.0), b.radius, b.strength)
+        end
+        r = fmm!(t, s; tune=true, expansion_order=4, leaf_size_source=30,
+            multipole_acceptance=0.5)
+        @test isempty(r[6]) && !isempty(r[5])   # all far field
+        @test all(r[1].leaf_size_source .>= 1)
+    end
+
+    @testset "TreeByLevel last-level cells are leaves" begin
+        sys = generate_gravitational(4, 500)
+        tree = CORE_FM.TreeByLevel((sys,), false; n_levels=2)
+        @test all(b -> !isempty(b.branch_index) || b.n_branches == 0, tree.branches)
+    end
+
+    @testset "UnequalSpheres local_error runs" begin
+        sys = generate_gravitational(5, 200)
+        switches = (DerivativesSwitch(),)
+        tree = CORE_FM.Tree((sys,), false, switches; expansion_order=4,
+            leaf_size=SVector{1}(10), shrink=false, recenter=false)
+        # two leaves separated by at least three times their summed radii
+        leaves = tree.branches[tree.leaf_index]
+        b1 = leaves[1]
+        b2 = leaves[argmax([norm(b.center - b1.center) / (b.radius + b1.radius) for b in leaves])]
+        @test norm(b2.center - b1.center) > 3 * (b1.radius + b2.radius)
+        for method in (CORE_FM.UnequalSpheres(), CORE_FM.UniformUnequalSpheres{false}())
+            @test isfinite(CORE_FM.local_error(b1, b2, 3, tree.expansions, 4, method, Val(false)))
+        end
+    end
+
+    @testset "DehnenAbsoluteGradient reads degree-p coefficients in bounds" begin
+        p = 1
+        weights = zeros(2, 2, ((p + 1) * (p + 2)) >> 1)   # degrees 0:p
+        weights[1, 1, 1] = 1.0
+        target = (center=SVector(3.0, 0.0, 0.0), radius=0.5)
+        source = (center=SVector(0.0, 0.0, 0.0), radius=0.5)
+        ε, _ = CORE_FM.predict_error(target, weights, source, nothing, nothing, nothing,
+            nothing, nothing, nothing, nothing, nothing, nothing, p, Val(false),
+            CORE_FM.DehnenAbsoluteGradient())
+        @test isfinite(ε) && ε > 0
+    end
+
+    @testset "tune_fmm warns when no setting meets the tolerance" begin
+        sys = generate_gravitational(6, 500)
+        @test_logs (:warn, r"returning untuned parameters") match_mode=:any CORE_FM.tune_fmm(sys, sys;
+            error_tolerance=CORE_FM.PowerAbsolutePotential(1e-30), max_expansion_order=2,
+            multipole_acceptances=[0.5], verbose=false)
+    end
+
+    @testset "failed near-field cache build restores source strengths" begin
+        sys = generate_gravitational(7, 1500)
+        plan = CORE_FM.FmmPlan((sys,), (sys,); expansion_order=6,
+            multipole_acceptance=0.4, leaf_size_source=25)
+        @test length(plan.direct_list) > 0
+        st = plan.source_tree
+        before = copy(st.buffers[1])
+        @test_throws Exception CORE_FM.NearfieldInfluenceCache((sys,), plan.target_tree,
+            (ThrowingAssemblySource(sys),), st, plan.direct_list, plan.derivatives_switches)
+        @test st.buffers[1] == before
+    end
+
+    @testset "shared tables grow completely under concurrent requests" begin
+        P = max(CORE_FM.TABLES_ORDER[] + 3, 30)
+        @sync for _ in 1:8
+            Threads.@spawn CORE_FM.ensure_tables!(P)
+        end
+        @test CORE_FM.TABLES_ORDER[] == P
+        for (table, update!) in ((CORE_FM.Hs_π2, CORE_FM.update_Hs_π2!),
+                (CORE_FM.ζs_mag, CORE_FM.update_ζs_mag!), (CORE_FM.ηs_mag, CORE_FM.update_ηs_mag!),
+                (CORE_FM.M̃, CORE_FM.update_M̃!), (CORE_FM.L̃, CORE_FM.update_L̃!))
+            ref = [1.0]
+            update!(ref, P)
+            @test table == ref
+        end
+    end
+
+    @testset "expansion_order below 1 throws" begin
+        sys = generate_gravitational(8, 200)
+        @test_throws ArgumentError fmm!(sys; expansion_order=0)
+        @test_throws ArgumentError CORE_FM.RadixFMMCache(sys; expansion_order=0, ell=2)
+        @test_throws ArgumentError CORE_FM.FmmPlan((sys,), (sys,); expansion_order=0)
+        @test_throws ArgumentError FastGaussSeidel((sys,), (sys,); expansion_order=0)
+    end
+
+    @testset "device-resident metadata needs the device hook or metadata=0" begin
+        with_meta = CORE_FM.DerivativesSwitch{false,true,false,0,2,false}()
+        no_meta = CORE_FM.DerivativesSwitch{false,true,false,0,0,false}()
+        err = try
+            CORE_FM._check_device_metadata((DevMetaNoHook(),), (with_meta,)); nothing
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("metadata=0", err.msg)
+        @test CORE_FM._check_device_metadata((DevMetaNoHook(),), (no_meta,)) === nothing
+        @test CORE_FM._check_device_metadata((DevMetaHook(),), (with_meta,)) === nothing
     end
 end

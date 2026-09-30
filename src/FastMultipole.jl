@@ -45,6 +45,11 @@ const ηs_mag = Float64[1.0]
 const M̃ = Float64[1.0]
 const L̃ = Float64[1.0]
 
+# the shared tables above are complete through this expansion order; growth
+# beyond it is serialized so concurrent fmm! calls never read a partial table
+const TABLES_ORDER = Threads.Atomic{Int}(0)
+const TABLES_LOCK = ReentrantLock()
+
 #------- WARNING FLAGS -------#
 
 const WARNING_FLAG_LEAF_SIZE = Array{Bool,0}(undef)
@@ -269,5 +274,21 @@ update_ηs_mag!(ηs_mag, 21)
 # precompute multipole/local power normalization constansts up to 20th order
 update_M̃!(M̃, 21)
 update_L̃!(L̃, 21)
+TABLES_ORDER[] = 21
+
+function ensure_tables!(expansion_order)
+    expansion_order <= TABLES_ORDER[] && return nothing
+    lock(TABLES_LOCK) do
+        if expansion_order > TABLES_ORDER[]
+            update_Hs_π2!(Hs_π2, expansion_order)
+            update_ζs_mag!(ζs_mag, expansion_order)
+            update_ηs_mag!(ηs_mag, expansion_order)
+            update_M̃!(M̃, expansion_order)
+            update_L̃!(L̃, expansion_order)
+            TABLES_ORDER[] = expansion_order
+        end
+    end
+    return nothing
+end
 
 end # module

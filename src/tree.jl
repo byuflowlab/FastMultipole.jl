@@ -735,6 +735,7 @@ function child_branches_level!(branches, buffers, sort_index, small_buffers, sor
                             min_potential = child_branch.min_potential
                             min_gradient = child_branch.min_gradient
 
+                            n_branches = 0
                             branch_index = 1:0
                             child_branch = typeof(child_branch)(n_bodies, bodies_index, n_branches, 
                                 branch_index, i_parent, i_leaf, center, radius, box, min_potential, min_gradient)

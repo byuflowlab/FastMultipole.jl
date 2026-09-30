@@ -657,6 +657,9 @@ function body_to_multipole!(element::Type{<:Panel}, system, multipole_coefficien
         xu = x2 - x1
         xv = x3 - x1
 
+        # a zero-area triangle has no normal and contributes nothing
+        iszero(norm(cross(xu, xv))) && continue
+
         # get normal
         normal = get_normal(buffer, system, i_body)
 
@@ -687,15 +690,16 @@ function body_to_multipole_quad!(element::Type{<:Panel}, system, multipole_coeff
         xu = x2 - x1
         xv = x3 - x1
 
-        # get normal
+        # get normal; a zero-area triangle (e.g. a quad with a collapsed edge)
+        # contributes nothing
         normal = cross(x2-x1, x3-x1)
-        normal /= norm(normal)
+        area2 = norm(normal)
 
         # get strength
         strength = get_strength(buffer, system, i_body)
 
         # update values
-        body_to_multipole_panel!(element, multipole_coefficients, harmonics, x0, xu, xv, normal, strength, expansion_order)
+        iszero(area2) || body_to_multipole_panel!(element, multipole_coefficients, harmonics, x0, xu, xv, normal / area2, strength, expansion_order)
 
         #--- second triangle ---#
 
@@ -708,12 +712,16 @@ function body_to_multipole_quad!(element::Type{<:Panel}, system, multipole_coeff
 
         # get normal
         normal = cross(x2-x1, x3-x1) 
-        normal /= norm(normal)
+        area2 = norm(normal)
 
         # update values
-        body_to_multipole_panel!(element, multipole_coefficients, harmonics, x0, xu, xv, normal, strength, expansion_order)
+        iszero(area2) || body_to_multipole_panel!(element, multipole_coefficients, harmonics, x0, xu, xv, normal / area2, strength, expansion_order)
     end
 end
+
+# the two-parameter spelling `Panel{NS,K}` (as `body_type` and the radix path
+# write it) runs the same triangle kernels as the one-parameter `Panel{K}`
+body_to_multipole_panel!(::Type{<:Panel{<:Any,K}}, args...) where K = body_to_multipole_panel!(Panel{K}, args...)
 
 function body_to_multipole_panel!(::Type{Panel{SourceDipole}}, multipole_coefficients, harmonics, x0, xu, xv, normal, strength, expansion_order)
     body_to_multipole_panel!(Panel{Source}, multipole_coefficients, harmonics, x0, xu, xv, normal, SVector{1}(strength[1]), expansion_order)

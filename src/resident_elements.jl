@@ -301,8 +301,9 @@ end
 
 @inline function _res_panel_b2m!(::Type{<:Panel{3,Dipole}}, coef, h, x0, xu, xv, strength, P)
     T = eltype(coef)
-    _res_panel_harmonics!(h, x0, xu, xv, P, one(T))
     J, nx, ny, nz = _res_tri_area_normal(xu, xv)
+    iszero(J) && return coef                     # zero area: no normal, no contribution
+    _res_panel_harmonics!(h, x0, xu, xv, P, one(T))
     mu = T(strength[1])
     _res_source_to_dipole!(h, 2, 1, nx * mu, ny * mu, nz * mu, P)      # dipole into slot 2
     return _res_accumulate_scalar!(coef, h, 2, J, P)

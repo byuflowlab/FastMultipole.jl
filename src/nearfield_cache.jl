@@ -457,39 +457,42 @@ function _build_nearfield_cache(entries, target_ranges, source_ranges,
     # method-table reflection: once per SOURCE SYSTEM per build, never per block
     system_opts_in = map(overrides_block_assembly, source_systems)
     any_fallback = !use_block_assembly || !all(system_opts_in)
-    if n_workers <= 1
-        _assemble_source_keys!(assemble!, matrices, keys_sorted,
-            1:length(keys_sorted), blocks_by_source, entries, target_ranges,
-            source_ranges, target_buffers, source_systems, source_buffers,
-            derivatives_switches)
-    else
-        next_chunk = Threads.Atomic{Int}(0)
-        @sync for _ in 1:n_workers
-            Threads.@spawn begin
-                local_targets = any_fallback ? map(copy, target_buffers) :
-                                               target_buffers
-                local_sources = any_fallback ? map(copy, source_buffers) :
-                                               source_buffers
-                while true
-                    i = Threads.atomic_add!(next_chunk, 1) + 1
-                    i > length(chunks) && break
-                    _assemble_source_keys!(assemble!, matrices, keys_sorted,
-                        chunks[i], blocks_by_source, entries, target_ranges,
-                        source_ranges, local_targets, source_systems,
-                        local_sources, derivatives_switches)
+    try
+        if n_workers <= 1
+            _assemble_source_keys!(assemble!, matrices, keys_sorted,
+                1:length(keys_sorted), blocks_by_source, entries, target_ranges,
+                source_ranges, target_buffers, source_systems, source_buffers,
+                derivatives_switches)
+        else
+            next_chunk = Threads.Atomic{Int}(0)
+            @sync for _ in 1:n_workers
+                Threads.@spawn begin
+                    local_targets = any_fallback ? map(copy, target_buffers) :
+                                                   target_buffers
+                    local_sources = any_fallback ? map(copy, source_buffers) :
+                                                   source_buffers
+                    while true
+                        i = Threads.atomic_add!(next_chunk, 1) + 1
+                        i > length(chunks) && break
+                        _assemble_source_keys!(assemble!, matrices, keys_sorted,
+                            chunks[i], blocks_by_source, entries, target_ranges,
+                            source_ranges, local_targets, source_systems,
+                            local_sources, derivatives_switches)
+                    end
                 end
             end
         end
-    end
-
-    # restore strengths; leave target output rows zeroed (callers reset anyway)
-    for i in eachindex(source_systems)
-        sd = strength_dims(source_systems[i])
-        source_buffers[i][5:4+sd, :] .= old_strengths[i]
-    end
-    for k in 1:n_blocks
-        i_ts = entries[k][3]
-        @views target_buffers[i_ts][output_ranges[k], target_ranges[k]] .= zero(TF)
+    finally
+        # restore strengths even if an assembly hook throws; leave target
+        # output rows zeroed (callers reset anyway)
+        for i in eachindex(source_systems)
+            sd = strength_dims(source_systems[i])
+            source_buffers[i][5:4+sd, :] .= old_strengths[i]
+        end
+        for k in 1:n_blocks
+            i_ts = entries[k][3]
+            @views target_buffers[i_ts][output_ranges[k], target_ranges[k]] .= zero(TF)
+        end
     end
 
     strengths_scratch = [Vector{TF}(undef, max_width) for _ in 1:Threads.nthreads()]

@@ -106,8 +106,9 @@ device-resident ones.
 Metadata rows (`metadata_range(switch)`): a host-resident target's buffer has
 them refilled from the system with `metadata_to_buffer!` every call, as on the
 host radix path. A device-resident target's buffer is device memory, which the
-per-body host hook cannot write, so there they are zero (the scatter zero-fills
-the whole buffer) -- never stale data from an earlier call.
+per-body host hook cannot write, so there they are filled by the target's
+`metadata_to_device_buffer!` overload (`fmm!` rejects a device-resident target
+with metadata rows and no overload before any work).
 """
 function ka_finalize_radix_output!(state, target_systems;
         derivatives_switches=nothing, host_output_staging=nothing,
@@ -130,6 +131,8 @@ function ka_finalize_radix_output!(state, target_systems;
             ka_scatter_output_to_target_buffer!(target_buffer, state.output,
                 state.body_perm, state.body_system_ids, state.body_indices, isys,
                 switch, state.counts.n_bodies)
+            isempty(FastMultipole.metadata_range(switch)) ||
+                FastMultipole.metadata_to_device_buffer!(target_buffer, switch, target_system)
             FastMultipole.buffer_to_target!(target_system, target_buffer, switch,
                 1:FastMultipole.get_n_bodies(target_system))
         else

@@ -218,6 +218,10 @@ function tune_fmm(target_systems::Tuple, source_systems::Tuple;
 
     end
 
+    if t_fmm_best == Inf
+        @warn "tune_fmm: no multipole_acceptance met error_tolerance = $error_tolerance at max_expansion_order = $original_max_expansion_order; returning untuned parameters. Raise max_expansion_order or loosen error_tolerance."
+    end
+
     if verbose
         println("\nFinished autotune!")
         println("\nParameters: ")

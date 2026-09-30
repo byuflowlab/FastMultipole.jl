@@ -52,6 +52,7 @@ FastMultipole.source_revision
 FastMultipole.get_position
 FastMultipole.metadata_per_body
 FastMultipole.metadata_to_buffer!
+FastMultipole.metadata_to_device_buffer!
 FastMultipole.previous_potential_metadata_index
 FastMultipole.previous_gradient_metadata_index
 FastMultipole.strength_dims

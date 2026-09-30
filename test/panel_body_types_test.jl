@@ -192,3 +192,56 @@ end
         @test maximum(abs.(v3q[2:13] .- v2q[2:13])) <= 1e-4 * maximum(abs.(v2q[2:13]))   # order-2 error at ~2 panel sizes
     end
 end
+
+zero_panel(st) = (z = copy(st); z[:, 7] .= 0; z)
+
+@testset "zero-area dipole panels contribute nothing" begin
+    Random.seed!(3)
+    n = 400
+    cs = rand(3, n); e1 = randn(3, n); e2 = randn(3, n)
+    v1s = cs .- 0.003 .* e1; v2s = cs .+ 0.003 .* e1; v3s = cs .+ 0.003 .* e2
+    v3s[:, 7] .= v1s[:, 7]                        # collapsed panel
+    for BT in (FastMultipole.Panel{3,FastMultipole.Dipole}, FastMultipole.Panel{3,FastMultipole.SourceDipole})
+        sd = FastMultipole.element_strength_dims(BT)
+        strengths = rand(sd, n)
+        outputs = map((strengths, zero_panel(strengths))) do st
+            sys = PanelBodies{BT}(pack_panels(v1s, v2s, v3s, st))
+            fmm!(sys, RadixFMMCache(sys; expansion_order = 6, ell = 3);
+                scalar_potential = true, gradient = true)
+            sys.potential[1:4, :]
+        end
+        @test all(isfinite, outputs[1])
+        @test isapprox(outputs[1], outputs[2]; rtol = 1e-12)
+    end
+end
+
+@testset "octree panel B2M accepts Panel{3,K} and skips zero-area triangles" begin
+    P = 6
+    v1 = [0.1, 0.2, 0.05]; v2 = [0.4, 0.15, 0.1]; v3 = [0.2, 0.45, 0.0]
+    center = SVector(0.25, 0.25, 0.02)
+    nc = ((P + 1) * (P + 2)) >> 1
+    # host (octree) vs resident coefficients: the resident convention omits the
+    # source/dipole strength negation, so those two differ by a sign
+    for (K, strength, sgn) in ((FastMultipole.Source, [0.7], -1), (FastMultipole.Dipole, [0.4], -1),
+            (FastMultipole.Vortex, [0.3, -0.2, 0.1], 1))
+        BT = FastMultipole.Panel{3,K}
+        data = pack_panels(reshape(v1, 3, 1), reshape(v2, 3, 1), reshape(v3, 3, 1), reshape(strength, :, 1))
+        sys = PanelBodies{BT}(data)
+        host = zeros(2, 2, nc)
+        FastMultipole.body_to_multipole!(BT, sys, host, data, center, 1:1,
+            FastMultipole.initialize_harmonics(P, Float64), P)
+        res = zeros(2, 2, nc)
+        FastMultipole._res_panel_b2m!(BT, res, FastMultipole.initialize_harmonics(P, Float64),
+            SVector{3}(v1) - center, SVector{3}(v2 .- v1), SVector{3}(v3 .- v1), Tuple(strength), P)
+        @test any(!iszero, res)
+        @test isapprox(host, sgn .* res; rtol = 1e-12)
+
+        # a collapsed triangle next to a good one changes nothing
+        data2 = pack_panels(hcat(v1, v1), hcat(v2, v2), hcat(v3, v1), hcat(strength, strength))
+        host2 = zeros(2, 2, nc)
+        FastMultipole.body_to_multipole!(BT, PanelBodies{BT}(data2), host2, data2, center, 1:2,
+            FastMultipole.initialize_harmonics(P, Float64), P)
+        @test host2 == host
+    end
+end
+

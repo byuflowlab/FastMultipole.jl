@@ -156,9 +156,10 @@ end
 Metadata rows are per-body values the consumer wants carried through the sort
 alongside the outputs: previous-step estimates for relative-error methods, flags,
 or any per-body scalar a `direct!` overload or `buffer_to_target_system!` needs
-while the bodies are in sorted order. They live after the outputs in the target
-buffer (`metadata_range(switch)`, `metadata_index(switch, k)`), are written on
-the way in by `metadata_to_buffer!` and are never touched by the FMM itself.
+while the bodies are in sorted order. They sit after the position rows and
+before the outputs in the target buffer (`metadata_range(switch)`,
+`metadata_index(switch, k)`), are written on the way in by
+`metadata_to_buffer!` and are never touched by the FMM itself.
 Target systems declare sorted metadata with:
 
 ```julia
