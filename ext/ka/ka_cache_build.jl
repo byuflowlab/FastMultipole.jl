@@ -32,8 +32,11 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         box_extent::SVector{3,TF}=SVector{3,TF}(2 * h0, 2 * h0, 2 * h0),
         root_level::Int=0, first_m2l_level::Int=2,
         direct_flag_capacity::Int=min(direct_capacity, 1 << 21),
+        direct_pair_capacity::Int=min(direct_capacity, 1 << 16),
         workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
     direct_flag_capacity > 0 || throw(ArgumentError("direct_flag_capacity must be positive"))
+    0 < direct_pair_capacity <= max(direct_capacity, 1) || throw(ArgumentError(
+        "direct_pair_capacity must be in 1:direct_capacity ($direct_capacity); got $direct_pair_capacity"))
     stencil_policy isa FastMultipole.HierarchicalRigidStencil || throw(ArgumentError(
         "ka_radix_cache_device_build covers the hierarchical stencil path only; " *
         "got $(typeof(stencil_policy))"))
@@ -117,8 +120,13 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         cell_at=_z(Int32, 0, 0, 0),
         hierarchical_ctx,
         d_accepted, d_rejected, class_chunk=1,
-        direct_targets=_z(Int, direct_capacity),
-        direct_sources=_z(Int, direct_capacity),
+        # near pairs: start at direct_pair_capacity and grow in place (resize!)
+        # up to direct_capacity when an epoch needs more (`ka_hier_generate_direct_pairs!`);
+        # the capacity bound is every (occupied cell, near offset) of the
+        # full grid, of which a wake uses a few percent
+        direct_targets=_z(Int, direct_pair_capacity),
+        direct_sources=_z(Int, direct_pair_capacity),
+        direct_capacity,
         # flag/scan scratch for the near-pair compaction, which walks the
         # (cell, near offset) candidates in chunks of this length: bounded, not
         # sized to the full pair capacity (`ka_hier_generate_direct_pairs!`)

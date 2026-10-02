@@ -404,8 +404,15 @@ function ka_hier_generate_direct_pairs!(ctx, hctx::FastMultipole.DeviceHierarchi
         copyto!(ctx.host_scalar32, 1, ctx.direct_prefix, len, 1)
         chunk_total = Int(ctx.host_scalar32[1])
         if chunk_total > 0
-            n_direct + chunk_total <= length(ctx.direct_targets) ||
+            needed = n_direct + chunk_total
+            needed <= ctx.direct_capacity ||
                 throw(AssertionError("device hierarchical direct pair buffer exceeded its capacity"))
+            if needed > length(ctx.direct_targets)
+                # grow in place, keeping the pairs already compacted: the state
+                # and the near-field launches hold these same vectors
+                n_new = min(ctx.direct_capacity, max(needed, (3 * length(ctx.direct_targets)) ÷ 2))
+                resize!(ctx.direct_targets, n_new); resize!(ctx.direct_sources, n_new)
+            end
             compactk(ctx.direct_targets, ctx.direct_sources, ctx.direct_flags,
                 ctx.direct_prefix, hctx.node_at, grid.node_coords,
                 hctx.d_near_offsets, f0, len, kn, leaf_base, level_base_L, ell,
