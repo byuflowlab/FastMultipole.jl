@@ -1,7 +1,7 @@
 using FastMultipole
 using Random
 
-include("../test/gravitational.jl")
+include("../test/helpers/gravitational.jl")
 
 function generate_gravitational(seed, n_bodies; radius_factor=1.0)
     Random.seed!(123)

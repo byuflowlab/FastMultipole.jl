@@ -2,7 +2,7 @@
 using FastMultipole: RadixGrid, DeviceRadixGrid, ConstantPStencilConfig, RadixSeparationPolicy, ParentNeighborM2L, RigidHierarchicalTables, RadixLevelOccupancy, RadixM2LBatch, RadixInteractionList, TreeRole, SourceTree, TargetTree, element_strength_dims, DeviceResidentRadixState, AbstractOperatorBasis, CompressedComplexBasis, OperatorOrders, OperatorBasisInfo, OperatorInvariantCache, OperatorScratch, FlatCoefficientBuffer, AbstractM2LOperator, MaterializedYRotationM2L, FactoredRotationM2L, M2LOperatorScratch, rigid_stencil_epsilon, constant_p_stencil_bound, RadixRouteSelection, run_host_radix_lifecycle!, finalize_radix_output!, snapshot_locked_radix_settings, verify_locked_radix_settings, rect_source_rows, rect_output_rows
 # test-only radix reference code (standalone RadixGrid, ParentNeighborM2L list,
 # host_radix_state) shared with the host suite
-include(joinpath(@__DIR__, "..", "radix_reference.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "radix_reference.jl"))
 # Shared backend selection for the ka_*_correctness.jl suites: include it
 # instead of `using Metal` / `using CUDA`, and the same suite text runs on
 # either backend.

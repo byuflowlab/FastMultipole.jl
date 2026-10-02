@@ -1,6 +1,6 @@
 using FastMultipole
 
-include("../test/gravitational.jl")
+include("../test/helpers/gravitational.jl")
 include("simple_gravitational.jl")
 
 for expansion_order in [] #[1,2,16,17,18,19,20]

@@ -15,7 +15,7 @@ In the this section, and continuing in [Automated Tuning](advanced_usage_2.md), 
 using FastMultipole
 using Random # needed for `gravitational.jl`
 
-gravitational_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "gravitational.jl"))
+gravitational_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "helpers", "gravitational.jl"))
 include(gravitational_path)
 
 target_system = generate_gravitational(123, 1000)
@@ -34,9 +34,9 @@ In practice, the source system might be a collection of systems, composed of a v
 using LinearAlgebra
 
 # include vortex filament and particle models and interface functions
-vortex_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "vortex.jl"))
+vortex_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "helpers", "vortex.jl"))
 include(vortex_path)
-filament_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "vortex_filament.jl"))
+filament_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "helpers", "vortex_filament.jl"))
 include(filament_path)
 
 # generate systems

@@ -1,6 +1,6 @@
 # Shared systems/references for the device-system interface tests (host:
 # device_system_interface_test.jl and the regression tests; device:
-# metal_env/ka_regression_correctness.jl).
+# gpu/ka_regression_correctness.jl).
 # Requires gravitational.jl and vortex.jl to be included first.
 
 using FastMultipole.LinearAlgebra: dot, I

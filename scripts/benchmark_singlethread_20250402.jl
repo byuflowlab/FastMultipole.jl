@@ -2,8 +2,8 @@ using FastMultipole
 using Random
 using Statistics
 
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
 
 function get_potential(system::Gravitational)
     return system.potential[1,:]

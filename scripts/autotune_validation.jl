@@ -4,7 +4,7 @@
 using FastMultipole
 using DelimitedFiles
 using Random
-include("../test/gravitational.jl")
+include("../test/helpers/gravitational.jl")
 
 function validate_tuning!(systems::Tuple, leaf_size_range, mac_range, name::String; expansion_order=10, fmm_args...)
     # preallocate

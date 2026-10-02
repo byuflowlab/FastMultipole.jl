@@ -40,6 +40,7 @@ n_colors = length(fgs.leaves_by_color)
 leaf_ranges = [fgs.targets_by_branch[b] for b in fgs.source_tree.leaf_index]
 leaf_starts = [first(r) for r in leaf_ranges]
 n_checked = 0
+n_conflicts = 0
 for i_leaf in 1:n_leaves
     for index in fgs.index_map[i_leaf]
         i_target, _ = fgs.direct_list[index]
@@ -49,11 +50,12 @@ for i_leaf in 1:n_leaves
         hi = max(searchsortedlast(leaf_starts, last(rows)), 1)
         for k_leaf in lo:hi
             k_leaf == i_leaf && continue
-            @test fgs.leaf_colors[i_leaf] != fgs.leaf_colors[k_leaf]
+            n_conflicts += !(fgs.leaf_colors[i_leaf] != fgs.leaf_colors[k_leaf])
             n_checked += 1
         end
     end
 end
+@test n_conflicts == 0
 @test n_checked > 0                # premise: the validity loop was non-vacuous
 
 # --- 2. batching theorem: colored sweep == serial color-major immediate GS --

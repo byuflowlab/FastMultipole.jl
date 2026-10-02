@@ -293,6 +293,9 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
     self_induce &&
         ka_extra_targets_evaluate!(state, extra_targets, extra_target_switches; workgroup)
     isempty(extra_targets) || _utick!(:extra_targets, KA.get_backend(state.output))
+    # the one sync of the step: the stages above only queue work (a host read
+    # inside them waits on its own copy), so the results are ready on return
+    KA.synchronize(KA.get_backend(state.output))
     return cache
 end
 

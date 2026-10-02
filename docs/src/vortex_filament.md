@@ -1,6 +1,6 @@
 # Vortex Filament Example
 
-In this example, we review the interface functions used by the vortex filament model found in `FastMultipole/test/vortex_filament.jl`. First, let's take a look at the data structure:
+In this example, we review the interface functions used by the vortex filament model found in `FastMultipole/test/helpers/vortex_filament.jl`. First, let's take a look at the data structure:
 
 ```@example guidedex
 using FastMultipole # hide

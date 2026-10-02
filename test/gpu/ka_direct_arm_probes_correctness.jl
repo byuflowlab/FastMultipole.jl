@@ -5,7 +5,7 @@
 using FastMultipole, Random, Printf, LinearAlgebra, Test
 using FastMultipole.StaticArrays
 const FM = FastMultipole
-include(joinpath(@__DIR__, "..", "vortex.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "vortex.jl"))
 include(joinpath(@__DIR__, "ka_backend.jl"))
 
 npass = Ref(0); nfail = Ref(0)

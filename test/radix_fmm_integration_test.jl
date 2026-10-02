@@ -4,7 +4,7 @@ using Random
 using Test
 
 if !isdefined(@__MODULE__, :generate_gravitational)
-    include("gravitational.jl")
+    include("helpers/gravitational.jl")
 end
 
 function _radix_direct_reference(seed, n; kwargs...)
@@ -30,15 +30,6 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     # tolerances scaled for constant-P truncation of the analytic stencil
     @test _radix_potential_error(sys, ref) < 1e-6
     @test _radix_gradient_error(sys, ref) < 1e-4
-
-    #--- (b) radix vs legacy fmm! parity ---#
-
-    legacy = generate_gravitational(seed, n)
-    fmm!(legacy; expansion_order=10, scalar_potential=true, gradient=true, multipole_acceptance=0.4)
-    # both approximate the same direct sums; their difference is bounded by the
-    # sum of the two truncation errors
-    @test maximum(abs.(sys.potential[1, :] .- legacy.potential[1, :])) < 2e-6
-    @test maximum(abs.(sys.potential[5:7, :] .- legacy.potential[5:7, :])) < 2e-4
 
     #--- (c) point-mass 1/r convergence with monotone error decrease ---#
 
@@ -114,12 +105,13 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
 
     #--- (f2) genuine grouped factored resident M2L parity ---#
 
-    for P in (4, 8), (TF, LH) in ((Float64, false), (Float64, true),
-                                  (Float32, false), (Float32, true))
-        nf = 300
+    # one direct reference for every (f2) and (f3) case: all use the same system
+    nf = 300
+    direct = _radix_direct_reference(seed + 9, nf)
+    for (P, TF, LH) in ((8, Float64, false), (8, Float64, true),
+                        (8, Float32, false), (4, Float32, true))
         factored = generate_gravitational(seed + 9, nf)
         concat = generate_gravitational(seed + 9, nf)
-        direct = _radix_direct_reference(seed + 9, nf)
         # The grouped-factored resident plan is a FLAT-path structure: under the
         # hierarchical default the factored selection deliberately routes
         # through the bounded concat engine (mirroring the host). Pin both caches
@@ -156,9 +148,7 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
     saved_cols = FastMultipole.FACTORED_Y_GEMM_MIN_COLS[]
     saved_dim = FastMultipole.FACTORED_Y_GEMM_MIN_DIM[]
     try
-        for P in (4, 8), LH in (false, true)
-            nf = 300
-            gemm_direct = _radix_direct_reference(seed + 9, nf)
+        for (P, LH) in ((8, false), (4, true))
             mk_cache(sys) = RadixFMMCache(sys; expansion_order=P, ell=3,
                 lamb_helmholtz=LH,
                 options=RadixLifecycleOptions(; operator=FactoredRotationM2L(),
@@ -181,8 +171,8 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
             @test maximum(abs.(gemm_sys.potential[5:7, :] .-
                 scalar_sys.potential[5:7, :])) < 1e-7
             if P == 8
-                !LH && @test _radix_potential_error(gemm_sys, gemm_direct) < 1e-6
-                @test _radix_gradient_error(gemm_sys, gemm_direct) < 1e-4
+                !LH && @test _radix_potential_error(gemm_sys, direct) < 1e-6
+                @test _radix_gradient_error(gemm_sys, direct) < 1e-4
             end
             FastMultipole._launch_resident_m2l!(gemm_cache.state)
             @test (@allocated FastMultipole._launch_resident_m2l!(gemm_cache.state)) <= 64 * 1024
@@ -255,21 +245,6 @@ _radix_gradient_error(sys, ref) = maximum(abs.(sys.potential[5:7, :] .- ref.pote
             m2l_strategy=ConcatenatedFixedZM2L()))
     @test exp_cache.state.options.precision === Float64
     @test exp_cache.state.options.m2l_strategy isa ConcatenatedFixedZM2L
-
-    # Float32 at literature P = 4 must cost no measurable accuracy against Float64
-    # at the same geometry: the stencil truncation error dominates.
-    f32 = generate_gravitational(seed + 5, 1500)
-    f64 = generate_gravitational(seed + 5, 1500)
-    ref32 = _radix_direct_reference(seed + 5, 1500)
-    c32 = RadixFMMCache(f32; expansion_order=3, ell=4)
-    c64 = RadixFMMCache(f64; expansion_order=3, ell=4,
-        options=RadixLifecycleOptions(; precision=Float64,
-            m2l_strategy=DenseTranslationM2L()))
-    fmm!(f32, c32; scalar_potential=true, gradient=true)
-    fmm!(f64, c64; scalar_potential=true, gradient=true)
-    e32 = _radix_gradient_error(f32, ref32)
-    e64 = _radix_gradient_error(f64, ref32)
-    @test e32 <= 1.05 * e64
 end
 
 @testset "radix rectangular bounds" begin

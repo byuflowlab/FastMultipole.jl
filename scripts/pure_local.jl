@@ -4,9 +4,9 @@ using LinearAlgebra
 using Statistics
 using PythonPlot
 
-include("../test/bodytolocal.jl")
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
+include("../test/helpers/bodytolocal.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
 
 function get_strength(system::Gravitational, i)
     return system.bodies[i].strength

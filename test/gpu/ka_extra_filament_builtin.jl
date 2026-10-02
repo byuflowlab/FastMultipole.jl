@@ -11,8 +11,8 @@
 using FastMultipole, Random, Printf, LinearAlgebra, Test
 using FastMultipole.StaticArrays
 const FM = FastMultipole
-include(joinpath(@__DIR__, "..", "vortex.jl"))
-include(joinpath(@__DIR__, "ka_extra_tree_correctness_systems.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "vortex.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "extra_tree_test_systems.jl"))
 const TF = Float64
 npass = Ref(0); nfail = Ref(0)
 check(ok, msg) = (ok ? (npass[] += 1) : (nfail[] += 1); println(ok ? "  PASS  $msg" : "  FAIL  $msg"))

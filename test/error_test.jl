@@ -5,10 +5,10 @@ using LinearAlgebra
 using DelimitedFiles
 using FastMultipole
 
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
-include("../test/bodytolocal.jl")
-include("../test/evaluate_multipole.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
+include("../test/helpers/bodytolocal.jl")
+include("../test/helpers/evaluate_multipole.jl")
 
 function predicted_errors(tree, m2l_list, system, error_method, expansion_order, lamb_helmholtz::Val)
     # preallocate containers

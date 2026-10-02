@@ -104,7 +104,7 @@ end
     b = segment_quadrature(SingularVortex(), xt, x1, x2, G)
     @test maximum(abs.(a[2:4, :] .- b[2:4, :])) < 1e-9 * maximum(abs.(b[2:4, :]))
     @test maximum(abs.(a[5:13, :] .- b[5:13, :])) < 1e-8 * maximum(abs.(b[5:13, :]))
-    include(joinpath(@__DIR__, "vortex_filament.jl"))   # vortex_filament(x1, x2, xt, q)
+    include(joinpath(@__DIR__, "helpers", "vortex_filament.jl"))   # vortex_filament(x1, x2, xt, q)
     for c in 1:3
         v = vortex_filament(SVector{3}(x1), SVector{3}(x2), SVector{3}(xt[:, c]), 0.6)
         @test maximum(abs.(a[2:4, c] .- v)) < 1e-12

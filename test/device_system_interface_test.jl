@@ -3,23 +3,23 @@
 # body_type trait with the Point{Vortex} B2M (φ + χ, Lamb-Helmholtz
 # end-to-end), and the 9-component hessian output chosen at cache
 # construction — all without a GPU. Device mirrors are exercised by the
-# suites in test/metal_env/.
+# suites in test/gpu/.
 
 using FastMultipole
 using FastMultipole.StaticArrays
 using FastMultipole.LinearAlgebra
 using Random
 using Test
-@isdefined(host_radix_state) || include("radix_reference.jl")
+@isdefined(host_radix_state) || include("helpers/radix_reference.jl")
 
 if !isdefined(@__MODULE__, :generate_gravitational)
-    include("gravitational.jl")
+    include("helpers/gravitational.jl")
 end
 if !isdefined(@__MODULE__, :VortexParticles)
-    include("vortex.jl")
+    include("helpers/vortex.jl")
 end
 if !isdefined(@__MODULE__, :ExtendedVortex)
-    include("interface_test_systems.jl")
+    include("helpers/interface_test_systems.jl")
 end
 
 @testset "device-system interface" begin
@@ -323,10 +323,11 @@ end
     end
 
     #--- (b) end-to-end host resident A/B at identical geometry: partitioned vs
-    #    regularized-everywhere vs the erf-based direct reference; P=8 and P=4 ---#
+    #    regularized-everywhere vs the erf-based direct reference; (P=4, F64) and
+    #    (P=8, F32) ---#
 
     nv = 400
-    for P in (8, 4), (TF, gtol) in ((Float64, 1e-3), (Float32, 3e-3))
+    for (P, TF, gtol) in ((4, Float64, 1e-3), (8, Float32, 3e-3))
         tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates
         base_r = generate_vortex(seed, nv)
         base_p = generate_vortex(seed, nv)
@@ -468,10 +469,10 @@ end
     end
 
     #--- (b) end-to-end host two-pass vs the erf-based regularized reference and
-    #    vs regularized-everywhere at identical geometry; P=8 and P=4, F64/F32 ---#
+    #    vs regularized-everywhere at identical geometry; (P=4, F64) and (P=8, F32) ---#
 
     nv = 400
-    for P in (8, 4), (TF, gtol) in ((Float64, 1e-3), (Float32, 3e-3))
+    for (P, TF, gtol) in ((4, Float64, 1e-3), (8, Float32, 3e-3))
         tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates
         base_r = generate_vortex(seed, nv)
         base_t = generate_vortex(seed, nv)

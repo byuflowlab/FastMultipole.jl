@@ -66,7 +66,6 @@ function ka_scatter_output_to_target_buffer!(target_buffer, output, body_perm,
         isempty(grange) ? 1 : first(grange), isempty(grange) ? 0 : last(grange),
         isempty(hrange) ? 1 : first(hrange), isempty(hrange) ? 0 : last(hrange),
         n_bodies; ndrange=n_bodies)
-    KA.synchronize(backend)
     return target_buffer
 end
 
@@ -143,7 +142,6 @@ function ka_finalize_radix_output!(state, target_systems;
                     # recurring path: download only the valid column prefix into
                     # the preallocated staging
                     nb = state.counts.n_bodies
-                    KA.synchronize(backend)
                     copyto!(host_output_staging, 1, state.output, 1,
                         size(state.output, 1) * nb)
                     host_output = host_output_staging
@@ -279,16 +277,21 @@ Compose a within-cell sub-Morton ordering into `ctx.grid.perm` and refresh
 `invperm`. A no-op when the grid is already at the Morton depth cap
 (`sub == 0`), when the grid is empty, or on the KA `CPU` backend.
 """
+# Whether `ka_nearfield_subsort!` reorders (and re-inverts) the body perm.
+# The cell sort's barriers sit inside a loop whose trip count is the cell's
+# population, which the KA CPU backend cannot lower (it has no group index in
+# uniform scope). The subsort only reorders bodies within a cell, so the CPU
+# backend skips it.
+_ka_subsort_runs(cache, backend, n::Int) =
+    cache.options.direct_kernel isa FastMultipole.PartitionedVortex &&
+    FastMultipole.RADIX_GRID_MAX_ELL - cache.ell > 0 && n > 0 && !(backend isa KA.CPU)
+
 function ka_nearfield_subsort!(ctx, cache::FastMultipole.RadixFMMCache, n::Int,
         n_cells::Int; workgroup::Int=256)
     sub = min(3, FastMultipole.RADIX_GRID_MAX_ELL - cache.ell)
     (sub > 0 && n > 0 && n_cells > 0) || return nothing
     grid = ctx.grid
     backend = KA.get_backend(grid.perm)
-    # The cell sort's barriers sit inside a loop whose trip count is the cell's
-    # population, which the KA CPU backend cannot lower (it has no group index
-    # in uniform scope). The subsort only reorders bodies within a cell, so the
-    # CPU backend skips it.
     backend isa KA.CPU && return nothing
     kk = _cached_kernel(ka_subsort_keys_kernel!, backend, 128)
     kk(ctx.subsort_keys, ctx.positions, grid.perm, cache.x_min, cache.h0,
@@ -379,6 +382,19 @@ neighbours of every occupied leaf cell into `ctx.direct_targets` /
 `ctx.direct_sources`, chunked so the flag buffer bounds the working set.
 Returns the pair count.
 """
+# Room for `needed` near pairs, up to `ctx.direct_capacity`. Grows in place,
+# keeping the pairs already compacted: the state and the near-field launches
+# hold these same vectors.
+function _ka_direct_pairs_reserve!(ctx, needed::Int)
+    needed <= ctx.direct_capacity ||
+        throw(AssertionError("device hierarchical direct pair buffer exceeded its capacity"))
+    if needed > length(ctx.direct_targets)
+        n_new = min(ctx.direct_capacity, max(needed, (3 * length(ctx.direct_targets)) ÷ 2))
+        resize!(ctx.direct_targets, n_new); resize!(ctx.direct_sources, n_new)
+    end
+    return nothing
+end
+
 function ka_hier_generate_direct_pairs!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LContext,
         grid, n_cells::Int, leaf_base::Int, ell::Int; workgroup=KA_AUTO_WORKGROUP)
     kn = size(hctx.d_near_offsets, 2)
@@ -398,19 +414,10 @@ function ka_hier_generate_direct_pairs!(ctx, hctx::FastMultipole.DeviceHierarchi
         flagk(ctx.direct_flags, hctx.node_at, grid.node_coords, hctx.d_near_offsets,
             f0, len, kn, leaf_base, level_base_L, ell; ndrange=len)
         accumulate!(+, view(ctx.direct_prefix, 1:len), view(ctx.direct_flags, 1:len))
-        KA.synchronize(backend)
         copyto!(ctx.host_scalar32, 1, ctx.direct_prefix, len, 1)
         chunk_total = Int(ctx.host_scalar32[1])
         if chunk_total > 0
-            needed = n_direct + chunk_total
-            needed <= ctx.direct_capacity ||
-                throw(AssertionError("device hierarchical direct pair buffer exceeded its capacity"))
-            if needed > length(ctx.direct_targets)
-                # grow in place, keeping the pairs already compacted: the state
-                # and the near-field launches hold these same vectors
-                n_new = min(ctx.direct_capacity, max(needed, (3 * length(ctx.direct_targets)) ÷ 2))
-                resize!(ctx.direct_targets, n_new); resize!(ctx.direct_sources, n_new)
-            end
+            _ka_direct_pairs_reserve!(ctx, n_direct + chunk_total)
             compactk(ctx.direct_targets, ctx.direct_sources, ctx.direct_flags,
                 ctx.direct_prefix, hctx.node_at, grid.node_coords,
                 hctx.d_near_offsets, f0, len, kn, leaf_base, level_base_L, ell,
@@ -419,7 +426,6 @@ function ka_hier_generate_direct_pairs!(ctx, hctx::FastMultipole.DeviceHierarchi
         n_direct += chunk_total
         f0 += len
     end
-    KA.synchronize(backend)
     return n_direct
 end
 
@@ -441,6 +447,17 @@ function _ka_hier_win_ensure!(hctx, backend, needed::Int)
     return nothing
 end
 
+# Grow the window-scan flag/prefix scratch to `needed`; contents not preserved
+# (every slot is rewritten by the flag kernels and the scan).
+function _ka_hier_win_scan_ensure!(hctx, backend, needed::Int)
+    cap = hctx.win_flags === nothing ? 0 : length(hctx.win_flags)
+    needed <= cap && return nothing
+    newcap = max(needed, cap + cld(cap, 2), 1024)
+    hctx.win_flags = KA.allocate(backend, Int32, newcap)
+    hctx.win_prefix = KA.allocate(backend, Int32, newcap)
+    return nothing
+end
+
 """
     ka_hier_cache_windows!(hctx, grid; workgroup=KA_AUTO_WORKGROUP)
 
@@ -448,71 +465,127 @@ Regenerate the complete per-level window concatenation for the current
 occupancy epoch, in the same (level, offset-class window, class, source) order
 as the host `build_hierarchical_routes_window!`. Runs inside the refresh, which
 is legal because windows read node metadata only, never expansions.
+
+Within a level the windows split the offset range `1:noffsets` into
+consecutive blocks of `window_classes`, and each window enumerates
+(offset, source) offset-major, so the windows of one level concatenated are
+exactly one offset-major enumeration over `1:noffsets`: one flag launch and one
+compact launch per level generate the stream, and only the route total is read
+back.
 """
 function ka_hier_cache_windows!(hctx::FastMultipole.DeviceHierarchicalM2LContext,
         grid; workgroup=KA_AUTO_WORKGROUP)
-    plan = hctx.apply_plan
-    route_class = plan.route_class
+    scan = _ka_hier_windows_scan!(hctx, grid; workgroup)
+    scan === nothing && return hctx
+    backend = KA.get_backend(hctx.node_at)
+    copyto!(hctx.win_host_total, 1, hctx.win_prefix, scan.total_used, 1)   # the one D2H sync
+    _utick!(:win_sync_d2h, backend)
+    return _ka_hier_windows_compact!(hctx, grid, scan, Int(hctx.win_host_total[1]);
+        workgroup)
+end
+
+# Window cache phase 1: flag every level into one buffer and scan it. Returns
+# `nothing` (cache already finalized as empty) when there is nothing to scan,
+# else what phase 2 needs; the route total is `win_prefix[total_used]`.
+function _ka_hier_windows_scan!(hctx, grid; workgroup=KA_AUTO_WORKGROUP)
     backend = KA.get_backend(hctx.node_at)
     noffsets = hctx.noffsets
-    K = hctx.window_classes
-    ell = hctx.ell
-    # `class_base` is (L - first_m2l_level) * noffsets: a cache built with 0
-    # would apply every level with level-2 operators.
-    windows = Tuple{Int,Int,Int}[]
-    for L in hctx.first_m2l_level:ell, first_offset in 1:K:noffsets
-        push!(windows, (L, first_offset, min(first_offset + K - 1, noffsets)))
-    end
-    nw = length(windows)
-    _KA_UPDATE_TIMERS[] === nothing || push!(get!(_KA_UPDATE_TIMERS[], :win_n_windows, Float64[]), nw)
+    levels = hctx.first_m2l_level:hctx.ell
+    _KA_UPDATE_TIMERS[] === nothing ||
+        push!(get!(_KA_UPDATE_TIMERS[], :win_n_levels, Float64[]), length(levels))
+    # level L's flags occupy bases[i]+1 : bases[i]+used[i]
+    n_src(L) = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
+    used = [n_src(L) * noffsets for L in levels]
+    total_used = sum(used; init=0)
     # zero-M2L geometry (e.g. the all-direct fallback cache): no windows, no routes
-    if nw == 0
+    if total_used == 0
         hctx.total_routes = 0
         hctx.win_valid = true
-        return hctx
+        return nothing
     end
-    # One concatenated flag buffer for every window, ONE scan, one sync:
-    # window w's flags occupy bases[w]+1 : bases[w]+used[w].
-    n_src(L) = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
-    used = [n_src(L) * (lo - fo + 1) for (L, fo, lo) in windows]
     bases = cumsum([0; used[1:end-1]])
-    total_used = sum(used)
-    flags_all = KA.zeros(backend, Int32, max(total_used, 1))
-    prefix_all = KA.zeros(backend, Int32, max(total_used, 1))
+    _ka_hier_win_scan_ensure!(hctx, backend, total_used)
+    flags_all = hctx.win_flags
     flags_kernel = _cached_kernel(ka_hier_route_flags_kernel!, backend, workgroup)
-    for (w, (L, fo, lo)) in enumerate(windows)
-        used[w] > 0 || continue
-        kn = lo - fo + 1
-        flags_kernel(view(flags_all, bases[w]+1:bases[w]+used[w]), hctx.node_at,
+    for (i, L) in enumerate(levels)
+        used[i] > 0 || continue
+        flags_kernel(view(flags_all, bases[i]+1:bases[i]+used[i]), hctx.node_at,
             grid.node_coords, hctx.d_push_offsets, hctx.d_class_of, hctx.level_base[L + 1],
-            hctx.level_offsets[L + 1] + 1, n_src(L), fo, kn, L; ndrange=used[w])
+            hctx.level_offsets[L + 1] + 1, n_src(L), 1, noffsets, L; ndrange=used[i])
     end
-    total_used > 0 && accumulate!(+, view(prefix_all, 1:total_used), view(flags_all, 1:total_used))
+    accumulate!(+, view(hctx.win_prefix, 1:total_used), view(flags_all, 1:total_used))
     _utick!(:win_phase1_count, backend)
-    # host_ends[w]: routes in windows 1:w, the inclusive prefix at the window's
-    # last flag; a window ending at flag 0 (empty windows before any flag) has 0
-    last_flag = bases .+ used
-    ends = KA.allocate(backend, Int, nw); copyto!(ends, max.(last_flag, 1))
-    KA.synchronize(backend)
-    host_ends = Array(prefix_all[ends])          # the one D2H sync
-    _utick!(:win_sync_d2h, backend)
-    host_ends = [e == 0 ? 0 : Int(v) for (e, v) in zip(last_flag, host_ends)]
-    total_routes = host_ends[end]
+    return (; levels, used, bases, total_used)
+end
+
+# Window cache phase 2: compact the scanned flags straight into the cache.
+function _ka_hier_windows_compact!(hctx, grid, scan, total_routes::Int;
+        workgroup=KA_AUTO_WORKGROUP)
+    backend = KA.get_backend(hctx.node_at)
+    noffsets = hctx.noffsets
+    (; levels, used, bases) = scan
+    n_src(L) = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
     _ka_hier_win_ensure!(hctx, backend, total_routes)
     compact_kernel = _cached_kernel(ka_hier_route_compact_global_kernel!, backend, workgroup)
-    for (w, (L, first_offset, last_offset)) in enumerate(windows)
-        used[w] > 0 || continue
-        n = host_ends[w] - (w > 1 ? host_ends[w-1] : 0)
-        n == 0 && continue
+    for (i, L) in enumerate(levels)
+        used[i] > 0 || continue
         class_base = (L - hctx.first_m2l_level) * noffsets
-        kn = last_offset - first_offset + 1
         compact_kernel(hctx.win_targets, hctx.win_sources, hctx.win_class,
-            flags_all, prefix_all, bases[w], hctx.node_at, grid.node_coords,
+            hctx.win_flags, hctx.win_prefix, bases[i], hctx.node_at, grid.node_coords,
             hctx.d_push_offsets, hctx.level_base[L + 1], hctx.level_offsets[L + 1] + 1,
-            n_src(L), first_offset, kn, L, class_base; ndrange=used[w])
+            n_src(L), 1, noffsets, L, class_base; ndrange=used[i])
     end
     _utick!(:win_phase2_compact, backend)
     hctx.total_routes = total_routes
     hctx.win_valid = true
     return hctx
+end
+
+"""
+    ka_hier_refresh_routes!(ctx, hctx, grid, n_cells, leaf_base, ell;
+                            workgroup=KA_AUTO_WORKGROUP)
+
+Epoch regeneration of the direct pairs and (concat plans) the M2L window
+cache. When the direct pairs fit one flag chunk, both are flagged and scanned
+first and their two totals come back in one transfer; otherwise this is
+`ka_hier_generate_direct_pairs!` followed by `ka_hier_cache_windows!`. Returns
+the direct pair count.
+"""
+function ka_hier_refresh_routes!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LContext,
+        grid, n_cells::Int, leaf_base::Int, ell::Int; workgroup=KA_AUTO_WORKGROUP)
+    kn = size(hctx.d_near_offsets, 2)
+    total = kn * n_cells
+    windows = !hctx.win_valid && hctx.apply_plan isa FastMultipole.ResidentM2LConcatPlan
+    if !windows || total == 0 || total > length(ctx.direct_flags)
+        n_direct = ka_hier_generate_direct_pairs!(ctx, hctx, grid, n_cells, leaf_base,
+            ell; workgroup)
+        windows && ka_hier_cache_windows!(hctx, grid; workgroup)
+        return n_direct
+    end
+    backend = KA.get_backend(ctx.direct_flags)
+    level_base_L = hctx.level_base[ell + 1]
+    flagk = _cached_kernel(ka_hier_direct_flags_kernel!, backend, workgroup)
+    flagk(ctx.direct_flags, hctx.node_at, grid.node_coords, hctx.d_near_offsets,
+        0, total, kn, leaf_base, level_base_L, ell; ndrange=total)
+    accumulate!(+, view(ctx.direct_prefix, 1:total), view(ctx.direct_flags, 1:total))
+    scan = _ka_hier_windows_scan!(hctx, grid; workgroup)
+    # [direct pairs, routes] in one transfer
+    fill!(ctx.route_scalars, Int32(0))
+    copyto!(ctx.route_scalars, 1, ctx.direct_prefix, total, 1)
+    scan === nothing ||
+        copyto!(ctx.route_scalars, 2, hctx.win_prefix, scan.total_used, 1)
+    copyto!(ctx.host_route_scalars, ctx.route_scalars)
+    _utick!(:win_sync_d2h, backend)
+    n_direct = Int(ctx.host_route_scalars[1])
+    if n_direct > 0
+        _ka_direct_pairs_reserve!(ctx, n_direct)
+        compactk = _cached_kernel(ka_hier_direct_compact_kernel!, backend, workgroup)
+        compactk(ctx.direct_targets, ctx.direct_sources, ctx.direct_flags,
+            ctx.direct_prefix, hctx.node_at, grid.node_coords,
+            hctx.d_near_offsets, 0, total, kn, leaf_base, level_base_L, ell,
+            0; ndrange=total)
+    end
+    scan === nothing ||
+        _ka_hier_windows_compact!(hctx, grid, scan, Int(ctx.host_route_scalars[2]); workgroup)
+    return n_direct
 end

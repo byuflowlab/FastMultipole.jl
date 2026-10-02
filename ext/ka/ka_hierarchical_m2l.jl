@@ -250,6 +250,7 @@ function ka_hierarchical_context(backend, tables, level_class_of::Array{Int32,3}
         0,
         0, 0, false,
         nothing, nothing, nothing,
+        nothing, nothing, zeros(Int32, 1),
     )
 end
 

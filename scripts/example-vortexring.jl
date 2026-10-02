@@ -22,7 +22,7 @@ modulepath = splitdir(@__FILE__)[1]         # Path to this module
 
 # Load FastMultipole `vortex.jl` module
 using StaticArrays
-include(joinpath(modulepath, "..", "test", "vortex.jl"))
+include(joinpath(modulepath, "..", "test", "helpers", "vortex.jl"))
 
 
 

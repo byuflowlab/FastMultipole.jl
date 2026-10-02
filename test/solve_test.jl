@@ -3,7 +3,7 @@
 # using LinearAlgebra
 # using Test
 
-# include("gravitational.jl")
+# include("helpers/gravitational.jl")
 
 #--- define influence function ---#
 
@@ -101,11 +101,7 @@ for (i, i_leaf) in enumerate(fgs.source_tree.leaf_index)
     end
 
     influence_matrix_fgs, _ = FastMultipole.get_matrix_vector(fgs.self_matrices, i)
-    for (i,i_body) in enumerate(bodies_index)
-        for (j,j_body) in enumerate(bodies_index)
-            @test influence_matrix_fgs[i, j] ≈ influence_matrix_check[i, j] atol=1e-6
-        end
-    end
+    @test maximum(abs, influence_matrix_fgs[1:n_bodies, 1:n_bodies] .- influence_matrix_check; init=0.0) <= 1e-6
 
 end
 
@@ -143,11 +139,7 @@ for i_leaf in 1:length(fgs.source_tree.leaf_index)
         end
 
         # test
-        for (i_target, i_target_body) in enumerate(target_indices)
-            for (j_source, j_source_body) in enumerate(source_indices)
-                @test mat[i_target, j_source] ≈ influence_matrix_check[i_target, j_source] atol=1e-6
-            end
-        end
+        @test maximum(abs, mat[1:length(target_indices), 1:length(source_indices)] .- influence_matrix_check; init=0.0) <= 1e-6
     else
         @assert fgs.nonself_matrices.sizes[i_leaf][1] == 0 "this influence matrix should be empty"
     end
@@ -204,14 +196,16 @@ FastMultipole.influence!(extra_right_hand_side, influences_per_system, target_bu
 #--- check influence function ---#
 
 i_body = 1
+max_error = 0.0
 for i_branch in source_tree.leaf_index
     branch = source_tree.branches[i_branch]
     bodies_index = branch.bodies_index[1]
     for i in bodies_index
-        @test isapprox(extra_right_hand_side[i_body], phi_desired[FastMultipole.sorted_index_2_unsorted_index(i, 1, source_tree)]; atol=1e-6)
+        max_error = max(max_error, abs(extra_right_hand_side[i_body] - phi_desired[FastMultipole.sorted_index_2_unsorted_index(i, 1, source_tree)]))
         i_body += 1
     end
 end
+@test max_error <= 1e-6
 
 #--- check strengths_by_leaf ---#
 
@@ -229,14 +223,16 @@ FastMultipole.update_by_leaf!(strengths, strengths_by_leaf, (system,), source_bu
 #--- check strengths ---#
 
 i_body = 1
+max_error = 0.0
 for i_branch in source_tree.leaf_index
     branch = source_tree.branches[i_branch]
     bodies_index = branch.bodies_index[1]
     for i in bodies_index
-        @test isapprox(strengths[i_body], system.bodies[FastMultipole.sorted_index_2_unsorted_index(i, 1, source_tree)].strength; atol=1e-6)
+        max_error = max(max_error, abs(strengths[i_body] - system.bodies[FastMultipole.sorted_index_2_unsorted_index(i, 1, source_tree)].strength))
         i_body += 1
     end
 end
+@test max_error <= 1e-6
 
 #--- nonself influence function: first matrix ---#
 
@@ -297,14 +293,16 @@ FastMultipole.buffer_to_system_strength!((system,), source_tree)
 #--- check strengths ---#
 
 i_body = 1
+max_error = 0.0
 for i_branch in source_tree.leaf_index
     branch = source_tree.branches[i_branch]
     bodies_index = branch.bodies_index[1]
     for i in bodies_index
-        @test isapprox(strengths[i_body], system.bodies[FastMultipole.sorted_index_2_unsorted_index(i, 1, source_tree)].strength; atol=1e-6)
+        max_error = max(max_error, abs(strengths[i_body] - system.bodies[FastMultipole.sorted_index_2_unsorted_index(i, 1, source_tree)].strength))
         i_body += 1
     end
 end
+@test max_error <= 1e-6
 
 end
 
@@ -401,10 +399,9 @@ sorted_buffer_positions = buffer_positions[:, buffer_p]
 sorted_buffer_strengths = buffer_strengths[buffer_p]
 
 # test that the sorted positions and strengths are the same
-for i in 1:FastMultipole.get_n_bodies(system)
-    @test isapprox(sorted_system_positions[:, i], sorted_buffer_positions[:, i]; atol=1e-6)
-    @test isapprox(sorted_system_strengths[i], sorted_buffer_strengths[i]; atol=1e-6)
-end
+# (per-body position check is the norm of the 3-vector difference, as vector isapprox)
+@test maximum(norm, eachcol(sorted_system_positions .- sorted_buffer_positions)) <= 1e-6
+@test maximum(abs, sorted_system_strengths .- sorted_buffer_strengths) <= 1e-6
 
 end
 

@@ -8,10 +8,10 @@ using Random
 # using BSON
 using PythonPlot
 
-include("../test/evaluate_multipole.jl")
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
-include("../test/evaluate_multipole.jl")
+include("../test/helpers/evaluate_multipole.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
+include("../test/helpers/evaluate_multipole.jl")
 
 function get_gradient(system::Gravitational)
     return system.potential[5:7,:]

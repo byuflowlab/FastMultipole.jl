@@ -25,7 +25,7 @@ using FastMultipole, Random, Printf, Test
 using FastMultipole.StaticArrays
 using KernelAbstractions
 const FM = FastMultipole
-include(joinpath(@__DIR__, "..", "vortex.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "vortex.jl"))
 
 dev_functional() || (println("$(DEV_NAME) not functional; skipping"); exit(0))
 ext = Base.get_extension(FastMultipole, :FastMultipoleKAExt)

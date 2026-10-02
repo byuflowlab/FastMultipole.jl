@@ -4,8 +4,8 @@ Pkg.activate(normpath(this_dir,".."))
 using StaticArrays
 using LinearAlgebra
 using PythonPlot
-include("../test/vortex.jl")
-include("../test/gravitational.jl")
+include("../test/helpers/vortex.jl")
+include("../test/helpers/gravitational.jl")
 
 using Random
 

@@ -2,8 +2,8 @@ using FastMultipole
 using Random
 using Statistics
 
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
 
 n_bodies = 10_000
 ε_abs = 1e-3

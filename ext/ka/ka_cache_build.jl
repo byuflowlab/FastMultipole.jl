@@ -133,6 +133,9 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         # sized to the full pair capacity (`ka_hier_generate_direct_pairs!`)
         direct_flags=_z(Int32, direct_flag_capacity),
         direct_prefix=_z(Int32, direct_flag_capacity),
+        # [direct pairs, M2L routes]: the epoch route regeneration readback
+        route_scalars=_z(Int32, 2),
+        host_route_scalars=zeros(Int32, 2),
         # grid-update scratch: persistent, so the recurring step allocates
         # nothing beyond the backend's own sort scratch
         positions=_z(TF, 3, maxn),
@@ -160,6 +163,9 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         epoch_cell_keys=_z(UInt64, max_cells),
         epoch_flag=_z(Int32, 1),
         host_epoch_flag=zeros(Int32, 1),
+        # [n_cells, keys differ]: the compress readback with the epoch compare
+        step_scalars=_z(Int, 2),
+        host_step_scalars=zeros(Int, 2),
         epoch_prev_n_cells=Ref(0),
         epoch_have=Ref(false),
         epoch_id=Ref(0),                 # bumps whenever the occupied-cell set changes

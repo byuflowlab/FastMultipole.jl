@@ -6,7 +6,7 @@ using PythonPlot
 using Statistics
 using Random
 
-include(joinpath(@__DIR__, "gravitational.jl"))
+include(joinpath(@__DIR__, "helpers", "gravitational.jl"))
 
 """
     benchmark_m2l(; n_bodies, expansion_order, dv, error_methods, tolerances, seed)

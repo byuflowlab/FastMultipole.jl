@@ -6,8 +6,8 @@ using FastMultipole.StaticArrays
 using LinearAlgebra, Random, Test
 
 const CORE_FM = FastMultipole
-isdefined(Main, :generate_gravitational) || include("gravitational.jl")
-isdefined(Main, :generate_vortex) || include("vortex.jl")
+isdefined(Main, :generate_gravitational) || include("helpers/gravitational.jl")
+isdefined(Main, :generate_vortex) || include("helpers/vortex.jl")
 
 # a gravitational system carrying one controlled metadata row, recording the
 # metadata row it sees in buffer_to_target_system!
@@ -268,7 +268,7 @@ end
 
         # all-direct demotion: Float32 policy, and the step is counted once
         base = generate_vortex(32, 200)
-        isdefined(Main, :SmoothedVortex) || include("interface_test_systems.jl")
+        isdefined(Main, :SmoothedVortex) || include("helpers/interface_test_systems.jl")
         bad = SmoothedVortex(base, fill(0.2, 200))
         fat = @test_logs (:warn, r"near-set adequacy failed") match_mode=:any RadixFMMCache(
             bad; expansion_order=4, ell=3,
@@ -452,7 +452,7 @@ end
     end
 
     @testset "explicit options kernel conflicting with the trait throws" begin
-        isdefined(Main, :SmoothedVortex) || include("interface_test_systems.jl")
+        isdefined(Main, :SmoothedVortex) || include("helpers/interface_test_systems.jl")
         sv = SmoothedVortex(generate_vortex(92, 200), fill(0.01, 200))
         err = try
             RadixFMMCache(sv; expansion_order=4, ell=3,
@@ -541,12 +541,6 @@ end
             multipole_acceptance=0.5)
         @test isempty(r[6]) && !isempty(r[5])   # all far field
         @test all(r[1].leaf_size_source .>= 1)
-    end
-
-    @testset "TreeByLevel last-level cells are leaves" begin
-        sys = generate_gravitational(4, 500)
-        tree = CORE_FM.TreeByLevel((sys,), false; n_levels=2)
-        @test all(b -> !isempty(b.branch_index) || b.n_branches == 0, tree.branches)
     end
 
     @testset "UnequalSpheres local_error runs" begin

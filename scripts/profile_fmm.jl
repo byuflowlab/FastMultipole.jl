@@ -3,8 +3,8 @@ using Random
 using Statistics
 using PProf
 
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
 
 function grav_system(n_bodies; rand_seed=123, expansion_order=5, leaf_size_source=40, multipole_acceptance=0.5)
     system = generate_gravitational(rand_seed, n_bodies)

@@ -11,7 +11,7 @@
 
 # native flat coefficient buffer helpers: operators consume
 # FlatCoefficientBuffer; the parity references stay in the legacy [2,2,nh] layout.
-isdefined(@__MODULE__, :to_flat_buffer) || include("flat_buffer_helpers.jl")
+isdefined(@__MODULE__, :to_flat_buffer) || include("helpers/flat_buffer_helpers.jl")
 
 M2L_OFFSETS = (
     SVector{3}(0.0, 0.0, 3.0),       # +z axis  (θ = 0)
@@ -89,30 +89,19 @@ end
 # Val(false): every harmonic of both lanes must match production at P.
 function m2l_check_nolh!(target, ref, P, atol, rtol)
     nh = ((P + 1) * (P + 2)) >> 1
-    for i in 1:nh
-        @test isapprox(target[1, 1, i], ref[1, 1, i]; atol=atol, rtol=rtol)
-        @test isapprox(target[2, 1, i], ref[2, 1, i]; atol=atol, rtol=rtol)
-    end
+    @test all(isapprox.(target[1:2, 1, 1:nh], ref[1:2, 1, 1:nh]; atol=atol, rtol=rtol))
 end
 
 # Val(true): φ physical through P_phi matches the φ-zero-padded production
 # reference (sentinel ignored); χ through P_active matches (padding contributes);
 # φ above P_phi is a clean zero (no nonphysical output row).
 function m2l_check_lh!(target, ref, P_phi, P_active, atol, rtol)
-    for n in 0:P_active
-        for m in 0:n
-            i = FastMultipole.harmonic_index(n, m)
-            @test isapprox(target[1, 2, i], ref[1, 2, i]; atol=atol, rtol=rtol)
-            @test isapprox(target[2, 2, i], ref[2, 2, i]; atol=atol, rtol=rtol)
-            if n <= P_phi
-                @test isapprox(target[1, 1, i], ref[1, 1, i]; atol=atol, rtol=rtol)
-                @test isapprox(target[2, 1, i], ref[2, 1, i]; atol=atol, rtol=rtol)
-            else
-                @test isapprox(target[1, 1, i], zero(eltype(target)); atol=1e-13)
-                @test isapprox(target[2, 1, i], zero(eltype(target)); atol=1e-13)
-            end
-        end
-    end
+    i_chi = [FastMultipole.harmonic_index(n, m) for n in 0:P_active for m in 0:n]
+    i_phi = [FastMultipole.harmonic_index(n, m) for n in 0:P_phi for m in 0:n]
+    i_pad = [FastMultipole.harmonic_index(n, m) for n in (P_phi + 1):P_active for m in 0:n]
+    @test all(isapprox.(target[1:2, 2, i_chi], ref[1:2, 2, i_chi]; atol=atol, rtol=rtol))
+    @test all(isapprox.(target[1:2, 1, i_phi], ref[1:2, 1, i_phi]; atol=atol, rtol=rtol))
+    @test maximum(abs, target[1:2, 1, i_pad]; init=zero(eltype(target))) <= 1e-13
 end
 
 TF = Float64

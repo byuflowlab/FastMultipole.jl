@@ -39,7 +39,7 @@ Say I wanted to compute the gravitational potential to a tolerance of `1e-6` usi
 using FastMultipole
 using Random # needed for `gravitational.jl`
 
-gravitational_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "gravitational.jl"))
+gravitational_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "helpers", "gravitational.jl"))
 include(gravitational_path)
 
 # create system

@@ -24,7 +24,7 @@ using FastMultipole, Random, Test, Printf
 using FastMultipole.StaticArrays
 
 const FM = FastMultipole
-include(joinpath(@__DIR__, "..", "vortex.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "vortex.jl"))
 
 if !dev_functional()
     println("$(DEV_NAME) not functional; skipping")
@@ -173,12 +173,18 @@ end
 # scratch: a bound far below the pair count, so the compaction runs in many chunks;
 # and the pair buffers start far below the pair count, so they grow in place;
 # and the M2M/L2L scratch is far narrower than the level groups, so they run in chunks.
-let (P, ell, n, wc) = (4, 4, 512, 64), chunk = 64, nflag = 97, npair0 = 50, sbatch = 8, TF = Float32
+# Run twice: a 97-entry flag bound takes the chunked compaction; an unbounded one
+# takes the single-chunk path of `ka_hier_refresh_routes!` (direct pairs and M2L
+# routes scanned together, one readback), which must grow the pairs too.
+const CAPACITY_CASES = (:chunked, :single)
+for flagmode in CAPACITY_CASES
+let (P, ell, n, wc) = (4, 4, 512, 64), chunk = 64, npair0 = 50, sbatch = 8, TF = Float32
     sys_h = make_system(5199, n, TF); sys_d = make_system(5199, n, TF)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(chunk), body_type=FM.Point{FM.Vortex})
     hcache = RadixFMMCache(sys_h; expansion_order=P, ell=ell, window_classes=wc, options=opts)
     fmm!(sys_h, hcache)
+    nflag = flagmode === :chunked ? 97 : hcache.direct_capacity
     a = device_build_args(hcache)
     LH = typeof(hcache).parameters[2]
     dcache = ext.ka_radix_cache_device_build(DEV_BACKEND, (sys_d,),
@@ -201,21 +207,26 @@ let (P, ell, n, wc) = (4, 4, 512, 64), chunk = 64, nflag = 97, npair0 = 50, sbat
     ndirect = dcache.state.interaction_list.epoch_n_direct
     ws = dcache.state.scratch
     gmax = maximum(g.count[] for g in vcat(ws.m2m_groups, ws.l2l_groups))
+    # candidates = (occupied cell, near offset) pairs; above the flag bound the
+    # compaction is chunked, at or below it the single-chunk path runs
+    ncand = size(dcache.state.interaction_list.d_near_offsets, 2) * dcache.state.counts.n_cells
+    path_ok = flagmode === :chunked ? ndirect > nflag : ncand <= nflag
     ok = plan.chunk == min(chunk, hcache.route_capacity) && size(plan.aphi, 2) == plan.chunk &&
-        nroutes > chunk && length(dcache.device_ctx.direct_flags) == nflag && ndirect > nflag &&
+        nroutes > chunk && length(dcache.device_ctx.direct_flags) == nflag && path_ok &&
         length(dcache.state.direct_targets) >= ndirect > npair0 &&
         dcache.state.direct_targets === dcache.device_ctx.direct_targets &&
         size(ws.aphi, 2) == sbatch && gmax > sbatch && length(plan.route_class) == chunk &&
         e_vel < TOL
     ok ? (npass[] += 1) : (nfail[] += 1)
-    println("m2l chunk + direct flag bound (chunk=$chunk, routes=$nroutes; flags=$nflag, pairs=$ndirect): ",
+    println("m2l chunk + direct flag bound [$flagmode] (chunk=$chunk, routes=$nroutes; flags=$nflag, pairs=$ndirect): ",
         ok ? "PASS" : "FAIL", "  plan.chunk=", plan.chunk, "  scratch cols=", size(plan.aphi, 2),
         "  flag length=", length(dcache.device_ctx.direct_flags),
         "  pair buffer ", npair0, " -> ", length(dcache.state.direct_targets),
         "  stage scratch ", size(ws.aphi, 2), " cols for groups up to ", gmax, "  velocity=", e_vel)
     flush(stdout)
 end
+end
 
 println("\nKA device cache build+step vs host RadixFMMCache fmm!: ",
-    "$(npass[])/$(length(CASES) + 1) pass")
+    "$(npass[])/$(length(CASES) + length(CAPACITY_CASES)) pass")
 nfail[] == 0 || error("$(nfail[]) case(s) failed")

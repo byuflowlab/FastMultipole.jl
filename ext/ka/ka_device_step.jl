@@ -111,29 +111,30 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     _utick!(:keys, backend)
         ka_radix_sort_bodies!(view(grid.perm, 1:n), sk, grid.invperm, kv; workgroup,
             ell=ell, histogram=ctx.counting_histogram, prefix=ctx.counting_prefix,
-            cursor=ctx.counting_cursor)
+            cursor=ctx.counting_cursor,
+            fill_invperm=!(!direct_only && _ka_subsort_runs(cache, backend, n)))
+        # occupancy epoch: everything past the compress is a pure function of
+        # the occupied leaf-cell SET inside the fixed box
+        track_epoch = length(ctx.epoch_cell_keys) > 0
+        compare = track_epoch && ctx.epoch_have[]
         n_cells = ka_radix_compress_cells!(grid.cell_keys, grid.cell_ranges, sk,
             view(ctx.body_flags, 1:n), view(ctx.body_prefix, 1:n), ctx.host_scalar;
-            workgroup)
+            workgroup, epoch=compare ? (; scalars=ctx.step_scalars,
+                host_scalars=ctx.host_step_scalars, snapshot=ctx.epoch_cell_keys,
+                prev_n_cells=ctx.epoch_prev_n_cells[]) : nothing)
         n_cells <= cache.max_cells ||
             throw(AssertionError("device radix grid exceeded the cache cell capacity"))
         ckv = view(grid.cell_keys, 1:n_cells)
-
-        # occupancy epoch: everything past this point is a pure function of the
-        # occupied leaf-cell SET inside the fixed box
-        track_epoch = length(ctx.epoch_cell_keys) > 0
     _utick!(:sort_compress, backend)
         # The epoch is keyed on the occupied-cell SET, not on the body count:
         # bodies added to already-occupied cells (a shedding solver, every step)
         # leave every route, window and stage group valid. Compare the keys
         # whenever the cell count matches; a count-only change must not force
         # the rebuild (measured at ~420 ms per call at 400 bodies on Metal,
-        # against ~15 ms for the evaluation itself).
-        occ_changed = true
-        if track_epoch && ctx.epoch_have[] && ctx.epoch_prev_n_cells[] == n_cells
-            occ_changed = ka_radix_occupancy_changed!(ctx.epoch_flag, ctx.host_epoch_flag,
-                ckv, ctx.epoch_cell_keys, n_cells; workgroup)
-        end
+        # against ~15 ms for the evaluation itself). The compare ran inside the
+        # compress and came back with the cell count.
+        occ_changed = !(compare && ctx.epoch_prev_n_cells[] == n_cells &&
+            ctx.host_step_scalars[2] == 0)
     _utick!(:occ_check, backend)
         if occ_changed
             ctx.epoch_id[] += 1
@@ -191,7 +192,6 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
     # host mirrors serve host-resident target finalization only
     _utick!(:pack, backend)
     if FastMultipole._radix_any_host_resident(systems)
-        KA.synchronize(backend)
         copyto!(ctx.host_perm, 1, grid.perm, 1, n)
         copyto!(ctx.host_body_system, 1, grid.body_system, 1, n)
         copyto!(ctx.host_body_index, 1, grid.body_index, 1, n)
@@ -210,7 +210,7 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
             hctx.epoch_id += 1
             hctx.win_valid = false
             ka_hier_refresh_occupancy!(hctx, grid, cache.level_offsets; workgroup)
-            n_direct = ka_hier_generate_direct_pairs!(ctx, hctx, grid, n_cells,
+            n_direct = ka_hier_refresh_routes!(ctx, hctx, grid, n_cells,
                 cache.level_offsets[ell + 1], ell; workgroup)
             hctx.epoch_n_direct = n_direct
         else
@@ -233,7 +233,6 @@ function ka_update_radix_state!(cache::FastMultipole.RadixFMMCache{TF,LH}, syste
         end
     end
     _utick!(:stage_groups, backend)
-    KA.synchronize(backend)
     # occupancy-epoch snapshot, after the node rebuild, direct pairs, windows
     # and stage groups it stands for: a throw in any of them leaves no snapshot,
     # so the next call rebuilds instead of trusting half-written state

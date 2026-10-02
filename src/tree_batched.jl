@@ -158,7 +158,7 @@ function _refresh_radix_cells!(cell_keys::Vector{UInt64}, cell_ranges::AbstractM
 end
 
 # In-place level-major node metadata rebuild, matching the test reference
-# `host_resident_radix_grid` (test/radix_reference.jl) exactly: node keys per
+# `host_resident_radix_grid` (test/helpers/radix_reference.jl) exactly: node keys per
 # level are the sorted distinct shifted leaf keys, parents resolve by a sorted
 # merge against the previous level, and each parent's children are contiguous
 # in the next level. Returns n_nodes; fills level_offsets

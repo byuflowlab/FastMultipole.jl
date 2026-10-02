@@ -2,8 +2,8 @@ using FastMultipole
 using Statistics
 using Random
 
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
 
 n_bodies = 50_000
 # masses = generate_gravitational(123, n_bodies)

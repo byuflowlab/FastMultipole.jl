@@ -5,8 +5,8 @@ using PythonPlot
 using LaTeXStrings
 using DelimitedFiles
 
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
 
 function get_gradient(system::Gravitational)
     return system.potential[5:7,:]
