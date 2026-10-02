@@ -1197,8 +1197,10 @@ _m2l_factorial_overflows(::Type{TF}, P::Integer) where TF =
 # order or in a physically small box, and an infinite factor turns every local
 # it touches into Inf/NaN. Every M2L plan
 # checks its range at construction and refuses with the remedies that work.
-# TODO: normalize coordinates to a unit box internally so Float32 caches work at
-# any physical scale and expansion order.
+# TODO: scale expansion coefficients per level (multipoles by 1/s^n, locals by
+# s^(n+1), s = the level's box size) so Float32 caches work at any physical scale.
+# Normalizing coordinates to a unit box does not: the bound depends on the cell
+# size B/2^ell, and a unit box lowers the reachable P for large geometry.
 
 @noinline function _m2l_range_error(::Type{TF}, plan::AbstractString, what::AbstractString,
         P::Integer, r) where TF
