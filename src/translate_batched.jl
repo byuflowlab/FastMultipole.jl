@@ -2407,7 +2407,8 @@ end
 function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, exemplar,
         strategy::ConcatenatedFixedZM2L, invariant::OperatorInvariantCache,
         accepted_offsets::AbstractVector{SVector{3,Int}}, cell_width::Real,
-        route_capacity::Integer; whole_window::Bool=false) where {TF,B,LH}
+        route_capacity::Integer; whole_window::Bool=false,
+        route_class_capacity::Integer=route_capacity) where {TF,B,LH}
     P_phi = basis_info.orders.P_phi
     P_active = basis_info.orders.P_active
     nclasses = length(accepted_offsets)
@@ -2442,7 +2443,9 @@ function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, 
         _array_like_vector(exemplar, TF, thetas),
         _array_like_vector(exemplar, TF, rs),
         _array_like_vector(exemplar, TF, inv.(rs)),
-        _array_like_vector(exemplar, Int32, Vector{Int32}(undef, nroutes)),
+        # the plan's own class stream; a caller that always passes its own
+        # (the KA device M2L applies the epoch window cache) keeps it short
+        _array_like_vector(exemplar, Int32, Vector{Int32}(undef, Int(route_class_capacity))),
         similar(exemplar, TF, chunk),
         similar(exemplar, TF, chunk),
         similar(exemplar, TF, chunk),
@@ -2887,7 +2890,8 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         operator::AbstractM2LOperator=MaterializedYRotationM2L();
         hierarchical_noffsets::Int=0,
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
-        first_level::Int=0, stage_batch::Int=typemax(Int)) where {TF,B,LH}
+        first_level::Int=0, stage_batch::Int=typemax(Int),
+        m2l_route_class_capacity::Int=typemax(Int)) where {TF,B,LH}
     stage_batch > 0 || throw(ArgumentError("stage_batch must be positive"))
     m2l_strategy isa PrecomputedFactoredYM2L && !(operator isa FactoredRotationM2L) &&
         throw(ArgumentError("PrecomputedFactoredYM2L requires operator=FactoredRotationM2L()"))
@@ -2939,7 +2943,8 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
             cell_width, route_capacity, max_cells, invariant) :
         ResidentM2LConcatPlan(TF, basis_info, exemplar.phi, m2l_strategy,
             invariant, accepted_offsets, cell_width, route_capacity;
-            whole_window=hierarchical_noffsets > 0)
+            whole_window=hierarchical_noffsets > 0,
+            route_class_capacity=min(route_capacity, m2l_route_class_capacity))
 
     ndof_phi = degree_major_dof(P_phi)
     ndof_chi = LH ? degree_major_dof(P_active) : 0

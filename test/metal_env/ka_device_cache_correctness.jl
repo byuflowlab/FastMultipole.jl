@@ -205,7 +205,7 @@ let (P, ell, n, wc) = (4, 4, 512, 64), chunk = 64, nflag = 97, npair0 = 50, sbat
         nroutes > chunk && length(dcache.device_ctx.direct_flags) == nflag && ndirect > nflag &&
         length(dcache.state.direct_targets) >= ndirect > npair0 &&
         dcache.state.direct_targets === dcache.device_ctx.direct_targets &&
-        size(ws.aphi, 2) == sbatch && gmax > sbatch &&
+        size(ws.aphi, 2) == sbatch && gmax > sbatch && length(plan.route_class) == chunk &&
         e_vel < TOL
     ok ? (npass[] += 1) : (nfail[] += 1)
     println("m2l chunk + direct flag bound (chunk=$chunk, routes=$nroutes; flags=$nflag, pairs=$ndirect): ",

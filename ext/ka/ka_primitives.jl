@@ -647,6 +647,9 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
     # `route_class` defaults to the plan's own window-scoped buffer, which the
     # generate-and-apply-per-window path refills before every call. The cached
     # path passes a view into the epoch-cached class stream instead.
+    route_class === nothing && nroutes > length(plan.route_class) && throw(ArgumentError(
+        "ka_resident_m2l_concat_apply!: $nroutes routes but the plan's own class stream holds " *
+        "$(length(plan.route_class)); pass route_class"))
     classes = route_class === nothing ? plan.route_class : route_class
     LH = size(dest.chi, 1) > 0
     TF = eltype(dest.phi)

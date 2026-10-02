@@ -32,5 +32,8 @@ function ka_radix_cache_workspace(backend, ::Type{TF},
     return FastMultipole._radix_cache_workspace(TF, basis_info, exemplar, Int(ell), h0,
         Int(max_cells), Int(max_nodes), Int(route_capacity), accepted_offsets, invariant,
         m2l_strategy, FastMultipole.MaterializedYRotationM2L();
-        ell_axes=ell_axes, first_level=Int(first_level), stage_batch=Int(stage_batch))
+        ell_axes=ell_axes, first_level=Int(first_level), stage_batch=Int(stage_batch),
+        # the device M2L always passes the epoch window cache's classes, so the
+        # plan's own class stream only needs one chunk
+        m2l_route_class_capacity=m2l_strategy.chunk)
 end
