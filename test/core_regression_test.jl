@@ -394,7 +394,9 @@ end
     end
 
     @testset "planned fmm! carries its docstring" begin
-        @test occursin("Run the FMM using the precomputed", string(@doc fmm!))
+        md = Base.Docs.meta(CORE_FM)[Base.Docs.Binding(CORE_FM, :fmm!)]
+        @test any(d -> occursin("Run the FMM using the precomputed", join(d.text)),
+                  values(md.docs))
     end
 
     @testset "repeated transform_tree! keeps boxes bounded" begin
