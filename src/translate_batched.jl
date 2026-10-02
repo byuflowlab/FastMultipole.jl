@@ -2887,7 +2887,8 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         operator::AbstractM2LOperator=MaterializedYRotationM2L();
         hierarchical_noffsets::Int=0,
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
-        first_level::Int=0) where {TF,B,LH}
+        first_level::Int=0, stage_batch::Int=typemax(Int)) where {TF,B,LH}
+    stage_batch > 0 || throw(ArgumentError("stage_batch must be positive"))
     m2l_strategy isa PrecomputedFactoredYM2L && !(operator isa FactoredRotationM2L) &&
         throw(ArgumentError("PrecomputedFactoredYM2L requires operator=FactoredRotationM2L()"))
     m2l_strategy isa DenseTranslationM2L && !(operator isa MaterializedYRotationM2L) &&
@@ -2921,7 +2922,9 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
             _radix_level_node_capacity(level, ell_axes, ell, max_cells))
         for level in (first_level + 1):ell
     ]
-    max_batch = max(_radix_level_node_capacity(ell, ell_axes, ell, max_cells), 1)
+    # M2M/L2L column scratch: the widest level's node capacity, or `stage_batch`
+    # when the apply walks a group in column chunks (the KA device apply does)
+    max_batch = max(min(_radix_level_node_capacity(ell, ell_axes, ell, max_cells), stage_batch), 1)
 
     cell_width = (2 * h0) / (1 << ell)
     m2l_concat = m2l_strategy isa DenseTranslationM2L ?

@@ -3,7 +3,7 @@
 """
     ka_radix_cache_workspace(backend, TF, basis_info, ell, h0, max_cells, max_nodes,
                              route_capacity, accepted_offsets, invariant;
-                             ell_axes, first_level, m2l_strategy)
+                             ell_axes, first_level, m2l_strategy, stage_batch)
 
 Build a device-resident [`ResidentOperatorWorkspace`](@ref) on any KA backend.
 
@@ -26,10 +26,11 @@ function ka_radix_cache_workspace(backend, ::Type{TF},
         invariant::FastMultipole.OperatorInvariantCache;
         ell_axes::SVector{3,Int}=SVector(Int(ell), Int(ell), Int(ell)),
         first_level::Integer=0,
-        m2l_strategy::FastMultipole.ConcatenatedFixedZM2L=FastMultipole.ConcatenatedFixedZM2L()) where {TF,B,LH}
+        m2l_strategy::FastMultipole.ConcatenatedFixedZM2L=FastMultipole.ConcatenatedFixedZM2L(),
+        stage_batch::Integer=1 << 14) where {TF,B,LH}
     exemplar = _ka_flat_buffer(backend, TF, basis_info, 1)
     return FastMultipole._radix_cache_workspace(TF, basis_info, exemplar, Int(ell), h0,
         Int(max_cells), Int(max_nodes), Int(route_capacity), accepted_offsets, invariant,
         m2l_strategy, FastMultipole.MaterializedYRotationM2L();
-        ell_axes=ell_axes, first_level=Int(first_level))
+        ell_axes=ell_axes, first_level=Int(first_level), stage_batch=Int(stage_batch))
 end

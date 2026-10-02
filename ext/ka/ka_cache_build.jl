@@ -33,6 +33,7 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         root_level::Int=0, first_m2l_level::Int=2,
         direct_flag_capacity::Int=min(direct_capacity, 1 << 21),
         direct_pair_capacity::Int=min(direct_capacity, 1 << 16),
+        stage_batch::Int=1 << 14,
         workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
     direct_flag_capacity > 0 || throw(ArgumentError("direct_flag_capacity must be positive"))
     0 < direct_pair_capacity <= max(direct_capacity, 1) || throw(ArgumentError(
@@ -59,7 +60,7 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
     invariant = FastMultipole.OperatorInvariantCache(TF, basis_info)
     workspace = ka_radix_cache_workspace(backend, TF, basis_info, ell, h0,
         max_cells, max_nodes, route_capacity, accepted, invariant;
-        ell_axes, first_level=root_level, m2l_strategy=options.m2l_strategy)
+        ell_axes, first_level=root_level, m2l_strategy=options.m2l_strategy, stage_batch)
 
     # capacity-sized persistent grid: counts bound the valid prefixes, so
     # recurring steps refresh these arrays in place and never reallocate

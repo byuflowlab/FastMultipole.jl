@@ -533,15 +533,27 @@ end
 function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
     n = group.count[]
     n == 0 && return dest
+    # the scratch may be narrower than the group (a device workspace caps it at
+    # `stage_batch`): walk the group in column chunks. A group's sources and
+    # targets sit on different levels, so the chunks are independent.
+    cap = size(ws.aphi, 2)
+    for c0 in 1:cap:n
+        _ka_stage_group_cols!(dest, src, group, ws, kind, c0:min(c0 + cap - 1, n))
+    end
+    return dest
+end
+
+function _ka_stage_group_cols!(dest, src, group, ws, kind::Symbol, cols::UnitRange{Int})
+    n = length(cols)
     mult = kind === :m2m
     ystk = ws.ystk_phi
     Ur = mult ? ystk.mult_Ur : ystk.loc_Ur
     Vs = mult ? ystk.mult_Vs : ystk.loc_Vs
     ndof_phi = size(ws.aphi, 1)
-    source_idx = FastMultipole._vector_prefix_view(group.source_idx, n)
-    target_idx = FastMultipole._vector_prefix_view(group.target_idx, n)
-    group_phis = FastMultipole._vector_prefix_view(group.phis, n)
-    group_thetas = FastMultipole._vector_prefix_view(group.thetas, n)
+    source_idx = view(group.source_idx, cols)
+    target_idx = view(group.target_idx, cols)
+    group_phis = view(group.phis, cols)
+    group_thetas = view(group.thetas, cols)
     aphi = FastMultipole._matrix_col_view(ws.aphi, n)
     yphi = FastMultipole._matrix_col_view(ws.yphi, n)
     zphi = FastMultipole._matrix_col_view(ws.zphi, n)
