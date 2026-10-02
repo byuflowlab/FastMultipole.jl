@@ -525,6 +525,14 @@ function _ka_hier_windows_compact!(hctx, grid, scan, total_routes::Int;
     noffsets = hctx.noffsets
     (; levels, used, bases) = scan
     n_src(L) = hctx.level_offsets[L + 2] - hctx.level_offsets[L + 1]
+    # no accepted route anywhere (every occupied cell near every other, e.g. a
+    # young wake): the cache arrays may not exist yet, and the compact kernel
+    # cannot be compiled against `nothing`; the M2L apply skips n_routes == 0
+    if total_routes == 0
+        hctx.total_routes = 0
+        hctx.win_valid = true
+        return hctx
+    end
     _ka_hier_win_ensure!(hctx, backend, total_routes)
     compact_kernel = _cached_kernel(ka_hier_route_compact_global_kernel!, backend, workgroup)
     for (i, L) in enumerate(levels)

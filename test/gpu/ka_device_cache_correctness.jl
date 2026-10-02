@@ -227,6 +227,48 @@ let (P, ell, n, wc) = (4, 4, 512, 64), chunk = 64, npair0 = 50, sbatch = 8, TF =
 end
 end
 
+# Zero M2L routes with M2L levels present: a small cluster in a large fixed box,
+# so every occupied cell is near every other (the NREL 5MW's first steps). The
+# window compact ran over the candidates with the never-allocated window cache
+# (`nothing`) and failed to compile.
+let (P, ell, wc, n) = (4, 4, 8, 200), TF = Float32
+    Random.seed!(5301)
+    mk() = VortexParticles(TF(0.45) .+ TF(0.1) .* rand(TF, 3, n), (randn(TF, 3, n) ./ TF(n)), zeros(TF, n);
+        potential=zeros(TF, 13, n), gradient_stretching=zeros(TF, 6, n))
+    Random.seed!(5301); sys_h = mk(); Random.seed!(5301); sys_d = mk()
+    box = (SVector{3,TF}(0, 0, 0), TF(1))
+    opts = FM.RadixLifecycleOptions(; precision=TF, m2l_strategy=FM.ConcatenatedFixedZM2L(), body_type=FM.Point{FM.Vortex})
+    hcache = RadixFMMCache(sys_h; expansion_order=P, ell=ell, window_classes=wc, bounds=box, options=opts)
+    fmm!(sys_h, hcache)
+    a = device_build_args(hcache)
+    LH = typeof(hcache).parameters[2]
+    local ok, nroutes, e_vel
+    try
+        dcache = ext.ka_radix_cache_device_build(DEV_BACKEND, (sys_d,),
+            hcache.expansion_order, ell, hcache.x_min, hcache.h0,
+            hcache.max_n_bodies, hcache.options, hcache.policy,
+            hcache.accepted_offsets, hcache.rejected_offsets,
+            hcache.max_cells, hcache.max_nodes, hcache.route_capacity,
+            hcache.direct_capacity, hcache.state.multipoles.basis_info, Val(LH);
+            hierarchical_tables=a.tables,
+            hierarchical_level_class_of=a.level_class_of, hessian=hcache.hessian,
+            ell_axes=hcache.ell_axes, box_extent=hcache.box_extent,
+            root_level=a.root_level, first_m2l_level=a.first_m2l_level)
+        switches = FM.DerivativesSwitch(FM.to_vector(false, 1), FM.to_vector(true, 1),
+            FM.to_vector(false, 1), (sys_d,))
+        ext.ka_radix_cache_device_step!(dcache, (sys_d,), switches)
+        nroutes = dcache.state.interaction_list.total_routes
+        e_vel = relerr(sys_d.gradient_stretching[1:3, :], sys_h.gradient_stretching[1:3, :])
+        ok = nroutes == 0 && e_vel < TOL
+    catch err
+        ok = false; nroutes = -1; e_vel = NaN
+        println("zero-route epoch THREW: ", first(sprint(showerror, err), 300))
+    end
+    ok ? (npass[] += 1) : (nfail[] += 1)
+    println("zero-route epoch (routes=$nroutes): ", ok ? "PASS" : "FAIL", "  velocity=", e_vel)
+    flush(stdout)
+end
+
 println("\nKA device cache build+step vs host RadixFMMCache fmm!: ",
-    "$(npass[])/$(length(CASES) + length(CAPACITY_CASES)) pass")
+    "$(npass[])/$(length(CASES) + length(CAPACITY_CASES) + 1) pass")
 nfail[] == 0 || error("$(nfail[]) case(s) failed")
