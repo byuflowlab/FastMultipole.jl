@@ -10,8 +10,9 @@
 # This driver calls the ext's `ka_*` stage drivers, so "KA" is unambiguous on
 # every backend.
 #
-# One `KA.synchronize` at the END of the driver, never per stage: a sync per
-# kernel costs 1.37-2.7x on this code.
+# No `KA.synchronize` per stage: a sync per kernel costs 1.37-2.7x on this
+# code. The driver issues none at all; every stage is ordered on one queue and
+# `ka_radix_cache_device_step!` syncs once before returning.
 
 """
     ka_lifecycle_body!(state; extra_tree=())
@@ -42,8 +43,9 @@ function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
     end
     isempty(extra_tree) || _utick!(:lc_extra_b2m, backend)
 
-    # 3. far field: M2M -> M2L -> L2L, then L2B
-    FastMultipole._zero_resident_nonleaf_multipoles!(state)
+    # 3. far field: M2M -> M2L -> L2L, then L2B. No non-leaf zeroing: every
+    #    ka_launch_b2m! method zero-fills the whole multipole buffer, and the
+    #    extra-tree B2M adds into leaf columns only.
     for group in ws.m2m_groups
         ka_resident_stage_group_apply!(state.multipoles, state.multipoles, group, ws, :m2m)
     end
@@ -56,8 +58,6 @@ function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
     _utick!(:lc_l2l, backend)
     ka_launch_l2b!(state)
     _utick!(:lc_l2b, backend)
-
-    KA.synchronize(backend)
     return state
 end
 

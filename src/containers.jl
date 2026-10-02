@@ -659,6 +659,11 @@ mutable struct DeviceHierarchicalM2LContext{PL,IV32,IM32,IA32,IV}
     win_class::Any
     win_sources::Any
     win_targets::Any
+    # route-scan scratch, grow-only like the route arrays, and the host slot
+    # the route total is read back into
+    win_flags::Any
+    win_prefix::Any
+    win_host_total::Vector{Int32}
 end
 
 "One radix M2L displacement class and its paired target/source cell indices."

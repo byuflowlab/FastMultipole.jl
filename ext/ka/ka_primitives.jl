@@ -27,7 +27,13 @@ const _ROW_EXTREMA_SCRATCH = Dict{Any,Vector{Any}}()
     end
 end
 
-function FastMultipole._device_row_extrema(A::AnyGPUMatrix, row::Integer, n::Integer)
+FastMultipole._device_row_extrema(A::AnyGPUMatrix, row::Integer, n::Integer) =
+    _ka_row_extrema(A, row, n, true)
+# the max alone downloads one partial vector instead of two
+FastMultipole._device_row_max(A::AnyGPUMatrix, row::Integer, n::Integer) =
+    _ka_row_extrema(A, row, n, false)[2]
+
+function _ka_row_extrema(A, row::Integer, n::Integer, want_lo::Bool)
     n > 0 || throw(ArgumentError("reducing over an empty row prefix"))
     T = eltype(A)
     backend = KA.get_backend(A)
@@ -46,8 +52,9 @@ function FastMultipole._device_row_extrema(A::AnyGPUMatrix, row::Integer, n::Int
         wg = resolve_workgroup(backend, KA_AUTO_WORKGROUP)
         kern = _cached_kernel(ka_row_extrema_kernel!, backend, wg)
         kern(lo, hi, A, Int(row), Int(n), ROW_EXTREMA_LANES; ndrange=ROW_EXTREMA_LANES)
-        KA.synchronize(backend)
-        copyto!(hlo, lo); copyto!(hhi, hi)
+        copyto!(hhi, hi)
+        want_lo || return zero(T), maximum(hhi)
+        copyto!(hlo, lo)
         return minimum(hlo), maximum(hhi)
     finally
         lock(() -> push!(_ROW_EXTREMA_SCRATCH[key], scratch), _CACHE_LOCK)
@@ -229,6 +236,62 @@ function ka_trig_fill!(C, S, nu, theta)
     return C
 end
 
+# Both channels' trig tables over the same angles in one launch: elements
+# 1:length(C) fill (C, S) from `nu`, the rest fill (Cc, Sc) from `nuc`.
+@kernel function ka_trig_fill2_kernel!(C, S, Cc, Sc, @Const(nu), @Const(nuc), @Const(theta))
+    i = @index(Global)
+    nphi = Int32(length(C))
+    @inbounds if i <= length(C) + length(Cc)
+        i32 = Int32(i) - Int32(1)
+        if i32 < nphi
+            nr = Int32(size(C, 1))
+            row = i32 % nr + Int32(1); col = i32 ÷ nr + Int32(1)
+            th = nu[row] * theta[col]
+            C[row, col] = cos(th); S[row, col] = sin(th)
+        else
+            j32 = i32 - nphi; nr = Int32(size(Cc, 1))
+            row = j32 % nr + Int32(1); col = j32 ÷ nr + Int32(1)
+            th = nuc[row] * theta[col]
+            Cc[row, col] = cos(th); Sc[row, col] = sin(th)
+        end
+    end
+end
+
+function ka_trig_fill2!(C, S, Cc, Sc, nu, nuc, theta)
+    kernel = _cached_kernel(ka_trig_fill2_kernel!, KA.get_backend(C), 256)
+    kernel(C, S, Cc, Sc, nu, nuc, theta; ndrange=length(C) + length(Cc))
+    return C
+end
+
+# The stage-group Lamb-Helmholtz row mix in one launch:
+#   cphi = zphi + phi_rows .* zchi[phi_pair, :]
+#   cchi = zchi + chi_rows .* zchi[chi_src, :]
+# rows 1:ndphi of the flattened range write cphi, the rest cchi.
+@kernel function ka_lh_row_mix_kernel!(cphi, cchi, @Const(zphi), @Const(zchi),
+        @Const(phi_rows), @Const(chi_rows), @Const(phi_pair), @Const(chi_src))
+    i = @index(Global)
+    ndphi = Int32(size(cphi, 1)); ndchi = Int32(size(cchi, 1))
+    nd = ndphi + ndchi
+    @inbounds if i <= Int(nd) * size(cphi, 2)
+        i32 = Int32(i) - Int32(1)
+        row = i32 % nd + Int32(1); col = i32 ÷ nd + Int32(1)
+        if row <= ndphi
+            cphi[row, col] = zphi[row, col] + phi_rows[row] * zchi[phi_pair[row], col]
+        else
+            r = row - ndphi
+            cchi[r, col] = zchi[r, col] + chi_rows[r] * zchi[chi_src[r], col]
+        end
+    end
+end
+
+function ka_lh_row_mix!(cphi, cchi, zphi, zchi, phi_rows, chi_rows, phi_pair, chi_src)
+    n = (size(cphi, 1) + size(cchi, 1)) * size(cphi, 2)
+    n == 0 && return cphi
+    kernel = _cached_kernel(ka_lh_row_mix_kernel!, KA.get_backend(cphi), 256)
+    kernel(cphi, cchi, zphi, zchi, phi_rows, chi_rows, phi_pair, chi_src; ndrange=n)
+    return cphi
+end
+
 """
     ka_stacked_y_dense!(out_slab, in_slab, Ur, Vs, C, S, G, G2, ndof)
 
@@ -322,8 +385,8 @@ end
 
 Three `ka_gather_values!` calls sharing one index vector, done in one launch and
 one `ids` read per column. Used for the concat plan's (phi, theta, invr) column
-parameter gather; the Lamb-Helmholtz `r` gather stays a separate call because
-`col_r` is absent on a non-LH plan.
+parameter gather; a Lamb-Helmholtz plan also gathers `r`, through
+`ka_gather_values4!`, since `col_r` is absent on a non-LH plan.
 """
 function ka_gather_values3!(d1, d2, d3, s1, s2, s3, ids; workgroup=KA_AUTO_WORKGROUP)
     n = length(d1)
@@ -331,6 +394,28 @@ function ka_gather_values3!(d1, d2, d3, s1, s2, s3, ids; workgroup=KA_AUTO_WORKG
     backend = KA.get_backend(d1)
     kernel = _cached_kernel(ka_gather_values3_kernel!, backend, workgroup)
     kernel(d1, d2, d3, s1, s2, s3, ids; ndrange=n)
+    return d1
+end
+
+@kernel function ka_gather_values4_kernel!(d1, d2, d3, d4, @Const(s1), @Const(s2),
+        @Const(s3), @Const(s4), @Const(ids))
+    j = @index(Global)
+    @inbounds begin
+        id = ids[j]
+        d1[j] = s1[id]
+        d2[j] = s2[id]
+        d3[j] = s3[id]
+        d4[j] = s4[id]
+    end
+end
+
+"`ka_gather_values3!` plus a fourth vector, in one launch."
+function ka_gather_values4!(d1, d2, d3, d4, s1, s2, s3, s4, ids; workgroup=KA_AUTO_WORKGROUP)
+    n = length(d1)
+    n == 0 && return d1
+    backend = KA.get_backend(d1)
+    kernel = _cached_kernel(ka_gather_values4_kernel!, backend, workgroup)
+    kernel(d1, d2, d3, d4, s1, s2, s3, s4, ids; ndrange=n)
     return d1
 end
 
@@ -551,14 +636,20 @@ function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
     S = FastMultipole._matrix_col_view(ystk.Sy, n)
     G = FastMultipole._matrix_col_view(ystk.G, n)
     G2 = FastMultipole._matrix_col_view(ystk.G2, n)
-    ka_trig_fill!(C, S, ystk.nu, group_thetas)
+    has_lh = size(dest.chi, 1) > 0
+    if has_lh
+        Cc = FastMultipole._matrix_col_view(ws.ystk_chi.Cy, n)
+        Sc = FastMultipole._matrix_col_view(ws.ystk_chi.Sy, n)
+        ka_trig_fill2!(C, S, Cc, Sc, ystk.nu, ws.ystk_chi.nu, group_thetas)
+    else
+        ka_trig_fill!(C, S, ystk.nu, group_thetas)
+    end
     ka_gather_rotate_z!(aphi, src.phi, ws.phi_flat_idx, source_idx,
         ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, group_phis, one(eltype(aphi)))
     ka_stacked_y_dense!(yphi, aphi, Ur, Vs, C, S, G, G2, ndof_phi)
     mul!(zphi, group.phi_dense, yphi)
     ret_phi = zphi
 
-    has_lh = size(dest.chi, 1) > 0
     if has_lh
         ystk_c = ws.ystk_chi
         Urc = mult ? ystk_c.mult_Ur : ystk_c.loc_Ur
@@ -569,20 +660,15 @@ function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
         zchi = FastMultipole._matrix_col_view(ws.zchi, n)
         rchi = FastMultipole._matrix_col_view(ws.rchi, n)
         cchi = FastMultipole._matrix_col_view(ws.cchi, n)
-        Cc = FastMultipole._matrix_col_view(ystk_c.Cy, n)
-        Sc = FastMultipole._matrix_col_view(ystk_c.Sy, n)
         Gc = FastMultipole._matrix_col_view(ystk_c.G, n)
         G2c = FastMultipole._matrix_col_view(ystk_c.G2, n)
-        ka_trig_fill!(Cc, Sc, ystk_c.nu, group_thetas)
         ka_gather_rotate_z!(achi, src.chi, ws.chi_flat_idx, source_idx,
             ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, group_phis, one(eltype(achi)))
         ka_stacked_y_dense!(ychi, achi, Urc, Vsc, Cc, Sc, Gc, G2c, ndof_chi)
         mul!(zchi, group.chi_dense, ychi)
         chi_rows = mult ? ws.maps_chi.row_down : ws.maps_chi.row_up
-        ka_gather_rows!(yphi, zchi, ws.maps_phi.row_pair)
-        ka_gather_rows!(ychi, zchi, chi_rows)
-        cphi .= zphi .+ group.lh_phi_rows .* yphi
-        cchi .= zchi .+ group.lh_chi_rows .* ychi
+        ka_lh_row_mix!(cphi, cchi, zphi, zchi, group.lh_phi_rows, group.lh_chi_rows,
+            ws.maps_phi.row_pair, chi_rows)
         ka_stacked_y_dense!(rchi, cchi, Urc, Vsc, Cc, Sc, Gc, G2c, ndof_chi)
         ka_rotate_z_scatter_accumulate!(dest.chi, rchi, ws.chi_flat_idx, target_idx,
             ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, group_phis)
@@ -596,7 +682,8 @@ function ka_resident_stage_group_apply!(dest, src, group, ws, kind::Symbol)
     # next launch on this same backend, and this driver is called once per
     # M2M/L2L group and per M2L route set -- a barrier here is the per-stage
     # sync `ka_lifecycle_body!` exists to avoid (measured 1.37-2.7x on this
-    # code). The single end-of-lifecycle sync there covers the host readback.
+    # code). The single end-of-step sync in `ka_radix_cache_device_step!`
+    # covers the host readback.
     return dest
 end
 
@@ -645,11 +732,13 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
         phis = @view plan.col_phi[1:n]
         thetas = @view plan.col_theta[1:n]
         invr_col = @view plan.col_invr[1:n]
-        ka_gather_values3!(phis, thetas, invr_col, plan.phis, plan.thetas,
-            plan.invrs, cls)
         if LH
             rs_col = @view plan.col_r[1:n]
-            ka_gather_values!(rs_col, plan.rs, cls)
+            ka_gather_values4!(phis, thetas, invr_col, rs_col, plan.phis, plan.thetas,
+                plan.invrs, plan.rs, cls)
+        else
+            ka_gather_values3!(phis, thetas, invr_col, plan.phis, plan.thetas,
+                plan.invrs, cls)
         end
         src_cols = @view route_sources[cols]
         tgt_cols = @view route_targets[cols]

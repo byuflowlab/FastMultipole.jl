@@ -115,7 +115,6 @@ function ka_radix_keys_checked!(keys, oob_flag, host_oob, positions, x_min,
     fill!(oob_flag, Int32(0))
     kernel = _cached_kernel(ka_radix_keys_checked_kernel!, backend, workgroup)
     kernel(keys, oob_flag, positions, x_min, box_extent, h0, ell, ell_axes, n; ndrange=n)
-    KA.synchronize(backend)
     copyto!(host_oob, oob_flag)
     if host_oob[1] != 0
         x_max = x_min .+ box_extent
@@ -232,7 +231,7 @@ comparison against the host sort meaningful for them.
 """
 function ka_radix_sort_bodies!(perm, sorted_keys, invperm, keys;
         workgroup=KA_AUTO_WORKGROUP, ell::Int=-1,
-        histogram=nothing, prefix=nothing, cursor=nothing)
+        histogram=nothing, prefix=nothing, cursor=nothing, fill_invperm::Bool=true)
     n = length(keys)
     n == 0 && return perm
     backend = KA.get_backend(keys)
@@ -244,8 +243,9 @@ function ka_radix_sort_bodies!(perm, sorted_keys, invperm, keys;
         gather = _cached_kernel(ka_gather_sorted_keys_kernel!, backend, workgroup)
         gather(sorted_keys, keys, perm, n; ndrange=n)
     end
-    ka_fill_invperm!(invperm, perm; workgroup)
-    KA.synchronize(backend)
+    # skipped when the caller rewrites `perm` (the nearfield subsort) and
+    # fills `invperm` from the final order itself
+    fill_invperm && ka_fill_invperm!(invperm, perm; workgroup)
     return perm
 end
 
@@ -260,24 +260,43 @@ cell-firsts / cell-counts kernels. `flags`/`prefix` are caller-owned
 `1:n` scratch views; `host_scalar` is a 1-element host vector for the count
 download, the single unavoidable sync point (the caller needs `n_cells` to
 bounds-check against the cache's cell capacity).
+
+With `epoch = (; scalars, host_scalars, snapshot, prev_n_cells)` (a 2-slot
+device `Int` buffer and its host mirror) it also runs the occupancy-epoch
+compare of `ka_radix_occupancy_changed!` against the first `prev_n_cells`
+keys of `snapshot` and reads both back in one transfer: `host_scalars[2] != 0`
+then means the keys differ, valid only when the returned count equals
+`prev_n_cells`.
 """
 function ka_radix_compress_cells!(cell_keys, cell_ranges, sorted_keys, flags,
-        prefix, host_scalar; workgroup=KA_AUTO_WORKGROUP)
+        prefix, host_scalar; workgroup=KA_AUTO_WORKGROUP, epoch=nothing)
     n = length(sorted_keys)
     n == 0 && return 0
     backend = KA.get_backend(sorted_keys)
     flagk = _cached_kernel(ka_key_change_flags_kernel!, backend, workgroup)
     flagk(flags, sorted_keys, n; ndrange=n)
     accumulate!(+, prefix, flags)
-    KA.synchronize(backend)
-    copyto!(host_scalar, 1, prefix, n, 1)
-    n_cells = Int(host_scalar[1])
+    if epoch === nothing
+        copyto!(host_scalar, 1, prefix, n, 1)
+    end
+    # the cell kernels index through the device prefix, not the host count
     firstsk = _cached_kernel(ka_fill_cell_firsts_kernel!, backend, workgroup)
     firstsk(cell_keys, cell_ranges, sorted_keys, flags, prefix, n; ndrange=n)
     countsk = _cached_kernel(ka_fill_cell_counts_kernel!, backend, workgroup)
     countsk(cell_ranges, flags, prefix, n; ndrange=n)
-    KA.synchronize(backend)
-    return n_cells
+    epoch === nothing && return Int(host_scalar[1])
+    # occupancy compare against the previous epoch's `prev_n_cells` keys, read
+    # back together with the cell count: scalars = [n_cells, keys differ]. The
+    # flag means something only when the count matches, which the caller checks.
+    (; scalars, host_scalars, snapshot, prev_n_cells) = epoch
+    fill!(scalars, 0)
+    if prev_n_cells > 0
+        kernel = _cached_kernel(ka_keys_differ_kernel!, backend, workgroup)
+        kernel(view(scalars, 2:2), cell_keys, snapshot, prev_n_cells; ndrange=prev_n_cells)
+    end
+    copyto!(scalars, 1, prefix, n, 1)
+    copyto!(host_scalars, scalars)
+    return Int(host_scalars[1])
 end
 
 
@@ -338,7 +357,6 @@ function ka_radix_occupancy_changed!(flag, host_flag, cell_keys, snapshot,
     fill!(flag, Int32(0))
     kernel = _cached_kernel(ka_keys_differ_kernel!, backend, workgroup)
     kernel(flag, cell_keys, snapshot, n_cells; ndrange=n_cells)
-    KA.synchronize(backend)
     copyto!(host_flag, flag)
     return host_flag[1] != Int32(0)
 end
@@ -359,7 +377,6 @@ function ka_radix_cell_centers!(centers, coords, cell_keys, x_min, h0, ell::Int,
     backend = KA.get_backend(cell_keys)
     kernel = _cached_kernel(ka_cell_centers_kernel!, backend, workgroup)
     kernel(centers, coords, cell_keys, x_min, h0, ell, n_cells; ndrange=n_cells)
-    KA.synchronize(backend)
     return centers
 end
 
@@ -384,11 +401,16 @@ end
 # Host oracle for the gate: `_refresh_radix_nodes!` (src/tree_batched.jl), whose
 # count and fill loops are what `_radix_grid` runs on the CPU.
 
-@kernel function ka_leaf_ancestor_keys_kernel!(ancestor_keys, @Const(cell_keys),
+# ancestor keys and their run-start flags in one launch: each lane derives its
+# predecessor's ancestor itself instead of reading another lane's write
+@kernel function ka_leaf_ancestor_flags_kernel!(ancestor_keys, flags, @Const(cell_keys),
         leaf_level, level, n_cells)
     i = @index(Global)
     @inbounds if i <= n_cells
-        ancestor_keys[i] = cell_keys[i] >> (3 * (leaf_level - level))
+        shift = 3 * (leaf_level - level)
+        a = cell_keys[i] >> shift
+        ancestor_keys[i] = a
+        flags[i] = (i == 1 || a != (cell_keys[i - 1] >> shift)) ? 1 : 0
     end
 end
 
@@ -397,6 +419,21 @@ end
     l = @index(Global)
     @inbounds if l <= n_levels
         level_counts[l] = n_cells == 0 ? 0 : level_prefix[n_cells, l]
+    end
+end
+
+# d_level_offsets from the gathered per-level counts, the device mirror of the
+# host loop in `ka_radix_level_nodes!` (trimmed levels contribute 0); one lane.
+@kernel function ka_level_offsets_kernel!(d_level_offsets, @Const(level_counts),
+        first_level, ell)
+    i = @index(Global)
+    @inbounds if i == 1
+        acc = 0
+        d_level_offsets[1] = 0
+        for level in 0:ell
+            level >= first_level && (acc += level_counts[level + 1])
+            d_level_offsets[level + 2] = acc
+        end
     end
 end
 
@@ -434,20 +471,17 @@ function ka_radix_level_nodes!(node_keys, level_offsets, level_keys, level_flags
     backend = KA.get_backend(cell_keys)
     n_levels = length(level_counts)
     if n_cells > 0
-        ancestor = _cached_kernel(ka_leaf_ancestor_keys_kernel!, backend, workgroup)
-        flagk = _cached_kernel(ka_key_change_flags_kernel!, backend, workgroup)
+        ancflags = _cached_kernel(ka_leaf_ancestor_flags_kernel!, backend, workgroup)
         for level in first_level:ell
             col = level + 1
             lk = view(level_keys, 1:n_cells, col)
             lf = view(level_flags, 1:n_cells, col)
-            ancestor(lk, cell_keys, ell, level, n_cells; ndrange=n_cells)
-            flagk(lf, lk, n_cells; ndrange=n_cells)
+            ancflags(lk, lf, cell_keys, ell, level, n_cells; ndrange=n_cells)
             accumulate!(+, view(level_prefix, 1:n_cells, col), lf)
         end
     end
     gather = _cached_kernel(ka_gather_level_counts_kernel!, backend, workgroup)
     gather(level_counts, level_prefix, n_cells, n_levels; ndrange=n_levels)
-    KA.synchronize(backend)
     copyto!(host_level_counts, level_counts)
 
     level_offsets[1] = 0
@@ -473,8 +507,8 @@ function ka_radix_level_nodes!(node_keys, level_offsets, level_keys, level_flags
                 ndrange=n_cells)
         end
     end
-    copyto!(d_level_offsets, level_offsets)
-    KA.synchronize(backend)
+    offk = _cached_kernel(ka_level_offsets_kernel!, backend, workgroup)
+    offk(d_level_offsets, level_counts, first_level, ell; ndrange=1)
     return n_nodes, maximum(host_level_counts; init=0)
 end
 
@@ -598,6 +632,5 @@ function ka_radix_node_topology!(node_levels, node_coords, node_centers,
         l2n = _cached_kernel(ka_fill_leaf_to_node_kernel!, backend, workgroup)
         l2n(leaf_to_node, level_offsets[ell + 1], n_cells; ndrange=n_cells)
     end
-    KA.synchronize(backend)
     return leaf_to_node
 end
