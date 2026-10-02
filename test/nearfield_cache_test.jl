@@ -307,11 +307,12 @@ end
     @test assembled.entries == probed.entries
     @test assembled.matrices.sizes == probed.matrices.sizes
     @test any(!iszero, probed.matrices.data)   # non-vacuous
-    for k in eachindex(assembled.entries)
+    blocks_match = map(eachindex(assembled.entries)) do k
         block_a, _ = FastMultipole.get_matrix_vector(assembled.matrices, k)
         block_p, _ = FastMultipole.get_matrix_vector(probed.matrices, k)
-        @test isapprox(block_a, block_p; rtol=1e-12)
+        isapprox(block_a, block_p; rtol=1e-12)
     end
+    @test all(blocks_match)
 
     # cached matvec through the assembled cache matches the kernel near field
     out_range = FastMultipole.output_range(switches[1])

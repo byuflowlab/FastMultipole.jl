@@ -71,9 +71,7 @@ end
         @test maximum(abs.(sys.potential[5:7, :] .- ref.potential[5:7, :])) < 1e-4
         current = _radix_state_arrays(cache.state)
         @test keys(current) == keys(captured)
-        for (path, array) in captured
-            @test current[path] === array
-        end
+        @test all(current[path] === array for (path, array) in captured)
         groups = cache.state.scratch.m2l_concat.groups
         @test sum(g.count[] for g in groups) == cache.state.counts.n_routes
         @test all(g.count[] <= cache.max_cells for g in groups)
@@ -138,9 +136,7 @@ end
             # the non-flaky zero-reallocation proof: every array identity survives
             current = _radix_state_arrays(cache.state)
             @test keys(current) == keys(captured)
-            for (path, array) in captured
-                @test current[path] === array
-            end
+            @test all(current[path] === array for (path, array) in captured)
         end
         if step > 3
             t1 = time()

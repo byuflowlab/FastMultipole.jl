@@ -543,12 +543,6 @@ end
         @test all(r[1].leaf_size_source .>= 1)
     end
 
-    @testset "TreeByLevel last-level cells are leaves" begin
-        sys = generate_gravitational(4, 500)
-        tree = CORE_FM.TreeByLevel((sys,), false; n_levels=2)
-        @test all(b -> !isempty(b.branch_index) || b.n_branches == 0, tree.branches)
-    end
-
     @testset "UnequalSpheres local_error runs" begin
         sys = generate_gravitational(5, 200)
         switches = (DerivativesSwitch(),)

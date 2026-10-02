@@ -66,15 +66,13 @@ allocated_back_rotate_local_y_op!(out, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag
                 C = zeros(TF, nh)
                 S = zeros(TF, nh)
                 z_rotation_diagonals!(C, S, ϕt, P)
+                ch = 1:(LHbool ? 2 : 1)   # active channels
 
                 #--- diagonals correctness: C[i]=cos(mϕ), S[i]=sin(mϕ) ---#
-                i = 1
-                for n in 0:P, m in 0:n
-                    @test isapprox(C[i], cos(m*ϕt); atol=atol_fwd)
-                    @test isapprox(S[i], sin(m*ϕt); atol=atol_fwd)
-                    @test i == harmonic_index(n, m)
-                    i += 1
-                end
+                nm = [(n, m) for n in 0:P for m in 0:n]
+                @test maximum(abs, C[1:length(nm)] .- [cos(m*ϕt) for (n, m) in nm]) <= atol_fwd
+                @test maximum(abs, S[1:length(nm)] .- [sin(m*ϕt) for (n, m) in nm]) <= atol_fwd
+                @test [harmonic_index(n, m) for (n, m) in nm] == 1:length(nm)
 
                 #--- forward parity vs rotate_z! (overwrite) ---#
                 ref = initialize_expansion(P, TF)
@@ -84,14 +82,7 @@ allocated_back_rotate_local_y_op!(out, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag
                 op = initialize_expansion(P, TF)
                 apply_z_rotation!(op, source, C, S, P, lamb_helmholtz, Val(:overwrite))
 
-                for i in 1:nh
-                    @test isapprox(op[1,1,i], ref[1,1,i]; atol=atol_fwd)
-                    @test isapprox(op[2,1,i], ref[2,1,i]; atol=atol_fwd)
-                    if LHbool
-                        @test isapprox(op[1,2,i], ref[1,2,i]; atol=atol_fwd)
-                        @test isapprox(op[2,2,i], ref[2,2,i]; atol=atol_fwd)
-                    end
-                end
+                @test maximum(abs, op[1:2, ch, 1:nh] .- ref[1:2, ch, 1:nh]) <= atol_fwd
 
                 #--- inverse parity vs back_rotate_z! (accumulate onto preload) ---#
                 preload = random_expansion(P, TF, lamb_helmholtz)
@@ -105,40 +96,18 @@ allocated_back_rotate_local_y_op!(out, source, Ts, Hs_π2, S_pos, S_neg, ηs_mag
                 copyto!(op_back, preload)
                 apply_z_rotation!(op_back, op, C, S, P, lamb_helmholtz, Val(:accumulate))
 
-                for i in 1:nh
-                    @test isapprox(op_back[1,1,i], ref_back[1,1,i]; atol=atol_fwd)
-                    @test isapprox(op_back[2,1,i], ref_back[2,1,i]; atol=atol_fwd)
-                    if LHbool
-                        @test isapprox(op_back[1,2,i], ref_back[1,2,i]; atol=atol_fwd)
-                        @test isapprox(op_back[2,2,i], ref_back[2,2,i]; atol=atol_fwd)
-                    end
-                end
+                @test maximum(abs, op_back[1:2, ch, 1:nh] .- ref_back[1:2, ch, 1:nh]) <= atol_fwd
 
                 #--- round-trip identity: forward then inverse onto zeroed dest ---#
                 rt = initialize_expansion(P, TF)  # zeroed
                 apply_z_rotation!(rt, op, C, S, P, lamb_helmholtz, Val(:accumulate))
-                for i in 1:nh
-                    @test isapprox(rt[1,1,i], source[1,1,i]; atol=atol_rt)
-                    @test isapprox(rt[2,1,i], source[2,1,i]; atol=atol_rt)
-                    if LHbool
-                        @test isapprox(rt[1,2,i], source[1,2,i]; atol=atol_rt)
-                        @test isapprox(rt[2,2,i], source[2,2,i]; atol=atol_rt)
-                    end
-                end
+                @test maximum(abs, rt[1:2, ch, 1:nh] .- source[1:2, ch, 1:nh]) <= atol_rt
 
                 #--- m = 0 exact identity (forward) and exact pass-through (accumulate) ---#
-                for n in 0:P
-                    i0 = harmonic_index(n, 0)
-                    @test op[1,1,i0] == source[1,1,i0]
-                    @test op[2,1,i0] == source[2,1,i0]
-                    if LHbool
-                        @test op[1,2,i0] == source[1,2,i0]
-                        @test op[2,2,i0] == source[2,2,i0]
-                    end
-                    # accumulate of forward result onto preload adds source back unchanged
-                    @test op_back[1,1,i0] == preload[1,1,i0] + source[1,1,i0]
-                    @test op_back[2,1,i0] == preload[2,1,i0] + source[2,1,i0]
-                end
+                i0 = [harmonic_index(n, 0) for n in 0:P]
+                @test op[1:2, ch, i0] == source[1:2, ch, i0]
+                # accumulate of forward result onto preload adds source back unchanged
+                @test op_back[1:2, 1, i0] == preload[1:2, 1, i0] .+ source[1:2, 1, i0]
             end
         end
     end

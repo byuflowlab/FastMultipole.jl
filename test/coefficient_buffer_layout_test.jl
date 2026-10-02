@@ -23,9 +23,7 @@ TF = Float64
     @test sort(idx) == collect(1:basis_dof)
     @test length(unique(idx)) == basis_dof
     # re/im of one harmonic are adjacent (interleaved), re even-then-odd offset
-    for n in 0:P, m in 0:n
-        @test flat_basis_index(n, m, 2) == flat_basis_index(n, m, 1) + 1
-    end
+    @test all(flat_basis_index(n, m, 2) == flat_basis_index(n, m, 1) + 1 for n in 0:P for m in 0:n)
 end
 
 @testset "buffer sizing + χ pruning + slab density: LH=$(LHbool) P=$(P)" for
@@ -86,11 +84,8 @@ end
                                      abs(rt[2, 2, i, j] - legacy[2, 2, i, j]))
             end
             # φ above P_phi reads back as a clean zero (ragged buffer has no such rows)
-            for n in (info.orders.P_phi + 1):P_active, m in 0:n
-                i = harmonic_index(n, m)
-                @test rt[1, 1, i, j] == 0
-                @test rt[2, 1, i, j] == 0
-            end
+            @test all(rt[r, 1, harmonic_index(n, m), j] == 0
+                      for n in (info.orders.P_phi + 1):P_active for m in 0:n for r in 1:2)
         end
     end
     @test maxerr == 0.0
@@ -124,17 +119,11 @@ end
     KTOL = 1e-11
 
     cmp_physical(ref, flat) = begin
-        for n in 0:P_phi, m in 0:n
-            i = harmonic_index(n, m)
-            @test isapprox(flat[1, 1, i], ref[1, 1, i]; atol=KTOL, rtol=KTOL)
-            @test isapprox(flat[2, 1, i], ref[2, 1, i]; atol=KTOL, rtol=KTOL)
-        end
+        i_phi = [harmonic_index(n, m) for n in 0:P_phi for m in 0:n]
+        @test all(isapprox.(flat[1:2, 1, i_phi], ref[1:2, 1, i_phi]; atol=KTOL, rtol=KTOL))
         if LHbool
-            for n in 0:P_active, m in 0:n
-                i = harmonic_index(n, m)
-                @test isapprox(flat[1, 2, i], ref[1, 2, i]; atol=KTOL, rtol=KTOL)
-                @test isapprox(flat[2, 2, i], ref[2, 2, i]; atol=KTOL, rtol=KTOL)
-            end
+            i_chi = [harmonic_index(n, m) for n in 0:P_active for m in 0:n]
+            @test all(isapprox.(flat[1:2, 2, i_chi], ref[1:2, 2, i_chi]; atol=KTOL, rtol=KTOL))
         end
     end
 

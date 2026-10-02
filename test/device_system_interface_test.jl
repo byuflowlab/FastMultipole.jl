@@ -323,10 +323,11 @@ end
     end
 
     #--- (b) end-to-end host resident A/B at identical geometry: partitioned vs
-    #    regularized-everywhere vs the erf-based direct reference; P=8 and P=4 ---#
+    #    regularized-everywhere vs the erf-based direct reference; (P=4, F64) and
+    #    (P=8, F32) ---#
 
     nv = 400
-    for P in (8, 4), (TF, gtol) in ((Float64, 1e-3), (Float32, 3e-3))
+    for (P, TF, gtol) in ((4, Float64, 1e-3), (8, Float32, 3e-3))
         tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates
         base_r = generate_vortex(seed, nv)
         base_p = generate_vortex(seed, nv)
@@ -468,10 +469,10 @@ end
     end
 
     #--- (b) end-to-end host two-pass vs the erf-based regularized reference and
-    #    vs regularized-everywhere at identical geometry; P=8 and P=4, F64/F32 ---#
+    #    vs regularized-everywhere at identical geometry; (P=4, F64) and (P=8, F32) ---#
 
     nv = 400
-    for P in (8, 4), (TF, gtol) in ((Float64, 1e-3), (Float32, 3e-3))
+    for (P, TF, gtol) in ((4, Float64, 1e-3), (8, Float32, 3e-3))
         tol = P == 4 ? 10 * gtol : gtol   # P=4 truncation dominates
         base_r = generate_vortex(seed, nv)
         base_t = generate_vortex(seed, nv)

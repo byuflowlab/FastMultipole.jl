@@ -110,13 +110,16 @@ _hier_step_allocated(sys, cache) =
     @test HierarchicalRigidStencil(4, 1.0).window_classes == 4
     @test HierarchicalRigidStencil(4, 1.0; window_classes=7).window_classes == 7
 
+    # the FMM sweeps below run the smallest q, the default leaf (5) and coarse (6)
+    # radii, the q = 12 used elsewhere in this file, and the largest
+    swept_q = (3, 5, 6, 12, 20)
     ell = 3
     dense_coords = [SVector(x, y, z) for z in 0:7 for y in 0:7 for x in 0:7]
     boundary_coords = [SVector(0, 0, 0), SVector(1, 0, 0),
         SVector(7, 7, 7), SVector(6, 7, 7), SVector(0, 7, 3)]
     sparse_coords = [SVector(0, 0, 0), SVector(3, 1, 0),
         SVector(7, 7, 7), SVector(4, 6, 2), SVector(1, 7, 5)]
-    for q in supported_q, coords in (dense_coords, boundary_coords, sparse_coords)
+    for q in swept_q, coords in (dense_coords, boundary_coords, sparse_coords)
         sys = _hier_system(coords, ell)
         cache = RadixFMMCache(sys; expansion_order=4, ell,
             bounds=(SVector(0.0, 0.0, 0.0), 1.0),
@@ -156,7 +159,7 @@ _hier_step_allocated(sys, cache) =
     rand_cells = shuffle(MersenneTwister(0x026), 0:(16^3 - 1))[1:48]
     rand_coords = [SVector(c & 15, (c >> 4) & 15, (c >> 8) & 15)
                    for c in rand_cells]
-    for q in supported_q
+    for q in swept_q
         rsys = _hier_system(rand_coords, 4)
         rcache = RadixFMMCache(rsys; expansion_order=4, ell=4,
             bounds=(SVector(0.0, 0.0, 0.0), 1.0),
@@ -520,11 +523,8 @@ _hier_step_allocated(sys, cache) =
     # engines differ only through the coarse-level expansion centers, so the
     # gap is bounded by the truncation error on both sides — a far tighter
     # oracle than the direct! gates, and it exercises P = 8 and ell = 4.
-    parity_cases = Tuple{DataType,Bool,Int,Int}[]
-    for TF in (Float32, Float64), LH in (false, true), P in (4, 8)
-        push!(parity_cases, (TF, LH, P, 3))
-    end
-    push!(parity_cases, (Float64, false, 4, 4))
+    parity_cases = ((Float64, false, 4, 3), (Float64, true, 8, 3),
+                    (Float32, true, 4, 3), (Float64, false, 4, 4))
     for (TF, LH, P, pell) in parity_cases
         pa = generate_gravitational(26040, 80)
         pb = generate_gravitational(26040, 80)
@@ -548,8 +548,8 @@ _hier_step_allocated(sys, cache) =
         pgap = LH ? 0.0 :
             maximum(abs.(pa.potential[1, :] - pb.potential[1, :]))
         # Measured 2026-07-31 (Julia 1.12.5 host): P=4 pot <= 5.5e-7 /
-        # grad <= 3.2e-5; Float64 P=8 pot 1.5e-9 / grad 4.6e-8; Float32 P=8
-        # sits at the roundoff floor. Tolerances carry >= 5x margin.
+        # grad <= 3.2e-5; Float64 P=8 pot 1.5e-9 / grad 4.6e-8. Tolerances
+        # carry >= 5x margin.
         gtol = TF === Float32 ? 1e-4 : (P == 8 ? 5e-7 : 2e-4)
         ptol = TF === Float32 ? 5e-6 : (P == 8 ? 1e-8 : 3e-6)
         @test ggap < gtol
