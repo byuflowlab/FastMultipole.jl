@@ -157,6 +157,96 @@
   `transform_solver!` left the source buffers at the old pose for `solve!`'s
   first right-hand-side evaluation.
 
+## v2.3.0 - 2026 May
+
+- Added direct conditioning: `DirectConditioningRule(matcher, before!, after!)` temporarily transforms a source buffer for selected source-target system pairs during the direct (nearfield) pass. Matchers are `SelfPairs`, `AllPairs`, and `PairSet`; `applies` is exported. Pass `direct_conditioning=rule` (one rule or a tuple) to `fmm!` and `direct!`. `after!` callbacks run in reverse order inside `try`/`finally`.
+
+## v2.2.0 - 2026 May
+
+- Target buffers are now compact and carry optional metadata and extra output rows: `DerivativesSwitch` takes `extra_outputs` and `metadata` keywords, and `direct!` accepts `extra_outputs`. Metadata rows are copied from the target system, sorted with positions, and visible during nearfield interactions; extra output rows accumulate in the nearfield only (not in the farfield).
+- New exported row-layout helpers: `scalar_potential_index`, `gradient_range`, `hessian_range`, `standard_output_range`, `extra_output_range`, `output_range`, `metadata_range`, `metadata_index`, `tree_carried_range`, `get_extra_output`, `set_extra_output!`, `extra_output_view`, `output_view`, and `source_to_buffer`/`source_to_buffer!`. Hard-coded target rows `4`, `5:7`, `8:16` are valid only when `metadata=0` and all preceding standard outputs are enabled; custom `direct!` and `buffer_to_target_system!` overloads should use these helpers.
+- New compatibility functions `metadata_per_body` and `metadata_to_buffer!` for target systems that declare metadata.
+- Fixed Cartesian-to-spherical conversion for bodies at or near the origin (guards the `acos` domain and the zero-radius case).
+
+## v2.1.0 - 2026 May
+
+- `FastGaussSeidel` now supports multiple body systems (multibody `solve!`). `solve!` takes `rlx` (relaxation), `reverse_pass`, `verbose`, and `final_update` keywords, and takes `scalar_potential`, `gradient`, `hessian` keywords in place of a `derivatives_switches` keyword. Adds `value_to_strength!(source_buffer, source_system, i_body, value, rlx)` to the compatibility interface.
+- Added `JacobiPreconditioner`, a block Jacobi preconditioner (uniform grid cells, one LU factorization per cell); source and target systems must be the same.
+- Added `fmm!(...; extra_farfield=true)` (default `false`) with an `extra_farfield!` hook, intended for semi-infinite panels whose strengths are tied to another system. Companion compatibility functions: `extra_target_data_per_body` and `extra_target_data_to_buffer!`.
+- Added `numtype(system)` (default `eltype(system)`) to decouple a system's element type from the float type used for tree buffers; tree construction now uses it consistently.
+- Tree subdivision stops once a branch radius falls below the largest body radius.
+- `fmm!(system)` and `fmm!(target, source)` now accept `scalar_potential`, `gradient`, `hessian` keywords and build the `Cache` with matching `DerivativesSwitch`es; target buffer size follows the switch.
+- Fixed the sign of the far-field (local-expansion) contribution to the scalar potential, and fixed multithreaded `direct!` indexing and load-balancing bugs.
+
+## v2.0.4 - 2025 September
+
+- Further multithreading fixes in tree construction and interaction-list building; the minimum body count for multithreaded paths (`MIN_BODIES`) was raised from 1000 to 10000.
+
+## v2.0.3 - 2025 September
+
+- Multithreading fix, and threading now handles small body counts (new minimum-size thresholds for multithreaded sorting and branching).
+
+## v2.0.2 - 2025 August
+
+- No code changes from v2.0.1 (identical git tree).
+
+## v2.0.1 - 2025 August
+
+- Multithreaded tree construction (sorting, shrink/recenter, target-to-buffer) and multithreaded interaction-list building; large reduction in allocations.
+- New interaction list method `SelfTuningTargetStop`, now the default `interaction_list_method` of `fmm!` (was `SelfTuningTreeStop`).
+
+## v2.0.0 - 2025 July
+
+- Added relative-error tolerances with an absolute floor: `PowerRelativePotential`, `PowerRelativeGradient`, `RotatedCoefficientsRelativeGradient` take `(ε_rel, ε_abs=sqrt(eps()), BE=true)`. For relative methods, overload `get_previous_influence(system, i)` for your target system (default returns zero, which falls back to the absolute tolerance, with a warning).
+- Quadrilateral-panel body-to-multipole now computes the panel normal from its vertices instead of calling `get_normal`.
+
+### Breaking changes
+
+- `ErrorMethod` hierarchy re-parameterized: `ErrorMethod{BE}`, with `AbsoluteErrorMethod{ε,BE}` and `RelativeErrorMethod{ε_rel,ε_abs,BE}` replacing `AbsoluteError`/`RelativeError`. `UnequalSpheres`, `UnequalBoxes`, `UniformUnequalSpheres`, `UniformUnequalBoxes`, `RotatedCoefficients` now carry a `BE` type parameter. `AbsoluteUpperBound`, `RelativeUpperBound`, and `ExpansionSwitch` are removed.
+- Relative error types: the single tolerance `ε` became `(ε_rel, ε_abs)`, so `PowerRelativePotential{ε,BE}` is now `PowerRelativePotential{ε_rel,ε_abs,BE}`.
+- `InteractionListMethod` is no longer parameterized and `SortByTarget`/`SortBySource` are removed: `Barba(SortByTarget())` and `SelfTuning(SortByTarget())` become `Barba()` and `SelfTuning()`.
+- `Branch` fields consolidated: `source_center`/`target_center` -> `center`, `source_radius`/`target_radius` -> `radius`, `source_box`/`target_box` -> `box`, `max_influence` -> `min_potential` and `min_gradient`. Code constructing or reading `Branch` directly must change.
+
+## v1.0.0 - 2025 June
+
+- New interface based on per-system buffers. Replaces the `Base.getindex`/`setindex!` overloads for `Position`, `Radius`, `ScalarPotential`, `Velocity`, `VelocityGradient`, `Strength`, `Normal` with: `source_system_to_buffer!`, `data_per_body`, `get_position`, `strength_dims`, `get_normal`, `direct!(target_buffer, target_index, derivatives_switch, source_system, source_buffer, source_index)`, `buffer_to_target_system!`, `buffer_to_system_strength!`, `has_vector_potential`, and a rewritten `body_to_multipole!`. Lamb-Helmholtz is now chosen automatically from `has_vector_potential(source_systems)` instead of a `lamb_helmholtz` keyword.
+- Outputs are now `scalar_potential`, `gradient`, `hessian` (new exports `Gradient`, `Hessian`); `DerivativesSwitch` is `{PS,GS,HS}`.
+- Dynamic expansion order via `error_tolerance`: pass an `ErrorMethod` such as `PowerAbsolutePotential(1e-6)`, `PowerAbsoluteGradient`, or `RotatedCoefficientsAbsoluteGradient` (exported); `expansion_order` then acts as the maximum. `multipole_error` and `local_error` are exported.
+- Automated tuning: `tune_fmm(target_systems, source_systems; ...)` returns tuned keyword arguments; `fmm!(...; tune=true)` and the `multipole_acceptance` keyword (default 0.5).
+- `Cache` object to preallocate buffers across `fmm!` calls: `fmm!(systems, cache; ...)`. `fmm!` returns tuned optional arguments for reuse.
+- `InteractionListMethod` choices `SelfTuning` and `Barba` exported; default method `SelfTuningTreeStop()`.
+- New element types `Point`, `Filament`, `Panel` and kernels `Vortex`, `Source`, `Dipole`, `SourceDipole`, `SourceVortex`; a vortex-filament example is documented in `vortex_filament.md`.
+- Added `FastGaussSeidel` solver and `solve!` for boundary-element-style linear systems with fast matrix-vector products.
+- Added `leaf_size` per system (element-specific leaf sizes) and `shrink_recenter` (default `true`).
+- Dependencies: `BSON` removed; `ForwardDiff` and `SpecialFunctions` get compat entries (`1.0.1`, `2.5.1`). Julia compat remains `1.6`.
+
+### Breaking changes
+
+- Source/target systems must implement the new buffer interface above; the `Base.getindex`/`setindex!`-based interface (`ScalarPotential`, `Velocity`, `VelocityGradient`, `Strength`, `Normal` indexing) no longer works.
+- Exports removed: `Body`, `VectorPotential`, `Velocity`, `VelocityGradient`, `SortWrapper` (with `sortwrapper.jl`), `EqualSpheres`, `UnequalSpheres`, `UnequalBoxes`, `Dynamic`, and `ProbeSystem` (still available as `FastMultipole.ProbeSystem`).
+- `fmm!` keyword changes: `velocity`/`velocity_gradient`/`vector_potential` replaced by `gradient`/`hessian`; `error_method`/`predict_error`/`expansion_order=Dynamic(...)` replaced by `error_tolerance`; `multipole_threshold` renamed `multipole_acceptance`; `leaf_size_source`/`leaf_size_target` now accept per-system vectors; `nearfield_user`, `gpu`, `save_tree_*` keywords removed from the main entry points. `source_shrink_recenter`/`target_shrink_recenter` are replaced by a single `shrink_recenter`, default now `true` (was `false` in v0.4.0).
+
+## v0.4.0 - 2024 November
+
+- Dynamic expansion order (`expansion_order=Dynamic(Pmax, rtol)`) driven by new error predictors: `error_method` keyword with `UnequalSpheres`, `UnequalBoxes` (default), `UniformUnequalSpheres`, `UniformUnequalBoxes`, `RotatedCoefficients`; `predict_error` keyword.
+- New multipole acceptance criterion and bounding-box shrink: branches now track source and target radii and boxes; `source_shrink_recenter`/`target_shrink_recenter` default changed from `true` to `false`.
+- Exports `EqualSpheres`, `UnequalSpheres`, `UnequalBoxes`, `Dynamic`, `build_interaction_lists`. Automatic-differentiation compatibility updates. Adds `BSON` as a dependency (removed again in v1.0.0).
+
+## v0.3.0 - 2024 October
+
+- Faster expansions: rotation-based (Wigner) multipole and local translations, with precomputed rotation constants up to order 20, plus faster body-to-multipole and a new `evaluate_expansions` path for local velocity and gradient.
+- `lamb_helmholtz::Bool` keyword replaces the `vector_potential` and `method` keywords.
+- The `fmm!` `gpu` keyword is retained; `direct_gpu!` and `buffer_element` are now exported, along with `Branch`, `Tree`, `unsort!`, `resort!`, `unsorted_index_2_sorted_index`, `sorted_index_2_unsorted_index`, and the `Position`, `Radius`, `Strength`, ... indexable types.
+- Note: `ProbeSystem`'s `add_line!` and `reset!` are no longer exported (still defined).
+
+## v0.2.0 - 2024 September
+
+- `fmm!` and `direct!` keywords renamed: `n_per_branch_*` -> `leaf_size_source`/`leaf_size_target` (`leaf_size` for the single-system form), `multipole_acceptance_criterion` -> `multipole_threshold`; added `gpu` and `method` keywords, and `upward_pass`/`horizontal_pass`/`downward_pass` switches.
+- Source `Strength` is now indexed as a single attribute, replacing `ScalarStrength` and `VectorStrength`.
+- Added `direct_gpu!` hook, `resort!`, reuse of precomputed `m2l_list`/`direct_list`, and an early return when sources or targets are empty.
+- `ProbeSystem` gained `add_line!` (exported).
+- Added documentation site, `CHANGES.md`, and CI (Julia 1.10 tested).
+
 ## v0.1.0 - 2024 August
 
 Initial release.
