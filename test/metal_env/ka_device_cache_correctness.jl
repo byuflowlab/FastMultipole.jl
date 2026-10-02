@@ -172,12 +172,18 @@ end
 # apply -- still matches the host cache. Same for the near-pair flag/scan
 # scratch: a bound far below the pair count, so the compaction runs in many chunks;
 # and the pair buffers start far below the pair count, so they grow in place.
-let (P, ell, n, wc) = (4, 4, 512, 64), chunk = 64, nflag = 97, npair0 = 50, TF = Float32
+# Run twice: a 97-entry flag bound takes the chunked compaction; an unbounded one
+# takes the single-chunk path of `ka_hier_refresh_routes!` (direct pairs and M2L
+# routes scanned together, one readback), which must grow the pairs too.
+const CAPACITY_CASES = (:chunked, :single)
+for flagmode in CAPACITY_CASES
+let (P, ell, n, wc) = (4, 4, 512, 64), chunk = 64, npair0 = 50, TF = Float32
     sys_h = make_system(5199, n, TF); sys_d = make_system(5199, n, TF)
     opts = FM.RadixLifecycleOptions(; precision=TF,
         m2l_strategy=FM.ConcatenatedFixedZM2L(chunk), body_type=FM.Point{FM.Vortex})
     hcache = RadixFMMCache(sys_h; expansion_order=P, ell=ell, window_classes=wc, options=opts)
     fmm!(sys_h, hcache)
+    nflag = flagmode === :chunked ? 97 : hcache.direct_capacity
     a = device_build_args(hcache)
     LH = typeof(hcache).parameters[2]
     dcache = ext.ka_radix_cache_device_build(DEV_BACKEND, (sys_d,),
@@ -198,19 +204,24 @@ let (P, ell, n, wc) = (4, 4, 512, 64), chunk = 64, nflag = 97, npair0 = 50, TF =
     e_vel = relerr(sys_d.gradient_stretching[1:3, :], sys_h.gradient_stretching[1:3, :])
     nroutes = dcache.state.interaction_list.total_routes
     ndirect = dcache.state.interaction_list.epoch_n_direct
+    # candidates = (occupied cell, near offset) pairs; above the flag bound the
+    # compaction is chunked, at or below it the single-chunk path runs
+    ncand = size(dcache.state.interaction_list.d_near_offsets, 2) * dcache.state.counts.n_cells
+    path_ok = flagmode === :chunked ? ndirect > nflag : ncand <= nflag
     ok = plan.chunk == min(chunk, hcache.route_capacity) && size(plan.aphi, 2) == plan.chunk &&
-        nroutes > chunk && length(dcache.device_ctx.direct_flags) == nflag && ndirect > nflag &&
+        nroutes > chunk && length(dcache.device_ctx.direct_flags) == nflag && path_ok &&
         length(dcache.state.direct_targets) >= ndirect > npair0 &&
         dcache.state.direct_targets === dcache.device_ctx.direct_targets &&
         e_vel < TOL
     ok ? (npass[] += 1) : (nfail[] += 1)
-    println("m2l chunk + direct flag bound (chunk=$chunk, routes=$nroutes; flags=$nflag, pairs=$ndirect): ",
+    println("m2l chunk + direct flag bound [$flagmode] (chunk=$chunk, routes=$nroutes; flags=$nflag, pairs=$ndirect): ",
         ok ? "PASS" : "FAIL", "  plan.chunk=", plan.chunk, "  scratch cols=", size(plan.aphi, 2),
         "  flag length=", length(dcache.device_ctx.direct_flags),
         "  pair buffer ", npair0, " -> ", length(dcache.state.direct_targets), "  velocity=", e_vel)
     flush(stdout)
 end
+end
 
 println("\nKA device cache build+step vs host RadixFMMCache fmm!: ",
-    "$(npass[])/$(length(CASES) + 1) pass")
+    "$(npass[])/$(length(CASES) + length(CAPACITY_CASES)) pass")
 nfail[] == 0 || error("$(nfail[]) case(s) failed")

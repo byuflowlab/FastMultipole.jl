@@ -382,6 +382,19 @@ neighbours of every occupied leaf cell into `ctx.direct_targets` /
 `ctx.direct_sources`, chunked so the flag buffer bounds the working set.
 Returns the pair count.
 """
+# Room for `needed` near pairs, up to `ctx.direct_capacity`. Grows in place,
+# keeping the pairs already compacted: the state and the near-field launches
+# hold these same vectors.
+function _ka_direct_pairs_reserve!(ctx, needed::Int)
+    needed <= ctx.direct_capacity ||
+        throw(AssertionError("device hierarchical direct pair buffer exceeded its capacity"))
+    if needed > length(ctx.direct_targets)
+        n_new = min(ctx.direct_capacity, max(needed, (3 * length(ctx.direct_targets)) ÷ 2))
+        resize!(ctx.direct_targets, n_new); resize!(ctx.direct_sources, n_new)
+    end
+    return nothing
+end
+
 function ka_hier_generate_direct_pairs!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LContext,
         grid, n_cells::Int, leaf_base::Int, ell::Int; workgroup=KA_AUTO_WORKGROUP)
     kn = size(hctx.d_near_offsets, 2)
@@ -404,15 +417,7 @@ function ka_hier_generate_direct_pairs!(ctx, hctx::FastMultipole.DeviceHierarchi
         copyto!(ctx.host_scalar32, 1, ctx.direct_prefix, len, 1)
         chunk_total = Int(ctx.host_scalar32[1])
         if chunk_total > 0
-            needed = n_direct + chunk_total
-            needed <= ctx.direct_capacity ||
-                throw(AssertionError("device hierarchical direct pair buffer exceeded its capacity"))
-            if needed > length(ctx.direct_targets)
-                # grow in place, keeping the pairs already compacted: the state
-                # and the near-field launches hold these same vectors
-                n_new = min(ctx.direct_capacity, max(needed, (3 * length(ctx.direct_targets)) ÷ 2))
-                resize!(ctx.direct_targets, n_new); resize!(ctx.direct_sources, n_new)
-            end
+            _ka_direct_pairs_reserve!(ctx, n_direct + chunk_total)
             compactk(ctx.direct_targets, ctx.direct_sources, ctx.direct_flags,
                 ctx.direct_prefix, hctx.node_at, grid.node_coords,
                 hctx.d_near_offsets, f0, len, kn, leaf_base, level_base_L, ell,
@@ -573,8 +578,7 @@ function ka_hier_refresh_routes!(ctx, hctx::FastMultipole.DeviceHierarchicalM2LC
     _utick!(:win_sync_d2h, backend)
     n_direct = Int(ctx.host_route_scalars[1])
     if n_direct > 0
-        n_direct <= length(ctx.direct_targets) ||
-            throw(AssertionError("device hierarchical direct pair buffer exceeded its capacity"))
+        _ka_direct_pairs_reserve!(ctx, n_direct)
         compactk = _cached_kernel(ka_hier_direct_compact_kernel!, backend, workgroup)
         compactk(ctx.direct_targets, ctx.direct_sources, ctx.direct_flags,
             ctx.direct_prefix, hctx.node_at, grid.node_coords,
