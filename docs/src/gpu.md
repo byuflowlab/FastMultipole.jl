@@ -101,7 +101,13 @@ lifetime; a body that leaves it makes the next step throw, by contract, and
 `recenter!` moves the box. Two option fields need stating on the device:
 
 * `precision`: the default is Float64 from expansion order 4 up; Metal has no
-  Float64, and Float32 is the usual choice on an H200 too.
+  Float64, and Float32 is the usual choice on an H200 too. In Float32 the
+  local expansion coefficients grow like `n!(2/r)^(n+1)` (`r` the smallest
+  M2L distance, about two finest-level cells), so a high expansion order in a
+  physically small box can exceed the Float32 range. The cache checks this at
+  construction and throws an `ArgumentError` rather than returning Inf/NaN;
+  the remedies are Float64, a lower expansion order, or lengths scaled so the
+  box is O(1). Host caches default to Float64 and are not affected.
 * `m2l_strategy`: the extension builds the `ConcatenatedFixedZM2L` plan
   (`DenseTranslationM2L` and the factored strategies are host-only); the
   options constructor's host default is not it. (Leaving `options` out entirely
@@ -114,6 +120,41 @@ leaves to the first far-field cell, or the near field would be truncated.
 `examples/device_resident_system.jl` is the complete program: a vortex-particle
 system on Metal or CUDA, three steps of convection on the device, and the
 transfer counters checked flat across the steps.
+
+## Mixing in other systems
+
+A step can also involve systems the cache does not own. The cache's systems
+must come first in `target_systems`, in the cache's order; each further system
+takes one of three roles:
+
+```julia
+# sys:    the cache's own bodies (the resident lifecycle)
+# wake:   sources whose bodies join the cache's tree multipoles
+# blade:  an extra source, summed all-pairs onto sys only
+# probes: an extra target, summed all-pairs from sys only
+fmm!((sys, probes), (sys, blade), cache; tree_sources = (wake,))
+```
+
+* `tree_sources`: their bodies are binned into the cache's cells and join the
+  leaf multipoles before the upward pass, so they cost what the cache's own
+  bodies cost. Use this for many sources spread through the box.
+* Extra sources (further entries of `source_systems`): summed directly onto
+  the cache's own targets. The cost is one pair per target per source body, so
+  this suits small systems such as a blade's bound filaments. They reach
+  neither `tree_sources` nor extra targets.
+* Extra targets (further entries of `target_systems`): evaluated all-pairs from
+  the cache's own bodies only; they see neither extra sources nor
+  `tree_sources`.
+
+The call is self-inducing when the cache's systems lead `source_systems` too,
+as above. Leaving them out of `source_systems` entirely, as in
+`fmm!((sys,), (blade,), cache)`, skips the lifecycle: the cache's targets then
+receive only the extra sources (and `tree_sources`, summed directly), and extra
+targets are left untouched. Any other placement of the cache's systems throws
+an `ArgumentError`. An extra source's `direct_kernel` must define
+`FastMultipole._extra_pair_ug` (and `_extra_pair_ugh` for hessian output);
+`RegularizedVortex`, `PartitionedVortex` and `VortexFilamentKernel` do, and any
+other kernel throws an `ArgumentError` naming the missing method.
 
 ## End-to-end example
 

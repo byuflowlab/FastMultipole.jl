@@ -223,3 +223,37 @@ Note that the second call to `fmm!` allocates less memory.
 
 !!! warning
     Caches are tied to the requested target buffer layout. Changing `scalar_potential`, `gradient`, `hessian`, `third_derivative`, `metadata`, or `extra_outputs` requires a cache with the matching switch layout or a new cache.
+
+## Reusing the Tree: `FmmPlan`
+
+A `cache` saves the buffer allocations, but every call still rebuilds the trees and interaction lists. When the geometry is frozen between calls (positions, radii, body counts and the requested outputs all fixed), a [`FastMultipole.FmmPlan`](@ref) builds them once, and each planned `fmm!` call only refreshes the source strengths and the target outputs:
+
+```@example guidedex
+plan = FastMultipole.FmmPlan((system,), (system,); scalar_potential=false, gradient=true)
+
+# strengths may change between calls
+for i in eachindex(system.bodies)
+    b = system.bodies[i]
+    system.bodies[i] = Body(b.position, b.radius, 2 * b.strength)
+end
+fmm!((system,), (system,), plan)
+nothing # hide
+```
+
+The plan does not detect a geometry change beyond a body-count check: rebuild it whenever positions or radii change. The one exception is a rigid motion `x -> R*x + t` of all the systems together, which leaves the interaction lists unchanged; move the bodies, then mirror the motion with [`transform_plan!`](@ref):
+
+```@example guidedex
+θ = 0.1
+R = SMatrix{3,3}(cos(θ), sin(θ), 0.0, -sin(θ), cos(θ), 0.0, 0.0, 0.0, 1.0)
+t = SVector(0.05, 0.0, 0.0)
+for i in eachindex(system.bodies)
+    b = system.bodies[i]
+    system.bodies[i] = Body(R * b.position + t, b.radius, b.strength)
+end
+transform_plan!(plan, (system,), R, t)
+fmm!((system,), (system,), plan)
+nothing # hide
+```
+
+!!! warning
+    A plan accepts the tree- and list-building keywords of `fmm!` (`expansion_order`, `leaf_size_source`, `multipole_acceptance`, ...) only at construction; they are frozen with the geometry.
