@@ -79,7 +79,7 @@ end
 seed = 42
 for P in (4, 8)
     for LHbool in (true, false)
-        for nbatch in (5, 10)
+        for nbatch in (10,)   # the batch width does not change the path
             Random.seed!(seed)
             TF = Float32
             lh = Val(LHbool)

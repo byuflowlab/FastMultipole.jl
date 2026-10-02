@@ -1,4 +1,5 @@
-# Test systems shared by ka_extra_tree_correctness.jl and its debug script.
+# Test systems shared by extra_tree_test.jl (host) and the gpu/ extra-tree,
+# filament and regression suites.
 #--- a filament system packed exactly as a vortex-filament source is ---#
 struct Segs{TF}
     r1::Vector{SVector{3,TF}}

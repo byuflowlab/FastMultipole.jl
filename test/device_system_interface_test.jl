@@ -3,7 +3,7 @@
 # body_type trait with the Point{Vortex} B2M (φ + χ, Lamb-Helmholtz
 # end-to-end), and the 9-component hessian output chosen at cache
 # construction — all without a GPU. Device mirrors are exercised by the
-# suites in test/metal_env/.
+# suites in test/gpu/.
 
 using FastMultipole
 using FastMultipole.StaticArrays

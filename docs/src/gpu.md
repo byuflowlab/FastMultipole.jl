@@ -180,13 +180,13 @@ the first step no allocation remains.
 
 `Pkg.test()` runs the host suites everywhere. `FASTMULTIPOLE_GPU_TESTS=0|1`
 overrides GPU detection (hosted CI sets `0`). On Apple, the bundled
-`test/metal_env` project supplies Metal. On NVIDIA, the device suites run only
+`test/gpu` project supplies Metal. On NVIDIA, the device suites run only
 when `FASTMULTIPOLE_GPU_TEST_PROJECT` points to a CUDA-enabled Julia project;
 otherwise they are skipped even when a GPU is detected.
 The suites compare every stage of the device lifecycle, and the whole of it,
 against the host implementation of the same lifecycle, for both body types;
 From the repository root, run them directly with
-`FASTMULTIPOLE_GPU_TEST_PROJECT=/path/to/cuda/project bash test/metal_env/run_suites.sh`.
+`FASTMULTIPOLE_GPU_TEST_PROJECT=/path/to/cuda/project bash test/gpu/run_suites.sh`.
 The script prints one line per suite. On a cluster, build that environment on
 the login node first; compute nodes rarely have network access.
 

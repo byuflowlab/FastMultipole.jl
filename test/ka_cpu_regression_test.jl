@@ -2,7 +2,7 @@
 # runs on the KA CPU backend (or on plain host scalars) and covers one defect
 # that was fixed in ext/ka.
 #
-#   julia --project=test/metal_env -e 'using Test; include("test/ka_cpu_regression_test.jl")'
+#   julia --project=test/gpu -e 'using Test; include("test/ka_cpu_regression_test.jl")'
 using FastMultipole, KernelAbstractions, GPUArraysCore, LinearAlgebra, Random, Test
 using FastMultipole.StaticArrays
 const KA = KernelAbstractions
@@ -198,7 +198,7 @@ end
 # and per-pair team kernels use group indices the CPU backend cannot lower), so
 # the end-to-end counterparts of the checks below -- metadata delivery, the
 # rectangular-box step, the tree-carried contract functor and the near-sweep
-# workgroup -- are in test/metal_env/ka_regression_correctness.jl.
+# workgroup -- are in test/gpu/ka_regression_correctness.jl.
 
 @testset "KA regression: checked keys clamp each axis of a rectangular box" begin
     # bounds (8,2,2) at ell=3: unit leaf cells, ell_axes (3,1,1); a body on the

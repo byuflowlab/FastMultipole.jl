@@ -68,6 +68,8 @@ include("direct_test.jl")
 include("direct_rectangular_test.jl")
 include("core_regression_test.jl")
 include("extra_systems_regression_test.jl")
+include("extra_systems_test.jl")
+include("extra_tree_test.jl")
 include("ka_cpu_regression_test.jl")
 include("harmonics_test.jl")
 include("rotate_test.jl")
@@ -106,14 +108,14 @@ include("transform_solver_test.jl")
 include("fgs_coloring_test.jl")
 
 #--- GPU correctness suites ---#
-# The ka_*_correctness.jl suites live in their own env (test/metal_env) so the
+# The ka_*_correctness.jl suites live in their own env (test/gpu) so the
 # main test env stays free of CUDA/Metal. They run only when a device is
 # plausibly present; each suite still checks `dev_functional()` itself.
 # run_suites.sh exits with the number of failing suites; per-suite logs go to
-# test/metal_env/logs/. FASTMULTIPOLE_GPU_TESTS=0|1 overrides detection and
+# test/gpu/logs/. FASTMULTIPOLE_GPU_TESTS=0|1 overrides detection and
 # FASTMULTIPOLE_GPU_TEST_PROJECT points the suites at another env.
 gpu_present = Sys.isapple() || Sys.which("nvidia-smi") !== nothing
-# test/metal_env/Project.toml declares Metal only; an NVIDIA machine must point
+# test/gpu/Project.toml declares Metal only; an NVIDIA machine must point
 # FASTMULTIPOLE_GPU_TEST_PROJECT at an environment with CUDA (see docs/src/gpu.md)
 gpu_env_ok = Sys.isapple() || haskey(ENV, "FASTMULTIPOLE_GPU_TEST_PROJECT")
 if get(ENV, "FASTMULTIPOLE_GPU_TESTS", gpu_present ? "1" : "0") == "1" && !gpu_env_ok
@@ -121,6 +123,6 @@ if get(ENV, "FASTMULTIPOLE_GPU_TESTS", gpu_present ? "1" : "0") == "1" && !gpu_e
 end
 if get(ENV, "FASTMULTIPOLE_GPU_TESTS", gpu_present ? "1" : "0") == "1" && gpu_env_ok
     @testset "GPU correctness suites" begin
-        @test success(`bash $(joinpath(@__DIR__, "metal_env", "run_suites.sh"))`)
+        @test success(`bash $(joinpath(@__DIR__, "gpu", "run_suites.sh"))`)
     end
 end

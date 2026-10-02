@@ -45,7 +45,7 @@ Manifest.toml
 
 # working notes and run logs stay local
 logs/
-test/metal_env/logs/
+test/gpu/logs/
 *.bin
 .trash/
 

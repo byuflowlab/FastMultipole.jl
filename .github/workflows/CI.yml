@@ -44,7 +44,7 @@ jobs:
           # No hosted GitHub runner has a GPU (the macOS runner is Apple silicon without
           # a usable Metal device), so the KernelAbstractions device suites cannot run
           # here and are switched off on every runner. They are run by hand before a
-          # release: `bash test/metal_env/run_suites.sh` on a Metal machine, or with
+          # release: `bash test/gpu/run_suites.sh` on a Metal machine, or with
           # FASTMULTIPOLE_GPU_TEST_PROJECT pointing at a CUDA project (see docs/src/gpu.md).
           FASTMULTIPOLE_GPU_TESTS: "0"
   docs:

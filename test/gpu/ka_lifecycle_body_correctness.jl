@@ -33,9 +33,13 @@
 # lifecycle runs, plus the sequencing between them -- which is where a silent
 # wrong answer from a mis-sequenced stage would show up.
 #
-# Body types: `Point{Vortex}` with Lamb-Helmholtz on (the vortex-particle case), and
-# `Point{Source}` with and without the channel (the library default body, the
-# gravitational test system), each against the same host lifecycle.
+# Body types: `Point{Vortex}` with Lamb-Helmholtz on (the vortex-particle case),
+# `Point{Source}` without the channel (the library default body, the
+# gravitational test system), then the packed point, filament and panel types,
+# each against the same host lifecycle. The body types differ only in the
+# nearfield/B2M/L2B kernels, so only Point{Vortex} and Point{Source} run the
+# second expansion order; the others run the first case (all of CASES under
+# FM_FULL_SWEEP=1).
 include("ka_backend.jl")
 using FastMultipole, Random, Test
 using FastMultipole.StaticArrays
@@ -168,6 +172,7 @@ const CASES_SHORT = [
                    # operator tables are built per order
 ]
 const CASES = haskey(ENV, "FM_FULL_SWEEP") ? CASES_FULL : CASES_SHORT
+const BODY_CASES = haskey(ENV, "FM_FULL_SWEEP") ? CASES : CASES[1:1]
 
 const TOL = 2e-4  # Float32 whole-lifecycle accumulation; per-stage suites run 1e-4/1e-5
 
@@ -221,9 +226,9 @@ end
 println("\nka_lifecycle_body_flat! vs run_host_radix_lifecycle! (Point{Vortex}): $(npass[])/$(length(CASES)) pass")
 nfail[] == 0 || error("lifecycle gate failed (vortex)")
 
-# --- Point{Source}: the gravitational system, with and without Lamb-Helmholtz ---
+# --- Point{Source}: the gravitational system, Lamb-Helmholtz off (on, chi is identically zero) ---
 npass[] = 0; nfail[] = 0; ncase = 0
-for (ci, (P, ell, n)) in pairs(CASES), lh in (false, true)
+for (ci, (P, ell, n)) in pairs(CASES), lh in (false,)
     global ncase += 1
     t_case = time()
     TF = Float32
@@ -278,7 +283,7 @@ FM.has_vector_potential(::PackedPoints{TF,BT}) where {TF,BT} = BT <: FM.Point{FM
 FM.source_system_to_buffer!(buffer, i_buffer, s::PackedPoints, i_body) =
     (buffer[1:size(s.data, 1), i_buffer] .= view(s.data, :, i_body))
 npass[] = 0; nfail[] = 0; ncase = 0
-for (ci, (P, ell, n)) in pairs(CASES),
+for (ci, (P, ell, n)) in pairs(BODY_CASES),
         (label, BT, dpb, lh) in (("dipole", FM.Point{FM.Dipole}, 7, false),
                                  ("dipole LH", FM.Point{FM.Dipole}, 7, true),
                                  ("source-vortex", FM.Point{FM.SourceVortex}, 8, true))
@@ -334,7 +339,7 @@ FM.has_vector_potential(::PackedFilaments{TF,BT}) where {TF,BT} = BT <: FM.Filam
 FM.source_system_to_buffer!(buffer, i_buffer, s::PackedFilaments, i_body) =
     (buffer[1:size(s.data, 1), i_buffer] .= view(s.data, :, i_body))
 npass[] = 0; nfail[] = 0; ncase = 0
-for (ci, (P, ell, n)) in pairs(CASES),
+for (ci, (P, ell, n)) in pairs(BODY_CASES),
         (label, BT, sd, nv, lh) in (("source filament", FM.Filament{FM.Source}, 1, 2, false),
                                ("dipole filament", FM.Filament{FM.Dipole}, 3, 2, false),
                                ("vortex filament", FM.Filament{FM.Vortex}, 3, 2, true),

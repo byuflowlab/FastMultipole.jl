@@ -26,7 +26,7 @@ const FM = FastMultipole
 include(joinpath(@__DIR__, "..", "vortex.jl"))
 include(joinpath(@__DIR__, "..", "gravitational.jl"))
 include(joinpath(@__DIR__, "..", "interface_test_systems.jl"))
-include(joinpath(@__DIR__, "ka_extra_tree_correctness_systems.jl"))
+include(joinpath(@__DIR__, "..", "extra_tree_test_systems.jl"))
 
 if !dev_functional()
     println("$(DEV_NAME) not functional; skipping")
