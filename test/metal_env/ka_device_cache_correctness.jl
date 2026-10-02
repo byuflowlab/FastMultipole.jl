@@ -166,6 +166,47 @@ for (ci, (P, ell, n, wc)) in pairs(CASES)
     end
 end
 
+# The caller's M2L chunk reaches the device plan (it was replaced by the default
+# 2^17, so the M2L scratch was sized to the full route capacity whatever the
+# caller asked for), and a chunk far below the route count -- many pieces per
+# apply -- still matches the host cache. Same for the near-pair flag/scan
+# scratch: a bound far below the pair count, so the compaction runs in many chunks.
+let (P, ell, n, wc) = (4, 4, 512, 64), chunk = 64, nflag = 97, TF = Float32
+    sys_h = make_system(5199, n, TF); sys_d = make_system(5199, n, TF)
+    opts = FM.RadixLifecycleOptions(; precision=TF,
+        m2l_strategy=FM.ConcatenatedFixedZM2L(chunk), body_type=FM.Point{FM.Vortex})
+    hcache = RadixFMMCache(sys_h; expansion_order=P, ell=ell, window_classes=wc, options=opts)
+    fmm!(sys_h, hcache)
+    a = device_build_args(hcache)
+    LH = typeof(hcache).parameters[2]
+    dcache = ext.ka_radix_cache_device_build(DEV_BACKEND, (sys_d,),
+        hcache.expansion_order, ell, hcache.x_min, hcache.h0,
+        hcache.max_n_bodies, hcache.options, hcache.policy,
+        hcache.accepted_offsets, hcache.rejected_offsets,
+        hcache.max_cells, hcache.max_nodes, hcache.route_capacity,
+        hcache.direct_capacity, hcache.state.multipoles.basis_info, Val(LH);
+        hierarchical_tables=a.tables,
+        hierarchical_level_class_of=a.level_class_of, hessian=hcache.hessian,
+        ell_axes=hcache.ell_axes, box_extent=hcache.box_extent,
+        root_level=a.root_level, first_m2l_level=a.first_m2l_level,
+        direct_flag_capacity=nflag)
+    switches = FM.DerivativesSwitch(FM.to_vector(false, 1), FM.to_vector(true, 1),
+        FM.to_vector(false, 1), (sys_d,))
+    ext.ka_radix_cache_device_step!(dcache, (sys_d,), switches)
+    plan = dcache.state.interaction_list.apply_plan
+    e_vel = relerr(sys_d.gradient_stretching[1:3, :], sys_h.gradient_stretching[1:3, :])
+    nroutes = dcache.state.interaction_list.total_routes
+    ndirect = dcache.state.interaction_list.epoch_n_direct
+    ok = plan.chunk == min(chunk, hcache.route_capacity) && size(plan.aphi, 2) == plan.chunk &&
+        nroutes > chunk && length(dcache.device_ctx.direct_flags) == nflag && ndirect > nflag &&
+        e_vel < TOL
+    ok ? (npass[] += 1) : (nfail[] += 1)
+    println("m2l chunk + direct flag bound (chunk=$chunk, routes=$nroutes; flags=$nflag, pairs=$ndirect): ",
+        ok ? "PASS" : "FAIL", "  plan.chunk=", plan.chunk, "  scratch cols=", size(plan.aphi, 2),
+        "  flag length=", length(dcache.device_ctx.direct_flags), "  velocity=", e_vel)
+    flush(stdout)
+end
+
 println("\nKA device cache build+step vs host RadixFMMCache fmm!: ",
-    "$(npass[])/$(length(CASES)) pass")
+    "$(npass[])/$(length(CASES) + 1) pass")
 nfail[] == 0 || error("$(nfail[]) case(s) failed")
