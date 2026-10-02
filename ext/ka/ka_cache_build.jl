@@ -31,7 +31,9 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
         box_extent::SVector{3,TF}=SVector{3,TF}(2 * h0, 2 * h0, 2 * h0),
         root_level::Int=0, first_m2l_level::Int=2,
+        direct_flag_capacity::Int=min(direct_capacity, 1 << 21),
         workgroup=KA_AUTO_WORKGROUP) where {TF,B,LH}
+    direct_flag_capacity > 0 || throw(ArgumentError("direct_flag_capacity must be positive"))
     stencil_policy isa FastMultipole.HierarchicalRigidStencil || throw(ArgumentError(
         "ka_radix_cache_device_build covers the hierarchical stencil path only; " *
         "got $(typeof(stencil_policy))"))
@@ -54,7 +56,7 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
     invariant = FastMultipole.OperatorInvariantCache(TF, basis_info)
     workspace = ka_radix_cache_workspace(backend, TF, basis_info, ell, h0,
         max_cells, max_nodes, route_capacity, accepted, invariant;
-        ell_axes, first_level=root_level)
+        ell_axes, first_level=root_level, m2l_strategy=options.m2l_strategy)
 
     # capacity-sized persistent grid: counts bound the valid prefixes, so
     # recurring steps refresh these arrays in place and never reallocate
@@ -117,8 +119,11 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         d_accepted, d_rejected, class_chunk=1,
         direct_targets=_z(Int, direct_capacity),
         direct_sources=_z(Int, direct_capacity),
-        direct_flags=_z(Int32, direct_capacity),
-        direct_prefix=_z(Int32, direct_capacity),
+        # flag/scan scratch for the near-pair compaction, which walks the
+        # (cell, near offset) candidates in chunks of this length: bounded, not
+        # sized to the full pair capacity (`ka_hier_generate_direct_pairs!`)
+        direct_flags=_z(Int32, direct_flag_capacity),
+        direct_prefix=_z(Int32, direct_flag_capacity),
         # [direct pairs, M2L routes]: the epoch route regeneration readback
         route_scalars=_z(Int32, 2),
         host_route_scalars=zeros(Int32, 2),
