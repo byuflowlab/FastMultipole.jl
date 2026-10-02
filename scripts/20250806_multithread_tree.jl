@@ -1,7 +1,7 @@
 # using Profile
 # using ProfileView
 
-include("../test/gravitational.jl")
+include("../test/helpers/gravitational.jl")
 
 function generate_gravitational(seed, n_bodies; radius_factor=0.1)
     Random.seed!(123)

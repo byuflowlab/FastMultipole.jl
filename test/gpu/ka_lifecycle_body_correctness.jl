@@ -47,8 +47,8 @@ using FastMultipole.StaticArrays
 const FM = FastMultipole
 
 # the repo's own vortex system + generator (correct traits, body_type Point{Vortex})
-include(joinpath(@__DIR__, "..", "vortex.jl"))
-include(joinpath(@__DIR__, "..", "gravitational.jl"))   # Point{Source} system
+include(joinpath(@__DIR__, "..", "helpers", "vortex.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "gravitational.jl"))   # Point{Source} system
 
 if !dev_functional()
     println("$(DEV_NAME) not functional; skipping")

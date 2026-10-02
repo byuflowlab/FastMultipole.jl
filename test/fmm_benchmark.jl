@@ -4,7 +4,7 @@ using FastMultipole.LinearAlgebra
 using Statistics
 using PythonPlot
 
-include(joinpath(@__DIR__, "gravitational.jl"))
+include(joinpath(@__DIR__, "helpers", "gravitational.jl"))
 
 """
     benchmark_fmm_passes(; kwargs...)

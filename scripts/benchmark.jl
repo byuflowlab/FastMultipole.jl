@@ -5,7 +5,7 @@ using BSON
 
 scripts_dir = @__DIR__
 save_dir = "benchmark_results"
-include(joinpath(scripts_dir, "..", "test", "gravitational.jl"))
+include(joinpath(scripts_dir, "..", "test", "helpers", "gravitational.jl"))
 
 if !isdir(joinpath(scripts_dir, save_dir))
     mkdir(joinpath(scripts_dir, save_dir))

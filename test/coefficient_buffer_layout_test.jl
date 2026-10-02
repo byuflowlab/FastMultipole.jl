@@ -3,7 +3,7 @@
 # density, χ pruning, and a flat-vs-production kernel round-trip that anchors the relaid flat kernels to the production [2,2,nh]
 # kernels in src/translate.jl.
 
-isdefined(@__MODULE__, :to_flat_buffer) || include("flat_buffer_helpers.jl")
+isdefined(@__MODULE__, :to_flat_buffer) || include("helpers/flat_buffer_helpers.jl")
 
 using FastMultipole: harmonic_index, flat_basis_index, _operator_ncomplex,
     OperatorBasisInfo, FlatCoefficientBuffer, phi_slab, chi_slab,

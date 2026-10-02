@@ -7,8 +7,8 @@ using Statistics
 using Random
 using BSON
 
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
 
 function get_gradient(system::Gravitational)
     return system.potential[5:7,:]

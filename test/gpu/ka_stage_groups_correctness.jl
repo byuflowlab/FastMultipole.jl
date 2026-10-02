@@ -9,7 +9,7 @@
 # and emit one edge per child node in ascending flat node index, so the
 # comparison is elementwise per group.
 include("ka_backend.jl")
-include("../gravitational.jl")
+include("../helpers/gravitational.jl")
 using FastMultipole, Test
 
 const FM = FastMultipole

@@ -24,7 +24,7 @@ using FastMultipole, Random, Test, Printf
 using FastMultipole.StaticArrays
 
 const FM = FastMultipole
-include(joinpath(@__DIR__, "..", "vortex.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "vortex.jl"))
 
 if !dev_functional()
     println("$(DEV_NAME) not functional; skipping")

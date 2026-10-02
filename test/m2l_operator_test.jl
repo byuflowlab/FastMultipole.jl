@@ -11,7 +11,7 @@
 
 # native flat coefficient buffer helpers: operators consume
 # FlatCoefficientBuffer; the parity references stay in the legacy [2,2,nh] layout.
-isdefined(@__MODULE__, :to_flat_buffer) || include("flat_buffer_helpers.jl")
+isdefined(@__MODULE__, :to_flat_buffer) || include("helpers/flat_buffer_helpers.jl")
 
 M2L_OFFSETS = (
     SVector{3}(0.0, 0.0, 3.0),       # +z axis  (θ = 0)

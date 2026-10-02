@@ -9,10 +9,10 @@ using BSON
 using LinearAlgebra
 using PythonPlot
 
-include("../test/evaluate_multipole.jl")
-include("../test/bodytolocal.jl")
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
+include("../test/helpers/evaluate_multipole.jl")
+include("../test/helpers/bodytolocal.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
 
 function get_gradient(system::Gravitational)
     return system.potential[5:7,:]

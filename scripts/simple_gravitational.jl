@@ -1,7 +1,7 @@
 using Pkg
 this_dir = @__DIR__
 Pkg.activate(normpath(this_dir,".."))
-include("../test/gravitational.jl")
+include("../test/helpers/gravitational.jl")
 # using BenchmarkTools
 using Random
 using WriteVTK

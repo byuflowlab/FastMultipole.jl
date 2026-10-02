@@ -7,7 +7,7 @@ using FastMultipole
 using FastMultipole: RADIX_SETTING_SPECS, CUDA_NEARFIELD_GH_MODE
 
 if !isdefined(Main, :Gravitational)
-    include("gravitational.jl")
+    include("helpers/gravitational.jl")
 end
 
 @testset "radix settings surface" begin

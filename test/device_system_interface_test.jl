@@ -10,16 +10,16 @@ using FastMultipole.StaticArrays
 using FastMultipole.LinearAlgebra
 using Random
 using Test
-@isdefined(host_radix_state) || include("radix_reference.jl")
+@isdefined(host_radix_state) || include("helpers/radix_reference.jl")
 
 if !isdefined(@__MODULE__, :generate_gravitational)
-    include("gravitational.jl")
+    include("helpers/gravitational.jl")
 end
 if !isdefined(@__MODULE__, :VortexParticles)
-    include("vortex.jl")
+    include("helpers/vortex.jl")
 end
 if !isdefined(@__MODULE__, :ExtendedVortex)
-    include("interface_test_systems.jl")
+    include("helpers/interface_test_systems.jl")
 end
 
 @testset "device-system interface" begin

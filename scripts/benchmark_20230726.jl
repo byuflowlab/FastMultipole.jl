@@ -2,7 +2,7 @@ using BenchmarkTools
 
 module TestMe
 
-include("../test/gravitational.jl")
+include("../test/helpers/gravitational.jl")
 
 function bm_fmm(element)
     options = fmm.Options(4,1,4.0)

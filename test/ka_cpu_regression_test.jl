@@ -9,9 +9,9 @@ const KA = KernelAbstractions
 const FM = FastMultipole
 const KAExt = Base.get_extension(FastMultipole, :FastMultipoleKAExt)
 
-@isdefined(VortexParticles) || include(joinpath(@__DIR__, "vortex.jl"))
-@isdefined(Gravitational) || include(joinpath(@__DIR__, "gravitational.jl"))
-@isdefined(SmoothedVortex) || include(joinpath(@__DIR__, "interface_test_systems.jl"))
+@isdefined(VortexParticles) || include(joinpath(@__DIR__, "helpers", "vortex.jl"))
+@isdefined(Gravitational) || include(joinpath(@__DIR__, "helpers", "gravitational.jl"))
+@isdefined(SmoothedVortex) || include(joinpath(@__DIR__, "helpers", "interface_test_systems.jl"))
 
 # Systems owned by this file, so the `device_backend`/`source_revision` methods
 # below do not leak onto types other test files use.

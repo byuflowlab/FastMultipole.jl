@@ -4,8 +4,8 @@ using LinearAlgebra
 using PythonPlot
 using BSON
 
-include("../test/gravitational.jl")
-include("../test/evaluate_multipole.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/evaluate_multipole.jl")
 
 function spherical_to_cartesian(ρ,θ,ϕ)
     z = ρ * cos(θ)

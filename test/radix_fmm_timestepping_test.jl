@@ -4,7 +4,7 @@ using Random
 using Test
 
 if !isdefined(@__MODULE__, :generate_gravitational)
-    include("gravitational.jl")
+    include("helpers/gravitational.jl")
 end
 
 # Collect every Array anywhere in the step-varying state (state fields, grid

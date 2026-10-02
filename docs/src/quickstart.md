@@ -1,6 +1,6 @@
 # Quick Start
 
-The following tutorial shows how to use `FastMultipole` to compute the gravitational potential induced by a collection of point masses. It uses data structures located in `test/gravitational.jl`.
+The following tutorial shows how to use `FastMultipole` to compute the gravitational potential induced by a collection of point masses. It uses data structures located in `test/helpers/gravitational.jl`.
 
 ## Create a System
 
@@ -10,7 +10,7 @@ First, let's create a system of 1000 randomly spaced point masses:
 using FastMultipole
 using Random # needed for `gravitational.jl`
 
-gravitational_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "gravitational.jl"))
+gravitational_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "helpers", "gravitational.jl"))
 include(gravitational_path)
 
 rand_seed = 123

@@ -1,7 +1,7 @@
 using StaticArrays
 using Random
 
-include("../test/vortex.jl")
+include("../test/helpers/vortex.jl")
 
 n_bodies = 10_000
 system = generate_vortex(123, n_bodies; strength_scale=1/0.22/n_bodies)

@@ -23,7 +23,7 @@
 # refreshed before using it -- so a scatter bug surfaces as itself rather than as
 # a downstream window mismatch.
 include("ka_backend.jl")
-include("../gravitational.jl")
+include("../helpers/gravitational.jl")
 using FastMultipole, Random, Test
 
 const FM = FastMultipole

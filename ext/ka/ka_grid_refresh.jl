@@ -16,7 +16,7 @@
 #
 # Host oracle for the gate: `_radix_fill_body_data!` (src/tree_batched.jl)
 # plus the test reference `_host_radix_sort_permutation` and
-# `_compress_radix_cells` (test/radix_reference.jl), which are exactly these
+# `_compress_radix_cells` (test/helpers/radix_reference.jl), which are exactly these
 # three steps on the CPU.
 
 # leaf index of a scaled coordinate, clamped to 0:G-1 without throwing (NaN

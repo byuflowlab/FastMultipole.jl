@@ -4,7 +4,7 @@ using Random
 using Test
 
 if !isdefined(@__MODULE__, :generate_gravitational)
-    include("gravitational.jl")
+    include("helpers/gravitational.jl")
 end
 
 function _radix_direct_reference(seed, n; kwargs...)

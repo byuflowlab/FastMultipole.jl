@@ -9,8 +9,8 @@
 # The device path is checked against this host path in
 # gpu/ka_extra_tree_correctness.jl.
 if !@isdefined(FM) const FM = FastMultipole end
-@isdefined(VortexParticles) || include(joinpath(@__DIR__, "vortex.jl"))
-@isdefined(Segs) || include(joinpath(@__DIR__, "extra_tree_test_systems.jl"))
+@isdefined(VortexParticles) || include(joinpath(@__DIR__, "helpers", "vortex.jl"))
+@isdefined(Segs) || include(joinpath(@__DIR__, "helpers", "extra_tree_test_systems.jl"))
 
 let TF = Float64
 @testset "extra tree: slab layout against the resident Point{Vortex} kernel" begin

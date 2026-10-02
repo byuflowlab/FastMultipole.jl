@@ -2,10 +2,10 @@ using FastMultipole
 using FastMultipole.StaticArrays
 using Random
 using Test
-@isdefined(host_radix_state) || include("radix_reference.jl")
+@isdefined(host_radix_state) || include("helpers/radix_reference.jl")
 
 if !isdefined(@__MODULE__, :Gravitational)
-    include("gravitational.jl")
+    include("helpers/gravitational.jl")
 end
 
 const HIER_FM = FastMultipole

@@ -1,10 +1,10 @@
 using FastMultipole
 using Random
 
-include("../test/gravitational.jl")
-include("../test/vortex.jl")
-include("../test/panels.jl")
-include("../test/evaluate_multipole.jl")
+include("../test/helpers/gravitational.jl")
+include("../test/helpers/vortex.jl")
+include("../test/helpers/panels.jl")
+include("../test/helpers/evaluate_multipole.jl")
 
 function test_direct()
     # multithreaded test

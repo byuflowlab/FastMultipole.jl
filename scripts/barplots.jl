@@ -11,8 +11,8 @@ using Statistics
 
 println("*********************")
 
-include("../test/vortex.jl")
-include("../test/gravitational.jl")
+include("../test/helpers/vortex.jl")
+include("../test/helpers/gravitational.jl")
 include("../test/source_vortex.jl")
 
 n_tests = 2

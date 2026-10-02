@@ -3,7 +3,7 @@
 # using LinearAlgebra
 # using Test
 
-# include("gravitational.jl")
+# include("helpers/gravitational.jl")
 
 #--- define influence function ---#
 

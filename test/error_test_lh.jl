@@ -2,9 +2,9 @@ using Random
 using LegendrePolynomials
 using Statistics
 
-include("vortex.jl")
-include("evaluate_multipole.jl")
-include("bodytolocal.jl")
+include("helpers/vortex.jl")
+include("helpers/evaluate_multipole.jl")
+include("helpers/bodytolocal.jl")
 
 function flatten_derivatives!(jacobian)
     # vector field

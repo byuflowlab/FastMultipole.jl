@@ -4,8 +4,8 @@ using StaticArrays
 using LinearAlgebra
 using WriteVTK
 
-include("../test/vortex_filament.jl")
-include("../test/vortex.jl")
+include("../test/helpers/vortex_filament.jl")
+include("../test/helpers/vortex.jl")
 include("rotor.jl")
 
 # create a single vortex filament

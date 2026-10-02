@@ -6,9 +6,9 @@
 using FastMultipole, Random, Printf, LinearAlgebra, Test
 using FastMultipole.StaticArrays
 const FM = FastMultipole
-include(joinpath(@__DIR__, "..", "vortex.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "vortex.jl"))
 
-include(joinpath(@__DIR__, "..", "extra_tree_test_systems.jl"))
+include(joinpath(@__DIR__, "..", "helpers", "extra_tree_test_systems.jl"))
 
 const TF = Float64
 npass = Ref(0); nfail = Ref(0)

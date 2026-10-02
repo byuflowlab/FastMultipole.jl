@@ -3,7 +3,7 @@ using FastMultipole.StaticArrays
 using LinearAlgebra, Random, Test
 
 const DENSE_FM = FastMultipole
-isdefined(Main, :generate_gravitational) || include("gravitational.jl")
+isdefined(Main, :generate_gravitational) || include("helpers/gravitational.jl")
 
 function _dense_random_physical_flat!(buf, rng, ::Val{LH}) where LH
     buf.phi .= randn(rng, eltype(buf.phi), size(buf.phi))

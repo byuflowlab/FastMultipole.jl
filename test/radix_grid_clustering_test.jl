@@ -1,7 +1,7 @@
 using FastMultipole
 using FastMultipole.StaticArrays
 using Test
-@isdefined(host_radix_state) || include("radix_reference.jl")
+@isdefined(host_radix_state) || include("helpers/radix_reference.jl")
 
 @testset "radix grid clustering" begin
     @test FastMultipole.morton_key(0, 0, 0, 2) == UInt64(0)

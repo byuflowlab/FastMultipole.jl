@@ -2,7 +2,7 @@
 
 `FastMultipole` is designed to incorporate easily into your existing Julia code with minimal effort. In this section and the [Vortex Filament Example](vortex_filament.md), we demonstrate how this can be done.
 
-First, we'll review the interface functions used by the gravitational point mass model used in [Quick Start](@ref). This code can also be found under `FastMultipole/test/gravitational.jl`.
+First, we'll review the interface functions used by the gravitational point mass model used in [Quick Start](@ref). This code can also be found under `FastMultipole/test/helpers/gravitational.jl`.
 
 To better understand how the `FastMultipole` interface functions, let's take a look at the data structures we'll use to define our point masses:
 

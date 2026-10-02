@@ -9,7 +9,7 @@ First we'll try varying the `expansion_order`, or the degree of the expansions u
 ```@example guidedex
 using FastMultipole # hide
 using Random # hide
-gravitational_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "gravitational.jl")) # hide
+gravitational_path = normpath(joinpath(splitdir(pathof(FastMultipole))[1], "..", "test", "helpers", "gravitational.jl")) # hide
 include(gravitational_path) # hide
 # create system
 n_bodies, rand_seed = 10000, 123

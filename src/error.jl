@@ -1,4 +1,4 @@
-include("../test/evaluate_multipole.jl")
+include("../test/helpers/evaluate_multipole.jl")
 
 #--- determine distances for error formulae ---#
 
