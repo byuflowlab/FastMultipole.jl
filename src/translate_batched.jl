@@ -1718,23 +1718,31 @@ function _gather_values_n!(dst, src, ids, n::Int)
 end
 
 function _prefix_trig_scale!(C, S, scale, nu, theta, invr, rexp, ncols::Int)
-    @inbounds for j in 1:ncols, i in eachindex(nu)
-        s, c = sincos(nu[i] * theta[j])
-        C[i, j] = c
-        S[i, j] = s
-        scale[i, j] = invr[j]^rexp[i]
+    # rexp is constant over a degree's rows (`_degree_row_exponents`): reuse the
+    # power while it repeats -- P + 1 `^` calls per column instead of one per row
+    @inbounds for j in 1:ncols
+        e_last = oftype(rexp[1], NaN)
+        p_last = zero(eltype(scale))
+        for i in eachindex(nu)
+            s, c = sincos(nu[i] * theta[j])
+            C[i, j] = c
+            S[i, j] = s
+            e = rexp[i]
+            if e != e_last
+                e_last = e
+                p_last = invr[j]^e
+            end
+            scale[i, j] = p_last
+        end
     end
     return scale
 end
 
 function _prefix_matmul!(Y, A, X, ncols::Int)
-    @inbounds for j in 1:ncols, i in axes(A, 1)
-        acc = zero(eltype(Y))
-        for k in axes(A, 2)
-            acc += A[i, k] * X[k, j]
-        end
-        Y[i, j] = acc
-    end
+    # the leading `ncols` columns: one BLAS gemm for floats (generic matmul for
+    # other element types). The hand-written triple loop this replaces made the
+    # host M2L ~30 s per call at ell = 4.
+    mul!(view(Y, axes(A, 1), 1:ncols), A, view(X, axes(A, 2), 1:ncols))
     return Y
 end
 

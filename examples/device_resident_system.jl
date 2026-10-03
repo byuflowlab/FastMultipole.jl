@@ -208,14 +208,12 @@ function run_example(; n = 2000, ell = 3, expansion_order = 4, TF = DEV_TF, dt =
     # initial state update).
     fmm!(sys, cache; scalar_potential = false, gradient = true)
 
-    # Snapshot the transfer counters AFTER the first step: construction and
-    # step 1 legitimately upload operators/routes once; the resident contract
-    # is that the recurring steps add nothing.
+    # Snapshot the transfer counters AFTER the first step; the resident
+    # contract is that the recurring steps add nothing.
     counters = cache.state.counters
     base_body_uploads = counters.body_uploads
     base_influence_downloads = counters.influence_downloads
-    base_route_uploads = counters.route_uploads
-    base_operator_uploads = counters.operator_uploads
+    base_metadata_downloads = counters.metadata_downloads
 
     # 3-step convection loop: fmm! (in-place refresh + resident lifecycle +
     # device finalize) then a device Euler step. No host/device body traffic.
@@ -228,8 +226,7 @@ function run_example(; n = 2000, ell = 3, expansion_order = 4, TF = DEV_TF, dt =
     # Counter contract: flat across recurring steps.
     @assert counters.body_uploads == base_body_uploads "per-step body H2D detected"
     @assert counters.influence_downloads == base_influence_downloads "per-step result D2H detected"
-    @assert counters.route_uploads == base_route_uploads "per-step route upload detected"
-    @assert counters.operator_uploads == base_operator_uploads "per-step operator upload detected"
+    @assert counters.metadata_downloads == base_metadata_downloads "per-step metadata D2H detected"
     @assert counters.expansion_host_copies == 0 "expansion left the device"
 
     # Results live on the device in the consumer's own arrays.
@@ -238,7 +235,7 @@ function run_example(; n = 2000, ell = 3, expansion_order = 4, TF = DEV_TF, dt =
     println("  velocity[:, 1] = ", U[:, 1])
     println("  |velocity| mean = ", sum(abs, U) / (3n))
     println("  counter contract satisfied: body_uploads/influence_downloads/",
-        "route_uploads/operator_uploads flat, expansion_host_copies == 0")
+        "metadata_downloads flat, expansion_host_copies == 0")
     return sys, cache
 end
 
