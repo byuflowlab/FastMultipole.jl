@@ -1,12 +1,9 @@
 # Gate for the automatic concat-M2L chunk (`ConcatenatedFixedZM2L(0)`,
-# ext/ka/ka_workspace_routes.jl): the free-memory rule `_ka_auto_m2l_chunk` and
-# the out-of-memory retry `_ka_with_chunk_halving`.
+# ext/ka/ka_workspace_routes.jl): the free-memory rule `_ka_auto_m2l_chunk`.
 #
 # Every real GPU tried so far has had enough free memory to sit at the cap, so
 # the shrinking branches never ran there; here a stand-in backend reports chosen
-# free-memory sizes, and stand-in builds throw the errors the backends throw
-# (Metal: Base.OutOfMemoryError; CUDA: OutOfGPUMemoryError, "Out of GPU
-# memory ..."). The real backend's free-memory hook is called too, so an
+# free-memory sizes. The real backend's free-memory hook is called too, so an
 # extension calling a function its package does not have fails here, not on a
 # cluster job. That the result does not depend on the chunk is gated elsewhere
 # (ka_device_cache_correctness.jl runs a 64-column chunk).
@@ -60,43 +57,6 @@ let free = FM._device_free_bytes(DEV_BACKEND),
     got = ext._ka_auto_m2l_chunk(DEV_BACKEND, TF, BASIS)
     check("$DEV_NAME free-memory query", free isa Integer && free > 0, "free=$(free)")
     check("$DEV_NAME auto chunk in range", MIN <= got <= cap && ispow2(got), "got $got, cap $cap")
-end
-
-#------- out-of-memory retry -------#
-
-# throws `err` above `limit` columns, else returns the chunk it was given
-oom_above(limit, err) = chunk -> (chunk > limit ? throw(err) : chunk)
-
-check("Metal OutOfMemoryError -> halved to fit",
-    ext._ka_with_chunk_halving(oom_above(1 << 14, OutOfMemoryError()), 1 << 17) == 1 << 14)
-check("CUDA 'Out of GPU memory' -> halved to fit",
-    ext._ka_with_chunk_halving(oom_above(1 << 13,
-        ErrorException("Out of GPU memory trying to allocate 1.2 GiB")), 1 << 17) == 1 << 13)
-check("fits at once -> unchanged",
-    ext._ka_with_chunk_halving(oom_above(1 << 17, OutOfMemoryError()), 1 << 17) == 1 << 17)
-
-# a real device allocation inside the build: the retry returns a usable plan-sized array
-let a = ext._ka_with_chunk_halving(c -> (c > 1 << 12 && throw(OutOfMemoryError());
-            KernelAbstractions.zeros(DEV_BACKEND, TF, FM.degree_major_dof(P), c)), 1 << 15)
-    check("retry hands back the smaller device build", size(a, 2) == 1 << 12, "size $(size(a))")
-end
-
-# errors that must not be retried
-function throws(f, T)
-    try
-        f(); return false
-    catch err
-        return err isa T
-    end
-end
-check("non-memory error propagates at once",
-    throws(() -> ext._ka_with_chunk_halving(c -> throw(ArgumentError("bad")), 1 << 17), ArgumentError))
-check("still out of memory at the floor -> propagates",
-    throws(() -> ext._ka_with_chunk_halving(oom_above(0, OutOfMemoryError()), 1 << 17), OutOfMemoryError))
-let calls = Int[]
-    ext._ka_with_chunk_halving(c -> (push!(calls, c); c > MIN ? throw(OutOfMemoryError()) : c), 1 << 15)
-    check("halves one step at a time to the floor", calls == [1 << 15, 1 << 14, 1 << 13, 1 << 12],
-        "calls=$calls")
 end
 
 println("\nauto M2L chunk: $(npass[])/$(ntot[]) pass")

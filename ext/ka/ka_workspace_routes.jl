@@ -42,23 +42,8 @@ function ka_radix_cache_workspace(backend, ::Type{TF},
             slim_m2l=true)
     end
     m2l_strategy.chunk == 0 || return build(m2l_strategy.chunk)
-    # automatic: sized from free device memory, halved if the build still runs out
-    return _ka_with_chunk_halving(build, _ka_auto_m2l_chunk(backend, TF, basis_info))
-end
-
-# `build(chunk)`, halving `chunk` on an out-of-memory error down to
-# `_KA_MIN_M2L_CHUNK` (then the error propagates); other errors propagate at once.
-function _ka_with_chunk_halving(build, chunk::Integer)
-    while true
-        try
-            return build(chunk)
-        catch err
-            (chunk > _KA_MIN_M2L_CHUNK && _ka_is_oom(err)) || rethrow()
-            chunk ÷= 2
-            GC.gc()
-            @warn "radix cache: out of device memory; retrying with M2L chunk $chunk" maxlog = 4
-        end
-    end
+    # automatic: sized from free device memory
+    return build(_ka_auto_m2l_chunk(backend, TF, basis_info))
 end
 
 # Automatic concat-M2L chunk (`ConcatenatedFixedZM2L(0)`): the largest power of
@@ -84,7 +69,3 @@ function _ka_auto_m2l_chunk(backend, ::Type{TF}, basis_info) where TF
     end
     return chunk
 end
-
-_ka_is_oom(err) = err isa OutOfMemoryError ||
-    occursin(r"out of (gpu )?memory|insufficient memory|failed to allocate"i,
-        sprint(showerror, err))

@@ -114,8 +114,8 @@ lifetime; a body that leaves it makes the next step throw, by contract, and
   lets the cache pick a device-capable default for both.) Its `chunk` (route
   columns per M2L apply, about 3 KB of scratch each at P = 6, Float32) defaults
   to `0`, automatic: the largest power of two whose scratch fits a tenth of the
-  free device memory, up to `2^17` (`2^15` on Metal), halved on an
-  out-of-memory error. Free memory is read through the CUDA, AMDGPU and Metal
+  free device memory, up to `2^17` (`2^15` on Metal). Free memory is read
+  through the CUDA, AMDGPU and Metal
   package extensions; other backends take the cap. Chunking is exact.
 
 A regularized vortex kernel also sets the core-size rule the cache enforces at

@@ -1284,8 +1284,7 @@ Chunked whole-pass M2L strategy with fixed-m z-translation factors. `chunk` is
 the route columns per apply; `0` (default) chooses at build time: on a device,
 the largest power of two whose scratch fits a tenth of the free device memory
 (when the backend's package reports it: CUDA, AMDGPU, Metal), capped at `2^15`
-on Metal and `2^17` on every other GPU backend; on the host, `2^17`. A device
-build that still runs out of memory retries with half the chunk.
+on Metal and `2^17` on every other GPU backend; on the host, `2^17`.
 """
 struct ConcatenatedFixedZM2L <: AbstractResidentM2LStrategy
     chunk::Int
