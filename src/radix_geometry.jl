@@ -1,0 +1,394 @@
+#------- radix geometry policy: box, depth and near stencil, chosen and kept current -------#
+#
+# Moved from FLOWVPM (src/FLOWVPM_fmm_radix.jl, 2026-10-03) so the decisions about
+# what the uniform grid can admit live next to the grid. A consumer describes its
+# field with `radix_geometry_source` and holds an `AbstractRadixGeometry`; the uniform
+# radix grid's rule is `AutoUniformGeometry`. Another method (an adaptive tree) would
+# be another policy behind the same calls.
+
+"""
+    AbstractRadixGeometry
+
+How a radix cache's box, depth `ell` and leaf near radius `q` are chosen
+([`radix_choose_geometry`](@ref)) and when the live field has outgrown them
+([`radix_depth_outgrown!`](@ref), [`radix_sigma_outgrown!`](@ref)).
+"""
+abstract type AbstractRadixGeometry end
+
+"Default memory cap on the auto depth: the dense per-level node table is 8^ell Int32 entries (~64 MB at 8)."
+const RADIX_AUTO_MAX_ELL = 8
+
+"""
+    AutoUniformGeometry(; reach, near_radius2=6, accuracy_margin=1.03, ell=nothing,
+                        padding=0.1, rectangular=false, bounds=nothing,
+                        rebuild_growth=1.5, max_ell=RADIX_AUTO_MAX_ELL)
+
+The uniform radix grid's rule. `reach` is the direct kernel's primary reach in
+units of the core ([`radix_primary_reach`](@ref)); `near_radius2` is the floor on
+the leaf near radius; `ell` fixes the depth (a promise: never rebuilt); `bounds`
+fixes the box (a promise: never recentered); otherwise the box is derived from the
+field, padded by `padding` of its tight extent per face.
+"""
+Base.@kwdef struct AutoUniformGeometry <: AbstractRadixGeometry
+    reach::Float64
+    near_radius2::Int = 6
+    accuracy_margin::Float64 = 1.03
+    ell::Union{Nothing,Int} = nothing
+    padding::Float64 = 0.1
+    rectangular::Bool = false
+    bounds::Union{Nothing,Tuple} = nothing
+    rebuild_growth::Float64 = 1.5
+    max_ell::Int = RADIX_AUTO_MAX_ELL
+end
+
+"""
+    radix_primary_reach(kernel) -> Float64
+
+The direct kernel's regularization reach in units of the core: `rho_t`, or
+`rho_c` for the two-pass kernel.
+"""
+radix_primary_reach(kernel) = Float64(kernel.rho_t)
+radix_primary_reach(kernel::TwoPassVortex) = Float64(kernel.rho_c)
+
+"""
+    radix_geometry_source(system) -> (; P, x_rows, core_row, n)
+
+What the geometry rule reads from a field: the matrix `P` holding one body per
+column (host or device), the (contiguous) range of the three coordinate rows, the row of the core
+size, and the live count `n`. Defined by the consumer for its system type.
+"""
+radix_geometry_source(system) = throw(ArgumentError(
+    "radix_geometry_source is not defined for $(typeof(system)); a consumer of the radix geometry rule must define it"))
+
+_geom_row_extrema(src, row::Int) = _device_row_extrema(src.P, row, src.n)
+_geom_core_max(src) = _geom_row_extrema(src, src.core_row)[2]
+
+"""
+    radix_derive_bounds(src, padding; rectangular=false) -> (x_min::SVector{3}, box_size)
+
+Domain bounds covering the live bodies, padded by `padding` of the tight
+extent on each face (the `recenter!` convention). Cubic mode (the default)
+returns a scalar `box_size` from the maximum tight span; rectangular mode
+keeps per-axis tight extents and returns a 3-vector `box_size`,
+each axis padded by the same per-face convention
+(`L_a = (1 + 2*padding)*ext_a`, centered). In both modes degenerate extents
+are inflated to `4*sigma_max` (per axis in rectangular mode) so a
+near-singleton field still yields a valid box.
+"""
+function radix_derive_bounds(src, padding::Real; rectangular::Bool=false)
+    lo1, hi1 = _geom_row_extrema(src, src.x_rows[1])
+    lo2, hi2 = _geom_row_extrema(src, src.x_rows[2])
+    lo3, hi3 = _geom_row_extrema(src, src.x_rows[3])
+    cx = (lo1 + hi1) / 2
+    cy = (lo2 + hi2) / 2
+    cz = (lo3 + hi3) / 2
+    floor4s = 4 * _geom_core_max(src)
+    if !rectangular
+        span = max(hi1 - lo1, hi2 - lo2, hi3 - lo3)
+        L_tight = max(span, floor4s)
+        L_tight > 0 || error("cannot derive radix FMM bounds: degenerate particle field")
+        L = (1 + 2 * padding) * L_tight
+        x_min = SVector{3,Float64}(cx - L / 2, cy - L / 2, cz - L / 2)
+        return (x_min, Float64(L))
+    end
+    ex = max(hi1 - lo1, floor4s)
+    ey = max(hi2 - lo2, floor4s)
+    ez = max(hi3 - lo3, floor4s)
+    (ex > 0 && ey > 0 && ez > 0) ||
+        error("cannot derive radix FMM bounds: degenerate particle field")
+    Lx = (1 + 2 * padding) * ex
+    Ly = (1 + 2 * padding) * ey
+    Lz = (1 + 2 * padding) * ez
+    x_min = SVector{3,Float64}(cx - Lx / 2, cy - Ly / 2, cz - Lz / 2)
+    return (x_min, SVector{3,Float64}(Lx, Ly, Lz))
+end
+
+"""
+    radix_center_snapped_bounds(bounds, ell) -> (x_min, box_extent)
+
+Center the power-of-two rectangular embedding around the center of
+automatically derived tight bounds. The longest extent and leaf
+width are unchanged; shorter extents are padded symmetrically to whole
+power-of-two leaf-cell counts. Explicit user bounds do not use this helper and
+therefore retain their caller-owned `x_min` anchor.
+"""
+function radix_center_snapped_bounds(bounds, ell::Integer)
+    x_min = SVector{3,Float64}(bounds[1])
+    L = SVector{3,Float64}(bounds[2])
+    delta = maximum(L) / (1 << Int(ell))
+    function snapped_axis(a)
+        la = clamp(ceil(Int, log2(L[a] / delta)), 0, Int(ell))
+        while la < ell && delta * (1 << la) < L[a]
+            la += 1
+        end
+        return delta * (1 << la)
+    end
+    snapped = SVector{3,Float64}(
+        snapped_axis(1), snapped_axis(2), snapped_axis(3))
+    center = x_min + L / 2
+    return (center - snapped / 2, snapped)
+end
+
+"""
+    radix_occupancy_sums(src, bounds, ell_top) -> Dict{Int,Tuple{Int,Float64}}
+
+For every level `2:ell_top`, the number of OCCUPIED cells and the sum over
+cells of (bodies in the cell)^2, from one host sort of the bodies' Morton
+keys at `ell_top` (a level-`ell` key is the finest key shifted by
+`3*(ell_top - ell)`). The squared sum is the expected number of near-field
+pairs per stencil offset; with the stencil size it ranks admissible depths by
+the near-field work they cost, which is the term that dominates the device
+step. O(np log np) once per rebuild, on the host.
+"""
+function radix_occupancy_sums(src, bounds, ell_top::Int)
+    np = src.n
+    out = Dict{Int,Tuple{Int,Float64}}()
+    np == 0 && return out
+    x_min, L = bounds
+    n = 1 << ell_top
+    hx, hy, hz = L isa Real ? (L / n, L / n, L / n) : (L[1] / n, L[2] / n, L[3] / n)
+    # one host copy: a device-backed field must not be indexed elementwise
+    X = Array(view(src.P, src.x_rows, 1:np))
+    keys = Vector{UInt64}(undef, np)
+    @inbounds for i in 1:np
+        ix = clamp(floor(Int, (X[1, i] - x_min[1]) / hx), 0, n - 1)
+        iy = clamp(floor(Int, (X[2, i] - x_min[2]) / hy), 0, n - 1)
+        iz = clamp(floor(Int, (X[3, i] - x_min[3]) / hz), 0, n - 1)
+        keys[i] = UInt64(morton_key(SVector{3,Int}(ix, iy, iz), ell_top))
+    end
+    sort!(keys)
+    for ell in 2:ell_top
+        sh = 3 * (ell_top - ell)
+        n_occ = 0; sumsq = 0.0
+        run = 1
+        @inbounds for i in 2:np
+            if (keys[i] >> sh) == (keys[i - 1] >> sh)
+                run += 1
+            else
+                n_occ += 1; sumsq += Float64(run)^2; run = 1
+            end
+        end
+        n_occ += 1; sumsq += Float64(run)^2
+        out[ell] = (n_occ, sumsq)
+    end
+    return out
+end
+
+# integer offsets within a rigid stencil of squared radius q
+radix_stencil_size(q::Int) = (r = isqrt(q); count(ox * ox + oy * oy + oz * oz <= q
+    for ox in -r:r, oy in -r:r, oz in -r:r))
+
+"""
+    radix_auto_geometry(L, sigma_max, np, q_floor, rho_t, margin;
+                        ell_fixed=nothing, occupancy=nothing, max_ell=RADIX_AUTO_MAX_ELL) -> (ell, q)
+
+Joint depth/leaf-radius rule. Every depth `ell` for which some supported leaf
+near radius `q >= q_floor` satisfies the margin-guarded inequality
+`g_min(q) * h_leaf >= margin * rho_t * sigma_max` (`h_leaf = L / 2^ell`) is
+admissible, with the smallest passing `q` at that depth; the cap is only the
+memory bound `max_ell`. Among them: with occupancy counts, the fewest expected
+near-field pairs (stencil size times the sum of squared cell occupancies);
+without, the deepest. The margin buys regularization-deficit accuracy headroom
+over the bare adequacy gate (`margin = 1` reproduces adequacy-only selection).
+Errors loudly when no depth `>= 2` is admissible.
+"""
+function radix_auto_geometry(L::Real, sigma_max::Real, np::Int, q_floor::Int,
+                             rho_t::Real, margin::Real; ell_fixed=nothing,
+                             occupancy=nothing, max_ell::Int=RADIX_AUTO_MAX_ELL)
+    reach = margin * rho_t * sigma_max
+    qs = sort!([Int(q) for q in _SUPPORTED_RIGID_NEAR_RADII2 if q >= q_floor])
+    isempty(qs) && error("near_radius2=$q_floor exceeds every supported rigid " *
+        "near radius $(_SUPPORTED_RIGID_NEAR_RADII2)")
+    gaps = Dict(q => _ball_stencil_min_gap(q) for q in qs)
+    # The only cap is memory: the dense per-level node table is 8^ell Int32
+    # entries (~64 MB at 8). An occupancy heuristic of ~n^(1/3) cells per
+    # side used to sit here; it assumes a uniformly filled box, and a wake is
+    # a thin structure in a mostly empty one. Checked against an exact sum
+    # (LiftingLines test/gpu/al_depth_rule.jl, 2026-09-19): sixteen rotors at 363k
+    # particles are at 1.3e-4..1.6e-4 for every depth 2..8, four rotors at
+    # 4.6e-5..6.3e-5 for 2..6, Metal 1e-5 for 2..4 -- no degradation with
+    # depth -- and the deepest is the fastest (16 rotors: 73 ms at 8 vs 171
+    # at the cap's 6). Which admissible depth is used is decided below by
+    # the near-pair count, not by "deepest".
+    ell_top = max_ell
+    # a fixed `ell` still takes the smallest adequate stencil at that depth
+    # (near_radius2 is a floor on the auto path too)
+    ells = ell_fixed === nothing ? (ell_top:-1:2) : (Int(ell_fixed):Int(ell_fixed))
+    # every admissible depth, with the smallest near set that satisfies it
+    admissible = Tuple{Int,Int}[]
+    for ell in ells
+        h = L / 2^ell
+        for q in qs
+            if gaps[q] * h >= reach
+                push!(admissible, (ell, q))
+                break
+            end
+        end
+    end
+    if !isempty(admissible)
+        # Without occupancy counts: deepest admissible. With them: the
+        # admissible (ell, q) with the fewest expected near-field pairs,
+        # stencil size times the sum of squared cell occupancies. That is
+        # the term that dominates the device step (M2L is a few percent), and
+        # it is what "deepest admissible" gets wrong when the smallest
+        # adequate stencil at the deepest level is wide: the NREL 5MW spent
+        # an epoch at 8 s/step, four times its other epochs, on such a pick.
+        # Exact counts, no calibration.
+        occupancy === nothing && return first(admissible)
+        best = first(admissible); best_cost = Inf
+        for (ell, q) in admissible
+            haskey(occupancy, ell) || continue
+            c = radix_stencil_size(q) * occupancy[ell][2]
+            if c < best_cost
+                best_cost = c; best = (ell, q)
+            end
+        end
+        return best
+    end
+    error("no admissible radix depth (need ell >= 2): the margin-guarded " *
+        "near-set inequality requires g_min(q)*L/2^ell >= " *
+        "margin*rho_t*sigma_max = $reach, but even ell = 2 with the largest " *
+        "supported q >= $q_floor gives $(maximum(gaps[q] for q in qs) * L / 4). " *
+        "Reduce the smoothing overlap, enlarge the domain box, or use more " *
+        "particles.")
+end
+
+_geom_L(bounds) = bounds[2] isa Real ? Float64(bounds[2]) : Float64(maximum(bounds[2]))
+
+"""
+    radix_choose_geometry(g::AutoUniformGeometry, src; verbose=false) -> (bounds, ell, q)
+
+The box, depth and leaf near radius a cache built now should have: the fixed or
+derived bounds, then [`radix_auto_geometry`](@ref) on the field's largest core
+and occupancy; an auto rectangular box is center-snapped to the chosen depth.
+"""
+function radix_choose_geometry(g::AutoUniformGeometry, src; verbose::Bool=false)
+    bounds = g.bounds === nothing ?
+        radix_derive_bounds(src, g.padding; rectangular=g.rectangular) : g.bounds
+    sigma_max = Float64(_geom_core_max(src))
+    # The auto-geometry rule is shape-independent: L = max extent
+    # drives ell and q via sigma-adequacy exactly as in cubic mode, so the leaf
+    # width L/2^ell is identical — rectangularity only trims per-axis counts.
+    L_geo = _geom_L(bounds)
+    occupancy = radix_occupancy_sums(src, bounds, g.max_ell)
+    ell, q = radix_auto_geometry(L_geo, sigma_max, src.n, g.near_radius2,
+        g.reach, g.accuracy_margin; ell_fixed = g.ell, occupancy, max_ell = g.max_ell)
+    if verbose
+        # one line per (re)build: what the depth rule saw and what it chose
+        occ = join((string(l, ":", occupancy[l][1], "/", round(Int, occupancy[l][2]))
+                    for l in sort!(collect(keys(occupancy)))), " ")
+        println("radix build: np=$(src.n) L=$(round(L_geo; sigdigits=4)) sigma_max=$(round(sigma_max; sigdigits=4)) -> ell=$ell q=$q  [ell:cells/sum_sq  $occ]")
+        flush(stdout)
+    end
+    if g.bounds === nothing && g.rectangular
+        bounds = radix_center_snapped_bounds(bounds, ell)
+    end
+    return bounds, ell, q
+end
+
+"""
+    radix_recenter_bounds(g::AutoUniformGeometry, src, ell) -> bounds
+
+The bounds a cache of depth `ell` recenters to when the field leaves its box
+(derived, padded, center-snapped when rectangular).
+"""
+function radix_recenter_bounds(g::AutoUniformGeometry, src, ell::Integer)
+    bounds = radix_derive_bounds(src, g.padding; rectangular=g.rectangular)
+    g.rectangular && (bounds = radix_center_snapped_bounds(bounds, ell))
+    return bounds
+end
+
+"""
+    radix_sigma_limit(g::AutoUniformGeometry, cache) -> Float64
+
+Largest `sigma_max` the cached grid can serve. FastMultipole's runtime adequacy
+gate refuses to evaluate when `g_min*h_leaf <= rho_reach*sigma_max`; cores grow
+between builds, so a geometry picked with headroom at build time can become
+inadmissible mid-run. The limit divides out the SAME `accuracy_margin` the auto
+rule applies at build, so a rebuild triggers while the bare gate still holds.
+`Inf` for a zero-M2L degenerate cache (the gate is vacuous there).
+"""
+function radix_sigma_limit(g::AutoUniformGeometry, cache)
+    isempty(cache.accepted_offsets) && return Inf
+    g_min = _leaf_stencil_min_gap(cache)
+    h_leaf = 2 * Float64(cache.h0) / (1 << cache.ell)
+    return g_min * h_leaf / (Float64(g.accuracy_margin) * Float64(g.reach))
+end
+
+"""
+    radix_depth_outgrown!(g::AutoUniformGeometry, src, cache, q_cached, np_checked, evals;
+                          verbose=false) -> Bool
+
+`true` when the auto rule at the CURRENT count, bounds and cores would pick a
+different `(ell, q)` than the cached ones, so the caller rebuilds. A fixed `ell`
+is a promise and is never outgrown. Checked when the count has grown by
+`rebuild_growth` since the last check (`np_checked`, a `Ref`) or after 60
+evaluations (`evals`, a `Ref`): a convecting wake's box grows without the count
+doubling. If no admissible geometry exists at the grown shape the cache is kept.
+"""
+function radix_depth_outgrown!(g::AutoUniformGeometry, src, cache, q_cached,
+                               np_checked, evals; verbose::Bool=false)
+    g.ell === nothing || return false
+    np = src.n
+    # Two triggers: the count has grown by `rebuild_growth`, or 60 evaluations
+    # (~10 RK3 steps) have passed -- the box of a convecting wake grows without
+    # the count doubling (NREL 5MW: L 1417 -> 1840 m between 531k and 705k, the
+    # 705k geometry one level deeper and 25% faster; 2026-09-21). The check
+    # itself costs ~0.02 s and rebuilds only when (ell, q) would change.
+    evals[] += 1
+    (np > g.rebuild_growth * np_checked[] || evals[] >= 60) || return false
+    evals[] = 0
+    np_checked[] = np
+    t0 = time()
+    verbose && (println("radix depth check: np=$np (cached ell=$(cache.ell)) ..."); flush(stdout))
+    # The admissible depth grows with the box (a wake convects), so the
+    # geometry is re-derived whenever the count has grown by rebuild_growth.
+    bounds = g.bounds === nothing ?
+        radix_derive_bounds(src, g.padding; rectangular=g.rectangular) : g.bounds
+    sigma_max = Float64(_geom_core_max(src))
+    L_geo = _geom_L(bounds)
+    t1 = time()
+    occupancy = radix_occupancy_sums(src, bounds, g.max_ell)
+    t2 = time()
+    ell, q = try
+        radix_auto_geometry(L_geo, sigma_max, np, g.near_radius2, g.reach,
+            g.accuracy_margin; occupancy, max_ell = g.max_ell)
+    catch
+        verbose && (println("radix depth check: no admissible geometry, cache kept ($(round(time() - t0; digits=2)) s)"); flush(stdout))
+        return false
+    end
+    verbose && (println("radix depth check: L=$(round(L_geo; sigdigits=4)) sigma_max=$(round(sigma_max; sigdigits=4)) -> ell=$ell (bounds+sigma $(round(t1 - t0; digits=2)) s, occupancy $(round(t2 - t1; digits=2)) s, total $(round(time() - t0; digits=2)) s)"); flush(stdout))
+    # The cheapest geometry can move either way as the wake spreads, and the
+    # stencil radius matters as much as the depth: a box that grew 1.8x at the
+    # same depth kept a q sized for the old, smaller cells (NREL 5MW, 2026-09-21).
+    # Compare both.
+    return ell != cache.ell || q != q_cached
+end
+
+"""
+    radix_sigma_outgrown!(g::AutoUniformGeometry, src, cache; verbose=false) -> Bool
+
+Companion to [`radix_depth_outgrown!`](@ref) in the opposite direction: `true`
+when the LIVE largest core exceeds the cached geometry's admissible limit
+([`radix_sigma_limit`](@ref)) and an admissible geometry exists at the grown
+core, so the caller rebuilds (shallower `ell` and/or a larger near set). Checked
+every call (one O(n) device row reduction). A fixed `ell` is never rebuilt
+(the runtime gate's error propagates).
+"""
+function radix_sigma_outgrown!(g::AutoUniformGeometry, src, cache; verbose::Bool=false)
+    g.ell === nothing || return false
+    sigma_max = Float64(_geom_core_max(src))
+    # the live limit: `recenter!` changes the cache's box (and so its limit)
+    limit = radix_sigma_limit(g, cache)
+    sigma_max > limit || return false
+    verbose && (println("radix sigma outgrown: np=$(src.n) sigma_max=$(round(sigma_max; sigdigits=4)) > limit $(round(limit; sigdigits=4))"); flush(stdout))
+    bounds = g.bounds === nothing ?
+        radix_derive_bounds(src, g.padding; rectangular=g.rectangular) : g.bounds
+    try
+        radix_auto_geometry(_geom_L(bounds), sigma_max, src.n, g.near_radius2,
+            g.reach, g.accuracy_margin; max_ell = g.max_ell)
+    catch
+        return false
+    end
+    return true
+end
