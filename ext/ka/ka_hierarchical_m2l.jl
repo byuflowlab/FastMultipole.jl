@@ -61,8 +61,8 @@ end
         cz = node_coords[3, target] - push_offsets[3, k]
         linear = cx + G * (cy + G * cz)
         p = Int(prefix[base + idx])
-        win_targets[p] = target
-        win_sources[p] = Int(node_at[level_base_L + linear + 1])
+        win_targets[p] = Int32(target)
+        win_sources[p] = node_at[level_base_L + linear + 1]
         win_class[p] = Int32(class_base + k)
     end
 end

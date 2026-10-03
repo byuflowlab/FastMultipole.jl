@@ -439,8 +439,9 @@ function _ka_hier_win_ensure!(hctx, backend, needed::Int)
     needed <= cap && return nothing
     newcap = max(needed, cap + cld(cap, 2), 1024)
     new_class = KA.allocate(backend, Int32, newcap)
-    new_sources = KA.allocate(backend, Int, newcap)
-    new_targets = KA.allocate(backend, Int, newcap)
+    # node indices fit Int32; Int64 doubled the largest arrays of the cache
+    new_sources = KA.allocate(backend, Int32, newcap)
+    new_targets = KA.allocate(backend, Int32, newcap)
     hctx.win_class = new_class
     hctx.win_sources = new_sources
     hctx.win_targets = new_targets
@@ -461,17 +462,13 @@ end
 """
     ka_hier_cache_windows!(hctx, grid; workgroup=KA_AUTO_WORKGROUP)
 
-Regenerate the complete per-level window concatenation for the current
-occupancy epoch, in the same (level, offset-class window, class, source) order
-as the host `build_hierarchical_routes_window!`. Runs inside the refresh, which
-is legal because windows read node metadata only, never expansions.
-
-Within a level the windows split the offset range `1:noffsets` into
-consecutive blocks of `window_classes`, and each window enumerates
-(offset, source) offset-major, so the windows of one level concatenated are
-exactly one offset-major enumeration over `1:noffsets`: one flag launch and one
-compact launch per level generate the stream, and only the route total is read
-back.
+Regenerate the complete route stream for the current occupancy epoch: level
+by level, and within a level target by target (offset classes ascending), so a
+target's routes are adjacent for the M2L scatter's fixed-order sum. The route
+set is the host `build_hierarchical_routes_window!`'s. Runs inside the refresh,
+which is legal because the routes read node metadata only, never expansions.
+One flag launch and one compact launch per level generate the stream, and only
+the route total is read back.
 """
 function ka_hier_cache_windows!(hctx::FastMultipole.DeviceHierarchicalM2LContext,
         grid; workgroup=KA_AUTO_WORKGROUP)
