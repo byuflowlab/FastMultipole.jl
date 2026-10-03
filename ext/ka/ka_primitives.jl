@@ -389,12 +389,14 @@ end
 # The first `rows * n` entries of `buf` as a contiguous rows x n matrix (a plain
 # device array on Metal and CUDA): lets channels of different widths share one
 # stacked-y scratch buffer.
-# The preserve is needed: without it the temporary `vec(buf)` can be finalized
-# (its reference marked freed) before `reshape` copies it, an intermittent
+# `vec` and a contiguous GPUArrays `view` each return a derived array with its own
+# finalizer; unpreserved, either temporary can be finalized (its reference marked
+# freed) inside the next `reshape` before that copies it, an intermittent
 # "Attempt to copy a freed reference" on Metal.
 function _ka_slab(buf, rows::Integer, n::Integer)
     v = vec(buf)
-    return GC.@preserve v reshape(view(v, 1:(rows * n)), rows, n)
+    w = view(v, 1:(rows * n))
+    return GC.@preserve v w reshape(w, rows, n)
 end
 
 # C, S = cos/sin(nu * theta') as slabs (ndof x n); `theta` is the plain vector.

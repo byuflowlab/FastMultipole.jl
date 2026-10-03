@@ -43,7 +43,12 @@ function ka_radix_cache_workspace(backend, ::Type{TF},
     end
     m2l_strategy.chunk == 0 || return build(m2l_strategy.chunk)
     # automatic: sized from free device memory, halved if the build still runs out
-    chunk = _ka_auto_m2l_chunk(backend, TF, basis_info)
+    return _ka_with_chunk_halving(build, _ka_auto_m2l_chunk(backend, TF, basis_info))
+end
+
+# `build(chunk)`, halving `chunk` on an out-of-memory error down to
+# `_KA_MIN_M2L_CHUNK` (then the error propagates); other errors propagate at once.
+function _ka_with_chunk_halving(build, chunk::Integer)
     while true
         try
             return build(chunk)
