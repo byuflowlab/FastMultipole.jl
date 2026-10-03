@@ -1277,14 +1277,29 @@ end
 # z-translation separates as K_m(r)[n,np] = r^-(n+1/2) * (n+np)! * r^-(np+1/2), so a
 # per-column diagonal scaling before and after fixed factorial GEMMs replaces the
 # per-radius block matrices. Kernel-launch count scales with chunks, not groups.
-"Chunked whole-pass M2L strategy with fixed-m z-translation factors."
+"""
+    ConcatenatedFixedZM2L(chunk=0)
+
+Chunked whole-pass M2L strategy with fixed-m z-translation factors. `chunk` is
+the route columns per apply; `0` (default) chooses at build time: on a device,
+the largest power of two whose scratch fits a tenth of the free device memory
+(when the backend's package reports it: CUDA, AMDGPU, Metal), capped at `2^15`
+on Metal and `2^17` on every other GPU backend; on the host, `2^17`. A device
+build that still runs out of memory retries with half the chunk.
+"""
 struct ConcatenatedFixedZM2L <: AbstractResidentM2LStrategy
     chunk::Int
-    function ConcatenatedFixedZM2L(chunk::Integer=1 << 17)
-        chunk > 0 || throw(ArgumentError("ConcatenatedFixedZM2L chunk must be positive"))
+    function ConcatenatedFixedZM2L(chunk::Integer=0)
+        chunk >= 0 || throw(ArgumentError(
+            "ConcatenatedFixedZM2L chunk must be nonnegative (0 = automatic)"))
         return new(Int(chunk))
     end
 end
+
+# Free memory on a device backend, in bytes, or `nothing` when unknown. The
+# CUDA, AMDGPU and Metal package extensions add methods (oneAPI's Level Zero
+# reports no free memory); used to size the automatic concat-M2L chunk.
+_device_free_bytes(backend) = nothing
 
 """
     PrecomputedFactoredYM2L()

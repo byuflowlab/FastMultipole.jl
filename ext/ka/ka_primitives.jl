@@ -343,6 +343,60 @@ function ka_scale_inplace!(Y, Sc)
     return Y
 end
 
+# Per-class-table forms of the combine and scale kernels (concat M2L): the
+# trig factors are read from the class tables by column class instead of from
+# per-column slabs, so the device plan holds no trig slabs.
+@kernel function ka_stacked_combine_tab_kernel!(G2, @Const(G), @Const(TC), @Const(TS), @Const(cls), nd::Int32)
+    i = @index(Global)
+    @inbounds if i <= length(G2)
+        i32 = Int32(i) - Int32(1); nr = nd + nd
+        row = i32 % nr + Int32(1)
+        col = i32 ÷ nr + Int32(1)
+        cl = cls[col]
+        if row <= nd
+            G2[row, col] = TC[row, cl] * G[row, col] - TS[row, cl] * G[row + nd, col]
+        else
+            r = row - nd
+            G2[row, col] = TS[r, cl] * G[r, col] + TC[r, cl] * G[row, col]
+        end
+    end
+end
+
+@kernel function ka_scale_tab_kernel!(Y, @Const(TSc), @Const(cls))
+    i = @index(Global)
+    @inbounds if i <= length(Y)
+        i32 = Int32(i) - Int32(1); nr = Int32(size(Y, 1))
+        row = i32 % nr + Int32(1)
+        col = i32 ÷ nr + Int32(1)
+        Y[row, col] *= TSc[row, cls[col]]
+    end
+end
+
+function ka_scale_tab!(Y, (_, _, TSc), cls)
+    length(Y) == 0 && return Y
+    _cached_kernel(ka_scale_tab_kernel!, KA.get_backend(Y), 256)(Y, TSc, cls; ndrange=length(Y))
+    return Y
+end
+
+function ka_stacked_y_dense_tab!(out_slab, in_slab, Ur, Vs, (TC, TS, _), cls, G, G2, ndof::Integer)
+    mul!(G, Vs, in_slab)
+    kernel = _cached_kernel(ka_stacked_combine_tab_kernel!, KA.get_backend(G2), 256)
+    kernel(G2, G, TC, TS, cls, Int32(ndof); ndrange=length(G2))
+    mul!(out_slab, Ur, G2)
+    return out_slab
+end
+
+# The first `rows * n` entries of `buf` as a contiguous rows x n matrix (a plain
+# device array on Metal and CUDA): lets channels of different widths share one
+# stacked-y scratch buffer.
+# The preserve is needed: without it the temporary `vec(buf)` can be finalized
+# (its reference marked freed) before `reshape` copies it, an intermittent
+# "Attempt to copy a freed reference" on Metal.
+function _ka_slab(buf, rows::Integer, n::Integer)
+    v = vec(buf)
+    return GC.@preserve v reshape(view(v, 1:(rows * n)), rows, n)
+end
+
 # C, S = cos/sin(nu * theta') as slabs (ndof x n); `theta` is the plain vector.
 function ka_trig_fill!(C, S, nu, theta)
     kernel = _cached_kernel(ka_trig_fill_kernel!, KA.get_backend(C), 256)
@@ -854,20 +908,6 @@ end
     end
 end
 
-@kernel function ka_gather_class_cols3_kernel!(C, S, Sc, @Const(TC), @Const(TS), @Const(TSc), @Const(cls))
-    i = @index(Global)
-    nrow = size(C, 1)
-    @inbounds if i <= length(C)
-        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
-        row = i32 % nrow32 + Int32(1)
-        col = i32 ÷ nrow32 + Int32(1)
-        c = cls[col]
-        C[row, col] = TC[row, c]
-        S[row, col] = TS[row, c]
-        Sc[row, col] = TSc[row, c]
-    end
-end
-
 @kernel function ka_gather_rotate_z_tab_kernel!(dst, @Const(src), @Const(flat_idx), @Const(cols),
         @Const(RC), @Const(RS), @Const(row_ssign), @Const(row_pair), @Const(cls), sgn)
     i = @index(Global)
@@ -916,14 +956,6 @@ function _ka_m2l_tables(plan, ws, LH::Bool)
                       rot=_ka_rot_table(backend, TF, ws.maps_chi.row_m, plan.phis)) : nothing
         (; phi, chi)
     end
-end
-
-function ka_gather_class_cols3!(C, S, Sc, (TC, TS, TSc), cls; workgroup=KA_AUTO_WORKGROUP)
-    length(C) == 0 && return C
-    backend = KA.get_backend(C)
-    _cached_kernel(ka_gather_class_cols3_kernel!, backend, workgroup)(C, S, Sc, TC, TS, TSc, cls;
-        ndrange=length(C))
-    return C
 end
 
 function ka_gather_rotate_z_tab!(dst, src, flat_idx, cols, (RC, RS), row_ssign, row_pair, cls, sgn;
@@ -976,62 +1008,62 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
         _utick!(:m2l_vals, backend)
         src_cols = @view route_sources[cols]
         tgt_cols = @view route_targets[cols]
+        # Slab reuse (a device plan is built `slim`): the trig factors come from
+        # the class tables, the stacked-y scratch G/G2 is one buffer shared by
+        # both channels, the output slab r reuses a (free once rotated) and the
+        # scatter's partial buffer is y (free once z is formed).
         aphi = @view plan.aphi[:, 1:n]; yphi = @view plan.yphi[:, 1:n]
-        zphi = @view plan.zphi[:, 1:n]; rphi = @view plan.rphi[:, 1:n]
+        zphi = @view plan.zphi[:, 1:n]; rphi = aphi
         ops_phi = plan.ops_phi
         ndof_phi = size(plan.aphi, 1)
-        Gphi = @view ops_phi.G[:, 1:n]; G2phi = @view ops_phi.G2[:, 1:n]
-        Cphi = @view ops_phi.Cy[:, 1:n]; Sphi = @view ops_phi.Sy[:, 1:n]
-        sphi = @view ops_phi.scale[:, 1:n]
-        ka_gather_class_cols3!(Cphi, Sphi, sphi, tabs.phi.trig, cls)
-        _utick!(:m2l_trig, backend)
+        Gphi = _ka_slab(ops_phi.G, 2 * ndof_phi, n); G2phi = _ka_slab(ops_phi.G2, 2 * ndof_phi, n)
         ka_gather_rotate_z_tab!(aphi, src.phi, ws.phi_flat_idx, src_cols, tabs.phi.rot,
             ws.maps_phi.row_ssign, ws.maps_phi.row_pair, cls, one(TF))
         _utick!(:m2l_gather, backend)
-        ka_stacked_y_dense!(yphi, aphi, ops_phi.yU_mult, ops_phi.yV_mult,
-            Cphi, Sphi, Gphi, G2phi, ndof_phi)
+        ka_stacked_y_dense_tab!(yphi, aphi, ops_phi.yU_mult, ops_phi.yV_mult,
+            tabs.phi.trig, cls, Gphi, G2phi, ndof_phi)
         _utick!(:m2l_y_in, backend)
-        ka_scale_inplace!(yphi, sphi)
+        ka_scale_tab!(yphi, tabs.phi.trig, cls)
         mul!(zphi, ops_phi.zD, yphi)
-        ka_scale_inplace!(zphi, sphi)
+        ka_scale_tab!(zphi, tabs.phi.trig, cls)
         _utick!(:m2l_zgemm, backend)
         ret_phi = zphi
 
         if LH
             ops_chi = plan.ops_chi
             ndof_chi = size(plan.achi, 1)
-            Gchi = @view ops_chi.G[:, 1:n]; G2chi = @view ops_chi.G2[:, 1:n]
-            Cchi = @view ops_chi.Cy[:, 1:n]; Schi = @view ops_chi.Sy[:, 1:n]
-            schi = @view ops_chi.scale[:, 1:n]
+            # the shared stacked-y buffer (a non-slim plan keeps the chi
+            # channel's own, which is always large enough)
+            gbuf = length(ops_phi.G) >= 2 * ndof_chi * n ? ops_phi : ops_chi
+            Gchi = _ka_slab(gbuf.G, 2 * ndof_chi, n); G2chi = _ka_slab(gbuf.G2, 2 * ndof_chi, n)
             achi = @view plan.achi[:, 1:n]; ychi = @view plan.ychi[:, 1:n]
-            zchi = @view plan.zchi[:, 1:n]; rchi = @view plan.rchi[:, 1:n]
+            zchi = @view plan.zchi[:, 1:n]; rchi = achi
             cphi = @view plan.cphi[:, 1:n]; cchi = @view plan.cchi[:, 1:n]
-            ka_gather_class_cols3!(Cchi, Schi, schi, tabs.chi.trig, cls)
             ka_gather_rotate_z_tab!(achi, src.chi, ws.chi_flat_idx, src_cols, tabs.chi.rot,
                 ws.maps_chi.row_ssign, ws.maps_chi.row_pair, cls, one(TF))
-            ka_stacked_y_dense!(ychi, achi, ops_chi.yU_mult, ops_chi.yV_mult,
-                Cchi, Schi, Gchi, G2chi, ndof_chi)
-            ka_scale_inplace!(ychi, schi)
+            ka_stacked_y_dense_tab!(ychi, achi, ops_chi.yU_mult, ops_chi.yV_mult,
+                tabs.chi.trig, cls, Gchi, G2chi, ndof_chi)
+            ka_scale_tab!(ychi, tabs.chi.trig, cls)
             mul!(zchi, ops_chi.zD, ychi)
-            ka_scale_inplace!(zchi, schi)
+            ka_scale_tab!(zchi, tabs.chi.trig, cls)
             ka_prefix_lh_mix!(cphi, cchi, zphi, zchi, plan.lh_arow_unit,
                 plan.lh_brow_unit, rs_col, ws.maps_phi.row_pair,
                 ws.maps_chi.row_up)
-            ka_stacked_y_dense!(rchi, cchi, ops_chi.yU_loc, ops_chi.yV_loc,
-                Cchi, Schi, Gchi, G2chi, ndof_chi)
+            ka_stacked_y_dense_tab!(rchi, cchi, ops_chi.yU_loc, ops_chi.yV_loc,
+                tabs.chi.trig, cls, Gchi, G2chi, ndof_chi)
             ka_rotate_z_scatter_accumulate!(dest.chi, rchi, ws.chi_flat_idx, tgt_cols,
                 ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis;
-                partial=achi, rot=(tabs.chi.rot, cls))   # achi is free once gathered and rotated
+                partial=ychi, rot=(tabs.chi.rot, cls))
             ret_phi = cphi
         end
         _utick!(:m2l_chi, backend)
 
-        ka_stacked_y_dense!(rphi, ret_phi, ops_phi.yU_loc, ops_phi.yV_loc,
-            Cphi, Sphi, Gphi, G2phi, ndof_phi)
+        ka_stacked_y_dense_tab!(rphi, ret_phi, ops_phi.yU_loc, ops_phi.yV_loc,
+            tabs.phi.trig, cls, Gphi, G2phi, ndof_phi)
         _utick!(:m2l_y_out, backend)
         ka_rotate_z_scatter_accumulate!(dest.phi, rphi, ws.phi_flat_idx, tgt_cols,
             ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis;
-            partial=aphi, rot=(tabs.phi.rot, cls))   # aphi is free once gathered and rotated
+            partial=yphi, rot=(tabs.phi.rot, cls))
         _utick!(:m2l_scatter, backend)
     end
     # No sync here: every kernel above is queue-ordered against the caller's

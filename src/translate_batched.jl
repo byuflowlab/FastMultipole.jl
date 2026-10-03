@@ -1286,7 +1286,8 @@ function _degree_row_nus(exemplar, ::Type{TF}, P::Integer) where TF
 end
 
 function ConcatChannelOps(exemplar, ::Type{TF}, invariant::OperatorInvariantCache,
-        P::Integer, chunk::Integer) where TF
+        P::Integer, chunk::Integer; trig_cols::Integer=chunk, g_rows::Integer=0,
+        g_cols::Integer=chunk) where TF
     source_scaled = _m2l_factorial_overflows(TF, P)
     yU_mult, yV_mult = _ymode_stacked_dense(exemplar, TF, invariant.y_mult_U,
         invariant.y_mult_V, P; row_factorial=source_scaled)
@@ -1296,11 +1297,11 @@ function ConcatChannelOps(exemplar, ::Type{TF}, invariant::OperatorInvariantCach
         yU_mult, yV_mult, yU_loc, yV_loc,
         _m2l_dense_factorial_matrix(exemplar, TF, P, source_scaled),
         _degree_row_nus(exemplar, TF, P),
-        similar(exemplar, TF, ndof, chunk),
-        similar(exemplar, TF, ndof, chunk),
-        similar(exemplar, TF, ndof, chunk),
-        similar(exemplar, TF, 2 * ndof, chunk),
-        similar(exemplar, TF, 2 * ndof, chunk),
+        similar(exemplar, TF, ndof, trig_cols),
+        similar(exemplar, TF, ndof, trig_cols),
+        similar(exemplar, TF, ndof, trig_cols),
+        similar(exemplar, TF, max(2 * ndof, g_rows), g_cols),
+        similar(exemplar, TF, max(2 * ndof, g_rows), g_cols),
     )
 end
 
@@ -2418,7 +2419,7 @@ function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, 
         strategy::ConcatenatedFixedZM2L, invariant::OperatorInvariantCache,
         accepted_offsets::AbstractVector{SVector{3,Int}}, cell_width::Real,
         route_capacity::Integer; whole_window::Bool=false,
-        route_class_capacity::Integer=route_capacity) where {TF,B,LH}
+        route_class_capacity::Integer=route_capacity, slim::Bool=false) where {TF,B,LH}
     P_phi = basis_info.orders.P_phi
     P_active = basis_info.orders.P_active
     nclasses = length(accepted_offsets)
@@ -2437,8 +2438,9 @@ function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, 
     # are generated and applied one complete class window at a time, so their
     # scratch must cover the full window capacity; a window may hold more routes
     # than `strategy.chunk`.
+    strategy_chunk = strategy.chunk == 0 ? 1 << 17 : strategy.chunk   # 0: automatic
     chunk = whole_window ? max(nroutes, 1) :
-        max(min(strategy.chunk, max(nroutes, 1)), 1)
+        max(min(strategy_chunk, max(nroutes, 1)), 1)
     _check_m2l_range(TF, rs, LH ? P_active : P_phi, "ConcatenatedFixedZM2L")
     ndof_phi = degree_major_dof(P_phi)
     ndof_chi = LH ? degree_major_dof(P_active) : 0
@@ -2447,6 +2449,14 @@ function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, 
         (nothing, nothing)
     mkphi() = similar(exemplar, TF, ndof_phi, chunk)
     mkchi() = similar(exemplar, TF, ndof_chi, LH ? chunk : 0)
+    # `slim` (the KA device apply): the trig slabs are not allocated (it reads
+    # per-class tables), the stacked-y scratch is allocated once, in the phi
+    # channel, sized for either channel, and the output slabs reuse the input
+    # ones (see ext/ka ka_resident_m2l_concat_apply!)
+    trig_cols = slim ? 0 : chunk
+    g_rows = slim ? 2 * max(ndof_phi, ndof_chi) : 0
+    none_phi() = similar(exemplar, TF, ndof_phi, 0)
+    none_chi() = similar(exemplar, TF, ndof_chi, 0)
     return ResidentM2LConcatPlan(
         nroutes, chunk,
         _array_like_vector(exemplar, TF, phis),
@@ -2462,11 +2472,12 @@ function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, 
         similar(exemplar, TF, chunk),
         _degree_row_exponents(exemplar, TF, P_phi),
         LH ? _degree_row_exponents(exemplar, TF, P_active) : nothing,
-        ConcatChannelOps(exemplar, TF, invariant, P_phi, chunk),
-        LH ? ConcatChannelOps(exemplar, TF, invariant, P_active, chunk) : nothing,
+        ConcatChannelOps(exemplar, TF, invariant, P_phi, chunk; trig_cols, g_rows),
+        LH ? ConcatChannelOps(exemplar, TF, invariant, P_active, chunk; trig_cols,
+            g_cols=slim ? 0 : chunk) : nothing,
         lh_arow_unit, lh_brow_unit,
-        mkphi(), mkphi(), mkphi(), mkphi(),
-        mkchi(), mkchi(), mkchi(), mkchi(),
+        mkphi(), mkphi(), mkphi(), slim ? none_phi() : mkphi(),
+        mkchi(), mkchi(), mkchi(), slim ? none_chi() : mkchi(),
         LH ? mkphi() : similar(exemplar, TF, 0, 0), mkchi(),
         LH ? mkphi() : nothing, LH ? mkchi() : nothing,
     )
@@ -2901,7 +2912,7 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         hierarchical_noffsets::Int=0,
         ell_axes::SVector{3,Int}=SVector(ell, ell, ell),
         first_level::Int=0, stage_batch::Int=typemax(Int),
-        m2l_route_class_capacity::Int=typemax(Int)) where {TF,B,LH}
+        m2l_route_class_capacity::Int=typemax(Int), slim_m2l::Bool=false) where {TF,B,LH}
     stage_batch > 0 || throw(ArgumentError("stage_batch must be positive"))
     m2l_strategy isa PrecomputedFactoredYM2L && !(operator isa FactoredRotationM2L) &&
         throw(ArgumentError("PrecomputedFactoredYM2L requires operator=FactoredRotationM2L()"))
@@ -2954,7 +2965,8 @@ function _radix_cache_workspace(::Type{TF}, basis_info::OperatorBasisInfo{B,LH},
         ResidentM2LConcatPlan(TF, basis_info, exemplar.phi, m2l_strategy,
             invariant, accepted_offsets, cell_width, route_capacity;
             whole_window=hierarchical_noffsets > 0,
-            route_class_capacity=min(route_capacity, m2l_route_class_capacity))
+            route_class_capacity=min(route_capacity, m2l_route_class_capacity),
+            slim=slim_m2l)
 
     ndof_phi = degree_major_dof(P_phi)
     ndof_chi = LH ? degree_major_dof(P_active) : 0
