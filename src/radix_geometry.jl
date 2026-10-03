@@ -15,19 +15,46 @@ How a radix cache's box, depth `ell` and leaf near radius `q` are chosen
 """
 abstract type AbstractRadixGeometry end
 
+"""
+    AbstractOversizePolicy
+
+Which bodies a uniform grid takes out of its tree because their core reach
+exceeds what the chosen geometry admits: [`NoOversize`](@ref),
+[`FixedOversize`](@ref) or [`AdaptiveOversize`](@ref). The masked bodies keep
+their exact influence through an all-pairs extra source ([`MaskedBodies`](@ref)).
+"""
+abstract type AbstractOversizePolicy end
+"Mask nothing."
+struct NoOversize <: AbstractOversizePolicy end
+"Mask the `count` largest cores (when the field has more than `8 count` bodies and they stand out)."
+struct FixedOversize <: AbstractOversizePolicy
+    count::Int
+end
+"""
+    AdaptiveOversize(fraction)
+
+Mask every core the geometry chosen for the field without its tail cannot
+admit, at most `fraction` of the live count (see [`radix_oversize_threshold`](@ref)).
+"""
+struct AdaptiveOversize <: AbstractOversizePolicy
+    fraction::Float64
+end
+
 "Default memory cap on the auto depth: the dense per-level node table is 8^ell Int32 entries (~64 MB at 8)."
 const RADIX_AUTO_MAX_ELL = 8
 
 """
     AutoUniformGeometry(; reach, near_radius2=6, accuracy_margin=1.03, ell=nothing,
                         padding=0.1, rectangular=false, bounds=nothing,
-                        rebuild_growth=1.5, max_ell=RADIX_AUTO_MAX_ELL)
+                        rebuild_growth=1.5, max_ell=RADIX_AUTO_MAX_ELL,
+                        oversize=AdaptiveOversize(0.02))
 
 The uniform radix grid's rule. `reach` is the direct kernel's primary reach in
 units of the core ([`radix_primary_reach`](@ref)); `near_radius2` is the floor on
 the leaf near radius; `ell` fixes the depth (a promise: never rebuilt); `bounds`
 fixes the box (a promise: never recentered); otherwise the box is derived from the
-field, padded by `padding` of its tight extent per face.
+field, padded by `padding` of its tight extent per face. `oversize` decides which
+cores leave the tree ([`radix_oversize_select`](@ref)).
 """
 Base.@kwdef struct AutoUniformGeometry <: AbstractRadixGeometry
     reach::Float64
@@ -39,6 +66,7 @@ Base.@kwdef struct AutoUniformGeometry <: AbstractRadixGeometry
     bounds::Union{Nothing,Tuple} = nothing
     rebuild_growth::Float64 = 1.5
     max_ell::Int = RADIX_AUTO_MAX_ELL
+    oversize::AbstractOversizePolicy = AdaptiveOversize(0.02)
 end
 
 """
@@ -391,4 +419,162 @@ function radix_sigma_outgrown!(g::AutoUniformGeometry, src, cache; verbose::Bool
         return false
     end
     return true
+end
+
+#------- bodies whose core the grid cannot admit (moved from FLOWVPM, 2026-10-03) -------#
+#
+# A tail of large cores would force the whole field onto a coarser grid (the
+# geometry must admit the largest core's reach). Instead those bodies are taken
+# out of the tree for the evaluation: the consumer zeroes their strength and core
+# in its own storage (`radix_mask_bodies!`, which returns their packed columns),
+# the tree sees the rest, and the masked bodies act on every target all-pairs
+# through a `MaskedBodies` extra source; `radix_unmask_bodies!` restores them.
+
+"""
+    MaskedBodies(buffer, kernel, strength_dims)
+
+The masked bodies of one evaluation as an all-pairs extra source: `buffer` holds
+their packed columns in the consumer's source layout (one column per body, as its
+`source_system_to_buffer!` writes them), `kernel` is the direct kernel.
+"""
+struct MaskedBodies{TF,K}
+    buffer::Matrix{TF}
+    kernel::K
+    strength_dims::Int
+end
+get_n_bodies(o::MaskedBodies) = size(o.buffer, 2)
+data_per_body(o::MaskedBodies) = size(o.buffer, 1)
+get_position(o::MaskedBodies, i) = SVector{3}(o.buffer[1, i], o.buffer[2, i], o.buffer[3, i])
+strength_dims(o::MaskedBodies) = o.strength_dims
+direct_kernel(o::MaskedBodies) = o.kernel
+function source_system_to_buffer!(buffer, i_buffer, o::MaskedBodies, i_body)
+    @inbounds for r in 1:size(o.buffer, 1)
+        buffer[r, i_buffer] = o.buffer[r, i_body]
+    end
+    return nothing
+end
+
+"""
+    radix_mask_bodies!(system, idx) -> buffer::Matrix
+
+Consumer hook: return the packed source columns of bodies `idx` (as
+`source_system_to_buffer!` would write them) and zero their strength and core in
+the system's own storage, so the next packing leaves them out of the tree.
+"""
+radix_mask_bodies!(system, idx) = throw(ArgumentError(
+    "radix_mask_bodies! is not defined for $(typeof(system)); masking oversize bodies needs it"))
+
+"""
+    radix_unmask_bodies!(system, idx, buffer)
+
+Consumer hook: restore the strength and core of bodies `idx` from the columns
+[`radix_mask_bodies!`](@ref) returned.
+"""
+radix_unmask_bodies!(system, idx, buffer) = throw(ArgumentError(
+    "radix_unmask_bodies! is not defined for $(typeof(system))"))
+
+"""
+    radix_rows_above(P, row, n, thr, cap) -> Vector{Int}
+
+The columns `1:n` of `P` whose `row` exceeds `thr`, at most `cap` (the largest),
+sorted. Host and device (the KA extension) give the same list.
+"""
+function radix_rows_above(P::Matrix, row::Int, np::Int, thr, cap::Int)
+    sig = view(P, row, 1:np)
+    idx = findall(>(thr), sig)
+    length(idx) > cap && (idx = idx[partialsortperm(view(sig, idx), 1:cap; rev=true)])
+    return idx
+end
+
+"""
+    radix_rows_top(P, row, n, K) -> Vector{Int}
+
+Of the `K` largest values of `row` over columns `1:n`, those that stand clear of
+the `(K+1)`-th (by 2%); empty when the row is flat.
+"""
+function radix_rows_top(P::Matrix, row::Int, np::Int, K::Int)
+    sig = view(P, row, 1:np)
+    top = partialsortperm(sig, 1:(K + 1); rev=true)
+    sigma_ref = sig[top[K + 1]]
+    return [i for i in view(top, 1:K) if sig[i] > 1.02 * sigma_ref]
+end
+
+radix_oversize_kmax(p::AdaptiveOversize, np::Int) = max(32, round(Int, p.fraction * np))
+
+"""
+    radix_oversize_threshold(g::AutoUniformGeometry, src, rec; verbose=false) -> (thr, rec)
+
+The core size above which bodies leave the tree (`Inf`: nothing to mask), for an
+[`AdaptiveOversize`](@ref) policy. Derived from the field: take the
+`(K_max+1)`-th largest core as the largest core the field would have without its
+tail, ask the auto-geometry rule (occupancy included) which `(ell, q)` it would
+choose, and return that geometry's adequacy limit `g_min(q) * L/2^ell / (margin *
+reach)`. Every core above it is masked, at most `K_max` of them by construction.
+`rec` (`nothing` or `(; thr, np, evals::Ref)`) caches it: refreshed when the live
+count has grown 5% or after 60 evaluations; the returned record is a new object
+only when it was refreshed.
+"""
+function radix_oversize_threshold(g::AutoUniformGeometry, src, rec; verbose::Bool=false)
+    np = src.n
+    np > 256 || return Inf, rec
+    if rec !== nothing && np <= 1.05 * rec.np && rec.evals[] < 60
+        rec.evals[] += 1
+        return rec.thr, rec
+    end
+    K_max = radix_oversize_kmax(g.oversize, np)
+    sig = Array(view(src.P, src.core_row, 1:np))
+    sigma_top = Float64(maximum(sig))
+    sigma_q = Float64(partialsort(sig, K_max + 1; rev=true))
+    thr = Inf
+    if sigma_q < sigma_top
+        bounds = g.bounds === nothing ?
+            radix_derive_bounds(src, g.padding; rectangular=g.rectangular) : g.bounds
+        L_geo = bounds[2] isa Real ? Float64(bounds[2]) : Float64(maximum(bounds[2]))
+        rho_t = g.reach
+        ell, q = try
+            radix_auto_geometry(L_geo, sigma_q, np, g.near_radius2, rho_t,
+                g.accuracy_margin; ell_fixed=g.ell,
+                occupancy=radix_occupancy_sums(src, bounds, g.max_ell), max_ell=g.max_ell)
+        catch
+            (0, 0)
+        end
+        if ell > 0
+            lim = _ball_stencil_min_gap(q) * (L_geo / 2^ell) / (g.accuracy_margin * rho_t)
+            lim < sigma_top && (thr = max(lim, sigma_q))
+        end
+        verbose && (println(
+            "radix oversize threshold: np=$np K_max=$K_max sigma_q=$(round(sigma_q; sigdigits=4)) " *
+            "sigma_max=$(round(sigma_top; sigdigits=4)) -> ell=$ell q=$q thr=$(round(thr; sigdigits=4))"); flush(stdout))
+    end
+    return thr, (; thr, np, evals=Ref(0))
+end
+
+"""
+    radix_oversize_select(g::AutoUniformGeometry, src, rec, cache; verbose=false) -> (idx, rec)
+
+The bodies to take out of the tree for this evaluation (sorted global indices) under
+`g.oversize`, never above what the cached grid (`cache`, or `nothing` before the
+first build) admits. Adaptive: every core above [`radix_oversize_threshold`](@ref),
+at most `K_max`; a longer tail drops the threshold record (`rec = nothing`) so the
+next call re-derives it.
+"""
+function radix_oversize_select(g::AutoUniformGeometry, src, rec, cache; verbose::Bool=false)
+    p = g.oversize
+    p isa NoOversize && return Int[], rec
+    np = src.n
+    if p isa FixedOversize
+        K = p.count
+        (K > 0 && np > 8 * K) || return Int[], rec
+        return radix_rows_top(src.P, src.core_row, np, K), rec
+    end
+    thr, rec = radix_oversize_threshold(g, src, rec; verbose)
+    # Never above what the cached grid admits: the threshold is derived for a
+    # geometry the cache may not have, so on its own it let cores through that
+    # the cached geometry cannot serve
+    cache === nothing || (thr = min(thr, radix_sigma_limit(g, cache)))
+    isfinite(thr) || return Int[], rec
+    K_max = radix_oversize_kmax(p, np)
+    idx = radix_rows_above(src.P, src.core_row, np, thr, K_max + 64)
+    length(idx) > K_max && (rec = nothing)
+    return idx, rec
 end
