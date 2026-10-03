@@ -200,7 +200,7 @@ function ka_radix_cache_device_build(backend, sources::Tuple, P::Int, ell::Int,
         nothing, zeros(Int32, 0, 0, 0), SVector{3,Int}[], zeros(Int, ell + 2),
         UInt64[], Int[], Int[], Int[], nothing, nothing, ctx,
         length(sources), false, 0,
-        FastMultipole.snapshot_locked_radix_settings(),
+        FastMultipole.snapshot_locked_radix_settings(), nothing,
     )
     ka_update_radix_state!(cache, sources; workgroup)
     cache.built = true

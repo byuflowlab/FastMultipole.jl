@@ -71,3 +71,42 @@ function FastMultipole.radix_rows_above(P::AnyGPUMatrix, row::Int, np::Int, thr,
     end
     return sort!(Int.(Array(view(idx, 1:n))))
 end
+
+#------- the masked bodies' slots on the device (moved from FLOWVPM, 2026-10-03) -------#
+
+# sorted slot of each masked body: one thread per slot, a binary search of the
+# masked global indices
+@kernel function _masked_slots_kernel!(mslot, @Const(perm), @Const(sysid), @Const(bidx),
+        @Const(psorted), @Const(korder), K, n)
+    s = @index(Global)
+    @inbounds if s <= n
+        g = perm[s]
+        if sysid[g] == 1
+            p = bidx[g]
+            lo = 1; hi = K
+            while lo < hi
+                mid = (lo + hi) >>> 1
+                if psorted[mid] < p
+                    lo = mid + 1
+                else
+                    hi = mid
+                end
+            end
+            if K >= 1 && psorted[lo] == p
+                mslot[korder[lo]] = Int32(s)
+            end
+        end
+    end
+end
+
+# the masked grid (FastMultipole.radix_masked_grid) on the device, with the slots
+# searched there
+function FastMultipole.radix_masked_grid_device(m, nf, backend::KA.Backend)
+    up(A) = (d = KA.allocate(backend, eltype(A), size(A)...); copyto!(d, A); d)
+    mslot = KA.zeros(backend, Int32, m.K)
+    psorted = up(collect(m.psorted)); korder = up(m.korder)
+    _masked_slots_kernel!(backend, 256)(mslot, nf.body_perm, nf.body_system_ids, nf.body_indices,
+        psorted, korder, m.K, nf.n_bodies; ndrange = cld(nf.n_bodies, 256) * 256)
+    return (; K = m.K, mx = up(m.mx), ms = up(m.ms), mslot, offsets = up(m.offsets),
+              o = m.origin, h = m.h, dims = m.dims)
+end

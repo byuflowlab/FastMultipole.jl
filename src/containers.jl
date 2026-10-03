@@ -2003,6 +2003,10 @@ mutable struct RadixFMMCache{TF,LH}
     # settings (Vector{Pair{Symbol,Any}}); verified at device-step entry so a
     # post-construction flip errors loudly instead of being silently ignored.
     locked_settings::Any
+    # the bodies the last evaluation took out of the tree (`radix_set_masked!`):
+    # nothing, or (; idx, buffer) -- global indices into system 1 and their
+    # packed columns; consumers read it through `radix_nearfield`
+    masked::Any
 end
 
 # Partial-application constructor: every call site writes

@@ -697,7 +697,7 @@ function RadixFMMCache(target_systems, source_systems=target_systems;
         zeros(Int, Int(ell) + 2), Vector{UInt64}(undef, maxn), Vector{Int}(undef, maxn),
         zeros(Int, 256), zeros(Int, 256), source_buffers, nothing, nothing,
         length(sources), false, 0,
-        snapshot_locked_radix_settings(),
+        snapshot_locked_radix_settings(), nothing,
     )
     _update_host_radix_state!(cache, to_tuple(sources))
     cache.built = true
