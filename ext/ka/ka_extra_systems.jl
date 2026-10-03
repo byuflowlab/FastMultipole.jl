@@ -74,66 +74,50 @@ function ka_extra_tree_b2m!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
     return state
 end
 
-# one workgroup per near cell pair, threads striding over the target cell's
-# bodies; a target body is written by several pairs, hence the atomics
-@kernel function ka_extra_tree_near_kernel!(kernel, output, @Const(bodies), @Const(cell_ranges),
+# target-owned form: one thread per target body walks its cell's source cells
+# in pair-list order and stores once (no atomics, reproducible)
+@kernel function ka_extra_tree_near_bodies_kernel!(kernel, output, @Const(bodies), @Const(cell_ranges),
         @Const(ex_buffer), @Const(ex_ranges), @Const(direct_targets), @Const(direct_sources),
-        n_direct, ::Type{T}, ::Val{HS}, ::Val{WG}, ::Val{EP}) where {T,HS,WG,EP}
-    tid = @index(Local)
-    pair_i = @index(Group)
-    # `kernel` here is the caller's own direct kernel, not one of the cache's
-    # functors, so querying it on the device is a dynamic dispatch that fails
-    # to compile; the host resolves it and passes the answer as a type parameter
+        n_direct, n_cells, n_bodies, ::Type{T}, ::Val{HS}, ::Val{EP}) where {T,HS,EP}
+    i = @index(Global)
     ep = EP
-    @inbounds if pair_i <= n_direct
-        target_cell = direct_targets[pair_i]
-        source_cell = direct_sources[pair_i]
-        scount = ex_ranges[2, source_cell]
-        if scount > 0
+    @inbounds if i <= n_bodies
+        c = _ka_cell_of(cell_ranges, n_cells, i)
+        p0 = _ka_pair_lower_bound(direct_targets, n_direct, c)
+        p1 = _ka_pair_lower_bound(direct_targets, n_direct, c + 1) - 1
+        xi = bodies[1, i]; yi = bodies[2, i]; zi = bodies[3, i]
+        u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
+        h1 = zero(T); h2 = zero(T); h3 = zero(T)
+        h4 = zero(T); h5 = zero(T); h6 = zero(T)
+        h7 = zero(T); h8 = zero(T); h9 = zero(T)
+        for p in p0:p1
+            source_cell = direct_sources[p]
+            scount = ex_ranges[2, source_cell]
             sfirst = ex_ranges[1, source_cell]
-            tfirst = cell_ranges[1, target_cell]
-            tcount = cell_ranges[2, target_cell]
-            i = tfirst + tid - 1
-            while i <= tfirst + tcount - 1
-                xi = bodies[1, i]; yi = bodies[2, i]; zi = bodies[3, i]
-                u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
-                h1 = zero(T); h2 = zero(T); h3 = zero(T)
-                h4 = zero(T); h5 = zero(T); h6 = zero(T)
-                h7 = zero(T); h8 = zero(T); h9 = zero(T)
-                for j in sfirst:(sfirst + scount - 1)
-                    if HS
-                        du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
-                            FastMultipole._extra_pair_ugh(kernel, xi, yi, zi, ex_buffer, j)
-                        u += du; gx += dgx; gy += dgy; gz += dgz
-                        h1 += dh1; h2 += dh2; h3 += dh3
-                        h4 += dh4; h5 += dh5; h6 += dh6
-                        h7 += dh7; h8 += dh8; h9 += dh9
-                    else
-                        du, dgx, dgy, dgz = FastMultipole._extra_pair_ug(kernel, xi, yi, zi, ex_buffer, j)
-                        u += du; gx += dgx; gy += dgy; gz += dgz
-                    end
-                end
-                if ep
-                    KA.@atomic output[1, i] += u
-                end
-                KA.@atomic output[2, i] += gx
-                KA.@atomic output[3, i] += gy
-                KA.@atomic output[4, i] += gz
+            for j in sfirst:(sfirst + scount - 1)
                 if HS
-                    # the velocity gradient of the near pairs: without it only the
-                    # far field carried the extra source's gradient
-                    KA.@atomic output[5, i] += h1
-                    KA.@atomic output[6, i] += h2
-                    KA.@atomic output[7, i] += h3
-                    KA.@atomic output[8, i] += h4
-                    KA.@atomic output[9, i] += h5
-                    KA.@atomic output[10, i] += h6
-                    KA.@atomic output[11, i] += h7
-                    KA.@atomic output[12, i] += h8
-                    KA.@atomic output[13, i] += h9
+                    du, dgx, dgy, dgz, dh1, dh2, dh3, dh4, dh5, dh6, dh7, dh8, dh9 =
+                        FastMultipole._extra_pair_ugh(kernel, xi, yi, zi, ex_buffer, j)
+                    u += du; gx += dgx; gy += dgy; gz += dgz
+                    h1 += dh1; h2 += dh2; h3 += dh3
+                    h4 += dh4; h5 += dh5; h6 += dh6
+                    h7 += dh7; h8 += dh8; h9 += dh9
+                else
+                    du, dgx, dgy, dgz = FastMultipole._extra_pair_ug(kernel, xi, yi, zi, ex_buffer, j)
+                    u += du; gx += dgx; gy += dgy; gz += dgz
                 end
-                i += WG
             end
+        end
+        if ep
+            output[1, i] += u
+        end
+        output[2, i] += gx
+        output[3, i] += gy
+        output[4, i] += gz
+        if HS
+            output[5, i] += h1;  output[6, i] += h2;  output[7, i] += h3
+            output[8, i] += h4;  output[9, i] += h5;  output[10, i] += h6
+            output[11, i] += h7; output[12, i] += h8; output[13, i] += h9
         end
     end
 end
@@ -141,8 +125,8 @@ end
 """
     ka_extra_tree_near!(state, prepared; workgroup)
 
-Sweep the near cell pairs, summing the binned extra bodies of each source cell
-against the resident bodies of the paired target cell.
+Sweep the near cell pairs target by target: each resident body sums the binned
+extra bodies of its cell's near source cells, in pair-list order.
 """
 function ka_extra_tree_near!(state::FastMultipole.DeviceResidentRadixState{TF},
         prepared; workgroup::Int=128) where TF
@@ -152,11 +136,12 @@ function ka_extra_tree_near!(state::FastMultipole.DeviceResidentRadixState{TF},
     wg = resolve_workgroup(backend, workgroup)
     hs = size(state.output, 1) >= 13
     dkernel = _ka_device_direct_kernel(prepared.kernel, TF, 0)
-    kern = _cached_kernel(ka_extra_tree_near_kernel!, backend, wg)
+    n_cells = Int(state.counts.n_cells); n_bodies = Int(state.counts.n_bodies)
+    kern = _cached_kernel(ka_extra_tree_near_bodies_kernel!, backend, wg)
     kern(dkernel, state.output, state.source_bodies, state.cell_ranges,
          prepared.buffer, prepared.cell_ranges, state.direct_targets, state.direct_sources,
-         n_direct, TF, Val(hs && FastMultipole._extra_pair_has_hessian(dkernel)), Val(wg),
-         Val(FastMultipole._extra_emits_potential(prepared.kernel)); ndrange=n_direct * wg)
+         n_direct, n_cells, n_bodies, TF, Val(hs && FastMultipole._extra_pair_has_hessian(dkernel)),
+         Val(FastMultipole._extra_emits_potential(prepared.kernel)); ndrange=cld(n_bodies, wg) * wg)
     return state
 end
 

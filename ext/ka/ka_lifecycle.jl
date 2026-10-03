@@ -31,7 +31,7 @@ function ka_lifecycle_body!(state::FastMultipole.DeviceResidentRadixState{TF,B,L
 
     backend = KA.get_backend(state.output)
     # 1. nearfield (clears state.output first)
-    ka_launch_nearfield!(state; clear=true)   # shape/workgroup from _nf_config
+    ka_launch_nearfield!(state; clear=true)   # workgroup from _nf_config
     _utick!(:lc_near, backend)
 
     # 2. B2M, then any extra source system the tree carries (before M2M, so the

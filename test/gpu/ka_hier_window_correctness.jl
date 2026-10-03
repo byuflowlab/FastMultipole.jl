@@ -4,10 +4,11 @@
 # `ka_hierarchical_m2l!` applies in one call.
 #
 # Oracle: `build_hierarchical_routes_window!` (src/interaction_list_batched.jl),
-# the host CPU builder, run window by window and concatenated. It emits routes
-# in the same class-major/source-major order as the device flat index
-# (idx -> kloc = (idx-1)÷n_sources+1, s = (idx-1)%n_sources+1), so the
-# comparison is elementwise, not set-wise.
+# the host CPU builder, run window by window. It emits a level's routes
+# class-major/source-major; the device stream is target-major within a level
+# (so the M2L scatter can sum a target's routes in a fixed order), so each
+# level's host routes are sorted by (target, class) -- unique within a level --
+# and the comparison stays elementwise, not set-wise.
 #
 # Setup: a plain CPU `RadixFMMCache` with the default hierarchical policy gives
 # the grid, the dense per-level occupancy, and a populated
@@ -75,16 +76,21 @@ function run_case(seed, n_bodies, ell, P; window_classes=8)
     h_class = zeros(Int32, cap)
     want_targets = Int[]; want_sources = Int[]; want_class = Int32[]
     nwin = 0
-    for L in lo:Int(grid.ell), first in 1:K:noffsets
-        last = min(first + K - 1, noffsets)
-        n_host = FM.build_hierarchical_routes_window!(state.route_levels,
-            state.route_offsets, state.route_targets, state.route_sources,
-            h_class, ctx, grid, L, first, last)
-        n_host == 0 && continue
-        append!(want_targets, state.route_targets[1:n_host])
-        append!(want_sources, state.route_sources[1:n_host])
-        append!(want_class, h_class[1:n_host])
-        nwin += 1
+    for L in lo:Int(grid.ell)
+        lt = Int[]; ls = Int[]; lc = Int32[]
+        for first in 1:K:noffsets
+            last = min(first + K - 1, noffsets)
+            n_host = FM.build_hierarchical_routes_window!(state.route_levels,
+                state.route_offsets, state.route_targets, state.route_sources,
+                h_class, ctx, grid, L, first, last)
+            n_host == 0 && continue
+            append!(lt, state.route_targets[1:n_host])
+            append!(ls, state.route_sources[1:n_host])
+            append!(lc, h_class[1:n_host])
+            nwin += 1
+        end
+        o = sortperm(collect(zip(lt, lc)))
+        append!(want_targets, lt[o]); append!(want_sources, ls[o]); append!(want_class, lc[o])
     end
 
     # device: the epoch window cache the production step builds

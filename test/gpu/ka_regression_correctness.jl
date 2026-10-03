@@ -133,17 +133,12 @@ guarded("launch contracts") do
     # 4. nearfield
     ext.ka_launch_nearfield!(state; clear=true); KernelAbstractions.synchronize(DEV_BACKEND)
     nf_ref = Array(state.output)
-    for wg in (0, 128)
+    # one thread per target body: any group size, and the same sum order
+    for wg in (0, 96, 128)
         ext.ka_launch_nearfield!(state; workgroup=wg, clear=true)
         KernelAbstractions.synchronize(DEV_BACKEND)
-        check(relerr(Array(state.output), nf_ref) < 1e-5, "nearfield workgroup=$wg matches the default")
+        check(Array(state.output) == nf_ref, "nearfield workgroup=$wg matches the default bit for bit")
     end
-    threw = try
-        ext.ka_launch_nearfield!(state; workgroup=96, clear=true); false
-    catch err
-        err isa ArgumentError
-    end
-    check(threw, "nearfield workgroup=96 (not a multiple of 64 lanes) is refused")
 
     # 5. L2B
     fill!(state.output, 0); ext.ka_launch_l2b!(state; workgroup=64)
@@ -165,10 +160,10 @@ guarded("launch contracts") do
     ex_ref = Array(state.output)
     fill!(state.output, 0); ext.ka_extra_tree_finish!(state, prepared; workgroup=32)
     KernelAbstractions.synchronize(DEV_BACKEND)
-    check(haskey(ext._KERNEL_CACHE, (ext.ka_extra_tree_near_kernel!, typeof(DEV_BACKEND), 32)) &&
+    check(haskey(ext._KERNEL_CACHE, (ext.ka_extra_tree_near_bodies_kernel!, typeof(DEV_BACKEND), 32)) &&
         relerr(Array(state.output), ex_ref) < 1e-5,
         "extra-tree finish runs the near sweep at the requested workgroup")
-    key128 = (ext.ka_extra_tree_near_kernel!, typeof(DEV_BACKEND), 128)
+    key128 = (ext.ka_extra_tree_near_bodies_kernel!, typeof(DEV_BACKEND), 128)
     delete!(ext._KERNEL_CACHE, key128)
     fill!(state.output, 0); ext.ka_extra_tree_finish!(state, prepared)
     KernelAbstractions.synchronize(DEV_BACKEND)

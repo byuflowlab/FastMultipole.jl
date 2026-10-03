@@ -133,18 +133,10 @@ end
 # keys to `0:2^(3ell)-1`, so a histogram over the whole key domain plus one scan
 # and an atomic-cursor scatter replaces the comparison sort.
 #
-# This path is UNSTABLE: the scatter claims its slot with an atomic cursor, so
-# bodies sharing a cell land in an order that varies between otherwise
-# identical runs. That is why it sits behind a runtime gate rather than simply
-# replacing `sortperm!`. Two consequences:
-#
-#   * within-cell body order is not reproducible run to run, so neither is the
-#     summation order of the same-cell nearfield atomics -- identical inputs
-#     move in the last bits between runs;
-#   * `perm` can no longer be compared elementwise against the stable host sort.
-#     Everything downstream still is exact: `cell_keys`, `cell_ranges`, cell
-#     centers and the whole node table are pure functions of the occupied-cell
-#     SET, not of within-cell ordering.
+# The scatter claims its slot with an atomic cursor, so bodies sharing a cell
+# land in arrival order; a last pass sorts each key's segment by body index,
+# which makes the result the stable sort (`sortperm!`'s order) and the run
+# reproducible. Every later sum over a cell's bodies runs in that order.
 #
 # The gate (`ka_counting_sort_ready`) has two conditions: `ell` must be within
 # `KA_COUNTING_SORT_MAX_ELL`, AND the histogram, prefix and cursor actually
@@ -177,6 +169,25 @@ end
     end
 end
 
+# one thread per key: insertion-sort the key's segment of `perm` (a cell's
+# population) by body index; the keys in a segment are all equal
+@kernel function ka_counting_stabilize_kernel!(perm, @Const(prefix), nkeys)
+    k = @index(Global)
+    @inbounds if k <= nkeys
+        lo = k == 1 ? 1 : Int(prefix[k - 1]) + 1
+        hi = Int(prefix[k])
+        for a in (lo + 1):hi
+            v = perm[a]
+            b = a - 1
+            while b >= lo && perm[b] > v
+                perm[b + 1] = perm[b]
+                b -= 1
+            end
+            perm[b + 1] = v
+        end
+    end
+end
+
 # Deepest uniform level whose full 8^ell key-domain histogram is allocated for
 # the counting sort; deeper grids take the stable `sortperm!` path.
 const KA_COUNTING_SORT_MAX_ELL = 6
@@ -194,9 +205,9 @@ const KA_COUNTING_SORT_MAX_ELL = 6
 
 Histogram the bounded
 Morton keys, inclusive-scan the histogram, shift it into an exclusive cursor,
-then scatter each body into the slot its atomic cursor claims. `histogram`,
-`prefix` and `cursor` must each span the full `2^(3ell)` key domain. Unstable by
-construction -- see the note above.
+then scatter each body into the slot its atomic cursor claims and sort each
+key's segment by body index (stable -- see the note above). `histogram`,
+`prefix` and `cursor` must each span the full `2^(3ell)` key domain.
 """
 function ka_counting_sort_into!(perm, sorted_keys, keys, histogram, prefix, cursor;
         workgroup=KA_AUTO_WORKGROUP)
@@ -212,6 +223,8 @@ function ka_counting_sort_into!(perm, sorted_keys, keys, histogram, prefix, curs
     ck(cursor, prefix, nd; ndrange=nd)
     sc = _cached_kernel(ka_counting_scatter_kernel!, backend, workgroup)
     sc(perm, sorted_keys, cursor, keys, n; ndrange=n)
+    st = _cached_kernel(ka_counting_stabilize_kernel!, backend, workgroup)
+    st(perm, prefix, nd; ndrange=nd)
     return perm
 end
 

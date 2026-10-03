@@ -913,13 +913,14 @@ end
 # (PartitionedVortex, RegularizedVortex, SingularSource, ...) comes along for
 # free.
 #
-# Only the cell-pair shape exists here, always with the `ghv = Val(:shipped)`
-# g/h series and no lookup table; fused target-owned or symmetric Newton-pair
-# shapes would be performance variants of the same physics.
+# Only the target-owned shape exists here, always with the `ghv = Val(:shipped)`
+# g/h series and no lookup table; symmetric Newton-pair shapes would be
+# performance variants of the same physics.
 #
-# A team of lanes per pair, lanes striding the pair's target bodies. Targets of
-# different pairs overlap, so the output accumulation must stay atomic. The
-# stage is gated against the CPU reference.
+# One thread per target body walks its cell's direct pairs in list order, so
+# no two threads write one target and no accumulation is atomic: the sum order,
+# and the result, is the same on every run. The stage is gated against the CPU
+# reference.
 
 # 1/sqrt(r2). Float32: `inv(sqrt(r2))`. Float64: a Float32 seed refined by two
 # Newton steps (24 -> 48 -> 53 bits); a full FP64 sqrt+divide was 1.7x of the
@@ -938,14 +939,11 @@ end
 end
 @inline _ka_invsqrt(r2) = inv(sqrt(r2))
 
-#------- lanes-per-pair nearfield -------#
+#------- target-owned nearfield -------#
 #
 # The only nearfield kernel the lifecycle launches (the all-pairs kernel below
-# serves the direct arm). Launch geometry, from `_nf_config`:
-#   * LANES threads per pair, WG/LANES pairs per group. On CUDA, LANES follows
-#     the cell population in [64, 256] (Float64: [64, 128]) and WG = max(128,
-#     LANES), so a group carries two pairs at 64 lanes and one otherwise; on
-#     every other backend WG = LANES = 64, one pair per group;
+# serves the direct arm): one thread per target body, groups of
+# `_nf_config(...).wg`. Two type parameters:
 #   * `FR` (fast rsqrt): on CUDA, libdevice's approximate `rsqrtf` instead of
 #     IEEE sqrt+divide in the innermost line; Float64 seeds two Newton steps
 #     from it. Other backends use `_ka_invsqrt(r2)` above;
@@ -966,30 +964,60 @@ end
 end
 @inline _ka_invsqrt(r2, ::Val{false}) = _ka_invsqrt(r2)
 
-@kernel function ka_direct_pairs_warp_kernel!(kernel, output, @Const(source_bodies),
+# First pair whose target cell is >= `c` (`n + 1` if none). The pair list is
+# ascending in its target cell: the compaction writes it cell-major.
+@inline function _ka_pair_lower_bound(direct_targets, n, c)
+    lo = 1; hi = n + 1
+    while lo < hi
+        mid = (lo + hi) >>> 1
+        if direct_targets[mid] < c
+            lo = mid + 1
+        else
+            hi = mid
+        end
+    end
+    return lo
+end
+
+# The cell holding sorted body `i`: the last cell whose first body is <= i.
+@inline function _ka_cell_of(cell_ranges, n_cells, i)
+    lo = 1; hi = n_cells
+    while lo < hi
+        mid = (lo + hi + 1) >>> 1
+        if cell_ranges[1, mid] <= i
+            lo = mid
+        else
+            hi = mid - 1
+        end
+    end
+    return lo
+end
+
+# Target-owned nearfield: one thread per target body walks its cell's source
+# cells in pair-list order and stores once -- no atomics, so the sum order,
+# and the result, is the same on every run. Consecutive threads share a cell
+# (bodies are cell-sorted), so their source reads coincide.
+@kernel function ka_direct_bodies_kernel!(kernel, output, @Const(source_bodies),
         @Const(cell_ranges), @Const(direct_targets), @Const(direct_sources),
-        npairs, ::Type{T}, ::Val{HS}, ::Val{WG}, ::Val{LANES}, ::Val{FR},
-        ::Val{GH}) where {T,HS,WG,LANES,FR,GH}
-    tid = @index(Local)
-    pair_i = (@index(Group) - 1) * (WG ÷ LANES) + (tid - 1) ÷ LANES + 1
-    lane = (tid - 1) % LANES
+        npairs, n_cells, n_bodies, ::Type{T}, ::Val{HS}, ::Val{FR},
+        ::Val{GH}) where {T,HS,FR,GH}
+    i = @index(Global)
     ep = FastMultipole._emits_potential(kernel)
     ghv = Val(GH)
     frv = Val(FR)
-    @inbounds if pair_i <= npairs
-        target_cell = direct_targets[pair_i]
-        source_cell = direct_sources[pair_i]
-        tfirst = cell_ranges[1, target_cell]
-        tlast = tfirst + cell_ranges[2, target_cell] - 1
-        sfirst = cell_ranges[1, source_cell]
-        slast = sfirst + cell_ranges[2, source_cell] - 1
-        i = tfirst + lane
-        while i <= tlast
-            xi = source_bodies[1, i]; yi = source_bodies[2, i]; zi = source_bodies[3, i]
-            u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
-            h1 = zero(T); h2 = zero(T); h3 = zero(T)
-            h4 = zero(T); h5 = zero(T); h6 = zero(T)
-            h7 = zero(T); h8 = zero(T); h9 = zero(T)
+    @inbounds if i <= n_bodies
+        c = _ka_cell_of(cell_ranges, n_cells, i)
+        p0 = _ka_pair_lower_bound(direct_targets, npairs, c)
+        p1 = _ka_pair_lower_bound(direct_targets, npairs, c + 1) - 1
+        xi = source_bodies[1, i]; yi = source_bodies[2, i]; zi = source_bodies[3, i]
+        u = zero(T); gx = zero(T); gy = zero(T); gz = zero(T)
+        h1 = zero(T); h2 = zero(T); h3 = zero(T)
+        h4 = zero(T); h5 = zero(T); h6 = zero(T)
+        h7 = zero(T); h8 = zero(T); h9 = zero(T)
+        for p in p0:p1
+            source_cell = direct_sources[p]
+            sfirst = cell_ranges[1, source_cell]
+            slast = sfirst + cell_ranges[2, source_cell] - 1
             for j in sfirst:slast
                 if i != j
                     dx = xi - source_bodies[1, j]
@@ -1014,27 +1042,21 @@ end
                     end
                 end
             end
-            if ep
-                KA.@atomic output[1, i] += u
-            end
-            KA.@atomic output[2, i] += gx
-            KA.@atomic output[3, i] += gy
-            KA.@atomic output[4, i] += gz
-            if HS
-                KA.@atomic output[5, i]  += h1
-                KA.@atomic output[6, i]  += h2
-                KA.@atomic output[7, i]  += h3
-                KA.@atomic output[8, i]  += h4
-                KA.@atomic output[9, i]  += h5
-                KA.@atomic output[10, i] += h6
-                KA.@atomic output[11, i] += h7
-                KA.@atomic output[12, i] += h8
-                KA.@atomic output[13, i] += h9
-            end
-            i += LANES
+        end
+        if ep
+            output[1, i] += u
+        end
+        output[2, i] += gx
+        output[3, i] += gy
+        output[4, i] += gz
+        if HS
+            output[5, i] += h1;  output[6, i] += h2;  output[7, i] += h3
+            output[8, i] += h4;  output[9, i] += h5;  output[10, i] += h6
+            output[11, i] += h7; output[12, i] += h8; output[13, i] += h9
         end
     end
 end
+
 
 
 # (A register-tiled variant -- two targets per thread through one source pass
@@ -1052,39 +1074,19 @@ end
 
 # Per-backend nearfield launch configuration (see the block above). Only the
 # backend TYPE NAME is consulted, so this extension stays free of CUDA.
-#
-# Defaults measured on an H200, a rotor-wake particle field at np=248714 (20
-# calls, median): one block per pair with ALL its lanes on that pair, and the
-# lane count is what matters -- 64 lanes 0.099 s, 128 0.072, 256 0.069, 512
-# 0.074 in Float32 (a hand-written CUDA.jl kernel: 0.067-0.074); Float64 128
-# lanes 0.130, 256 0.135 (hand-written: 0.18-0.19). Warp-sized teams (32 lanes,
-# four pairs per 128-thread block) were SLOWER, 0.130. The reciprocal-sigma row
-# bought 13% at 64 lanes and nothing at 128+, where the divide latency is
-# already hidden.
-function _nf_config(backend, ::Type{TF}; bodies_per_cell::Real=0) where TF
+function _nf_config(backend, ::Type{TF}) where TF
     cuda = nameof(typeof(backend)) === :CUDABackend
-    # Lanes per pair follow the cell population (the lanes stride a pair's
-    # TARGET bodies): a dense field wants a whole block on each pair, a thin
-    # one wants warp-sized teams so lanes are not idle. Clamped to [64, 256]
-    # (Float64: 128 -- its measured optimum at 249k) and rounded to a power of
-    # two. Non-CUDA backends: 64 lanes, one pair per block
-    # (measured flat 64-256 on Metal).
-    hi = TF === Float32 ? 256 : 128
-    auto_lanes = cuda && bodies_per_cell > 0 ?
-        clamp(nextpow(2, max(1, ceil(Int, bodies_per_cell))), 64, hi) : (cuda ? hi : 64)
-    lanes = auto_lanes
-    wg = cuda ? max(128, lanes) : lanes
     # libdevice rsqrtf is CUDA-only; other backends keep inv(sqrt)
-    return (; wg, lanes, fast=cuda)
+    return (; wg=64, fast=cuda)
 end
 
 """
     ka_launch_nearfield!(state; workgroup=nothing, clear=true)
 
-U-list direct nearfield for the KA lifecycle, one lane team per direct cell
-pair. Zeroes `state.output` first (this is the first stage of the lifecycle)
-unless `clear=false`. `workgroup=nothing` takes the launch shape from
-`_nf_config`; an explicit workgroup must be a multiple of the lanes per pair.
+U-list direct nearfield for the KA lifecycle, one thread per target body
+walking its cell's direct pairs (no atomics: the result is reproducible).
+Zeroes `state.output` first (this is the first stage of the lifecycle) unless
+`clear=false`. `workgroup=nothing` takes the group size from `_nf_config`.
 """
 function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B,LH};
         workgroup::Union{Nothing,Int}=nothing, clear::Bool=true) where {TF,B,LH}
@@ -1093,23 +1095,18 @@ function ka_launch_nearfield!(state::FastMultipole.DeviceResidentRadixState{TF,B
     npairs == 0 && return state
     hs = size(state.output, 1) >= 13
     backend = KA.get_backend(state.output)
-    n_cells = Int(state.counts.n_cells)
-    cfg = _nf_config(backend, TF;
-        bodies_per_cell = n_cells > 0 ? Int(state.counts.n_bodies) / n_cells : 0)
+    cfg = _nf_config(backend, TF)
     wg = workgroup === nothing ? cfg.wg : resolve_workgroup(backend, workgroup)
     wg > 0 || throw(ArgumentError("ka_launch_nearfield! workgroup must be positive"))
-    lanes = min(cfg.lanes, wg)
-    # a group carries wg ÷ lanes whole pairs; a partial team would re-run the
-    # next group's first pair and add it twice
-    wg % lanes == 0 || throw(ArgumentError(
-        "ka_launch_nearfield! workgroup=$wg must be a multiple of the $lanes lanes per pair"))
     dkernel = _ka_device_direct_kernel(state.options.direct_kernel, TF,
         _ka_nf_inv_sigma_row(state))
-    kern = _cached_kernel(ka_direct_pairs_warp_kernel!, backend, wg)
+    n_cells = Int(state.counts.n_cells)
+    n_bodies = Int(state.counts.n_bodies)
+    kern = _cached_kernel(ka_direct_bodies_kernel!, backend, wg)
     kern(dkernel, state.output, state.source_bodies,
          state.cell_ranges, state.direct_targets, state.direct_sources,
-         npairs, TF, Val(hs), Val(wg), Val(lanes), Val(cfg.fast), Val(:shipped),
-         ndrange=cld(npairs, wg ÷ lanes) * wg)
+         npairs, n_cells, n_bodies, TF, Val(hs), Val(cfg.fast), Val(:shipped),
+         ndrange=cld(n_bodies, wg) * wg)
     return state
 end
 
@@ -1126,11 +1123,9 @@ end
 # an observation and deliberately NOT turned into a dispatch rule. Anything
 # that selects between the two arms needs a cross-backend calibration first.
 #
-# Shape differs from the cell-pair nearfield kernel deliberately. There a
-# workgroup owns a cell PAIR and its targets are shared with other pairs, so
-# every accumulation is atomic. Here a workitem owns one target body outright
-# and no other workitem touches it, so the accumulators are plain stores --
-# which also makes the result deterministic, unlike the pair shape.
+# Like the lifecycle's nearfield, a workitem owns one target body outright and
+# no other workitem touches it, so the accumulators are plain stores and the
+# result is deterministic; here it walks every source instead of a pair list.
 #
 # The physics is the same `_direct_pair_ug` / `_direct_pair_ugh` shared with
 # the CPU path, with the same `ghv = Val(:shipped)` series and a plain

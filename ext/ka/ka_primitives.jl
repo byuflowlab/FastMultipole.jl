@@ -72,8 +72,7 @@ end
 #
 # NOT every site is tunable. `ka_launch_b2m!` and `ka_launch_l2b!` thread
 # `workgroup` into `Val(workgroup)` and launch `ndrange = ncell * workgroup`
-# (one group per cell), and `ka_launch_nearfield!` takes its team shape from
-# `_nf_config`: there the workgroup is the per-cell/per-pair *team size* (for
+# (one group per cell): there the workgroup is the per-cell *team size* (for
 # B2M, also what the `@localmem` reduction extents are declared against), not
 # an occupancy knob. Those keep their explicit sizes; changing one there
 # changes the parallel decomposition, not just the launch geometry.
@@ -155,14 +154,28 @@ end
                                                          @Const(row_ssign), @Const(row_pair), @Const(phis))
     i = @index(Global)
     nrow = size(slab, 1)
+    ncol = size(slab, 2)
     @inbounds begin
         # Int32 decode: a 64-bit divide per element is emulated on Metal
         i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
         row = i32 % nrow32 + Int32(1)
         col = i32 ÷ nrow32 + Int32(1)
-        s, c = sincos(row_m[row] * phis[col])
-        v = c * slab[row, col] - row_ssign[row] * s * slab[row_pair[row], col]
-        KA.@atomic dest[flat_idx[row], col_targets[col]] += v
+        t = col_targets[col]
+        # One thread per run of adjacent columns sharing a target (an M2M
+        # parent's children are adjacent in node order) sums the run in column
+        # order and adds once, so the sum does not depend on thread arrival
+        # order. The add stays atomic: a target split across runs is still
+        # summed correctly, just not reproducibly.
+        if col == 1 || col_targets[col - 1] != t
+            acc = zero(eltype(dest))
+            k = col
+            while k <= ncol && col_targets[k] == t
+                s, c = sincos(row_m[row] * phis[k])
+                acc += c * slab[row, k] - row_ssign[row] * s * slab[row_pair[row], k]
+                k += 1
+            end
+            KA.@atomic dest[flat_idx[row], t] += acc
+        end
     end
 end
 
@@ -171,9 +184,9 @@ end
 
 Device form of `_rotate_z_scatter_accumulate!` (src/translate_batched.jl):
 inverse z-rotation fused with an
-atomic-accumulating scatter back into the flat coefficient buffer (the
-M2M/M2L "return alignment" stage). Uses `KernelAbstractions.@atomic`,
-confirmed working on Metal.
+accumulating scatter back into the flat coefficient buffer (the
+M2M/M2L "return alignment" stage). Columns sharing a target must be adjacent
+for the sum to be reproducible (see the kernel).
 """
 function ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=KA_AUTO_WORKGROUP)
     length(slab) == 0 && return dest

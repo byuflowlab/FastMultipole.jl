@@ -183,19 +183,17 @@ end
     @test !haskey(ctx.extra_tree_cache, objectid(srcs[2]))
 end
 
-@testset "KA regression: nearfield workgroup must hold whole lane teams" begin
+@testset "KA regression: a negative workgroup is refused" begin
     sys = ka_cpu_smoothed(26, 300, 0.002)
     cache = ka_cpu_cache(sys)
     KAExt.ka_update_radix_state!(cache, (sys,))
     state = cache.state
-    lanes = KAExt._nf_config(KA.CPU(), Float64).lanes
-    @test_throws ArgumentError KAExt.ka_launch_nearfield!(state; workgroup=lanes + lanes ÷ 2)
     @test_throws ArgumentError KAExt.ka_launch_nearfield!(state; workgroup=-1)
     @test_throws ArgumentError KAExt.ka_launch_l2b!(state; workgroup=-1)
 end
 
 # The full device lifecycle does not run on the KA CPU backend (its per-cell
-# and per-pair team kernels use group indices the CPU backend cannot lower), so
+# team kernels use group indices the CPU backend cannot lower), so
 # the end-to-end counterparts of the checks below -- metadata delivery, the
 # rectangular-box step, the tree-carried contract functor and the near-sweep
 # workgroup -- are in test/gpu/ka_regression_correctness.jl.

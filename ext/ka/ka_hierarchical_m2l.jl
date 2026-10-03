@@ -1,9 +1,9 @@
 #------- hierarchical M2L window generation (KA) -------#
 #
 # The flag and compact kernels behind `ka_hier_cache_windows!`
-# (ka_finalize_refresh.jl), which fills the epoch window cache
-# `hctx.win_targets`/`win_sources`/`win_class` for every (level, offset-class)
-# window.
+# (ka_finalize_refresh.jl), which fills the epoch route cache
+# `hctx.win_targets`/`win_sources`/`win_class`, level by level and within a
+# level target by target.
 #
 # `DeviceHierarchicalM2LContext` is array-type generic (IV32/IM32/IA32/IV/SM
 # type parameters), so it lives on any KA backend as is. The scan is
@@ -17,23 +17,23 @@
         level_base_L, first_source, n_sources, first_offset, kn, L)
     idx = @index(Global)
     @inbounds if idx <= kn * n_sources
-        kloc = (idx - 1) ÷ n_sources + 1
-        s = (idx - 1) % n_sources + 1
+        # target-major: the routes into one target are adjacent in the stream,
+        # which the M2L scatter needs to sum them in a fixed order. The route
+        # of offset k into `target` comes from the node at target - offset.
+        t = (idx - 1) ÷ kn + 1
+        kloc = (idx - 1) % kn + 1
         k = first_offset + kloc - 1
-        source = first_source + s - 1
+        target = first_source + t - 1
         G = 1 << L
-        cx = node_coords[1, source]
-        cy = node_coords[2, source]
-        cz = node_coords[3, source]
-        # same x/y/z bit convention as _rigid_phase_index
-        phase = 1 + (cx & 1) + 2 * (cy & 1) + 4 * (cz & 1)
+        cx = node_coords[1, target] - push_offsets[1, k]
+        cy = node_coords[2, target] - push_offsets[2, k]
+        cz = node_coords[3, target] - push_offsets[3, k]
         hit = Int32(0)
-        if class_of[phase, k, L + 1] != Int32(0)
-            tx = cx + push_offsets[1, k]
-            ty = cy + push_offsets[2, k]
-            tz = cz + push_offsets[3, k]
-            if 0 <= tx < G && 0 <= ty < G && 0 <= tz < G
-                linear = tx + G * (ty + G * tz)
+        if 0 <= cx < G && 0 <= cy < G && 0 <= cz < G
+            # the source's phase, same x/y/z bit convention as _rigid_phase_index
+            phase = 1 + (cx & 1) + 2 * (cy & 1) + 4 * (cz & 1)
+            if class_of[phase, k, L + 1] != Int32(0)
+                linear = cx + G * (cy + G * cz)
                 node_at[level_base_L + linear + 1] == Int32(0) || (hit = Int32(1))
             end
         end
@@ -51,21 +51,18 @@ end
         class_base)
     idx = @index(Global)
     @inbounds if idx <= kn * n_sources && flags[base + idx] == Int32(1)
-        kloc = (idx - 1) ÷ n_sources + 1
-        s = (idx - 1) % n_sources + 1
+        t = (idx - 1) ÷ kn + 1
+        kloc = (idx - 1) % kn + 1
         k = first_offset + kloc - 1
-        source = first_source + s - 1
+        target = first_source + t - 1
         G = 1 << L
-        ox = push_offsets[1, k]
-        oy = push_offsets[2, k]
-        oz = push_offsets[3, k]
-        tx = node_coords[1, source] + ox
-        ty = node_coords[2, source] + oy
-        tz = node_coords[3, source] + oz
-        linear = tx + G * (ty + G * tz)
+        cx = node_coords[1, target] - push_offsets[1, k]
+        cy = node_coords[2, target] - push_offsets[2, k]
+        cz = node_coords[3, target] - push_offsets[3, k]
+        linear = cx + G * (cy + G * cz)
         p = Int(prefix[base + idx])
-        win_targets[p] = Int(node_at[level_base_L + linear + 1])
-        win_sources[p] = source
+        win_targets[p] = target
+        win_sources[p] = Int(node_at[level_base_L + linear + 1])
         win_class[p] = Int32(class_base + k)
     end
 end
