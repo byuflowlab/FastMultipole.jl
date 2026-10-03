@@ -179,6 +179,91 @@ end
     end
 end
 
+# Two-phase form for long runs (an M2L target receives hundreds of routes, so
+# one thread per run would sum them serially). Phase 1: one thread per (row,
+# tile of _KA_SCATTER_TILE columns) sums each run segment inside its tile, in
+# column order, into `partial` at the segment's first column, and records
+# where each tile's last segment starts (`lastseg`). Phase 2: one thread per
+# (row, run) adds the run's segment partials in order, crossing into the next
+# tile only when its current segment is that tile's last one and the next tile
+# opens with the same target. Both orders are fixed, so the result is
+# reproducible; any column order is summed correctly.
+const _KA_SCATTER_TILE = 32
+
+# grow-only per-backend Int32 scratch for `lastseg`
+const _KA_SCATTER_LASTSEG = IdDict{Any,Any}()
+function _ka_scatter_lastseg(backend, ntiles::Int)
+    v = get(_KA_SCATTER_LASTSEG, typeof(backend), nothing)
+    if v === nothing || length(v) < ntiles
+        v = KA.allocate(backend, Int32, max(ntiles, 2 * (v === nothing ? 0 : length(v))))
+        _KA_SCATTER_LASTSEG[typeof(backend)] = v
+    end
+    return v
+end
+
+# the z-rotation factors of (row, column k): computed from the column's angle,
+# or read from a per-class table when `row_m` is `(RC, RS)` and `phis` the
+# column classes
+@inline _ka_rot_sc(row_m, phis, row, k) = sincos(row_m[row] * phis[k])
+@inline function _ka_rot_sc(tab::Tuple, cls, row, k)
+    @inbounds cl = cls[k]
+    @inbounds return tab[2][row, cl], tab[1][row, cl]
+end
+
+@kernel function ka_rotate_z_scatter_partials_kernel!(partial, lastseg, @Const(slab), @Const(col_targets),
+        row_m, @Const(row_ssign), @Const(row_pair), phis, ntiles)
+    i = @index(Global)
+    nrow = size(slab, 1)
+    ncol = size(slab, 2)
+    @inbounds if i <= nrow * ntiles
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        tile = i32 ÷ nrow32
+        k0 = Int(tile) * _KA_SCATTER_TILE + 1
+        k1 = min(k0 + _KA_SCATTER_TILE - 1, ncol)
+        acc = zero(eltype(partial))
+        start = k0
+        for k in k0:k1
+            if k > k0 && col_targets[k] != col_targets[k - 1]
+                partial[row, start] = acc
+                acc = zero(eltype(partial))
+                start = k
+            end
+            s, c = _ka_rot_sc(row_m, phis, row, k)
+            acc += c * slab[row, k] - row_ssign[row] * s * slab[row_pair[row], k]
+        end
+        partial[row, start] = acc
+        row == 1 && (lastseg[tile + 1] = Int32(start))
+    end
+end
+
+@kernel function ka_scatter_runs_kernel!(dest, @Const(partial), @Const(lastseg), @Const(flat_idx),
+        @Const(col_targets))
+    i = @index(Global)
+    nrow = size(partial, 1)
+    ncol = size(partial, 2)
+    @inbounds if i <= nrow * ncol
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = Int(i32 ÷ nrow32) + 1
+        t = col_targets[col]
+        if col == 1 || col_targets[col - 1] != t
+            acc = zero(eltype(dest))
+            k = col
+            while true
+                acc += partial[row, k]
+                tile = (k - 1) ÷ _KA_SCATTER_TILE          # 0-based tile of segment k
+                knext = (tile + 1) * _KA_SCATTER_TILE + 1    # next tile's first column
+                # continue only if segment k runs to its tile's end and the run
+                # carries on into the next tile
+                (Int(lastseg[tile + 1]) == k && knext <= ncol && col_targets[knext] == t) || break
+                k = knext
+            end
+            KA.@atomic dest[flat_idx[row], t] += acc
+        end
+    end
+end
+
 """
     ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=KA_AUTO_WORKGROUP)
 
@@ -186,13 +271,29 @@ Device form of `_rotate_z_scatter_accumulate!` (src/translate_batched.jl):
 inverse z-rotation fused with an
 accumulating scatter back into the flat coefficient buffer (the
 M2M/M2L "return alignment" stage). Columns sharing a target must be adjacent
-for the sum to be reproducible (see the kernel).
+for the sum to be reproducible (see the kernel). `partial` (a slab-sized
+buffer) selects the two-phase form for long runs (M2L).
 """
-function ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; workgroup=KA_AUTO_WORKGROUP)
+function ka_rotate_z_scatter_accumulate!(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis;
+        workgroup=KA_AUTO_WORKGROUP, partial=nothing, rot=nothing)
     length(slab) == 0 && return dest
     backend = KA.get_backend(dest)
-    kernel = _cached_kernel(ka_rotate_z_scatter_accumulate_kernel!, backend, workgroup)
-    kernel(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; ndrange=length(slab))
+    if partial === nothing
+        kernel = _cached_kernel(ka_rotate_z_scatter_accumulate_kernel!, backend, workgroup)
+        kernel(dest, slab, flat_idx, col_targets, row_m, row_ssign, row_pair, phis; ndrange=length(slab))
+        return dest
+    end
+    size(partial) == size(slab) || throw(DimensionMismatch(
+        "scatter partial buffer $(size(partial)) must match the slab $(size(slab))"))
+    ntiles = cld(size(slab, 2), _KA_SCATTER_TILE)
+    lastseg = _ka_scatter_lastseg(backend, ntiles)
+    k1 = _cached_kernel(ka_rotate_z_scatter_partials_kernel!, backend, workgroup)
+    # `rot = ((RC, RS), cls)`: per-class rotation table instead of sincos per column
+    rm, ph = rot === nothing ? (row_m, phis) : rot
+    k1(partial, lastseg, slab, col_targets, rm, row_ssign, row_pair, ph, ntiles;
+       ndrange=size(slab, 1) * ntiles)
+    k2 = _cached_kernel(ka_scatter_runs_kernel!, backend, workgroup)
+    k2(dest, partial, lastseg, flat_idx, col_targets; ndrange=length(slab))
     return dest
 end
 
@@ -732,6 +833,108 @@ end
 #     into `dest`.
 # `mul!` dispatches to each backend's own GPU matmul.
 
+#------- per-class M2L tables -------#
+#
+# The concat M2L's per-route trig (cos/sin(nu*theta), invr^rexp) and z-rotation
+# (sincos(m*phi)) depend only on the route's offset class, of which there are a
+# few hundred against millions of routes. They are tabulated once per plan --
+# with the same expressions the per-route kernels evaluated, so the result is
+# bit-identical -- and gathered by class.
+
+@kernel function ka_rot_table_kernel!(RC, RS, @Const(row_m), @Const(phis))
+    i = @index(Global)
+    nrow = size(RC, 1)
+    @inbounds if i <= length(RC)
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        c = i32 ÷ nrow32 + Int32(1)
+        s, co = sincos(row_m[row] * phis[c])
+        RC[row, c] = co
+        RS[row, c] = s
+    end
+end
+
+@kernel function ka_gather_class_cols3_kernel!(C, S, Sc, @Const(TC), @Const(TS), @Const(TSc), @Const(cls))
+    i = @index(Global)
+    nrow = size(C, 1)
+    @inbounds if i <= length(C)
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
+        c = cls[col]
+        C[row, col] = TC[row, c]
+        S[row, col] = TS[row, c]
+        Sc[row, col] = TSc[row, c]
+    end
+end
+
+@kernel function ka_gather_rotate_z_tab_kernel!(dst, @Const(src), @Const(flat_idx), @Const(cols),
+        @Const(RC), @Const(RS), @Const(row_ssign), @Const(row_pair), @Const(cls), sgn)
+    i = @index(Global)
+    nrow = size(dst, 1)
+    @inbounds if i <= length(dst)
+        i32 = Int32(i) - Int32(1); nrow32 = Int32(nrow)
+        row = i32 % nrow32 + Int32(1)
+        col = i32 ÷ nrow32 + Int32(1)
+        cl = cls[col]
+        c = RC[row, cl]; s = RS[row, cl]
+        a = src[flat_idx[row], cols[col]]
+        b = src[flat_idx[row_pair[row]], cols[col]]
+        dst[row, col] = c * a + sgn * row_ssign[row] * s * b
+    end
+end
+
+function _ka_rot_table(backend, ::Type{TF}, row_m, phis) where TF
+    RC = KA.allocate(backend, TF, length(row_m), length(phis))
+    RS = KA.allocate(backend, TF, length(row_m), length(phis))
+    length(RC) == 0 && return RC, RS
+    _cached_kernel(ka_rot_table_kernel!, backend, KA_AUTO_WORKGROUP)(RC, RS, row_m, phis;
+        ndrange=length(RC))
+    return RC, RS
+end
+
+function _ka_trig_table(backend, ::Type{TF}, nu, thetas, invrs, rexp) where TF
+    TC = KA.allocate(backend, TF, length(nu), length(thetas))
+    TS = KA.allocate(backend, TF, length(nu), length(thetas))
+    TSc = KA.allocate(backend, TF, length(nu), length(thetas))
+    ka_prefix_trig_scale!(TC, TS, TSc, nu, thetas, invrs, rexp)
+    return TC, TS, TSc
+end
+
+# per plan, keyed by the identity of its class-angle vector (a rebuilt plan
+# has a new one); capped so tables of replaced plans do not accumulate
+const _KA_M2L_TABLES = IdDict{Any,Any}()
+
+function _ka_m2l_tables(plan, ws, LH::Bool)
+    haskey(_KA_M2L_TABLES, plan.phis) || length(_KA_M2L_TABLES) < 8 || empty!(_KA_M2L_TABLES)
+    return get!(_KA_M2L_TABLES, plan.phis) do
+        backend = KA.get_backend(plan.phis)
+        TF = eltype(plan.aphi)
+        phi = (; trig=_ka_trig_table(backend, TF, plan.ops_phi.nu, plan.thetas, plan.invrs, plan.rexp_phi),
+                 rot=_ka_rot_table(backend, TF, ws.maps_phi.row_m, plan.phis))
+        chi = LH ? (; trig=_ka_trig_table(backend, TF, plan.ops_chi.nu, plan.thetas, plan.invrs, plan.rexp_chi),
+                      rot=_ka_rot_table(backend, TF, ws.maps_chi.row_m, plan.phis)) : nothing
+        (; phi, chi)
+    end
+end
+
+function ka_gather_class_cols3!(C, S, Sc, (TC, TS, TSc), cls; workgroup=KA_AUTO_WORKGROUP)
+    length(C) == 0 && return C
+    backend = KA.get_backend(C)
+    _cached_kernel(ka_gather_class_cols3_kernel!, backend, workgroup)(C, S, Sc, TC, TS, TSc, cls;
+        ndrange=length(C))
+    return C
+end
+
+function ka_gather_rotate_z_tab!(dst, src, flat_idx, cols, (RC, RS), row_ssign, row_pair, cls, sgn;
+        workgroup=KA_AUTO_WORKGROUP)
+    length(dst) == 0 && return dst
+    backend = KA.get_backend(dst)
+    _cached_kernel(ka_gather_rotate_z_tab_kernel!, backend, workgroup)(dst, src, flat_idx, cols,
+        RC, RS, row_ssign, row_pair, cls, sgn; ndrange=length(dst))
+    return dst
+end
+
 """
     ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targets, nroutes)
 
@@ -753,6 +956,8 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
     classes = route_class === nothing ? plan.route_class : route_class
     LH = size(dest.chi, 1) > 0
     TF = eltype(dest.phi)
+    backend = KA.get_backend(dest.phi)   # for the optional per-step timing ticks
+    tabs = _ka_m2l_tables(plan, ws, LH)
     for c0 in 1:plan.chunk:nroutes
         cols = c0:min(c0 + plan.chunk - 1, nroutes)
         n = length(cols)
@@ -768,6 +973,7 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
             ka_gather_values3!(phis, thetas, invr_col, plan.phis, plan.thetas,
                 plan.invrs, cls)
         end
+        _utick!(:m2l_vals, backend)
         src_cols = @view route_sources[cols]
         tgt_cols = @view route_targets[cols]
         aphi = @view plan.aphi[:, 1:n]; yphi = @view plan.yphi[:, 1:n]
@@ -777,15 +983,18 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
         Gphi = @view ops_phi.G[:, 1:n]; G2phi = @view ops_phi.G2[:, 1:n]
         Cphi = @view ops_phi.Cy[:, 1:n]; Sphi = @view ops_phi.Sy[:, 1:n]
         sphi = @view ops_phi.scale[:, 1:n]
-        ka_prefix_trig_scale!(Cphi, Sphi, sphi, ops_phi.nu, thetas, invr_col,
-            plan.rexp_phi)
-        ka_gather_rotate_z!(aphi, src.phi, ws.phi_flat_idx, src_cols,
-            ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis, one(TF))
+        ka_gather_class_cols3!(Cphi, Sphi, sphi, tabs.phi.trig, cls)
+        _utick!(:m2l_trig, backend)
+        ka_gather_rotate_z_tab!(aphi, src.phi, ws.phi_flat_idx, src_cols, tabs.phi.rot,
+            ws.maps_phi.row_ssign, ws.maps_phi.row_pair, cls, one(TF))
+        _utick!(:m2l_gather, backend)
         ka_stacked_y_dense!(yphi, aphi, ops_phi.yU_mult, ops_phi.yV_mult,
             Cphi, Sphi, Gphi, G2phi, ndof_phi)
+        _utick!(:m2l_y_in, backend)
         ka_scale_inplace!(yphi, sphi)
         mul!(zphi, ops_phi.zD, yphi)
         ka_scale_inplace!(zphi, sphi)
+        _utick!(:m2l_zgemm, backend)
         ret_phi = zphi
 
         if LH
@@ -797,10 +1006,9 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
             achi = @view plan.achi[:, 1:n]; ychi = @view plan.ychi[:, 1:n]
             zchi = @view plan.zchi[:, 1:n]; rchi = @view plan.rchi[:, 1:n]
             cphi = @view plan.cphi[:, 1:n]; cchi = @view plan.cchi[:, 1:n]
-            ka_prefix_trig_scale!(Cchi, Schi, schi, ops_chi.nu, thetas, invr_col,
-                plan.rexp_chi)
-            ka_gather_rotate_z!(achi, src.chi, ws.chi_flat_idx, src_cols,
-                ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis, one(TF))
+            ka_gather_class_cols3!(Cchi, Schi, schi, tabs.chi.trig, cls)
+            ka_gather_rotate_z_tab!(achi, src.chi, ws.chi_flat_idx, src_cols, tabs.chi.rot,
+                ws.maps_chi.row_ssign, ws.maps_chi.row_pair, cls, one(TF))
             ka_stacked_y_dense!(ychi, achi, ops_chi.yU_mult, ops_chi.yV_mult,
                 Cchi, Schi, Gchi, G2chi, ndof_chi)
             ka_scale_inplace!(ychi, schi)
@@ -812,14 +1020,19 @@ function ka_resident_m2l_concat_apply!(dest, src, ws, route_sources, route_targe
             ka_stacked_y_dense!(rchi, cchi, ops_chi.yU_loc, ops_chi.yV_loc,
                 Cchi, Schi, Gchi, G2chi, ndof_chi)
             ka_rotate_z_scatter_accumulate!(dest.chi, rchi, ws.chi_flat_idx, tgt_cols,
-                ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis)
+                ws.maps_chi.row_m, ws.maps_chi.row_ssign, ws.maps_chi.row_pair, phis;
+                partial=achi, rot=(tabs.chi.rot, cls))   # achi is free once gathered and rotated
             ret_phi = cphi
         end
+        _utick!(:m2l_chi, backend)
 
         ka_stacked_y_dense!(rphi, ret_phi, ops_phi.yU_loc, ops_phi.yV_loc,
             Cphi, Sphi, Gphi, G2phi, ndof_phi)
+        _utick!(:m2l_y_out, backend)
         ka_rotate_z_scatter_accumulate!(dest.phi, rphi, ws.phi_flat_idx, tgt_cols,
-            ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis)
+            ws.maps_phi.row_m, ws.maps_phi.row_ssign, ws.maps_phi.row_pair, phis;
+            partial=aphi, rot=(tabs.phi.rot, cls))   # aphi is free once gathered and rotated
+        _utick!(:m2l_scatter, backend)
     end
     # No sync here: every kernel above is queue-ordered against the caller's
     # next launch on this same backend, and this driver is called once per
