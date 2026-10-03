@@ -2438,9 +2438,8 @@ function ResidentM2LConcatPlan(::Type{TF}, basis_info::OperatorBasisInfo{B,LH}, 
     # are generated and applied one complete class window at a time, so their
     # scratch must cover the full window capacity; a window may hold more routes
     # than `strategy.chunk`.
-    strategy_chunk = strategy.chunk == 0 ? 1 << 17 : strategy.chunk   # 0: automatic
     chunk = whole_window ? max(nroutes, 1) :
-        max(min(strategy_chunk, max(nroutes, 1)), 1)
+        max(min(strategy.chunk, max(nroutes, 1)), 1)
     _check_m2l_range(TF, rs, LH ? P_active : P_phi, "ConcatenatedFixedZM2L")
     ndof_phi = degree_major_dof(P_phi)
     ndof_chi = LH ? degree_major_dof(P_active) : 0
