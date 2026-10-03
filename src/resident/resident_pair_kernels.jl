@@ -1079,8 +1079,9 @@ end
 _radix_uses_factored_rotation(options::RadixLifecycleOptions) =
     options.operator isa FactoredRotationM2L
 
-function _launch_host_resident_operator_pipeline!(state::DeviceResidentRadixState)
-    _launch_host_m2m!(state)
+function _launch_host_resident_operator_pipeline!(state::DeviceResidentRadixState;
+        after_m2m_zero=nothing)
+    _launch_host_m2m!(state; after_zero=after_m2m_zero)
     # the FactoredRotation* operators are exact only on the
     # physical subspace (m = 0 imaginary rows == 0); guard the upward-pass output
     # once per lifecycle run, DEBUG[]-gated (off in production).

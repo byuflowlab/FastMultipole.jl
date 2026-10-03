@@ -306,8 +306,8 @@ swept afterwards, and any body held out of the tree is summed against every
 resident body.
 """
 function run_host_radix_lifecycle_with_extra_tree!(state::DeviceResidentRadixState{TF,B,LH},
-        systems::Tuple) where {TF,B,LH}
-    isempty(systems) && return run_host_radix_lifecycle!(state)
+        systems::Tuple; multilevel::Tuple=()) where {TF,B,LH}
+    isempty(systems) && isempty(multilevel) && return run_host_radix_lifecycle!(state)
     n_cells = Int(state.counts.n_cells)
     n = Int(state.counts.n_bodies)
     hs = size(state.output, 1) >= 13
@@ -322,7 +322,11 @@ function run_host_radix_lifecycle_with_extra_tree!(state::DeviceResidentRadixSta
     for (binned, _, _) in prepared
         resident_extra_b2m!(state, binned)
     end
-    _launch_host_resident_operator_pipeline!(state)
+    # masked bodies reinserted at coarser levels (radix_multilevel.jl): after the
+    # upward pass zeroes the non-leaf nodes, before it accumulates the children
+    _launch_host_resident_operator_pipeline!(state;
+        after_m2m_zero = isempty(multilevel) ? nothing :
+            (st -> foreach(plan -> _radix_multilevel_b2m!(st, plan), multilevel)))
     for (binned, loose, kernel) in prepared
         resident_extra_near!(state, binned, kernel)
         size(loose, 2) == 0 && continue

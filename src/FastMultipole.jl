@@ -132,6 +132,7 @@ include("radix_nearfield.jl")
 export radix_nearfield
 include("radix_settings.jl")
 include("radix_geometry.jl")
+include("radix_multilevel.jl")
 export radix_settings, radix_setting
 export set_radix_setting!, set_radix_settings!
 

@@ -1613,13 +1613,17 @@ function _resident_factored_m2l_group_apply!(state::DeviceResidentRadixState{TF,
     return state
 end
 
-function _launch_resident_m2m!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
+function _launch_resident_m2m!(state::DeviceResidentRadixState{TF,B,LH};
+        after_zero=nothing) where {TF,B,LH}
     state.grid isa DeviceRadixGrid ||
         throw(ArgumentError("resident M2M requires DeviceRadixGrid-shaped node metadata"))
     ws = state.scratch
     ws isa ResidentOperatorWorkspace ||
         throw(ArgumentError("resident M2M requires ResidentOperatorWorkspace scratch"))
     _zero_resident_nonleaf_multipoles!(state)
+    # multipoles that join non-leaf nodes directly (the multilevel masked bodies)
+    # go in after the zeroing; the groups accumulate the children on top
+    after_zero === nothing || after_zero(state)
     # Groups run top-down (level ell-1 -> 0): each group reads finalized child
     # multipoles one level below the parents it accumulates into.
     for group in ws.m2m_groups

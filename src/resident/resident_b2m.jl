@@ -133,8 +133,9 @@ function _host_b2m_vortex_kernel!(ph::AbstractMatrix{TF}, ch, source_bodies,
     return ph
 end
 
-function _launch_host_m2m!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}
-    return _launch_resident_m2m!(state)
+function _launch_host_m2m!(state::DeviceResidentRadixState{TF,B,LH};
+        after_zero=nothing) where {TF,B,LH}
+    return _launch_resident_m2m!(state; after_zero)
 end
 
 function _launch_host_m2l!(state::DeviceResidentRadixState{TF,B,LH}) where {TF,B,LH}

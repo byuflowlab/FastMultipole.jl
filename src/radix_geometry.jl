@@ -431,17 +431,48 @@ end
 # through a `MaskedBodies` extra source; `radix_unmask_bodies!` restores them.
 
 """
-    MaskedBodies(buffer, kernel, strength_dims)
+    AbstractOversizeEvaluator
 
-The masked bodies of one evaluation as an all-pairs extra source: `buffer` holds
-their packed columns in the consumer's source layout (one column per body, as its
-`source_system_to_buffer!` writes them), `kernel` is the direct kernel.
+How [`MaskedBodies`](@ref) act on the targets: [`AllPairsOversize`](@ref) (every
+target directly, exact) or [`MultilevelOversize`](@ref).
 """
-struct MaskedBodies{TF,K}
+abstract type AbstractOversizeEvaluator end
+"Every target directly: exact, `K x N` pairs."
+struct AllPairsOversize <: AbstractOversizeEvaluator end
+"""
+    MultilevelOversize(; margin=1.0)
+
+Each masked body at the deepest level whose stencil admits `margin` times its
+regularization reach: direct to the targets near it at that level, the far field
+through the tree.
+"""
+Base.@kwdef struct MultilevelOversize <: AbstractOversizeEvaluator
+    margin::Float64 = 1.0
+end
+
+"""
+    MaskedBodies(buffer, kernel, strength_dims; idx=Int[], bodytype=nothing,
+                 evaluator=AllPairsOversize())
+
+The masked bodies of one evaluation as an extra source: `buffer` holds their packed
+columns in the consumer's source layout (one column per body, as its
+`source_system_to_buffer!` writes them), `kernel` is the direct kernel, `idx` their
+global indices into system 1, `bodytype` their element type (for the multipole of
+a [`MultilevelOversize`](@ref) evaluator), `evaluator` how they act on the targets.
+"""
+struct MaskedBodies{TF,K,E<:AbstractOversizeEvaluator}
     buffer::Matrix{TF}
     kernel::K
     strength_dims::Int
+    idx::Vector{Int}
+    bodytype::Any
+    evaluator::E
 end
+MaskedBodies(buffer, kernel, strength_dims::Integer; idx=Int[], bodytype=nothing,
+             evaluator=AllPairsOversize()) =
+    MaskedBodies(buffer, kernel, Int(strength_dims), collect(Int, idx), bodytype, evaluator)
+body_type(o::MaskedBodies) = o.bodytype === nothing ?
+    throw(ArgumentError("MaskedBodies needs `bodytype` for a multipole")) : o.bodytype
 get_n_bodies(o::MaskedBodies) = size(o.buffer, 2)
 data_per_body(o::MaskedBodies) = size(o.buffer, 1)
 get_position(o::MaskedBodies, i) = SVector{3}(o.buffer[1, i], o.buffer[2, i], o.buffer[3, i])
