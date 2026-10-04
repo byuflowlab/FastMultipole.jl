@@ -343,6 +343,15 @@ function radix_sigma_limit(g::AutoUniformGeometry, cache)
     return g_min * h_leaf / (Float64(g.accuracy_margin) * Float64(g.reach))
 end
 
+# The same limit for a hierarchical geometry given as (ell, box, q, level_radii2), before
+# its cache exists (a checkpoint restore builds the cache from it): `box` is the cubic
+# edge or the rectangular extents, whose largest is the virtual cube's 2 h0.
+function radix_sigma_limit(g::AutoUniformGeometry, ell::Integer, box, q::Integer, level_radii2=())
+    g_min = _ball_stencil_min_gap(isempty(level_radii2) ? Int(q) : Int(level_radii2[end]))
+    h_leaf = Float64(maximum(box)) / (1 << ell)
+    return g_min * h_leaf / (Float64(g.accuracy_margin) * Float64(g.reach))
+end
+
 """
     radix_depth_outgrown!(g::AutoUniformGeometry, src, cache, q_cached, np_checked, evals;
                           verbose=false) -> Bool
