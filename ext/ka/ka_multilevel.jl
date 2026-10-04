@@ -153,7 +153,7 @@ function ka_multilevel_prepare(cache, mb)
     phi = zeros(TF, rows_phi, G); chi = zeros(TF, rows_chi, G)
     # the node groups are independent (distinct columns): one chunk per thread
     sorted_buffer = buffer[:, order]
-    Threads.@threads for chunk in collect(Iterators.partition(1:G, cld(G, Threads.nthreads())))
+    Threads.@threads for chunk in collect(Iterators.partition(1:G, max(1, cld(G, Threads.nthreads()))))
         FastMultipole._resident_extra_b2m_kernel!(phi, chi, mb, sorted_buffer, granges[:, chunk],
             gcenters[:, chunk], chunk, orders.P_phi, orders.P_active, length(chunk), Val(LH))
     end

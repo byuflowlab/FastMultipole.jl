@@ -29,12 +29,14 @@ end
 
 Each masked body's insertion level: the deepest level, from `ell - 1` up to the
 coarsest M2L level, whose stencil gap admits its margin-scaled regularization
-reach; 0 (all-pairs) when none does or the grid is not a cubic hierarchical one.
+reach; 0 (all-pairs) when none does or the stencil is not hierarchical. A
+rectangular grid is the same Morton hierarchy over its virtual cube (cells cubic at
+every level, M2L from its root level down), so the rule is the same.
 """
 function radix_multilevel_levels(cache, mb)
     ell = cache.ell; K = size(mb.buffer, 2)
     levels = zeros(Int, K)
-    (cache.ell_axes == SVector(ell, ell, ell) && cache.policy isa HierarchicalRigidStencil) || return levels
+    cache.policy isa HierarchicalRigidStencil || return levels
     first_level = _radix_first_m2l_level(cache)
     margin = mb.margin
     # the largest reach each level admits, deepest first
