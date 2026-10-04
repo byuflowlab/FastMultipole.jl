@@ -249,11 +249,20 @@ function ka_radix_cache_device_step!(cache::FastMultipole.RadixFMMCache,
         prepared = isempty(extra_tree_sources) ? () :
             Tuple(_ka_extra_tree_prepared!(cache, sys) for sys in extra_tree_sources)
         isempty(prepared) || _utick!(:extra_prepare, KA.get_backend(state.output))
-        ka_lifecycle_body!(state; extra_tree=prepared)
+        # masked bodies go back into the tree at the level their reach admits
+        # (ka_multilevel.jl); the other extra sources stay all-pairs below
+        multilevel = Tuple(ka_multilevel_prepare(cache, s) for s in extra_sources if _ka_is_multilevel(s))
+        extra_sources = Tuple(s for s in extra_sources if !_ka_is_multilevel(s))
+        isempty(multilevel) || _utick!(:multilevel_prepare, KA.get_backend(state.output))
+        ka_lifecycle_body!(state; extra_tree=(prepared..., (m.tree for m in multilevel)...))
         for p in prepared
             ka_extra_tree_finish!(state, p; workgroup)
         end
         isempty(prepared) || _utick!(:extra_finish, KA.get_backend(state.output))
+        for m in multilevel
+            ka_multilevel_near!(state, cache, m; workgroup)
+        end
+        isempty(multilevel) || _utick!(:multilevel_near, KA.get_backend(state.output))
     end
     if nearfield_pass !== nothing
         # the consumer's own pass over the U-list direct pairs (e.g. an SFS

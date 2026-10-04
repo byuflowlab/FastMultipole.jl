@@ -36,6 +36,7 @@ include("ka/ka_device_step.jl")
 include("ka/ka_cache_build.jl")
 include("ka/ka_extra_systems.jl")
 include("ka/ka_row_select.jl")
+include("ka/ka_multilevel.jl")
 include("ka/ka_functors.jl")
 include("ka/ka_entry.jl")
 

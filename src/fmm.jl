@@ -881,26 +881,16 @@ function fmm!(target_systems, source_systems, cache::RadixFMMCache{TF,LH};
             self_induce=split.self_induce)
     else
         update_radix_state!(cache, main)
-        # masked bodies with a multilevel evaluator go back into the tree at the
-        # level their reach admits (radix_multilevel.jl); the rest stay all-pairs
-        ml = split.self_induce ?
-            Tuple(s for s in split.extra_sources if s isa MaskedBodies && s.evaluator isa MultilevelOversize) : ()
-        plans = Tuple(radix_multilevel_plan(cache, s, s.idx) for s in ml)
-        allpairs = isempty(ml) ? split.extra_sources :
-            Tuple(s for s in split.extra_sources if !(s isa MaskedBodies && s.evaluator isa MultilevelOversize))
         if split.self_induce
             # `tree_sources` join the leaf multipoles before the upward pass;
             # a sources-only call has no tree to join, so they stay direct
-            run_host_radix_lifecycle_with_extra_tree!(cache.state, tree_sources; multilevel=plans)
+            run_host_radix_lifecycle_with_extra_tree!(cache.state, tree_sources)
         else
             fill!(cache.state.output, zero(TF))
             _radix_extra_sources_into_output!(cache.state, tree_sources)
         end
         nearfield_pass === nothing || nearfield_pass(cache)
-        _radix_extra_sources_into_output!(cache.state, allpairs)
-        for plan in plans
-            _radix_multilevel_near!(cache.state, cache, plan)
-        end
+        _radix_extra_sources_into_output!(cache.state, split.extra_sources)
         finalize_radix_output!(cache.state, main; derivatives_switches=switches,
             target_buffers=_radix_cache_target_buffers!(cache, switches))
         split.self_induce &&
